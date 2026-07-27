@@ -14,6 +14,7 @@ import subprocess as sp
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest import mock
 from unittest.mock import MagicMock
 
 from agent6.tools.results import ExecResult, RawResult
@@ -83,6 +84,54 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     assert loaded.gateless_ever_committed is True
     assert loaded.metric_best_score == 27.0
     assert loaded.metric_at_ceiling is True
+
+
+def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path) -> None:
+    """A prose turn plus its nudge is a completed iteration; an operator stop
+    at its boundary must resume from AFTER it. The post-turn snapshot only ran
+    on tool turns, so a stop after a prose answer left loop_state.json at the
+    PRE-call snapshot: resume re-paid the provider call and the nudge never
+    existed in the resumed history."""
+    from agent6.providers import ProviderResponse
+    from agent6.workflows._run_state import RunResult
+
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    snap_path = tmp_path / "loop_state.json"
+    provider = MagicMock()
+    provider.call.return_value = ProviderResponse(
+        text="answer in prose",
+        tool_uses=(),
+        stop_reason="end_turn",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": [{"type": "text", "text": "answer in prose"}]},
+    )
+    wf = _wf(
+        root=repo,
+        provider=provider,
+        resume_state_path=snap_path,
+        provider_retry_count=0,
+        provider_retry_delay_s=0.0,
+        max_iterations=5,
+    )
+    stopped = RunResult(
+        completed=False, reason="interactive_stop", summary="", iterations=1, tool_calls=0
+    )
+
+    def stop_at_boundary(*_a: object, **_k: object) -> RunResult:
+        return stopped
+
+    with mock.patch.object(Workflow, "_operator_boundary", stop_at_boundary):
+        result = wf.run("do the task")
+    assert result.reason == "interactive_stop"
+    loaded = load_run_snapshot(snap_path)
+    assert loaded.next_iteration == 2  # the prose turn is a COMPLETED iteration
+    dumped = json.dumps(loaded.messages)
+    assert "answer in prose" in dumped  # the model's turn survives the stop
+    assert "[harness]" in dumped  # and so does the nudge that answered it
 
 
 def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -> None:

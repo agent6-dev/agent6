@@ -919,6 +919,17 @@ class Workflow:
                 result = self._handle_no_tool_use(got, conversation, state, iteration=iteration)
                 if result is not None:
                     return result
+                # A completed prose turn is snapshotted like a tool turn, so an
+                # operator stop at the boundary below resumes from AFTER the
+                # prose + nudge instead of re-paying the provider call.
+                self._save_resume_snapshot(
+                    system=system,
+                    messages=conversation.to_wire(),
+                    tool_calls=state.tool_calls,
+                    next_iteration=iteration + 1,
+                    root_task_id=root_task_id,
+                    state=state,
+                )
                 # A prose turn is a completed iteration too: without this
                 # boundary a model answering in prose could never be stopped
                 # or steered (the stop marker sat pending while the run kept
