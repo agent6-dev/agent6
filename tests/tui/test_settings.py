@@ -40,3 +40,17 @@ def test_save_preserves_other_keys(cfg: Path) -> None:
     data = load_ui_settings()["ui"]
     assert data["theme"] == "dracula"
     assert data["show_x"] is True  # unrelated keys survive the rewrite
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX symlinks")
+def test_save_does_not_follow_a_planted_tmp_symlink(cfg: Path) -> None:
+    """The old fixed `ui.toml.tmp` + write_text followed a planted symlink; since
+    the save chowns back to the real user it can run under sudo, making that an
+    arbitrary-file truncate-as-root primitive. atomic_write's mkstemp temp is
+    unpredictable, so a planted `ui.toml.tmp` is simply ignored."""
+    secret = cfg / "root_secret"
+    secret.write_text("do-not-truncate", encoding="utf-8")
+    (cfg / "ui.toml.tmp").symlink_to(secret)
+    save_theme("nord")
+    assert secret.read_text(encoding="utf-8") == "do-not-truncate"  # untouched
+    assert get_theme() == "nord"  # the real save still landed

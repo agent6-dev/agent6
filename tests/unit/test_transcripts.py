@@ -135,3 +135,35 @@ def test_seq_continues_across_resume_legs(tmp_path: Path) -> None:
     from agent6.viewmodel.transcript_render import load_transcripts
 
     assert [t["seq"] for t in load_transcripts(d)] == [1, 2, 3]
+
+
+def test_transcript_record_publishes_via_atomic_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The writer used a predictable `<name>.json.tmp` + write_text that would
+    follow a planted symlink; it now publishes through atomic_write (mkstemp,
+    unpredictable name, O_EXCL). Spying the primitive is the regression: the old
+    write_text path never called it. The record still lands, headers redacted."""
+    import agent6.providers.types as types_mod
+
+    calls: list[Path] = []
+    real = types_mod.atomic_write
+
+    def spy(path: Path, data: str | bytes) -> None:
+        calls.append(path)
+        real(path, data)
+
+    monkeypatch.setattr(types_mod, "atomic_write", spy)
+    sink = TranscriptSink(tmp_path)
+    path = sink.record(
+        url="https://x",
+        request_headers={"x-api-key": "sk-secret"},
+        request_body={"m": 1},
+        response_status=200,
+        response_body={"ok": True},
+    )
+    assert calls == [path]  # published atomically, not via a predictable temp
+    body = path.read_text(encoding="utf-8")
+    assert json.loads(body)["seq"] == 1
+    assert "sk-secret" not in body  # redaction intact
+    assert not list(tmp_path.glob("*.json.tmp"))

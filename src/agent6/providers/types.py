@@ -20,6 +20,8 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
+from agent6.portable import atomic_write
+
 
 class ProviderError(Exception):
     """A provider call failed.
@@ -156,9 +158,11 @@ class TranscriptSink:
                 "body": response_body,
             },
         }
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(path)
+        # atomic_write (mkstemp, unpredictable name, O_EXCL) instead of a fixed
+        # `<name>.json.tmp` + write_text: the predictable temp was symlink-
+        # followable (the class hardened out of secrets.py), and this also makes
+        # the record durable.
+        atomic_write(path, json.dumps(payload, indent=2, sort_keys=True))
         return path
 
 

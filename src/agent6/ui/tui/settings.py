@@ -24,6 +24,7 @@ import tomllib
 from typing import Any
 
 from agent6.paths import RealUser, chown_to_real_user, effective_user, ui_settings_path
+from agent6.portable import atomic_write
 
 DEFAULT_THEME = "agent6-dark"
 DEFAULT_COPY_METHOD = "auto"
@@ -58,9 +59,12 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
     data["ui"] = ui
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(_render_ui_toml(data), encoding="utf-8")
-        tmp.replace(path)
+        # atomic_write uses mkstemp (unpredictable name, O_EXCL): a pre-planted
+        # `ui.toml.tmp` symlink can no longer redirect this write. The old fixed
+        # `.tmp` + write_text (O_CREAT|O_TRUNC) followed such a symlink, and
+        # this runs chown_to_real_user -- i.e. it can run under sudo -- so the
+        # follow was an arbitrary-file truncate-as-root primitive.
+        atomic_write(path, _render_ui_toml(data))
         chown_to_real_user(path.parent, user)
         chown_to_real_user(path, user)
     except OSError:
