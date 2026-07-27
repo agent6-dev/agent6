@@ -109,6 +109,37 @@ def test_root_optin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert paths.root_optin_enabled(False) is False
 
 
+def test_mkdir_for_real_user_hands_back_created_ancestors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Under sudo, every directory the call CREATES is handed back to the real
+    operator: chowning only the deepest one left a root-owned state/config
+    BASE that no later non-root process could create a sibling in. Directories
+    that already existed are never touched."""
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "1234")
+    monkeypatch.setenv("SUDO_GID", "1234")
+    chowned: list[Path] = []
+
+    def _record(*a: object) -> None:
+        chowned.append(Path(str(a[0])))
+
+    monkeypatch.setattr(os, "lchown", _record)
+    base = tmp_path / "existing"
+    base.mkdir()
+    target = base / "agent6" / "repo-abc"
+    paths.mkdir_for_real_user(target)
+    assert target.is_dir()
+    assert base / "agent6" in chowned  # the created ancestor is handed back
+    assert target in chowned
+    assert base not in chowned  # pre-existing dirs are never rechowned
+    # Nothing missing: the handover still covers the path itself (the
+    # behavior of the per-site mkdir+chown pairs this primitive replaces).
+    chowned.clear()
+    paths.mkdir_for_real_user(target)
+    assert chowned == [target]
+
+
 def test_chown_to_real_user_is_noop_when_not_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

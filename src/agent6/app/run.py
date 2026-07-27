@@ -86,7 +86,7 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.graph.curator import GraphCurator
-from agent6.paths import chown_to_real_user
+from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import Provider, TranscriptSink
 from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.ipc import (
@@ -366,6 +366,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 "continue it, or choose a different --run-id."
             )
             return 2
+    # Under sudo the first run on a machine creates the whole state ancestry;
+    # hand the created dirs back NOW, not at teardown -- a killed run must not
+    # leave a root-owned base that blocks every other repo's non-root runs.
+    mkdir_for_real_user(layout.run_dir)
     layout.ensure()
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
     # run state (clearing answers, the worker pid, the curator) so a second

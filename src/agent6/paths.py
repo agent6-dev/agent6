@@ -242,6 +242,27 @@ def root_optin_enabled(cli_flag: bool) -> bool:
     return val not in ("", "0", "false", "no")
 
 
+def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
+    """Create *path* (with any missing ancestors) and hand back what was created.
+
+    Under ``sudo`` a bare ``mkdir(parents=True)`` creates the missing ancestry
+    as root, and a root-owned base blocks every later non-root sibling (the
+    second repo's state dir, the next skill's install dir). The handover covers
+    the topmost directory this call created, recursively -- pre-existing
+    directories are never rechowned -- and falls back to *path* itself when
+    nothing was missing.
+    """
+    missing: list[Path] = []
+    cur = path
+    while not cur.exists():
+        missing.append(cur)
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    path.mkdir(parents=True, exist_ok=True)
+    chown_to_real_user(missing[-1] if missing else path, user)
+
+
 def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
     """Recursively ``chown`` *path* back to the real operator.
 

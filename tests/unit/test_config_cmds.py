@@ -269,6 +269,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
 
     handed: list[Path] = []
     monkeypatch.setattr(cc, "chown_to_real_user", handed.append)
+    monkeypatch.setattr(cc, "mkdir_for_real_user", handed.append)  # the dir handover
     gpath = global_config_path()
     gpath.write_text("[budget]\nbest_effort_usd_limit = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)

@@ -410,6 +410,35 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value
 
 
+def test_prepare_write_target_hands_back_the_created_state_base(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A sudo config write on a fresh machine creates the whole state base;
+    chowning only the deepest dir left `<base>` root-owned, and the next
+    repo's non-root write then died creating its sibling dir there."""
+    import os
+
+    from agent6.config import layer as layer_mod
+
+    base = tmp_path / "nested" / "state-base"  # two levels, neither exists yet
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "1234")
+    monkeypatch.setenv("SUDO_GID", "1234")
+    chowned: list[Path] = []
+
+    def _record(*a: object) -> None:
+        chowned.append(Path(str(a[0])))
+
+    monkeypatch.setattr(os, "lchown", _record)
+    target = layer_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
+    assert target.parent.is_dir()
+    assert base in chowned  # the created base is handed back...
+    assert tmp_path / "nested" in chowned  # ...and every created level above it
+
+
 def test_config_write_hands_the_dir_over_before_writing(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -420,7 +449,7 @@ def test_config_write_hands_the_dir_over_before_writing(
     from agent6.config import layer as layer_mod
 
     handed: list[Path] = []
-    monkeypatch.setattr(layer_mod, "chown_to_real_user", handed.append)
+    monkeypatch.setattr(layer_mod, "mkdir_for_real_user", handed.append)
 
     def killed(*_args: object, **_kwargs: object) -> None:
         raise KeyboardInterrupt  # stands in for the operator killing the writer

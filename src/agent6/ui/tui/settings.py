@@ -23,7 +23,13 @@ from __future__ import annotations
 import tomllib
 from typing import Any
 
-from agent6.paths import RealUser, chown_to_real_user, effective_user, ui_settings_path
+from agent6.paths import (
+    RealUser,
+    chown_to_real_user,
+    effective_user,
+    mkdir_for_real_user,
+    ui_settings_path,
+)
 from agent6.portable import atomic_write
 
 DEFAULT_THEME = "agent6-dark"
@@ -58,7 +64,7 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
     ui[key] = value
     data["ui"] = ui
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(path.parent, user)
         # atomic_write uses mkstemp (unpredictable name, O_EXCL): a pre-planted
         # `ui.toml.tmp` symlink can no longer redirect this write. The old fixed
         # `.tmp` + write_text (O_CREAT|O_TRUNC) followed such a symlink, and

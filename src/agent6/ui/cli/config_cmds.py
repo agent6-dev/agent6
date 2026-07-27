@@ -42,6 +42,7 @@ from agent6.paths import (
     chown_to_real_user,
     effective_user,
     global_config_path,
+    mkdir_for_real_user,
     secrets_path,
 )
 from agent6.portable import atomic_write, locked_file
@@ -90,8 +91,7 @@ def _open_target(target: Path) -> None:
     Under sudo the dir is created as root; handing it back only after a
     successful write left a root-owned dir behind on every refusal.
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    chown_to_real_user(target.parent)
+    mkdir_for_real_user(target.parent)
 
 
 def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) -> int:

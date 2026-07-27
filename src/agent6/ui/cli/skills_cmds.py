@@ -25,7 +25,13 @@ import httpx2
 
 from agent6.config.io import remove_toml_leaf, upsert_toml_leaf
 from agent6.config.layer import load_effective
-from agent6.paths import chown_to_real_user, data_dir, global_config_path, repo_config_path
+from agent6.paths import (
+    chown_to_real_user,
+    data_dir,
+    global_config_path,
+    mkdir_for_real_user,
+    repo_config_path,
+)
 from agent6.skills import (
     Skill,
     discover_skills,
@@ -137,7 +143,7 @@ def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force
     """Copy one skill directory (SKILL.md + supplementary files) into place."""
     name = _skill_name_from_text((src / "SKILL.md").read_text(encoding="utf-8"), str(src))
     target = _refuse_or_clear_existing(name, force=force)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     shutil.copytree(src, target)
     (target / _ORIGIN_FILE).unlink(missing_ok=True)  # never inherit a copied origin
     _write_origin(target, url=url, kind=kind, source_sha=source_sha)
@@ -149,7 +155,8 @@ def _install_skill_text(text: str, *, url: str, force: bool) -> str:
     """Install a single-file skill from raw SKILL.md text."""
     name = _skill_name_from_text(text, url)
     target = _refuse_or_clear_existing(name, force=force)
-    target.mkdir(parents=True)
+    mkdir_for_real_user(target.parent)
+    target.mkdir()  # the skill dir itself must not pre-exist
     (target / "SKILL.md").write_text(text, encoding="utf-8")
     _write_origin(target, url=url, kind="skillmd", source_sha="")
     chown_to_real_user(target)

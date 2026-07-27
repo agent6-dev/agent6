@@ -55,6 +55,7 @@ from agent6.config.model import (
 from agent6.paths import (
     chown_to_real_user,
     global_config_path,
+    mkdir_for_real_user,
     repo_config_path,
     state_dir,
 )
@@ -771,8 +772,7 @@ def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
     its atomic-write temp file there with no way back but a manual chown.
     """
     target = _write_target(repo_root, to_repo=to_repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    chown_to_real_user(target.parent)
+    mkdir_for_real_user(target.parent)
     return target
 
 

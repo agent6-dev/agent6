@@ -31,7 +31,13 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from agent6.paths import RealUser, chown_to_real_user, effective_user, secrets_path
+from agent6.paths import (
+    RealUser,
+    chown_to_real_user,
+    effective_user,
+    mkdir_for_real_user,
+    secrets_path,
+)
 from agent6.portable import atomic_write, locked_file
 
 
@@ -132,7 +138,7 @@ def save_secret(
         providers[provider_name] = entry
         data["providers"] = providers
 
-        path.parent.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(path.parent, user)
         path.parent.chmod(0o700)
         text = _render_secrets_toml(data)
         # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL at
