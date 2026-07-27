@@ -375,12 +375,20 @@ class MachineJournal:
         Claims the signal by renaming it to a private consume path first: `poke`
         renames a fresh signal into place from another process, so a
         read-then-unlink would destroy a poke that landed in between.
+
+        A consume path already present is a claim stranded by a crash between
+        the rename and the unlink (machine_lock guarantees no live second
+        consumer): consume IT first -- restart otherwise lost that poke forever,
+        and renaming over it would clobber the payload. Delivery is thus
+        at-least-once: a crash after the read can re-deliver, which a wake
+        tolerates (a bare poke is a valid wake).
         """
         consume = self.signal_path.with_suffix(".consuming")
-        try:
-            self.signal_path.rename(consume)
-        except FileNotFoundError:
-            return False, None
+        if not consume.exists():
+            try:
+                self.signal_path.rename(consume)
+            except FileNotFoundError:
+                return False, None
         try:
             raw = consume.read_text(encoding="utf-8")
         except OSError:

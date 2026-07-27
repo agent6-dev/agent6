@@ -432,6 +432,19 @@ def test_take_signal_preserves_poke_landing_mid_consume(
     assert j.take_signal() == (True, "second")  # the mid-consume poke survived
 
 
+def test_take_signal_recovers_stranded_consuming_file(tmp_path: Path) -> None:
+    """A crash between the rename-claim and the unlink strands signal.consuming;
+    restart never looked for it, so the poke (payload included) was lost forever,
+    and the next claim's rename would have clobbered it. A stranded claim is
+    consumed first, before any fresh signal."""
+    j = _journal(tmp_path)
+    j.signal_path.with_suffix(".consuming").write_text('"stranded"', encoding="utf-8")
+    j.poke("fresh")
+    assert j.take_signal() == (True, "stranded")
+    assert j.take_signal() == (True, "fresh")
+    assert j.take_signal() == (False, None)
+
+
 def test_poke_carries_payload(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.poke({"cmd": "reload", "n": 3})
