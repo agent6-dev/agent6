@@ -216,13 +216,29 @@ class MachineWatchScreen(Screen[None]):
         # offers a control that would drop into a dead instance dir (matches the
         # web, which disables both buttons once the machine has ended).
         del parameters
+        if action == "steer" and not self._steerable():
+            return False
         return not (action in ("steer", "poke") and self._ended)
+
+    def _steerable(self) -> bool:
+        """A steer only reaches an agent state while the machine's worker runs.
+        A parked or stopped machine has NOT ended, but its newest state dir is a
+        finished agent state nobody polls, so the marker is dropped in silence
+        (the web refuses this; a poke is what wakes a parked machine)."""
+        return not self._ended and worker_is_alive(self._root)
 
     def action_steer(self) -> None:
         """Steer the current agent state: drop a request marker + open the steer
         box; the state picks it up at its next safe boundary. No-op if none runs."""
         if self._ended:
             self.app.notify("machine ended; cannot steer", timeout=4.0)
+            return
+        if not self._steerable():
+            self.app.notify(
+                "machine is not running, so no agent state would read a steer"
+                " (poke it to wake a waiting machine)",
+                timeout=6.0,
+            )
             return
         state_dir = self._state_dir()
         if state_dir is None or self._steer_open:

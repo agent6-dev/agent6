@@ -544,3 +544,48 @@ def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) ->
             assert captured and captured[-1][-2:] == ["create", "nightly sweep"]
 
     asyncio.run(scenario())
+
+
+def test_watch_screen_refuses_a_steer_no_state_would_read(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """A parked machine has not ENDED, but its worker is gone and its newest
+    state dir is a finished agent state, so nothing will ever poll the marker.
+    The web refuses this with a reason; the TUI wrote the marker and reported
+    success, silently dropping the operator's course-correction."""
+    from agent6.machine import load_machine
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "parked"
+    instance.mkdir(parents=True)
+    # A begun-but-not-ended journal: not `_ended`, and no worker.pid -> dead.
+    (instance / "journal.jsonl").write_text(
+        '{"kind": "machine.begin", "ts": "t", "machine": "tiny", "version": 1}\n',
+        encoding="utf-8",
+    )
+    state = instance / "states" / "0001-work"
+    state.mkdir(parents=True)
+    (state / "logs.jsonl").write_text("", encoding="utf-8")
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert not screen._ended  # pyright: ignore[reportPrivateUsage]
+            assert screen.check_action("steer", ()) is False
+            screen.action_steer()
+            await pilot.pause()
+            assert not (state / "steer.request").exists()
+
+    asyncio.run(scenario())
