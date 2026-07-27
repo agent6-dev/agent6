@@ -195,7 +195,10 @@ def worker_is_alive(run_dir: Path) -> bool:
     if rec is None:
         return False
     pid, recorded_start = rec
-    if not _pid_alive(pid):
+    # `os.kill(0, 0)` probes the process GROUP and `os.kill(-1, 0)` every
+    # process, so both answer alive: 0 and -1 are not pids, as frontend_is_live
+    # already knows.
+    if pid <= 0 or not _pid_alive(pid):
         return False
     if not recorded_start:
         return True

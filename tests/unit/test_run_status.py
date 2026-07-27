@@ -455,3 +455,14 @@ def test_status_ambiguous_prefix_names_the_candidates(
     assert "ambiguous" in err
     assert "winsome-dawn-YWH5ZS" in err and "winsome-dusk-AAAAAA" in err
     assert "no run matches" not in err
+
+
+def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
+    """`os.kill(0, 0)` signals the process group and `os.kill(-1, 0)` every
+    process, so both succeed: a worker.pid holding 0 or -1 read ALIVE forever,
+    refusing resume and hanging the /parallel lane await -- the exact symptom
+    the identity record exists to kill. The front-end probe guards this; the
+    worker probe did not."""
+    for junk in ("0", "-1"):
+        (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
+        assert worker_is_alive(tmp_path) is False, junk
