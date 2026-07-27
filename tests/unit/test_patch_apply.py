@@ -301,3 +301,30 @@ def test_v4a_end_of_file_marker_accepted() -> None:
         "*** Begin Patch\n*** Update File: m.py\n@@\n last\n+added\n*** End of File\n*** End Patch"
     )
     assert apply_v4a_text(patch, "last\n") == ("m.py", "last\nadded\n")
+
+
+def test_v4a_pure_deletion_removes_the_lines_whole() -> None:
+    """A hunk with only `-` lines deleted the text but left the newline that
+    terminated the last removed line, so the file kept a stray blank line where
+    the deletion happened (deleting every line left the file as a lone "\\n")."""
+    orig = "line1\nline2\nline3\nline4\n"
+    patch = "*** Begin Patch\n*** Update File: m.py\n@@\n-line2\n-line3\n*** End Patch"
+    _, new = apply_v4a_text(patch, orig)
+    assert new == "line1\nline4\n"
+
+
+def test_v4a_pure_deletion_of_the_whole_file_empties_it() -> None:
+    orig = "only\n"
+    patch = "*** Begin Patch\n*** Update File: m.py\n@@\n-only\n*** End Patch"
+    _, new = apply_v4a_text(patch, orig)
+    assert new == ""
+
+
+def test_v4a_deletion_with_context_is_unaffected() -> None:
+    """The context-anchored form already worked; it must keep working."""
+    orig = "line1\nline2\nline3\nline4\n"
+    patch = (
+        "*** Begin Patch\n*** Update File: m.py\n@@\n line1\n-line2\n-line3\n line4\n*** End Patch"
+    )
+    _, new = apply_v4a_text(patch, orig)
+    assert new == "line1\nline4\n"

@@ -459,8 +459,7 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
                 f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
             )
         if count == 1:
-            idx = matches[0]
-            content = content[:idx] + new_block + content[idx + len(old_block) :]
+            content = _v4a_splice(content, matches[0], old_block, new_block)
             continue
         # The block itself repeats; the `@@ <section>` hints disambiguate it. We
         # only apply when the hints pin a SINGLE occurrence -- otherwise the hunk
@@ -472,8 +471,21 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
                 "more surrounding context lines, or a `@@ <section>` marker naming the "
                 "enclosing def/class, so the location is unique"
             )
-        content = content[:idx] + new_block + content[idx + len(old_block) :]
+        content = _v4a_splice(content, idx, old_block, new_block)
     return path, content
+
+
+def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:
+    """Replace the block at *idx* with *new_block*.
+
+    The blocks are line TEXT with no trailing newline, so a pure deletion (an
+    empty new block) must take the newline that terminated the last removed
+    line with it -- leaving it behind put a stray blank line where the deletion
+    happened, and deleting every line left the file as a lone newline."""
+    rest = content[idx + len(old_block) :]
+    if not new_block and rest.startswith("\n"):
+        rest = rest[1:]
+    return content[:idx] + new_block + rest
 
 
 def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str]]:
