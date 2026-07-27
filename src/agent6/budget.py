@@ -102,8 +102,10 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
     to this model, prefer that sum over the price-table estimate. If even one
     call lacked the field (mixed-route, transient OpenRouter quirk, etc.) fall
     back to the table for the whole model so the numbers are consistent rather
-    than partially-mixed. Returns None when the model has no cached price (and
-    no fully-reported figure): the caller reports it as unknown.
+    than partially-mixed -- unless there is no price to fall back to, where the
+    reported subset is still better than nothing and is flagged partial.
+    Returns None only when the model has no cached price and reported nothing:
+    the caller reports it as unknown.
 
     Pricing model (Anthropic-accurate):
       fresh input:      price[0]         (already excludes cached portion)
