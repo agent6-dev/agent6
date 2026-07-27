@@ -60,3 +60,24 @@ def test_prompt_show_plan_mode_differs(
     rc = _cmd_prompt_show(None, mode="plan")
     out = capsys.readouterr().out
     assert rc == 0 and "PLAN mode" in out
+
+
+def test_prompt_show_includes_recorded_memories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`prompt show` claims to print what the worker actually receives, but it
+    never passed the memories (or skills) the run loop injects: an operator
+    checking whether a recorded memory would reach future runs saw '(none
+    recorded yet)' while the real prompt carried it."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.memory import add
+
+    repo = _git_repo(tmp_path)
+    _isolate(tmp_path, monkeypatch, repo)
+    state = resolved_state_dir(repo)
+    state.mkdir(parents=True, exist_ok=True)
+    add(state, "facts", "the deploy script needs sudo")
+
+    assert _cmd_prompt_show(None, mode="run") == 0
+    out = capsys.readouterr().out
+    assert "the deploy script needs sudo" in out

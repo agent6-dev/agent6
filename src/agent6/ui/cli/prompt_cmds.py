@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from agent6.config.layer import resolved_state_dir
 from agent6.ui.cli._common import load_config_or_exit
 from agent6.workflows import system_prompt_for
 
@@ -25,5 +26,5 @@ def _cmd_prompt_show(
     eff = load_config_or_exit(cwd, config_path)
     if isinstance(eff, int):
         return eff
-    print(system_prompt_for(eff.config, cwd, mode))
+    print(system_prompt_for(eff.config, cwd, mode, state_dir=resolved_state_dir(cwd)))
     return 0
