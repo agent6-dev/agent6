@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.budget import BudgetTracker
-from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
+from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
 from agent6.runs.id import (
     RunIdError,
     resolve_run_id,
@@ -172,9 +172,13 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{head_ref}")
         merged_sha = manifest.merged.sha if manifest.merged else ""
         if rc != 0 and run_branch and merged_sha:
-            # The run branch was pruned after its merge; the merge stamp's
-            # commit carries the run's content, so diff that instead.
-            diff_label = f"{merged_sha[:12]}^..{merged_sha[:12]} (run branch pruned; merge commit)"
+            # The range is unreachable -- usually a run branch pruned after its
+            # merge, but a gc'd base_sha does it with the branch still there.
+            # The merge stamp's commit carries the run's content either way; the
+            # label names which it was, since the model may go read the branch.
+            gone = branch_tip_sha(cwd, run_branch) is None
+            why = "run branch pruned" if gone else "base unreachable"
+            diff_label = f"{merged_sha[:12]}^..{merged_sha[:12]} ({why}; merge commit)"
             rc, diff, err = _git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
         if rc != 0:
             # Loud, never an empty diff block the model reads as "no changes".

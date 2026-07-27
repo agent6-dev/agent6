@@ -397,6 +397,30 @@ def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
     assert "run branch pruned" in digest
 
 
+def test_ask_run_digest_does_not_call_a_present_branch_pruned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback fired on ANY failed diff and hardcoded "run branch pruned".
+    A base_sha that no longer resolves (gc'd, or a rewritten base) trips it with
+    the branch still sitting there, so the digest told the model the branch was
+    gone when the model could have read it."""
+    rid = _make_run(tmp_path)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    _git(tmp_path, "checkout", "-q", m["base_sha"])
+    _git(tmp_path, "merge", "--squash", "agent6/run")
+    _git(tmp_path, "commit", "-qm", "squash-merge run")
+    m["merged"] = {"into": "master", "sha": _git(tmp_path, "rev-parse", "HEAD"), "ts": "2026-07"}
+    m["base_sha"] = "deadbeef" * 5  # unreachable base, branch untouched
+    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "changed by the run" in digest  # still falls back to the merge commit
+    assert "run branch pruned" not in digest  # ...without lying about why
+
+
 def test_ask_run_digest_reports_unavailable_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
