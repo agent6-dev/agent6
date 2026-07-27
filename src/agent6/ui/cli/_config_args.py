@@ -67,6 +67,14 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     _sub(
         config_sub, "path", help="Print the resolved global + repo config (and secrets) file paths."
     )
+    _sub(
+        config_sub,
+        "profiles",
+        help=(
+            "List config profiles (built-in + user [profiles.*]) with the overrides"
+            " each applies, marking the selected one and its source."
+        ),
+    )
     config_get = _sub(
         config_sub, "get", help="Print a leaf's effective value and which layer set it."
     )

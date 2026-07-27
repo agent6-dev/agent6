@@ -15,6 +15,7 @@ from agent6.config.layer import (
     available_profile_names,
     leaf_keys,
     load_effective,
+    profile_catalog,
 )
 from agent6.ui.cli._common import _machines_dir, _runs_dir
 from agent6.ui.cli.model import _connected_providers, _models_for
@@ -90,13 +91,29 @@ _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _user_profile_names() -> list[str]:
+    """USER-defined [profiles.*] names only, for key completion. Built-in names
+    are deliberately absent: writing profiles.ultra.* creates a user table that
+    REPLACES the built-in wholesale, a footgun TAB should not put one keystroke
+    away (the same rule keeps `none` out of sandbox.profile completion)."""
+    try:
+        return [p.name for p in profile_catalog(Path.cwd()).profiles if p.origin != "built-in"]
+    except ConfigError:
+        return []
+
+
 def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: known dotted config leaf paths (effective + enum keys)."""
+    """argcomplete: known dotted config leaf paths (effective + enum keys).
+    From `profile` onward, also the user's profiles.<name>.<leaf> paths (kept
+    out of the bare-TAB listing, which is crowded enough already)."""
     try:
         keys = set(leaf_keys(load_effective(Path.cwd(), None)))
     except ConfigError:
         keys = set()
     keys |= set(_CONFIG_ENUM_CHOICES)
+    if prefix.startswith("profile"):
+        pool = {k for k in keys if k != "profile"}
+        keys |= {f"profiles.{name}.{k}" for name in _user_profile_names() for k in pool}
     return sorted(k for k in keys if k.startswith(prefix))
 
 
@@ -115,6 +132,8 @@ def _complete_config_values(
 ) -> list[str]:
     """argcomplete: the Literal choices for the config key already typed."""
     key = getattr(parsed_args, "key", "") or ""
+    if key == "profile":
+        return _complete_profiles(prefix)
     choices = list(_CONFIG_ENUM_CHOICES.get(key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_PRESETS)

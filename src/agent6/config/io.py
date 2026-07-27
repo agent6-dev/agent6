@@ -143,11 +143,12 @@ def parse_cli_value(value: str) -> object:
 def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
     """Split ``sandbox.agent_network`` into ``("sandbox", "agent_network")``.
 
-    Config leaves always live under a section table, so a usable key has at
-    least two non-empty segments; the parent segments form the TOML table.
+    A single-segment key (the top-level ``profile``) splits to table ``""``:
+    the surgery below targets the file's bare top region, before any
+    ``[table]`` header.
     """
     parts = dotted_key.split(".")
-    if len(parts) < 2 or any(not p for p in parts):
+    if any(not p for p in parts):
         raise ValueError(
             f"config key must be a dotted leaf path like 'sandbox.network', got {dotted_key!r}"
         )
@@ -160,25 +161,37 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     Like :func:`upsert_toml_table` this is deliberate line surgery rather than
     a full serializer round-trip, so comments and sibling keys/tables survive.
     Creates the ``[table]`` block if it is absent.
+
+    TOML forbids a bare top-level key and a same-named ``[table]`` coexisting
+    (``profile`` vs ``[profile]``), so a write REPLACES the conflicting other
+    shape; emitting both published an unparseable file that the lenient
+    already-invalid set path then kept, wedging every later config read.
+    Revalidation still arbitrates whether the new value is semantically valid.
     """
     table, leaf = _split_dotted_key(dotted_key)
     new_line = f"{leaf} = {format_toml_value(value)}"
     with locked_file(path):
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         lines = text.splitlines()
-        header = f"[{table}]"
-        start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
-        if start is None:
-            prefix = text if (not text or text.endswith("\n")) else text + "\n"
-            sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-            _write(path, prefix + sep + header + "\n" + new_line + "\n")
-            return
+        if table:
+            lines = _drop_top_region_key(lines, table.split(".", 1)[0])
+            header = f"[{table}]"
+            start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+            if start is None:
+                text = "\n".join(lines) + "\n" if lines else ""
+                sep = "\n" if text and not text.endswith("\n\n") else ""
+                _write(path, text + sep + header + "\n" + new_line + "\n")
+                return
+            region = start + 1
+        else:
+            lines, _ = _drop_table_lines(lines, leaf)
+            region = 0  # top-level key: the bare region before any [table] header
         end = next(
-            (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+            (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
             len(lines),
         )
         leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-        for j in range(start + 1, end):
+        for j in range(region, end):
             if leaf_re.match(lines[j]):
                 # Replace the WHOLE value: a multi-line array or triple-quoted
                 # string spans several lines, and rewriting only the opening one
@@ -187,10 +200,45 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
                 _write(path, "\n".join(lines).rstrip("\n") + "\n")
                 return
         insert_at = end
-        while insert_at - 1 > start and lines[insert_at - 1].strip() == "":
+        while insert_at - 1 >= region and lines[insert_at - 1].strip() == "":
             insert_at -= 1
-        lines[insert_at:insert_at] = [new_line]
+        # A fresh top-level key sitting flush against the first [table] header
+        # reads as that table's member; keep a separating blank line.
+        flush_against_header = insert_at < len(lines) and lines[insert_at].lstrip().startswith("[")
+        gap = [""] if not table and flush_against_header else []
+        lines[insert_at:insert_at] = [new_line, *gap]
         _write(path, "\n".join(lines).rstrip("\n") + "\n")
+
+
+def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
+    """*lines* without the ``[table]`` section (header, body, and ``[table.sub]``
+    subtables), plus whether anything was dropped."""
+    kept: list[str] = []
+    dropping = False
+    removed = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            name = stripped.strip("[]").strip()
+            dropping = name == table or name.startswith(f"{table}.")
+            removed = removed or dropping
+        if not dropping:
+            kept.append(line)
+    return kept, removed
+
+
+def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
+    """*lines* without a bare top-level ``key = ...`` (multi-line value included).
+
+    The top region ends at the first ``[table]`` header; a same-named key
+    inside a table is someone else's and stays.
+    """
+    end = next((j for j, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))
+    key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    for j in range(end):
+        if key_re.match(lines[j]):
+            return lines[:j] + lines[j + _value_line_span(lines, j) :]
+    return lines
 
 
 def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str | None]:
@@ -249,22 +297,28 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         if not path.is_file():
             return False
         lines = path.read_text(encoding="utf-8").splitlines()
-        header = f"[{table}]"
-        start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
-        if start is None:
-            return False
+        if table:
+            header = f"[{table}]"
+            start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+            if start is None:
+                return False
+            region = start + 1
+        else:
+            start = None  # top-level key: no header line to clean up after
+            region = 0
         end = next(
-            (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+            (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
             len(lines),
         )
         leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-        for j in range(start + 1, end):
+        for j in range(region, end):
             if leaf_re.match(lines[j]):
                 span = _value_line_span(lines, j)
                 del lines[j : j + span]
-                remaining_end = end - span  # next section header shifted up by span
-                if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
-                    del lines[start:remaining_end]
+                if start is not None:
+                    remaining_end = end - span  # next section header shifted up by span
+                    if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
+                        del lines[start:remaining_end]
                 out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
                 _write(path, out)
                 return True
@@ -281,17 +335,7 @@ def remove_toml_table(path: Path, table: str) -> bool:
         if not path.is_file():
             return False
         lines = path.read_text(encoding="utf-8").splitlines()
-        kept: list[str] = []
-        dropping = False
-        removed = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                name = stripped.strip("[]").strip()
-                dropping = name == table or name.startswith(f"{table}.")
-                removed = removed or dropping
-            if not dropping:
-                kept.append(line)
+        kept, removed = _drop_table_lines(lines, table)
         if not removed:
             return False
         out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""

@@ -37,6 +37,7 @@ from agent6.ui.cli.config_cmds import (
     _cmd_config_fix,
     _cmd_config_get,
     _cmd_config_path,
+    _cmd_config_profiles,
     _cmd_config_remove,
     _cmd_config_set,
     _cmd_config_show,
@@ -435,6 +436,8 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
     if args.config_command == "path":
         return _cmd_config_path()
+    if args.config_command == "profiles":
+        return _cmd_config_profiles()
     if args.config_command == "get":
         return _cmd_config_get(args.key, machine=args.machine_file)
     if args.config_command == "set":

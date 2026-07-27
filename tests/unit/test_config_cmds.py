@@ -38,6 +38,57 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     ]
 
 
+def test_profile_value_completer_offers_profile_names(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # TAB after `config set profile` offers the selectable names: built-ins
+    # plus user [profiles.*] tables.
+    import argparse
+
+    from agent6.ui.cli.completers import (
+        _complete_config_values,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text("[profiles.myteam.review]\npanel_size = 2\n")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.chdir(tmp_path)
+    args = argparse.Namespace(key="profile")
+    out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    assert "ultra" in out and "myteam" in out
+    assert _complete_config_values("ul", args) == ["ultra"]  # pyright: ignore[reportPrivateUsage]
+
+
+def test_config_key_completer_offers_user_profile_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # `config set profiles.<TAB>` completes leaf paths for USER-defined profiles
+    # only. Built-in names never complete in the KEY position: writing
+    # profiles.ultra.* creates a user table that REPLACES the built-in
+    # wholesale, a footgun TAB should not put one keystroke away (the same
+    # rule keeps `none` out of sandbox.profile completion).
+    from agent6.ui.cli.completers import (
+        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text("[profiles.myteam.review]\npanel_size = 2\n")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.chdir(tmp_path)
+    out = _complete_config_keys("profiles.")  # pyright: ignore[reportPrivateUsage]
+    assert any(k.startswith("profiles.myteam.review.") for k in out)
+    assert not any(k.startswith("profiles.ultra") for k in out)
+    # the top-level `profile` leaf itself is offered alongside profiles.*
+    assert "profile" in _complete_config_keys("profile")  # pyright: ignore[reportPrivateUsage]
+    # a bare TAB (empty prefix) is not flooded with the generated paths
+    assert not any(
+        k.startswith("profiles.")
+        for k in _complete_config_keys("")  # pyright: ignore[reportPrivateUsage]
+    )
+
+
 def test_parallel_models_completer_completes_after_last_comma(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

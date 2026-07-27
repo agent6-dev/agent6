@@ -8,6 +8,8 @@ import threading
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from agent6.config.io import (
     format_toml_value,
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
@@ -47,6 +49,84 @@ def test_remove_toml_leaf_multiline_last_leaf_drops_header(tmp_path: Path) -> No
     out = path.read_text()
     tomllib.loads(out)
     assert "[sandbox]" not in out  # empty section header dropped
+
+
+def test_upsert_toml_leaf_top_level_key_lands_before_first_table(tmp_path: Path) -> None:
+    """A single-segment key (the top-level `profile`) must be written into the
+    top region, BEFORE the first [table] header; appended after one it would
+    silently become that table's member."""
+    path = tmp_path / "c.toml"
+    path.write_text('# keep me\n[sandbox]\nrun_commands = "ask"\n')
+    upsert_toml_leaf(path, "profile", "ultra")
+    out = path.read_text()
+    assert tomllib.loads(out) == {"profile": "ultra", "sandbox": {"run_commands": "ask"}}
+    assert "# keep me" in out
+
+
+def test_upsert_toml_leaf_top_level_key_replaces_existing(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text('profile = "quick"\n\n[sandbox]\nrun_commands = "ask"\n')
+    upsert_toml_leaf(path, "profile", "ultra")
+    out = path.read_text()
+    assert tomllib.loads(out) == {"profile": "ultra", "sandbox": {"run_commands": "ask"}}
+    assert out.count("profile") == 1
+
+
+def test_upsert_toml_leaf_top_level_key_into_empty_file(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    upsert_toml_leaf(path, "profile", "ultra")
+    assert tomllib.loads(path.read_text()) == {"profile": "ultra"}
+
+
+def test_remove_toml_leaf_top_level_key_keeps_sections(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text('profile = "ultra"\n\n[sandbox]\nrun_commands = "ask"\n')
+    assert remove_toml_leaf(path, "profile") is True
+    assert tomllib.loads(path.read_text()) == {"sandbox": {"run_commands": "ask"}}
+    assert remove_toml_leaf(path, "profile") is False  # already gone
+
+
+def test_remove_toml_leaf_top_level_key_never_touches_a_table_member(tmp_path: Path) -> None:
+    # A [review] section owning `trigger` must not lose it to a bare-key remove.
+    path = tmp_path / "c.toml"
+    path.write_text('[review]\ntrigger = "off"\n')
+    assert remove_toml_leaf(path, "trigger") is False
+    assert tomllib.loads(path.read_text()) == {"review": {"trigger": "off"}}
+
+
+def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: Path) -> None:
+    """Writing the bare `profile` key while a `[profile]` TABLE exists must
+    replace the table: writing both leaves the file unparseable ("Cannot
+    overwrite a value"), which the lenient already-invalid set path then
+    KEPT, wedging every later config read."""
+    path = tmp_path / "c.toml"
+    path.write_text('[profile]\nporifle = "x"\n\n[sandbox]\nrun_commands = "ask"\n')
+    upsert_toml_leaf(path, "profile", "ultra")
+    assert tomllib.loads(path.read_text()) == {
+        "profile": "ultra",
+        "sandbox": {"run_commands": "ask"},
+    }
+
+
+def test_upsert_table_leaf_replaces_conflicting_top_level_key(tmp_path: Path) -> None:
+    """The inverse: creating a `[profile]` table while the bare `profile` key
+    exists must drop the bare key, never write both (unparseable)."""
+    path = tmp_path / "c.toml"
+    path.write_text('profile = "ultra"\n\n[sandbox]\nrun_commands = "ask"\n')
+    upsert_toml_leaf(path, "profile.porifle", "x")
+    assert tomllib.loads(path.read_text()) == {
+        "profile": {"porifle": "x"},
+        "sandbox": {"run_commands": "ask"},
+    }
+
+
+def test_leaf_surgery_still_rejects_empty_key_segments(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    for bad in ("", "a..b", ".x", "x."):
+        with pytest.raises(ValueError, match="config key"):
+            upsert_toml_leaf(path, bad, "v")
+        with pytest.raises(ValueError, match="config key"):
+            remove_toml_leaf(path, bad)
 
 
 def test_remove_toml_table_drops_header_body_and_subtables(tmp_path: Path) -> None:

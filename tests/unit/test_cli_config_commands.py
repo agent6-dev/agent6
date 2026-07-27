@@ -130,6 +130,121 @@ def test_set_preserves_sibling_keys(iso: Path) -> None:
     assert sandbox == {"agent_network": "open", "run_commands": "yes"}  # type: ignore[comparison-overlap]
 
 
+# --- top-level `profile` (the one section-less leaf) -------------------------
+
+
+def test_set_top_level_profile_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _run(["config", "set", "profile", "ultra"]) == 0
+    assert _global_toml(iso)["profile"] == "ultra"
+    capsys.readouterr()
+    assert _run(["config", "get", "profile"]) == 0
+    out = capsys.readouterr().out
+    assert "profile = ultra" in out
+    assert "[global]" in out
+
+
+def test_set_unknown_profile_name_reverts(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _run(["config", "set", "profile", "ultra"]) == 0
+    assert _run(["config", "set", "profile", "porifle"]) == 2
+    assert "unknown profile" in capsys.readouterr().err
+    assert _global_toml(iso)["profile"] == "ultra"  # rolled back to the prior value
+
+
+def test_unset_top_level_profile(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _run(["config", "set", "profile", "quick"])
+    assert _run(["config", "unset", "profile"]) == 0
+    assert "profile" not in _global_toml(iso)
+    capsys.readouterr()
+    _run(["config", "get", "profile"])
+    assert "[default]" in capsys.readouterr().out
+
+
+def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
+    # A leftover `[profile]` TABLE (from `config set profile.<name>`) breaks the
+    # config; the advertised fix `config set profile <name>` must heal it in one
+    # step, not stack a bare key on top of the table (unparseable TOML, kept by
+    # the lenient already-invalid path).
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "config.toml").write_text('[profile]\nporifle = "ultra"\n', encoding="utf-8")
+    assert _run(["config", "set", "profile", "ultra"]) == 0
+    assert _global_toml(iso) == {"profile": "ultra"}
+
+
+def test_set_profile_table_typo_reports_profile_error(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `config set profile.porifle x` over a valid config must fail with the
+    # profile-must-be-a-string message and roll back, even when the bare
+    # `profile` key it collides with is already set.
+    assert _run(["config", "set", "profile", "ultra"]) == 0
+    assert _run(["config", "set", "profile.porifle", "x"]) == 2
+    assert "must be a profile name string" in capsys.readouterr().err
+    assert _global_toml(iso) == {"profile": "ultra"}
+
+
+def test_set_profile_repo_targets_repo_config(iso: Path) -> None:
+    assert _run(["config", "set", "profile", "quick", "--repo"]) == 0
+    repo_cfg = (resolved_state_dir(iso) / "config.toml").read_text(encoding="utf-8")
+    assert 'profile = "quick"' in repo_cfg
+    assert not (iso / "g" / "config.toml").is_file()
+
+
+def test_set_profile_machine_file_is_refused(
+    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A machine [config] overlay must not smuggle a profile selection
+    # (_forbid_layer_profile); the write is rolled back.
+    mf = tmp_path / "m.asm.toml"
+    mf.write_text("[config]\n", encoding="utf-8")
+    assert _run(["config", "set", "profile", "ultra", "--machine-file", str(mf)]) == 2
+    assert "profile" in capsys.readouterr().err
+    assert "profile" not in mf.read_text(encoding="utf-8").replace("[config]", "")
+
+
+# --- profiles listing ---------------------------------------------------------
+
+
+def test_config_profiles_lists_builtins_and_user(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "config.toml").write_text(
+        'profile = "ultra"\n\n[profiles.myteam.review]\npanel_size = 2\n', encoding="utf-8"
+    )
+    assert _run(["config", "profiles"]) == 0
+    out = capsys.readouterr().out
+    for builtin in ("standard", "quick", "ultra", "paranoid"):
+        assert builtin in out
+    assert "selected" in out  # ultra marked as the selection, with its source
+    assert "global" in out
+    assert "review.panel_size = 3" in out  # ultra's contents are shown
+    assert "myteam" in out  # user profile listed with its contents
+    assert "review.panel_size = 2" in out
+
+
+def test_config_profiles_none_selected(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _run(["config", "profiles"]) == 0
+    out = capsys.readouterr().out
+    assert "no profile selected" in out
+    assert "standard" in out  # built-ins still listed
+
+
+def test_config_profiles_user_shadow_replaces_builtin(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A user [profiles.ultra] REPLACES the built-in wholesale; the listing must
+    # show the user's contents (not the dead built-in's) and say so.
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "config.toml").write_text(
+        "[profiles.ultra.review]\npanel_size = 9\n", encoding="utf-8"
+    )
+    assert _run(["config", "profiles"]) == 0
+    out = capsys.readouterr().out
+    assert "review.panel_size = 9" in out
+    assert "review.panel_size = 3" not in out  # the built-in body is dead, not shown
+    assert "replaces the built-in" in out
+
+
 # --- repo target ------------------------------------------------------------
 
 

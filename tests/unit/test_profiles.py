@@ -71,6 +71,15 @@ def test_unknown_profile_errors(repo: Path) -> None:
         load_effective(repo)
 
 
+def test_profile_table_instead_of_string_is_clear_error(repo: Path) -> None:
+    """A `[profile]` TABLE (e.g. from a typo'd `config set profile.porifle x`)
+    must fail as "profile must be a string", not str()-coerce the dict into
+    `unknown profile "{'porifle': 'ultra'}"`."""
+    _write_repo_config(repo, '[profile]\nporifle = "ultra"\n')
+    with pytest.raises(ConfigError, match="must be a profile name string"):
+        load_effective(repo)
+
+
 def test_no_profile_is_plain_defaults(repo: Path) -> None:
     _write_repo_config(repo, "[review]\n")
     cfg = load_effective(repo).config

@@ -263,6 +263,56 @@ def available_profile_names(repo_root: Path, explicit_path: Path | None = None) 
     return sorted(names)
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileInfo:
+    """One profile as `config profiles` shows it."""
+
+    name: str
+    overrides: dict[str, Any]  # the nested config dict it applies ({} = plain defaults)
+    origin: str  # "built-in", "global", "repo", or "global+repo"
+    replaces_builtin: bool  # a user profile with a built-in's name (wholesale replace)
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileCatalog:
+    profiles: tuple[ProfileInfo, ...]  # built-ins in definition order, then user's sorted
+    selected: str  # "" when no profile is selected anywhere
+    source: str  # "repo" / "global" / "none"
+
+
+def profile_catalog(repo_root: Path, explicit_path: Path | None = None) -> ProfileCatalog:
+    """Everything ``config profiles`` lists: each known profile with the
+    overrides it would apply (a user table REPLACES a same-named built-in, so
+    only the effective body is reported), plus the selected name and its
+    source. Unlike :func:`available_profile_names` this fails loudly on a
+    broken config: it is an audit surface, not a chooser fallback."""
+    layers = discover_layers(repo_root, explicit_path)
+    user: dict[str, dict[str, Any]] = {}
+    origins: dict[str, str] = {}
+    for layer in layers:
+        prof = layer.data.get("profiles")
+        if not isinstance(prof, dict):
+            continue
+        for name, body in prof.items():
+            if not isinstance(body, dict):
+                raise ConfigError(f"[profiles.{name}] must be a table, got {type(body).__name__}")
+            user[name] = _deep_merge(user.get(name, {}), body)
+            origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
+    selected, source = _select_profile(layers, "")
+    builtins = tuple(
+        ProfileInfo(name, user[name], origins[name], replaces_builtin=True)
+        if name in user
+        else ProfileInfo(name, body, "built-in", replaces_builtin=False)
+        for name, body in BUILTIN_PROFILES.items()
+    )
+    customs = tuple(
+        ProfileInfo(name, user[name], origins[name], replaces_builtin=False)
+        for name in sorted(user)
+        if name not in BUILTIN_PROFILES
+    )
+    return ProfileCatalog((*builtins, *customs), selected, source)
+
+
 def _format_changed(val: object, existing: object) -> bool:
     """The one wholesale-REPLACE rule the merge and the provenance walk share:
     a discriminated dict (e.g. a [providers.<name>] entry) whose ``api_format``
@@ -382,8 +432,23 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
 
 
 def _own_profile(layer: Layer) -> str:
-    """A layer's OWN raw top-level ``profile`` (not the merged value), or ""."""
-    return str(layer.data.get("profile", "") or "")
+    """A layer's OWN raw top-level ``profile`` (not the merged value), or "".
+
+    A non-string (a ``[profile]`` table from a typo'd ``config set
+    profile.<name>``) fails here with its own message; str()-coercing it
+    produced ``unknown profile "{'porifle': 'ultra'}"``.
+    """
+    raw = layer.data.get("profile")
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        shape = "a [profile] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
+        raise ConfigError(
+            f"top-level `profile` in the {layer.name} config must be a profile name"
+            f' string (e.g. profile = "ultra"), got {shape};'
+            f" set it with `agent6 config set profile <name>`."
+        )
+    return raw
 
 
 def _select_profile(cleaned: list[Layer], profile_override: str) -> tuple[str, str]:

@@ -222,7 +222,7 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides every section. The `--profile` CLI flag overrides it. |
+| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides every section. Set with `agent6 config set profile <name>` (`--repo` for this repo); the `--profile` CLI flag overrides it per run. |
 
 ## `[workflow]`
 
@@ -334,10 +334,12 @@ delivery paths above remain the answer when a skill must apply.
 ### Config profiles
 
 A profile presets many settings at once so a task picks a strategy with one knob.
-Select with `--profile <name>` (on `run`/`plan`/`ask`), the top-level `profile =
-"<name>"` key in the **global or repo** config (a `--config FILE` or a machine
-`[config]` overlay cannot select one and rejects the key loudly), or the TUI
-new-work chooser. A profile **overrides** config rather than
+`agent6 config profiles` lists them all (built-in + user-defined) with the
+overrides each applies and which one is selected. Select with `--profile <name>`
+(on `run`/`plan`/`ask`), persistently with `agent6 config set profile <name>`
+(`--repo` for this repo; the key lives top-level in the **global or repo** config,
+a `--config FILE` or a machine `[config]` overlay cannot select one and rejects
+the key loudly), or the TUI new-work chooser. A profile **overrides** config rather than
 being a baseline: its preset is injected just above the config layer that selected
 it, so precedence (low → high) is
 
@@ -357,8 +359,9 @@ individual flag still beats the profile.
 | `ultra` | a 3-seat grounded `before_finish` veto panel; thorough review. |
 | `paranoid` | 5 explore-tier seats, `before_finish` veto, bigger budget. |
 
-Define your own with a `[profiles.<name>]` table (a partial config); it wins over
-a built-in of the same name. Example:
+Define your own with a `[profiles.<name>]` table (a partial config; edit leaves
+with `agent6 config set profiles.<name>.<leaf> <value>`); a built-in's name
+**replaces** that built-in wholesale, not merges into it. Example:
 
 ```toml
 profile = "myteam"

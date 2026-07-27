@@ -34,6 +34,7 @@ from agent6.config.layer import (
     load_effective,
     load_effective_with_overlay,
     materialize,
+    profile_catalog,
     repo_config_path_for,
 )
 from agent6.machine import MachineError, load_machine
@@ -82,6 +83,35 @@ def _cmd_config_path() -> int:
     for label, p in (("global config", gp), ("repo config  ", rp), ("secrets      ", sp)):
         note = "" if p.is_file() else "  (not present)"
         print(f"{label}: {p}{note}")
+    return 0
+
+
+def _cmd_config_profiles() -> int:
+    """List every known profile with the overrides it applies; mark the selection."""
+    try:
+        cat = profile_catalog(Path.cwd(), None)
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    if cat.selected:
+        print(f"profile = {cat.selected}  [{cat.source}]")
+    else:
+        print("no profile selected (plain defaults)")
+    for info in cat.profiles:
+        tag = "built-in" if info.origin == "built-in" else f"user, {info.origin} config"
+        if info.replaces_builtin:
+            tag += ", replaces the built-in"
+        sel = "  (selected)" if info.name == cat.selected else ""
+        print(f"\n{info.name}  [{tag}]{sel}")
+        leaves = flatten_leaves(info.overrides)
+        if not leaves:
+            print("  (plain defaults, no overrides)")
+        for key, val in leaves.items():
+            print(f"  {key} = {format_value(val)}")
+    print(
+        "\nSelect per run with --profile <name>;"
+        " persist with `agent6 config set profile <name>` (--repo for this repo)."
+    )
     return 0
 
 
