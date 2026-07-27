@@ -1447,3 +1447,20 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     )
     assert survivor["compare"]["winner"] is True
     assert "crsh-l1" in out and "crashed" in out
+
+
+def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
+    """A lane's branch is how its work is imported (bridge_spawner fetches
+    agent6/<run_id>), but the origin's [git].branch_per_run=false materialized
+    into the lane config, so the branch was never cut: every lane completed and
+    billed, then failed at import with a raw git 'couldn't find remote ref'."""
+    import tomllib
+
+    from agent6.app.parallel import _write_lane_config  # pyright: ignore[reportPrivateUsage]
+
+    base = Config()
+    cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
+    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "clone", model=None)
+    path = _write_lane_config(cfg, spec)
+    written = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert written["git"]["branch_per_run"] is True

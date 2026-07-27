@@ -168,6 +168,13 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
     the global-only `[agent6].state_dir`, which `--config` forbids. Global config
     + secrets apply automatically."""
     lane_cfg = cfg.with_machine_agent_overrides(model=spec.model) if spec.model else cfg
+    # A lane's branch IS how its work comes back (the import fetches
+    # agent6/<run_id>), so the origin's branch_per_run=false must not ride
+    # along: every lane ran to completion, billed, and then failed the import
+    # with a raw git "couldn't find remote ref".
+    lane_cfg = lane_cfg.model_copy(
+        update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
+    )
     config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(materialize(lane_cfg, for_repo=True), encoding="utf-8")
