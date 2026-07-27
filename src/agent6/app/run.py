@@ -89,6 +89,7 @@ from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink
 from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.ipc import (
+    away_mode,
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -143,9 +144,14 @@ def apply_spawned_away_default(run_dir: Path) -> None:
     spawns a run detached and drives it over the bridge. Without it a spawned run
     with no terminal fabricates empty ask_user answers when no viewer is live;
     'wait' makes approvals and questions block for a front-end. A pure headless
-    run (no launcher) sets no env, so this is a no-op and it keeps its default."""
+    run (no launcher) sets no env, so this is a no-op and it keeps its default.
+
+    A DEFAULT: an away mode already on the run dir is the operator's own detach
+    answer, and the resume this spawns carries 'wait' regardless -- overwriting
+    silently upgraded a chosen 'deny' to 'wait', so the run blocked on an
+    approval nobody was there to give instead of denying and carrying on."""
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
-    if away in ("wait", "approve", "deny"):
+    if away in ("wait", "approve", "deny") and not away_mode(run_dir):
         set_away_mode(run_dir, away)
 
 

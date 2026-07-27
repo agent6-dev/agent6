@@ -371,3 +371,35 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("ls") is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
+
+
+def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: Path) -> None:
+    """On detach the operator picks the while-away policy ('deny' stops
+    run_commands until they reattach), then the background resume is spawned
+    with AGENT6_DETACHED_AWAY=wait. Applying that as a DEFAULT must not clobber
+    the explicit choice -- it silently upgraded 'deny' to 'wait', so the run sat
+    blocked on an approval nobody was there to give instead of denying and
+    carrying on."""
+    import os
+
+    from agent6.app.run import apply_spawned_away_default
+    from agent6.runs.ipc import away_mode, set_away_mode
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    set_away_mode(run_dir, "deny")  # the operator's detach answer
+    old = os.environ.get("AGENT6_DETACHED_AWAY")
+    os.environ["AGENT6_DETACHED_AWAY"] = "wait"  # what the spawned resume carries
+    try:
+        apply_spawned_away_default(run_dir)
+        assert away_mode(run_dir) == "deny"
+        # With nothing chosen, the launcher's default still applies.
+        other = tmp_path / "other"
+        other.mkdir()
+        apply_spawned_away_default(other)
+        assert away_mode(other) == "wait"
+    finally:
+        if old is None:
+            del os.environ["AGENT6_DETACHED_AWAY"]
+        else:
+            os.environ["AGENT6_DETACHED_AWAY"] = old
