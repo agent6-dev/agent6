@@ -281,3 +281,25 @@ def test_compact_request_carries_focus(tmp_path: Path) -> None:
     assert read_compact_request(tmp_path) == "weigh the auth decisions"
     clear_compact_request(tmp_path)
     assert read_compact_request(tmp_path) is None
+
+
+def test_compact_request_publishes_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """request_compact publishes via tmp+rename (portable.atomic_write). The run
+    polls read_compact_request every boundary, so a plain write_text exposed an
+    empty/partial focus the run then consumed -- and clear_compact_request
+    deleted the real one before it was ever read."""
+    from agent6.runs import ipc
+
+    calls: list[tuple[Path, str]] = []
+    real = ipc.atomic_write
+
+    def spy(path: Path, data: str) -> None:
+        calls.append((path, data))
+        real(path, data)
+
+    monkeypatch.setattr(ipc, "atomic_write", spy)
+    ipc.request_compact(tmp_path, focus="pin the auth decisions")
+    assert (tmp_path / "compact.request", "pin the auth decisions") in calls
+    assert ipc.read_compact_request(tmp_path) == "pin the auth decisions"

@@ -439,9 +439,11 @@ def request_compact(run_dir: Path, focus: str = "") -> None:
     """Front-end-initiated manual compaction: drop a marker the run polls at its
     next safe boundary and honors by forcing a context compaction (mirrors
     steer). The marker body is the operator's optional summary *focus*
-    (`/compact <focus>`); "" is a plain compact."""
+    (`/compact <focus>`); "" is a plain compact. Published atomically: the run
+    polls `read_compact_request` every boundary, so a plain write exposed an
+    empty/partial focus it consumed (and then cleared) as the real one."""
     with contextlib.suppress(OSError):
-        (run_dir / COMPACT_REQUEST_FILE).write_text(focus, encoding="utf-8")
+        atomic_write(run_dir / COMPACT_REQUEST_FILE, focus)
 
 
 def read_compact_request(run_dir: Path) -> str | None:
