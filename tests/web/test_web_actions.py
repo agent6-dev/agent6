@@ -386,3 +386,33 @@ def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
     assert not ok
     assert "ended" in msg
     assert not list((inst / "states" / "0000-route").glob("*.answer"))
+
+
+def _parked_machine(cwd: Path, name: str) -> Path:
+    """An instance parked on an armed wait (no live worker, no MachineEnd) whose
+    newest state dir is a COMPLETED agent state."""
+    inst = resolved_state_dir(cwd) / "machines" / name
+    (inst / "states" / "0001-work").mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
+    (inst / "journal.jsonl").write_text(
+        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n',
+        encoding="utf-8",
+    )
+    (inst / "wait.json").write_text(
+        '{"state":"idle","wake_epoch":9999999999.0}\n', encoding="utf-8"
+    )
+    return inst
+
+
+def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> None:
+    """A parked/stopped machine's newest state dir is a finished agent state
+    whose run loop has exited, so nothing polls its steer marker. Reporting
+    "steer requested" dropped the operator's course-correction on the floor --
+    the run steer refuses "run is not live" for exactly this reason."""
+    inst = _parked_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_steer(tmp_path, "tiny", "skip the deploy this cycle")
+    assert not ok
+    assert "not" in msg  # names the reason rather than claiming success
+    assert not list((inst / "states" / "0001-work").glob("*.answer"))
+    assert not (inst / "states" / "0001-work" / "steer.request").exists()

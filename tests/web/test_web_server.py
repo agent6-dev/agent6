@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.runs.ipc import write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.web.server import (
     WebServer,
@@ -385,8 +386,12 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     assert ok_status == 200 and ok_body["ok"] is True
 
 
-def _make_machine_with_state(cwd: Path, name: str, seq_state: str) -> tuple[Path, Path]:
-    """A machine instance dir + one per-state agent-log dir. Returns (instance, state)."""
+def _make_machine_with_state(
+    cwd: Path, name: str, seq_state: str, *, running: bool = False
+) -> tuple[Path, Path]:
+    """A machine instance dir + one per-state agent-log dir. Returns (instance,
+    state). ``running`` records this test process as the machine's worker, so
+    steer (which refuses a machine no state is executing under) is offered."""
     inst = resolved_state_dir(cwd) / "machines" / name
     inst.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -394,6 +399,8 @@ def _make_machine_with_state(cwd: Path, name: str, seq_state: str) -> tuple[Path
     state = inst / "states" / seq_state
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text("", encoding="utf-8")
+    if running:
+        write_worker_pid(inst, os.getpid())
     return inst, state
 
 
@@ -431,7 +438,7 @@ def test_machine_approve_and_steer_target_per_state_dir(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    _inst, state = _make_machine_with_state(tmp_path, "acter", "0001-work")
+    _inst, state = _make_machine_with_state(tmp_path, "acter", "0001-work", running=True)
     _post(port, "/api/machine/acter/approve", {"id": "approval-1", "approved": False})
     assert (state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "no"
     _post(port, "/api/machine/acter/steer", {"text": "focus"})

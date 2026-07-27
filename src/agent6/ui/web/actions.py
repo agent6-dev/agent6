@@ -362,6 +362,16 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     absent). Same contract as a run steer."""
     if _machine_has_ended(cwd, name):
         return False, f"machine {name!r} has ended; there is no state to steer"
+    machine_dir = model.machine_dir_for(cwd, name)
+    if machine_dir is not None and not worker_is_alive(machine_dir):
+        # The newest state dir of a parked or stopped machine is a FINISHED
+        # agent state whose loop has exited, so nothing would ever poll the
+        # marker: refuse like the run steer does instead of reporting success
+        # and dropping the instruction. A parked machine takes `poke`.
+        return False, (
+            f"machine {name!r} is not running, so no agent state would read a steer"
+            " (poke it to wake a waiting machine)"
+        )
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
