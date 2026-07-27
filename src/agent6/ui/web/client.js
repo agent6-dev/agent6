@@ -532,8 +532,10 @@ function makeComposer(id) {
     const text = ta.value.trim();
     if (!finished) {
       if (!text) return;
+      // The server decides what the text WAS: `/compact [focus]` is an
+      // out-of-band request, not a steer, and it says so.
       postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text })
-        .then(() => { toast('steer sent'); ta.value = ''; })
+        .then(r => { toast((r && r.message) || 'steer sent'); ta.value = ''; })
         .catch(err => toast(err.message, true));
     } else {
       resume(text);
