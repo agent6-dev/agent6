@@ -10,10 +10,16 @@ from typing import Literal
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.workflows._context import load_repo_summary
-from agent6.workflows._prompt_blocks import build_system_prompt
+from agent6.workflows._prompt_blocks import (
+    MEMORIES_MAX_CHARS,
+    MEMORY_ENTRY_MAX_CHARS,
+    build_system_prompt,
+)
 from agent6.workflows.review import CodeReviewError, code_review
 
 __all__ = [
+    "MEMORIES_MAX_CHARS",
+    "MEMORY_ENTRY_MAX_CHARS",
     "CodeReviewError",
     "code_review",
     "system_prompt_for",

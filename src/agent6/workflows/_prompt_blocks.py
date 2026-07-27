@@ -63,16 +63,21 @@ def memories_block(
     # Newest win under the total cap: rank by (created_at, id) descending and
     # keep the contiguous newest window that fits; render keepers in original
     # (chronological, per-scope) order. The +48 approximates the id/date line
-    # overhead per entry.
+    # overhead per entry. Operator-pinned entries are costed FIRST (newest-first
+    # among themselves), so a pin is exempt from the newest-win trim but never
+    # from the byte bound: pins alone over the cap elide oldest-pinned-first.
     ranked = sorted(entries, key=lambda e: (e.created_at, e.id), reverse=True)
     kept: set[str] = set()
     used = 0
-    for e in ranked:
-        cost = min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
-        if kept and used + cost > MEMORIES_MAX_CHARS:
-            break
-        kept.add(e.id)
-        used += cost
+    for pass_pinned in (True, False):
+        for e in ranked:
+            if e.pinned is not pass_pinned or e.id in kept:
+                continue
+            cost = min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
+            if kept and used + cost > MEMORIES_MAX_CHARS:
+                break
+            kept.add(e.id)
+            used += cost
     lines: list[str] = [MEMORIES_HEADER_RUN if mode == "run" else MEMORIES_HEADER_READONLY, ""]
     elided = len(entries) - len(kept)
     if elided:
@@ -90,7 +95,8 @@ def memories_block(
             if len(body) > MEMORY_ENTRY_MAX_CHARS:
                 body = body[:MEMORY_ENTRY_MAX_CHARS] + " [clipped]"
             first, *rest = body.splitlines() or [""]
-            lines.append(f"- {e.id} ({e.created_at[:10]}): {first}")
+            mark = " [pinned]" if e.pinned else ""
+            lines.append(f"- {e.id} ({e.created_at[:10]}){mark}: {first}")
             lines.extend(f"  {ln}" for ln in rest)
         lines.append("")
     if not rendered_any:

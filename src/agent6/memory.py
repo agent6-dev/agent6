@@ -62,6 +62,9 @@ class MemoryEntry:
     body: str
     invalidated_at: str = ""
     invalidation_reason: str = ""
+    # Operator-pinned (`agent6 memory pin`): exempt from the <memories> block's
+    # newest-win trim. Render-side only; invalidation still wins.
+    pinned: bool = False
 
     @property
     def is_active(self) -> bool:
@@ -104,6 +107,7 @@ def _parse_file(path: Path, scope: MemoryScope) -> list[MemoryEntry]:
                 invalidated_at=meta.get("invalidated_at", ""),
                 invalidation_reason=meta.get("invalidation_reason", ""),
                 body=body,
+                pinned=meta.get("pinned", "") == "true",
             )
         )
 
@@ -140,6 +144,8 @@ def _render_file(scope: MemoryScope, entries: list[MemoryEntry]) -> str:
     for e in entries:
         out.append(f"### {e.id}")
         out.append(f"created_at: {e.created_at}")
+        if e.pinned:
+            out.append("pinned: true")
         if e.invalidated_at:
             out.append(f"invalidated_at: {e.invalidated_at}")
         if e.invalidation_reason:
@@ -225,6 +231,43 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
                     invalidated_at=_now(),
                     invalidation_reason=reason,
                     body=e.body,
+                    pinned=e.pinned,
+                )
+                entries[i] = updated
+                atomic_write(path, _render_file(scope, entries))
+                return updated
+    raise MemoryStoreError(f"no memory with id {memory_id!r}")
+
+
+def set_pinned(state_dir: Path, memory_id: str, pinned: bool) -> MemoryEntry:
+    """Pin or unpin `memory_id` (operator control over the block trim).
+
+    Errors loudly on an unknown id, a same-state call, and pinning an
+    invalidated entry (inactive entries never render, so a pin there would be
+    a silent no-op lie); unpinning an invalidated entry is allowed as cleanup.
+    """
+    with _lock_memories(state_dir):
+        for scope in _SCOPES:
+            path = _scope_path(state_dir, scope)
+            entries = _parse_file(path, scope)
+            for i, e in enumerate(entries):
+                if e.id != memory_id:
+                    continue
+                if e.pinned == pinned:
+                    state = "already pinned" if pinned else "not pinned"
+                    raise MemoryStoreError(f"memory {memory_id} {state}")
+                if pinned and e.invalidated_at:
+                    raise MemoryStoreError(
+                        f"memory {memory_id} is invalidated; invalidated memories cannot be pinned"
+                    )
+                updated = MemoryEntry(
+                    id=e.id,
+                    scope=scope,
+                    created_at=e.created_at,
+                    invalidated_at=e.invalidated_at,
+                    invalidation_reason=e.invalidation_reason,
+                    body=e.body,
+                    pinned=pinned,
                 )
                 entries[i] = updated
                 atomic_write(path, _render_file(scope, entries))

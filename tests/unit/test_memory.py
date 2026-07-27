@@ -139,3 +139,48 @@ def test_concurrent_writers_cannot_lose_or_resurrect_entries(tmp_path: Path) -> 
     mem.invalidate(state, first.id, "stale")
     active = {e.body for e in mem.list_entries(state, "facts") if not e.invalidated_at}
     assert "entry one" not in active
+
+
+def test_set_pinned_roundtrips_and_marks(tmp_path: Path) -> None:
+    from agent6.memory import set_pinned
+
+    e = add(tmp_path, "decisions", "merge strategy is squash")
+    other = add(tmp_path, "decisions", "unpinned sibling")
+    pinned = set_pinned(tmp_path, e.id, True)
+    assert pinned.pinned is True
+    loaded = {x.id: x for x in list_entries(tmp_path, "decisions")}
+    assert loaded[e.id].pinned is True
+    assert loaded[e.id].body == "merge strategy is squash"
+    assert loaded[other.id].pinned is False
+    unpinned = set_pinned(tmp_path, e.id, False)
+    assert unpinned.pinned is False
+    assert {x.id: x.pinned for x in list_entries(tmp_path, "decisions")} == {
+        e.id: False,
+        other.id: False,
+    }
+
+
+def test_set_pinned_errors_loudly(tmp_path: Path) -> None:
+    from agent6.memory import set_pinned
+
+    e = add(tmp_path, "facts", "a fact")
+    with pytest.raises(MemoryStoreError, match="not pinned"):
+        set_pinned(tmp_path, e.id, False)
+    set_pinned(tmp_path, e.id, True)
+    with pytest.raises(MemoryStoreError, match="already pinned"):
+        set_pinned(tmp_path, e.id, True)
+    with pytest.raises(MemoryStoreError, match="no memory with id"):
+        set_pinned(tmp_path, "0" * 26, True)
+
+
+def test_pin_refused_on_invalidated_but_unpin_allowed(tmp_path: Path) -> None:
+    from agent6.memory import set_pinned
+
+    e = add(tmp_path, "facts", "stale fact")
+    set_pinned(tmp_path, e.id, True)
+    invalidate(tmp_path, e.id, "superseded")
+    # cleanup unpin of an invalidated entry is allowed...
+    assert set_pinned(tmp_path, e.id, False).pinned is False
+    # ...but pinning one is refused: inactive entries never render.
+    with pytest.raises(MemoryStoreError, match="invalidated"):
+        set_pinned(tmp_path, e.id, True)

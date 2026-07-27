@@ -56,3 +56,45 @@ def test_list_hides_invalidated_until_asked(env: Path, capsys: pytest.CaptureFix
     shown = capsys.readouterr().out
     assert "stale note" in shown
     assert "invalidated" in shown
+
+
+def test_pin_unpin_roundtrip_and_list_marker(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from agent6.memory import list_entries
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.memory_cmds import (
+        _cmd_memory_pin,  # pyright: ignore[reportPrivateUsage]
+        _cmd_memory_unpin,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert _cmd_memory_add("decisions", "squash merges only") == 0
+    mem_id = list_entries(_state_dir(Path.cwd()))[0].id
+    capsys.readouterr()
+    assert _cmd_memory_pin(mem_id) == 0
+    assert "pinned" in capsys.readouterr().out
+    assert _cmd_memory_list(None, include_invalidated=False) == 0
+    assert "[pinned]" in capsys.readouterr().out
+    assert _cmd_memory_unpin(mem_id) == 0
+    assert "unpinned" in capsys.readouterr().out
+    # errors are loud and non-zero
+    assert _cmd_memory_unpin(mem_id) == 2
+    assert "not pinned" in capsys.readouterr().err
+
+
+def test_list_warns_when_pins_exceed_the_block_cap(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.memory import list_entries
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.memory_cmds import (
+        _cmd_memory_pin,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for i in range(12):
+        assert _cmd_memory_add("facts", f"pin {i} " + "y" * 1150) == 0
+    for e in list_entries(_state_dir(Path.cwd())):
+        _cmd_memory_pin(e.id)
+    capsys.readouterr()
+    assert _cmd_memory_list(None, include_invalidated=False) == 0
+    out = capsys.readouterr().out
+    assert "exceed the memory block cap" in out
+    assert "oldest pinned" in out

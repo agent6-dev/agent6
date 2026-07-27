@@ -64,6 +64,8 @@ from agent6.ui.cli.memory_cmds import (
     _cmd_memory_add,
     _cmd_memory_invalidate,
     _cmd_memory_list,
+    _cmd_memory_pin,
+    _cmd_memory_unpin,
 )
 from agent6.ui.cli.model import _cmd_model
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
@@ -466,6 +468,10 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
         return _cmd_memory_list(args.scope or None, include_invalidated=args.all)
     if args.memory_command == "invalidate":
         return _cmd_memory_invalidate(args.memory_id, args.reason)
+    if args.memory_command == "pin":
+        return _cmd_memory_pin(args.memory_id)
+    if args.memory_command == "unpin":
+        return _cmd_memory_unpin(args.memory_id)
     raise AssertionError("unreachable")  # pragma: no cover -- memory subparser is required
 
 

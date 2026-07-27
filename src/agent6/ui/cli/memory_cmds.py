@@ -21,7 +21,11 @@ from agent6.memory import (
 from agent6.memory import (
     list_entries as memory_list,
 )
+from agent6.memory import (
+    set_pinned as memory_set_pinned,
+)
 from agent6.ui.cli._common import _state_dir, sgr
+from agent6.workflows import MEMORIES_MAX_CHARS, MEMORY_ENTRY_MAX_CHARS
 
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
@@ -41,6 +45,15 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     shown = [e for e in entries if include_invalidated or e.is_active]
+    pinned_cost = sum(
+        min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48 for e in entries if e.pinned and e.is_active
+    )
+    if pinned_cost > MEMORIES_MAX_CHARS:
+        print(
+            "[agent6] pinned memories exceed the memory block cap"
+            f" ({pinned_cost:,} > {MEMORIES_MAX_CHARS:,} chars);"
+            " oldest pinned will be elided from the <memories> block"
+        )
     if not shown:
         if entries:
             print("no active memories. Pass --include-invalidated to see invalidated ones.")
@@ -60,6 +73,8 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
             for line in e.body.splitlines():
                 print(f"  {line}" if active else sgr(f"  {line}", "2"))
             meta = f"{e.id}  ·  {e.created_at}"
+            if e.pinned:
+                meta = f"[pinned] {meta}"
             if not active:
                 meta = f"[invalidated] {meta}  ·  {e.invalidation_reason or 'no reason'}"
             print(sgr(f"  {meta}", "2"))
@@ -73,4 +88,24 @@ def _cmd_memory_invalidate(memory_id: str, reason: str) -> int:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     print(f"invalidated {entry.scope} {entry.id} at {entry.invalidated_at}")
+    return 0
+
+
+def _cmd_memory_pin(memory_id: str) -> int:
+    try:
+        entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, True)
+    except MemoryStoreError as exc:
+        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"pinned {entry.scope} {entry.id} (exempt from the <memories> block trim)")
+    return 0
+
+
+def _cmd_memory_unpin(memory_id: str) -> int:
+    try:
+        entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, False)
+    except MemoryStoreError as exc:
+        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"unpinned {entry.scope} {entry.id}")
     return 0

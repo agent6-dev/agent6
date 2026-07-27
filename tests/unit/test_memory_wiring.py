@@ -315,3 +315,49 @@ def test_workflow_load_memories_unreadable_store_warns_not_raises(tmp_path: Path
     finally:
         (state / "memories" / "facts.md").chmod(0o600)
     assert any("memories unavailable" in m for m in logs)
+
+
+def test_memories_block_pinned_survives_the_trim() -> None:
+    """An old pinned entry outlives 20 newer bulky entries; unpinned old ones
+    elide as before, and the elided count stays truthful."""
+    old_pinned = _entry(
+        "decisions",
+        "PINNED-DECISION squash merges only",
+        id="01" + "0" * 24,
+        created_at="2025-06-01T00:00:00Z",
+        pinned=True,
+    )
+    noise = tuple(
+        _entry(
+            "facts",
+            f"note {i} " + "z" * 1100,
+            id=f"01{i:024d}",
+            created_at=f"2026-01-{i + 1:02d}T00:00:00Z",
+        )
+        for i in range(1, 20)
+    )
+    block = memories_block((old_pinned, *noise), mode="run")
+    assert "PINNED-DECISION squash merges only" in block
+    assert "[pinned]" in block
+    assert "older memories elided" in block
+    assert "note 1 " not in block  # oldest unpinned still elides
+
+
+def test_memories_block_pins_over_cap_elide_oldest_pins() -> None:
+    """Pins never break the block byte bound: when pins alone exceed the cap,
+    the oldest pinned elide (counted in the note) and the newest pinned render."""
+    pins = tuple(
+        _entry(
+            "facts",
+            f"pin {i} " + "y" * 1150,
+            id=f"01{i:024d}",
+            created_at=f"2026-02-{i + 1:02d}T00:00:00Z",
+            pinned=True,
+        )
+        for i in range(12)  # 12 x ~1248 chars > 12000 cap
+    )
+    block = memories_block(pins, mode="run")
+    assert "older memories elided" in block
+    assert "pin 11 " in block  # newest pinned kept
+    assert "pin 0 " not in block  # oldest pinned elided
+    assert len(block) < 14_000  # bound holds (cap + headers)
