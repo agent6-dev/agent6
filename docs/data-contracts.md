@@ -81,6 +81,7 @@ How a run ends and how it resumes: the RunResult the workflow returns, the Resum
 | `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
 | `parallel_groups_dispatched` | `int` | `0` |
+| `pins` | `tuple[str, ...]` | `()` |
 | `head_sha` | `str` | `''` |
 | `graph_version` | `int` | `0` |
 
@@ -104,11 +105,11 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 ## Event union
 
-[`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 22 frozen families
+[`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 23 frozen families
 
 Typed read model for the ~19 logs.jsonl event families the RunState fold consumes.
 
-Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `CompactDropped`, `CompactGists`, `SteerRequested`, `RunEnd`, `RawEvent`
+Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `CompactDropped`, `CompactGists`, `SteerRequested`, `RunEnd`, `RawEvent`
 
 - **Written by:** viewmodel/{events}
 - **Read by:** viewmodel/{__init__, listing, state}

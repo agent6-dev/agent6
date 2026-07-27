@@ -2438,15 +2438,19 @@ def _long_history(n_pairs: int) -> list[dict[str, Any]]:
     return msgs
 
 
-def _restart_via_wire(wf: Workflow, messages: list[dict[str, Any]]) -> None:
+def _restart_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> None:
     conversation = Conversation.from_wire(messages)
-    wf._summarise_and_restart(conversation)  # pyright: ignore[reportPrivateUsage]
+    wf._summarise_and_restart(  # pyright: ignore[reportPrivateUsage]
+        conversation, state if state is not None else _state()
+    )
     messages[:] = conversation.to_wire()
 
 
-def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]]) -> bool:
+def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]], *, state: Any = None) -> bool:
     conversation = Conversation.from_wire(messages)
-    out = wf._maybe_compact(conversation)  # pyright: ignore[reportPrivateUsage]
+    out = wf._maybe_compact(  # pyright: ignore[reportPrivateUsage]
+        conversation, state if state is not None else _state()
+    )
     messages[:] = conversation.to_wire()
     return out
 
@@ -2526,6 +2530,23 @@ def test_summarise_done_event_carries_summary_text() -> None:
     _restart_via_wire(wf, _long_history(6))
     done = [e for e in ev.events if e["type"] == "loop.compact.summarise.done"]
     assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
+
+
+def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
+    """Pins are re-shown verbatim in the restart message (before the summary
+    label, as standing orders), and the summariser is told not to restate them."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("progress summary text")
+    wf = _wf(summariser_provider=summariser)
+    st = _state(pins=["never touch schema files", "goal:\nship X"])
+    messages = _long_history(6)
+    _restart_via_wire(wf, messages, state=st)
+    text = messages[1]["content"][0]["text"]
+    assert "PINNED operator instructions (verbatim):" in text
+    assert "1. never touch schema files" in text
+    assert "2. goal:\nship X" in text
+    assert text.index("PINNED operator") < text.index("PROGRESS SUMMARY:")
+    assert "do NOT restate" in str(summariser.call.call_args)
 
 
 def test_summarise_and_restart_replaces_history() -> None:
@@ -3339,6 +3360,62 @@ def test_steer_none_text_continues_without_inject() -> None:
     assert result is None
     assert cleared == [True]
     assert messages == []
+
+
+def test_steer_pin_records_and_injects_marked_notice() -> None:
+    ev = _EventCapture()
+    st = _state()
+    wf = _wf(
+        events=ev,
+        steer_requested=lambda: True,
+        steer_clear=lambda: None,
+        steer_prompt=lambda: "/pin never touch the schema files",
+    )
+    messages: list[dict[str, Any]] = []
+    assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
+    assert st.pins == ["never touch the schema files"]
+    block = messages[0]["content"][0]["text"]
+    assert "PINNED" in block and "survives context compaction" in block
+    assert "never touch the schema files" in block
+    added = [e for e in ev.events if e["type"] == "loop.pin.added"]
+    assert added and added[-1]["text"] == "never touch the schema files"
+    assert added[-1]["count"] == 1
+
+
+def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
+    """A pin past the total cap still reaches the model NOW as a plain steer;
+    only the survives-compaction durability is refused, loudly."""
+    from agent6.workflows.loop import PINS_MAX_CHARS
+
+    ev = _EventCapture()
+    st = _state(pins=["x" * (PINS_MAX_CHARS - 10)])
+    wf = _wf(
+        events=ev,
+        steer_requested=lambda: True,
+        steer_clear=lambda: None,
+        steer_prompt=lambda: "/pin " + "y" * 100,
+    )
+    messages: list[dict[str, Any]] = []
+    assert _steer_via_wire(wf, messages, iteration=3, state=st) is None
+    assert len(st.pins) == 1  # the oversized pin was NOT recorded
+    text = messages[0]["content"][0]["text"]
+    assert "OPERATOR STEERING" in text and "y" * 100 in text
+    assert "PINNED" not in text
+    refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
+    assert refused and refused[-1]["limit"] == PINS_MAX_CHARS
+
+
+def test_steer_bare_pin_answers_with_feedback() -> None:
+    st = _state()
+    wf = _wf(
+        steer_requested=lambda: True,
+        steer_clear=lambda: None,
+        steer_prompt=lambda: "/pin   ",
+    )
+    messages: list[dict[str, Any]] = []
+    assert _steer_via_wire(wf, messages, iteration=1, state=st) is None
+    assert st.pins == []
+    assert messages and "nothing pinned" in messages[0]["content"][0]["text"]
 
 
 def test_steer_abort_signal() -> None:

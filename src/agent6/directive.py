@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The unified `/parallel` grammar, shared by the coordinator steer parser
-(``workflows/loop.py``) and the web + TUI new-work composers.
+"""The steer-directive grammars (`/parallel`, `/pin`), shared by the
+coordinator steer parser (``workflows/loop.py``) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
+    /pin <instruction that must survive context compaction>
 
 - ``spec`` is a positive int (lane count) or a comma-separated model list, and
   is OPTIONAL: omitted means one lane on the configured worker model. A
@@ -21,9 +22,10 @@
   too.
 - Newlines are ordinary task characters, so a task can span multiple lines.
 
-One parser, imported by ``workflows`` (the coordinator) and ``ui`` (the
-composers, and the CLI ``--parallel`` value via :func:`parse_spec`). Pure stdlib
-string parsing, no agent6 imports -- a leaf both layers sit above."""
+One parser per directive, imported by ``workflows`` (the coordinator) and
+``ui`` (the composers, and the CLI ``--parallel`` value via
+:func:`parse_spec`). Pure stdlib string parsing, no agent6 imports -- a leaf
+both layers sit above."""
 
 from __future__ import annotations
 
@@ -78,6 +80,26 @@ def parse_spec(spec: str) -> list[str | None]:
     if not models:
         raise DirectiveError(f"parallel spec {spec!r} names no models")
     return list(models)
+
+
+# A leading `/pin` token, whitespace-delimited: optional leading whitespace,
+# then the exact token, then whitespace or end. Same discipline as _SEPARATOR
+# (mid-text or glued tokens are ordinary steer text), but /pin never splits a
+# message: everything after the token is one pinned instruction.
+_PIN_TOKEN = re.compile(r"\A\s*/pin(?=\s|\Z)")
+
+
+def parse_pin(text: str) -> str | None:
+    """The instruction a `/pin` steer carries, or ``None`` when *text* is not a
+    pin directive (does not start with the exact ``/pin`` token). Internal
+    newlines are instruction text. Raises DirectiveError on a bare ``/pin``."""
+    m = _PIN_TOKEN.match(text)
+    if m is None:
+        return None
+    instruction = text[m.end() :].strip()
+    if not instruction:
+        raise DirectiveError("pin needs an instruction: /pin <text that must survive compaction>")
+    return instruction
 
 
 def parse_directive(text: str) -> list[Segment] | None:

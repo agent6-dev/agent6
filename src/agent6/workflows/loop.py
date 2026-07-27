@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
+from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin, parse_spec
 from agent6.git_ops import GitError, commit_all, commit_diff, diff_since
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import GraphCurator
@@ -48,6 +48,7 @@ from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
     CRITIC_SYSTEM_PROMPT,
     GIST_DISTILL_SYSTEM_PROMPT,
+    PINS_NO_RESTATE_CLAUSE,
     PROMPT_REVISION_SYSTEM_PROMPT,
     context_restart_notice,
 )
@@ -208,6 +209,13 @@ if TYPE_CHECKING:
 # (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
+
+# Total chars of operator `/pin` instructions a run may hold. Pins are
+# re-injected verbatim into every tier-2 restart, so the cap bounds what every
+# post-compaction context permanently re-pays. An over-cap pin is delivered as
+# an ordinary steer (the instruction still reaches the model once); only its
+# survives-compaction durability is refused.
+PINS_MAX_CHARS = 4_000
 
 
 def _summarise_assistant_text_for_commit(
@@ -380,6 +388,9 @@ class _LoopState:
     # How many `/parallel` sibling groups this run has dispatched. Names each
     # group's lanes (`<run-id>-p<seq>-l<i>`); increments per dispatch.
     parallel_groups_dispatched: int = 0
+    # Operator `/pin` instructions, re-injected verbatim after every tier-2
+    # restart. Total chars capped at PINS_MAX_CHARS; persisted in the snapshot.
+    pins: list[str] = field(default_factory=list)
 
 
 def _restore_completion_state(state: _LoopState, snap: RunSnapshot) -> None:
@@ -392,6 +403,7 @@ def _restore_completion_state(state: _LoopState, snap: RunSnapshot) -> None:
     state.verify_ever_passed = snap.verify_ever_passed
     state.gateless_ever_committed = snap.gateless_ever_committed
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
+    state.pins = list(snap.pins)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:
         # Seed one synthetic sample so `_metric_at_ceiling` and the plateau guard
         # see the prior best (we persist a compact summary, not the full history,
@@ -1011,7 +1023,7 @@ class Workflow:
         After the snapshot write, a crash anywhere up to the next iteration's
         snapshot can be resumed by re-running this same call."""
         self._emit_budget(iteration)
-        if self._maybe_compact(conversation):
+        if self._maybe_compact(conversation, state):
             # A tier-2 restart wiped the surfaced focus banner; let the next
             # nudge pass re-surface the current task into the fresh context.
             state.surfaced_task_id = None
@@ -2913,6 +2925,7 @@ class Workflow:
             verify_ever_passed=state.verify_ever_passed,
             gateless_ever_committed=state.gateless_ever_committed,
             parallel_groups_dispatched=state.parallel_groups_dispatched,
+            pins=tuple(state.pins),
             metric_best_score=best.score if best is not None else None,
             metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
             head_sha=self._checkpoint_head_sha(),
@@ -3114,7 +3127,7 @@ class Workflow:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
 
-    def _maybe_compact(self, conversation: Conversation) -> bool:
+    def _maybe_compact(self, conversation: Conversation, state: _LoopState) -> bool:
         """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
         actually replaced the history (so the caller can re-surface the
         current-task banner the restart wiped); False otherwise.
@@ -3173,7 +3186,7 @@ class Workflow:
         # to be worth summarising; below that a restart would lose more than
         # it saves.
         if (forced or total > self.compact_summarise_at_chars) and len(conversation) > 3:
-            return self._summarise_and_restart(conversation)
+            return self._summarise_and_restart(conversation, state)
         return False
 
     def _distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
@@ -3198,7 +3211,7 @@ class Workflow:
             return {}
         return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
-    def _summarise_and_restart(self, conversation: Conversation) -> bool:
+    def _summarise_and_restart(self, conversation: Conversation, state: _LoopState) -> bool:
         """Replace the history with (original task + a model-written progress
         summary), in place. The loop only calls this at the top of an
         iteration, where the history is balanced (every ``tool_use`` already
@@ -3231,9 +3244,13 @@ class Workflow:
             )
         else:
             checkoff_req = ""
+        pins_req = ""
+        if state.pins:
+            pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
+            pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
         user_msg = (
             "Summarise the following agent transcript for a context restart."
-            f"{checkoff_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
+            f"{checkoff_req}{pins_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
         self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(conversation)} msgs)")
         self._emit("loop.compact.summarise.call", messages=len(conversation))
@@ -3260,7 +3277,7 @@ class Workflow:
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         summary = strip_checkoff(raw) if open_tasks else raw
-        conversation.restart(context_restart_notice(self.mode) + summary)
+        conversation.restart(context_restart_notice(self.mode, pins=state.pins) + summary)
         self._emit("loop.compact.summarise.done", summary_chars=len(summary), summary=summary)
         return True
 
@@ -3787,7 +3804,9 @@ class Workflow:
             self._emit("loop.steer.detached")
             self._log("  detach - stopping to resume in the background")
             return "detach"
-        if self._steer_directive(conversation, iteration, state, steer_text):
+        if self._steer_directive(conversation, iteration, state, steer_text) or self._steer_pin(
+            conversation, state, steer_text
+        ):
             return None
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
@@ -3797,6 +3816,45 @@ class Workflow:
             f"{steer_text}"
         )
         return None
+
+    def _steer_pin(self, conversation: Conversation, state: _LoopState, steer_text: str) -> bool:
+        """Handle a steer that is a `/pin` directive. A recorded pin is injected
+        as a marked instruction AND re-injected verbatim after every tier-2
+        restart. Over the total cap, the instruction is still delivered as an
+        ordinary steer -- only the durability is refused, loudly. Returns True
+        when handled; False when *steer_text* is not a pin directive."""
+        try:
+            instruction = parse_pin(steer_text)
+        except DirectiveError as exc:
+            conversation.notice(f"OPERATOR STEERING: nothing pinned: {exc}")
+            self._log(f"  /pin refused: {exc}")
+            return True
+        if instruction is None:
+            return False
+        held = sum(len(p) for p in state.pins)
+        if held + len(instruction) > PINS_MAX_CHARS:
+            self._log(
+                f"  /pin over cap ({held} + {len(instruction)} > {PINS_MAX_CHARS});"
+                " delivered as an ordinary steer"
+            )
+            self._emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
+            conversation.notice(
+                "OPERATOR STEERING (mid-run instruction; "
+                "incorporate this into your next step):\n"
+                f"{instruction}"
+            )
+            return True
+        state.pins.append(instruction)
+        self._log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
+        self._emit(
+            "loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins)
+        )
+        conversation.notice(
+            "OPERATOR STEERING (PINNED — this instruction survives context "
+            "compaction; it stays binding for the rest of the run):\n"
+            f"{instruction}"
+        )
+        return True
 
     # ---- /parallel steer dispatch (coordinator) --------------------------
 

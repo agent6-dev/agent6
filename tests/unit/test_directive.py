@@ -185,3 +185,37 @@ def test_superscript_digit_is_not_a_lane_count() -> None:
     assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
     # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
     assert parse_spec("\u0662") == [None, None]
+
+
+# --- /pin steer directive ------------------------------------------------------
+
+
+def test_parse_pin_returns_instruction_text() -> None:
+    from agent6.directive import parse_pin
+
+    assert parse_pin("/pin always run the full suite") == "always run the full suite"
+    assert parse_pin("  /pin keep the API stable  ") == "keep the API stable"
+
+
+def test_parse_pin_none_unless_leading_exact_token() -> None:
+    from agent6.directive import parse_pin
+
+    assert parse_pin("please /pin this") is None  # mid-text, not a directive
+    assert parse_pin("/pinfoo bar") is None  # prefix lookalike
+    assert parse_pin("src//pin/x is a path") is None
+    assert parse_pin("ordinary steer text") is None
+
+
+def test_parse_pin_multiline_instruction_preserved() -> None:
+    from agent6.directive import parse_pin
+
+    assert parse_pin("/pin goal:\n- ship X\n- keep Y green") == "goal:\n- ship X\n- keep Y green"
+
+
+def test_parse_pin_bare_token_raises() -> None:
+    from agent6.directive import parse_pin
+
+    with pytest.raises(DirectiveError):
+        parse_pin("/pin")
+    with pytest.raises(DirectiveError):
+        parse_pin("  /pin   ")

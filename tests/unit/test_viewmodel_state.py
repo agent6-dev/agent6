@@ -564,3 +564,12 @@ def test_format_log_line_compaction_identities() -> None:
         {"type": "loop.compact.summarise.done", "summary_chars": 2341, "summary": "did things"}
     )
     assert "2341-char progress summary" in done
+
+
+def test_pin_added_events_accumulate() -> None:
+    s = initial_state()
+    s = apply_event(
+        s, {"type": "loop.pin.added", "text": "never touch schema", "chars": 18, "count": 1}
+    )
+    s = apply_event(s, {"type": "loop.pin.added", "text": "ship X first", "chars": 12, "count": 2})
+    assert s.pins == ("never touch schema", "ship X first")

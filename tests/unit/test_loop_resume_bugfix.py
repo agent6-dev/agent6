@@ -119,6 +119,44 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     assert fresh.parallel_groups_dispatched == 2  # the next dispatch is p3, not p1
 
 
+def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
+    """Operator /pin instructions are run-lifetime state: every tier-2 restart
+    re-injects them verbatim, so a resume must carry them like the sibling
+    completion scalars. A version-2 snapshot written BEFORE pins existed loads
+    with none (additive defaulted field, same as the /parallel counter)."""
+    from agent6.workflows.loop import (
+        _restore_completion_state,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    snap = tmp_path / "loop_state.json"
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
+    )
+    wf = _wf(resume_state_path=snap, config=config)
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.pins.extend(["never touch schema files", "goal:\nship X"])
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
+    )
+    loaded = load_run_snapshot(snap)
+    assert loaded.pins == ("never touch schema files", "goal:\nship X")
+
+    fresh = _LoopState(original_task="t", tool_calls=0)
+    _restore_completion_state(fresh, loaded)
+    assert fresh.pins == ["never touch schema files", "goal:\nship X"]
+
+    # Pre-pins snapshot (no `pins` key) still loads: additive default.
+    raw = json.loads(snap.read_text(encoding="utf-8"))
+    del raw["pins"]
+    snap.write_text(json.dumps(raw), encoding="utf-8")
+    assert load_run_snapshot(snap).pins == ()
+
+
 def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
     """An in-flight run written before a state-format change (an older
     SNAPSHOT_VERSION) must refuse to resume/fork with a clear reason -- never a
@@ -331,9 +369,9 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         events.append({"kind": "provider_call"})
         return orig_call(*a, **kw)
 
-    def _spy_compact(msgs: Any) -> bool:
+    def _spy_compact(msgs: Any, state: Any) -> bool:
         events.append({"kind": "compact"})
-        return orig_compact(msgs)
+        return orig_compact(msgs, state)
 
     wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
     wf._call_with_retry = _spy_call  # type: ignore[method-assign]

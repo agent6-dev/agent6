@@ -52,6 +52,7 @@ PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 MENU_COMMANDS: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, profile",
     "/tasks": "the task graph with statuses",
+    "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context before the next model call",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
@@ -144,10 +145,24 @@ def _print_status(run_dir: Path) -> None:
         ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
     if s.compact_elided:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
+    if s.pins:
+        ctx += f" · pins {len(s.pins)}"
     profile = _read_profile(run_dir)
     prof = f" · profile {profile}" if profile else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {s.user_task[:80]}")
+
+
+def _print_pins(run_dir: Path) -> None:
+    """Bare /pin: the recorded pins (fold truth). `/pin <text>` has a space, so
+    the menu sends it verbatim as a steer and the loop's parser records it."""
+    s = _fold(run_dir)
+    if not s.pins:
+        print("[agent6] no pinned instructions; pin one with `/pin <text>`")
+        return
+    print(f"[agent6] {len(s.pins)} pinned (survive context compaction; `/pin <text>` adds):")
+    for i, pin in enumerate(s.pins, start=1):
+        print(f"  {i}. {pin}")
 
 
 def _print_tasks(run_dir: Path) -> None:
@@ -181,6 +196,8 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
         _print_status(run_dir)
     elif cmd == "/tasks":
         _print_tasks(run_dir)
+    elif cmd == "/pin":
+        _print_pins(run_dir)
     elif cmd == "/compact":
         request_compact(run_dir)
         print("[agent6] compaction requested; applies before the next model call")

@@ -191,6 +191,13 @@ class QuestionAnswer:
 
 
 @dataclass(frozen=True, slots=True)
+class PinAdded:
+    """loop.pin.added: an operator /pin instruction was recorded."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class CompactDropped:
     """loop.compact.dropped: tier-1 elision, with the elided call identities."""
 
@@ -245,6 +252,7 @@ Event = (
     | ApprovalAnswer
     | QuestionPrompt
     | QuestionAnswer
+    | PinAdded
     | CompactDropped
     | CompactGists
     | SteerRequested
@@ -356,6 +364,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             raw_ans = raw.get("answers", ()) or ()
             answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
             return QuestionAnswer(id=str(raw.get("id", "")), answers=answers)
+        case "loop.pin.added":
+            return PinAdded(text=str(raw.get("text", "")))
         case "loop.compact.dropped":
             raw_calls = raw.get("calls", ()) or ()
             calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()

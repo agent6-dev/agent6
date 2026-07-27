@@ -9,6 +9,7 @@ the loop owns running each call.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 CRITIC_SYSTEM_PROMPT = (
@@ -98,13 +99,37 @@ _CONTEXT_RESTART_DAG = (
 )
 
 
-def context_restart_notice(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
+def pinned_block(pins: Sequence[str]) -> str:
+    """The operator's `/pin` instructions as a numbered verbatim block, or ""
+    when none. Rendered into every tier-2 restart so pinned instructions are
+    never squeezed through the summariser."""
+    if not pins:
+        return ""
+    lines = "\n".join(f"{i}. {pin}" for i, pin in enumerate(pins, start=1))
+    return f"PINNED operator instructions (verbatim):\n{lines}"
+
+
+# Appended to the summariser's request when pins exist: the restart re-shows
+# them verbatim, so a summary that restates them would double-spend the chars.
+PINS_NO_RESTATE_CLAUSE = (
+    "\n\nThe operator PINNED these instructions; they are re-shown verbatim"
+    " after the restart — do NOT restate them in the summary:\n"
+)
+
+
+def context_restart_notice(
+    mode: Literal["run", "plan", "ask", "machine", "agent"],
+    pins: Sequence[str] = (),
+) -> str:
     """The post-compaction restart preamble. The DAG-recovery paragraph is
     included only for modes whose tool surface has the DAG tools (run, plan):
     in ask/machine/agent `list_tasks` does not exist, so instructing the worker
-    to call it burns a turn on an unknown-tool error."""
+    to call it burns a turn on an unknown-tool error. Operator pins render
+    between the preamble and the summary label, as standing orders."""
     parts = [_CONTEXT_RESTART_HEAD]
     if mode in ("run", "plan"):
         parts.append(_CONTEXT_RESTART_DAG)
+    if block := pinned_block(pins):
+        parts.append(block)
     parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

@@ -168,6 +168,8 @@ class RunState:
     # demoted -- a demoted gist is back to a bare marker).
     compact_elided: int = 0
     compact_gists_live: int = 0
+    # Operator /pin instructions recorded so far (loop.pin.added), most-recent-last.
+    pins: tuple[str, ...] = ()
 
 
 def initial_state() -> RunState:
@@ -426,6 +428,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
             return replace(state, pending_questions=new_q)
 
+        case events.PinAdded(text=text):
+            return replace(state, pins=(*state.pins, text))
+
         case events.CompactDropped(n=n):
             return replace(state, compact_elided=state.compact_elided + n)
 
@@ -560,6 +565,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
                 salient = f"{role} in={tin} out={tout}"
         case "loop.provider.retry":
             salient = f"attempt {event.get('attempt')}: {str(event.get('error', ''))[:160]}"
+        case "loop.pin.added":
+            salient = f"pinned ({event.get('chars')} chars): {str(event.get('text', ''))[:80]}"
+        case "loop.pin.refused":
+            salient = f"pin refused: over the {event.get('limit')}-char cap"
         case "loop.compact.dropped":
             calls = event.get("calls", []) or []
             named = ", ".join(str(c) for c in calls)

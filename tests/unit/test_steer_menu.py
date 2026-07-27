@@ -300,3 +300,36 @@ def test_skill_menu_table_lists_enabled(tmp_path: Path, monkeypatch: pytest.Monk
     table = skill_menu_table()
     assert set(table) == {"/caveman", "/tidy"}
     assert table["/caveman"][0] == "Use when testing caveman."
+
+
+def test_pause_menu_status_and_bare_pin_list_pins(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """/status counts pins; a bare /pin lists them with usage (the /pin <text>
+    form is a steer directive the loop parses, so it must stay a verbatim steer)."""
+    import json
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {"type": "loop.pin.added", "text": "never touch schema", "chars": 18, "count": 1},
+                {"type": "loop.pin.added", "text": "goal:\nship X", "chars": 12, "count": 2},
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/pin", "/stop"])) == "abort"
+    printed = capsys.readouterr().out
+    assert "pins 2" in printed  # /status
+    assert "1. never touch schema" in printed  # bare /pin lists them
+    assert "2. goal:" in printed
+    assert "/pin <text>" in printed  # usage line
+    # /pin with text stays a verbatim steer for the loop's parser
+    assert (
+        pause_menu(tmp_path, input_fn=_feed(["/pin keep the API stable"]))
+        == "/pin keep the API stable"
+    )

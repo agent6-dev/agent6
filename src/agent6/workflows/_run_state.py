@@ -140,6 +140,10 @@ class RunSnapshot(BaseModel):
     # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior
     # group's exact ids and collided on its clone dirs / branches.
     parallel_groups_dispatched: int = 0
+    # Operator /pin instructions, re-injected verbatim after every tier-2
+    # restart. Run-lifetime like the group counter above (additive default:
+    # a snapshot written before pins existed loads with none).
+    pins: tuple[str, ...] = ()
     # Fork extras: the workspace HEAD and curator graph_version at this turn, so
     # ``fork --at-turn N`` cuts the branch at the right sha and clones the DAG as of
     # that version. Best-effort at write time: "" / 0 when git/curator was
