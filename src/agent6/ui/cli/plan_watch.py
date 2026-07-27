@@ -42,6 +42,7 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.format import format_compare, format_cost
+from agent6.viewmodel.state import SESSION_START_EVENTS
 
 
 def _resolve_plan_run_id(run_id: str) -> str | None:
@@ -432,15 +433,27 @@ class _CliFrontEnd:
         self._view = view
         self._answered: set[str] = set()
         self._handled: set[str] = set()
+        # Events the attach pre-scan already decided. The follow loop re-reads
+        # logs.jsonl FROM THE START, so it hands those same events back to
+        # `react`; replaying them must never prompt (see `react`). A count is
+        # enough because logs.jsonl is append-only: the follow can only deliver
+        # MORE events than the scan saw, never fewer, and the scanned ones
+        # always arrive first.
+        self._replayed: int = 0
 
     def open_prompts_at_attach(self, events_path: Path) -> list[tuple[str, str, object]]:
         """Pre-scan the existing log: seed ``_answered`` and return the prompts
         that are open right now (emitted, not answered) so a run already waiting
         at an approval when you attach is handled at once."""
         open_prompts: dict[str, tuple[str, str, object]] = {}
+        scanned = 0
         for ev in tail_events(events_path, follow=False):
+            scanned += 1
             etype = str(ev.get("type", ""))
             pid = str(ev.get("id", ""))
+            if etype in SESSION_START_EVENTS:
+                self._new_session()
+                open_prompts.clear()
             if etype == "approval.prompt":
                 open_prompts[pid] = ("approval", pid, ev.get("prompt", ""))
             elif etype == "question.prompt":
@@ -448,6 +461,7 @@ class _CliFrontEnd:
             elif etype in ("approval.answer", "question.answer"):
                 self._answered.add(pid)
                 open_prompts.pop(pid, None)
+        self._replayed = scanned
         return list(open_prompts.values())
 
     def handle(self, kind: str, prompt_id: str, content: object) -> None:
@@ -476,11 +490,34 @@ class _CliFrontEnd:
             )
         self._handled.add(prompt_id)
 
+    def _new_session(self) -> None:
+        """A session boundary (a fresh run, or a resumed leg) restarts the prompt
+        id counters at approval-1/question-1, so the prior leg's ids say nothing
+        about the new leg's. Keeping them made the attached front-end swallow the
+        resumed leg's first prompt while the worker waited on it forever."""
+        self._answered.clear()
+        self._handled.clear()
+
     def react(self, event: dict[str, object]) -> None:
         """Live follow: answer a NEW unanswered prompt; a historical/answered one
         (id in ``_answered``/``_handled``) is skipped on the replay."""
         etype = str(event.get("type", ""))
         pid = str(event.get("id", ""))
+        if self._replayed > 0:
+            # Still inside the pre-scan's window: the follow loop is handing
+            # back events `open_prompts_at_attach` already ruled on, so keep the
+            # bookkeeping in step but NEVER prompt. Deciding these live re-asked
+            # every prompt the run had already answered, because the leg-boundary
+            # clear below discarded what the pre-scan knew.
+            self._replayed -= 1
+            if etype in SESSION_START_EVENTS:
+                self._new_session()
+            elif etype in ("approval.answer", "question.answer"):
+                self._answered.add(pid)
+            return
+        if etype in SESSION_START_EVENTS:
+            self._new_session()
+            return
         if etype in ("approval.answer", "question.answer"):
             self._answered.add(pid)
             return

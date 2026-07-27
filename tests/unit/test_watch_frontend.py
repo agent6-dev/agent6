@@ -84,9 +84,12 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
 
     monkeypatch.setattr(plan_watch, "default_stdin_questioner", _beta)
     log = tmp_path / "logs.jsonl"
-    _write_log(log, [{"type": "run.start"}])
+    history: list[dict[str, Any]] = [{"type": "run.start"}]
+    _write_log(log, history)
     fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
     fe.open_prompts_at_attach(log)
+    for ev in history:  # the follow loop replays the scanned prefix first
+        fe.react(ev)
     event: dict[str, Any] = {
         "type": "question.prompt",
         "id": "question-1",
@@ -94,3 +97,80 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
     }
     fe.react(event)
     assert json.loads((questions_dir(tmp_path) / "question-1.answer").read_text()) == ["beta"]
+
+
+def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeypatch: Any) -> None:
+    """The follow loop replays the WHOLE log through react() after the pre-scan,
+    and every real log opens with run.start. Clearing the answered ids at that
+    boundary threw away the pre-scan's knowledge, so attaching to any run that
+    had ever answered a prompt re-asked it and blocked on stdin."""
+    asked: list[str] = []
+
+    def _yes(prompt: str) -> str:
+        asked.append(prompt)
+        return "yes"
+
+    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    log = tmp_path / "logs.jsonl"
+    history: list[dict[str, Any]] = [
+        {"type": "run.start", "user_task": "t"},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "ANSWERED LONG AGO"},
+        {"type": "approval.answer", "id": "approval-1", "approved": True},
+        {"type": "role.call", "role": "worker", "model": "m"},
+    ]
+    _write_log(log, history)
+
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    assert fe.open_prompts_at_attach(log) == []  # nothing open
+    for ev in history:  # _watch_transcript replays from the start
+        fe.react(ev)
+    assert asked == []  # the answered prompt is history, not a question
+
+
+def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Prompt ids are per-leg counters, so a resumed leg re-emits approval-1 /
+    question-1. The answered-set must clear at the session boundary: it did not,
+    so an attached CLI silently dropped the new leg's first prompt and the run
+    hung forever on a front-end that would never answer (the TUI already resets
+    its seen-set on SESSION_START_EVENTS)."""
+    asked: list[str] = []
+
+    def _yes(prompt: str) -> str:
+        asked.append(prompt)
+        return "yes"
+
+    def _answer(_qs: Any) -> tuple[str, ...]:
+        asked.append("question")
+        return ("a",)
+
+    monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
+    monkeypatch.setattr(plan_watch, "default_stdin_questioner", _answer)
+    log = tmp_path / "logs.jsonl"
+    leg1: list[dict[str, Any]] = [
+        {"type": "run.start"},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "leg 1 ok?"},
+        {"type": "approval.answer", "id": "approval-1", "approved": True},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q?"}]},
+        {"type": "question.answer", "id": "question-1", "answers": ["x"]},
+        {"type": "run.end", "reason": "steer_abort"},
+    ]
+    _write_log(log, leg1)
+    fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
+    assert fe.open_prompts_at_attach(log) == []  # leg 1 is fully answered
+    for ev in leg1:  # the follow loop replays the whole log first
+        fe.react(ev)
+    assert asked == []  # nothing historical is re-asked
+
+    # The resumed leg restarts the id counters and prompts again, live.
+    leg2: tuple[dict[str, object], ...] = (
+        {"type": "loop.resume.start", "iteration": 2},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "leg 2 ok?"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q2?"}]},
+    )
+    for ev in leg2:
+        fe.react(ev)
+    assert asked == ["leg 2 ok?", "question"]  # both prompted, neither swallowed
+    assert (approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+    assert (questions_dir(tmp_path) / "question-1.answer").exists()
