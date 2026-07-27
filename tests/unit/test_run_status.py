@@ -466,3 +466,28 @@ def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
     for junk in ("0", "-1"):
         (tmp_path / "worker.pid").write_text(junk, encoding="utf-8")
         assert worker_is_alive(tmp_path) is False, junk
+
+
+def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
+    """The last polled state file written with plain write_text: it truncates,
+    then writes, so a reader in that window sees a PREFIX of the pid with the
+    start-time identity stripped -- and a prefix that happens to name a live
+    process you own reads alive with nothing left to refute it, which is the
+    recycled-pid lie the identity was added to kill."""
+    from agent6.runs import ipc
+
+    seen: list[str] = []
+    real = ipc.atomic_write
+
+    def spy(path: Path, text: str) -> None:
+        seen.append(path.name)
+        real(path, text)
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(ipc, "atomic_write", spy)
+    try:
+        write_worker_pid(tmp_path, os.getpid())
+    finally:
+        monkey.undo()
+    assert seen == ["worker.pid"]
+    assert worker_is_alive(tmp_path) is True  # still a valid record

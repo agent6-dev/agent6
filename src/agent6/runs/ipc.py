@@ -163,8 +163,12 @@ def write_worker_pid(run_dir: Path, pid: int) -> None:
     process, after a SIGKILL'd worker left the file behind -- cannot make a
     dead run read running forever, which blocked resume and hung the
     /parallel lane await."""
+    # Atomic like every sibling publish: a plain write truncates first, so a
+    # reader in that window sees a PREFIX of the pid with the identity stripped
+    # -- and a prefix naming a live process you own reads alive with nothing
+    # left to refute it, the exact recycled-pid lie this record exists to kill.
     record = f"{pid} {_proc_start_time(pid)}".rstrip()
-    (run_dir / WORKER_PID_FILE).write_text(record, encoding="utf-8")
+    atomic_write(run_dir / WORKER_PID_FILE, record)
 
 
 def clear_worker_pid(run_dir: Path) -> None:
