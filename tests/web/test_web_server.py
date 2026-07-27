@@ -771,6 +771,57 @@ def test_sse_run_dead_worker_frame_is_terminal(
     assert last["status_label"] == "stale"
 
 
+def test_sse_run_pidless_stale_frame_is_terminal(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashed run that never recorded worker.pid (killed in preflight, or
+    the pid file cleaned) heartbeated forever: the idle close only probed a
+    RECORDED pid. The one dir decision (summarize_run_dir) already calls a
+    pid-less run silent past its window "stale"; the stream must close on it
+    with the same terminal frame as the recorded-dead-pid case."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    _make_run(
+        tmp_path,
+        "pidless-stale",
+        [{"type": "run.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+    )
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "pidless-stale"
+    assert not (run_dir / "worker.pid").exists()
+    old = 1_000_000_000.0  # silent far past the stale window
+    os.utime(run_dir / "logs.jsonl", (old, old))
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    seen = b""
+    eof = False
+    try:
+        conn.request("GET", "/api/run/pidless-stale/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        # Bounded read: the buggy stream never closes but keeps heartbeating,
+        # so a plain read() would hang forever on live ping bytes.
+        import time as _time
+
+        deadline = _time.monotonic() + 4.0
+        while _time.monotonic() < deadline:
+            try:
+                chunk = resp.read1(65536)
+            except TimeoutError:
+                continue
+            if chunk == b"":
+                eof = True  # the close stuck
+                break
+            seen += chunk
+    finally:
+        conn.close()
+    assert eof, "stream never closed for a pid-less stale run"
+    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+    last = json.loads(frames[-1][len(b"data:") :])
+    assert last["finished"] is True
+    assert last["status_label"] == "stale"
+
+
 def test_sse_machine_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int],
     tmp_path: Path,

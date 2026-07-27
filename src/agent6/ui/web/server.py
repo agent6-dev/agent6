@@ -48,7 +48,13 @@ from agent6.ui.web.page import (
     PAGE_HTML,
     SERVICE_WORKER_JS,
 )
-from agent6.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
+from agent6.viewmodel import (
+    apply_event,
+    initial_state,
+    run_state_as_dict,
+    summarize_run_dir,
+    tail_events,
+)
 
 # SSE tuning: coalesce high-frequency streaming deltas, heartbeat idle streams so
 # a disconnected client is noticed and its worker thread exits.
@@ -641,9 +647,11 @@ class _Handler(BaseHTTPRequestHandler):
                     if not self._sse_ping():
                         return
                     # A run that died without a run.end (crash / went quiet) would
-                    # otherwise pin this worker forever: once its worker.pid points
-                    # at a dead process, send a final snapshot and close.
-                    if read_worker_pid(run_dir) is not None and not worker_is_alive(run_dir):
+                    # otherwise pin this worker forever. The one dir decision
+                    # (the hub's word) covers both dead shapes: a recorded pid
+                    # that no longer runs, and a pid-less run silent past its
+                    # window.
+                    if summarize_run_dir(run_dir).status == "stale":
                         self._sse_send(frame(dead=True))
                         return
                     continue
