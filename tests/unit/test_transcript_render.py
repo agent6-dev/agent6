@@ -334,6 +334,63 @@ def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
     assert "distilled gist kept" in markers[0].text
 
 
+def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
+    """Two results of the SAME call identity in one message, elided in two
+    different passes: the second pass's marker must count the newly elided one
+    (an identity SET would see it as already-reported and under-count)."""
+    both = {
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "u1", "content": "FULL A"},
+            {"type": "tool_result", "tool_use_id": "u2", "content": "FULL A COPY"},
+        ],
+    }
+    assistant = {
+        "role": "assistant",
+        "content": [
+            {"type": "tool_use", "id": "u1", "name": "read_file", "input": {"path": "a.py"}},
+            {"type": "tool_use", "id": "u2", "name": "read_file", "input": {"path": "a.py"}},
+        ],
+    }
+    task = {"role": "user", "content": [{"type": "text", "text": "do X"}]}
+
+    def call(seq: int, msgs: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "seq": seq,
+            "request": {"body": {"system": "S", "messages": msgs}},
+            "response": {
+                "body": {"role": "assistant", "content": [{"type": "text", "text": f"t{seq}"}]}
+            },
+        }
+
+    one_elided = {
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "u1", "content": _BARE_ELIDED_A},
+            {"type": "tool_result", "tool_use_id": "u2", "content": "FULL A COPY"},
+        ],
+    }
+    both_elided = {
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "u1", "content": _BARE_ELIDED_A},
+            {"type": "tool_result", "tool_use_id": "u2", "content": _BARE_ELIDED_A},
+        ],
+    }
+    grow = {"role": "user", "content": [{"type": "text", "text": "next"}]}
+    turns = fold_conversation(
+        [
+            call(1, [task, assistant, both]),
+            call(2, [task, assistant, one_elided, grow]),
+            call(3, [task, assistant, both_elided, grow, grow]),
+        ]
+    )
+    markers = [t.text for t in turns if t.role == "marker"]
+    assert len(markers) == 2
+    assert "elided 1 older tool result" in markers[0]
+    assert "elided 1 older tool result" in markers[1]  # the second copy, counted
+
+
 def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
     """The renderer detects placeholders by prefix; this pins the cross-module
     coupling without a runtime viewmodel->workflows import."""

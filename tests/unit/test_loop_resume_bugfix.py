@@ -279,6 +279,74 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     assert captured.get("at_ceiling") is True
 
 
+class _EventCapture:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def emit(self, event_type: str, /, **fields: Any) -> None:
+        self.events.append({"type": event_type, **fields})
+
+
+def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
+    """A resumed leg emits loop.pin.restored with the snapshot's pins: a fork's
+    fresh logs.jsonl has no pin.added events, so without this the surfaces show
+    zero pins while the engine still re-injects them at every restart."""
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_run",
+                    "input": {"summary": "done"},
+                }
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    ev = _EventCapture()
+    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=Conversation.from_wire(
+            [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+        ),
+        tools=[],
+        tool_calls=0,
+        start_iteration=3,
+        root_task_id=None,
+        original_task="go",
+        resume_from=RunSnapshot(
+            system="s",
+            messages=[],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=(),
+            pins=("keep A", "ship X"),
+        ),
+    )
+    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    assert restored and restored[0]["pins"] == ["keep A", "ship X"]
+    assert restored[0]["count"] == 2
+
+
 # --- #3: end-of-iteration snapshot (no replay of executed tools) -----------
 
 

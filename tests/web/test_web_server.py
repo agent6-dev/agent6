@@ -1045,7 +1045,7 @@ def test_steer_compact_directive_routes_to_compact_request(
         port, "/api/run/compact-run/steer", {"text": "/compact keep the auth decisions"}
     )
     assert status == 200 and body["ok"] is True
-    assert "compaction requested" in body["message"]
+    assert "compaction requested" in str(body["message"])
     assert (run_dir / "compact.request").read_text(encoding="utf-8") == "keep the auth decisions"
     assert not (run_dir / "steer.answer").exists()
     assert not (run_dir / "steer.request").exists()

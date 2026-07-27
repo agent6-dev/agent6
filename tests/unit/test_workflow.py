@@ -3439,6 +3439,7 @@ def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     assert len(st.pins) == 1  # the oversized pin was NOT recorded
     text = messages[0]["content"][0]["text"]
     assert "OPERATOR STEERING" in text and "y" * 100 in text
+    assert "pin refused" in text  # the refusal is visible on every surface
     assert "PINNED" not in text
     refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
     assert refused and refused[-1]["limit"] == PINS_MAX_CHARS

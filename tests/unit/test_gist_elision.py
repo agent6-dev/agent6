@@ -218,3 +218,19 @@ def test_stats_carry_gist_and_demotion_identities() -> None:
     assert tighter.demoted_paths == ("docs/spec.md",)
     assert tighter.elided_calls == ()
     assert tighter.gist_paths == ()
+
+
+def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
+    """The gist placeholder names the call through the same truncated identity
+    as the bare marker, so a gist->bare demotion of a >120-char path is not
+    re-reported as a fresh elision by the conversation differ."""
+    import re
+
+    from agent6.workflows._compaction import call_label, elision_placeholder
+
+    long_path = "docs/" + "d" * 130 + ".md"
+    ident = re.compile(r": the result of (.+?) was replaced")
+    gist_m = ident.search(elision_gist_placeholder(long_path, "the gist"))
+    bare_m = ident.search(elision_placeholder("read_file", {"path": long_path}))
+    assert gist_m is not None and bare_m is not None
+    assert gist_m.group(1) == bare_m.group(1) == call_label("read_file", {"path": long_path})

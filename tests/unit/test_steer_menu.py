@@ -148,12 +148,12 @@ def test_pause_menu_prefixes_and_word_rule(
 def test_pause_menu_compact_requests_compaction(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.runs.ipc import compact_request_pending
+    from agent6.runs.ipc import read_compact_request
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     assert pause_menu(tmp_path, input_fn=_feed(["/compact"])) is None  # EOF -> continue
-    assert compact_request_pending(tmp_path) is True
+    assert read_compact_request(tmp_path) == ""  # marker pending, no focus
     assert "compaction requested" in capsys.readouterr().out
 
 

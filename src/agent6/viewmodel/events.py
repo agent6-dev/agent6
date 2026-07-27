@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed read model for the ~19 logs.jsonl event families the RunState fold consumes.
+"""Typed read model for the ~22 logs.jsonl event families the RunState fold consumes.
 
 The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
 **fields}` dicts and never validates; ~90 distinct types exist. The RunState fold
-(`viewmodel.state.apply_event`) structurally consumes only the 19 families defined
+(`viewmodel.state.apply_event`) structurally consumes only the families defined
 here. `parse_event` turns one raw event dict into exactly one of those frozen
 families, or a `RawEvent` passthrough for every other type -- the compatibility
 surface that keeps old run dirs folding: a type this module does not know becomes
@@ -198,6 +198,15 @@ class PinAdded:
 
 
 @dataclass(frozen=True, slots=True)
+class PinsRestored:
+    """loop.pin.restored: a resume/fork leg restored the snapshot's pins. The
+    full list replaces the fold's pins (a plain resume's log already carries
+    the pin.added events; a fork's fresh log carries only this)."""
+
+    pins: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CompactDropped:
     """loop.compact.dropped: tier-1 elision, with the elided call identities."""
 
@@ -211,6 +220,12 @@ class CompactGists:
 
     gisted: int
     demoted: int
+
+
+@dataclass(frozen=True, slots=True)
+class CompactSummarised:
+    """loop.compact.summarise.done: a tier-2 restart replaced the history (and
+    with it every elision marker and gist the context held)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,8 +268,10 @@ Event = (
     | QuestionPrompt
     | QuestionAnswer
     | PinAdded
+    | PinsRestored
     | CompactDropped
     | CompactGists
+    | CompactSummarised
     | SteerRequested
     | RunEnd
     | RawEvent
@@ -366,6 +383,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return QuestionAnswer(id=str(raw.get("id", "")), answers=answers)
         case "loop.pin.added":
             return PinAdded(text=str(raw.get("text", "")))
+        case "loop.pin.restored":
+            raw_pins = raw.get("pins", ()) or ()
+            pins = tuple(str(x) for x in raw_pins) if isinstance(raw_pins, (list, tuple)) else ()
+            return PinsRestored(pins=pins)
         case "loop.compact.dropped":
             raw_calls = raw.get("calls", ()) or ()
             calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()
@@ -374,6 +395,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return CompactGists(
                 gisted=_as_int(raw.get("gisted")), demoted=_as_int(raw.get("demoted"))
             )
+        case "loop.compact.summarise.done":
+            return CompactSummarised()
         case "run.steer_requested":
             return SteerRequested()
         case "run.end":

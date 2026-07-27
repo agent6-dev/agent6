@@ -163,9 +163,9 @@ class RunState:
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to pop a steer modal exactly once per press.
     steer_requests: int = 0
-    # Context-compaction truth for the status surfaces: cumulative tool_results
-    # elided from the model's context, and gists currently held (created minus
-    # demoted -- a demoted gist is back to a bare marker).
+    # Context-compaction truth for the status surfaces: elision markers and
+    # live gists in the CURRENT context (a demoted gist is back to a bare
+    # marker; a tier-2 restart wipes every marker, so both reset there).
     compact_elided: int = 0
     compact_gists_live: int = 0
     # Operator /pin instructions recorded so far (loop.pin.added), most-recent-last.
@@ -431,12 +431,18 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case events.PinAdded(text=text):
             return replace(state, pins=(*state.pins, text))
 
+        case events.PinsRestored(pins=pins):
+            return replace(state, pins=pins)
+
         case events.CompactDropped(n=n):
             return replace(state, compact_elided=state.compact_elided + n)
 
         case events.CompactGists(gisted=gisted, demoted=demoted):
             live = max(0, state.compact_gists_live + gisted - demoted)
             return replace(state, compact_gists_live=live)
+
+        case events.CompactSummarised():
+            return replace(state, compact_elided=0, compact_gists_live=0)
 
         case events.SteerRequested():
             return replace(state, steer_requests=state.steer_requests + 1)
@@ -569,6 +575,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"pinned ({event.get('chars')} chars): {str(event.get('text', ''))[:80]}"
         case "loop.pin.refused":
             salient = f"pin refused: over the {event.get('limit')}-char cap"
+        case "loop.pin.restored":
+            salient = f"{event.get('count')} pinned instructions restored from the snapshot"
         case "loop.compact.dropped":
             calls = event.get("calls", []) or []
             named = ", ".join(str(c) for c in calls)

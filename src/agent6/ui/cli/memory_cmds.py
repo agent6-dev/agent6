@@ -45,8 +45,13 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     shown = [e for e in entries if include_invalidated or e.is_active]
+    # The block trims across ALL scopes, so the over-cap warning must too --
+    # a --scope listing would otherwise miss a global overflow.
+    everything = entries if scope is None else memory_list(_state_dir(Path.cwd()), None)
     pinned_cost = sum(
-        min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48 for e in entries if e.pinned and e.is_active
+        min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
+        for e in everything
+        if e.pinned and e.is_active
     )
     if pinned_cost > MEMORIES_MAX_CHARS:
         print(

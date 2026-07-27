@@ -98,3 +98,6 @@ def test_list_warns_when_pins_exceed_the_block_cap(
     out = capsys.readouterr().out
     assert "exceed the memory block cap" in out
     assert "oldest pinned" in out
+    # The cap is global: a scope-filtered listing must still warn.
+    assert _cmd_memory_list("decisions", include_invalidated=False) == 0
+    assert "exceed the memory block cap" in capsys.readouterr().out

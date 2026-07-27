@@ -740,23 +740,23 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     """The Run menu's "Compact context now" drops the compact.request marker for
     the run to honor at its next boundary; a finished run refuses (nothing to
     compact)."""
-    from agent6.runs.ipc import compact_request_pending
+    from agent6.runs.ipc import read_compact_request
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            assert not compact_request_pending(tmp_path)
+            assert read_compact_request(tmp_path) is None
             app.action_compact()
             await pilot.pause()
-            assert compact_request_pending(tmp_path)  # marker dropped for the run
+            assert read_compact_request(tmp_path) is not None  # marker dropped for the run
             # A finished run: the action refuses instead of dropping a marker.
             (tmp_path / "compact.request").unlink()
             app._handle_event(_ev(type="run.end", reason="completed", all_passed=True))
             app.action_compact()
             await pilot.pause()
-            assert not compact_request_pending(tmp_path)
+            assert read_compact_request(tmp_path) is None
 
     asyncio.run(scenario())
 

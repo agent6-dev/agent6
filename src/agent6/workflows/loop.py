@@ -885,6 +885,11 @@ class Workflow:
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
         if resume_from is not None:
             _restore_completion_state(state, resume_from)
+            if state.pins:
+                # Re-announce restored pins for the read model: a fork's fresh
+                # logs.jsonl has no pin.added events to fold (the fold REPLACES
+                # on this event, so a plain resume never double-counts).
+                self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
             # A resume seeded with `--steer` queues the operator's follow-up
@@ -3848,8 +3853,9 @@ class Workflow:
             )
             self._emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
             conversation.notice(
-                "OPERATOR STEERING (mid-run instruction; "
-                "incorporate this into your next step):\n"
+                f"OPERATOR STEERING (pin refused: the {PINS_MAX_CHARS}-char pin cap "
+                "is full, so this is an ordinary instruction that will NOT survive "
+                "context compaction; incorporate it into your next step):\n"
                 f"{instruction}"
             )
             return True

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -222,17 +223,21 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
     """Marker text when old tool_results were mutated into elision placeholders
     between two request snapshots, or "" when none were. The conversation view
     keeps showing the original results; this line is the truth about what the
-    MODEL still sees. Compares by identity, not placeholder bytes, so a gist
-    demoting to the bare marker is not re-reported as a fresh elision."""
+    MODEL still sees. Compares identity COUNTS, not placeholder bytes: a gist
+    demoting to the bare marker is not re-reported, while a second result of
+    the same identity elided in a later pass still is."""
     labels: list[str] = []
     for i in range(min(upto, len(prev), len(msgs))):
         cur_m, prev_m = msgs[i], prev[i]
         if not isinstance(cur_m, dict) or not isinstance(prev_m, dict):
             continue
-        before = {_elision_identity(s) for s in _elided_strings(prev_m)}
-        labels.extend(
-            _elision_label(s) for s in _elided_strings(cur_m) if _elision_identity(s) not in before
-        )
+        before = Counter(_elision_identity(s) for s in _elided_strings(prev_m))
+        for s in _elided_strings(cur_m):
+            ident = _elision_identity(s)
+            if before[ident] > 0:
+                before[ident] -= 1
+            else:
+                labels.append(_elision_label(s))
     if not labels:
         return ""
     shown = ", ".join(labels[:6]) + (f", +{len(labels) - 6} more" if len(labels) > 6 else "")

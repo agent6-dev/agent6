@@ -145,9 +145,12 @@ class CompactionStats:
 
 
 def elision_gist_placeholder(path: str, gist: str) -> str:
-    """Tier-1 placeholder that keeps a distilled gist of the elided read."""
+    """Tier-1 placeholder that keeps a distilled gist of the elided read. Names
+    the call through ``call_label`` so the gist and bare markers carry the SAME
+    identity (the conversation differ dedupes a gist->bare demotion on it)."""
+    described = call_label("read_file", {"path": path})
     return (
-        f"{ELISION_GIST_PREFIX}: the result of read_file {path} was replaced "
+        f"{ELISION_GIST_PREFIX}: the result of {described} was replaced "
         f"by this distilled gist; if the gist is not enough, re-read only "
         f"the part you need (read_file with a targeted offset/limit).\ngist: {gist}>"
     )

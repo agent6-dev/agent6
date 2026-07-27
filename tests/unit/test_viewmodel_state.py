@@ -524,8 +524,8 @@ def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
 
 
 def test_compaction_events_fold_into_elision_counters() -> None:
-    """/status truth source: cumulative elided count, LIVE gist count (a demoted
-    gist is no longer held as a gist)."""
+    """/status truth source: counts of elided markers / live gists in the
+    CURRENT context (a demoted gist is no longer held as a gist)."""
     s = initial_state()
     s = apply_event(
         s, {"type": "loop.compact.dropped", "n": 3, "calls": ["read_file a.py", "grep 'q'"]}
@@ -573,3 +573,40 @@ def test_pin_added_events_accumulate() -> None:
     )
     s = apply_event(s, {"type": "loop.pin.added", "text": "ship X first", "chars": 12, "count": 2})
     assert s.pins == ("never touch schema", "ship X first")
+
+
+def test_tier2_restart_resets_elision_counters() -> None:
+    """A summarise-and-restart wipes every elision marker and gist from the
+    model's context; the /status counters must reset with it or the surface
+    claims markers the model no longer holds."""
+    s = initial_state()
+    s = apply_event(s, {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]})
+    s = apply_event(
+        s,
+        {
+            "type": "loop.compact.gists",
+            "gisted": 3,
+            "demoted": 0,
+            "paths": ["a.py", "b.py", "c.py"],
+            "demoted_paths": [],
+        },
+    )
+    s = apply_event(
+        s, {"type": "loop.compact.summarise.done", "summary_chars": 900, "summary": "s"}
+    )
+    assert s.compact_elided == 0
+    assert s.compact_gists_live == 0
+
+
+def test_pins_restored_event_replaces_not_appends() -> None:
+    """loop.pin.restored carries the full restored list: a plain resume (whose
+    log already holds the pin.added events) must not double-count, and a fork
+    (fresh log, snapshot-only pins) must show them at all."""
+    s = initial_state()
+    s = apply_event(s, {"type": "loop.pin.added", "text": "keep A", "chars": 6, "count": 1})
+    s = apply_event(s, {"type": "loop.pin.restored", "pins": ["keep A"], "count": 1})
+    assert s.pins == ("keep A",)  # replace, not append
+    fork = apply_event(
+        initial_state(), {"type": "loop.pin.restored", "pins": ["keep A", "ship X"], "count": 2}
+    )
+    assert fork.pins == ("keep A", "ship X")

@@ -453,10 +453,6 @@ def read_compact_request(run_dir: Path) -> str | None:
         return None
 
 
-def compact_request_pending(run_dir: Path) -> bool:
-    return (run_dir / COMPACT_REQUEST_FILE).exists()
-
-
 def clear_compact_request(run_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
         (run_dir / COMPACT_REQUEST_FILE).unlink()
