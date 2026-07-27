@@ -434,3 +434,24 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
     t2.join(timeout=15)
     assert errors == []
     assert (d / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+
+
+def test_status_ambiguous_prefix_names_the_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ambiguous id prefix must say so and name the matches, as `attach` and
+    `runs stop` do. `runs show` swallowed the resolver's error and printed
+    "no run matches 't'" -- telling the operator no such run exists while two
+    did."""
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    sibling = d.parent / "winsome-dusk-AAAAAA"
+    sibling.mkdir()
+    (sibling / "logs.jsonl").write_text(
+        json.dumps({"ts": _ts(9), "type": "run.start", "mode": "run"}) + "\n", encoding="utf-8"
+    )
+
+    assert _cmd_status("winsome-d") == 2
+    err = capsys.readouterr().err
+    assert "ambiguous" in err
+    assert "winsome-dawn-YWH5ZS" in err and "winsome-dusk-AAAAAA" in err
+    assert "no run matches" not in err

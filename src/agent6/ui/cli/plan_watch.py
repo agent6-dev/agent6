@@ -239,7 +239,15 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     last event, current iteration, and elapsed time from logs.jsonl. For a quick
     or scripted check; `agent6 attach` is the live follower.
     """
-    target = _resolve_run_dir(Path.cwd(), run_id)
+    try:
+        layout = resolve_or_newest_layout(Path.cwd(), run_id)
+    except RunIdError as exc:
+        # An ambiguous prefix names its candidates (as attach and runs stop do);
+        # swallowing it printed "no run matches <id>", which is false when
+        # several do.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    target = layout.run_dir if layout is not None else None
     if target is None or not target.is_dir():
         print_no_run_match(run_id, _state_dir(Path.cwd()))
         return 2
