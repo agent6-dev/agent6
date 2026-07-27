@@ -1175,6 +1175,12 @@ class Workflow:
                 state.tool_error_nudges_used = 0
                 state.last_error_was_denial = False
                 self._note_jail_exec_failure(state, turn, name, tool_input, result)
+                # Only a DISPATCHED finish counts: a refused finish tool (mode
+                # backstop, schema error) is an error result the model recovers
+                # from, and capturing it ended the run through a tool that
+                # never ran -- a hallucinated finish_planning in run mode even
+                # ended it all_passed=True.
+                self._capture_finish(turn, name, tool_input)
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._maybe_tool_error_ladder(state, turn)
@@ -1191,7 +1197,6 @@ class Workflow:
                     for_call=tu,
                 )
             )
-            self._capture_finish(turn, name, tool_input)
         return None
 
     def _note_verify_result(self, state: _LoopState, turn: _TurnState, result: ExecResult) -> None:

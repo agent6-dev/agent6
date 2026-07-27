@@ -5635,3 +5635,36 @@ def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
     (tmp_path / "AGENTS.md").write_bytes(b"Style: use \x93smart quotes\x94\n")
     summary = load_repo_summary(tmp_path)
     assert "smart quotes" in summary.agents_md  # lossy, present, no crash
+
+
+def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
+    """A finish tool the dispatcher REFUSED (ToolError -- e.g. a hallucinated
+    finish_planning in run mode, which the mode backstop blocks) must not be
+    captured as a finish signal: the refusal is an error tool_result the model
+    reads and recovers from. Capturing it anyway ended the run completed=True
+    -- for finish_planning even all_passed=True -- bypassing every finish
+    gate."""
+    from agent6.tools.dispatch import ToolError
+    from agent6.workflows._conversation import ToolUse
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch.side_effect = ToolError("finish_planning is not available in run mode")
+    wf = _wf(mode="run", dispatcher=dispatcher)
+    turn = _TurnState(
+        iteration=1,
+        resp=MagicMock(),
+        assistant=AssistantTurn(
+            raw_content=(),
+            tool_uses=(
+                ToolUse(
+                    id="tu1",
+                    name="finish_planning",
+                    input={"summary": "all done", "plan_markdown": "# x"},
+                ),
+            ),
+        ),
+    )
+    out = wf._turn_dispatch_tools(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+    assert out is None  # the refusal is served as an error result, not an abort
+    assert turn.finish_signal is None  # and never captured as a finish
