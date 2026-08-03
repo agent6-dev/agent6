@@ -509,3 +509,24 @@ def test_coauthor_is_gone(iso: Path, capsys: pytest.CaptureFixture[str]) -> None
     """Replaced by the trailer format string; no migration, pre-1.0."""
     assert _refuse(["config", "set", "git.commit.coauthor", "A <a@b>"]) == 2
     assert "trailer" in capsys.readouterr().err  # the did-you-mean points at it
+
+
+def test_the_paired_context_thresholds_are_settable_together(iso: Path) -> None:
+    """Both leaves must move together, so neither can be set alone. The
+    inline-table form writes the pair in ONE validated upsert."""
+    inline = "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
+    assert _run(["config", "set", "context", inline]) == 0
+    ctx = _global_toml(iso)["context"]
+    assert isinstance(ctx, dict)
+    assert ctx == {"drop_at_chars": 200000, "summarise_at_chars": 400000}
+
+
+def test_setting_one_threshold_names_the_command_that_works(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal that does not name the working form leaves the operator with
+    no way in: both single-leaf orderings refuse."""
+    assert _refuse(["config", "set", "context.drop_at_chars", "200000"]) == 2
+    err = capsys.readouterr().err
+    assert "config set context '{ drop_at_chars =" in err
+    assert "summarise_at_chars =" in err

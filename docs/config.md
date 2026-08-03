@@ -30,6 +30,12 @@ table below), so a repo needs nothing repo-specific to run.
   inferred from the repo, adds `.gitignore` entries, and creates/updates
   `AGENTS.md` -- each step asks first and never overwrites your files.
 - `agent6 config show`: every effective value and which layer set it.
+- A leaf whose value must move with a sibling (the `[context]` compaction
+  thresholds) is set as one inline table on the section key:
+  `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
+  The pair is written and validated in one edit, so a half-set config never
+  lands; the same form works for any section (`workflow.metric`, a provider
+  entry).
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
   (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay). Every edit is
   re-validated and rolled back if it would produce an invalid config. Edits

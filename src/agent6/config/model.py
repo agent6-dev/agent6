@@ -655,7 +655,9 @@ class ContextConfig(BaseModel):
             raise ValueError(
                 "set BOTH context.drop_at_chars and"
                 " summarise_at_chars, or NEITHER (neither == adaptive,"
-                " sized from the worker model's context window)."
+                " sized from the worker model's context window). Both at once:"
+                " agent6 config set context"
+                " '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'"
             )
         if drop is not None and summarise is not None and summarise <= drop:
             raise ValueError(
