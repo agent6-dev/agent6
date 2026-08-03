@@ -210,14 +210,14 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     """The app layer emits session.end reason="interrupted" on KeyboardInterrupt;
-    the value must live in RunReason (the wire vocabulary of session.end.reason).
+    the value must live in SessionEndReason (the wire vocabulary of session.end.reason).
     The raw token IS the accepted done-line rendering (it reads fine; the
     label map exists only for unfriendly tokens like steer_abort)."""
     from typing import get_args
 
-    from agent6.workflows._run_state import RunReason
+    from agent6.workflows._session_state import SessionEndReason
 
-    assert "interrupted" in get_args(RunReason)
+    assert "interrupted" in get_args(SessionEndReason)
     (done,) = fold_transcript(
         [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
     )

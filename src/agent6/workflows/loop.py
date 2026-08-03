@@ -194,13 +194,13 @@ from agent6.workflows._provider_call import (
     provider_error_hint,
 )
 from agent6.workflows._review import ReviewDispatch, ReviewSeat, run_panel
-from agent6.workflows._run_state import (
+from agent6.workflows._session_state import (
     ResumeError,
-    RunReason,
-    RunResult,
-    RunSnapshot,
+    SessionEndReason,
+    SessionResult,
+    SessionSnapshot,
     Verification,
-    load_run_snapshot,
+    load_session_snapshot,
 )
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
@@ -392,12 +392,12 @@ class _LoopState:
     pins: list[str] = field(default_factory=list)
 
 
-def _restore_completion_state(state: _LoopState, snap: RunSnapshot) -> None:
+def _restore_completion_state(state: _LoopState, snap: SessionSnapshot) -> None:
     """Carry a resume snapshot's completion-relevant bookkeeping into fresh loop
     state, so the review gate-disarm, metric, and verify-settled stop logic don't
     regress to zero after a resume (re-rejecting a correct finish_run, re-counting
     idle). A fresh run() never calls this and keeps _LoopState's defaults. Adding a
-    persisted completion field is one field on RunSnapshot plus one line here."""
+    persisted completion field is one field on SessionSnapshot plus one line here."""
     state.review_rejections_total = snap.review_rejections_total
     state.verify_ever_passed = snap.verify_ever_passed
     state.gateless_ever_committed = snap.gateless_ever_committed
@@ -703,7 +703,7 @@ class Workflow:
     # the loop's own session.end emitters use.
     iterations_reached: int = field(default=0, init=False)
 
-    def run(self, user_task: str) -> RunResult:
+    def run(self, user_task: str) -> SessionResult:
         """Drive the single-loop agent to completion."""
         self.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
@@ -734,7 +734,7 @@ class Workflow:
                 iterations=0,
                 all_passed=False,
             )
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="prompt_revision_failed",
                 summary=str(exc),
@@ -797,7 +797,7 @@ class Workflow:
             original_task=effective_task,
         )
 
-    def resume(self) -> RunResult:
+    def resume(self) -> SessionResult:
         """Resume a paused/crashed run from its snapshot.
 
         Reads ``self.resume_state_path`` (the snapshot written by the
@@ -812,7 +812,7 @@ class Workflow:
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
-            snapshot = load_run_snapshot(self.resume_state_path)
+            snapshot = load_session_snapshot(self.resume_state_path)
             conversation = Conversation.from_wire(snapshot.messages)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ResumeError(
@@ -864,7 +864,7 @@ class Workflow:
         )
 
     def _seed_carryover(
-        self, state: _LoopState, conversation: Conversation, resume_from: RunSnapshot | None
+        self, state: _LoopState, conversation: Conversation, resume_from: SessionSnapshot | None
     ) -> None:
         """Seed the leg's carried state and announce it for the read model.
 
@@ -906,11 +906,11 @@ class Workflow:
         start_iteration: int,
         root_task_id: str | None,
         original_task: str,
-        resume_from: RunSnapshot | None = None,
-    ) -> RunResult:
+        resume_from: SessionSnapshot | None = None,
+    ) -> SessionResult:
         """Shared loop body for both fresh ``run()`` and ``resume()``: one
         ``_TurnState`` per tool-use iteration, driven through the turn phases
-        in order. Any phase returning a RunResult ends the run.
+        in order. Any phase returning a SessionResult ends the run.
 
         ``original_task`` is the exact task string (in-loop critic calls ground
         on it): run() threads it straight through, resume() reads it verbatim
@@ -961,7 +961,7 @@ class Workflow:
                 state,
                 iteration=iteration,
             )
-            if isinstance(got, RunResult):
+            if isinstance(got, SessionResult):
                 return got
             if isinstance(got, _NextTurn):
                 continue
@@ -1040,7 +1040,7 @@ class Workflow:
             iterations=self.max_iterations,
             all_passed=False,
         )
-        return RunResult(
+        return SessionResult(
             completed=False,
             reason="max_iterations",
             summary=f"max_iterations={self.max_iterations} reached without finish_run",
@@ -1096,9 +1096,9 @@ class Workflow:
         state: _LoopState,
         *,
         iteration: int,
-    ) -> RunResult | _NextTurn | ProviderResponse:
+    ) -> SessionResult | _NextTurn | ProviderResponse:
         """One worker call with terminal-error classification. Returns the
-        provider response on success, a RunResult to end the run, or
+        provider response on success, a SessionResult to end the run, or
         ``_NEXT_TURN`` when a mid-stream steer discarded the turn (the menu
         chose continue, or injected an instruction, so the turn is re-done).
         ``wire`` is the pre-call serialization (already snapshotted); the
@@ -1119,7 +1119,7 @@ class Workflow:
                 iterations=iteration,
                 all_passed=False,
             )
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="budget_exhausted",
                 summary=f"budget exhausted at iter {iteration}: {exc}",
@@ -1130,7 +1130,7 @@ class Workflow:
             self.steer_clear()  # consume the stop; don't leave it on disk to re-read
             self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
             self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="steer_abort",
                 summary=f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
@@ -1162,7 +1162,7 @@ class Workflow:
                 all_passed=False,
             )
             status = f" (HTTP {exc.status_code})" if exc.status_code else ""
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="provider_error",
                 summary=f"provider error at iter {iteration}{status}{hint}",
@@ -1170,10 +1170,10 @@ class Workflow:
                 tool_calls=state.tool_calls,
             )
 
-    def _turn_dispatch_tools(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+    def _turn_dispatch_tools(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
         """Dispatch each tool_use in the turn, appending one tool_result per
         call and noting effects (verify / metric / edits / DAG / finish) on
-        ``turn``. Returns a RunResult only for the unexecutable-operator-
+        ``turn``. Returns a SessionResult only for the unexecutable-operator-
         command abort; tool errors become error tool_results instead."""
         # This iteration produced tool_uses, so the went_quiet
         # nudge budget refills (failures are per-streak, not per-run).
@@ -1507,7 +1507,9 @@ class Workflow:
             )
         )
 
-    def _turn_auto_commit_and_metric(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+    def _turn_auto_commit_and_metric(
+        self, state: _LoopState, turn: _TurnState
+    ) -> SessionResult | None:
         """Auto-commit the turn's work, then take the automatic metric sample.
 
         With a verify command, commits are gated on a green verify (the agent
@@ -1521,7 +1523,7 @@ class Workflow:
         don't abort the run; the catch includes OSError so a transient FS
         hiccup doesn't kill an otherwise-fine run.
 
-        Returns a RunResult for the REPL hook's "stop" directive or an
+        Returns a SessionResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
         gateless = not self.config.workflow.verify_command
         gateless_changed = gateless and (turn.edited or self._worktree_dirty())
@@ -1568,7 +1570,7 @@ class Workflow:
                     iterations=turn.iteration,
                     all_passed=False,
                 )
-                return RunResult(
+                return SessionResult(
                     completed=True,
                     verified=self._verification(state),
                     reason="interactive_stop",
@@ -2171,7 +2173,7 @@ class Workflow:
 
     def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
         self, state: _LoopState, turn: _TurnState
-    ) -> RunResult | None:
+    ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         ``messages`` and the post-tools snapshot is written, in precedence
         order: verify-settled stop, metric-plateau stop, loop-guard kill, then
@@ -2187,7 +2189,7 @@ class Workflow:
                 iterations=turn.iteration,
                 all_passed=False,
             )
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="tool_error_stuck",
                 summary=(
@@ -2211,7 +2213,7 @@ class Workflow:
                 iterations=turn.iteration,
                 all_passed=False,
             )
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="no_progress",
                 summary=(
@@ -2234,7 +2236,7 @@ class Workflow:
             # cannot disagree).
             if state.verify_ever_passed and self._tree_is_verify_green(state) is not False:
                 self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
-                return RunResult(
+                return SessionResult(
                     completed=True,
                     verified=self._verification(state),
                     reason="verify_settled",
@@ -2261,7 +2263,7 @@ class Workflow:
                 summary = (
                     "the worker settled after committing work; no verify command existed to gate it"
                 )
-            return RunResult(
+            return SessionResult(
                 completed=True,
                 verified=self._verification(state),
                 reason="settled",
@@ -2279,7 +2281,7 @@ class Workflow:
             self._emit_run_end_grounded(
                 reason="metric_plateau", iteration=turn.iteration, state=state
             )
-            return RunResult(
+            return SessionResult(
                 completed=True,
                 verified=self._verification(state),
                 reason="metric_plateau",
@@ -2313,7 +2315,7 @@ class Workflow:
                 tool=latched_name,
                 streak=state.repeat_streak,
             )
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="loop_guard_killed",
                 summary=(
@@ -2337,7 +2339,7 @@ class Workflow:
                 self._emit_run_end_grounded(reason=reason, iteration=turn.iteration, state=state)
             else:
                 self._emit_run_end_passed(reason=reason, iterations=turn.iteration)
-            return RunResult(
+            return SessionResult(
                 completed=True,
                 verified=self._verification(state),
                 reason=reason,
@@ -2502,10 +2504,10 @@ class Workflow:
         state: _LoopState,
         *,
         iteration: int,
-    ) -> RunResult | None:
+    ) -> SessionResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
         emitted text; gated like an explicit finish_run) or went-quiet (an
-        empty turn; nudged up to a cap). Returns a terminal RunResult, or None
+        empty turn; nudged up to a cap). Returns a terminal SessionResult, or None
         to continue the loop after appending a nudge.
 
         Distinguishing the two matters: "agent talked then stopped" is likely
@@ -2527,11 +2529,11 @@ class Workflow:
 
     def _handle_silent_finish(
         self, text: str, conversation: Conversation, state: _LoopState, *, iteration: int
-    ) -> RunResult | None:
+    ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
         it through the same gates as an explicit finish_run. Returns None (with
         a nudge appended to the conversation) when a gate sends the worker back to
-        work; the silent_finish RunResult once every gate lets it through."""
+        work; the silent_finish SessionResult once every gate lets it through."""
         # An EARLY prose turn on an untouched tree is a stall, not an
         # implicit finish (observed: kimi answering a SWE-bench problem in
         # prose at iteration 2, ending the run patchless). Bounded to the
@@ -2631,7 +2633,7 @@ class Workflow:
         # answer IS the text), so end as "answered", not "silent_finish" -- the
         # latter read as a failure diagnostic on a perfectly good answer. run/plan
         # keep silent_finish: there, stopping without finish_run is mildly anomalous.
-        reason: RunReason = "answered" if self.mode == "ask" else "silent_finish"
+        reason: SessionEndReason = "answered" if self.mode == "ask" else "silent_finish"
         if self.mode == "ask":
             self._log(f"  ask answered at iter {iteration}")
         else:
@@ -2647,7 +2649,7 @@ class Workflow:
             self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
         else:
             self._emit_run_end_passed(reason=reason, iterations=iteration)
-        return RunResult(
+        return SessionResult(
             completed=True,
             verified=self._verification(state),
             reason=reason,
@@ -2715,7 +2717,7 @@ class Workflow:
         state: _LoopState,
         *,
         iteration: int,
-    ) -> RunResult | None:
+    ) -> SessionResult | None:
         """A fully-empty turn (no text, no tool_use): surface reasoning
         starvation explicitly, then nudge-and-retry up to the per-streak cap
         before ending the run as went_quiet.
@@ -2805,7 +2807,7 @@ class Workflow:
             iterations=iteration,
             all_passed=False,
         )
-        return RunResult(
+        return SessionResult(
             completed=False,
             reason="went_quiet",
             summary="(agent emitted no text and no tool_use)",
@@ -2931,7 +2933,7 @@ class Workflow:
             self._emit_graph_snapshot()
 
     def _verification(self, state: _LoopState) -> Verification:
-        """The verify verdict for the RunResult, from the same tri-state
+        """The verify verdict for the SessionResult, from the same tri-state
         `session.end.all_passed` is grounded on, so the result and the event can
         never disagree.
 
@@ -2962,7 +2964,7 @@ class Workflow:
             return None
         return state.last_verify_ok is True and not state.edited_since_verify
 
-    def _finish_reason(self, turn: _TurnState, state: _LoopState) -> RunReason:
+    def _finish_reason(self, turn: _TurnState, state: _LoopState) -> SessionEndReason:
         """What this finish is called.
 
         `gate_stale` needs a gate that is actually RED. Green means it passed,
@@ -3104,7 +3106,7 @@ class Workflow:
             return
         goal = metric_goal(self.config.workflow.metric)
         best = best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
-        snapshot = RunSnapshot(
+        snapshot = SessionSnapshot(
             system=system,
             messages=messages,
             tool_calls=tool_calls,
@@ -3269,7 +3271,7 @@ class Workflow:
 
     def _unexecutable_abort(
         self, exc: OperatorCommandUnexecutable, *, iteration: int, tool_calls: int
-    ) -> RunResult:
+    ) -> SessionResult:
         """Graceful abort when an operator verify/metric command cannot run in
         the jail (e.g. its binary is not on the jail PATH). The model cannot fix
         operator config, so stop loudly rather than flail against a gate that
@@ -3287,7 +3289,7 @@ class Workflow:
             iterations=iteration,
             all_passed=False,
         )
-        return RunResult(
+        return SessionResult(
             completed=False,
             reason="verify_command_unexecutable",
             summary=str(exc),
@@ -3982,7 +3984,7 @@ class Workflow:
 
     def _operator_boundary(
         self, conversation: Conversation, iteration: int, state: _LoopState
-    ) -> RunResult | None:
+    ) -> SessionResult | None:
         """The end-of-iteration operator-control boundary, run after EVERY
         completed iteration (tool turns and prose turns alike): honor a
         pending "stop after this step" marker, then poll the steering flag.
@@ -3993,7 +3995,7 @@ class Workflow:
             self.stop_clear()
             self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
             self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="steer_abort",
                 summary=(
@@ -4011,12 +4013,12 @@ class Workflow:
 
     def _steer_outcome(
         self, steer_result: str | None, iteration: int, state: _LoopState
-    ) -> RunResult | None:
-        """Map a _maybe_handle_steer result to a terminal RunResult, or None to keep
+    ) -> SessionResult | None:
+        """Map a _maybe_handle_steer result to a terminal SessionResult, or None to keep
         going (empty steer, or an instruction injected into messages)."""
         if steer_result == "abort":
             self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="steer_abort",
                 summary=(
@@ -4030,7 +4032,7 @@ class Workflow:
             # Not an end: the caller respawns a detached `resume` that appends to this
             # same log, so a persistent viewer follows straight through (no session.end).
             # The per-iteration snapshot is the resume point.
-            return RunResult(
+            return SessionResult(
                 completed=False,
                 reason="detached",
                 summary=f"operator detached at iter {iteration}; resuming in the background",

@@ -174,15 +174,15 @@ def test_ask_repl_multi_turn_carries_context(
 
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import run_ask_repl as _run_ask_repl
-    from agent6.workflows.loop import RunResult
+    from agent6.workflows.loop import SessionResult
 
     class _FakeWf:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def run(self, q: str) -> RunResult:
+        def run(self, q: str) -> SessionResult:
             self.calls.append(q)
-            return RunResult(
+            return SessionResult(
                 completed=True,
                 reason="silent_finish",
                 summary=f"answer-{len(self.calls)}",

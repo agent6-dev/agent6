@@ -96,8 +96,8 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
-from agent6.workflows._run_state import RunReason, load_run_snapshot
-from agent6.workflows.loop import ResumeError, RunResult, Workflow
+from agent6.workflows._session_state import SessionEndReason, load_session_snapshot
+from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
 
 def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
@@ -189,7 +189,7 @@ def snapshot_head_mismatch(
         loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             # Raw single-key peek (must not raise); "head_sha" is
-            # RunSnapshot.head_sha -- keep in sync on a field rename.
+            # SessionSnapshot.head_sha -- keep in sync on a field rename.
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None
@@ -315,7 +315,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     repo_lock_fd: int | None = None
     # Bound before the lock scope so the teardown can report on the leg.
-    result: RunResult | None = None
+    result: SessionResult | None = None
     isolation: IsolationLevel | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
@@ -428,7 +428,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # not after a broker + preamble already printed. wf.resume() re-validates
         # the same snapshot; a corrupt/old file refuses identically here (exit 1).
         try:
-            snapshot = load_run_snapshot(snapshot_path)
+            snapshot = load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
@@ -690,7 +690,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err("\n[agent6] resume interrupted")
                 # suppress: the interrupt exit (130 + resume hint) must not be
                 # masked by a dead journal.
-                reason: RunReason = "interrupted"
+                reason: SessionEndReason = "interrupted"
                 with contextlib.suppress(EventWriteError):
                     events.emit(
                         "session.end",

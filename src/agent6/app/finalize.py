@@ -34,7 +34,7 @@ from agent6.sessions.layout import LOGS_NAME, SessionLayout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import scan_session_log, summarize_session_dir
 from agent6.viewmodel.format import format_cost
-from agent6.workflows.loop import RunResult
+from agent6.workflows.loop import SessionResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
 # the cap and `agent6 resume`" apart from a genuine failure. Documented in
@@ -47,7 +47,7 @@ _EXIT_BUDGET_EXHAUSTED = 3
 _EXIT_VERIFY_FAILED = 4
 
 
-def session_exit_code(result: RunResult) -> int:
+def session_exit_code(result: SessionResult) -> int:
     """Map a finished run to its process exit code.
 
     0 finished (nothing to gate on, or the gate was green) / 3 budget /
@@ -96,7 +96,7 @@ def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
 
 
 def _print_unknown_baseline(
-    result: RunResult, *, layout: SessionLayout, reporter: Reporter
+    result: SessionResult, *, layout: SessionLayout, reporter: Reporter
 ) -> None:
     """On a red gate nothing observed at the base, say so and name the check.
 
@@ -128,7 +128,7 @@ def _print_unknown_baseline(
     reporter.out(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
-def _print_stale_gate(result: RunResult, *, reporter: Reporter) -> None:
+def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     """Surface a proposed gate replacement, and say plainly that nothing moved.
 
     The worker may declare the configured gate stale instead of reverting
@@ -147,7 +147,7 @@ def _print_stale_gate(result: RunResult, *, reporter: Reporter) -> None:
 
 
 def print_session_end(
-    result: RunResult,
+    result: SessionResult,
     *,
     layout: SessionLayout,
     budget: BudgetTracker,

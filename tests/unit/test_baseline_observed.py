@@ -172,9 +172,9 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
     """Attribution belongs in the word, not the exit code: a script reading 0
     would take it as a passing gate, and the tree is not green either way."""
     from agent6.app.finalize import session_exit_code
-    from agent6.workflows._run_state import RunResult
+    from agent6.workflows._session_state import SessionResult
 
-    inherited = RunResult(
+    inherited = SessionResult(
         completed=True,
         reason="gate_red_at_base",
         summary="s",

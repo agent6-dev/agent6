@@ -10,7 +10,7 @@ without anyone noticing it never appeared.
 
 from __future__ import annotations
 
-from typing import Any, get_args, get_origin
+from typing import Any
 
 import pytest
 from pydantic import BaseModel
@@ -52,13 +52,6 @@ def _leaf_paths(model: BaseModel, prefix: str = "") -> set[str]:
         else:
             leaves.add(path)
     return leaves
-
-
-def _optional_model(annotation: Any) -> bool:
-    return (
-        any(isinstance(arg, type) and issubclass(arg, BaseModel) for arg in get_args(annotation))
-        and get_origin(annotation) is not None
-    )
 
 
 def test_every_leaf_of_a_populated_config_is_rendered() -> None:

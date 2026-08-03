@@ -822,7 +822,7 @@ class _OneShotSteer:
 
 
 def _resume_snapshot(**kw: Any) -> Any:
-    from agent6.workflows._run_state import RunSnapshot
+    from agent6.workflows._session_state import SessionSnapshot
 
     defaults: dict[str, Any] = {
         "system": "system",
@@ -834,7 +834,7 @@ def _resume_snapshot(**kw: Any) -> Any:
         "verify_command": (),
     }
     defaults.update(kw)
-    return RunSnapshot(**defaults)
+    return SessionSnapshot(**defaults)
 
 
 def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
@@ -3575,7 +3575,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
 
 def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
     """Snapshot written by _save_resume_snapshot loads back identically."""
-    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
@@ -3592,7 +3592,7 @@ def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
         state=_state(tool_calls=3),
     )
     assert snap_path.is_file()
-    loaded = load_run_snapshot(snap_path)
+    loaded = load_session_snapshot(snap_path)
     assert loaded.system == "SYSTEM PROMPT"
     assert loaded.messages == msgs
     assert loaded.tool_calls == 3
@@ -3646,7 +3646,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
     import json as _json
 
-    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
@@ -3663,7 +3663,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="is version 999, not 2"):
-        load_run_snapshot(snap_path)
+        load_session_snapshot(snap_path)
 
 
 def test_resume_raises_when_path_unset() -> None:
@@ -3781,9 +3781,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
     # Snapshot must exist after the crash and be loadable.
     assert snap_path.is_file(), "snapshot must be written before every LLM call"
-    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_session_snapshot  # pyright: ignore[reportPrivateUsage]
 
-    snap = load_run_snapshot(snap_path)
+    snap = load_session_snapshot(snap_path)
     # The user's task message survived in the snapshot.
     user_text = "".join(
         block.get("text", "")
@@ -4073,7 +4073,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     """The snapshot stores the run's resolved verify_command so resume reuses it
     rather than re-inferring (which could diverge from the frozen prompt). A
     gateless run stores [] and loads back as ()."""
-    from agent6.workflows._run_state import load_run_snapshot
+    from agent6.workflows._session_state import load_session_snapshot
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
@@ -4089,13 +4089,13 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
-    assert load_run_snapshot(snap).verify_command == ("pytest", "-q")
+    assert load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
-    assert load_run_snapshot(snap).verify_command == ()
+    assert load_session_snapshot(snap).verify_command == ()
 
 
 def test_provider_error_hint_for_auth_and_quota() -> None:
@@ -4161,20 +4161,20 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
 
 
 def test_run_result_docstring_enumerates_every_loop_reason() -> None:
-    # RunResult.reason is a free-form str whose docstring is the enumeration
+    # SessionResult.reason is a free-form str whose docstring is the enumeration
     # operators grep against; it silently drifted to omit five reasons. Pin it
     # to the literal `reason=` values loop.py actually constructs.
     import ast
     import inspect
 
     import agent6.workflows.loop as loopmod
-    from agent6.workflows._run_state import RunResult
+    from agent6.workflows._session_state import SessionResult
 
     reasons: set[str] = set()
     for node in ast.walk(ast.parse(inspect.getsource(loopmod))):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
             continue
-        if node.func.id != "RunResult":
+        if node.func.id != "SessionResult":
             continue
         for kw in node.keywords:
             if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
@@ -4190,9 +4190,9 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
         "interactive_stop",
         "finish_planning",
     }  # the five the docstring omitted
-    doc = RunResult.__doc__ or ""
+    doc = SessionResult.__doc__ or ""
     undocumented = {r for r in reasons if r not in doc}
-    assert not undocumented, f"RunResult docstring omits reasons: {sorted(undocumented)}"
+    assert not undocumented, f"SessionResult docstring omits reasons: {sorted(undocumented)}"
 
 
 def test_question_nudge_then_accept(tmp_path: Path) -> None:

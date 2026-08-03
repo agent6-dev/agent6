@@ -133,7 +133,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
 
     from agent6.app import finalize
     from agent6.budget import BudgetTracker
-    from agent6.workflows._run_state import RunResult
+    from agent6.workflows._session_state import SessionResult
 
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
@@ -154,7 +154,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         encoding="utf-8",
     )
     finalize.print_session_end(
-        RunResult(
+        SessionResult(
             completed=True,
             reason="finish_run",
             summary="s",

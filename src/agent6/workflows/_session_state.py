@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""How a run ends and how it resumes: the RunResult the workflow returns, the
+"""How a session ends and how it resumes: the SessionResult the workflow returns, the
 ResumeError it raises, and the provider-agnostic resume snapshot written before
 each LLM call (load here; the loop owns saving it)."""
 
@@ -13,11 +13,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-# Every way a run can end. The loop constructs all of these except
+# Every way a session can end -- run, plan, ask alike, which is why the
+# reasons include finish_planning and answered. The loop constructs all of
+# these except
 # "ask_repl_empty" (an interactive ask session that ended before any question
 # was asked, ui/cli/_ask.py). Typed so a new outcome must be declared here
-# before a RunResult can carry it.
-RunReason = Literal[
+# before a SessionResult can carry it.
+SessionEndReason = Literal[
     "finish_run",
     "finish_planning",
     "answered",  # ask mode: the final prose IS the answer (a normal, successful end)
@@ -48,14 +50,14 @@ RunReason = Literal[
 # Whether the verify gate was green when the run ended, on its own axis: a
 # deliberate finish and a verified one are different facts, and collapsing them
 # into ``completed`` made a finish_run over a red verify exit 0 and auto-merge.
-# ``not_applicable`` covers both a gateless run (no verify_command) and a run
+# ``not_applicable`` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
 Verification = Literal["passed", "failed", "not_applicable"]
 
 
 @dataclass(frozen=True, slots=True)
-class RunResult:
-    """Final state of a run.
+class SessionResult:
+    """Final state of a session.
 
     ``reason`` values (each constructed in loop.py):
       finish_run        - agent called the finish_run tool explicitly.
@@ -98,7 +100,7 @@ class RunResult:
     """
 
     completed: bool
-    reason: RunReason
+    reason: SessionEndReason
     summary: str
     iterations: int
     tool_calls: int
@@ -117,14 +119,14 @@ class ResumeError(Exception):
 
 
 # Bump on ANY change to the persisted shape below. An in-flight run written by an
-# older agent6 then refuses to resume/fork loudly (see load_run_snapshot) rather
+# older agent6 then refuses to resume/fork loudly (see load_session_snapshot) rather
 # than parsing into a half-populated run. Finished runs never need a snapshot, so
 # they keep rendering across the bump.
 SNAPSHOT_VERSION = 2
 
 
-class RunSnapshot(BaseModel):
-    """The persisted state of an in-flight run: what ``resume`` re-enters and what
+class SessionSnapshot(BaseModel):
+    """The persisted state of an in-flight session: what ``resume`` re-enters and what
     ``fork`` clones. The loop writes it before each LLM call and again after each
     iteration's tools land, to ``loop_state.json`` and an append-only
     ``checkpoints/<NNNN>.json`` (identical bytes), so a crash resumes from the last
@@ -197,7 +199,7 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     return raw
 
 
-def load_run_snapshot(path: Path) -> RunSnapshot:
+def load_session_snapshot(path: Path) -> SessionSnapshot:
     """Load a persisted run-state snapshot (``loop_state.json`` or a checkpoint).
 
     Refuses a snapshot from before the current ``SNAPSHOT_VERSION`` loudly: an
@@ -212,6 +214,6 @@ def load_run_snapshot(path: Path) -> RunSnapshot:
             "run predates a state-format change and cannot be resumed or forked. Start a new run."
         )
     try:
-        return RunSnapshot.model_validate(raw)
+        return SessionSnapshot.model_validate(raw)
     except ValidationError as exc:
         raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc

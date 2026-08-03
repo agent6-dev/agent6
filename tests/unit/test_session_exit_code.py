@@ -10,14 +10,14 @@ completed=False is exit 1, a clean or ungated finish is 0.
 from __future__ import annotations
 
 from agent6.app.finalize import session_exit_code
-from agent6.workflows._run_state import RunReason, Verification
-from agent6.workflows.loop import RunResult
+from agent6.workflows._session_state import SessionEndReason, Verification
+from agent6.workflows.loop import SessionResult
 
 
 def _result(
-    *, completed: bool, reason: RunReason, verified: Verification = "not_applicable"
-) -> RunResult:
-    return RunResult(
+    *, completed: bool, reason: SessionEndReason, verified: Verification = "not_applicable"
+) -> SessionResult:
+    return SessionResult(
         completed=completed,
         reason=reason,
         summary="",

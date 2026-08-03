@@ -22,7 +22,7 @@ from agent6.ui.cli._common import (
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import first_task_line, newest_session_dir, session_mtime
 from agent6.workflows.loop import (
-    RunResult,
+    SessionResult,
     Workflow,
 )
 
@@ -276,7 +276,7 @@ def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str
 
 def run_ask_repl(
     wf: Workflow, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
-) -> RunResult:
+) -> SessionResult:
     """Interactive multi-turn ask. Each follow-up re-enters the loop with the
     prior Q&A carried as context, reusing the one provider/jail/budget setup.
     The agent re-reads what it needs per turn (prompt-cached); the conversation
@@ -287,7 +287,7 @@ def run_ask_repl(
     )
     conversation: list[tuple[str, str]] = []
     pending = first_question.strip()
-    result: RunResult | None = None
+    result: SessionResult | None = None
     while True:
         if pending:
             question = pending
@@ -325,7 +325,7 @@ def run_ask_repl(
             print("[agent6] budget exhausted; ending the REPL.", file=sys.stderr)
             break
     if result is None:
-        return RunResult(
+        return SessionResult(
             completed=True, reason="ask_repl_empty", summary="", iterations=0, tool_calls=0
         )
     return result

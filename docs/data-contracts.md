@@ -58,13 +58,13 @@ Read a run's manifest.json into the typed SessionManifest. The single reader + t
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/{sessions}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, sessions_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, policy, state}
 - **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (9 test files exercise it)
 
-## RunSnapshot
+## SessionSnapshot
 
-[`agent6.workflows._run_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_run_state.py) &middot; pydantic model
+[`agent6.workflows._session_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_session_state.py) &middot; pydantic model
 
-How a run ends and how it resumes: the RunResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
+How a session ends and how it resumes: the SessionResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
 
-**RunSnapshot** &mdash; The persisted state of an in-flight run: what `resume` re-enters and what `fork` clones.
+**SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
 
 | field | type | default |
 | --- | --- | --- |

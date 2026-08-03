@@ -29,7 +29,7 @@ from agent6.types import session_bucket
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
-from agent6.workflows._run_state import load_run_snapshot
+from agent6.workflows._session_state import load_session_snapshot
 from agent6.workflows.loop import (
     Workflow,
     _LoopState,  # pyright: ignore[reportPrivateUsage]
@@ -99,11 +99,11 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
 
-    loaded = load_run_snapshot(cp)
+    loaded = load_session_snapshot(cp)
     assert loaded.next_iteration == 3
     assert loaded.head_sha == head
     assert loaded.graph_version == 7
-    # loop_state.json holds the identical RunSnapshot bytes as the checkpoint.
+    # loop_state.json holds the identical SessionSnapshot bytes as the checkpoint.
     assert json.loads(snap.read_text())["head_sha"] == head
 
 
@@ -133,7 +133,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     cp_dir = session_dir / "checkpoints"
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
     # Turn 1's payload was not clobbered by later turns.
-    assert load_run_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
+    assert load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
 
 
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
@@ -150,10 +150,10 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
     for bad in ("null", "[]", '"x"'):
         cp.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            load_run_snapshot(cp)
+            load_session_snapshot(cp)
     cp.write_text(json.dumps({"version": 2}), encoding="utf-8")  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        load_run_snapshot(cp)
+        load_session_snapshot(cp)
 
 
 # --- fork command -----------------------------------------------------------
@@ -457,7 +457,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
     assert dst.session_dir.is_dir()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
-    seed = load_run_snapshot(dst.checkpoint_path(0))
+    seed = load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
     assert (dst.session_dir / "loop_state.json").is_file()
     # DAG rebuilt at the latest checkpoint's graph_version (3): both nodes, the
@@ -540,7 +540,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
 
     assert rc == 0
     dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
-    assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
+    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
         "turn 3 from loop_state"
     )
 
@@ -563,7 +563,7 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
 
     assert rc == 0
     dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
-    assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
 
 
 def test_fork_at_turn_selects_that_checkpoint(
@@ -579,7 +579,7 @@ def test_fork_at_turn_selects_that_checkpoint(
     rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0
     dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
-    assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+    assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
 
@@ -645,7 +645,7 @@ def test_fork_pre_checkpoint_run_degrades_gracefully(
     rc = _cmd_fork(None, "old-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
     dst = SessionLayout(state_dir=state_dir, session_id="fresh-FFFF66")
-    seed = load_run_snapshot(dst.checkpoint_path(0))
+    seed = load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "legacy"
     assert seed.next_iteration == 4
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))

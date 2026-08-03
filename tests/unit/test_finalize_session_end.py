@@ -21,7 +21,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
 from agent6.sessions.layout import SessionLayout
-from agent6.workflows._run_state import RunResult
+from agent6.workflows._session_state import SessionResult
 
 
 def _layout(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> SessionLayout:
@@ -40,7 +40,7 @@ def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, caps
             {"type": "session.end", "reason": "finish_run", "all_passed": False},
         ],
     )
-    result = RunResult(
+    result = SessionResult(
         completed=True, reason="finish_run", summary="all tests pass", iterations=3, tool_calls=5
     )
     print_session_end(
@@ -64,7 +64,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
             {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
-    result = RunResult(
+    result = SessionResult(
         completed=True, reason="finish_run", summary="done", iterations=2, tool_calls=3
     )
     print_session_end(
@@ -102,7 +102,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         ),
         encoding="utf-8",
     )
-    result = RunResult(
+    result = SessionResult(
         completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
     )
     print_session_end(
@@ -139,7 +139,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
         )
 
     monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
-    result = RunResult(
+    result = SessionResult(
         completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
     )
     print_session_end(
@@ -192,7 +192,7 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
             {"type": "session.end", "reason": "provider_error", "all_passed": False},
         ],
     )
-    result = RunResult(
+    result = SessionResult(
         completed=False, reason="provider_error", summary="", iterations=1, tool_calls=0
     )
     print_session_end(
@@ -223,7 +223,9 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
             {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
-    result = RunResult(completed=True, reason="finish_run", summary="", iterations=5, tool_calls=2)
+    result = SessionResult(
+        completed=True, reason="finish_run", summary="", iterations=5, tool_calls=2
+    )
     print_session_end(
         result,
         layout=layout,
@@ -247,7 +249,9 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
             {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
-    result = RunResult(completed=True, reason="finish_run", summary="", iterations=2, tool_calls=1)
+    result = SessionResult(
+        completed=True, reason="finish_run", summary="", iterations=2, tool_calls=1
+    )
     print_session_end(
         result,
         layout=layout,
@@ -467,7 +471,9 @@ def test_the_end_of_run_block_goes_through_the_reporter(
     forged = 'done\n{"jsonrpc":"2.0","id":1,"method":"fs/write_text_file","params":{}}'
     said: list[str] = []
     print_session_end(
-        RunResult(completed=True, reason="finish_run", summary=forged, iterations=1, tool_calls=1),
+        SessionResult(
+            completed=True, reason="finish_run", summary=forged, iterations=1, tool_calls=1
+        ),
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,

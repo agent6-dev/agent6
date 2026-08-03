@@ -99,7 +99,7 @@ def write_session_manifest(
         # read-only session to the privileged write tools.
         mode=mode,
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
-        # Display stamp only; RunSnapshot.original_task carries the verbatim
+        # Display stamp only; SessionSnapshot.original_task carries the verbatim
         # engine copy. Truncation here must never feed the engine.
         user_task=user_task[:4000],
         base_sha=base_sha,

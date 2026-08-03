@@ -115,14 +115,14 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def test_run_one_returns_finish_payload(
     iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.workflows.loop import RunResult
+    from agent6.workflows.loop import SessionResult
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> RunResult:
-            return RunResult(
+        def run(self, _prompt: str) -> SessionResult:
+            return SessionResult(
                 reason="finish_run",
                 completed=True,
                 summary="done",
@@ -154,14 +154,14 @@ def test_run_one_returns_finish_payload(
 
 def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Stub the agent loop in machine_agent; return a dict capturing dispatcher kwargs."""
-    from agent6.workflows.loop import RunResult
+    from agent6.workflows.loop import SessionResult
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> RunResult:
-            return RunResult(
+        def run(self, _prompt: str) -> SessionResult:
+            return SessionResult(
                 reason="finish_run",
                 completed=True,
                 summary="d",

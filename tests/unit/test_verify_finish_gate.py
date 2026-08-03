@@ -65,7 +65,7 @@ def _verified(wf: Workflow, **state_kw: Any) -> str:
 
 
 def test_verification_carries_the_same_verdict_the_event_does() -> None:
-    """RunResult.verified is the app layer's copy of session.end.all_passed's
+    """SessionResult.verified is the app layer's copy of session.end.all_passed's
     grounding, so exit code, auto-merge, and the notify hook read the verify
     truth instead of `completed` (true for any deliberate finish)."""
     assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=False) == "passed"

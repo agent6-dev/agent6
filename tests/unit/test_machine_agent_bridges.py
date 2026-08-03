@@ -138,7 +138,7 @@ def test_machine_agent_wires_the_summariser_seat(
 
     from agent6.app import machine_agent
     from agent6.machine.engine import AgentRequest
-    from agent6.workflows.loop import RunResult
+    from agent6.workflows.loop import SessionResult
 
     gdir = tmp_path / "g"
     gdir.mkdir()
@@ -157,8 +157,8 @@ def test_machine_agent_wires_the_summariser_seat(
         def __init__(self, **kw: Any) -> None:
             wf_kwargs.update(kw)
 
-        def run(self, _prompt: str) -> RunResult:
-            return RunResult(
+        def run(self, _prompt: str) -> SessionResult:
+            return SessionResult(
                 reason="finish_run", completed=True, summary="done", iterations=1, tool_calls=0
             )
 

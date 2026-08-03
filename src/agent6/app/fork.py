@@ -57,7 +57,7 @@ from agent6.sessions.layout import SessionLayout, session_layout, session_matche
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.types import session_bucket
 from agent6.viewmodel import newest_session_dir
-from agent6.workflows._run_state import load_run_snapshot
+from agent6.workflows._session_state import load_session_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
 # top-level entry under the run dir (`graph/` is a directory).
@@ -223,7 +223,7 @@ def _snapshot_turn(path: Path) -> int | None:
     if not isinstance(raw, dict):
         return None
     # Raw single-key peek (must not raise); "next_iteration" is
-    # RunSnapshot.next_iteration -- keep in sync on a field rename.
+    # SessionSnapshot.next_iteration -- keep in sync on a field rename.
     value = raw.get("next_iteration")
     if not isinstance(value, str | int):
         return None
@@ -260,7 +260,7 @@ def create_fork(  # noqa: PLR0911
         return "", 2
 
     try:
-        checkpoint = load_run_snapshot(checkpoint_path)
+        checkpoint = load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.err(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}")
         return "", 1

@@ -104,8 +104,8 @@ from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel, session_bucket, session_kind
-from agent6.workflows._run_state import RunReason
-from agent6.workflows.loop import RunResult, Workflow
+from agent6.workflows._session_state import SessionEndReason
+from agent6.workflows.loop import SessionResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
 
 
@@ -218,7 +218,7 @@ class SessionFrontend:
         [Path, BudgetTracker, str, MCPManager | None],
         Callable[[int, str], Literal["continue", "stop"]],
     ]
-    run_ask_repl: Callable[[Workflow, BudgetTracker, SessionLayout, str], RunResult]
+    run_ask_repl: Callable[[Workflow, BudgetTracker, SessionLayout, str], SessionResult]
     save_ask_transcript: Callable[[SessionLayout, str, str], None]
     # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner).
     build_coordinator_spawner: Callable[
@@ -432,7 +432,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     repo_lock_fd: int | None = None
     # Bound before the lock scope so the teardown can report on the run whatever
     # went wrong inside it.
-    result: RunResult | None = None
+    result: SessionResult | None = None
     if mode == "run":
         repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
         if repo_lock_fd is None:
@@ -760,7 +760,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # the iteration the loop reached so session.end keeps one shape.
                 # suppress: the interrupt exit (130 + resume hint) must not be
                 # masked by a dead journal.
-                reason: RunReason = "interrupted"
+                reason: SessionEndReason = "interrupted"
                 with contextlib.suppress(EventWriteError):
                     events.emit(
                         "session.end",

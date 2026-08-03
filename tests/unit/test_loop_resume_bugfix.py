@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
-from agent6.workflows._run_state import RunSnapshot, load_run_snapshot
+from agent6.workflows._session_state import SessionSnapshot, load_session_snapshot
 from agent6.workflows.loop import (
     Workflow,
     _LoopState,  # pyright: ignore[reportPrivateUsage]
@@ -81,7 +81,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=2, next_iteration=4, root_task_id=None, state=state
     )
-    loaded = load_run_snapshot(snap)
+    loaded = load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.gateless_ever_committed is True
     assert loaded.metric_best_score == 27.0
@@ -95,7 +95,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
     PRE-call snapshot: resume re-paid the provider call and the nudge never
     existed in the resumed history."""
     from agent6.providers import ProviderResponse
-    from agent6.workflows._run_state import RunResult
+    from agent6.workflows._session_state import SessionResult
 
     repo = tmp_path / "repo"
     _git_repo(repo)
@@ -119,17 +119,17 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: Path)
         provider_retry_delay_s=0.0,
         max_iterations=5,
     )
-    stopped = RunResult(
+    stopped = SessionResult(
         completed=False, reason="interactive_stop", summary="", iterations=1, tool_calls=0
     )
 
-    def stop_at_boundary(*_a: object, **_k: object) -> RunResult:
+    def stop_at_boundary(*_a: object, **_k: object) -> SessionResult:
         return stopped
 
     with mock.patch.object(Workflow, "_operator_boundary", stop_at_boundary):
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
-    loaded = load_run_snapshot(snap_path)
+    loaded = load_session_snapshot(snap_path)
     assert loaded.next_iteration == 2  # the prose turn is a COMPLETED iteration
     dumped = json.dumps(loaded.messages)
     assert "answer in prose" in dumped  # the model's turn survives the stop
@@ -163,7 +163,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
     )
-    loaded = load_run_snapshot(snap)
+    loaded = load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
     fresh = _LoopState(original_task="t", tool_calls=0)
@@ -196,7 +196,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
     )
-    loaded = load_run_snapshot(snap)
+    loaded = load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
     fresh = _LoopState(original_task="t", tool_calls=0)
@@ -207,7 +207,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     raw = json.loads(snap.read_text(encoding="utf-8"))
     del raw["pins"]
     snap.write_text(json.dumps(raw), encoding="utf-8")
-    assert load_run_snapshot(snap).pins == ()
+    assert load_session_snapshot(snap).pins == ()
 
 
 def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
@@ -231,7 +231,7 @@ def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="predates a state-format change"):
-        load_run_snapshot(snap)
+        load_session_snapshot(snap)
 
 
 def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
@@ -244,11 +244,11 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
     for bad in ("null", "[]", "123", '"str"'):
         snap.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            load_run_snapshot(snap)
+            load_session_snapshot(snap)
     # current version, wrong internals: missing required keys, and a non-list messages
     snap.write_text(json.dumps({"version": 2, "system": "s"}), encoding="utf-8")
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        load_run_snapshot(snap)
+        load_session_snapshot(snap)
     snap.write_text(
         json.dumps(
             {"version": 2, "system": "s", "messages": "oops", "tool_calls": 0, "next_iteration": 1}
@@ -256,7 +256,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="messages"):
-        load_run_snapshot(snap)
+        load_session_snapshot(snap)
 
 
 def test_resume_seeds_state_from_snapshot_scalars() -> None:
@@ -314,7 +314,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=RunSnapshot(
+        resume_from=SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -385,7 +385,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=RunSnapshot(
+        resume_from=SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -406,7 +406,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     mode like session.start so the leg's log identifies itself (the manifest owns
     the task). An identity-less leg log left every fold empty and each consumer
     patching its own copy."""
-    from agent6.workflows._run_state import RunSnapshot as _Snap
+    from agent6.workflows._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -504,7 +504,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=RunSnapshot(
+        resume_from=SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -825,7 +825,7 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        resume_from=RunSnapshot(
+        resume_from=SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -962,7 +962,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     verify command between legs swaps what judges the work while the
     instructions still name the old gate, so the worker runs one command and is
     graded on another. Silence there is the worst case: it looks like it worked."""
-    from agent6.workflows._run_state import RunSnapshot as _Snap
+    from agent6.workflows._session_state import SessionSnapshot as _Snap
 
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)

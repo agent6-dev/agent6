@@ -94,9 +94,9 @@ CONTRACTS: tuple[Contract, ...] = (
         pins=("tests/unit/test_runs_manifest.py",),
     ),
     Contract(
-        title="RunSnapshot",
-        module="agent6.workflows._run_state",
-        primary=("RunSnapshot",),
+        title="SessionSnapshot",
+        module="agent6.workflows._session_state",
+        primary=("SessionSnapshot",),
         writers=("workflows/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),
     ),

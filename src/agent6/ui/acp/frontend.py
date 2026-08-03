@@ -28,7 +28,7 @@ from agent6.events import EventSink
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
-from agent6.workflows.loop import RunResult, Workflow
+from agent6.workflows.loop import SessionResult, Workflow
 
 # What the client is asked, and what an unaskable client is assumed to have
 # said. Every one of these is the CAUTIOUS answer: a session that cannot ask
@@ -137,7 +137,7 @@ def acp_frontend(
 
     def _no_ask_repl(
         _wf: Workflow, _budget: BudgetTracker, _layout: SessionLayout, _task: str
-    ) -> RunResult:
+    ) -> SessionResult:
         raise RuntimeError("an ACP session drives its own turns; the ask REPL is not used")
 
     return SessionFrontend(
