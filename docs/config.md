@@ -187,9 +187,9 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `"auto"` | `auto` picks the strongest profile the host supports (`strict`, else `hardened`; never `none` on Linux); explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED (self-authorizing, loud warning); the per-invocation forms are `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. See SECURITY §3. |
+| `profile` | `"auto"` | `auto` picks the strongest profile the host supports (`strict`, else `hardened`), falling to `none` with a loud warning only when the host offers no confinement mechanism at all; explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED (self-authorizing, loud warning); the per-invocation forms are `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. See SECURITY §3. |
 | `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open` (SECURITY §1b). |
-| `tool_network` | `"block"` | Jailed-command egress: `block` / `only_explicit_states` / `allow` (SECURITY §8). |
+| `tool_network` | `"auto"` | Jailed-command egress. `auto`: no tool network, enforced on `strict` (per-child netns), degraded with a warning on `hardened`/`none`; `block`: enforced, refuses profiles that cannot provide it; `only_explicit_states`: strict-only, machine `tool` states may opt in; `allow`: open (requires `agent_network = "open"`). SECURITY §8. |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
 | `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` (auto-approve; also `--auto-approve`) / `no` (withheld) / `ask` (prompt each call). `yes` skips approval; confinement still depends on `sandbox.profile`. |
 | `protect_git` | `true` | Strict only: re-bind `.git/` read-only in the jail. On the hardened profile the cwd is blanket read-write (no mount namespace to carve), so `.git` is writable by jailed commands there; that is gated by `run_commands`, recoverable (branch-per-run, commits through git_ops), and bounded by the surrounding container. |
