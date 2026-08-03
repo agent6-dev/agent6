@@ -176,10 +176,41 @@ def test_reported_cost_works_for_unknown_model() -> None:
     assert partial is False
 
 
-def test_partial_reported_cost_falls_back_to_table() -> None:
-    """If only some calls to a model carried ``usage.cost`` the totals
-    would be inconsistent — fall back to the table for the whole model."""
+def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
+    """When only some calls to a model carried ``usage.cost``, the reported
+    dollars are authoritative for those calls and the table prices ONLY the
+    unreported calls' tokens. The whole-model table fallback discarded the
+    reported $50.00 for a $36.00 estimate presented as exact -- under-counting
+    the enforced ceiling by the same amount."""
     bt = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    bt.record(
+        model="claude-sonnet-4-5",
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=50.0,  # authoritative; this call's tokens must NOT be re-priced
+    )
+    bt.record(
+        model="claude-sonnet-4-5",
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_read_tokens=1_000_000,  # 1M @ $3*0.1/M = $0.30: cache banks per call too
+        cache_creation_tokens=0,
+        # no cost_usd
+    )
+    usd, partial = bt.estimate_usd()
+    # $50.00 reported + table for call 2 only (1M @ $3 + 1M @ $15 + $0.30).
+    assert usd == pytest.approx(68.30)
+    # Every dollar is reported or table-priced; nothing is a known under-estimate.
+    assert partial is False
+    assert "(reported + estimated)" in bt.format_summary()
+
+
+def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
+    """The enforced ceiling sees reported + estimated, not the whole-model
+    table figure: $50 reported + $18 estimated must trip a $60 cap ($36 did not)."""
+    bt = BudgetTracker(max_usd=60.0, max_tokens_fallback=-1)
     bt.record(
         model="claude-sonnet-4-5",
         input_tokens=1_000_000,
@@ -194,11 +225,8 @@ def test_partial_reported_cost_falls_back_to_table() -> None:
         output_tokens=1_000_000,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        # no cost_usd
     )
-    usd, _ = bt.estimate_usd()
-    # Table says 2M @ $3 + 2M @ $15 = $36.
-    assert usd == 36.0
+    assert bt.is_exhausted()
 
 
 def test_fraction_remaining_tracks_usd_ceiling() -> None:

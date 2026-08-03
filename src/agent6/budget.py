@@ -49,12 +49,17 @@ class _ModelTotals:
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
     calls: int = 0
-    # Sum of provider-reported per-call USD cost. Populated only
-    # for routes that surface ``usage.cost`` in the response body (today:
-    # OpenRouter). When > 0 it is preferred over the price-table
-    # estimate; when 0 we fall back to the table.
+    # Sum of provider-reported per-call USD cost, authoritative for the calls
+    # that carried ``usage.cost`` in the response body (today: OpenRouter).
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
+    # Token counts for ONLY the calls that reported no cost, banked per call in
+    # record(): the price table covers exactly this bucket, so mixed reporting
+    # never discards reported dollars and never prices a call twice.
+    unreported_input_tokens: int = 0
+    unreported_output_tokens: int = 0
+    unreported_cache_read_tokens: int = 0
+    unreported_cache_creation_tokens: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,16 +73,21 @@ class ModelUsage:
     calls: int
     reported_cost_usd: float
     reported_calls: int
+    unreported_input_tokens: int
+    unreported_output_tokens: int
+    unreported_cache_read_tokens: int
+    unreported_cache_creation_tokens: int
 
 
 @dataclass(frozen=True, slots=True)
 class _ModelCost:
-    """One model's resolved cost: the USD figure plus whether it is the
-    provider-reported sum (vs the price-table estimate), and whether that
-    figure is a known under-estimate (some calls priced by neither)."""
+    """One model's resolved cost: the USD figure, which sources fed it
+    (provider-reported dollars, price-table estimate, or both), and whether it
+    is a known under-estimate (some calls priced by neither)."""
 
     usd: float
     reported: bool
+    estimated: bool
     partial: bool = False
 
 
@@ -86,14 +96,13 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
     ``_estimate_usd_locked`` (the enforced USD ceiling) and ``format_summary``
     (the printed figure) so a drifted copy can never misreport spend.
 
-    When the provider returned an authoritative ``usage.cost`` for EVERY call
-    to this model, prefer that sum over the price-table estimate. If even one
-    call lacked the field (mixed-route, transient OpenRouter quirk, etc.) fall
-    back to the table for the whole model so the numbers are consistent rather
-    than partially-mixed -- unless there is no price to fall back to, where the
-    reported subset is still better than nothing and is flagged partial.
-    Returns None only when the model has no cached price and reported nothing:
-    the caller reports it as unknown.
+    Provider-reported ``usage.cost`` is authoritative for the calls that
+    carried it; the price table prices ONLY the unreported calls' tokens (the
+    ``unreported_*`` bucket), so the figure is reported + estimated with
+    nothing dropped and nothing priced twice. With no table price the reported
+    subset still counts, flagged partial (a known lower bound). Returns None
+    only when the model has no cached price and reported nothing: the caller
+    reports it as unknown.
 
     Pricing model (Anthropic-accurate):
       fresh input:      price[0]         (already excludes cached portion)
@@ -104,23 +113,26 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
     since the chat-completions usage block has no separate write-surcharge
     field, so the 1.25x branch is a no-op for them.
     """
-    if t.reported_cost_usd > 0.0 and t.reported_calls == t.calls:
-        return _ModelCost(t.reported_cost_usd, reported=True)
+    reported = t.reported_cost_usd > 0.0
     price = lookup_price(model)
     if price is None:
-        # No table price AND only some calls reported one: keep what WAS
-        # reported rather than dropping the model's whole spend. Returning
-        # unknown here zeroed real dollars out of the estimate and out of the
-        # best-effort USD cap, which then never tripped. The caller flags the
-        # figure partial either way (see any_unknown).
-        if t.reported_cost_usd > 0.0:
-            return _ModelCost(t.reported_cost_usd, reported=True, partial=True)
+        if reported:
+            # Dropping the reported dollars here would zero real spend out of
+            # the estimate and the USD cap; keep them, flagged partial when
+            # some calls carried no figure at all.
+            return _ModelCost(
+                t.reported_cost_usd,
+                reported=True,
+                estimated=False,
+                partial=t.reported_calls < t.calls,
+            )
         return None
-    in_usd = t.input_tokens * price[0] / 1e6
-    cache_creation_usd = t.cache_creation_tokens * (price[0] * 1.25) / 1e6
-    cache_read_usd = t.cache_read_tokens * (price[0] * 0.1) / 1e6
-    out_usd = t.output_tokens * price[1] / 1e6
-    return _ModelCost(in_usd + cache_creation_usd + cache_read_usd + out_usd, reported=False)
+    in_usd = t.unreported_input_tokens * price[0] / 1e6
+    cache_creation_usd = t.unreported_cache_creation_tokens * (price[0] * 1.25) / 1e6
+    cache_read_usd = t.unreported_cache_read_tokens * (price[0] * 0.1) / 1e6
+    out_usd = t.unreported_output_tokens * price[1] / 1e6
+    estimate = in_usd + cache_creation_usd + cache_read_usd + out_usd
+    return _ModelCost(t.reported_cost_usd + estimate, reported=reported, estimated=estimate > 0.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +203,11 @@ class BudgetTracker:
             if cost_usd > 0.0:
                 totals.reported_cost_usd += cost_usd
                 totals.reported_calls += 1
+            else:
+                totals.unreported_input_tokens += input_tokens
+                totals.unreported_output_tokens += output_tokens
+                totals.unreported_cache_read_tokens += cache_read_tokens
+                totals.unreported_cache_creation_tokens += cache_creation_tokens
             self._input_total += input_tokens
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
@@ -272,6 +289,10 @@ class BudgetTracker:
                     calls=t.calls,
                     reported_cost_usd=t.reported_cost_usd,
                     reported_calls=t.reported_calls,
+                    unreported_input_tokens=t.unreported_input_tokens,
+                    unreported_output_tokens=t.unreported_output_tokens,
+                    unreported_cache_read_tokens=t.unreported_cache_read_tokens,
+                    unreported_cache_creation_tokens=t.unreported_cache_creation_tokens,
                 )
                 for model, t in sorted(self._per_model.items())
             }
@@ -334,8 +355,15 @@ class BudgetTracker:
             else:
                 total_usd += cost.usd
                 any_unknown = any_unknown or cost.partial
-                note = " (reported, some calls unpriced)" if cost.partial else " (reported)"
-                cost_str = f"${cost.usd:.4f}{note}" if cost.reported else f"${cost.usd:.4f}"
+                if cost.partial:
+                    note = " (reported, some calls unpriced)"
+                elif cost.reported and cost.estimated:
+                    note = " (reported + estimated)"
+                elif cost.reported:
+                    note = " (reported)"
+                else:
+                    note = ""
+                cost_str = f"${cost.usd:.4f}{note}"
             lines.append(
                 f"  {model}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
