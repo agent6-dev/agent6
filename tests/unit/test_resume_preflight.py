@@ -55,3 +55,46 @@ def test_v1_snapshot_resume_refuses_before_starting_egress(
     err = capsys.readouterr().err
     assert "predates a state-format change" in err
     assert "provider-only egress" not in err  # no broker preamble printed
+
+
+def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The parked branch is the SECOND profile replay site: it handed the raw
+    stamped name to load_effective, where _select_profile treats it as a flag
+    that outranks every config layer -- so a parked submission under a
+    config-selected profile started under a config its original submission
+    never had. The snapshot-resume path already replays via replay_profile."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    run_dir = _state_dir(repo) / "runs" / "parked-AAAA11"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "run_id": "parked-AAAA11",
+                "mode": "run",
+                "user_task": "queued work",
+                "parked_task": "queued work",
+                "workflow": {"profile": "t", "profile_from_flag": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def _capture_load_effective(*_a: object, profile: str = "", **_k: object) -> object:
+        from agent6.config import ConfigError
+
+        seen.append(profile)
+        raise ConfigError("stop before run_task")  # short-circuit the branch
+
+    monkeypatch.setattr(resume_mod, "load_effective", _capture_load_effective)
+    rc = _cmd_resume(None, "parked-AAAA11", force=False)
+    assert rc == 2
+    # A config-selected profile re-resolves from the config files; only a
+    # --profile flag is replayed (WorkflowStamp.replay_profile's contract).
+    assert seen == [""]

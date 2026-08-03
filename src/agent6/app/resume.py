@@ -318,8 +318,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # (and re-parks with a fresh message if the checkout is STILL busy),
             # so release ours first. Its manifest rewrite clears parked_task.
             try:
+                # replay_profile, not the raw stamped name: a config-selected
+                # profile re-resolves from the same files, and handing its name
+                # back would make _select_profile rank it as a flag (the same
+                # rule as the snapshot-resume path below).
                 cfg = load_effective(
-                    cwd, config_path, profile=profile or manifest.workflow.profile
+                    cwd, config_path, profile=profile or manifest.workflow.replay_profile
                 ).config
                 set_repo_hook_policy(cfg.git.run_repo_hooks)
                 if budget_overrides is not None:
