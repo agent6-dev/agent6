@@ -80,11 +80,16 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
     after-the-fact check can reject it.
 
     ``O_NOFOLLOW`` on every component, including the parents this creates,
-    contains the walk by construction: no hop can traverse a symlink, and
-    :func:`resolve_in_root` already refused ``..``. Honest callers are
-    unaffected, including one working through an in-repo symlink, whose
-    resolved path names the real target.
+    contains the walk by construction: no hop can traverse a symlink. ``..``
+    and an absolute path are refused here rather than trusted to the caller,
+    so containment is a property of this function, not of nine call sites.
+    Honest callers are unaffected, including one working through an in-repo
+    symlink, whose resolved path names the real target.
     """
+    if rel_path.is_absolute():
+        raise ToolError(f"Path is not relative to the workspace: {rel_path}")
+    if ".." in rel_path.parts:
+        raise ToolError(f"Path contains '..': {rel_path}")
     dir_fd = os.open(root, os.O_PATH | os.O_DIRECTORY)
     try:
         for name in rel_path.parts[:-1]:
