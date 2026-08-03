@@ -317,3 +317,25 @@ def test_exit_on_end_is_not_pinned_by_a_ghost_prompt(tmp_path: Path) -> None:
             assert not app.is_running, "exit_on_end never fired over the ghost prompt"
 
     asyncio.run(scenario())
+
+
+def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
+    """The dead/parked/created hints said "press r to resume", but the r
+    binding was removed (no plain-letter shortcuts) and the composer holds
+    focus, so pressing r typed the letter into the box. Point at the
+    composer's Enter, the action that exists."""
+    d = tmp_path / "crashed-hint"
+    _mk_crashed(d)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            app._tick()
+            await pilot.pause()
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "press r" not in body
+            assert "Enter resumes" in body
+
+    asyncio.run(scenario())

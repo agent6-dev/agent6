@@ -593,19 +593,21 @@ class DashboardScreen(Screen[None]):
             secs = int(time.monotonic() - tui.last_event_at)
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "stale":
+            # The composer below has focus and Enter resumes; there is no
+            # plain-letter shortcut to point at (pressing r would just type r).
             st.append(
                 "worker exited without finishing (crashed or killed) — type a"
-                " follow-up below or press r to resume",
+                " follow-up below (Enter resumes)",
                 style="bold red",
             )
         elif tui.dir_status[0] == "parked":
             # No model is coming: the busy-checkout refusal saved the task and
             # the run never started. Resume is the one action.
             st.append("parked — the checkout was busy at submission\n", style="bold yellow")
-            st.append("type the go-ahead below or press r to resume", style="dim")
+            st.append("type the go-ahead below (Enter resumes)", style="dim")
         elif tui.dir_status[0] == "created":
             st.append("created — the run has not started\n", style="bold")
-            st.append("type a follow-up below or press r to resume", style="dim")
+            st.append("type a follow-up below (Enter resumes)", style="dim")
         else:
             st.append("(waiting for the model…)", style="dim")
         return st
