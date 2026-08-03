@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -308,8 +309,6 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     # started(pid) fires only when the instance worker.pid holds the CHILD's own
     # pid: a live worker.pid from an already-running machine (lock held) must
     # not read as "this spawn started".
-    from collections.abc import Callable
-
     from agent6.sessions.ipc import write_worker_pid
     from agent6.ui.web import model
 
@@ -466,3 +465,28 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
     assert ok is False and "not running" in msg
     ok, msg = actions.machine_answer(tmp_path, "dead", "q-1", ["yes"])
     assert ok is False and "not running" in msg
+
+
+_UNKNOWN_MACHINE_CALLS: list[tuple[Callable[[Path], tuple[bool, str]], str]] = [
+    (lambda cwd: actions.machine_approve(cwd, "ghost", "approval-1", True), "approve"),
+    (lambda cwd: actions.machine_answer(cwd, "ghost", "question-1", ["yes"]), "answer"),
+    (lambda cwd: actions.machine_steer(cwd, "ghost", "do more"), "steer"),
+]
+
+
+@pytest.mark.parametrize(("call", "label"), _UNKNOWN_MACHINE_CALLS)
+def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
+    tmp_path: Path, call: Callable[[Path], tuple[bool, str]], label: str
+) -> None:
+    """A machine that does not exist must not be described as one that stopped.
+
+    The liveness gate read a missing instance dir as LIVE, so the action sailed
+    past it and failed one step later with "no active agent state" -- telling
+    the operator to go looking for a state belonging to a machine that was
+    never there.
+    """
+    ok, msg = call(tmp_path)
+    assert not ok
+    assert "no machine 'ghost'" in msg, f"{label} misdescribed an unknown machine: {msg!r}"
+    assert "not running" not in msg, f"{label} implied the machine exists: {msg!r}"
+    assert "agent state" not in msg, f"{label} pointed at a state that never existed: {msg!r}"

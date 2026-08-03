@@ -336,13 +336,25 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
     return True, "poked"
 
 
-def _machine_is_live(cwd: Path, name: str) -> bool:
-    """Whether a machine can still receive an answer: its instance dir has a live
-    worker. Mirrors machine_steer -- the newest state dir of a parked or stopped
-    machine is a FINISHED agent state whose loop has exited, so a marker written
-    there is polled by nobody."""
+def _machine_unavailable(cwd: Path, name: str, *, ended: str, stopped: str) -> str:
+    """Why *name* cannot receive an answer, or "" when it can.
+
+    Ordered so the message names the real state: an unknown machine is not a
+    stopped one. Reading a missing instance dir as LIVE sent the caller past
+    this gate to fail on "no active agent state", pointing the operator at a
+    state belonging to a machine that never existed.
+
+    The newest state dir of a parked or stopped machine is a FINISHED agent
+    state whose loop has exited, so a marker written there is polled by nobody.
+    """
     machine_dir = model.machine_dir_for(cwd, name)
-    return machine_dir is None or worker_is_alive(machine_dir)
+    if machine_dir is None:
+        return f"no machine {name!r}"
+    if _machine_has_ended(cwd, name):
+        return ended
+    if not worker_is_alive(machine_dir):
+        return stopped
+    return ""
 
 
 def machine_approve(
@@ -351,10 +363,14 @@ def machine_approve(
     """Answer a pending approval in the agent state the prompt was rendered from
     (``state``; newest when absent). ``session`` auto-approves every later
     run_command in that state."""
-    if _machine_has_ended(cwd, name):
-        return False, f"machine {name!r} has ended; the prompt is closed"
-    if not _machine_is_live(cwd, name):
-        return False, f"machine {name!r} is not running; poke it to wake a waiting machine"
+    refusal = _machine_unavailable(
+        cwd,
+        name,
+        ended=f"machine {name!r} has ended; the prompt is closed",
+        stopped=f"machine {name!r} is not running; poke it to wake a waiting machine",
+    )
+    if refusal:
+        return False, refusal
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
@@ -369,10 +385,14 @@ def machine_answer(
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
     from (``state``; newest when absent). One answer per question, by index."""
-    if _machine_has_ended(cwd, name):
-        return False, f"machine {name!r} has ended; the prompt is closed"
-    if not _machine_is_live(cwd, name):
-        return False, f"machine {name!r} is not running; poke it to wake a waiting machine"
+    refusal = _machine_unavailable(
+        cwd,
+        name,
+        ended=f"machine {name!r} has ended; the prompt is closed",
+        stopped=f"machine {name!r} is not running; poke it to wake a waiting machine",
+    )
+    if refusal:
+        return False, refusal
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
@@ -383,13 +403,17 @@ def machine_answer(
 def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
     """Steer the agent state the operator is viewing (``state``; newest when
     absent). Same contract as a run steer."""
-    if _machine_has_ended(cwd, name):
-        return False, f"machine {name!r} has ended; there is no state to steer"
-    if not _machine_is_live(cwd, name):
-        return False, (
+    refusal = _machine_unavailable(
+        cwd,
+        name,
+        ended=f"machine {name!r} has ended; there is no state to steer",
+        stopped=(
             f"machine {name!r} is not running, so no agent state would read a steer"
             " (poke it to wake a waiting machine)"
-        )
+        ),
+    )
+    if refusal:
+        return False, refusal
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
