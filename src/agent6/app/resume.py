@@ -59,6 +59,7 @@ from agent6.git_ops import (
     branch_tip_sha,
     create_branch,
     is_ancestor,
+    render_commit_trailer,
     set_repo_hook_policy,
     verify_git_identity,
 )
@@ -489,11 +490,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(missing)
             return 2
 
-        identity = CommitIdentity(
-            name=cfg.git.commit.name,
-            email=cfg.git.commit.email,
-            coauthor=cfg.git.commit.coauthor,
-        )
+        identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
         # (no-repo guard already ran above, before the resume head guard)
         if writes_code:
             try:
@@ -625,6 +622,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             wf = Workflow(
                 root=cwd,
                 config=cfg,
+                commit_trailer=render_commit_trailer(
+                    cfg.git.commit.trailer,
+                    model=session.rm_role.model,
+                    role=session_kind(mode).role,
+                ),
                 provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,

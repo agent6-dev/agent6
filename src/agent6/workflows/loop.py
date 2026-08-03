@@ -30,7 +30,16 @@ from typing import TYPE_CHECKING, Any, Literal
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
-from agent6.git_ops import GitError, commit_all, commit_diff, diff_since, dirty_paths
+from agent6.git_ops import (
+    CommitIdentity,
+    GitError,
+    commit_all,
+    commit_diff,
+    conventional_commit_subject,
+    diff_since,
+    dirty_paths,
+    worktree_name_status,
+)
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
@@ -242,29 +251,29 @@ PINS_MAX_CHARS = 4_000
 _DIRTY_NOTE_CAP = 500
 
 
-def _summarise_assistant_text_for_commit(
-    text: str, iteration: int, *, fallback: str = "verify passed"
-) -> str:
-    """``agent6 iter N: <first line>`` from the agent's own prose, truncated to
-    72 chars (git ``--oneline`` width). Free: ``resp.text`` is already in hand.
-    Falls back to "verify passed" on a pure tool-call turn."""
+def _first_prose_line(text: str, *, fallback: str) -> str:
+    """The agent's first prose line (leading ``<thinking>`` blocks dropped,
+    heading/bullet markers stripped), or *fallback* on a pure tool-call turn."""
     cleaned = text
-    # Drop any leading <thinking>...</thinking> block - common with reasoning models.
     while cleaned.lstrip().startswith("<thinking>"):
         end = cleaned.find("</thinking>")
         if end == -1:
             cleaned = ""
             break
         cleaned = cleaned[end + len("</thinking>") :]
-    first_line = ""
     for raw_line in cleaned.splitlines():
         line = raw_line.strip().lstrip("#").lstrip("-*").strip()
         if line:
-            first_line = line
-            break
-    if not first_line:
-        first_line = fallback
-    subject_body = first_line[:72]
+            return line
+    return fallback
+
+
+def _summarise_assistant_text_for_commit(
+    text: str, iteration: int, *, fallback: str = "verify passed"
+) -> str:
+    """``agent6 iter N: <first line>``, the first line truncated to 72 chars
+    (git ``--oneline`` width). Free: ``resp.text`` is already in hand."""
+    subject_body = _first_prose_line(text, fallback=fallback)[:72]
     return f"agent6 iter {iteration}: {subject_body}"
 
 
@@ -525,6 +534,9 @@ class Workflow:
     # dispatcher so add_memory / invalidate_memory persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.
     state_dir: Path | None = None
+    # Rendered [git.commit].trailer line (render_commit_trailer), appended once
+    # to every commit this loop makes. None = no trailer configured.
+    commit_trailer: str | None = None
     # Hard cap on assistant turns. Each turn = one provider.call. With the
     # default tool-use-loop pattern, agents take 30-100 turns on a non-
     # trivial task; 200 is well above that without being unbounded.
@@ -1541,14 +1553,12 @@ class Workflow:
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
         if self.mode != "run" or not (verified_commit or gateless_changed):
             return None
-        commit_subject = _summarise_assistant_text_for_commit(
-            turn.resp.text or "",
-            turn.iteration,
-            fallback="checkpoint" if gateless else "verify passed",
+        commit_subject = self._checkpoint_subject(
+            turn, fallback="checkpoint" if gateless else "verify passed"
         )
         sha = ""
         try:
-            sha = commit_all(self.root, commit_subject)
+            sha = commit_all(self.root, commit_subject, identity=self._commit_identity())
             self._log(f"  auto-commit: {sha[:12]}")
             self._emit("loop.auto_commit", iteration=turn.iteration, sha=sha)
             turn.committed = bool(sha)
@@ -2927,7 +2937,9 @@ class Workflow:
         if self.mode != "run" or not self._worktree_dirty():
             return
         try:
-            sha = commit_all(self.root, f"checkpoint (iter {iteration})")
+            sha = commit_all(
+                self.root, f"checkpoint (iter {iteration})", identity=self._commit_identity()
+            )
             if sha:
                 self._log(f"  final checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
@@ -4354,7 +4366,11 @@ class Workflow:
         if not self._worktree_dirty():
             return True
         try:
-            sha = commit_all(self.root, f"checkpoint before /parallel dispatch (iter {iteration})")
+            sha = commit_all(
+                self.root,
+                f"checkpoint before /parallel dispatch (iter {iteration})",
+                identity=self._commit_identity(),
+            )
             if sha:
                 self._log(f"  pre-dispatch checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
@@ -4439,6 +4455,56 @@ class Workflow:
         worker pid first (see :func:`agent6.sessions.ipc.emit_session_start`)."""
         if self.events is not None:
             emit_session_start(self.events, self.events.path.parent, event_type, **fields)
+
+    def _commit_identity(self) -> CommitIdentity | None:
+        """The provenance trailer for this loop's commits; author identity
+        stays git's own resolution (the app verified it at startup)."""
+        return CommitIdentity(trailer=self.commit_trailer) if self.commit_trailer else None
+
+    def _checkpoint_subject(self, turn: _TurnState, *, fallback: str) -> str:
+        """The per-step commit message, per ``[git.commit.checkpoint].message``."""
+        agent6_subject = _summarise_assistant_text_for_commit(
+            turn.resp.text or "", turn.iteration, fallback=fallback
+        )
+        style = self.config.git.commit.checkpoint.message
+        if style == "agent6":
+            return agent6_subject
+        summary = _first_prose_line(turn.resp.text or "", fallback=fallback)
+        changes = worktree_name_status(self.root)
+        if style == "conventional":
+            return conventional_commit_subject(changes, summary=summary)
+        msg = self._model_commit_message(changes, hint=summary)
+        if msg:
+            return msg
+        self._log("WARNING: model commit message failed; using the agent6 style")
+        return agent6_subject
+
+    def _model_commit_message(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:
+        """One small provider call writing the message from git facts only;
+        None on any failure (the caller degrades to the agent6 style)."""
+        try:
+            listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
+            resp = self.provider.call(
+                system=(
+                    "Write a git commit message for the change set: one"
+                    " imperative subject line under 72 characters, optionally a"
+                    " blank line and a short body. Use only the facts given."
+                    " Output the message text only."
+                ),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Summary hint: {hint}\nChanged files (status\tpath):\n{listing}"
+                        ),
+                    }
+                ],
+                tools=None,
+                max_tokens=400,
+            )
+        except Exception:
+            return None
+        return (resp.text or "").strip() or None
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. Lets

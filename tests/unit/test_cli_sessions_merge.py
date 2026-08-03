@@ -540,3 +540,69 @@ def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
     err = capsys.readouterr().err
     assert "no base_sha" in err
     assert "branch_per_run" not in err
+
+
+def _head_message(repo: Path) -> str:
+    return _git(repo, "log", "-1", "--format=%B")
+
+
+def test_merge_squash_combine_style_uses_gits_own_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[git.commit.squash].message = combine commits with git's squash message
+    (the concatenated per-step log)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g").mkdir()
+    (tmp_path / "g" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "combine"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-CMB111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-CMB111", "--strategy", "squash"]) == 0
+    msg = _head_message(tmp_path)
+    assert "Squashed commit of the following" in msg
+    assert "agent6 iter 1: add a" in msg
+
+
+def test_merge_squash_conventional_style_derives_the_subject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g").mkdir()
+    (tmp_path / "g" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-CNV111", "--strategy", "squash"]) == 0
+    subject = _head_message(tmp_path).splitlines()[0]
+    assert subject == "feat: implement the thing"  # an added file, no common scope
+
+
+def test_merge_squash_model_style_degrades_with_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No provider is reachable in this environment, so the model style must
+    fall back to the agent6 message and say so, never fail the merge."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g").mkdir()
+    (tmp_path / "g" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-MDL111", "--strategy", "squash"]) == 0
+    assert "model squash message failed" in capsys.readouterr().err
+    assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
+
+
+def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g").mkdir()
+    (tmp_path / "g" / "config.toml").write_text(
+        '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-TRL111", "--strategy", "squash"]) == 0
+    assert _head_message(tmp_path).count("Assisted-by: agent6:") == 1

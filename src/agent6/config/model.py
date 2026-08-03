@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import ipaddress
 import math
+import re
+import string
 import tomllib
 from collections.abc import Callable
 from ipaddress import ip_address
@@ -423,20 +425,66 @@ class SandboxConfig(BaseModel):
         return v
 
 
-class GitCommitConfig(BaseModel):
-    """Optional overrides for the author/committer identity on agent6 commits.
+class GitCommitCheckpointConfig(BaseModel):
+    """Message style for the per-step commits a run makes on its branch."""
 
-    All default to None = the project's own `git config` identity; `agent6 run`
-    refuses at startup when neither an override nor a resolvable identity
-    exists, rather than committing as `(no author) <(none)>`. `coauthor` takes
-    a trailer value like `"Alice <alice@example.com>"`.
+    model_config = _BASE_MODEL_CONFIG
+
+    # agent6: the `agent6 iter N:` subject. conventional: a `type(scope): subject`
+    # derived from the diff without a model call. model: the model writes the
+    # message from git facts, degrading to agent6 with a warning on any failure.
+    message: Literal["agent6", "conventional", "model"] = "agent6"
+
+
+class GitCommitSquashConfig(BaseModel):
+    """Message style for the one commit a squash merge produces."""
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # As checkpoint's styles, plus combine: git's own squash message (the
+    # concatenated per-step log).
+    message: Literal["agent6", "conventional", "combine", "model"] = "agent6"
+
+
+class GitCommitConfig(BaseModel):
+    """Overrides for the author/committer identity on agent6 commits, the
+    provenance trailer, and the per-kind message styles.
+
+    `name`/`email` default to None = the project's own `git config` identity;
+    `agent6 run` refuses at startup when neither an override nor a resolvable
+    identity exists, rather than committing as `(no author) <(none)>`.
     """
 
     model_config = _BASE_MODEL_CONFIG
 
     name: str | None = None
     email: str | None = None
-    coauthor: str | None = None
+    # A git trailer line appended once to every commit agent6 makes when
+    # non-empty, e.g. "Assisted-by: agent6:{model}". Placeholders: {model} (the
+    # model id that wrote the commit) and {role} (worker/reviewer).
+    trailer: str = ""
+    checkpoint: GitCommitCheckpointConfig = GitCommitCheckpointConfig()
+    squash: GitCommitSquashConfig = GitCommitSquashConfig()
+
+    @field_validator("trailer")
+    @classmethod
+    def _trailer_is_a_trailer_line(cls, v: str) -> str:
+        if not v:
+            return v
+        fields = {f for _, f, _, _ in string.Formatter().parse(v) if f is not None}
+        unknown = fields - {"model", "role"}
+        if unknown:
+            raise ValueError(
+                f"unknown placeholder {sorted(unknown)} in git.commit.trailer"
+                " (known: {model}, {role})"
+            )
+        rendered = v.format(model="m", role="worker")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z-]*: .+", rendered, re.DOTALL):
+            raise ValueError(
+                'git.commit.trailer must be a git trailer line, "Key: value"'
+                ' (e.g. "Assisted-by: agent6:{model}")'
+            )
+        return v
 
 
 class GitConfig(BaseModel):

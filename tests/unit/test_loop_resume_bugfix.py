@@ -26,6 +26,8 @@ from agent6.workflows.loop import (
     _LoopState,  # pyright: ignore[reportPrivateUsage]
 )
 
+_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
+
 
 def _silent(_: str) -> None:
     return None
@@ -35,6 +37,7 @@ def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
         "config": MagicMock(
+            git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
@@ -65,6 +68,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     and load back, instead of resetting to their fresh-run defaults."""
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -149,6 +153,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -182,6 +187,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -267,6 +273,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     the loop saw the restored at-ceiling history (no early-finish rejection).
     """
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -346,6 +353,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     fresh logs.jsonl has no pin.added events, so without this the surfaces show
     zero pins while the engine still re-injects them at every restart."""
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -424,6 +432,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -475,6 +484,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     event (which the fold REPLACES on) must fire even when the snapshot is
     empty -- guarding it on a non-empty list is what let the stale one stand."""
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -542,6 +552,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     _git_repo(repo)
     snap = repo / "loop_state.json"
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -680,6 +691,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -726,6 +738,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -767,6 +780,7 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     from agent6.workflows._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
 
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
@@ -1000,6 +1014,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
         encoding="utf-8",
     )
     config = SimpleNamespace(
+        git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,

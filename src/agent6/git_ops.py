@@ -19,8 +19,9 @@ import shutil
 import subprocess
 import textwrap
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from agent6.types import CommandResult
 
@@ -49,21 +50,32 @@ class GitStatus:
 
 @dataclass(frozen=True, slots=True)
 class CommitIdentity:
-    """Resolved name/email/coauthor used for commits this run.
+    """Resolved name/email + provenance trailer used for commits this run.
 
     `name` and `email` are populated from `[git.commit]` overrides when set,
     otherwise left as None to mean "let git's own config resolution decide".
     `verify_git_identity` ensures that when both are None the project's git
-    config has a usable identity before any commit is attempted.
+    config has a usable identity before any commit is attempted. `trailer` is
+    a rendered git trailer line (see :func:`render_commit_trailer`), appended
+    once per commit.
     """
 
     name: str | None = None
     email: str | None = None
-    coauthor: str | None = None
+    trailer: str | None = None
 
     @property
     def has_override(self) -> bool:
-        return bool(self.name or self.email or self.coauthor)
+        return bool(self.name or self.email or self.trailer)
+
+
+def render_commit_trailer(fmt: str, *, model: str, role: str) -> str | None:
+    """The `[git.commit].trailer` format string as a concrete trailer line,
+    or None when unset. The config validator pins the placeholder set
+    ({model}, {role}) and the "Key: value" shape."""
+    if not fmt:
+        return None
+    return fmt.format(model=model, role=role)
 
 
 def verify_git_identity(path: Path, identity: CommitIdentity) -> tuple[str, str]:
@@ -611,8 +623,9 @@ def _commit(
 ) -> str:
     merged_trailers = dict(trailers or {})
     env_extra = _identity_env(identity)
-    if identity is not None and identity.coauthor:
-        merged_trailers["Co-authored-by"] = identity.coauthor
+    if identity is not None and identity.trailer and identity.trailer not in message:
+        key, _, value = identity.trailer.partition(": ")
+        merged_trailers[key] = value
     full_message = message
     if merged_trailers:
         trailer_lines = "\n".join(f"{k}: {v}" for k, v in merged_trailers.items())
@@ -671,20 +684,19 @@ def merge_branch(
     identity: CommitIdentity | None = None,
 ) -> MergeResult:
     """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`, with
-    *message* and *identity*, including a Co-authored-by trailer for
-    identity.coauthor) keeps the run's per-step history; *ff_only* instead
-    fast-forwards and raises if the target has moved (no commit is created, so
-    message and identity do not apply). On conflict, `git merge --abort` (not a
-    history rewrite) leaves the tree clean and the result reports the conflicts."""
+    *message* and *identity*, including identity.trailer) keeps the run's
+    per-step history; *ff_only* instead fast-forwards and raises if the target
+    has moved (no commit is created, so message and identity do not apply). On
+    conflict, `git merge --abort` (not a history rewrite) leaves the tree clean
+    and the result reports the conflicts."""
     if ff_only:
         args: tuple[str, ...] = ("merge", "--ff-only", branch)
         env_extra = None
     else:
         text = message
-        coauthor = identity.coauthor if identity else None
-        if coauthor:
+        trailer = identity.trailer if identity else None
+        if trailer:
             base = text or f"Merge {branch}"
-            trailer = f"Co-authored-by: {coauthor}"
             text = base if trailer in base else f"{base}\n\n{trailer}"
         msg_args = ("-m", text) if text else ("--no-edit",)
         args = ("merge", "--no-ff", *msg_args, branch)
@@ -702,19 +714,19 @@ def merge_branch(
 def squash_merge(
     path: Path,
     branch: str,
-    message: str,
+    message: str | None,
     *,
     identity: CommitIdentity | None,
-    coauthors: tuple[str, ...] = (),
 ) -> MergeResult:
     """Squash *branch* into HEAD as ONE commit. `git merge --squash` stages the
     branch's cumulative tree without committing or moving HEAD (not a rebase or
-    reset, so policy-clean); we then commit once with *message* plus the deduped
-    *coauthors*. A squash with nothing to merge is a clean no-op (returns HEAD).
-    On conflict, restore the pre-merge tree (reset --mixed + checkout, plus
-    removing only the files this squash newly staged, which otherwise survive as
-    untracked; never reset --hard, as a squash leaves no MERGE_HEAD to --abort)
-    and report the conflicted paths."""
+    reset, so policy-clean); we then commit once with *message* plus
+    identity.trailer (once, however many per-step commits carried it). A squash
+    with nothing to merge is a clean no-op (returns HEAD). On conflict, restore
+    the pre-merge tree (reset --mixed + checkout, plus removing only the files
+    this squash newly staged, which otherwise survive as untracked; never
+    reset --hard, as a squash leaves no MERGE_HEAD to --abort) and report the
+    conflicted paths."""
     head = _run(path, "rev-parse", "HEAD").stdout.strip()
     pre_untracked = _untracked_files(path)
     res = _run(path, "merge", "--squash", branch, check=False)
@@ -737,12 +749,18 @@ def squash_merge(
         # Nothing staged: the branch was already up to date / an ancestor. A clean
         # no-op, matching merge_branch's "Already up to date" behavior.
         return MergeResult(head, False, ())
-    full = message
-    if coauthors:
-        full = message + "\n\n" + "\n".join(f"Co-authored-by: {c}" for c in coauthors)
-    author = CommitIdentity(name=identity.name, email=identity.email) if identity else None
+    if message is None:
+        # The `combine` style: git's own squash message, written to SQUASH_MSG
+        # by `merge --squash`.
+        msg_path = Path(_run(path, "rev-parse", "--git-path", "SQUASH_MSG").stdout.strip())
+        if not msg_path.is_absolute():
+            msg_path = path / msg_path
+        try:
+            message = msg_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            message = f"Squash {branch}"
     try:
-        sha = _commit(path, full, trailers=None, identity=author)
+        sha = _commit(path, message, trailers=None, identity=identity)
     except GitError:
         # The squash already staged a tree; if the commit step itself fails (a
         # rejecting hook, say), restore the clean pre-merge tree rather than leave
@@ -777,19 +795,16 @@ def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[Commit
 
 
 _ITER_SUBJECT_RE = re.compile(r"^agent6 iter \d+:\s*", re.IGNORECASE)
-_COAUTHOR_RE = re.compile(r"^co-authored-by:\s*(.+)$", re.IGNORECASE)
 
 
-def condense_commit_message(
-    rows: tuple[CommitRow, ...], *, subject: str
-) -> tuple[str, tuple[str, ...]]:
-    """Fold per-step commits into one readable message + a deduped co-author list,
-    so a squash reads as a single authored commit, not a squashed series.
+def condense_commit_message(rows: tuple[CommitRow, ...], *, subject: str) -> str:
+    """Fold per-step commits into one readable message, so a squash reads as a
+    single authored commit, not a squashed series.
 
     *subject* is the run's task (the headline). The body lists the distinct,
-    de-noised per-step subjects (the `agent6 iter N:` prefix and checkpoint noise
-    stripped). Co-authored-by trailers are collected across every commit and
-    de-duplicated case-insensitively by `Name <email>`."""
+    de-noised per-step subjects (the `agent6 iter N:` prefix and checkpoint
+    noise stripped). The provenance trailer is the commit emitter's job
+    (identity.trailer), not this message's."""
     bullets: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -798,14 +813,6 @@ def condense_commit_message(
             continue
         seen.add(s.lower())
         bullets.append(s)
-    coauthors: list[str] = []
-    seen_ca: set[str] = set()
-    for row in rows:
-        for line in row.message.splitlines():
-            m = _COAUTHOR_RE.match(line.strip())
-            if m and m.group(1).strip().lower() not in seen_ca:
-                seen_ca.add(m.group(1).strip().lower())
-                coauthors.append(m.group(1).strip())
     task = _ITER_SUBJECT_RE.sub("", subject).strip()
     headline = _headline_subject(task) or (bullets[0] if bullets else "agent6 run")
     parts = [headline]
@@ -818,10 +825,89 @@ def condense_commit_message(
     if bullets:
         parts.append("")
         parts.extend(f"- {b}" for b in bullets)
-    return "\n".join(parts), tuple(coauthors)
+    return "\n".join(parts)
 
 
 _SUBJECT_LIMIT = 72  # git's soft subject cap; conventional tooling truncates past it
+
+
+def _is_testish(p: str) -> bool:
+    parts = PurePosixPath(p).parts
+    name = parts[-1] if parts else ""
+    return parts[:1] == ("tests",) or name.startswith("test_") or name == "conftest.py"
+
+
+def _is_docish(p: str) -> bool:
+    pp = PurePosixPath(p)
+    return pp.suffix.lower() in (".md", ".rst") or pp.parts[:1] == ("docs",)
+
+
+def _conventional_scope(paths: Sequence[str]) -> str:
+    """The one common area the change touches, or "" when there is none: the
+    package dir under ``src/<pkg>/`` (the module stem for a file directly under
+    the package), else a second-level dir every path shares."""
+    parts = [PurePosixPath(p).parts for p in paths if p]
+    if not parts:
+        return ""
+    src_pkgs = [pp for pp in parts if len(pp) >= 3 and pp[0] == "src"]
+    if src_pkgs:
+        names = {pp[2] if len(pp) > 3 else str(PurePosixPath(pp[2]).stem) for pp in src_pkgs}
+        return names.pop() if len(names) == 1 else ""
+    tops = {pp[0] for pp in parts}
+    if len(tops) != 1:
+        return ""
+    seconds = {pp[1] for pp in parts if len(pp) >= 3}
+    return seconds.pop() if len(seconds) == 1 else ""
+
+
+def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: str) -> str:
+    """A Conventional Commits subject from ``(status, path)`` pairs, without a
+    model call: all-tests -> ``test``, all-docs -> ``docs``, any added file ->
+    ``feat``, else ``fix`` (``chore`` when nothing changed). Scope is the one
+    common area (:func:`_conventional_scope`); the subject is *summary* with
+    its head lowercased and any trailing period stripped, capped at 72."""
+    paths = [p for _, p in changes]
+    if not paths:
+        ctype = "chore"
+    elif all(_is_testish(p) for p in paths):
+        ctype = "test"
+    elif all(_is_docish(p) for p in paths):
+        ctype = "docs"
+    elif any(status.startswith("A") for status, _ in changes):
+        ctype = "feat"
+    else:
+        ctype = "fix"
+    scope = _conventional_scope(paths)
+    head = f"{ctype}({scope}): " if scope else f"{ctype}: "
+    subject = " ".join(summary.split()).rstrip(".")
+    subject = (subject[:1].lower() + subject[1:]) if subject else "update"
+    return (head + subject)[:_SUBJECT_LIMIT]
+
+
+def worktree_name_status(path: Path) -> tuple[tuple[str, str], ...]:
+    """``(status, path)`` pairs for every pending change (``status
+    --porcelain``), untracked reported as ``A``: the conventional-subject
+    deriver's input at checkpoint time."""
+    res = _run(path, "status", "--porcelain", check=False)
+    pairs: list[tuple[str, str]] = []
+    for line in res.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        code = line[:2].strip() or "M"
+        pairs.append(("A" if code in ("??", "A", "AM") else code[:1], line[3:].strip()))
+    return tuple(pairs)
+
+
+def range_name_status(path: Path, base: str, head: str) -> tuple[tuple[str, str], ...]:
+    """``(status, path)`` pairs for ``base..head``: the conventional-subject
+    deriver's input at squash time."""
+    res = _run(path, "diff", "--name-status", f"{base}..{head}", check=False)
+    pairs: list[tuple[str, str]] = []
+    for line in res.stdout.splitlines():
+        cols = line.split("\t")
+        if len(cols) >= 2:
+            pairs.append((cols[0][:1], cols[-1]))
+    return tuple(pairs)
 
 
 def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:

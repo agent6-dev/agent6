@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -13,6 +14,8 @@ from agent6.tools.results import RawResult
 from agent6.workflows import loop as loopmod
 from agent6.workflows._conversation import Conversation
 from agent6.workflows.loop import Workflow
+
+_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
 
 
 def _silent(_msg: str) -> None:
@@ -25,6 +28,7 @@ def _wf(**kw: Any) -> Workflow:
         # Gateless by default (verify_command=()) so a bare MagicMock's truthy
         # attr doesn't make the verify finish-gate think a red verify is pending.
         "config": MagicMock(
+            git=_GIT_STUB,
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
         ),

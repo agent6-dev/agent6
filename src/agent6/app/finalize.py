@@ -24,6 +24,7 @@ from agent6.git_ops import (
     create_branch,
     delete_branch_if_merged,
     find_stash,
+    render_commit_trailer,
     restore_stash,
     verify_git_identity,
 )
@@ -297,7 +298,13 @@ def finalize_auto_merge(  # noqa: PLR0912
         )
         return
     identity = CommitIdentity(
-        name=cfg.git.commit.name, email=cfg.git.commit.email, coauthor=cfg.git.commit.coauthor
+        name=cfg.git.commit.name,
+        email=cfg.git.commit.email,
+        trailer=render_commit_trailer(
+            cfg.git.commit.trailer,
+            model=manifest.models.driver.model if manifest.models.driver else "",
+            role="worker",
+        ),
     )
     try:
         verify_git_identity(cwd, identity)
@@ -318,6 +325,7 @@ def finalize_auto_merge(  # noqa: PLR0912
         cfg=cfg,
         identity=identity,
         original="",  # stay on the base branch, where the work now lives
+        warn=lambda m: reporter.err(f"[agent6] {m}"),
     )
     if outcome.status == "merged":
         reporter.err(

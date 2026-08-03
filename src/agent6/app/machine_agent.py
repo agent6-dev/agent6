@@ -53,7 +53,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
-from agent6.git_ops import CommitIdentity, set_repo_hook_policy
+from agent6.git_ops import CommitIdentity, render_commit_trailer, set_repo_hook_policy
 from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import Provider, TranscriptSink
 from agent6.sessions.ipc import (
@@ -371,6 +371,9 @@ def run_one(
     wf = Workflow(
         root=req.root,
         config=cfg,
+        commit_trailer=render_commit_trailer(
+            cfg.git.commit.trailer, model=rm.model if rm is not None else "", role="worker"
+        ),
         provider=provider,
         summariser_provider=summariser_provider,
         dispatcher=dispatcher,

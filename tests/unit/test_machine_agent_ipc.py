@@ -49,7 +49,7 @@ _REQUEST_BYTES = (
     '"transcript_dir":"/state/machines/m/i/transcripts",'
     '"events_log":"/state/machines/m/i/states/0002-review/logs.jsonl",'
     '"protect_paths":["/work/repo/m.asm.toml"],'
-    '"commit_identity":{"name":"Machine Bot","email":"bot@example.com","coauthor":null},'
+    '"commit_identity":{"name":"Machine Bot","email":"bot@example.com","trailer":null},'
     '"request":{"prompt":"review the queue","timeout_s":600.0,"model":"claude-x",'
     '"provider":"anthropic","thinking":"low","temperature":0.2,"max_usd":1.5,'
     '"max_tokens_fallback":200000,"mode":"run",'

@@ -474,7 +474,7 @@ def test_commit_all_with_identity_overrides_author(tmp_path: Path) -> None:
         identity=CommitIdentity(
             name="agent6",
             email="agent6@example.com",
-            coauthor="Alice <alice@example.com>",
+            trailer="Co-authored-by: Alice <alice@example.com>",
         ),
     )
     show = subprocess.run(
@@ -901,12 +901,14 @@ def test_merge_branch_ff_only_refuses_when_diverged(tmp_path: Path) -> None:
     assert status(tmp_path).is_clean  # a refused ff leaves the tree clean
 
 
-def test_merge_branch_no_ff_credits_coauthor(tmp_path: Path) -> None:
+def test_merge_branch_no_ff_carries_the_trailer(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     create_branch(tmp_path, "agent6/r1")
     _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
     create_branch(tmp_path, "main")
-    res = merge_branch(tmp_path, "agent6/r1", identity=CommitIdentity(coauthor="Op <op@x>"))
+    res = merge_branch(
+        tmp_path, "agent6/r1", identity=CommitIdentity(trailer="Co-authored-by: Op <op@x>")
+    )
     assert not res.conflicted
     head_msg = subprocess.run(
         ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
@@ -992,15 +994,14 @@ def test_list_run_commits_oldest_first(tmp_path: Path) -> None:
     assert [r.subject for r in rows] == ["agent6 iter 1: add a", "agent6 iter 2: add b"]
 
 
-def test_condense_dedups_coauthors_and_strips_prefix(tmp_path: Path) -> None:
+def test_condense_strips_prefix_and_bullets(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a\n\nCo-authored-by: Op <op@x>")
-    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b\n\nCo-authored-by: Op <op@x>")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b")
     rows = list_run_commits(tmp_path, base, "agent6/r1")
-    message, coauthors = condense_commit_message(rows, subject="implement parse_url")
-    assert coauthors == ("Op <op@x>",)  # deduped from two identical trailers
+    message = condense_commit_message(rows, subject="implement parse_url")
     assert message.splitlines()[0] == "implement parse_url"  # headline = the task
     assert "- add a" in message and "- add b" in message  # prefix stripped, bulleted
 
@@ -1012,7 +1013,7 @@ def test_condense_subject_is_first_clause_and_wraps_the_rest(tmp_path: Path) -> 
         "Add a --limit flag to runs list. Then update the parser help and add a "
         "focused unit test covering the newest-N slice and the argcomplete choices"
     )
-    message, _ = condense_commit_message((), subject=task)
+    message = condense_commit_message((), subject=task)
     lines = message.splitlines()
     assert lines[0] == "Add a --limit flag to runs list"  # first clause only
     assert all(len(ln) <= 72 for ln in lines)  # nothing over the subject/body cap
@@ -1021,21 +1022,24 @@ def test_condense_subject_is_first_clause_and_wraps_the_rest(tmp_path: Path) -> 
 
 def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: Path) -> None:
     task = "make the thing " * 20  # 300 chars, no sentence break
-    message, _ = condense_commit_message((), subject=task)
+    message = condense_commit_message((), subject=task)
     subject = message.splitlines()[0]
     assert len(subject) <= 72 and subject.endswith("…")
 
 
-def test_squash_merge_is_one_commit_with_single_coauthor(tmp_path: Path) -> None:
+def test_squash_merge_emits_the_identity_trailer_once(tmp_path: Path) -> None:
+    """However many checkpoints carried the trailer, the squash commit gets it
+    exactly once: git trailers are a set."""
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
     create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a\n\nCo-authored-by: Op <op@x>")
-    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b\n\nCo-authored-by: Op <op@x>")
+    line = "Assisted-by: agent6:m1"
+    _commit_file(tmp_path, "a.txt", "a\n", f"agent6 iter 1: add a\n\n{line}")
+    _commit_file(tmp_path, "b.txt", "b\n", f"agent6 iter 2: add b\n\n{line}")
     create_branch(tmp_path, "main")
     rows = list_run_commits(tmp_path, base, "agent6/r1")
-    message, coauthors = condense_commit_message(rows, subject="the task")
-    res = squash_merge(tmp_path, "agent6/r1", message, identity=None, coauthors=coauthors)
+    message = condense_commit_message(rows, subject="the task")
+    res = squash_merge(tmp_path, "agent6/r1", message, identity=CommitIdentity(trailer=line))
     assert not res.conflicted
     assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
     head_msg = subprocess.run(
@@ -1044,10 +1048,33 @@ def test_squash_merge_is_one_commit_with_single_coauthor(tmp_path: Path) -> None
         text=True,
         check=True,
     ).stdout
-    assert head_msg.count("Co-authored-by: Op <op@x>") == 1  # single deduped trailer
+    assert head_msg.count(line) == 1  # once, not per checkpoint
     # ONE squash commit on main since base (not the two per-step commits)
     main_commits = list_run_commits(tmp_path, base, "main")
     assert len(main_commits) == 1
+
+
+def test_commit_all_appends_the_identity_trailer_once(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+    line = "Assisted-by: agent6:m1 (worker)"
+    commit_all(tmp_path, "add f", identity=CommitIdentity(trailer=line))
+    head_msg = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert head_msg.count(line) == 1
+    assert head_msg.splitlines()[0] == "add f"
+
+
+def test_render_commit_trailer_fills_model_and_role() -> None:
+    from agent6.git_ops import render_commit_trailer
+
+    assert render_commit_trailer("", model="m", role="worker") is None
+    got = render_commit_trailer("Assisted-by: agent6:{model} ({role})", model="m1", role="worker")
+    assert got == "Assisted-by: agent6:m1 (worker)"
 
 
 def test_squash_merge_conflict_rolls_back_clean(tmp_path: Path) -> None:
@@ -1109,5 +1136,51 @@ def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: Path) ->
     _commit_file(tmp_path, "a.txt", "a\n", f"agent6 iter 1: add a\n\n{body}")
     rows = list_run_commits(tmp_path, base, "agent6/r1")
     assert len(rows) == 1  # \x1e in the body did not split it into two records
-    _, coauthors = condense_commit_message(rows, subject="t")
-    assert coauthors == ("Op <op@x>",)  # \x1f in the body did not truncate the trailer
+    assert "Co-authored-by: Op <op@x>" in rows[0].message  # \x1f did not truncate the body
+
+
+def test_conventional_subject_derives_type_and_scope() -> None:
+    from agent6.git_ops import conventional_commit_subject
+
+    # All test files -> test; scope from the common first dir under src/ when
+    # source is touched, else the common top-level dir.
+    assert conventional_commit_subject(
+        [("M", "tests/unit/test_a.py"), ("M", "tests/unit/test_b.py")],
+        summary="cover the resolver",
+    ).startswith("test(unit): cover the resolver")
+    # All docs -> docs.
+    assert conventional_commit_subject(
+        [("M", "docs/config.md"), ("M", "README.md")], summary="explain the lock"
+    ).startswith("docs: explain the lock")
+    # An added source file -> feat, scoped by the package dir.
+    got = conventional_commit_subject(
+        [("A", "src/agent6/config/write.py"), ("M", "src/agent6/config/model.py")],
+        summary="one write path",
+    )
+    assert got == "feat(config): one write path"
+    # Modified-only source -> fix.
+    got = conventional_commit_subject(
+        [("M", "src/agent6/git_ops.py")], summary="Trailer emitted once."
+    )
+    assert got == "fix(git_ops): trailer emitted once"
+    # No changes at all still yields a valid subject.
+    assert conventional_commit_subject([], summary="tidy") == "chore: tidy"
+
+
+def test_squash_merge_combine_uses_gits_own_message(tmp_path: Path) -> None:
+    """message=None commits with git's MERGE_MSG (the concatenated per-step
+    log), the `combine` style."""
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
+    create_branch(tmp_path, "main")
+    res = squash_merge(tmp_path, "agent6/r1", None, identity=None)
+    assert not res.conflicted
+    head_msg = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "Squashed commit of the following" in head_msg
+    assert "agent6 iter 1: add a" in head_msg

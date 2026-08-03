@@ -221,7 +221,14 @@ The security boundary. Profiles and the network model are specified in
 | Field | Default | Meaning |
 |---|---|---|
 | `name` / `email` | none | Override the commit identity (else use the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
-| `coauthor` | none | Append a `Co-authored-by:` trailer, e.g. `"Alice <alice@example.com>"`. |
+| `trailer` | `""` | A git trailer line appended once to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6 <noreply@agent6.dev>"`. Placeholders: `{model}` (the model id that wrote the commit), `{role}` (`worker`/`reviewer`). Validated at `config set`; a squash emits it once however many per-step commits carried it. |
+
+### `[git.commit.checkpoint]` and `[git.commit.squash]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `checkpoint.message` | `"agent6"` | Style of the per-step commit messages: `agent6` (the `agent6 iter N:` subject), `conventional` (a `type(scope): subject` derived from the diff, no model call), or `model` (the model writes the message from git facts, degrading to `agent6` with a warning on any failure). |
+| `squash.message` | `"agent6"` | Style of the one squash-merge commit: as checkpoint's styles, plus `combine` (git's own squash message, the concatenated per-step log). |
 
 ## `preset` (top-level)
 

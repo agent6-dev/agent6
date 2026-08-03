@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +17,8 @@ from tests.unit.test_critic import (
     _resp_with_tool_use,  # pyright: ignore[reportPrivateUsage]
     _wf,  # pyright: ignore[reportPrivateUsage]
 )
+
+_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
 
 
 def _verify_pass_tool_use(tu_id: str) -> dict[str, Any]:

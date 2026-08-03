@@ -31,6 +31,7 @@ from agent6.git_ops import (
     is_git_repo,
     list_run_branches,
     list_run_commits,
+    render_commit_trailer,
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
@@ -504,7 +505,13 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     identity = CommitIdentity(
-        name=cfg.git.commit.name, email=cfg.git.commit.email, coauthor=cfg.git.commit.coauthor
+        name=cfg.git.commit.name,
+        email=cfg.git.commit.email,
+        trailer=render_commit_trailer(
+            cfg.git.commit.trailer,
+            model=manifest.models.driver.model if manifest.models.driver else "",
+            role="worker",
+        ),
     )
     try:
         verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
@@ -551,6 +558,7 @@ def _cmd_merge(
         cfg=plan.cfg,
         identity=plan.identity,
         original=plan.original,
+        warn=lambda m: print(f"[agent6] {m}", file=sys.stderr),
     )
     if outcome.status == "error":
         print(f"ERROR: {outcome.error}", file=sys.stderr)

@@ -11,26 +11,33 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from agent6.app.manifest import write_manifest
+from agent6.app.providers import build_role_provider
+from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.git_ops import (
     CommitIdentity,
+    CommitRow,
     GitError,
     MergeResult,
     branch_exists,
     branch_tip_sha,
     condense_commit_message,
+    conventional_commit_subject,
     create_branch,
     is_ancestor,
     list_run_commits,
     merge_branch,
+    range_name_status,
     set_repo_hook_policy,
     squash_merge,
 )
+from agent6.providers import TranscriptSink
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 
@@ -105,28 +112,112 @@ def dispatch_merge(
     message: str | None,
     cfg: Config,
     identity: CommitIdentity,
+    *,
+    transcript_dir: Path | None = None,
+    warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeResult:
-    """Run the chosen strategy. squash condenses the per-step commit messages (and
-    folds in the configured coauthor); merge/ff hand off to merge_branch."""
+    """Run the chosen strategy. squash builds its message per
+    ``[git.commit.squash].message`` (the trailer is identity's); merge/ff hand
+    off to merge_branch. An operator *message* overrides any style."""
     if strategy != "squash":
         return merge_branch(
             cwd, run_branch, ff_only=(strategy == "ff"), message=message, identity=identity
         )
+    if message is None:
+        message = _squash_message(
+            cwd,
+            cfg,
+            manifest,
+            base_sha=base_sha,
+            run_branch=run_branch,
+            transcript_dir=transcript_dir,
+            warn=warn,
+        )
+    return squash_merge(cwd, run_branch, message, identity=identity)
+
+
+def _squash_message(
+    cwd: Path,
+    cfg: Config,
+    manifest: SessionManifest,
+    *,
+    base_sha: str,
+    run_branch: str,
+    transcript_dir: Path | None,
+    warn: Callable[[str], None],
+) -> str | None:
+    """The squash commit's message per ``[git.commit.squash].message``; None
+    means let git combine (its own SQUASH_MSG)."""
+    style = cfg.git.commit.squash.message
+    if style == "combine":
+        return None
     rows = list_run_commits(cwd, base_sha, run_branch)
-    default_msg, coauthors = condense_commit_message(
-        rows, subject=manifest.user_task or "agent6 run"
-    )
-    if cfg.git.commit.coauthor and cfg.git.commit.coauthor.lower() not in {
-        c.lower() for c in coauthors
-    }:
-        coauthors = (*coauthors, cfg.git.commit.coauthor)
-    return squash_merge(
-        cwd,
-        run_branch,
-        message or default_msg,
-        identity=CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email),
-        coauthors=coauthors,
-    )
+    base_msg = condense_commit_message(rows, subject=manifest.user_task or "agent6 run")
+    if style == "conventional":
+        subject = conventional_commit_subject(
+            range_name_status(cwd, base_sha, run_branch), summary=base_msg.splitlines()[0]
+        )
+        return "\n".join([subject, *base_msg.splitlines()[1:]])
+    if style == "model":
+        msg = _model_squash_message(
+            cwd,
+            cfg,
+            rows,
+            base_sha=base_sha,
+            run_branch=run_branch,
+            task=manifest.user_task or "agent6 run",
+            transcript_dir=transcript_dir,
+        )
+        if msg:
+            return msg
+        warn("model squash message failed; using the agent6 style")
+    return base_msg
+
+
+def _model_squash_message(
+    cwd: Path,
+    cfg: Config,
+    rows: tuple[CommitRow, ...],
+    *,
+    base_sha: str,
+    run_branch: str,
+    task: str,
+    transcript_dir: Path | None,
+) -> str | None:
+    """One provider call writing the squash message from git facts only; None
+    on any failure (the caller degrades to the agent6 style)."""
+    if transcript_dir is None:
+        return None
+    try:
+        provider = build_role_provider(
+            cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=BudgetTracker()
+        )
+        steps = "\n".join(f"- {r.subject}" for r in rows[:100])
+        files = "\n".join(
+            f"{s}\t{p}" for s, p in range_name_status(cwd, base_sha, run_branch)[:200]
+        )
+        resp = provider.call(
+            system=(
+                "Write a git commit message for a squashed branch: one"
+                " imperative subject line under 72 characters, a blank line,"
+                " then a short body. Use only the facts given. Output the"
+                " message text only."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Task: {task}\nPer-step subjects:\n{steps}\n"
+                        f"Changed files (status\tpath):\n{files}"
+                    ),
+                }
+            ],
+            tools=None,
+            max_tokens=500,
+        )
+    except Exception:
+        return None
+    return (resp.text or "").strip() or None
 
 
 def execute_merge(  # noqa: PLR0911
@@ -142,6 +233,7 @@ def execute_merge(  # noqa: PLR0911
     cfg: Config,
     identity: CommitIdentity,
     original: str,
+    warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
     """Check out *target*, merge *run_branch* in with *strategy*, restore the
     *original* checkout, and record the merge. The caller validates first; this
@@ -188,7 +280,16 @@ def execute_merge(  # noqa: PLR0911
     target_tip_before = branch_tip_sha(cwd, target) or ""
     try:
         result = dispatch_merge(
-            cwd, strategy, run_branch, base_sha, manifest, message, cfg, identity
+            cwd,
+            strategy,
+            run_branch,
+            base_sha,
+            manifest,
+            message,
+            cfg,
+            identity,
+            transcript_dir=layout.session_dir / "transcripts",
+            warn=warn,
         )
     except GitError as exc:
         restore_checkout(cwd, land_on, target)

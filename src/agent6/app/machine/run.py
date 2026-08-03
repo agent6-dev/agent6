@@ -249,11 +249,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # missing identity fails loudly up front, not as mid-loop noise.
             commit_identity: CommitIdentity | None = None
             if has_run_agent:
-                base = CommitIdentity(
-                    name=cfg.git.commit.name,
-                    email=cfg.git.commit.email,
-                    coauthor=cfg.git.commit.coauthor,
-                )
+                base = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
                 try:
                     name, email = verify_git_identity(cwd, base)
                 except GitError as exc:

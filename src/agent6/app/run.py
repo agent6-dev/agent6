@@ -65,6 +65,7 @@ from agent6.git_ops import (
     auto_stash_message,
     create_branch,
     dirty_paths,
+    render_commit_trailer,
     set_repo_hook_policy,
     stash_all,
     verify_git_identity,
@@ -319,11 +320,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # into its own hooks silently kept them off under an editor -- a knob
     # `config show` reports and one surface ignored.
     set_repo_hook_policy(cfg.git.run_repo_hooks)
-    identity = CommitIdentity(
-        name=cfg.git.commit.name,
-        email=cfg.git.commit.email,
-        coauthor=cfg.git.commit.coauthor,
-    )
+    identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
     # so it skips the commit-oriented git pre-flight entirely.
     base_sha = ""
@@ -686,6 +683,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 root=cwd,
                 config=cfg,
                 initial_pins=tuple(pins),
+                commit_trailer=render_commit_trailer(
+                    cfg.git.commit.trailer,
+                    model=session.rm_role.model,
+                    role=session_kind(mode).role,
+                ),
                 provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,
