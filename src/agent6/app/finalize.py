@@ -116,24 +116,38 @@ def print_baseline(
         return
     base_sha = ""
     with contextlib.suppress(ManifestError):
-        base_sha = read_manifest(layout.run_dir).base_sha
+        m = read_manifest(layout.run_dir)
+        # A fork starts where it was CUT, not where its parent started: gating
+        # the parent's base blamed the fork for breakage it inherited.
+        base_sha = m.forked_from_sha or m.base_sha
     # The PINNED gate, not the app-layer cfg: a run that adopted one mid-run
     # rebinds the loop's config, never this one, so cfg would say "no gate".
     pinned = ()
     with contextlib.suppress(ManifestError):
         pinned = read_manifest(layout.run_dir).workflow.verify_command
-    argv = tuple(pinned) or tuple(cfg.workflow.verify_command)
-    if not (argv and base_sha):
+    # The PIN, never the app-layer cfg: the pin is what judged this run, and
+    # falling back to cfg sent a full extra gate run against the base commit
+    # for a run that deliberately had none.
+    if not (pinned and base_sha):
         return
+    argv = tuple(pinned)
     reporter.out(f"\nchecking the gate on the base commit ({shlex.join(argv)}) ...")
-    baseline = gate_on_base(
-        Path.cwd(),
-        base_sha,
-        argv=argv,
-        config=cfg,
-        isolation=isolation,
-        timeout_s=cfg.workflow.verify_timeout_s,
-    )
+    reporter.out("  (Ctrl-C skips it; the run's own result is already decided)")
+    try:
+        baseline = gate_on_base(
+            Path.cwd(),
+            base_sha,
+            argv=argv,
+            config=cfg,
+            isolation=isolation,
+            timeout_s=cfg.workflow.verify_timeout_s,
+        )
+    except (KeyboardInterrupt, OSError) as exc:
+        # This answers a question ABOUT the run, from the teardown. Letting it
+        # out would replace the run's exit code with 130 (or a crash) and lose
+        # the verdict every `agent6 run && ...` chain reads.
+        reporter.out(f"  skipped: {exc.__class__.__name__}")
+        return
     reporter.out(baseline.line())
 
 

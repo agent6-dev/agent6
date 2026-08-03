@@ -143,3 +143,90 @@ def test_the_end_of_run_block_never_runs_a_second_gate(
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
+
+
+def test_the_baseline_gates_where_a_fork_actually_started(tmp_path: Path) -> None:
+    """A fork inherits its parent's base_sha, but it STARTS at the sha it was
+    cut from. Gating the parent's base told the operator "the gate passes on
+    the base commit, so this run broke it" about breakage the fork inherited."""
+    import json
+
+    from agent6.app import finalize
+    from agent6.app.baseline import Baseline
+    from agent6.workflows._run_state import RunResult
+
+    rd = tmp_path / "runs" / "fork1"
+    rd.mkdir(parents=True)
+    (rd / "logs.jsonl").write_text(
+        json.dumps({"type": "run.end", "reason": "finish_run", "all_passed": False}) + "\n",
+        encoding="utf-8",
+    )
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "run_id": "fork1",
+                "mode": "run",
+                "base_sha": "a" * 40,
+                "forked_from_sha": "b" * 40,
+                "workflow": {"verify_command": ["true"], "verify_origin": "configured"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def _capture(_cwd: object, base: str, **_k: object) -> Baseline:
+        seen.append(base)
+        return Baseline(ran=True, returncode=0, detail="")
+
+    import pytest as _pytest
+
+    monkey = _pytest.MonkeyPatch()
+    monkey.setattr(finalize, "gate_on_base", _capture)
+    try:
+        finalize.print_baseline(
+            RunResult(
+                completed=True,
+                reason="finish_run",
+                summary="s",
+                iterations=1,
+                tool_calls=1,
+                verified="failed",
+            ),
+            layout=RunLayout(state_dir=tmp_path, run_id="fork1"),
+            cfg=Config(),
+            isolation="none",
+            reporter=Reporter(out=lambda _m: None, err=lambda _m: None),
+        )
+    finally:
+        monkey.undo()
+    assert seen == ["b" * 40], "the fork was gated against its PARENT's base"
+
+
+def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: Path) -> None:
+    """`auto` degrades. A manifest stamping the knob told every surface "auto",
+    which says nothing about whether the run was confined."""
+    layout = RunLayout(state_dir=tmp_path, run_id="quiet-fox-AAAAAA")
+    layout.ensure()
+    write_run_manifest(
+        layout,
+        run_id=layout.run_id,
+        user_task="t",
+        base_sha="0" * 40,
+        base_branch="main",
+        run_branch=None,
+        cfg=Config(),  # sandbox.isolation defaults to "auto"
+        isolation="hardened",
+    )
+    assert read_manifest(layout.run_dir).policy.isolation == "hardened"
+
+
+def test_an_empty_gate_never_carries_an_origin(tmp_path: Path) -> None:
+    """`configured` beside `()` is self-contradictory on disk, and the next
+    leg reads that origin back."""
+    layout = _layout(tmp_path)
+    reporter, _said = _quiet()
+    pin_gate(layout.run_dir, (), "", events=_sink(tmp_path), reporter=reporter)
+    pinned = read_manifest(layout.run_dir).workflow
+    assert (pinned.verify_command, pinned.verify_origin) == ((), "")

@@ -535,11 +535,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         with contextlib.suppress(ManifestError, OSError):
             pinned = read_manifest(layout.run_dir).workflow
             pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
-        if leg_configured and pinned_gate and tuple(pinned_gate) != cfg.workflow.verify_command:
-            reporter.err(
-                f"[agent6] config replaces this run's verify gate: was"
-                f" {' '.join(pinned_gate)}, now {' '.join(cfg.workflow.verify_command)}"
-            )
+        if tuple(pinned_gate) != cfg.workflow.verify_command:
+            # Both directions, including none -> gate: the frozen system prompt
+            # names the OLD gate either way, so the operator has to know which
+            # command is now judging the run.
+            was = " ".join(pinned_gate) or "none"
+            now = " ".join(cfg.workflow.verify_command) or "none"
+            reporter.err(f"[agent6] this run's verify gate changed: was {was}, now {now}")
         pin_gate(
             layout.run_dir,
             cfg.workflow.verify_command,

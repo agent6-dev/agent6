@@ -531,6 +531,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             mode=mode,
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
+            isolation=isolation,
         )
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
@@ -563,12 +564,16 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
         # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
-        gate_origin = "configured" if cfg.workflow.verify_command else ""
+        configured_gate = bool(cfg.workflow.verify_command)
         cfg = infer_verify_if_unset(
             cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
         )
-        if not gate_origin and cfg.workflow.verify_command:
-            gate_origin = "inferred"
+        # After resolution, never before: preflight can DROP the gate (a run
+        # that cannot run commands), and an empty gate with an origin of
+        # "configured" is a self-contradiction the next leg reads back.
+        gate_origin = ""
+        if cfg.workflow.verify_command:
+            gate_origin = "configured" if configured_gate else "inferred"
         # Pin it: from here the run is judged by THIS gate, whatever the file it
         # was inferred from says later.
         pin_gate(

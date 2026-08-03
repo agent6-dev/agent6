@@ -72,6 +72,7 @@ def write_run_manifest(
     effective_preset: str = "",
     preset_from_flag: bool = False,
     gate: tuple[Sequence[str], str] | None = None,
+    isolation: str = "",
     parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -124,7 +125,10 @@ def write_run_manifest(
         ),
         policy=PolicyStamp(
             run_commands=cfg.sandbox.run_commands,
-            isolation=str(cfg.sandbox.isolation),
+            # What the run RESOLVED to, not the knob: `auto` degrades, and a
+            # surface printing "auto" told the operator nothing about whether
+            # the run was actually confined.
+            isolation=isolation or str(cfg.sandbox.isolation),
         ),
         parked_task=parked_task,
         parent_run_id=parent_run_id,
