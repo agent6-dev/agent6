@@ -104,10 +104,26 @@ class MCPToolDescriptor:
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
-def _confined_argv(
-    command: tuple[str, ...], confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None
-) -> tuple[str, ...]:
-    """*command*, wrapped in the Landlock shim when the operator asked for one.
+@dataclass(frozen=True, slots=True)
+class MCPConfinement:
+    """What confining one spawned MCP server means, in one record.
+
+    A `(read, write, require)` tuple every call site had to unpack positionally;
+    the network knob would have been a fourth thing to count.
+    """
+
+    read_paths: tuple[str, ...] = ()
+    write_paths: tuple[str, ...] = ()
+    # Refuse to start rather than run the server with no Landlock domain.
+    require: bool = False
+    # "none" puts the server in a network namespace of its own: a loopback that
+    # reaches only itself, and nothing else. "host" leaves it on the operator's
+    # network, which is what most servers are for.
+    network: str = "host"
+
+
+def _confined_argv(command: tuple[str, ...], confine: MCPConfinement | None) -> tuple[str, ...]:
+    """*command*, wrapped in the confinement shim when the operator asked for one.
 
     A shim rather than `preexec_fn`: Landlock is restrict-self-then-exec and
     inherited across the exec, and `preexec_fn` is unsafe in a process with
@@ -115,14 +131,15 @@ def _confined_argv(
     """
     if confine is None:
         return command
-    read, write, require = confine
     shim = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
-    for path in read:
+    for path in confine.read_paths:
         shim += ["--read", path]
-    for path in write:
+    for path in confine.write_paths:
         shim += ["--write", path]
-    if require:
+    if confine.require:
         shim.append("--require")
+    if confine.network == "none":
+        shim.append("--no-network")
     return (*shim, "--", *command)
 
 
@@ -149,8 +166,8 @@ class MCPServerSpec:
     pass_env: tuple[str, ...] = ()
     # Set instead of `command` for a server the operator runs.
     http: HttpTransport | None = None
-    # (read_paths, write_paths, require) for a spawned server, or None.
-    confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None = None
+    # Confinement for a spawned server, or None for an unconfined one.
+    confine: MCPConfinement | None = None
 
 
 @dataclass
@@ -164,10 +181,9 @@ class _MCPServer:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
-    # Filesystem confinement for a spawned server: (read_paths, write_paths,
-    # require). Empty paths means unconfined, which is what a server without a
-    # `[sandbox]` block gets.
-    confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None = None
+    # Confinement for a spawned server. None is unconfined, which is what a
+    # server without a `[sandbox]` block gets.
+    confine: MCPConfinement | None = None
     # Set instead of `command` for a server the OPERATOR runs: agent6 connects
     # rather than spawning, so it owns none of that server's environment,
     # lifetime or confinement.

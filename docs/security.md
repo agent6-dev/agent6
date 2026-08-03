@@ -194,14 +194,22 @@ fixed argv depending only on operator input, never LLM output.
 
 - `git_ops.py`: agent6's own git operations (§5).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/exec_confined.py`: applies Landlock to itself, then `execvp`s the
-  argv after `--`. For a long-lived child agent6 spawns but does not drive (a
-  configured MCP server): the jail launcher captures stdio and owns the process
-  to completion, which cannot host a live MCP pipe. Landlock is
+- `sandbox/exec_confined.py`: confines itself, then `execvp`s the argv after
+  `--`. For a long-lived child agent6 spawns but does not drive (a configured
+  MCP server): the jail launcher captures stdio and owns the process to
+  completion, which cannot host a live MCP pipe. Both mechanisms are
   restrict-self-then-exec and inherited, so the server and everything it spawns
-  get the domain. The paths and the argv are the operator's, from config; no
-  LLM input reaches it, and `preexec_fn` -- the obvious alternative -- is unsafe
-  in a threaded process, which the MCP client is.
+  get them: Landlock's domain is irrevocable across `execve`, and
+  `[mcp.servers.<name>.sandbox].network = "none"` additionally
+  `unshare`s a user + network namespace, which the stdio pipes (file
+  descriptors) survive untouched. The namespace work runs BEFORE Landlock,
+  because it writes `/proc/self/{setgroups,uid_map,gid_map}` (mapping the
+  operator's uid straight through, so the server does not become `nobody`) and
+  opens a socket to bring `lo` up -- none of which the domain grants. A host
+  whose kernel forbids unprivileged user namespaces makes the server REFUSE
+  rather than start connected. The paths and the argv are the operator's, from
+  config; no LLM input reaches it, and `preexec_fn` -- the obvious alternative
+  -- is unsafe in a threaded process, which the MCP client is.
 - `sandbox/jail.py`: the jail launcher itself.
 
 - `tools/lsp.py`: the `ty` language server, exe resolved from PATH.

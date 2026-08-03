@@ -18,7 +18,10 @@ import pytest
 
 from agent6.app.reporter import Reporter
 from agent6.config import Config
-from agent6.tools.mcp_client import _confined_argv  # pyright: ignore[reportPrivateUsage]
+from agent6.tools.mcp_client import (
+    MCPConfinement,
+    _confined_argv,  # pyright: ignore[reportPrivateUsage]
+)
 
 _SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
 
@@ -33,7 +36,10 @@ def test_a_confined_server_is_wrapped_in_the_shim() -> None:
     """A shim, not `preexec_fn`: Landlock is restrict-self-then-exec and
     inherited across the exec, and preexec_fn is unsafe in a threaded process
     -- which the MCP client is."""
-    argv = _confined_argv(("npx", "server"), (("/usr", "/etc"), ("/tmp",), False))
+    argv = _confined_argv(
+        ("npx", "server"),
+        MCPConfinement(read_paths=("/usr", "/etc"), write_paths=("/tmp",)),
+    )
     assert list(argv) == [
         *_SHIM,
         "--read",
@@ -49,7 +55,7 @@ def test_a_confined_server_is_wrapped_in_the_shim() -> None:
 
 
 def test_require_is_passed_through() -> None:
-    argv = _confined_argv(("x",), ((), ("/tmp",), True))
+    argv = _confined_argv(("x",), MCPConfinement(write_paths=("/tmp",), require=True))
     assert "--require" in argv
 
 
@@ -232,7 +238,7 @@ def test_only_a_confined_spawn_drops_the_desktop(monkeypatch: pytest.MonkeyPatch
     original = client.subprocess.Popen
     client.subprocess.Popen = _capture  # pyright: ignore[reportAttributeAccessIssue]
     try:
-        for confine in (None, (("/usr",), (), False)):
+        for confine in (None, MCPConfinement(read_paths=("/usr",))):
             srv = client._MCPServer(  # pyright: ignore[reportPrivateUsage]
                 name="s",
                 command=("x",),

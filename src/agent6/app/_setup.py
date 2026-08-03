@@ -18,7 +18,7 @@ from agent6.models.cache import list_models
 from agent6.sandbox import landlock_abi, strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from agent6.tools.mcp_client import MCPConfinement, MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 
 
@@ -147,7 +147,12 @@ def start_mcp_manager_if_enabled(
             call_timeout_s=srv.call_timeout_s,
             pass_env=srv.pass_env,
             confine=(
-                (srv.sandbox.read_paths, srv.sandbox.write_paths, srv.sandbox.require)
+                MCPConfinement(
+                    read_paths=srv.sandbox.read_paths,
+                    write_paths=srv.sandbox.write_paths,
+                    require=srv.sandbox.require,
+                    network=srv.sandbox.network,
+                )
                 if srv.sandbox is not None
                 else None
             ),

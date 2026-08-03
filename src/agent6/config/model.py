@@ -934,11 +934,12 @@ class MCPSandbox(BaseModel):
     whole filesystem, because agent6 cannot know what a given one needs and a
     guess that breaks it is worse than none. Naming paths opts in.
 
-    Landlock only: the domain is applied to a shim which then becomes the
-    server, so it is inherited by the server and everything it spawns.
-    Namespace-level knobs (network, pivot_root, seccomp) need the jail
-    launcher, which captures stdio and so cannot host a live MCP pipe; they
-    are refused rather than accepted and ignored.
+    The Landlock domain is applied to a shim which then becomes the server, so
+    it is inherited by the server and everything it spawns. ``network`` is the
+    one namespace-level knob: it needs no launcher, because unsharing a network
+    namespace leaves the stdio pipes (which are fds) untouched. pivot_root and
+    seccomp DO need the jail launcher, which captures stdio and so cannot host
+    a live MCP pipe; they have no knob here rather than one that does nothing.
     """
 
     model_config = _BASE_MODEL_CONFIG
@@ -949,6 +950,15 @@ class MCPSandbox(BaseModel):
     # Refuse to start the server at all when the kernel has no Landlock,
     # instead of running it unconfined with a warning.
     require: bool = False
+    # "none" runs the server in a network namespace of its own: it keeps a
+    # loopback that reaches only itself, and nothing else -- no LAN, no
+    # internet, no host loopback. Default "host" is permissive because most
+    # servers exist to reach something. NOT called "auto": everywhere else in
+    # agent6 `auto` means "the most secure option available, degrading with a
+    # warning", and one word cannot also mean permissive. "none" is an explicit
+    # enforce value, so a host whose kernel forbids unprivileged user
+    # namespaces refuses the server rather than starting it connected.
+    network: Literal["host", "none"] = "host"
 
     @model_validator(mode="after")
     def _reachable(self) -> MCPSandbox:

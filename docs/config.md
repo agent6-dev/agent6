@@ -540,6 +540,7 @@ command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
 [mcp.servers.notes.sandbox]
 read_paths  = ["/usr", "/etc", "~/notes"]
 write_paths = ["~/notes"]
+network     = "none"     # optional: loopback only, reaching nothing else
 ```
 
 **What this bounds, and what it does not.** Landlock gates filesystem paths.
@@ -551,11 +552,17 @@ Anything else that reaches an unconfined process (a listening daemon the server
 can talk to, a path you granted that holds one) is still a way out: name the
 narrowest paths that work.
 
-Filesystem only, for now. Namespace-level knobs (network, pivot_root, seccomp)
+`network = "none"` is the one namespace-level knob: it puts the server in a
+network namespace of its own, with a loopback that reaches only itself and no
+route anywhere else. It needs no launcher, because unsharing a namespace leaves
+the stdio pipes (file descriptors) untouched. `pivot_root` and `seccomp` DO
 need the jail launcher, which captures stdio and so cannot host a live MCP
-pipe; they are refused rather than accepted and ignored. A `url` server is your
-own process -- confine it where you start it. On a kernel with no Landlock the
-block degrades with a warning at run start; `require = true` refuses instead.
+pipe; they have no knob here rather than one that quietly does nothing. A `url`
+server is your own process -- confine it where you start it. On a kernel with
+no Landlock the block degrades with a warning at run start; `require = true`
+refuses instead. `network = "none"` always refuses, on a host whose kernel
+forbids unprivileged user namespaces: it is an explicit enforce value, and a
+server you believe is offline must never quietly keep the network.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -567,6 +574,7 @@ block degrades with a warning at run start; `require = true` refuses instead.
 | `servers.<name>.sandbox.read_paths` | *(required in a block)* | Paths a SPAWNED server may read and execute (absolute, or `~`). Naming any path opts the server into a Landlock domain it and everything it spawns inherit, and drops its desktop-session addresses. **Absent block means unconfined** -- it runs as you, with your whole filesystem -- because agent6 cannot know what a given server needs and a guess that breaks it is worse than none. Required inside a block because Landlock grants read and execute together: a server that cannot read its own interpreter dies on startup with an import error that says nothing about the sandbox. |
 | `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. |
 | `servers.<name>.sandbox.require` | `false` | Refuse to start the server at all on a kernel with no Landlock, instead of running it unconfined with a warning. |
+| `servers.<name>.sandbox.network` | `"host"` | `"none"` runs the server in its own network namespace: loopback only, no LAN, no internet, no host loopback. Default is permissive because most servers exist to reach something, and a default that broke every one of them would just get turned off. Not called `auto`: everywhere else in agent6 that word means "the most secure option available, degrading with a warning", so it must not also mean permissive here. The server keeps your uid (the namespace maps it through) and gets its `lo` brought up, so nothing about it looks unusual from the inside. |
 | `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
