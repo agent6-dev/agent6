@@ -255,6 +255,29 @@ def test_written_value_error_catches_an_invalid_container_element() -> None:
     assert written_value_error("providers.x.token_command", ["gcloud"]) is None
 
 
+def test_written_value_error_catches_a_section_wide_rule() -> None:
+    """A rule spanning two keys is a model_validator, and pydantic reports it at
+    the SECTION -- a PARENT of the written key. Accepting a parent loc only for
+    extra_forbidden let every such rule through: `config set
+    context.drop_at_chars` from a repo whose layer set both halves wrote a
+    half-set [context] to the GLOBAL file, exit 0, and every other repo on the
+    machine then failed to load any config at all.
+
+    The standalone dict holds only the written key, so a complaint about the
+    section it sits in can only be about this write.
+    """
+    from agent6.config.write import written_value_error
+
+    for key, value in (
+        ("context.drop_at_chars", 200_000),  # pair: both or neither
+        ("git.auto_stash_pop", True),  # needs auto_stash
+        ("web.host", "0.0.0.0"),  # non-loopback needs the opt-in
+    ):
+        assert written_value_error(key, value) is not None, f"{key} slipped through"
+    # A provider filled in over several sets still validates field by field.
+    assert written_value_error("providers.x.base_url", "https://api.example") is None
+
+
 def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     """set_config_table writes a whole [table]; it must validate each LEAF, not the
     table dict as one. written_value_error only flags an error at loc == key, so a

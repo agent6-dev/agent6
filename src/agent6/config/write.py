@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import get_args
 
 from pydantic import BaseModel, ValidationError
+from pydantic_core import ErrorDetails
 
 from agent6.config.io import (
     ConfigLeafValue,
@@ -218,12 +219,13 @@ def written_value_error(key: str, value: object) -> str | None:
     only to explode later where the mask is absent. THE one owner every writer
     uses (`config set/add/remove` and the engine-level set_config_* the TUI,
     web, init and connect drive), so all of them validate the written value
-    identically. Rejects only when the error sits exactly at *key*, or at a
-    parent of it for the schema's extra_forbidden (an unknown key or section),
-    so a partial dynamic entry (a provider filled in over several sets) is not
-    falsely reverted. An error UNDER *key* (a container's per-element loc,
-    ``sandbox.fetch_hosts.0``) is the written value's own and rejects too --
-    except a missing child, which only means the container is partial."""
+    identically. Rejects an error at *key*, under it, or at a PARENT of it: the
+    standalone dict holds only this key, so a complaint about the section it
+    sits in is about this write -- a rule spanning two keys is a
+    ``model_validator`` and pydantic reports those at the section. A missing
+    child is the exception: it only means the written container is partial (a
+    provider filled in over several sets), and the merged re-validation still
+    catches one that is genuinely absent."""
     if key == "presets" or key.startswith("presets."):
         # [presets.*] is meta-config the loader strips BEFORE validation
         # (_apply_preset), so the Config schema forbids it by design; the
@@ -244,25 +246,40 @@ def written_value_error(key: str, value: object) -> str | None:
         Config.model_validate(nested)
     except ValidationError as exc:
         for err in exc.errors():
-            loc = ".".join(str(x) for x in err["loc"])
-            if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
-                # An unknown top-level section errors at the SECTION (a parent
-                # loc), not the leaf; both deserve the same friendly message,
-                # not pydantic-speak or the merged-layer dump.
-                return unknown_key_error(key)
-            if loc == key or loc.startswith(key + "."):
-                if err["type"] == "missing":
-                    # A missing child means the written container is PARTIAL;
-                    # another layer may complete it, and the merged
-                    # re-validation still catches a genuinely absent field.
-                    continue
-                msg = err["msg"]
-                if err["type"] == "bool_parsing":
-                    msg = f"expected true or false, got {value!r}"
-                return f"{key}: {msg}"
+            message = _error_about(err, key, value)
+            if message is not None:
+                return message
     except ConfigError as exc:
         return str(exc)
     return None
+
+
+def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
+    """One validation error as a message about *key*, or None when it is about
+    something else in the config."""
+    loc = ".".join(str(x) for x in err["loc"])
+    if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
+        # An unknown top-level section errors at the SECTION (a parent loc),
+        # not the leaf; both deserve the same friendly message, not
+        # pydantic-speak or the merged-layer dump.
+        return unknown_key_error(key)
+    if err["type"] == "value_error" and "." not in loc and key.startswith(loc + "."):
+        # A rule spanning two keys of one section is a model_validator, and
+        # pydantic reports those at the SECTION. Only a TOP-LEVEL one: the
+        # name-keyed entries (providers.x, mcp.servers.x) are legitimately
+        # written a leaf at a time, and their whole-entry rules would reject
+        # every partial write.
+        return f"{key}: {err['msg']}"
+    if loc != key and not loc.startswith(key + "."):
+        return None
+    if err["type"] == "missing":
+        # A missing child means the written container is PARTIAL; another layer
+        # may complete it, and the merged re-validation still catches a
+        # genuinely absent field.
+        return None
+    if err["type"] == "bool_parsing":
+        return f"{key}: expected true or false, got {value!r}"
+    return f"{key}: {err['msg']}"
 
 
 def revalidate_write(
