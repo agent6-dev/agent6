@@ -466,11 +466,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             set_repo_hook_policy(cfg.git.run_repo_hooks)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)
-            if sandbox_overrides is not None:
-                cfg = sandbox_overrides.apply(cfg)
-            # Same clamp a fresh session gets: a resumed ask is still an ask,
-            # and overrides must not put back what the mode takes away.
-            cfg = session_config(cfg, mode)
+            # Same clamp a fresh session gets: a resumed ask is still an ask.
+            # The operator's own flags land after it, as they do on a fresh one.
+            cfg = session_config(cfg, mode, sandbox_overrides)
             cfg.require_runnable(role)
         except ConfigError as exc:
             reporter.err(f"CONFIG ERROR:\n{exc}")

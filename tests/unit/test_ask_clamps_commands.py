@@ -84,3 +84,57 @@ def test_tightening_needs_no_permission_but_widening_does() -> None:
     assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
     asked = Config.model_validate({"sandbox": {"run_commands": "ask"}})
     assert asked.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "yes"
+
+
+def test_an_explicit_auto_approve_survives_the_ask_clamp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The clamp exists to stop an ask inheriting a STANDING `run_commands =
+    "yes"` while nobody watches. An operator typing --auto-approve on this
+    invocation is the opposite: the most specific layer, and unreachable by the
+    LLM.
+
+    Clamping it made the flag inert, and every headless `ask --auto-approve`
+    was then refused by the approval preflight -- whose message recommends
+    --auto-approve, the flag that had just been undone.
+    """
+    from agent6.app import run as run_mod
+    from agent6.app._session import SessionRefused
+    from agent6.app._setup import SandboxOverrides
+
+    seen: list[str] = []
+
+    def capture(cfg: Config, **_kw: object) -> str:
+        seen.append(cfg.sandbox.run_commands)
+        raise SessionRefused(2)
+
+    monkeypatch.setattr(run_mod, "select_isolation", capture)
+    monkeypatch.chdir(tmp_path)
+    run_mod.run_task(
+        _cfg("ask"),
+        "q",
+        frontend=MagicMock(),
+        mode="ask",
+        sandbox_overrides=SandboxOverrides(auto_approve=True),
+    )
+    assert seen == ["yes"], f"the operator's own flag was undone: {seen}"
+
+
+def test_the_clamp_still_catches_a_standing_yes_in_ask(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The converse, so the fix above cannot quietly become "asks never clamp":
+    a config-level `yes` with no flag is still clamped to a prompt."""
+    from agent6.app import run as run_mod
+    from agent6.app._session import SessionRefused
+
+    seen: list[str] = []
+
+    def capture(cfg: Config, **_kw: object) -> str:
+        seen.append(cfg.sandbox.run_commands)
+        raise SessionRefused(2)
+
+    monkeypatch.setattr(run_mod, "select_isolation", capture)
+    monkeypatch.chdir(tmp_path)
+    run_mod.run_task(_cfg("yes"), "q", frontend=MagicMock(), mode="ask")
+    assert seen == ["ask"]

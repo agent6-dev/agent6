@@ -296,8 +296,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     role = session_kind(mode).role
 
     # Before anything reads a knob (see session_config): an ask never runs a
-    # command unwatched, whether it is starting here or resuming.
-    cfg = session_config(cfg, mode)
+    # command unwatched, whether it is starting here or resuming -- unless the
+    # operator granted this invocation, which lands after the clamp.
+    cfg = session_config(cfg, mode, sandbox_overrides)
     try:
         isolation = select_isolation(
             cfg,
