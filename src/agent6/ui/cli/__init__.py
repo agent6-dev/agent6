@@ -398,6 +398,7 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
         no_run=args.no_run,
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
         steer=args.steer,
     )
 

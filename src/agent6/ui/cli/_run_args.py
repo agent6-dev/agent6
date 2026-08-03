@@ -242,3 +242,6 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         ),
     )
     _add_budget_flags(fork_p)
+    # A fork without --no-run CONTINUES a run, so it is a paid command like the
+    # rest and carries the same approval/sandbox overrides.
+    _add_sandbox_flags(fork_p)

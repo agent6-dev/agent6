@@ -92,3 +92,24 @@ def test_config_get_does_not_offer_keys_it_rejects(
 
     assert any(k.startswith("presets.mine.") for k in for_set), "the write verbs still offer them"
     assert not any(k.startswith("presets.") for k in for_get), f"get offered: {for_get[:3]}"
+
+
+def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
+    """`_add_sandbox_flags` says "every paid command carries both:
+    run/plan/ask/resume and machine run". A fork without `--no-run` CONTINUES a
+    run, so it is one -- but it registered only the budget flags, and
+    `agent6 fork --auto-approve <id>` died on "unrecognized arguments".
+
+    Loud, not silent, which is why this is a consistency gap rather than a lie.
+    But an operator who forks a run they had auto-approved should not have to
+    fork with --no-run and then resume just to say so again.
+    """
+    from agent6.app._setup import SandboxOverrides
+    from agent6.ui.cli.parser import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["fork", "--auto-approve", "some-session-id"])
+    assert SandboxOverrides.from_args(args).auto_approve is True
+
+    args = parser.parse_args(["fork", "--no-commands", "some-session-id"])
+    assert SandboxOverrides.from_args(args).no_commands is True

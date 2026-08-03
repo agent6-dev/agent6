@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from agent6.app._setup import BudgetOverrides
+from agent6.app._setup import BudgetOverrides, SandboxOverrides
 from agent6.app.fork import create_fork
 from agent6.ui.cli.resume import _cmd_resume
 
@@ -23,6 +23,7 @@ def _cmd_fork(
     no_run: bool = False,
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
+    sandbox_overrides: SandboxOverrides | None = None,
     steer: str = "",
 ) -> int:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
@@ -63,5 +64,6 @@ def _cmd_fork(
         force=False,
         tui=tui,
         budget_overrides=budget_overrides,
+        sandbox_overrides=sandbox_overrides,
         steer=steer,
     )
