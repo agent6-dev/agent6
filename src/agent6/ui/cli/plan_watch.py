@@ -549,17 +549,23 @@ def _print_crashed_line(target: Path) -> None:
     )
 
 
-def _render_dead_session(target: Path, events_path: Path) -> int:
-    """Crashed/killed: no session.end will ever come and no worker reads answers.
-    Render the log read-only (no front-end, no re-asked prompts), then say
-    what `sessions show` already knows."""
+def _render_over_session(target: Path, events_path: Path, *, finished: bool) -> int:
+    """A session no worker is driving: nothing more will be appended and no
+    answer would be read. Render the log read-only (no front-end, no re-asked
+    prompts), then say how it ended.
+
+    *finished* separates the two ways that happens: a run that ended cleanly
+    already said its outcome, and calling that "crashed or killed" contradicted
+    the `passed` the other surfaces were showing for the same run.
+    """
     view = ConsoleView(sys.stdout)
     try:
         for event in tail_events(events_path, follow=False):
             view.feed(event)
     finally:
         view.close()
-    _print_crashed_line(target)
+    if not finished:
+        _print_crashed_line(target)
     return 0
 
 
@@ -606,9 +612,11 @@ def _watch_transcript(target: Path) -> int:
 
     # THE liveness question, answered where every other surface answers it: a
     # second rule here read "no pid" as not-dead, so attach followed a log
-    # nothing would append to while `sessions list` called it stale.
+    # nothing would append to while `sessions list` called it stale. Whether it
+    # ENDED is a separate fact: both stop the follow, only one is a crash.
     if not session_is_live(target):
-        return _render_dead_session(target, events_path)
+        scan = scan_session_log(events_path)
+        return _render_over_session(target, events_path, finished=scan.finished)
 
     def worker_dead() -> bool:
         # Per poll, so it stays O(1): once we are following, the session has

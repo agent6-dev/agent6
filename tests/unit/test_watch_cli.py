@@ -237,3 +237,36 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
     assert not t.is_alive(), "attach followed a session with no worker"
     assert result == [0]
     assert "crashed or killed" in capsys.readouterr().err
+
+
+def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that ended cleanly is not a crashed one.
+
+    Routing attach through the liveness fold collapsed two different states:
+    `session_is_live` is False for a FINISHED run as much as for a dead one, so
+    attaching to a run that had just printed "passed" told the operator it
+    "never ended (crashed or killed)" -- while `sessions list` and `sessions
+    show` both said passed. Three surfaces, two stories.
+    """
+    import threading
+
+    _make_run(
+        tmp_path,
+        "done-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result: list[int] = []
+    t = threading.Thread(target=lambda: result.append(main(["attach", "done-run"])), daemon=True)
+    t.start()
+    t.join(timeout=5)
+    assert not t.is_alive(), "attach failed to terminate on a finished run"
+    assert result == [0]
+    err = capsys.readouterr().err
+    assert "crashed or killed" not in err, f"a clean finish rendered as a crash: {err!r}"
