@@ -754,13 +754,20 @@ def _is_table_array(value: Any) -> bool:
     )
 
 
-def materialize(config: Config, *, for_repo: bool = False) -> str:
+def materialize(
+    config: Config, *, for_repo: bool = False, keep_presets_from: Path | None = None
+) -> str:
     """Render the fully-resolved config as a complete TOML document.
 
     Used by ``agent6 config fill`` to snapshot every effective value into
     one explicit file (handy before tightening defaults or for an audit).
     When ``for_repo`` is set, the global-only ``[agent6].state_dir``
     is dropped (it is invalid in a per-repo config).
+
+    ``keep_presets_from`` carries that file's own ``[presets.*]`` tables into the
+    document. They are meta-config -- stripped before validation, so no ``Config``
+    holds them -- and a fill that rewrites the operator's config file would
+    otherwise delete the definitions it cannot see.
     """
     data = config.model_dump(mode="python")
     if for_repo and isinstance(data.get("agent6"), dict):
@@ -801,4 +808,14 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
                     if v2 is not None and not isinstance(v2, dict):
                         lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
                 lines.append("")
+    if kept := _file_presets(keep_presets_from):
+        _emit_table("presets", kept, lines)
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _file_presets(path: Path | None) -> dict[str, Any]:
+    """The ``[presets.*]`` tables *path* defines itself, if any."""
+    if path is None or not path.is_file():
+        return {}
+    presets = _read_toml(path).get("presets")
+    return presets if isinstance(presets, dict) else {}

@@ -71,3 +71,37 @@ def test_a_filled_config_can_be_used_as_an_explicit_config(
     # The point: this must not raise.
     reloaded = load_effective(tmp_path, filled).config
     assert reloaded.agent6.config_version == 1
+
+
+def test_config_fill_keeps_the_presets_the_file_defines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config fill` rewrites the operator's own config file. A `[presets.*]`
+    table in it is meta-config -- stripped before validation, so absent from the
+    `Config` the snapshot is rendered from -- and the rewrite dropped it.
+
+    Silently, and with `--force` there is no earlier copy: `config presets`
+    listed `myfast` before the fill and only the built-ins after. The leaves the
+    preset selected survive (they are materialized), the definition did not, so
+    `--preset myfast` stopped resolving at all.
+    """
+    from agent6.ui.cli import main
+
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    (cfg_home / "config.toml").write_text(
+        'preset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "yes"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "fill", "--force"]) == 0
+
+    after = load_effective(tmp_path)
+    assert after.config.sandbox.run_commands == "yes", "the preset's leaf did not survive"
+    text = (cfg_home / "config.toml").read_text(encoding="utf-8")
+    assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
+    # The SELECTOR still goes: every leaf it chose is explicit now, so keeping it
+    # would apply the preset a second time on top of the snapshot.
+    assert "\npreset = " not in text and not text.startswith("preset = ")

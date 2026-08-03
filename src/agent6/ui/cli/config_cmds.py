@@ -147,7 +147,10 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
                     file=sys.stderr,
                 )
                 return 2
-            atomic_write(target, materialize(eff.config, for_repo=to_repo))
+            atomic_write(
+                target,
+                materialize(eff.config, for_repo=to_repo, keep_presets_from=target),
+            )
     finally:
         chown_to_real_user(target)
     print(f"Wrote fully-resolved config to {target}")
