@@ -416,3 +416,29 @@ def test_machine_steer_refuses_when_no_state_is_executing(tmp_path: Path) -> Non
     assert "not" in msg  # names the reason rather than claiming success
     assert not list((inst / "states" / "0001-work").glob("*.answer"))
     assert not (inst / "states" / "0001-work" / "steer.request").exists()
+
+
+def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
+    """A run killed while blocked on a prompt still renders its Approve/Deny box
+    (the client filters on `answered`, not liveness), and these two POSTs wrote
+    the answer and reported success with no worker left to consume it -- the
+    same shape as the typed steer that used to reach a corpse. Every sibling
+    action already refuses "run is not live"."""
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run-A1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        '{"version":2,"run_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
+    )
+    (run_dir / "logs.jsonl").write_text(
+        '{"type":"run.start","mode":"run","user_task":"t"}\n'
+        '{"type":"approval.prompt","id":"approval-1","prompt":"ok?"}\n',
+        encoding="utf-8",
+    )
+    (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
+    before = sorted(p.name for p in run_dir.iterdir())
+
+    ok, msg = actions.approve(tmp_path, "dead-run-A1", "approval-1", True)
+    assert ok is False and "not live" in msg
+    ok2, msg2 = actions.answer_question(tmp_path, "dead-run-A1", "q-1", ["yes"])
+    assert ok2 is False and "not live" in msg2
+    assert sorted(p.name for p in run_dir.iterdir()) == before, "nothing may be written"

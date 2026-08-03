@@ -196,6 +196,12 @@ def approve(
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
+    if not worker_is_alive(run_dir):
+        # The prompt box outlives the worker (it clears on the answer event,
+        # which a dead run will never emit), so refuse like every sibling
+        # action: nothing would consume the answer, and the next resume drops
+        # it. A session grant would be just as stranded.
+        return False, "run is not live"
     if session:
         set_session_allow(run_dir)
     write_answer(run_dir, prompt_id, approved=approved)
@@ -209,6 +215,8 @@ def answer_question(
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
+    if not worker_is_alive(run_dir):
+        return False, "run is not live"  # see approve()
     write_question_answers(run_dir, question_id, answers)
     return True, "answered"
 

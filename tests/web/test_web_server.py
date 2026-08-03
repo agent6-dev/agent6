@@ -324,6 +324,7 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
     run_dir = resolved_state_dir(tmp_path) / "runs" / "appr-run"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
     status, body = _post(port, "/api/run/appr-run/approve", {"id": "p1", "approved": True})
     assert status == 200
     assert body["ok"] is True
@@ -335,6 +336,7 @@ def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Pa
     run_dir = resolved_state_dir(tmp_path) / "runs" / "q-run"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
     status, body = _post(port, "/api/run/q-run/answer", {"id": "q1", "answers": ["option B"]})
     assert status == 200 and body["ok"] is True
     assert (run_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
@@ -375,6 +377,7 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     run_dir = resolved_state_dir(tmp_path) / "runs" / "trav-run"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
         port, "/api/run/trav-run/approve", {"id": "../../../../pwned", "approved": True}
