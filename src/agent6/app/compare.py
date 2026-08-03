@@ -136,7 +136,8 @@ def print_ranked_candidates(
         c = by_id[rid]
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
         reporter.out(
-            f"  {rnk}. {rid}  {verify:<9} ${c.cost_usd:.4f}   merge with: agent6 runs merge {rid}"
+            f"  {rnk}. {rid}  {verify:<9} {format_cost(c.cost_usd)}"
+            f"   merge with: agent6 runs merge {rid}"
         )
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)

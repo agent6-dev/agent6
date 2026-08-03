@@ -186,6 +186,36 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     assert "total: candidates $0.1000" in out and "+ judge" not in out
 
 
+def test_compare_rows_and_total_format_cost_the_same_way(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Per-row and total costs must render through the one cost formatter, which
+    switches to cents at >= $1. Hand-formatting the rows at four decimals put
+    '$1.5000' in a row above a '$1.52' total on the same screen."""
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-CCCC33",
+        base_sha=base,
+        commits=[("c.txt", "c\n", "add c")],
+        status="passed",
+        cost=1.50,
+    )
+    _setup_run(
+        repo,
+        "run-DDDD44",
+        base_sha=base,
+        commits=[("d.txt", "d\n", "add d")],
+        status="passed",
+        cost=0.02,
+    )
+    assert main(["runs", "compare", "run-CCCC33", "run-DDDD44"]) == 0
+    out = capsys.readouterr().out
+    assert "$1.5000" not in out
+    assert "$1.50" in out
+    assert "total: candidates $1.52" in out
+
+
 def test_compare_is_read_only(repo: Path) -> None:
     """Never merges, never writes to the run's own branch/manifest."""
     base = _init_repo(repo)

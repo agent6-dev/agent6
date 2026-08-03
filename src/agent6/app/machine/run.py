@@ -53,6 +53,7 @@ from agent6.machine import (
 from agent6.runs.ipc import write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
+from agent6.viewmodel.format import format_cost
 
 
 def _fail(reporter: Reporter, path: Path, problems: list[str], label: str = "") -> int:
@@ -355,6 +356,6 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     reporter.out(
         f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
         f" after {_transitions(result.transitions)} ({result.reason});"
-        f" spent ${spend.usd:.4f}"
+        f" spent {format_cost(spend.usd, partial=spend.partial)}"
     )
     return 0 if result.status == "ok" else 1
