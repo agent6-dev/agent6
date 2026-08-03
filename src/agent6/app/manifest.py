@@ -93,9 +93,9 @@ def write_run_manifest(
     m = RunManifest(
         agent6_version=__version__,
         run_id=run_id,
-        # run | plan | ask. Only run/plan pass session_mode (the fork/resume
-        # privilege gate); an ask writes its manifest under asks/, which
-        # neither command looks in.
+        # run | plan | ask. `fork` and `resume` act on session_mode(), never on
+        # this string: a damaged manifest must not silently escalate a
+        # read-only session to the privileged write tools.
         mode=mode,
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         # Display stamp only; RunSnapshot.original_task carries the verbatim

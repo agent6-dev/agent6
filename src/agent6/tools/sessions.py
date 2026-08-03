@@ -133,9 +133,9 @@ def conversation(layout: RunLayout, *, max_chars: int) -> str:
     if len(text) > max_chars:
         # The header counts against the cap: added on top of a max_chars slice,
         # the result was longer than the caller asked for.
-        cut = len(text) - max_chars
-        header = f"... {cut} earlier characters elided ...\n\n"
-        text = header + text[-max(max_chars - len(header), 0) :]
+        header = "... {cut} earlier characters elided ...\n\n"
+        kept = max(max_chars - len(header.format(cut=len(text))), 0)
+        text = header.format(cut=len(text) - kept) + text[-kept:] if kept else ""
     return text or "(this session recorded no conversation)"
 
 

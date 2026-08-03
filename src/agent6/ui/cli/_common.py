@@ -172,7 +172,7 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
     state = _state_dir(repo_root)
     exact: list[tuple[str, str]] = []
     prefix: list[tuple[str, str]] = []
-    for subdir in ("runs", "asks", "machine-drafts"):
+    for subdir in RUN_BUCKETS:
         d = state / subdir
         if not d.is_dir():
             continue
