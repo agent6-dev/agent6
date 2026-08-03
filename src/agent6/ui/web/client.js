@@ -309,7 +309,7 @@ function draftsCard(drafts) {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.id);
     g.appendChild(el('div', 'title', d.task || d.id));
     g.appendChild(el('div', 'sub', `draft · ${esc(d.id)} · ${when(d.mtime)}`));
-    it.appendChild(pill(d.status));
+    it.appendChild(pill(d.status, d.label || d.status)); // keep the reason (failed · provider_error)
   });
 }
 
@@ -1192,14 +1192,19 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // The current state's conversation: live turn from this frame, completed
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
-  cards._conv.setLive(ended ? { finished: true } : r);
+  // Gate on the machine's DIR liveness (notRunning), not the reasoning fold's
+  // `finished`: an agent-state per-state log carries no run.end, so the dir-less
+  // fold's `finished` is STRUCTURALLY always false -- a parked/ended/stopped
+  // machine would otherwise show its last (finished) turn as live and tick
+  // "agent working…" forever. Matches the TUI, which gates on worker liveness.
+  cards._conv.setLive(notRunning ? { finished: true } : r);
   cards._conv.poke();
   const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
   hbState = {
-    // r.operator_blocked: a machine agent state blocked on an approval/question
-    // is not working, so the beat goes quiet (the run pane's rule; the machine
-    // snapshot is dir-less, so it reads the fold's operator_blocked, not status).
-    active: !ended && !r.finished && !!r.last_role && !streaming && !r.operator_blocked,
+    // notRunning quiets the beat for a not-running machine; operator_blocked
+    // still quiets a RUNNING state blocked on an approval/question (the run
+    // pane's rule; the machine snapshot is dir-less, so it reads the fold).
+    active: !notRunning && !!r.last_role && !streaming && !r.operator_blocked,
     role: (r.last_role && r.last_role.role) || 'agent',
     last: Date.now(),
     spin: hbState.spin,
