@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.app.preflight import git_repo_refusal
-from agent6.sessions.id import new_friendly_id
+from agent6.sessions.id import friendly_token
 from agent6.sessions.ipc import request_stop
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
@@ -84,7 +84,7 @@ class Sessions:
         refusal = git_repo_refusal(cwd)
         if refusal is not None:
             raise RpcError(INVALID_PARAMS, refusal)
-        session = Session(acp_id=new_friendly_id(), cwd=cwd)
+        session = Session(acp_id=friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
         return {"sessionId": session.acp_id}
 

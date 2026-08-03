@@ -54,8 +54,14 @@ def validate_explicit_session_id(session_id: str) -> str:
     return session_id
 
 
-def new_friendly_id() -> str:
-    """Return a new ``<adj>-<noun>-<suffix>`` run id."""
+def friendly_token() -> str:
+    """A fresh ``<adj>-<noun>-<suffix>`` token.
+
+    A token, not a session id: naming a session DIRECTORY goes through
+    :func:`unused_session_id`, which also checks the bucket. Callers that want
+    a readable unique string for something else (an ACP connection, a fan-out
+    group) use this.
+    """
 
     rand = os.urandom(6)
     adj = ADJECTIVES[(rand[0] << 8 | rand[1]) % len(ADJECTIVES)]
@@ -73,11 +79,11 @@ def unused_session_id(state_dir: Path, bucket: str) -> str:
 
     An id carries 4 timestamp chars plus 2 random ones, so two minted in the
     same millisecond collide about once in 30 million. Every site that names a
-    session directory mints through here: one that called `new_friendly_id`
-    directly wrote into whatever was already there.
+    session directory mints through here; :func:`friendly_token` is the raw
+    generator, for strings that are not directories.
     """
     for _ in range(8):
-        candidate = new_friendly_id()
+        candidate = friendly_token()
         if not (bucket_dir(state_dir, bucket) / candidate).exists():
             return candidate
     raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")

@@ -11,7 +11,7 @@ import pytest
 
 from agent6.sessions.id import (
     SessionIdError,
-    new_friendly_id,
+    friendly_token,
     resolve_session_id,
     validate_explicit_session_id,
 )
@@ -25,32 +25,32 @@ def test_validate_explicit_run_id_rejects_traversal() -> None:
             validate_explicit_session_id(bad)
     # A normal slug (and the generated shape) passes through unchanged.
     assert validate_explicit_session_id("my-run-1") == "my-run-1"
-    assert validate_explicit_session_id(new_friendly_id())
+    assert validate_explicit_session_id(friendly_token())
 
 
-def test_new_friendly_id_shape() -> None:
+def test_friendly_token_shape() -> None:
     for _ in range(50):
-        rid = new_friendly_id()
+        rid = friendly_token()
         assert _PATTERN.match(rid), rid
 
 
-def test_new_friendly_id_varies() -> None:
+def test_friendly_token_varies() -> None:
     """Catches a constant or an unseeded generator. NOT a uniqueness guarantee:
     within one millisecond the space is ~30M, so 500 draws collide about once
     in 200 -- which is what made the old 500-draw assertion flaky. What must
     never collide is the DIRECTORY, and `_unused_session_id` owns that
     (tests/unit/test_generated_id_collision.py)."""
-    seen = {new_friendly_id() for _ in range(20)}
+    seen = {friendly_token() for _ in range(20)}
     assert len(seen) == 20
 
 
-def test_new_friendly_id_suffix_time_sortable() -> None:
+def test_friendly_token_suffix_time_sortable() -> None:
     """Suffixes from ids minted in order should sort in time order."""
     import time
 
     suffixes: list[str] = []
     for _ in range(10):
-        suffixes.append(new_friendly_id().rsplit("-", 1)[1])
+        suffixes.append(friendly_token().rsplit("-", 1)[1])
         time.sleep(0.002)
     assert suffixes == sorted(suffixes)
 

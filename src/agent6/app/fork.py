@@ -50,7 +50,7 @@ from agent6.graph.storage import (
 from agent6.portable import atomic_write
 from agent6.sessions.id import (
     SessionIdError,
-    new_friendly_id,
+    unused_session_id,
     validate_explicit_session_id,
 )
 from agent6.sessions.layout import SessionLayout, session_layout, session_matches
@@ -314,7 +314,7 @@ def create_fork(  # noqa: PLR0911
         except SessionIdError as exc:
             reporter.err(f"ERROR: {exc}")
             return "", 2
-    child_id = new_session_id or new_friendly_id()
+    child_id = new_session_id or unused_session_id(state_dir, session_bucket(src_mode))
     rc = _materialize_fork(
         cwd=cwd,
         src=src,

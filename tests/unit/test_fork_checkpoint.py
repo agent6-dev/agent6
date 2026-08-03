@@ -998,3 +998,28 @@ def test_replay_reorder_sets_order_not_membership() -> None:
     assert set(replayed.nodes) == {root, child_a, child_b}
     # the reorder's order wins, and the later child is still attached
     assert replayed.nodes[root].children == (child_a, child_b)
+
+
+def test_an_auto_minted_fork_id_skips_a_taken_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork names a session DIRECTORY, so its auto-minted id goes through the
+    owner that checks the bucket. Minting a raw token instead wrote into
+    whatever already stood there."""
+    from agent6.sessions import id as id_mod
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "forky-src-AAAA11", head_sha=head, turns=(1, 2))
+    taken = state_dir / "sessions" / "runs" / "taken-one-AAAAAA"
+    taken.mkdir(parents=True)
+    (taken / "marker.txt").write_text("do not clobber\n", encoding="utf-8")
+    minted = iter(["taken-one-AAAAAA", "freed-two-BBBBBB"])
+    monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
+
+    assert _cmd_fork(None, "forky-src", no_run=True) == 0
+
+    assert (taken / "marker.txt").read_text(encoding="utf-8") == "do not clobber\n"
+    assert (state_dir / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()

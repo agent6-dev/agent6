@@ -33,7 +33,7 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, dirty_paths
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.sessions.id import new_friendly_id
+from agent6.sessions.id import friendly_token
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.ui.spawn import agent6_exe, spawn_and_locate
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -149,7 +149,7 @@ def dispatch_parallel(
         )
         return 2
 
-    fanout_id = new_friendly_id()
+    fanout_id = friendly_token()
     try:
         lanes = build_lane_specs(spec, cfg=cfg, fanout_id=fanout_id)
     except (DirectiveError, ParallelError) as exc:
