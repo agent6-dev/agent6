@@ -137,13 +137,21 @@ def _add_pre_commit_hook(repo: Path, marker: Path) -> None:
 
 
 def test_git_ops_skips_repo_hooks_by_default(tmp_path: Path) -> None:
-    # Secure default: agent6's own commit must NOT fire a repo `.git/hooks/*`.
+    """Secure default: agent6's own commit must NOT fire a repo
+    `.git/hooks/*`. Asserts the UNTOUCHED defaults too -- calling
+    set_repo_hook_policy(False) first pinned the explicit-False path, so a
+    flipped default (module state or config) stayed green."""
+    from agent6.config import Config
+    from agent6.git_ops import _hook_policy  # pyright: ignore[reportPrivateUsage]
+
+    assert _hook_policy["honor_repo_hooks"] is False  # the module's own default
+    assert Config().git.run_repo_hooks is False  # the config default that sets it
+
     _init_repo(tmp_path)
     marker = tmp_path / "HOOK_FIRED"
     _add_pre_commit_hook(tmp_path, marker)
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
-    set_repo_hook_policy(False)
-    commit_all(tmp_path, "c")
+    commit_all(tmp_path, "c")  # no set_repo_hook_policy call: the default governs
     assert not marker.exists()
 
 

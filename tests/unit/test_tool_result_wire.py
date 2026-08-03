@@ -247,7 +247,8 @@ def test_wire_add_task_order(tmp_path: Path) -> None:
     )
     w = _wire(d.dispatch("add_task", {"title": "sub"}))
     assert list(w) == ["id", "parent_id", "title", "status"]
-    assert w == {"id": w["id"], "parent_id": root.id, "title": "sub", "status": "pending"}
+    assert len(w["id"]) == 26 and w["id"] != root.id  # a fresh ULID, not the root's
+    assert (w["parent_id"], w["title"], w["status"]) == (root.id, "sub", "pending")
 
 
 # --- execution family (jail-backed; mock run_in_jail) ------------------------
@@ -305,8 +306,23 @@ def test_wire_run_metric_appends_score(tmp_path: Path) -> None:
 
 
 def test_wire_tool_error_shape(tmp_path: Path) -> None:
+    """The model-facing error bytes come from the LOOP's error path, so drive
+    that (_note_tool_error), not a dict rebuilt in the test -- rebuilding it
+    here pinned the test's own literal and left the producer unpinned."""
+    from unittest.mock import MagicMock
+
+    from agent6.workflows.loop import (
+        Workflow,
+        _LoopState,  # pyright: ignore[reportPrivateUsage]
+    )
+
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with pytest.raises(ToolError) as exc:
         d.dispatch("no_such_tool", {})
-    # The loop serializes a raised ToolError as {"error": str(exc)} (loop.py).
-    assert json.dumps({"error": str(exc.value)}) == '{"error": "Unknown tool: no_such_tool"}'
+
+    wf = MagicMock()
+    state = _LoopState(original_task="t", tool_calls=0)
+    content = Workflow._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+        wf, state, "no_such_tool", {}, exc.value
+    )
+    assert content == '{"error": "Unknown tool: no_such_tool"}'

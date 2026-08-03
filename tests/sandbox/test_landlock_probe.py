@@ -16,11 +16,19 @@ _BIND_TCP = 1 << 0  # _LANDLOCK_ACCESS_NET_BIND_TCP
 _CONNECT_TCP = 1 << 1  # _LANDLOCK_ACCESS_NET_CONNECT_TCP
 
 
-def test_landlock_abi_is_nonnegative() -> None:
-    # On a kernel without Landlock the call returns 0; we never want a hard fail.
+def test_landlock_abi_reports_the_kernel_version() -> None:
+    """0 means "no Landlock" and makes warn_sandbox_gaps drop confinement
+    everywhere, so `>= 0` passed for exactly the regression that matters. On a
+    Landlock kernel the probe must report the real ABI (>= 1)."""
     abi = landlock_abi()
     assert isinstance(abi, int)
-    assert abi >= 0
+    lsm = Path("/sys/kernel/security/lsm")
+    if not lsm.is_file():
+        pytest.skip("cannot confirm kernel Landlock support")
+    if "landlock" not in lsm.read_text(encoding="utf-8"):
+        assert abi == 0  # honest zero on a kernel without it
+    else:
+        assert abi >= 1, "kernel reports Landlock but the probe returned 0"
 
 
 def test_empty_connect_ports_does_not_handle_connect_tcp(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,8 +17,6 @@ communicate() never sees EOF and the timeout must fire.
 
 from __future__ import annotations
 
-import os
-import signal
 import stat
 import time
 from pathlib import Path
@@ -85,14 +83,3 @@ def test_jail_timeout_returns_124_and_kills_group(
         time.sleep(1.0)
         second = marker.stat().st_mtime
         assert first == second, "grandchild still alive after group kill"
-
-
-def test_jail_timeout_handler_present():
-    """The source must use start_new_session and a TimeoutExpired handler."""
-    src = Path(jail.__file__).read_text()
-    assert "start_new_session=True" in src
-    assert "subprocess.TimeoutExpired" in src
-    assert "os.killpg" in src
-    # sanity: signal import is wired up
-    assert signal.SIGKILL is not None
-    assert os.name == "posix"

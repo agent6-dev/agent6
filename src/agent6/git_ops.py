@@ -1020,5 +1020,3 @@ def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
     if len(out) > max_bytes:
         return out[:max_bytes] + f"\n... [truncated, full size {len(out)} bytes]"
     return out
-
-

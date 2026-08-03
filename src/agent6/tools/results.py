@@ -122,7 +122,10 @@ class GrepResult(ToolResult):
         return out
 
     def summary(self) -> str:
-        return f"{len(self.hits)} matches{_trunc(self.truncated)}"
+        # A wall-clock abort and the hit cap are different partial-ness: say
+        # which one, so a timed-out search never reads as "too many matches".
+        why = " (timed out)" if self.timeout else _trunc(self.truncated)
+        return f"{len(self.hits)} matches{why}"
 
 
 @dataclass(frozen=True, slots=True)
