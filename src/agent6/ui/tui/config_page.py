@@ -41,7 +41,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
 from agent6.config import ConfigError
-from agent6.config.io import format_toml_value
+from agent6.config.io import ConfigLeafValue, format_toml_value
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import (
     PROVIDER_DEFAULTS,
@@ -494,7 +494,7 @@ class ProviderModal(ModalScreen[None]):
         if not name:
             self.notify("Enter a provider name.", severity="warning")
             return
-        fields: dict[str, str | bool | None] = {
+        fields: dict[str, ConfigLeafValue] = {
             "api_format": self._selected("#prov-format", "anthropic")
         }
         dep = self._selected("#prov-deployment", "direct")

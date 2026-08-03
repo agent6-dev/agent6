@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +70,7 @@ def _toml_value(value: str | bool) -> str:
     return toml_basic_string(value)
 
 
-def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | None]) -> None:
+def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]) -> None:
     """Insert or replace a single ``[table]`` block in *path*, preserving the
     rest of the file (other tables and their comments).
 
@@ -86,7 +87,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     for key, val in fields.items():
         if val is None:
             continue
-        block_lines.append(f"{key} = {_toml_value(val)}")
+        block_lines.append(f"{key} = {format_toml_value(val)}")
     block = "\n".join(block_lines)
 
     with locked_file(path):
@@ -101,6 +102,13 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
         end = _region_end(lines, start + 1)
         new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
         _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
+
+
+# What a config leaf can hold, matching what `format_toml_value` serializes:
+# scalars, and a list for an array-valued leaf like an argv. `None` omits the
+# leaf. Declaring only `str | bool` made a caller pre-serialize an array into a
+# string, which then validated as a tuple of characters.
+ConfigLeafValue = str | bool | int | float | Sequence[str] | None
 
 
 def format_toml_value(value: object) -> str:  # noqa: PLR0911

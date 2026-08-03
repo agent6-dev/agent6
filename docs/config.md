@@ -518,6 +518,18 @@ Servers are a name-keyed map like `[providers.<name>]`: the table key is the
 tool prefix (`mcp__<name>__<tool>`), duplicates cannot exist, and a repo
 overlay can flip one server without restating the rest.
 
+`agent6 mcp connect` is the way in. It handshakes, prints the tools the server
+actually exposes, and only then writes the entry -- so config never names a
+server that turns out not to answer:
+
+```
+agent6 mcp connect files -- npx -y @modelcontextprotocol/server-filesystem .
+agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
+agent6 mcp list
+```
+
+It leaves `mcp.enabled` alone: that master switch stays your decision.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |

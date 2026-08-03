@@ -11,6 +11,7 @@ from agent6 import __version__
 from agent6.ui.cli._common import _sub
 from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
 from agent6.ui.cli._machine_args import _add_machine_parser
+from agent6.ui.cli._mcp_args import _add_mcp_server_parsers
 from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
 from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _add_system_parser
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
@@ -266,9 +267,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mcp_p = _sub(
         sub,
         "mcp",
-        help="MCP (Model Context Protocol) integration. See `agent6 mcp serve --help`.",
+        help="MCP (Model Context Protocol): add a server, list them, or serve.",
     )
     mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True, metavar="<subcommand>")
+    _add_mcp_server_parsers(mcp_sub)
     mcp_serve = _sub(
         mcp_sub,
         "serve",

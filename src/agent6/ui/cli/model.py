@@ -16,7 +16,7 @@ from agent6.config import (
     RoleName,
 )
 from agent6.config.layer import load_effective, repo_config_path_for
-from agent6.config.write import set_config_table
+from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.models.cache import list_models
 from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
@@ -203,7 +203,7 @@ def _cmd_model(
         print("ERROR: no model given.", file=sys.stderr)
         return 2
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-    fields: dict[str, str | bool | None] = {"provider": provider, "model": model}
+    fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
     if thinking:
         fields["thinking"] = thinking
     roles: tuple[RoleName, ...] = (

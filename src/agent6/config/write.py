@@ -17,6 +17,7 @@ from typing import get_args
 from pydantic import ValidationError
 
 from agent6.config.io import (
+    ConfigLeafValue,
     parse_cli_value,
     read_toml_file,
     remove_toml_leaf,
@@ -275,7 +276,7 @@ def set_config_value(
 def set_config_table(
     repo_root: Path,
     table: str,
-    fields: dict[str, str | bool | None],
+    fields: dict[str, ConfigLeafValue],
     *,
     to_repo: bool = False,
 ) -> str | None:
@@ -334,7 +335,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
 def set_config_leaves(
     repo_root: Path,
     table: str,
-    fields: dict[str, str | bool | None],
+    fields: dict[str, ConfigLeafValue],
     *,
     to_repo: bool = False,
 ) -> str | None:

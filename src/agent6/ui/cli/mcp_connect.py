@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 mcp connect`, add an MCP server after proving it works.
+
+The order is the whole point: handshake, list the tools, show them, and only
+then write config. A server named in config that turns out not to answer is a
+run that starts, logs "failed to start", and quietly has fewer tools than the
+operator thinks -- discovered mid-task, if at all.
+
+Nothing the server returns is ever executed. Its tool names and descriptions
+are printed as text and stored nowhere.
+"""
+
+from __future__ import annotations
+
+import shlex
+import sys
+from pathlib import Path
+
+from agent6.config import ConfigError
+from agent6.config.layer import load_effective
+from agent6.config.write import ConfigLeafValue, set_config_leaves
+from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
+from agent6.tools.mcp_http import HttpTransport
+
+# Long enough for a cold `npx` to fetch and boot a server, which is the slow
+# case an operator actually hits; the per-run default stays 10s.
+_CONNECT_TIMEOUT_S = 60.0
+
+
+def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
+    """Start the server, take its tool list, stop it. Returns (tools, error)."""
+    server = _MCPServer(
+        name=spec.name,
+        command=spec.command,
+        startup_timeout_s=spec.startup_timeout_s,
+        call_timeout_s=spec.call_timeout_s,
+        pass_env=spec.pass_env,
+        http=spec.http,
+    )
+    try:
+        server.start()
+        return server.tools, ""
+    except MCPError as exc:
+        return (), str(exc)
+    finally:
+        server.close()
+
+
+def _refuse_bad_flags(*, command: list[str], url: str, token_env: str, pass_env: list[str]) -> str:
+    """Why this invocation cannot be acted on, or "". Each transport owns one
+    env flag, so the wrong pairing is a mistake worth naming rather than a
+    setting that silently does nothing."""
+    if bool(command) == bool(url):
+        return (
+            "give exactly one of a command to spawn or --url to connect to.\n"
+            "  spawn:   agent6 mcp connect files -- npx -y"
+            " @modelcontextprotocol/server-filesystem .\n"
+            "  connect: agent6 mcp connect browser --url http://127.0.0.1:8931/mcp"
+        )
+    if token_env and not url:
+        return "--token-env is for --url servers; a spawned one uses --pass-env"
+    if pass_env and url:
+        return "--pass-env is for spawned servers; a --url one uses --token-env"
+    return ""
+
+
+def _describe(spec: MCPServerSpec) -> str:
+    if spec.http is not None:
+        return f"connecting to {spec.http.url}"
+    return f"spawning {shlex.join(spec.command)}"
+
+
+def cmd_mcp_connect(
+    name: str,
+    *,
+    command: list[str],
+    url: str,
+    token_env: str,
+    pass_env: list[str],
+    to_repo: bool,
+) -> int:
+    """Prove the server answers, then write it into config. Returns an exit code."""
+    refusal = _refuse_bad_flags(command=command, url=url, token_env=token_env, pass_env=pass_env)
+    if refusal:
+        print(f"ERROR: {refusal}", file=sys.stderr)
+        return 2
+
+    spec = MCPServerSpec(
+        name=name,
+        command=tuple(command),
+        startup_timeout_s=_CONNECT_TIMEOUT_S,
+        call_timeout_s=_CONNECT_TIMEOUT_S,
+        pass_env=tuple(pass_env),
+        http=HttpTransport(name=name, url=url, token_env=token_env) if url else None,
+    )
+    print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
+    tools, error = _probe(spec)
+    if error:
+        print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
+        print("       nothing was written to config.", file=sys.stderr)
+        return 1
+    if not tools:
+        print(f"ERROR: {name} started but exposed no tools; nothing was written.", file=sys.stderr)
+        return 1
+
+    print(f"\n{name}: {len(tools)} tool{'' if len(tools) == 1 else 's'}")
+    for tool in tools:
+        summary = " ".join(tool.description.split())[:80]
+        print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
+
+    # Values, not TOML text: `format_toml_value` serializes each one, so a
+    # list stays a list. Handing it a pre-quoted string wrote an argv as one
+    # long string, which then validated as a tuple of characters.
+    fields: dict[str, ConfigLeafValue] = {"enabled": True}
+    if command:
+        fields["command"] = command
+    else:
+        fields["url"] = url
+    if token_env:
+        fields["token_env"] = token_env
+    if pass_env:
+        fields["pass_env"] = pass_env
+    written = set_config_leaves(Path.cwd(), f"mcp.servers.{name}", fields, to_repo=to_repo)
+    if written is not None:
+        print(f"ERROR: {written}", file=sys.stderr)
+        return 2
+    # The master switch is separate and off by default, so say so rather than
+    # flipping a security-relevant default on the operator's behalf.
+    print(f"\nwritten to {'the repo' if to_repo else 'the global'} config.")
+    print("enable MCP for runs with:  agent6 config set mcp.enabled true")
+    return 0
+
+
+def cmd_mcp_list() -> int:
+    """The configured servers and how each is reached. Reads config only: it
+    never starts anything, so it answers instantly and says nothing about
+    whether a server currently works (`agent6 check mcp` does that)."""
+    try:
+        cfg = load_effective(Path.cwd()).config
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    if not cfg.mcp.servers:
+        print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
+        return 0
+    state = "enabled" if cfg.mcp.enabled else "DISABLED (agent6 config set mcp.enabled true)"
+    print(f"MCP is {state}\n")
+    for name, srv in sorted(cfg.mcp.servers.items()):
+        how = f"connect {srv.url}" if srv.url else f"spawn   {shlex.join(srv.command)}"
+        off = "" if srv.enabled else "  [disabled]"
+        print(f"  {name:<16} {how}{off}")
+        if srv.token_env:
+            print(f"  {'':<16} token from ${srv.token_env}")
+        if srv.pass_env:
+            print(f"  {'':<16} env {' '.join(srv.pass_env)}")
+    return 0

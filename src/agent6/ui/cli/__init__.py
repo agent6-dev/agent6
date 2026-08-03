@@ -63,6 +63,7 @@ from agent6.ui.cli.machine_cmds import (
     _cmd_machine_test,
 )
 from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve
+from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list
 from agent6.ui.cli.memory_cmds import (
     _cmd_memory_add,
     _cmd_memory_invalidate,
@@ -496,7 +497,16 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 def _dispatch_mcp(args: argparse.Namespace) -> int:
     if args.mcp_command == "serve":
         return _cmd_mcp_serve(args.config)
-    raise AssertionError("unreachable")  # pragma: no cover -- mcp subparser is required
+    if args.mcp_command == "connect":
+        return cmd_mcp_connect(
+            args.name,
+            command=args.command,
+            url=args.url,
+            token_env=args.token_env,
+            pass_env=args.pass_env,
+            to_repo=args.to_repo,
+        )
+    return cmd_mcp_list()
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
@@ -553,8 +563,8 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "history": _dispatch_history,
     "init": _dispatch_init,
     "review": _dispatch_review,
-    "mcp": _dispatch_mcp,
     "machine": _dispatch_machine,
+    "mcp": _dispatch_mcp,
     "system": _dispatch_system,
 }
 

@@ -18,7 +18,7 @@ from agent6.config import (
     validate_base_url,
 )
 from agent6.config.layer import repo_config_path_for
-from agent6.config.write import PROVIDER_DEFAULTS, set_config_leaves
+from agent6.config.write import PROVIDER_DEFAULTS, ConfigLeafValue, set_config_leaves
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
 from agent6.secrets import SecretsError, save_secret
@@ -204,7 +204,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-    fields: dict[str, str | bool | None] = {"api_format": api_format}
+    fields: dict[str, ConfigLeafValue] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
     # Leaf surgery, not a whole-block replace: connect is the documented
