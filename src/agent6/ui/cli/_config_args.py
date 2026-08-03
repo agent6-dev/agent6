@@ -7,6 +7,7 @@ provider + API key, and assign models to roles."""
 from __future__ import annotations
 
 import argparse
+from functools import partial
 from pathlib import Path
 
 from agent6.ui.cli._common import _sub
@@ -81,7 +82,11 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     config_get_key = config_get.add_argument(
         "key", help="Dotted leaf path, e.g. sandbox.tool_network."
     )
-    config_get_key.completer = _complete_config_keys  # type: ignore[attr-defined]
+    # `get` reads effective leaves, and `[presets.*]` are stripped before
+    # validation, so offering them would propose an input it refuses.
+    config_get_key.completer = partial(  # type: ignore[attr-defined]
+        _complete_config_keys, include_presets=False
+    )
     config_get_machine = config_get.add_argument(
         "--machine-file",
         dest="machine_file",

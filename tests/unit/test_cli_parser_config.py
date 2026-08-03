@@ -64,3 +64,31 @@ def test_history_explicit_search_still_works() -> None:
     # A flag after the bare query is carried onto the injected verb too.
     a2 = build_parser().parse_args(_inject_default_verb(["history", "--regex", "d.v"]))
     assert a2.history_command == "search" and a2.query == "d.v" and a2.regex is True
+
+
+def test_config_get_does_not_offer_keys_it_rejects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A completer must offer what the command accepts, and nothing else.
+
+    `[presets.*]` tables are stripped before validation, so they are not
+    effective-config leaves: `config get presets.mine.sandbox.tool_network`
+    errors with "is not a config leaf". The shared completer offered exactly
+    those keys, so TAB proposed an input the command refuses. They stay on the
+    write verbs, where they ARE accepted.
+    """
+    from agent6.ui.cli.completers import (
+        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    (tmp_path / "config.toml").write_text(
+        '[presets.mine.sandbox]\nrun_commands = "yes"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    for_set = _complete_config_keys("presets.")
+    for_get = _complete_config_keys("presets.", include_presets=False)
+
+    assert any(k.startswith("presets.mine.") for k in for_set), "the write verbs still offer them"
+    assert not any(k.startswith("presets.") for k in for_get), f"get offered: {for_get[:3]}"
