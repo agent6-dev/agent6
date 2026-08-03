@@ -12,9 +12,6 @@ import pytest
 from agent6.sandbox import landlock as ll
 from agent6.sandbox import landlock_abi
 
-_BIND_TCP = 1 << 0  # _LANDLOCK_ACCESS_NET_BIND_TCP
-_CONNECT_TCP = 1 << 1  # _LANDLOCK_ACCESS_NET_CONNECT_TCP
-
 
 def test_landlock_abi_reports_the_kernel_version() -> None:
     """0 means "no Landlock" and makes warn_sandbox_gaps drop confinement
@@ -31,21 +28,20 @@ def test_landlock_abi_reports_the_kernel_version() -> None:
         assert abi >= 1, "kernel reports Landlock but the probe returned 0"
 
 
-def test_bind_is_denied_and_connect_is_not_restricted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The agent ruleset denies TCP bind/listen and does NOT touch connect.
+def test_no_network_access_is_handled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The agent ruleset must handle NO network access.
 
-    Landlock filters connects by PORT, not host, so the only rule available on
-    a hardened host was "any host on the provider ports" -- which stops no
-    exfiltration (one HTTPS endpoint suffices, and every host offers one) while
-    breaking legitimate tools on other ports. Egress is bounded on `strict`,
-    where the broker + empty netns make it structural. Bind denial stays: it
-    costs agent6 nothing and removes an inbound surface.
+    Landlock's net rules are port-based. CONNECT could only be denied as "any
+    host on port N", which stops no exfiltration (one HTTPS endpoint suffices)
+    while breaking tools on other ports. BIND blocks only inbound while
+    outbound stays open, so it cost a model-run dev server its listening
+    socket and bought no boundary; nothing outlives its command anyway.
 
     Stubs the syscall layer so it runs on any kernel (ABI forced to 8)."""
     captured: dict[str, int] = {}
 
-    def fake_create(handled_fs: int, handled_net: int, abi: int) -> int:
-        captured["net"] = handled_net
+    def fake_create(handled_fs: int, abi: int) -> int:
+        captured["fs"] = handled_fs
         return os.open(os.devnull, os.O_RDONLY)  # a real, closeable fd
 
     def noop_restrict(ruleset_fd: int) -> None:
@@ -56,10 +52,8 @@ def test_bind_is_denied_and_connect_is_not_restricted(monkeypatch: pytest.Monkey
     monkeypatch.setattr(ll, "_create_ruleset", fake_create)
     monkeypatch.setattr(ll, "_restrict_self", noop_restrict)
 
-    report = ll.apply_agent_landlock(read_paths=(), write_paths=())
-    assert captured["net"] & _BIND_TCP  # bind/listen denied
-    assert not (captured["net"] & _CONNECT_TCP)  # connects unrestricted
-    assert report.tcp_bind_denied is True
+    ll.apply_agent_landlock(read_paths=(), write_paths=())
+    assert captured["fs"]  # filesystem access IS handled
 
 
 _TRUNCATE = 1 << 14  # _LANDLOCK_ACCESS_FS_TRUNCATE (ABI v3)
@@ -71,15 +65,15 @@ def test_handled_fs_masks_truncate_below_abi3(
 ) -> None:
     """Regression: the kernel EINVALs any handled_access_fs bit above its ABI,
     so passing the ABI-3 TRUNCATE bit on a 5.13-5.18 kernel (ABI 1/2) refused
-    every hardened run. handled_fs must be down-masked to the probed ABI, like
-    handled_net already is; pre-ABI-3 truncation is governed by WRITE_FILE, so
-    nothing is lost. Stubs the syscall layer so it runs on any kernel."""
+    every hardened run. handled_fs must be down-masked to the probed ABI;
+    pre-ABI-3 truncation is governed by WRITE_FILE, so nothing is lost. Stubs
+    the syscall layer so it runs on any kernel."""
     import os as _os
 
     captured: dict[str, int] = {}
     rule_bits: list[int] = []
 
-    def fake_create(handled_fs: int, handled_net: int, _abi: int) -> int:
+    def fake_create(handled_fs: int, _abi: int) -> int:
         captured["fs"] = handled_fs
         return _os.open(_os.devnull, _os.O_RDONLY)
 

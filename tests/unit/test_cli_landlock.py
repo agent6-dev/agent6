@@ -33,7 +33,6 @@ def _report() -> LandlockReport:
         abi=4,
         fs_read=(Path("/"),),
         fs_write=(Path("/"),),
-        tcp_bind_denied=True,
     )
 
 

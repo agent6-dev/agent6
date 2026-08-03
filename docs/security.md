@@ -70,7 +70,6 @@ process irrevocably, inherited by every child:
 |---|---|
 | FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, `/bin` `/sbin` `/lib` `/lib64` `/dev`, `/run` + `/proc` when present |
 | FS write | cwd, `/tmp`, the `/dev` char devices, `/proc` when present |
-| TCP bind/listen (kernel ≥ 6.7) | nothing: the agent process gets no inbound socket |
 
 - **`strict` skips this layer.**
     - Its per-command namespaces + broker (§1b) are stronger, and this would
@@ -87,8 +86,9 @@ process irrevocably, inherited by every child:
     - Egress confinement is `strict`'s broker + empty netns (§1b), which is
       structural. Choose `strict` if the host UID can read exfiltratable
       credentials.
-    - Bind/listen stays denied: it costs agent6 nothing and removes an inbound
-      surface.
+    - Bind/listen is not denied either. Blocking inbound while outbound stays
+      open is the same non-claim, and it cost a dev server the model runs its
+      listening socket. Nothing it binds outlives the command (§5).
 
 ### 1b. Provider-only egress broker (`agent_network = "providers"`, default)
 

@@ -52,7 +52,6 @@ _LANDLOCK_ACCESS_FS_TRUNCATE = 1 << 14  # ABI v3
 _LANDLOCK_ACCESS_FS_IOCTL_DEV = 1 << 15  # ABI v5
 
 # net access bits (ABI v4+)
-_LANDLOCK_ACCESS_NET_BIND_TCP = 1 << 0
 
 _FS_READ_BITS = (
     _LANDLOCK_ACCESS_FS_READ_FILE | _LANDLOCK_ACCESS_FS_READ_DIR | _LANDLOCK_ACCESS_FS_EXECUTE
@@ -149,12 +148,10 @@ def _set_no_new_privs() -> None:
         raise LandlockError(f"prctl(PR_SET_NO_NEW_PRIVS) failed: {os.strerror(err)}")
 
 
-def _create_ruleset(handled_fs: int, handled_net: int, abi: int) -> int:
-    # struct layout depends on ABI: v1-v3 = 1x u64, v4+ = 2x u64
-    if abi >= 4:
-        attr = struct.pack("=QQ", handled_fs, handled_net)
-    else:
-        attr = struct.pack("=Q", handled_fs)
+def _create_ruleset(handled_fs: int, abi: int) -> int:
+    # struct layout depends on ABI: v1-v3 = 1x u64, v4+ = 2x u64. The net field
+    # stays 0 -- agent6 handles no network access (see apply_agent_landlock).
+    attr = struct.pack("=QQ", handled_fs, 0) if abi >= 4 else struct.pack("=Q", handled_fs)
     buf = ctypes.create_string_buffer(attr, len(attr))
     return _syscall(
         _SYS_landlock_create_ruleset,
@@ -186,8 +183,6 @@ class LandlockReport:
     abi: int
     fs_read: tuple[Path, ...]
     fs_write: tuple[Path, ...]
-    # Landlock denied the agent process TCP bind/listen (needs ABI >= 4).
-    tcp_bind_denied: bool
 
 
 def apply_agent_landlock(
@@ -197,9 +192,7 @@ def apply_agent_landlock(
 ) -> LandlockReport:
     """Apply Landlock to the *current process*. Irrevocable.
 
-    Silently degrades:
-    - If ABI < 4, the TCP bind denial is not applied (no kernel support).
-    - If ABI == 0, raises LandlockNotSupportedError.
+    Raises LandlockNotSupportedError at ABI 0.
     """
     abi = landlock_abi()
     if abi <= 0:
@@ -211,21 +204,16 @@ def apply_agent_landlock(
         # its ABI, and pre-ABI-3 truncation is governed by WRITE_FILE anyway,
         # so masking it loses no enforcement. Mirrors the net gating below.
         handled_fs &= ~_LANDLOCK_ACCESS_FS_TRUNCATE
-    # NET_BIND_TCP is declared "handled" but NEVER granted below, which makes
-    # Landlock DENY all TCP bind()/listen() for the agent process: no
-    # agent-owned inbound surface, at no cost to anything agent6 does.
-    #
-    # CONNECT is deliberately NOT handled. Landlock filters connects by PORT,
-    # not by host, so the only enforceable rule here was "any host on the
-    # provider ports" -- which stops nothing that matters (an exfiltrating
-    # agent needs one HTTPS endpoint and every host offers one) while breaking
-    # legitimate tools on other ports. Egress is bounded on `strict`, where
-    # the broker + empty netns make it structural; `hardened` does not bound
-    # it and no longer pretends to.
-    handled_net = _LANDLOCK_ACCESS_NET_BIND_TCP if abi >= 4 else 0
-
+    # No network access is handled. Landlock's net rules are port-based: it can
+    # deny CONNECT only as "any host on port N", which stops no exfiltration
+    # (one HTTPS endpoint suffices, and every host offers one) while breaking
+    # tools on other ports; and denying BIND blocks only inbound while outbound
+    # stays open -- it cost a dev server the model runs its listening socket and
+    # bought no boundary. Egress is bounded on `strict`, where the broker plus
+    # an empty netns make it structural. A listener still cannot outlive its
+    # command: the escapee sweep (sandbox.jail) kills what a command leaves.
     _set_no_new_privs()
-    ruleset_fd = _create_ruleset(handled_fs, handled_net, abi)
+    ruleset_fd = _create_ruleset(handled_fs, abi)
 
     def _mask_for(path: Path, bits: int) -> int:
         try:
@@ -255,5 +243,4 @@ def apply_agent_landlock(
         abi=abi,
         fs_read=tuple(read_paths),
         fs_write=tuple(write_paths),
-        tcp_bind_denied=abi >= 4,
     )

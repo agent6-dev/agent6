@@ -561,9 +561,8 @@ def maybe_apply_agent_landlock(
         # is a can't-happen safety net here -- isolation resolution already
         # probed the ABI before selecting hardened.)
         return f"could not apply agent Landlock confinement: {exc}"
-    bind_note = "" if report.tcp_bind_denied else " (kernel too old to deny TCP bind)"
     reporter.err(
         f"[agent6] agent-process Landlock: ABI {report.abi}, "
-        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots{bind_note}"
+        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots"
     )
     return None

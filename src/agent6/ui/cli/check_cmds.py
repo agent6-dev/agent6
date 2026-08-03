@@ -53,7 +53,7 @@ def _cmd_check_sandbox() -> int:
         SandboxReport(
             name="landlock_abi",
             ok=abi > 0,
-            detail=f"abi={abi}; TCP={'yes' if abi >= 4 else 'no (need Linux 6.7)'}",
+            detail=f"abi={abi}",
         )
     )
 
