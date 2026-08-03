@@ -35,6 +35,17 @@ class RunPolicy:
             return "no verify gate"
         return f"{shlex.join(self.verify_command)} ({self.verify_origin or 'unknown origin'})"
 
+    def short(self) -> str:
+        """The compact form for a border or header: the two facts a watching
+        operator acts on. The model has its own place on those surfaces and the
+        gate belongs with the run's outcome, not next to the composer."""
+        parts = [
+            p
+            for p in (f"commands {self.run_commands}" if self.run_commands else "", self.isolation)
+            if p
+        ]
+        return " · ".join(parts)
+
     def line(self) -> str:
         """The one-line form every surface shows."""
         parts = [p for p in (self.model, self.isolation) if p]

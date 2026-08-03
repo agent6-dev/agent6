@@ -31,6 +31,7 @@ from agent6.viewmodel.listing import (
     status_for_run_dir,
     status_word,
 )
+from agent6.viewmodel.policy import run_policy
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -751,6 +752,9 @@ def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str,
         # The dir is authoritative for identity: a resumed/forked leg's log can
         # start at loop.resume.start, folding run_id/user_task empty. Fill them
         # HERE so every consumer (web, watch, SSE) carries the same identity.
+        # The same fold the CLI banner and the TUI composer read, so a web
+        # client cannot show a different answer.
+        d["policy"] = run_policy(run_dir).line()
         d["run_id"] = d["run_id"] or run_dir.name
         if not d["user_task"]:
             with contextlib.suppress(ManifestError):

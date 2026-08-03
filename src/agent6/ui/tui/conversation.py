@@ -55,6 +55,7 @@ from agent6.ui.tui.menubar import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
+from agent6.viewmodel.policy import run_policy
 from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
@@ -190,6 +191,8 @@ class SteerInput(TextArea):
         self.set_mode(live=True)
         self._resize()
 
+    policy = ""  # viewmodel.run_policy(...).short(), set once the run dir is known
+
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
         """Relabel for the run's state: steering (live) vs resuming (finished),
         plus the context-window fill when known, right where you type. Only
@@ -198,7 +201,10 @@ class SteerInput(TextArea):
         title = "steer the run (/pin, /compact [focus])" if live else "continue the run"
         keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
-        subtitle = f"{ctx}{keys}"
+        # The run's policy sits where the eye already goes for status, from the
+        # same fold the CLI banner and the web header read.
+        policy = f"{self.policy} · " if self.policy else ""
+        subtitle = f"{policy}{ctx}{keys}"
         if self.border_title != title:
             self.border_title = title
         if self.border_subtitle != subtitle:
@@ -623,6 +629,8 @@ class ConversationScreen(Screen[None]):
             if bar.display != shown:  # a same-value write still costs a relayout
                 bar.display = shown
             if bar.display:
+                if not bar.policy:  # folded once: the manifest does not change mid-run
+                    bar.policy = run_policy(self._logs_path.parent).short()
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
                 bar.set_mode(live=self._host_live(), ctx_pct=pct if isinstance(pct, int) else None)

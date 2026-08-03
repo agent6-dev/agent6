@@ -898,6 +898,8 @@ function paintRun(cards, s) {
     add('compare', parts.join(' · '));
   }
   cards.head.appendChild(kv);
+  // The same one-line fold the CLI banner and the TUI composer read.
+  if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
   if (s.compare && s.compare.rationale) {
     cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.compare.rationale));
   }
