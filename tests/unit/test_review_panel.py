@@ -414,8 +414,15 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
             n_block=1 if blocked else 0,
             n_abstain=sum(1 for v in per_seat if v.error),
         )
-        monkeypatch.setattr(review_cmds, "build_review_seats", lambda *a, **k: [_Seat()])
-        monkeypatch.setattr(review_cmds, "run_panel", lambda *a, **k: res)
+
+        def _seats(*_a: object, **_k: object) -> list[_Seat]:
+            return [_Seat()]
+
+        def _panel(*_a: object, **_k: object) -> PanelResult:
+            return res
+
+        monkeypatch.setattr(review_cmds, "build_review_seats", _seats)
+        monkeypatch.setattr(review_cmds, "run_panel", _panel)
         rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
             Config(),
             base="",

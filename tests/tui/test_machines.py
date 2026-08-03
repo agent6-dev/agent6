@@ -10,6 +10,7 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import DataTable, Input
 
+from agent6.machine import MachineSpec
 from agent6.ui.tui import machines as machmod
 from agent6.ui.tui.machines import (
     CreateMachineModal,
@@ -664,7 +665,7 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, object]:
+def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]:
     """A machine instance whose newest agent state is blocked on an unanswered
     approval, with a live or dead worker."""
     import json
