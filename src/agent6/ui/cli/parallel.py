@@ -96,6 +96,23 @@ def build_coordinator_spawner(
     )
 
 
+def _parallel_approval_refusal(cfg: Config) -> str | None:
+    """Refuse `--parallel` under `ask`, naming the two coherent choices.
+
+    Lanes run detached and at the same time, so "wait for someone to approve"
+    would mean attaching a front-end to each lane in turn -- most of what
+    running them in parallel was for. The decision is made once, at launch.
+    """
+    if cfg.sandbox.run_commands != "ask":
+        return None
+    return (
+        "sandbox.run_commands = 'ask' cannot drive parallel lanes -- each lane runs"
+        " detached, so there is nobody to answer per lane.\n"
+        "  --auto-approve   approve every command in every lane\n"
+        "  --no-commands    withhold commands from every lane"
+    )
+
+
 def dispatch_parallel(
     cfg: Config,
     task: str,
@@ -112,10 +129,10 @@ def dispatch_parallel(
     `auto_approve` forwards `--auto-approve` to every lane, same as `max_usd`."""
     origin = cwd
     origin_state = resolved_state_dir(origin)
-    budget_err = budget_preflight(cfg)
-    if budget_err is not None:
-        print(f"REFUSING: {budget_err}", file=sys.stderr)
-        return 2
+    for err in (budget_preflight(cfg), _parallel_approval_refusal(cfg)):
+        if err is not None:
+            print(f"REFUSING: {err}", file=sys.stderr)
+            return 2
     try:
         st = git_status(origin)
     except GitError as exc:

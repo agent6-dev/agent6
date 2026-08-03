@@ -77,3 +77,23 @@ def test_the_policy_is_re_read_not_cached(tmp_path: Path) -> None:
     assert d.command_policy() == "ask"
     set_session_allow(tmp_path)
     assert d.command_policy() == "yes"
+
+
+@pytest.mark.parametrize(
+    ("commands", "refused"),
+    [("ask", True), ("yes", False), ("no", False)],
+)
+def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -> None:
+    """ "Wait for someone to approve" is incoherent across detached lanes: it
+    would mean attaching a front-end to each in turn, which is most of what
+    running them in parallel was for. So `ask` refuses at launch and names the
+    two coherent choices."""
+    from agent6.ui.cli.parallel import (
+        _parallel_approval_refusal,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+    err = _parallel_approval_refusal(cfg)
+    assert (err is not None) is refused
+    if err is not None:
+        assert "--auto-approve" in err and "--no-commands" in err

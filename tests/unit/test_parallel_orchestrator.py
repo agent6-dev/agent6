@@ -198,11 +198,15 @@ def _write_models_cache(cache_home: Path, provider: str, models: list[str]) -> N
     p.write_text(json.dumps({"models": models}), encoding="utf-8")
 
 
-def _provider_cfg(model: str = "moonshotai/kimi-k2.6") -> Config:
+def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "yes") -> Config:
+    # run_commands defaults to "yes" here: `--parallel` refuses under "ask",
+    # since nobody can answer a detached lane, and these tests are about the
+    # dispatch itself. The refusal has its own test.
     return Config.model_validate(
         {
             "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
             "models": {"worker": {"provider": "o", "model": model}},
+            "sandbox": {"run_commands": run_commands},
         }
     )
 
