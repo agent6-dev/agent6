@@ -107,8 +107,9 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
         [ToolResultItem(tool_use_id="t1", content="RESULT", for_call=turn.tool_uses[0])]  # 6
     )
     total = context_chars(conv)
-    # 4 + 5 + 6 + len(str(input dict)) -- well above just the 6 tool_result bytes.
-    assert total == 4 + 5 + 6 + len(str({"q": "x"}))
+    # Every value of the tool_use block, not a chosen three: its id and name go
+    # on the wire with the input, so they count too.
+    assert total == 4 + 5 + 6 + len("t1") + len("grep") + len(str({"q": "x"}))
     assert total > 6
 
 
@@ -375,3 +376,33 @@ def test_stats_carry_elided_identities() -> None:
     assert stats.elided_calls == ("read_file a.py",)
     assert stats.gist_paths == ()
     assert stats.demoted_paths == ()
+
+
+def test_context_chars_counts_a_reasoning_model_s_thinking() -> None:
+    """The tier-2 trigger is compared against ~80% of the model's real context
+    window, so it has to measure what actually goes on the wire.
+
+    `Conversation.to_wire` sends an assistant turn's raw blocks VERBATIM, and
+    nothing strips thinking, so a reasoning model's `{"type": "thinking",
+    "thinking": ...}` is in every later request. Counting only text/content/
+    tool_use-input scored a turn holding 130,000 chars of thinking as 2, and
+    tier-2 summarisation waited on a number that omitted the largest thing in
+    the context -- on exactly the models that need it most.
+    """
+    conv = Conversation()
+    conv.assistant(
+        [
+            {"type": "thinking", "thinking": "R" * 10_000, "signature": "sig"},
+            {"type": "text", "text": "ok"},
+        ]
+    )
+    total = context_chars(conv)
+    assert total >= 10_000, f"thinking is on the wire but counted as {total}"
+
+
+def test_context_chars_counts_an_unknown_block_type() -> None:
+    """Enumerating known keys is what let thinking go uncounted; a block type
+    nobody has met yet must not be free either."""
+    conv = Conversation()
+    conv.assistant([{"type": "something_new", "payload": "P" * 5_000}])
+    assert context_chars(conv) >= 5_000

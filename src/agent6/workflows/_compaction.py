@@ -323,22 +323,31 @@ def strip_checkoff(text: str) -> str:
 def context_chars(conversation: Conversation) -> int:
     """Approximate the full character size of the conversation context.
 
-    Sums notice text, tool_result content, and -- for assistant turns' raw
-    blocks -- their text and tool_use inputs; i.e. everything that grows the
-    context and is sent back to the model each turn, not just tool_result bytes.
-    Used as the tier-2 (summarise-and-restart) trigger, which must measure
-    something tier-1 elision does not already cap.
+    Sums notice text, tool_result content, and -- for assistant turns -- every
+    value of every raw block, because ``Conversation.to_wire`` sends those
+    blocks VERBATIM: whatever is in them is in each later request. Used as the
+    tier-2 (summarise-and-restart) trigger, which must measure something tier-1
+    elision does not already cap, against ~80% of the model's real context
+    window.
+
+    Whole blocks rather than a list of known keys: counting only text/content/
+    tool_use-input scored a reasoning model's ``{"type": "thinking", ...}`` as
+    ZERO, so tier-2 waited on a number that omitted the largest thing in the
+    context. A block type nobody has met yet must not be free either.
     """
     total = 0
     for turn in conversation.turns:
         if isinstance(turn, AssistantTurn):
             for item in turn.raw_content:
                 if not isinstance(item, dict):
+                    total += len(str(item))
                     continue
-                total += len(str(item.get("text", "") or ""))
-                total += len(str(item.get("content", "") or ""))
-                if item.get("type") == "tool_use":
-                    total += len(str(item.get("input", "") or ""))
+                # "type" is the discriminator, not payload; everything else is.
+                total += sum(
+                    len(v if isinstance(v, str) else str(v))
+                    for k, v in item.items()
+                    if k != "type" and v is not None
+                )
         else:
             for item in turn.items:
                 total += len(item.content if isinstance(item, ToolResultItem) else item.text)
