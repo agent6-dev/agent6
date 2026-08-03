@@ -96,7 +96,7 @@ struct Policy {
 
 /// One command to run against an already-established jail.
 #[derive(Deserialize)]
-struct Request {
+struct ChildRequest {
     argv: Vec<String>,
     #[serde(default)]
     env: Vec<(String, String)>,
@@ -104,15 +104,9 @@ struct Request {
     timeout_s: f64,
     #[serde(default = "default_memory_limit_mb")]
     memory_limit_mb: u64,
-    /// Start the command and answer at once, leaving it running in this
-    /// session's namespaces. STRICT only: the PID namespace is what bounds it,
-    /// and hardened has none, so there a backgrounded process would outlive
-    /// the run.
-    #[serde(default)]
-    background: bool,
 }
 
-impl Request {
+impl ChildRequest {
     fn child_spec(&self) -> ChildSpec<'_> {
         ChildSpec {
             argv: &self.argv,
@@ -121,6 +115,26 @@ impl Request {
             timeout_s: self.timeout_s,
         }
     }
+}
+
+/// What a serving launcher is asked to do. A backgrounded command's pid is
+/// namespace-local, so the launcher is the only process that can wait on it or
+/// signal it: `status` and `stop` name that pid and it does the work.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Request {
+    /// Run to completion; answer with the result.
+    Run(ChildRequest),
+    /// Start the command and answer at once, leaving it running in this
+    /// session's namespaces. STRICT only: the PID namespace is what bounds it,
+    /// and hardened has none, so there a backgrounded process would outlive
+    /// the run.
+    Background(ChildRequest),
+    /// Report whether a backgrounded command is still running, reaping it and
+    /// answering with its exit code once it is not.
+    Status { pid: i32 },
+    /// Kill a backgrounded command's process group, then reap it.
+    Stop { pid: i32 },
 }
 
 fn default_mode() -> String {
@@ -245,13 +259,16 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
             Ok(r) => r,
             Err(e) => die(format!("serve: invalid request JSON: {e}")),
         };
-        if request.background && !pid_namespaced {
-            die("serve: background requests need the PID namespace (strict)");
-        }
-        let outcome = if request.background {
-            spawn_detached(&request.child_spec(), cwd)
-        } else {
-            run_child(&request.child_spec(), cwd)
+        let outcome = match request {
+            Request::Run(child) => run_child(&child.child_spec(), cwd),
+            Request::Background(child) => {
+                if !pid_namespaced {
+                    die("serve: background requests need the PID namespace (strict)");
+                }
+                spawn_detached(&child.child_spec(), cwd)
+            }
+            Request::Status { pid } => answer_status(pid),
+            Request::Stop { pid } => answer_stop(pid),
         };
         if let Err(e) = outcome {
             die(format!("serve: child execution failed: {e}"));
@@ -1546,6 +1563,60 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
 /// namespaces: no wait, and no process-group kill, so a server survives the
 /// request that started it. The PID namespace remains the bound -- when the
 /// session's stdin closes, everything in it dies with the namespace.
+/// The exit code a wait status carries, in the shape run_child reports it.
+/// None means the child is not gone (stopped, traced), never "exited 0".
+fn wait_code(status: WaitStatus) -> Option<i32> {
+    match status {
+        WaitStatus::Exited(_, code) => Some(code),
+        WaitStatus::Signaled(_, sig, _) => Some(128 + sig as i32),
+        _ => None,
+    }
+}
+
+/// Whether a backgrounded command is still running, reaping it once it is not
+/// so its pid cannot be recycled under a later request.
+fn answer_status(pid: i32) -> io::Result<()> {
+    let running = serde_json::json!({"running": true, "returncode": null});
+    let result = match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
+        Ok(WaitStatus::StillAlive) => running,
+        Ok(status) => match wait_code(status) {
+            Some(code) => serde_json::json!({"running": false, "returncode": code}),
+            None => running,
+        },
+        Err(e) => serde_json::json!({"running": false, "returncode": null, "error": e.to_string()}),
+    };
+    println!("{result}");
+    io::stdout().flush()
+}
+
+/// Kill a backgrounded command's group and reap it. Idempotent. Bounded: an
+/// unkillable process must not hold the run's only jail process.
+fn answer_stop(pid: i32) -> io::Result<()> {
+    // The group, not the pid: spawn_detached gives each one its own, so a
+    // server's children go down with it.
+    unsafe { libc::killpg(pid, libc::SIGKILL) };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let stopped = serde_json::json!({"stopped": true});
+    let result = loop {
+        match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) => {}
+            // ECHILD: a status request already reaped it, which is the state
+            // stop is asking for.
+            Ok(_) | Err(nix::errno::Errno::ECHILD) => break stopped,
+            Err(e) => break serde_json::json!({"stopped": false, "error": e.to_string()}),
+        }
+        if std::time::Instant::now() >= deadline {
+            break serde_json::json!({
+                "stopped": false,
+                "error": format!("pid {pid} did not exit within 5s of SIGKILL"),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    println!("{result}");
+    io::stdout().flush()
+}
+
 fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));

@@ -543,15 +543,6 @@ def _result_from_json(
     )
 
 
-def _result_from_line(line: str, argv: tuple[str, ...], start: float) -> CommandResult:
-    """One serve-mode reply line as a CommandResult."""
-    try:
-        parsed = json.loads(line)
-    except ValueError as exc:
-        raise JailUnavailableError(f"jail session produced unparseable output: {line!r}") from exc
-    return _result_from_json(parsed, argv, time.monotonic() - start)
-
-
 # --- detached commands -------------------------------------------------------
 # A background command keeps running after the call that started it, so it is
 # the one jailed child the escapee sweep must NOT kill: its launcher stays
@@ -733,28 +724,66 @@ class JailSession:
         *,
         env: tuple[tuple[str, str], ...] = (),
         timeout_s: float = 600.0,
-        background: bool = False,
     ) -> CommandResult:
-        """Run one command in this session's namespaces.
-
-        ``background`` answers as soon as the command starts and leaves it
-        running for later commands to reach. Strict only: the PID namespace is
-        what keeps it from outliving the run, and hardened has none.
-        """
-        assert self._proc.stdin is not None and self._proc.stdout is not None
+        """Run one command to completion in this session's namespaces."""
         start = time.monotonic()
-        request = {
-            "argv": list(argv),
-            "env": [list(p) for p in env],
-            "timeout_s": timeout_s,
-            "background": background,
-        }
+        answer = self._request(
+            {
+                "kind": "run",
+                "argv": list(argv),
+                "env": [list(p) for p in env],
+                "timeout_s": timeout_s,
+            }
+        )
+        return _result_from_json(answer, argv, time.monotonic() - start)
+
+    def start_background(
+        self, argv: tuple[str, ...], *, env: tuple[tuple[str, str], ...] = ()
+    ) -> int:
+        """Start a command and leave it running for later commands to reach,
+        answering with its pid. That pid is namespace-local: only this session
+        can report on it or stop it."""
+        answer = self._request(
+            {"kind": "background", "argv": list(argv), "env": [list(p) for p in env]}
+        )
+        pid = answer.get("pid")
+        if not isinstance(pid, int):
+            raise JailUnavailableError(f"jail session started no command: {answer}")
+        return pid
+
+    def status_background(self, pid: int) -> BackgroundStatus:
+        answer = self._request({"kind": "status", "pid": pid})
+        code = answer.get("returncode")
+        return BackgroundStatus(
+            running=bool(answer.get("running")),
+            returncode=code if isinstance(code, int) else None,
+            error=str(answer.get("error", "")),
+        )
+
+    def stop_background(self, pid: int) -> None:
+        """Kill a backgrounded command and its group. Idempotent."""
+        answer = self._request({"kind": "stop", "pid": pid})
+        if not answer.get("stopped"):
+            raise JailUnavailableError(f"jail session could not stop {pid}: {answer}")
+
+    def _request(self, request: dict[str, object]) -> dict[str, object]:
+        """One request, one answer line. The channel is in lockstep: every
+        request gets exactly one answer, or the next one reads this one's."""
+        assert self._proc.stdin is not None and self._proc.stdout is not None
         self._proc.stdin.write((json.dumps(request) + "\n").encode())
         self._proc.stdin.flush()
         line = self._proc.stdout.readline()
         if not line:
             raise JailUnavailableError("jail session ended before answering")
-        return _result_from_line(line.decode(errors="replace"), argv, start)
+        try:
+            parsed = json.loads(line.decode(errors="replace"))
+        except ValueError as exc:
+            raise JailUnavailableError(
+                f"jail session produced unparseable output: {line!r}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise JailUnavailableError(f"jail session answered with {type(parsed).__name__}")
+        return parsed  # pyright: ignore[reportUnknownVariableType]
 
     def close(self) -> None:
         """Shut the request channel; the PID namespace takes the rest down."""

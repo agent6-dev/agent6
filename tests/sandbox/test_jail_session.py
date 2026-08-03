@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -58,8 +59,7 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
             "s.bind(('127.0.0.1',8731));s.listen(1);"
             "c,_=s.accept();c.sendall(b'alive');c.close()"
         )
-        started = session.run(("python3", "-c", listener), background=True, timeout_s=30.0)
-        assert started.returncode == 0, started.stderr
+        assert session.start_background(("python3", "-c", listener)) > 0
         probe = session.run(
             (
                 "python3",
@@ -76,6 +76,39 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
         )
         assert probe.returncode == 0, probe.stderr + probe.stdout
         assert "alive" in probe.stdout
+    finally:
+        session.close()
+
+
+def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> None:
+    """Its pid is namespace-local, so only the launcher can signal it: stop
+    forwards the pid there. The kill is followed by a reap, or the pid stays
+    a zombie and every liveness check still answers "running"."""
+    session = _session(tmp_path)
+    try:
+        pid = session.start_background(("sleep", "300"))
+        alive = session.run(("sh", "-c", f"kill -0 {pid} && echo alive"))
+        assert "alive" in alive.stdout, alive.stderr
+        session.stop_background(pid)
+        gone = session.run(("sh", "-c", f"kill -0 {pid} 2>/dev/null && echo alive || echo gone"))
+        assert "gone" in gone.stdout, gone.stdout
+    finally:
+        session.close()
+
+
+def test_the_session_reports_a_backgrounded_command_s_exit(tmp_path: Path) -> None:
+    """The launcher is the only process that can wait on it, so the exit code
+    a surface reports has to come back over the same channel."""
+    session = _session(tmp_path)
+    try:
+        pid = session.start_background(("sh", "-c", "exit 7"))
+        status = session.status_background(pid)
+        deadline = time.monotonic() + 5.0
+        while status.running and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = session.status_background(pid)
+        assert status.running is False, "the command never showed as exited"
+        assert status.returncode == 7, status
     finally:
         session.close()
 
