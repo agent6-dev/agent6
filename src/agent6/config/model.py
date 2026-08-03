@@ -963,14 +963,22 @@ class MCPSandbox(BaseModel):
     @model_validator(mode="after")
     def _reachable(self) -> MCPSandbox:
         if not self.read_paths:
-            # Landlock grants READ and EXECUTE together, so a server with no
-            # read path cannot reach its own interpreter and dies on startup
-            # with an import error that says nothing about the sandbox. A
-            # write-only block is never what the operator meant.
+            # Filesystem and network are independent axes. With no read path
+            # there is no Landlock domain -- which is a legitimate block when
+            # `network = "none"` is what the operator wanted, and an inert one
+            # otherwise. Landlock grants READ and EXECUTE together, so a domain
+            # with no read path cannot reach the server's own interpreter and
+            # dies on startup with an import error that says nothing about the
+            # sandbox; a write-only or require-only block is never what the
+            # operator meant.
+            if self.network == "none" and not self.write_paths and not self.require:
+                return self
             raise ValueError(
-                "read_paths is required: a server needs to READ its own runtime"
-                " to start at all (its interpreter, its libraries). Name those"
-                " plus whatever data it reads; write_paths is separate."
+                "read_paths is required for filesystem confinement: a server"
+                " needs to READ its own runtime to start at all (its"
+                " interpreter, its libraries). Name those plus whatever data it"
+                " reads; write_paths is separate. For network confinement"
+                ' alone, set network = "none" and name no paths.'
             )
         for group in (self.read_paths, self.write_paths):
             for raw in group:

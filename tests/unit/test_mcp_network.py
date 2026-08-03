@@ -132,21 +132,101 @@ def test_the_confined_server_keeps_the_operators_uid() -> None:
     assert got.stdout.split() == [str(os.getuid()), str(os.getgid())]
 
 
-def test_a_host_that_cannot_unshare_refuses_rather_than_running_connected(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
+# The shim confines the process it runs IN, irrevocably. Every test of it runs
+# it as a subprocess: an in-process call that reached the Landlock line would
+# apply the domain to pytest itself and take the rest of the suite with it.
+_REFUSE_UNSHARE = (
+    "import os, sys;"
+    " os.unshare = lambda *_a: (_ for _ in ()).throw(OSError(1, 'Operation not permitted'));"
+    " import agent6.sandbox.exec_confined as m;"
+    " sys.exit(m.main(sys.argv[1:]))"
+)
+
+
+def test_a_host_that_cannot_unshare_refuses_rather_than_running_connected(tmp_path: Path) -> None:
     """`none` is an explicit enforce value, so it refuses when the environment
     cannot honor it -- never a warning over a server that still has the network.
     """
-    from agent6.sandbox import exec_confined
-
-    def _no(_flags: int) -> None:
-        raise OSError(1, "Operation not permitted")
-
-    monkeypatch.setattr(exec_confined.os, "unshare", _no, raising=False)
-    rc = exec_confined.main(
-        ["--read", str(tmp_path), "--no-network", "--", sys.executable, "-c", "pass"]
+    got = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            _REFUSE_UNSHARE,
+            "--read",
+            str(tmp_path),
+            "--no-network",
+            "--",
+            sys.executable,
+            "-c",
+            "pass",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "network" in err and "unprivileged user namespaces" in err
+    assert got.returncode == 2, got.stderr
+    assert "network" in got.stderr and "unprivileged user namespaces" in got.stderr
+
+
+def test_network_only_confinement_is_expressible() -> None:
+    """The two axes are independent. Requiring read_paths to reach the network
+    knob made the likeliest case -- "offline, but I am not enumerating your
+    filesystem" -- unsayable."""
+    cfg = _server({"network": "none"})
+    sandbox = cfg.mcp.servers["s"].sandbox
+    assert sandbox is not None
+    assert sandbox.network == "none" and sandbox.read_paths == ()
+
+
+def test_a_block_that_confines_nothing_is_refused() -> None:
+    """`network = "host"` with no paths is an inert block: the operator asked
+    for confinement and would have got none."""
+    with pytest.raises(ValueError, match="read_paths"):
+        _server({"network": "host"})
+
+
+def test_require_without_read_paths_is_refused() -> None:
+    """`require` is about a Landlock domain; with no paths there is none to
+    demand, so accepting it would promise confinement that never happens."""
+    with pytest.raises(ValueError, match="read_paths"):
+        _server({"network": "none", "require": True})
+
+
+def test_network_only_does_not_landlock_the_server() -> None:
+    """No paths named means no filesystem domain: applying an empty one grants
+    NOTHING and the server dies on its own interpreter."""
+    argv = _confined_argv(("npx", "s"), MCPConfinement(network="none"))
+    assert "--read" not in argv and "--write" not in argv and "--require" not in argv
+    assert "--no-network" in argv
+
+
+@pytest.mark.needs_namespaces
+def test_a_network_only_server_still_runs_and_still_has_no_network() -> None:
+    ours = Path("/proc/self/ns/net").readlink()
+    got = subprocess.run(
+        [
+            *_SHIM,
+            "--no-network",
+            "--",
+            sys.executable,
+            "-c",
+            "from pathlib import Path; print(Path('/proc/self/ns/net').readlink())",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert got.stdout.strip() != str(ours)
+
+
+def test_the_shim_refuses_to_confine_nothing() -> None:
+    """Asking for neither mechanism would apply an EMPTY Landlock domain --
+    granting nothing, to the shim and to whatever it becomes."""
+    got = subprocess.run(
+        [*_SHIM, "--", sys.executable, "-c", "pass"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert got.returncode == 2, got.stdout
+    assert "nothing to confine" in got.stderr

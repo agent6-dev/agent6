@@ -34,9 +34,14 @@ def test_new_friendly_id_shape() -> None:
         assert _PATTERN.match(rid), rid
 
 
-def test_new_friendly_id_unique() -> None:
-    seen = {new_friendly_id() for _ in range(500)}
-    assert len(seen) == 500
+def test_new_friendly_id_varies() -> None:
+    """Catches a constant or an unseeded generator. NOT a uniqueness guarantee:
+    within one millisecond the space is ~30M, so 500 draws collide about once
+    in 200 -- which is what made the old 500-draw assertion flaky. What must
+    never collide is the DIRECTORY, and `_unused_session_id` owns that
+    (tests/unit/test_generated_id_collision.py)."""
+    seen = {new_friendly_id() for _ in range(20)}
+    assert len(seen) == 20
 
 
 def test_new_friendly_id_suffix_time_sortable() -> None:

@@ -202,7 +202,10 @@ fixed argv depending only on operator input, never LLM output.
   get them: Landlock's domain is irrevocable across `execve`, and
   `[mcp.servers.<name>.sandbox].network = "none"` additionally
   `unshare`s a user + network namespace, which the stdio pipes (file
-  descriptors) survive untouched. The namespace work runs BEFORE Landlock,
+  descriptors) survive untouched. Either mechanism stands alone: a block naming
+  no paths applies no Landlock domain (an empty one would grant nothing, to the
+  shim and to whatever it becomes), and a shim asked for neither refuses rather
+  than exec unconfined while looking confined. The namespace work runs BEFORE Landlock,
   because it writes `/proc/self/{setgroups,uid_map,gid_map}` (mapping the
   operator's uid straight through, so the server does not become `nobody`) and
   opens a socket to bring `lo` up -- none of which the domain grants. A host

@@ -95,6 +95,20 @@ def _bring_up_loopback() -> None:
         fcntl.ioctl(sock.fileno(), _SIOCSIFFLAGS, ifreq)
 
 
+def _become(command: list[str]) -> int:
+    """Replace this process with *command*. Returns only when the exec fails.
+
+    The operator's argv, from their own config; no shell, and no LLM input
+    reaches here.
+    """
+    try:
+        os.execvp(command[0], command)  # noqa: S606
+    except OSError as exc:
+        print(f"agent6: could not exec {command[0]}: {exc}", file=sys.stderr)
+        return 127
+    return 0  # pragma: no cover -- execvp does not return
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="agent6.sandbox.exec_confined",
@@ -118,6 +132,15 @@ def main(argv: list[str] | None = None) -> int:
     if not command:
         parser.error("no command given after `--`")
 
+    if not args.no_network and not args.read and not args.write:
+        # Both mechanisms are restrict-SELF, so a shim asked for neither would
+        # apply an empty Landlock domain -- granting nothing, to itself and to
+        # whatever it becomes.
+        print(
+            "agent6: nothing to confine: name --read/--write paths or --no-network", file=sys.stderr
+        )
+        return 2
+
     if args.no_network:
         try:
             _drop_network()
@@ -127,6 +150,10 @@ def main(argv: list[str] | None = None) -> int:
             # whole network.
             print(f"agent6: refusing to run this server with the network: {exc}", file=sys.stderr)
             return 2
+
+    if not args.read and not args.write:
+        # Network-only confinement: no paths named, so no filesystem domain.
+        return _become(command)
 
     try:
         apply_agent_landlock(
@@ -141,14 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         # cannot give, and the server is still worth running.
         print(f"agent6: WARNING: running this server unconfined: {exc}", file=sys.stderr)
 
-    try:
-        # The operator's argv, from their own config; no shell, and no LLM
-        # input reaches here.
-        os.execvp(command[0], command)  # noqa: S606
-    except OSError as exc:
-        print(f"agent6: could not exec {command[0]}: {exc}", file=sys.stderr)
-        return 127
-    return 0  # pragma: no cover -- execvp does not return
+    return _become(command)
 
 
 if __name__ == "__main__":  # pragma: no cover -- the module entry point
