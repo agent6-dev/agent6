@@ -74,6 +74,48 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
     assert "non-JSON" in str(ei.value)
 
 
+def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
+    """OpenRouter/LiteLLM deliver an upstream 5xx/429 as HTTP 200 with a
+    top-level `error` object. The body has no `usage`, so the metering gate
+    blamed agent6's own accounting ("no usage input tokens", 422 = permanent)
+    and a transient upstream failure killed the run -- and every compaction
+    side-call -- with no retry. The streaming paths already surface the
+    envelope; the non-streaming path must match: upstream code/message,
+    retryable (status_code unset)."""
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps({"error": {"code": 502, "message": "Provider returned error"}}),
+    )
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code is None  # retryable
+    assert "502" in str(ei.value) and "Provider returned error" in str(ei.value)
+    assert "usage" not in str(ei.value)  # names the upstream, not the accounting
+
+
+def test_anthropic_2xx_error_envelope_is_the_upstreams_failure() -> None:
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}
+        ),
+    )
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code is None
+    assert "overloaded_error" in str(ei.value) and "Overloaded" in str(ei.value)
+
+
 def test_openai_budgeted_response_requires_usage_tokens() -> None:
     budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)

@@ -161,6 +161,19 @@ class ProviderCall:
                 f"(status {resp.status_code}): {resp.text[:500]}"
             )
         self.record(headers, resp.status_code, data)
+        # An in-band error envelope on a 2xx (OpenRouter/LiteLLM deliver an
+        # upstream 5xx/429 this way; Anthropic's error object has the same
+        # top-level key). The streaming paths already surface it; here the
+        # body has no `usage`, so require_metered below blamed agent6's own
+        # accounting ("no usage input tokens", 422 = permanent) and a
+        # transient upstream failure killed the run with no retry. A body
+        # that also carries real content is NOT an envelope; let it parse.
+        err = data.get("error")
+        if isinstance(err, dict) and not (data.get("choices") or data.get("content")):
+            raise ProviderError(
+                f"{self.api_label} error in 2xx body:"
+                f" {err.get('code') or err.get('type')}: {err.get('message')}"
+            )
         if self.budget is not None:
             self.require_metered(data)
         parsed = self.parse(data)
