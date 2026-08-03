@@ -57,6 +57,20 @@ def _str_field(entry: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _children_at(
+    current: tuple[str, ...], reordered: tuple[str, ...] | None, kept: dict[str, TaskNode]
+) -> tuple[str, ...]:
+    """The parent's children at the target version: the last reorder decides the
+    ORDER, never the membership. Taking the reorder as the whole tuple dropped a
+    child added after it but still within the version, leaving a node in the
+    graph that no tree walk reaches and the curator can never reorder again."""
+    surviving = [c for c in current if c in kept]
+    if reordered is None:
+        return tuple(surviving)
+    first = [c for c in reordered if c in kept]
+    return (*first, *(c for c in surviving if c not in first))
+
+
 def graph_at_version(
     nodes: dict[str, TaskNode],
     journal: Iterable[dict[str, Any]],
@@ -123,7 +137,7 @@ def graph_at_version(
                 "status": status.get(nid, "pending" if nid in born else node.status),
                 "commit_sha": commit.get(nid, "" if nid in born else node.commit_sha),
                 "depends_on": tuple(d for d in node.depends_on if d not in deps_after.get(nid, ())),
-                "children": tuple(c for c in order.get(nid, node.children) if c in kept),
+                "children": _children_at(node.children, order.get(nid), kept),
             }
         )
         for nid, node in kept.items()
