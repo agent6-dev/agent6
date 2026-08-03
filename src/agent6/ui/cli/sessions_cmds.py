@@ -37,7 +37,7 @@ from agent6.git_ops import status as git_status
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import (
-    HUB_BUCKETS,
+    SESSION_BUCKETS,
     SessionLayout,
     bucket_dir,
 )
@@ -97,13 +97,18 @@ def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
 
 def _cmd_list() -> int:
     """List this repo's sessions, newest first: updated (last-activity time),
-    status (with the failure reason), mode, cost, id, task. The listing twin of
-    the TUI/web hubs, built on the same shared summary and the same buckets."""
+    status (with the failure reason), mode, cost, id, task.
+
+    EVERY bucket, unlike the TUI/web hubs: they give `machine create` drafts
+    their own card, and the CLI has none -- so leaving drafts out here made a
+    session `attach` opens happily appear in no listing at all. The mode column
+    is what tells them apart.
+    """
     import time  # noqa: PLC0415
 
     cwd = Path.cwd()
     dirs: list[Path] = []
-    for sub in HUB_BUCKETS:
+    for sub in SESSION_BUCKETS:
         d = bucket_dir(_state_dir(cwd), sub)
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
