@@ -177,7 +177,9 @@ Notes:
   refused, not truncated: dropping the tail loses the newest thinking, and
   the refusal is what forces a prune. Never in the workspace, so never in a
   diff and never mounted into the jail. Same mode rule as memories: machine
-  and agent modes see none.
+  and agent modes see none. A resumed run keeps the `<notes>` block frozen in
+  its snapshot like the rest of its system prompt, but `read_notes` always
+  reads the file, so a later leg can still pick up what it wrote.
 - **Skills.** At run start the loop resolves operator-installed SKILL.md
   packs (`<data-dir>/skills/`, plus `[skills].extra_dirs`) through the
   dispatcher's single resolution, so the `<skills>` system-prompt index and
