@@ -120,5 +120,31 @@
     "properties": {
       "argv": "array[string]"
     }
+  },
+  {
+    "name": "run_background",
+    "required": [
+      "argv"
+    ],
+    "properties": {
+      "argv": "array[string]"
+    }
+  },
+  {
+    "name": "read_background",
+    "required": [],
+    "properties": {
+      "id": "string",
+      "tail_lines": "integer"
+    }
+  },
+  {
+    "name": "stop_background",
+    "required": [
+      "id"
+    ],
+    "properties": {
+      "id": "string"
+    }
   }
 ]

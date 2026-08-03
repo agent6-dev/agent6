@@ -83,7 +83,8 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     from agent6.tools.dispatch import OperatorCommandUnexecutable
     from agent6.types import CommandResult
 
-    cfg = _config(tmp_path)  # verify_command = ["true"]
+    # run_commands = "yes": this exercises verify EXECUTION, not the gate.
+    cfg = _config_with_run_commands(tmp_path, "yes")  # verify_command = ["true"]
     d = ToolDispatcher(root=tmp_path, config=cfg)
     unexecutable = CommandResult(
         argv=("true",),
@@ -925,7 +926,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
 def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
     from agent6.types import CommandResult, JailPolicy
 
-    cfg = _config(tmp_path)
+    cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     captured: dict[str, str] = {}
 
@@ -1600,3 +1601,37 @@ def test_git_is_protected_at_every_isolation_level(
 
     protected = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
     assert (tmp_path / ".git").resolve() in protected
+
+
+def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
+    """run_verify_command runs model-influenced argv in the same jail with the
+    same reach as run_command -- its argv is INFERRED from a file the model can
+    edit whenever it is not configured -- so it answers to the same knob rather
+    than running while `run_commands = "no"` disables everything else."""
+    gated = {"run_command", "run_verify_command", "run_background", "stop_background"}
+    denied = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "no"))
+    assert gated.isdisjoint(denied.available_tool_names())
+    for name in sorted(gated):
+        with pytest.raises(ToolError, match="run_commands"):
+            denied.dispatch(name, {"argv": ["true"], "id": "bg1"})
+    allowed = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "yes"))
+    assert gated <= set(allowed.available_tool_names())
+
+
+def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
+    """Under `ask` the operator approves the verify command like any other, and
+    a refusal denies the call instead of running it."""
+    from agent6.tools.errors import ToolDenied
+
+    asked: list[str] = []
+
+    def refuse(prompt: str) -> bool:
+        asked.append(prompt)
+        return False
+
+    d = ToolDispatcher(
+        root=tmp_path, config=_config_with_run_commands(tmp_path, "ask"), approver=refuse
+    )
+    with pytest.raises(ToolDenied):
+        d.dispatch("run_verify_command", {})
+    assert asked and asked[0].startswith("Allow run_verify_command: true")

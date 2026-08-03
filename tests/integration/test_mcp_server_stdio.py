@@ -41,7 +41,7 @@ model = "x"
 [sandbox]
 isolation = "auto"
 agent_network = "open"
-run_commands = "no"
+run_commands = "yes"
 protect_git = true
 [git]
 require_clean_worktree = true

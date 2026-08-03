@@ -596,6 +596,9 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     ApplyPatchInput,
     RunVerifyInput,
     RunCommandInput,
+    RunBackgroundInput,
+    ReadBackgroundInput,
+    StopBackgroundInput,
 )
 
 # Extra tools exposed only to the single-loop workflow (run_metric,
@@ -683,6 +686,15 @@ def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeT
         # tempt a weak model into spelunking.
         # `ask` keeps run_command for read-only, approval-gated investigation.
         blocked |= {RunVerifyInput.TOOL_NAME, RunCommandInput.TOOL_NAME}
+    if mode != "run":
+        # Only a run can own a background command's lifetime: every other mode
+        # is a short read-only pass, and a command killed at its end would be
+        # started for nothing.
+        blocked |= {
+            RunBackgroundInput.TOOL_NAME,
+            ReadBackgroundInput.TOOL_NAME,
+            StopBackgroundInput.TOOL_NAME,
+        }
     base = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
     names = frozenset(cls.TOOL_NAME for cls in (*base, *extras))
     return ModeTools(

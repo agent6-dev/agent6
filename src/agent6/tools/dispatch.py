@@ -194,9 +194,19 @@ def _default_questioner(  # pragma: no cover — interactive
     return tuple(answers)
 
 
-# run_command's power, so they answer to the same knob and the same approval.
+# Every tool that runs a command in the jail. They all execute model-influenced
+# argv with the same reach, so one knob governs them: `run_commands = "no"`
+# hides them, "ask" prompts (the session-allow marker keeps that to one prompt
+# per run), "yes" runs. run_verify_command is here too -- its argv is the
+# operator's when configured, but INFERRED from a file the model can edit when
+# it is not, and either way it is a command in the same sandbox.
 _COMMAND_TOOLS = frozenset(
-    {RunCommandInput.TOOL_NAME, RunBackgroundInput.TOOL_NAME, StopBackgroundInput.TOOL_NAME}
+    {
+        RunCommandInput.TOOL_NAME,
+        RunVerifyInput.TOOL_NAME,
+        RunBackgroundInput.TOOL_NAME,
+        StopBackgroundInput.TOOL_NAME,
+    }
 )
 
 
@@ -331,10 +341,9 @@ class ToolDispatcher:
         self._run_root_node_id = node_id
 
     def available_tool_names(self) -> tuple[str, ...]:
-        # run_command is filtered out if disabled.
         names = list(self._available)
         if self._config.sandbox.run_commands == "no":
-            names = [n for n in names if n != RunCommandInput.TOOL_NAME]
+            names = [n for n in names if n not in _COMMAND_TOOLS]
         # No verify_command (and none inferred) -> a gateless run: hide
         # run_verify_command rather than offer a tool that would error.
         if not self._config.workflow.verify_command:
@@ -608,6 +617,10 @@ class ToolDispatcher:
 
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)
+        if self._config.sandbox.run_commands == "ask" and not self._approver(
+            f"Allow run_verify_command: {shlex.join(argv)}"
+        ):
+            raise ToolDenied("run_verify_command not approved (sandbox.run_commands='ask')")
         # per-call timeout from config. Defaults to the jail's
         # general 600s but bench configs crank it down so infinite-loop
         # edits fail fast instead of burning ~10 min of wall per attempt.
