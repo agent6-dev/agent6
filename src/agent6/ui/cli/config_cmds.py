@@ -343,6 +343,12 @@ def _revalidate_config(
 
 def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None) -> int:
     """Print a leaf's effective value + the layer that set it."""
+    if machine is not None and not machine.is_file():
+        # read_toml_file answers {} for a missing path, so a typo'd machine file
+        # read as "an empty overlay" and the answer came confidently from the
+        # stack below it.
+        print(f"ERROR: no such machine file: {machine}", file=sys.stderr)
+        return 2
     try:
         if machine is not None:
             overlay = read_toml_file(machine).get("config", {})

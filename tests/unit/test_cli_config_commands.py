@@ -329,3 +329,23 @@ def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
     refuses it: answering from the defaults reports a value the named file
     never set."""
     assert _run(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2
+
+
+def test_get_refuses_a_machine_file_that_does_not_exist(iso: Path) -> None:
+    """A missing overlay path read as an EMPTY overlay, so a typo'd
+    --machine-file answered confidently from the stack below it at exit 0."""
+    assert (
+        _run(["config", "get", "--machine-file", str(iso / "nope.asm.toml"), "review.period"]) == 2
+    )
+
+
+def test_a_provider_leaf_error_names_every_valid_value(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`api_format` is a discriminator with two legal values, and only the first
+    member's complaint was reported -- telling someone configuring an
+    OpenAI-compatible provider that 'anthropic' was the only option."""
+    assert _run(["config", "set", "providers.p.api_format", "nonsense"]) == 2
+    err = capsys.readouterr().err
+    assert "anthropic" in err
+    assert "openai" in err
