@@ -203,34 +203,41 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     return GrepResult(hits=tuple(hits), truncated=False)
 
 
+def _has_component(path: Path, dir_name: str) -> bool:
+    """The one protected-directory membership test, shared by the raw and the
+    resolved checks so they can never disagree: any component equal to
+    *dir_name*, at any depth. Exact match only (``.github`` never matches
+    ``.git``)."""
+    return dir_name in path.parts
+
+
 def _refuse_protected_write(
     candidate: str, dir_name: str, *, why: str, resolved: SafePath | None = None
 ) -> None:
-    """Refuse an in-process ``apply_edit`` / ``apply_patch`` into a protected
-    top-level directory.
+    """Refuse an in-process ``apply_edit`` / ``apply_patch`` whose path has a
+    ``dir_name`` component at any depth.
 
     ``.git`` (when ``protect_git``): the edit tools write **in-process, outside
     the jail**, so without this an LLM could create or rewrite ``.git/hooks/*``
     or ``.git/config`` (e.g. ``core.fsmonitor``) and get code executed outside
     the sandbox on the next ``git`` invocation, or corrupt git history --
     defeating ``protect_git`` entirely (the strict jail's RO bind of ``.git``
-    never covers these in-process writes). Reads stay allowed. (Run state lives
-    out of the workspace, so it is unreachable by edits and needs no guard.)
+    never covers these in-process writes). A NESTED ``.git`` (vendored repo,
+    submodule gitlink) counts: host tools read that metadata just as
+    automatically. Reads stay allowed. (Run state lives out of the workspace,
+    so it is unreachable by edits and needs no guard.)
 
-    Checks both the raw candidate string AND the post-symlink-resolution relative
-    path, so a symlink ``./decoy -> .git`` can't launder a write past the prefix
-    check.
+    Checks both the raw candidate string AND the post-symlink-resolution
+    relative path, so a symlink ``./decoy -> .git`` can't launder a write past
+    the raw check.
     """
-    parts = Path(candidate).parts
-    if parts and parts[0] == dir_name:
+    if _has_component(Path(candidate), dir_name):
         raise ToolError(f"Refusing to write under {dir_name}/ ({why}): {candidate!r}")
-    if resolved is not None:
-        rel_parts = resolved.rel_path.parts
-        if rel_parts and rel_parts[0] == dir_name:
-            raise ToolError(
-                f"Refusing to write under {dir_name}/ ({why}) via symlink: {candidate!r} "
-                f"resolves to {resolved.rel_path!s}"
-            )
+    if resolved is not None and _has_component(resolved.rel_path, dir_name):
+        raise ToolError(
+            f"Refusing to write under {dir_name}/ ({why}) via symlink: {candidate!r} "
+            f"resolves to {resolved.rel_path!s}"
+        )
 
 
 def _refuse_env_write(candidate: str, resolved: SafePath) -> None:

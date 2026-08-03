@@ -363,10 +363,12 @@ syscall for hardened), never guessed from the kernel version.
       on a destructive verb.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
-    - `protect_git` (default on) keeps `.git` unwritable under `strict`, which
-      re-binds it read-only. A rewrite fails and `push` has no egress. It is
-      STRICT-ONLY: see below. On `hardened` the default degrades with a
-      warning and an explicitly-set `true` refuses to run.
+    - `protect_git` (default on) keeps the workspace's top-level `.git`
+      unwritable under `strict`, which re-binds it read-only. A rewrite fails
+      and `push` has no egress. It is STRICT-ONLY: see below. On `hardened`
+      the default degrades with a warning and an explicitly-set `true` refuses
+      to run. The bind covers only the top-level `.git`: a nested one (a
+      vendored repo's or submodule's) stays writable to jailed commands.
     - agent6 used to refuse mutating git subcommands (plus the `-c alias.*`
       injection that dodged them) in `run_command` argv. Removed: a blocklist
       enumerates badness, and a model that writes a shell script and runs it
@@ -399,7 +401,11 @@ syscall for hardened), never guessed from the kernel version.
       all failed at the workspace root, and coreutils reported "File exists",
       sending operators looking in the wrong place. That is too much to pay
       for a protection the operator can have properly by using `strict`.
-      The in-process edit tools still refuse `.git` writes at every level.
+      The in-process edit tools (`apply_edit`/`apply_patch`) refuse, on both
+      isolation levels, any write whose path has a `.git` component at any
+      depth -- nested (vendored/submodule) `.git` included, raw or
+      symlink-resolved. That guard covers only in-process edits, not jailed
+      commands (see above for what the jail binds).
 - **The edit tools refuse writes into an in-repo venv or `site-packages`.**
     - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
       editable-install `.pth` would silently corrupt the venv, invisible in `runs

@@ -327,6 +327,96 @@ def test_apply_edit_refuses_git_via_symlink(tmp_path: Path) -> None:
         )
 
 
+def test_apply_edit_refuses_nested_git_dir(tmp_path: Path) -> None:
+    # A vendored repo's or submodule's .git is host-read git metadata exactly
+    # like the top-level one; the guard matches the component at ANY depth.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "vendor/dep/.git/config",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "[core]\n"}],
+            },
+        )
+    # Deepest component: a submodule gitlink is a FILE named .git.
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "vendor/dep/.git",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "gitdir: x\n"}],
+            },
+        )
+    assert not (tmp_path / "vendor").exists()
+
+
+def test_apply_patch_refuses_nested_git_dir(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_patch",
+            {
+                "path": "sub/mod/.git/hooks/pre-commit",
+                "patch": (
+                    "--- /dev/null\n+++ sub/mod/.git/hooks/pre-commit\n@@ -0,0 +1 @@\n+#!/bin/sh\n"
+                ),
+            },
+        )
+
+
+def test_apply_edit_refuses_nested_git_via_symlink(tmp_path: Path) -> None:
+    # A decoy symlink to a NESTED .git must not launder the write past the
+    # raw-path check; the resolved path is held to the same predicate.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    (tmp_path / "vendor" / "dep" / ".git").mkdir(parents=True)
+    (tmp_path / "innocent").symlink_to(Path("vendor/dep/.git"), target_is_directory=True)
+    with pytest.raises(ToolError, match=r"\.git.*symlink"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "innocent/hooks/pre-commit",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "x"}],
+            },
+        )
+    # Deepest component via symlink: the target IS the nested gitlink file.
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / ".git").write_text("gitdir: ../.git/modules/sub\n", encoding="utf-8")
+    (tmp_path / "notes.txt").symlink_to(Path("sub/.git"))
+    with pytest.raises(ToolError, match=r"\.git.*symlink"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "notes.txt",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "x"}],
+            },
+        )
+
+
+def test_apply_edit_allows_git_lookalike_components(tmp_path: Path) -> None:
+    # Only the exact component `.git` is protected: `git`, `.gitignore`,
+    # `.github`, and any other `.git*` name stay writable at every depth.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    for path in (
+        "src/git/main.py",
+        "a/.gitignore",
+        ".github/workflows/ci.yml",
+        "vendor/.gitlab/ci.yml",
+    ):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": path,
+                "edits": [{"kind": "create", "old_string": "", "new_string": "ok\n"}],
+            },
+        )
+        assert (tmp_path / path).read_text(encoding="utf-8") == "ok\n"
+
+
 def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> None:
     # Opting out of protect_git lifts the guard (consistent with the jail,
     # which also stops RO-binding .git when protect_git is false).
