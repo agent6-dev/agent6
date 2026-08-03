@@ -87,6 +87,21 @@ def test_result_bytes_validate_to_same_object() -> None:
     assert AgentExecResult.model_validate_json(_RESULT_BYTES) == _RESULT
 
 
+def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
+    """A model's finish_run arguments reach the payload through json.loads,
+    which accepts a lone surrogate, while model_dump_json refuses one. The
+    subprocess writes result.json with exactly that call, so an unscrubbed
+    payload killed it before the write; the host then read the dead subprocess
+    as reason="error" and routed a SUCCESSFUL agent state to its on.failed edge.
+    """
+    import json
+
+    res = AgentExecResult(reason="finish_run", payload={"note": "bad \ud800 tail"})
+    text = res.model_dump_json()
+    assert json.loads(text)["payload"]["note"].startswith("bad ")
+    assert "\ud800" not in json.loads(text)["payload"]["note"]
+
+
 def test_defaulted_request_omits_nothing() -> None:
     # Optional envelope fields serialize explicitly (null / []), never key-drop:
     # the reader side needs no .get defaults, which is the point of the model.

@@ -33,7 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from agent6.machine._semantics import validate_record_payload
 from agent6.machine.journal import (
@@ -188,6 +188,18 @@ class AgentExecResult(BaseModel):
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
+
+    @field_validator("payload")
+    @classmethod
+    def _scrub_payload(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The payload is the model's `finish_run` arguments, parsed by
+        `json.loads`, which accepts a lone surrogate that `model_dump_json`
+        then refuses. The subprocess writes `result.json` with exactly that
+        call, so an unscrubbed payload killed it before the write and the host
+        read the dead subprocess as an error -- routing a state whose agent
+        finished successfully to its `on.failed` edge. Scrub here, on the type
+        that owns the file shape, so every construction path is safe."""
+        return value if value is None else scrub_lone_surrogates(value)
 
 
 @dataclass(frozen=True, slots=True)
