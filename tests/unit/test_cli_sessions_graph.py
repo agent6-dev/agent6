@@ -125,7 +125,7 @@ def test_history_graph_missing_run_errors(
     rc = main(["sessions", "graph", "nonexistent"])
     err = capsys.readouterr().err
     assert rc == 2
-    assert "no runs directory" in err or "no run matches" in err
+    assert "no runs directory" in err or "no session matches" in err
 
 
 def test_history_graph_empty_graph_errors(

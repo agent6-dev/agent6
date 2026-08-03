@@ -245,7 +245,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         layout = resolve_or_newest_layout(Path.cwd(), session_id)
     except SessionIdError as exc:
         # An ambiguous prefix names its candidates (as attach and runs stop do);
-        # swallowing it printed "no run matches <id>", which is false when
+        # swallowing it printed "no session matches <id>", which is false when
         # several do.
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

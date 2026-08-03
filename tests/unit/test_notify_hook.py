@@ -40,10 +40,10 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
         "-c",
         "import json,os,sys; "
         "json.dump({"
-        "'id': os.environ['AGENT6_RUN_ID'], "
-        "'ok': os.environ['AGENT6_RUN_OK'], "
-        "'reason': os.environ['AGENT6_RUN_REASON'], "
-        "'dir': os.environ['AGENT6_RUN_DIR']"
+        "'id': os.environ['AGENT6_SESSION_ID'], "
+        "'ok': os.environ['AGENT6_SESSION_OK'], "
+        "'reason': os.environ['AGENT6_SESSION_REASON'], "
+        "'dir': os.environ['AGENT6_SESSION_DIR']"
         "}, open(sys.argv[1], 'w'))",
         str(out),
     )
@@ -83,12 +83,12 @@ def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
-    """ok=False sets AGENT6_RUN_OK=0."""
+    """ok=False sets AGENT6_SESSION_OK=0."""
     out = tmp_path / "ok.txt"
     argv = (
         "sh",
         "-c",
-        f'printf "%s" "$AGENT6_RUN_OK" > {out}',
+        f'printf "%s" "$AGENT6_SESSION_OK" > {out}',
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=5.0)
     fire_notify_hook(
@@ -230,7 +230,7 @@ def test_notify_hook_env_carries_no_secrets(
         "'or_key': os.environ.get('OPENROUTER_API_KEY'), "
         "'path': bool(os.environ.get('PATH')), "
         "'home': bool(os.environ.get('HOME')), "
-        "'id': os.environ['AGENT6_RUN_ID']"
+        "'id': os.environ['AGENT6_SESSION_ID']"
         "}, open(sys.argv[1], 'w'))",
         str(out),
     )
@@ -273,14 +273,14 @@ def test_machine_notify_hook_env_carries_no_secrets(
 
 
 def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
-    """AGENT6_RUN_OK says the agent stopped deliberately; AGENT6_RUN_VERIFIED
+    """AGENT6_SESSION_OK says the agent stopped deliberately; AGENT6_SESSION_VERIFIED
     says what the gate said. A finish over a red verify is OK=1 VERIFIED=failed
     -- a hook that wants "green" reads the second, because the first is true
     for a finish the verify never passed."""
     script = tmp_path / "hook.sh"
     out = tmp_path / "env.txt"
     script.write_text(
-        f'#!/bin/sh\necho "$AGENT6_RUN_OK $AGENT6_RUN_VERIFIED" > {out}\n', encoding="utf-8"
+        f'#!/bin/sh\necho "$AGENT6_SESSION_OK $AGENT6_SESSION_VERIFIED" > {out}\n', encoding="utf-8"
     )
     script.chmod(0o755)
     fire_notify_hook(
@@ -293,3 +293,35 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
         reporter=STDIO_REPORTER,
     )
     assert out.read_text(encoding="utf-8").strip() == "1 failed"
+
+
+def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
+    """`run` is the verb for the agentic coding loop; the SESSION is the thing a
+    hook is told about, and it may be a run, a plan, an ask or a machine. The
+    old `AGENT6_SESSION_*` names said the wrong one three times in four."""
+    out = tmp_path / "env.json"
+    argv = (
+        "python3",
+        "-c",
+        "import json,os,sys; "
+        "json.dump({k: v for k, v in os.environ.items() if k.startswith('AGENT6_')},"
+        " open(sys.argv[1], 'w'))",
+        str(out),
+    )
+    fire_notify_hook(
+        NotifyConfig(on_complete=argv),
+        session_id="brave-oak-AAAAAA",
+        session_dir=tmp_path,
+        ok=True,
+        reason="finish_run",
+        verified="passed",
+        reporter=STDIO_REPORTER,
+    )
+    env = json.loads(out.read_text(encoding="utf-8"))
+
+    assert env["AGENT6_SESSION_ID"] == "brave-oak-AAAAAA"
+    assert env["AGENT6_SESSION_DIR"] == str(tmp_path)
+    assert env["AGENT6_SESSION_OK"] == "1"
+    assert env["AGENT6_SESSION_REASON"] == "finish_run"
+    assert env["AGENT6_SESSION_VERIFIED"] == "passed"
+    assert not [k for k in env if k.startswith("AGENT6_RUN_")], sorted(env)

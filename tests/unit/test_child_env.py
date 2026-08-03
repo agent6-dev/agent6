@@ -45,5 +45,5 @@ def test_a_name_that_is_not_set_is_simply_absent(monkeypatch: pytest.MonkeyPatch
 
 
 def test_the_callers_facts_win_over_the_inherited_ones(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_RUN_ID", "stale")
-    assert curated_env(extra={"AGENT6_RUN_ID": "fresh"})["AGENT6_RUN_ID"] == "fresh"
+    monkeypatch.setenv("AGENT6_SESSION_ID", "stale")
+    assert curated_env(extra={"AGENT6_SESSION_ID": "fresh"})["AGENT6_SESSION_ID"] == "fresh"

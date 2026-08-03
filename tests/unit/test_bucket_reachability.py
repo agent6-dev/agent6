@@ -85,7 +85,7 @@ def test_sessions_diff_names_the_real_problem_for_a_plan(
 
     main(["sessions", "diff", "brave-oak-AAAAAA"])
     err = capsys.readouterr().err
-    assert "no run matches" not in err, err
+    assert "no session matches" not in err, err
 
 
 def test_the_repl_watch_reads_its_own_log(

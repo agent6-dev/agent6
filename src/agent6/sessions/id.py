@@ -105,7 +105,7 @@ def resolve_session_id(runs_dir: Path, query: str) -> str:
         return query
     matches = [rid for rid in ids if rid.startswith(query)]
     if not matches:
-        raise SessionIdError(f"no run matches {query!r} under {runs_dir}")
+        raise SessionIdError(f"no session matches {query!r} under {runs_dir}")
     if len(matches) > 1:
         preview = ", ".join(sorted(matches)[:5])
         raise SessionIdError(

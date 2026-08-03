@@ -444,9 +444,9 @@ channel (ntfy/Pushover/email/Telegram).
 ## `[notify]` (optional)
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or
-failure), outside the jail as your user, with `AGENT6_RUN_ID`,
-`AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_VERIFIED`
-(`passed`/`failed`/`not_applicable`), `AGENT6_RUN_REASON` set. Same
+failure), outside the jail as your user, with `AGENT6_SESSION_ID`,
+`AGENT6_SESSION_DIR`, `AGENT6_SESSION_OK` (`1`/`0`), `AGENT6_SESSION_VERIFIED`
+(`passed`/`failed`/`not_applicable`), `AGENT6_SESSION_REASON` set. Same
 minimal environment as `[machine.notify]`: PATH/HOME/locale/desktop-bus plus
 the `AGENT6_*` vars, never your full environment.
 

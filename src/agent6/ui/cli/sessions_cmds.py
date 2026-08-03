@@ -278,7 +278,7 @@ def _resolve_session_manifest(
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
         # An EXPLICIT id resolves across every bucket. A plan the operator named
-        # exists; "no run matches" would deny that, when the real answer is that
+        # exists; "no session matches" would deny that, when the real answer is that
         # it has no branch to show.
         try:
             layout = resolve_session_layout(cwd, session_id)

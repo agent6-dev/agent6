@@ -910,11 +910,11 @@ class NotifyConfig(BaseModel):
     operator-controlled, it never includes LLM output, and runs in the
     user's shell environment, NOT in the jail, with these env vars:
 
-    - ``AGENT6_RUN_ID``      , run id under the per-repo run-state dir
-    - ``AGENT6_RUN_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
-    - ``AGENT6_RUN_REASON``  , workflow termination reason (e.g. ``finish_run``,
+    - ``AGENT6_SESSION_ID``      , session id under the per-repo state dir
+    - ``AGENT6_SESSION_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
+    - ``AGENT6_SESSION_REASON``  , workflow termination reason (e.g. ``finish_run``,
                                  ``budget_exhausted``, ``provider_error``)
-    - ``AGENT6_RUN_DIR``     , absolute path to the run dir
+    - ``AGENT6_SESSION_DIR``     , absolute path to the session dir
 
     Use cases: desktop notification (``notify-send``), shell-bell, ssh
     push notification, mailx, etc. A failure of the notify command is

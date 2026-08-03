@@ -459,14 +459,14 @@ def fire_notify_hook(
     if not notify.on_complete:
         return
     env = hook_env(
-        AGENT6_RUN_ID=session_id,
+        AGENT6_SESSION_ID=session_id,
         # OK = the agent stopped deliberately; VERIFIED = what the gate said
         # (passed / failed / not_applicable). A hook that wants "green" reads
         # the second: OK alone is true for a finish over a red verify.
-        AGENT6_RUN_OK="1" if ok else "0",
-        AGENT6_RUN_VERIFIED=verified,
-        AGENT6_RUN_REASON=reason,
-        AGENT6_RUN_DIR=str(session_dir),
+        AGENT6_SESSION_OK="1" if ok else "0",
+        AGENT6_SESSION_VERIFIED=verified,
+        AGENT6_SESSION_REASON=reason,
+        AGENT6_SESSION_DIR=str(session_dir),
     )
     try:
         subprocess.run(

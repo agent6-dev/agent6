@@ -245,7 +245,7 @@ fixed argv depending only on operator input, never LLM output.
 - `app/` helpers:
     - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
       run end; argv from config, env from `hook_env` (a minimal base plus
-      `AGENT6_RUN_*`, never the provider keys in the operator environment).
+      `AGENT6_SESSION_*`, never the provider keys in the operator environment).
     - `app/machine/_scriptcheck.py`: ruff/ty with fixed argv to statically read
       generated scripts, which only ever execute via `run_in_jail`.
     - The `machine run` supervisor (`app/machine_agent.py`): spawns each agent

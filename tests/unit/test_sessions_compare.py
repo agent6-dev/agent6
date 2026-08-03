@@ -126,7 +126,7 @@ def test_compare_unknown_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixt
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     rc = main(["sessions", "compare", "run-AAAA11", "nonexistent"])
     assert rc == 2
-    assert "no run matches" in capsys.readouterr().err
+    assert "no session matches" in capsys.readouterr().err
 
 
 def test_compare_ambiguous_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:

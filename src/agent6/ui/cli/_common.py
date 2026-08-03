@@ -132,7 +132,7 @@ def print_no_session_match(query: str, state: Path) -> None:
     name the query and where it looked (never the bucket-layout internals), or
     the same first-contact copy as `sessions` when there is nothing to show at all."""
     if query:
-        print(f"ERROR: no run matches {query!r} (looked under {state})", file=sys.stderr)
+        print(f"ERROR: no session matches {query!r} (looked under {state})", file=sys.stderr)
     else:
         print('no sessions yet. Start one with `agent6 run "<task>"`.', file=sys.stderr)
 
@@ -204,7 +204,7 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
             f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
             ambiguous=True,
         )
-    raise SessionIdError(f"no run matches {query!r} (looked under {state})")
+    raise SessionIdError(f"no session matches {query!r} (looked under {state})")
 
 
 def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:

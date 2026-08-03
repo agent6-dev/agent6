@@ -76,7 +76,7 @@ def test_resolve_ambiguous_prefix(tmp_path: Path) -> None:
 
 def test_resolve_no_match(tmp_path: Path) -> None:
     (tmp_path / "sunny-otter-K4Q7B2").mkdir()
-    with pytest.raises(SessionIdError, match="no run matches"):
+    with pytest.raises(SessionIdError, match="no session matches"):
         resolve_session_id(tmp_path, "zzz")
 
 

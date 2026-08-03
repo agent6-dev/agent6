@@ -132,7 +132,7 @@ def test_a_machine_instance_is_not_reachable_as_a_session(
     state = resolved_state_dir(tmp_path)
     (state / "machines" / "tiny").mkdir(parents=True)
 
-    with pytest.raises(Exception, match="no run matches"):
+    with pytest.raises(Exception, match="no session matches"):
         resolve_session_layout(tmp_path, "tiny")
 
 

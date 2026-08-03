@@ -346,7 +346,7 @@ def test_status_missing_id_and_empty_state_speak_human(
     monkeypatch.chdir(repo)
     assert _cmd_status("zzz", as_json=False) == 2
     err = capsys.readouterr().err
-    assert "no run matches 'zzz'" in err and "machines" not in err
+    assert "no session matches 'zzz'" in err and "machines" not in err
     assert _cmd_status("", as_json=False) == 2
     assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 
@@ -441,7 +441,7 @@ def test_status_ambiguous_prefix_names_the_candidates(
 ) -> None:
     """An ambiguous id prefix must say so and name the matches, as `attach` and
     `sessions stop` do. `sessions show` swallowed the resolver's error and printed
-    "no run matches 't'" -- telling the operator no such run exists while two
+    "no session matches 't'" -- telling the operator no such run exists while two
     did."""
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     sibling = d.parent / "winsome-dusk-AAAAAA"
@@ -454,7 +454,7 @@ def test_status_ambiguous_prefix_names_the_candidates(
     err = capsys.readouterr().err
     assert "ambiguous" in err
     assert "winsome-dawn-YWH5ZS" in err and "winsome-dusk-AAAAAA" in err
-    assert "no run matches" not in err
+    assert "no session matches" not in err
 
 
 def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: Path) -> None:
