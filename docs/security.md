@@ -227,15 +227,16 @@ fixed argv depending only on operator input, never LLM output.
       argv for `agent6 system apparmor` (operator host setup).
 - `app/` helpers:
     - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
-      run end; argv from config.
+      run end; argv from config, env from `hook_env` (a minimal base plus
+      `AGENT6_RUN_*`, never the provider keys in the operator environment).
     - `app/machine/_scriptcheck.py`: ruff/ty with fixed argv to statically read
       generated scripts, which only ever execute via `run_in_jail`.
     - The `machine run` supervisor (`app/machine_agent.py`): spawns each agent
       state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess
       whose request travels in a temp file, never on argv; its operator
       `[machine.notify].on_event` hook (argv from config, fired from
-      `app/machine/_preflight.py`) runs on the host with `AGENT6_MACHINE_*`
-      env, mirroring `[notify].on_complete`.
+      `app/machine/_preflight.py`) runs on the host with the same minimal
+      `hook_env` base plus `AGENT6_MACHINE_*`, mirroring `[notify].on_complete`.
     - `ui/cli/skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv
       for `agent6 skills install`; the URL is operator-supplied on the CLI and
       nothing fetched is ever executed.
@@ -494,7 +495,9 @@ More fail-closed properties:
   `machine.notify` as an overlay, and `attach`/TUI call `notify-send` with a FIXED
   argv (no shell), so a model message is inert data.
     - The out-of-band hook `[machine.notify].on_event` runs an operator argv on the
-      host with only `AGENT6_MACHINE_*` env (mirrors `[notify].on_complete`); a
+      host with a minimal env -- PATH/HOME/locale/desktop-bus plus
+      `AGENT6_MACHINE_*` (`hook_env` in `app/finalize.py`), never the full
+      environment with its provider keys (mirrors `[notify].on_complete`); a
       `[config]` overlay setting `[machine.notify]` is rejected at load. No Web
       Push/VAPID.
 

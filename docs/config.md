@@ -433,9 +433,11 @@ jail on every `machine.notify` (a state's `notify` message) and on the
 terminal `machine.end`, with `AGENT6_MACHINE_ID`, `AGENT6_MACHINE_DIR`,
 `AGENT6_MACHINE_EVENT` (`notify`/`end`), `AGENT6_MACHINE_STATE`,
 `AGENT6_MACHINE_MESSAGE`, and `AGENT6_MACHINE_LEVEL` (the level for a notify,
-the `ok`/`failed` status for an end). Set it only in the global/repo config,
-never in a machine `[config]` overlay (rejected at load); the argv is never
-LLM output. Fan out to your own push channel (ntfy/Pushover/email/Telegram).
+the `ok`/`failed` status for an end). The hook gets a minimal environment
+(PATH/HOME/locale/desktop-bus plus the `AGENT6_*` vars), not your full one.
+Set it only in the global/repo config, never in a machine `[config]` overlay
+(rejected at load); the argv is never LLM output. Fan out to your own push
+channel (ntfy/Pushover/email/Telegram).
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -446,7 +448,9 @@ LLM output. Fan out to your own push channel (ntfy/Pushover/email/Telegram).
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or
 failure), outside the jail as your user, with `AGENT6_RUN_ID`,
-`AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_REASON` set.
+`AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_REASON` set. Same
+minimal environment as `[machine.notify]`: PATH/HOME/locale/desktop-bus plus
+the `AGENT6_*` vars, never your full environment.
 
 | Field | Default | Meaning |
 |---|---|---|

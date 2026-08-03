@@ -13,13 +13,13 @@ protect paths (`machine_protect_paths`) and the operator notify hook
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app.egress import check_network_profile
+from agent6.app.finalize import hook_env
 from agent6.app.machine._bundle import is_inside
 from agent6.config import Config
 from agent6.machine import AgentState, MachineSpec, ToolState
@@ -134,13 +134,14 @@ def build_machine_notify_hook(
         return None
 
     def fire(kind: str, state: str, message: str, level: str) -> None:
-        env = dict(os.environ)
-        env["AGENT6_MACHINE_ID"] = machine_id
-        env["AGENT6_MACHINE_DIR"] = str(root)
-        env["AGENT6_MACHINE_EVENT"] = kind
-        env["AGENT6_MACHINE_STATE"] = state
-        env["AGENT6_MACHINE_MESSAGE"] = message
-        env["AGENT6_MACHINE_LEVEL"] = level
+        env = hook_env(
+            AGENT6_MACHINE_ID=machine_id,
+            AGENT6_MACHINE_DIR=str(root),
+            AGENT6_MACHINE_EVENT=kind,
+            AGENT6_MACHINE_STATE=state,
+            AGENT6_MACHINE_MESSAGE=message,
+            AGENT6_MACHINE_LEVEL=level,
+        )
         try:
             subprocess.run(list(notify.on_event), env=env, timeout=notify.timeout_s, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:

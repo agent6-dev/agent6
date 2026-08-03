@@ -346,6 +346,38 @@ def finalize_auto_stash(
         )
 
 
+# What an operator notify hook inherits: enough to execute a script (PATH,
+# HOME, locale, user identity) and to reach the desktop bus (notify-send needs
+# DISPLAY/DBUS), plus the AGENT6_* facts the caller adds. Never the whole
+# environment: it carries the provider API keys resolved via
+# `[providers.*].api_key_env`, and a hook that logs or forwards its env
+# (a shell wrapper, a webhook poster) would carry the key with it.
+_HOOK_ENV_KEEP = (
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "XDG_RUNTIME_DIR",
+)
+
+
+def hook_env(**agent6_vars: str) -> dict[str, str]:
+    """The environment for an operator notify hook: the `_HOOK_ENV_KEEP` base
+    plus the given ``AGENT6_*`` facts. The one owner for both hooks
+    (`[notify].on_complete` here, `[machine.notify].on_event` in
+    `app/machine/_preflight.py`), so their env-scope claims cannot drift."""
+    env = {k: v for k in _HOOK_ENV_KEEP if (v := os.environ.get(k)) is not None}
+    env.update(agent6_vars)
+    return env
+
+
 def fire_notify_hook(
     notify: NotifyConfig,
     *,
@@ -362,11 +394,12 @@ def fire_notify_hook(
     """
     if not notify.on_complete:
         return
-    env = dict(os.environ)
-    env["AGENT6_RUN_ID"] = run_id
-    env["AGENT6_RUN_OK"] = "1" if ok else "0"
-    env["AGENT6_RUN_REASON"] = reason
-    env["AGENT6_RUN_DIR"] = str(run_dir)
+    env = hook_env(
+        AGENT6_RUN_ID=run_id,
+        AGENT6_RUN_OK="1" if ok else "0",
+        AGENT6_RUN_REASON=reason,
+        AGENT6_RUN_DIR=str(run_dir),
+    )
     try:
         subprocess.run(
             list(notify.on_complete),

@@ -206,3 +206,55 @@ timeout_s = 12.5
     cfg = load_config(cfg_path)
     assert cfg.notify.on_complete == ("notify-send", "agent6 done")
     assert cfg.notify.timeout_s == 12.5
+
+
+def test_notify_hook_env_carries_no_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hook child got the operator's WHOLE environment -- provider bearer
+    tokens included via `[providers.*].api_key_env` -- where docs/security.md
+    promises only the AGENT6_* set. The env is now the minimal hook_env base:
+    a hook that logs or forwards its environment cannot carry a key with it."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
+    out = tmp_path / "env.json"
+    argv = (
+        "python3",
+        "-c",
+        "import json,os,sys; json.dump({"
+        "'key': os.environ.get('ANTHROPIC_API_KEY'), "
+        "'or_key': os.environ.get('OPENROUTER_API_KEY'), "
+        "'path': bool(os.environ.get('PATH')), "
+        "'home': bool(os.environ.get('HOME')), "
+        "'id': os.environ['AGENT6_RUN_ID']"
+        "}, open(sys.argv[1], 'w'))",
+        str(out),
+    )
+    notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
+    fire_notify_hook(notify, run_id="r1", run_dir=tmp_path, ok=True, reason="finish_run")
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload == {"key": None, "or_key": None, "path": True, "home": True, "id": "r1"}
+
+
+def test_machine_notify_hook_env_carries_no_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The machine hook goes through the same hook_env owner.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
+    out = tmp_path / "env2.json"
+    script = (
+        "import json,os,sys; json.dump({"
+        "'key': os.environ.get('ANTHROPIC_API_KEY'), "
+        "'path': bool(os.environ.get('PATH')), "
+        "'id': os.environ['AGENT6_MACHINE_ID']"
+        "}, open(sys.argv[1], 'w'))"
+    )
+    body = _MACHINE_CFG_BODY.replace('"PLACEHOLDER"', f'"{script}", "{out}"')
+    cfg_path = tmp_path / "agent6.toml"
+    cfg_path.write_text(body, encoding="utf-8")
+    cfg = load_config(cfg_path)
+    hook = build_machine_notify_hook(cfg, "m1", tmp_path / "inst")
+    assert hook is not None
+    hook("notify", "poll", "msg", "info")
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload == {"key": None, "path": True, "id": "m1"}
