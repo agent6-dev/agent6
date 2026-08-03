@@ -331,3 +331,57 @@ def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: Path) -
     # A genuinely absent leaf under a DECLARED header keeps the quiet False.
     p.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
     assert remove_toml_leaf(p, "sandbox.protect_git") is False
+
+
+def test_upsert_end_scan_skips_a_multiline_value_with_a_bracket_line(tmp_path: Path) -> None:
+    """The section-end scan that bounds the leaf search was a raw per-line
+    startswith("["), so a triple-quoted value whose interior line begins with
+    '[' truncated the region: the leaf search stopped early, missed the real
+    leaf, and the insert landed INSIDE the operator's string, destroying a
+    sibling and reporting success."""
+    p = tmp_path / "c.toml"
+    p.write_text(
+        '[workflow.metric]\npattern = """\n[0-9]+ ms\n"""\ngoal = "minimize"\n',
+        encoding="utf-8",
+    )
+    upsert_toml_leaf(p, "workflow.metric.goal", "maximize")
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert parsed["workflow"]["metric"]["goal"] == "maximize", "the real leaf must be rewritten"
+    assert parsed["workflow"]["metric"]["pattern"] == "[0-9]+ ms\n", "the string was corrupted"
+
+    # The unset twin: it must FIND (and remove) the real leaf, not report absent.
+    assert remove_toml_leaf(p, "workflow.metric.goal") is True
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert "goal" not in parsed["workflow"]["metric"]
+    assert parsed["workflow"]["metric"]["pattern"] == "[0-9]+ ms\n"
+
+
+def test_drop_top_region_key_skips_a_multiline_value_bracket_line(tmp_path: Path) -> None:
+    # profile (bare scalar) vs [profile] surgery: dropping the top-level key must
+    # not stop early at a '[' line inside a preceding top-level multi-line value.
+    p = tmp_path / "c.toml"
+    p.write_text(
+        'note = """\n[not a header]\n"""\nprofile = "old"\n',
+        encoding="utf-8",
+    )
+    upsert_toml_leaf(p, "profile.review.trigger", "off")  # forces [profile] surgery
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert parsed["note"] == "[not a header]\n", "the top-level string was corrupted"
+    assert parsed["profile"]["review"]["trigger"] == "off"
+
+
+def test_remove_toml_table_drops_an_array_of_tables_subtable(tmp_path: Path) -> None:
+    """Removing [cli] must take its [[cli.aliases]] array-of-tables subtable with
+    it. _drop_table_lines switched to _header_name, which reports [[x]] as
+    not-a-table, so the subtable (and everything after) was kept, leaving the
+    config unloadable and config fix stuck."""
+    p = tmp_path / "c.toml"
+    p.write_text(
+        '[cli]\nx = 1\n\n[[cli.aliases]]\nname = "a"\n\n[sandbox]\nprotect_git = true\n',
+        encoding="utf-8",
+    )
+    assert remove_toml_table(p, "cli") is True
+    out = p.read_text(encoding="utf-8")
+    assert "cli" not in tomllib.loads(out)
+    assert "aliases" not in out  # the subtable went with its parent
+    assert tomllib.loads(out)["sandbox"] == {"protect_git": True}  # sibling preserved

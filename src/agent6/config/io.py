@@ -45,6 +45,27 @@ def _header_name(line: str) -> str | None:
     return stripped[1:end].strip()
 
 
+def _section_name(line: str) -> str | None:
+    """The dotted name of a ``[table]`` OR ``[[array.of.tables]]`` header line,
+    or None if *line* is not one.
+
+    For DROPPING a whole section: both forms are subtables that must go with
+    their parent, so a `[[table.sub]]` under a dropped `[table]` is included.
+    `_header_name` is the stricter single-table matcher for a lookup, which
+    deliberately rejects `[[x]]`.
+    """
+    stripped = line.strip()
+    if stripped.startswith("[["):
+        close = stripped.find("]]")
+        if close == -1:
+            return None
+        trailing = stripped[close + 2 :].strip()
+        if trailing and not trailing.startswith("#"):
+            return None
+        return stripped[2:close].strip()
+    return _header_name(line)
+
+
 def _toml_value(value: str | bool) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -84,11 +105,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
             sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
             _write(path, prefix + sep + block + "\n")
             return
-        end = len(lines)
-        for j in range(start + 1, len(lines)):
-            if lines[j].lstrip().startswith("["):
-                end = j
-                break
+        end = _region_end(lines, start + 1)
         new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
         _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
@@ -199,10 +216,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         else:
             lines, _ = _drop_table_lines(lines, leaf)
             region = 0  # top-level key: the bare region before any [table] header
-        end = next(
-            (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
-            len(lines),
-        )
+        end = _region_end(lines, region)
         j = _find_leaf_line(lines, region, end, leaf)
         if j is not None:
             # Replace the WHOLE value: a multi-line array or triple-quoted
@@ -230,14 +244,44 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
     removed = False
     for line in lines:
         if line.strip().startswith("["):
-            # Any header line ends the previous section (an array-of-tables
-            # included, which _header_name reports as not-a-table).
-            name = _header_name(line)
+            # _section_name, not _header_name: a `[[table.sub]]` array-of-tables
+            # is a SUBTABLE that must be dropped with its parent. _header_name
+            # (the single-table lookup matcher) reports `[[x]]` as not-a-table,
+            # so keying the drop on it kept the subtable and everything after,
+            # leaving the config unloadable.
+            name = _section_name(line)
             dropping = name is not None and (name == table or name.startswith(f"{table}."))
             removed = removed or dropping
         if not dropping:
             kept.append(line)
     return kept, removed
+
+
+# A line that OPENS a ``leaf = value`` assignment (not a comment, blank, or
+# header). The value may then span more lines (a multi-line array / triple
+# string), which _value_line_span measures.
+_ASSIGN_RE = re.compile(r"^\s*[^#\s=\[][^=]*=")
+
+
+def _region_end(lines: list[str], region: int) -> int:
+    """Index of the first real ``[header]`` line at or after *region*, skipping
+    the INTERIOR of every multi-line value on the way.
+
+    THE single owner of "where does this table's body end". A plain per-line
+    ``startswith("[")`` scan stopped inside a triple-quoted value whose line
+    began with ``[`` (a regex character class is the natural case), so the leaf
+    search that this bounds ended early: it missed the real leaf and the insert
+    landed inside the operator's string, silently destroying a sibling while
+    reporting success.
+    """
+    j = region
+    while j < len(lines):
+        if lines[j].lstrip().startswith("["):
+            return j
+        # A value spanning several lines is jumped whole so its interior is
+        # never mistaken for a header; _value_line_span is >= 1, so j advances.
+        j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
+    return len(lines)
 
 
 def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
@@ -249,14 +293,13 @@ def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int |
     reported success.
     """
     leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-    assign_re = re.compile(r"^\s*[^#\s=\[][^=]*=")
     j = region
     while j < end:
         if leaf_re.match(lines[j]):
             return j
         # A value that spans lines is jumped whole, so its contents are never
         # candidates; _value_line_span is >= 1, so this always advances.
-        j += _value_line_span(lines, j) if assign_re.match(lines[j]) else 1
+        j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
     return None
 
 
@@ -266,7 +309,7 @@ def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
     The top region ends at the first ``[table]`` header; a same-named key
     inside a table is someone else's and stays.
     """
-    end = next((j for j, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines))
+    end = _region_end(lines, 0)
     key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
     for j in range(end):
         if key_re.match(lines[j]):
@@ -350,10 +393,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         else:
             start = None  # top-level key: no header line to clean up after
             region = 0
-        end = next(
-            (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
-            len(lines),
-        )
+        end = _region_end(lines, region)
         j = _find_leaf_line(lines, region, end, leaf)
         if j is not None:
             span = _value_line_span(lines, j)
