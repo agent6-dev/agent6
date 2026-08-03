@@ -253,15 +253,18 @@ class TestAtomicMultiInstall:
     def test_repo_conflict_refuses_whole_install(
         self, env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        # aa already installed; a repo carrying aa+bb must install NOTHING
-        src = _write_skill_file(env / "one" / "SKILL.md", "aa")
+        # zz already installed; a repo carrying aa+zz must install NOTHING.
+        # The conflict is the LAST entry in sort order on purpose: with the
+        # conflict first, the install aborts before reaching the sibling and a
+        # pre-check narrowed to the first dir would still look atomic.
+        src = _write_skill_file(env / "one" / "SKILL.md", "zz")
         assert _cmd_skills_install(str(src), force=False) == 0
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
-        _write_skill_file(repo / "skills" / "bb" / "SKILL.md", "bb")
+        _write_skill_file(repo / "skills" / "zz" / "SKILL.md", "zz")
         assert _cmd_skills_install(str(repo), force=False) == 2
         assert "nothing was installed" in capsys.readouterr().err
-        assert not _installed(env, "bb").exists()
+        assert not _installed(env, "aa").exists()  # the pre-conflict skill too
         # --force replaces and installs both
         assert _cmd_skills_install(str(repo), force=True) == 0
-        assert _installed(env, "bb").exists()
+        assert _installed(env, "aa").exists() and _installed(env, "zz").exists()

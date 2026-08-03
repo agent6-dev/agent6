@@ -120,13 +120,17 @@ class TestDiscoverSkills:
         assert warnings == ()
 
     def test_dotfiles_and_plain_files_ignored(self, tmp_path: Path) -> None:
+        # A dotted dir holding a VALID SKILL.md is the case the dot rule exists
+        # for: without it a .backup/ copy would be discovered and its
+        # instructions injected into every run's system prompt. An empty
+        # .hidden/ proves nothing (the SKILL.md check already excludes it).
         _write_skill(tmp_path, "tidy", PLAIN)
         (tmp_path / "tidy" / ".origin.toml").write_text("url='x'\n")
         (tmp_path / "README.md").write_text("not a skill\n")
-        (tmp_path / ".hidden").mkdir()
+        _write_skill(tmp_path, ".backup", PLAIN)
         found, warnings = skills.discover_skills([tmp_path])
         assert [s.name for s in found] == ["tidy"]
-        assert warnings == ()
+        assert warnings == ()  # skipped silently, not reported as broken
 
     def test_missing_dir_is_fine(self, tmp_path: Path) -> None:
         found, warnings = skills.discover_skills([tmp_path / "nope"])
