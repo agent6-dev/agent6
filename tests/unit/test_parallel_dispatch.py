@@ -111,3 +111,21 @@ def test_lane_note_wordings() -> None:
     assert lane_note(_join("joined", sha="abc123def4567")) == "lane-1 joined at abc123def456"
     assert lane_note(_join("conflict")) == "lane-1 conflicted; merge manually"
     assert lane_note(_join("failed")) == "lane-1 failed: boom"
+
+
+def test_segment_lanes_carry_the_operator_pins() -> None:
+    """`/pin` tells the worker an instruction "stays binding for the rest of the
+    run", and a lane's branch is merged back into the coordinator's -- so a lane
+    that never saw the pin could violate a standing instruction and have that
+    work land anyway. Lanes were built from the segment text alone."""
+    lanes = segment_lanes(
+        Segment(spec="2", task="refactor the model layer"), ["never touch schema files"]
+    )
+    assert len(lanes) == 2
+    for lane in lanes:
+        assert "never touch schema files" in lane.task
+        assert "refactor the model layer" in lane.task
+
+    # No pins: the task text is untouched.
+    plain = segment_lanes(Segment(spec="", task="do it"))
+    assert plain[0].task == "do it"

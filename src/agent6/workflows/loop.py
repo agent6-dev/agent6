@@ -4026,7 +4026,7 @@ class Workflow:
             return
         try:
             # One DAG node per SEGMENT (task); its lanes join under it.
-            per_segment = [segment_lanes(seg) for seg in segments]
+            per_segment = [segment_lanes(seg, state.pins) for seg in segments]
         except DirectiveError as exc:
             self._inject_parallel_feedback(
                 conversation, f"bad /parallel spec: {exc}; nothing dispatched."

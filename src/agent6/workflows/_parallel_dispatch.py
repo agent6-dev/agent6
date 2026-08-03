@@ -11,12 +11,14 @@ continues with. Unit-testable without a Workflow.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from agent6.directive import Segment, parse_spec
 from agent6.graph.models import NodeStatus
+from agent6.prompts.revision import pinned_block
 from agent6.workflows.subrun import LaneResult, LaneTask, SubrunError, join_branch
 
 
@@ -36,11 +38,21 @@ class LaneJoin:
     detail: str
 
 
-def segment_lanes(seg: Segment) -> list[LaneTask]:
+def segment_lanes(seg: Segment, pins: Sequence[str] = ()) -> list[LaneTask]:
     """Expand one segment into its lanes: `parse_spec` maps the spec to one
     model per lane (`None` = the worker model). Raises DirectiveError on a
-    bad spec (zero lanes, empty model list)."""
-    return [LaneTask(task=seg.task, model=model) for model in parse_spec(seg.spec)]
+    bad spec (zero lanes, empty model list).
+
+    Operator *pins* head every lane's task. `/pin` promises an instruction
+    "stays binding for the rest of the run", and a lane is work done for that
+    run whose branch is merged back into the coordinator's -- so a lane that
+    never saw the pin could violate a standing instruction and have it land
+    anyway. Rendered with the same block a restart re-shows, so the wording the
+    worker sees does not depend on which path delivered it.
+    """
+    block = pinned_block(pins)
+    task = f"{block}\n\n{seg.task}" if block else seg.task
+    return [LaneTask(task=task, model=model) for model in parse_spec(seg.spec)]
 
 
 def join_lane_result(root: Path, res: LaneResult) -> LaneJoin:
