@@ -61,8 +61,8 @@ def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> l
                 {
                     "sessionUpdate": "tool_call_update",
                     "toolCallId": _tool_id(item, run_id),
-                    "status": "completed" if item.ok is not False else "failed",
-                    **({"content": [_text(item.detail)]} if item.detail else {}),
+                    "status": _tool_status(item),
+                    **({"content": _tool_content(item)} if _tool_content(item) else {}),
                 },
             ),
         ]
@@ -131,6 +131,32 @@ def _update(session_id: str, update: dict[str, Any]) -> dict[str, Any]:
 
 def _text(text: str) -> dict[str, Any]:
     return {"type": "text", "text": text}
+
+
+def _tool_status(item: TranscriptItem) -> str:
+    """ACP's four statuses. `ok=None` is the fold's "in flight", which is a
+    status ACP has -- reporting it `completed` said a running tool had
+    finished, and a finished one carries a real verdict anyway."""
+    if item.ok is None:
+        return "in_progress"
+    return "completed" if item.ok else "failed"
+
+
+def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
+    """What the tool produced, in ACP's TAGGED shape.
+
+    `ToolCallContent` is a discriminated union (`content` | `diff` |
+    `terminal`), not a bare ContentBlock array. Sending the bare array made a
+    strict client reject the whole notification, so the `completed`/`failed`
+    it carried never arrived and the call announced a line earlier stayed
+    `pending` for the rest of the session.
+
+    `tail` is the failure's actual output -- a red gate's test log, a command's
+    stderr. The fold fills it for exactly this, and dropping it left an editor
+    showing "failed" with no reason.
+    """
+    body = "\n".join(part for part in (item.detail, item.tail) if part)
+    return [{"type": "content", "content": _text(body)}] if body else []
 
 
 def _tool_id(item: TranscriptItem, run_id: str) -> str:

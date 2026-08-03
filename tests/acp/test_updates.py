@@ -58,9 +58,10 @@ def test_a_failed_tool_says_so() -> None:
 
 
 def test_a_tool_still_running_is_not_reported_failed() -> None:
-    """`ok=None` is "no outcome yet", which is not the same as a failure."""
+    """`ok=None` is "no outcome yet", which is neither a failure nor a
+    success. This asserted "completed" while its own name said otherwise."""
     updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), session_id="s")
-    assert updates[1]["params"]["update"]["status"] == "completed"
+    assert updates[1]["params"]["update"]["status"] == "in_progress"
 
 
 def test_an_empty_body_produces_nothing() -> None:
@@ -167,3 +168,47 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
     second = updates_for(item, session_id="s", run_id="clever-elm-BBBBBB")
     assert first[0]["params"]["update"]["toolCallId"] != second[0]["params"]["update"]["toolCallId"]
     assert first[0]["params"]["update"]["toolCallId"].startswith("brave-oak-AAAAAA:")
+
+
+def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
+    """`ToolCallContent` is a discriminated union, not a ContentBlock array.
+
+    From the published schema: `oneOf` [{type: "content", ...Content}, {type:
+    "diff", ...}, {type: "terminal", ...}] with `discriminator.propertyName =
+    "type"`. Sending the bare array made a strict client reject the whole
+    notification -- so the `completed`/`failed` it carried never arrived and
+    the call announced one line earlier stayed `pending` for the rest of the
+    session.
+    """
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    item = TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1")
+    _call, outcome = updates_for(item, session_id="s")
+    content = outcome["params"]["update"]["content"]
+    assert content == [{"type": "content", "content": {"type": "text", "text": "exit 1"}}]
+
+
+def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
+    """The fold fills `tail` with the stderr/stdout of a failure for exactly
+    this. Sending only `detail` left an editor showing "failed" and the word
+    "exit 1", with the test log that says WHY nowhere on the wire."""
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    item = TranscriptItem(
+        kind="tool", name="run_verify", arg="", ok=False, detail="exit 1", tail="E   assert 1 == 2"
+    )
+    _call, outcome = updates_for(item, session_id="s")
+    text = outcome["params"]["update"]["content"][0]["content"]["text"]
+    assert "assert 1 == 2" in text
+
+
+def test_a_tool_still_running_is_not_reported_finished() -> None:
+    """`ok=None` is the fold's "in flight", and ACP has `in_progress` for it."""
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    live = TranscriptItem(kind="tool", name="run_command", arg="sleep 60", ok=None)
+    _call, outcome = updates_for(live, session_id="s")
+    assert outcome["params"]["update"]["status"] == "in_progress"

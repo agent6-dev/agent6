@@ -412,3 +412,23 @@ def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
     server.abandon_pending()
     asking.join(timeout=5.0)
     assert answered == [{}], "the worker was left waiting"
+
+
+def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
+    """ACP v1 carries a question as a permission request, whose options ARE
+    the buttons. A free-form `ask_user` has none, so there was nothing to
+    press: it stalled the full 300s timeout and then answered "said nothing"
+    anyway -- up to eight times in one call, sequentially."""
+    sent: list[tuple[str, dict[str, Any]]] = []
+    bridge = _bridge({"outcome": {"outcome": "cancelled"}})
+
+    def _record(method: str, params: dict[str, Any], **_kw: object) -> dict[str, Any]:
+        sent.append((method, params))
+        return {}
+
+    bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
+    session = session_mod.Session(id="s", cwd=Path("/x"))
+    assert bridge.ask(session, "What should the theme be?", (), None) is None
+    assert sent == [], "an unanswerable prompt was still shown"
+    assert bridge.ask(session, "Theme?", ("dark", "light"), None) is None
+    assert len(sent) == 1, "a question WITH options still goes out"

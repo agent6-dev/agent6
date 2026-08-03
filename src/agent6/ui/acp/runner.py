@@ -135,7 +135,14 @@ class RunBridge:
         ACP v1 has no method for a free-form question, so a `UserQuestion` goes
         out as a permission request too -- its options ARE the answers. The
         editor renders buttons either way, which is what the seam needs.
+
+        A question with no options has no buttons, so there is nothing for the
+        operator to press: it stalled the whole permission timeout and then
+        answered "said nothing" regardless. Not asking is the same answer,
+        immediately, and it does not hold the run for five minutes.
         """
+        if not options:
+            return None
         with self._asks:
             self._asked += 1
             tool_call_id = f"ask-{session.id}-{self._asked}"
