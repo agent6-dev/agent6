@@ -13,11 +13,19 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
 from agent6 import __version__
 from agent6.app.run import FrontendCapabilities
+from agent6.ui.acp.rpc import (
+    INTERNAL_ERROR,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    RpcError,
+)
+from agent6.ui.acp.session import Sessions, prompt_text
 
 # The ACP version this front-end speaks. Negotiation is bilateral: the client
 # sends the newest it supports, we answer with this, and the client disconnects
@@ -27,21 +35,12 @@ PROTOCOL_VERSION = 1
 # is the legitimate big case; past this the payload is dropped, not buffered.
 MAX_LINE_BYTES = 1 << 22
 
-# JSON-RPC 2.0 reserved codes, the only ones this front-end originates.
-PARSE_ERROR = -32700
-INVALID_REQUEST = -32600
-METHOD_NOT_FOUND = -32601
-INVALID_PARAMS = -32602
-INTERNAL_ERROR = -32603
 
-
-class RpcError(Exception):
-    """A JSON-RPC error to return to the client, rather than a crash."""
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
+# A handler returns this instead of a result when the reply comes later, from
+# a worker thread. `session/prompt` is the case: answering it inline would
+# block the read loop for the whole run, and a blocked loop cannot receive the
+# `session/cancel` that ACP requires to work during one.
+DEFERRED = object()
 
 
 def capabilities_from(client: dict[str, Any]) -> FrontendCapabilities:
@@ -76,10 +75,22 @@ class ACPServer:
     stdin: BinaryIO
     stdout: BinaryIO
     client_capabilities: FrontendCapabilities | None = None
+    # How a prompt becomes a run. None in a transport-only test.
+    sessions: Sessions | None = None
     _handlers: dict[str, Any] = field(default_factory=dict)
+    # One writer at a time: the read loop answers requests while worker threads
+    # stream session/update, and two interleaved writes are a line no editor
+    # can parse.
+    _write_lock: threading.Lock = field(default_factory=threading.Lock)
+    _current_id: object = None
 
     def __post_init__(self) -> None:
-        self._handlers = {"initialize": self._initialize}
+        self._handlers = {
+            "initialize": self._initialize,
+            "session/new": self._session_new,
+            "session/prompt": self._session_prompt,
+            "session/cancel": self._session_cancel,
+        }
 
     def serve(self) -> None:
         """Read messages until EOF. Requests are answered; notifications are
@@ -99,38 +110,78 @@ class ACPServer:
             self._handle(line)
 
     def _handle(self, line: bytes) -> None:
-        try:
-            message = json.loads(line)
-        except json.JSONDecodeError:
-            # No id to answer against, so this is the one case with no reply.
+        parsed = self._envelope(line)
+        if parsed is None:
             return
-        if not isinstance(message, dict):
-            return
-        req_id = message.get("id")
-        method = message.get("method")
-        raw = message.get("params")
-        params = raw if isinstance(raw, dict) else {}
-        if not isinstance(method, str):
-            if req_id is not None:
-                self._reply(req_id, error=(INVALID_REQUEST, "no method"))
-            return
+        req_id, method, params = parsed
+        # The handler for a DEFERRED method needs the id to answer with later.
+        self._current_id = req_id
         handler = self._handlers.get(method)
         if handler is None:
             if req_id is not None:  # a notification we do not know is ignorable
-                self._reply(req_id, error=(METHOD_NOT_FOUND, f"unknown method: {method!r}"))
+                self.reply(req_id, error=(METHOD_NOT_FOUND, f"unknown method: {method!r}"))
             return
         try:
             result = handler(params)
         except RpcError as exc:
             if req_id is not None:
-                self._reply(req_id, error=(exc.code, exc.message))
+                self.reply(req_id, error=(exc.code, exc.message))
             return
         except Exception as exc:  # a handler bug must not kill the connection
             if req_id is not None:
-                self._reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}"))
+                self.reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}"))
             return
-        if req_id is not None:
-            self._reply(req_id, result=result)
+        if result is not DEFERRED and req_id is not None:
+            self.reply(req_id, result=result)
+
+    def _envelope(self, line: bytes) -> tuple[object, str, dict[str, Any]] | None:
+        """`(id, method, params)`, or None when there is nothing to act on.
+
+        A malformed line has no id to answer against, which is the one case
+        with no reply at all -- and dropping it beats ending the session an
+        editor is mid-conversation on.
+        """
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(message, dict):
+            return None
+        req_id = message.get("id")
+        method = message.get("method")
+        raw = message.get("params")
+        if not isinstance(method, str):
+            if req_id is not None:
+                self.reply(req_id, error=(INVALID_REQUEST, "no method"))
+            return None
+        return req_id, method, raw if isinstance(raw, dict) else {}
+
+    def _session_new(self, params: dict[str, Any]) -> dict[str, Any]:
+        return self._sessions().new(params)
+
+    def _session_prompt(self, params: dict[str, Any]) -> object:
+        sessions = self._sessions()
+        session = sessions.get(params)
+        text = prompt_text(params)
+        req_id = self._current_id
+        sessions.start_turn(
+            session,
+            text,
+            finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),
+        )
+        return DEFERRED
+
+    def _session_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
+        # A notification in ACP: no reply, and it must land while the turn it
+        # cancels is still running -- which is why the turn is not on this
+        # thread.
+        self._sessions().cancel(self._sessions().get(params))
+        return {}
+
+    def _sessions(self) -> Sessions:
+        if self.sessions is None:
+            raise RpcError(INTERNAL_ERROR, "this connection has no session runner wired")
+        return self.sessions
 
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         raw = params.get("clientCapabilities")
@@ -147,7 +198,7 @@ class ACPServer:
             "authMethods": [],
         }
 
-    def _reply(
+    def reply(
         self,
         req_id: object,
         *,
@@ -166,8 +217,9 @@ class ACPServer:
         model-emitted text would otherwise raise mid-write and desynchronise
         the stream, which is worse than a replacement character."""
         line = json.dumps(body, ensure_ascii=False, default=str) + "\n"
-        self.stdout.write(line.encode("utf-8", "replace"))
-        self.stdout.flush()
+        with self._write_lock:
+            self.stdout.write(line.encode("utf-8", "replace"))
+            self.stdout.flush()
 
 
 def serve_acp() -> int:

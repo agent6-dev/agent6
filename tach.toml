@@ -159,6 +159,10 @@ depends_on = [
   "agent6.budget",
   "agent6.config",
   "agent6.events",
+  "agent6.runs.id",
+  # session/cancel drops the same stop marker the TUI and web do: a marker,
+  # not a kill, so the finished step lands first.
+  "agent6.runs.ipc",
   "agent6.runs.layout",
   "agent6.tools.schema",
   # session/update is the shared transcript fold, projected. Reading the
