@@ -503,7 +503,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         try:
-            start_isolation(cfg, isolation, reporter=reporter)
+            start_isolation(cfg, isolation, cwd=cwd, reporter=reporter)
         except SessionRefused as refusal:
             return refusal.rc
 

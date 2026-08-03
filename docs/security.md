@@ -637,6 +637,11 @@ regressions.
   still Landlock-confined when supported. The XDG state base is ephemeral (lost on
   rebuild), so mount a volume at the state dir or set `[agent6].state_dir` to
   persist runs.
+- **agent6 installed inside the project it works on** (pip into the project's
+  own venv) puts the running agent's code in the jail's writable workspace: a
+  jailed command can rewrite it, and the next tool call runs the rewrite as
+  you, outside the jail. Install agent6 outside the tree (pipx / `uv tool`);
+  agent6 warns at run entry when it detects this shape.
 - **Side channels:** no claim about timing/cache/speculative side channels; don't
   co-locate agent6 with secrets if Spectre-class attacks are in your model.
 - **Supply chain:** pin your install. Runtime deps `pydantic`, `httpx2`,
