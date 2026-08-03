@@ -217,8 +217,13 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         if j is not None:
             # Replace the WHOLE value: a multi-line array or triple-quoted
             # string spans several lines, and rewriting only the opening one
-            # orphans the rest into unparseable TOML.
-            lines[j : j + _value_line_span(lines, j)] = [new_line]
+            # orphans the rest into unparseable TOML. Keep a single-line value's
+            # trailing comment.
+            span = _value_line_span(lines, j)
+            replacement = new_line
+            if span == 1 and (comment := _line_comment(lines[j])):
+                replacement = f"{new_line}  {comment}"
+            lines[j : j + span] = [replacement]
             _write(path, "\n".join(lines).rstrip("\n") + "\n")
             return
         insert_at = end
@@ -375,6 +380,30 @@ def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str
         depth += (ch in "[{") - (ch in "]}")
         i += 1
     return depth, triple
+
+
+def _line_comment(line: str) -> str:
+    """The trailing ``# comment`` (text only) on a single TOML line, or "" -- a
+    ``#`` inside a string is not a comment."""
+    i, n, triple = 0, len(line), None
+    while i < n:
+        if triple is not None:
+            triple, i = (None, i + 3) if line.startswith(triple, i) else (triple, i + 1)
+            continue
+        if line.startswith('"""', i) or line.startswith("'''", i):
+            triple, i = line[i : i + 3], i + 3
+            continue
+        ch = line[i]
+        if ch in ('"', "'"):
+            i += 1
+            while i < n and line[i] != ch:
+                i += 2 if (ch == '"' and line[i] == "\\") else 1
+            i += 1
+            continue
+        if ch == "#":
+            return line[i:].rstrip()
+        i += 1
+    return ""
 
 
 def _value_line_span(lines: list[str], start: int) -> int:

@@ -135,6 +135,21 @@ def test_remove_toml_leaf_top_level_key_never_touches_a_table_member(tmp_path: P
     assert tomllib.loads(path.read_text()) == {"review": {"trigger": "off"}}
 
 
+def test_upsert_toml_leaf_preserves_a_trailing_comment(tmp_path: Path) -> None:
+    """Replacing a single-line leaf value keeps its trailing `# comment` -- the
+    surgery is comment-preserving -- and a `#` inside the string is not one."""
+    p = tmp_path / "c.toml"
+    p.write_text('[models.worker]\nmodel = "old"  # the good one\n', encoding="utf-8")
+    upsert_toml_leaf(p, "models.worker.model", "new")
+    out = p.read_text(encoding="utf-8")
+    assert 'model = "new"  # the good one' in out
+    assert tomllib.loads(out)["models"]["worker"]["model"] == "new"
+
+    p.write_text('[a]\nx = "has # hash"\n', encoding="utf-8")
+    upsert_toml_leaf(p, "a.x", "y")
+    assert p.read_text(encoding="utf-8").splitlines()[-1] == 'x = "y"'  # no phantom comment
+
+
 def test_upsert_top_level_key_replaces_conflicting_table(tmp_path: Path) -> None:
     """Writing the bare `profile` key while a `[profile]` TABLE exists must
     replace the table: writing both leaves the file unparseable ("Cannot
