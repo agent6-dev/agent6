@@ -97,3 +97,25 @@ def write_notes(state_dir: Path, content: str) -> int:
         read_notes(state_dir)
         atomic_write(notes_path(state_dir), content)
     return len(content)
+
+
+def replace_notes_if_unchanged(state_dir: Path, *, expected: str, content: str) -> bool:
+    """Write *content* only if the notes still read as *expected*.
+
+    For an editor session, which holds the file open for as long as a person
+    takes: locking across that would stall a live run, and locking nothing at
+    all made the save a whole-file replace over whatever the agent wrote
+    meanwhile. False means someone else wrote first and nothing was touched, so
+    the caller can hand the operator their version rather than pick a winner.
+    Over the cap raises, as for the agent.
+    """
+    if len(content) > NOTES_MAX_CHARS:
+        raise NotesError(
+            f"notes are {len(content)} chars, over the {NOTES_MAX_CHARS} cap:"
+            " prune them (drop what is resolved, merge what repeats) and save again"
+        )
+    with _lock_notes(state_dir):
+        if read_notes(state_dir) != expected:
+            return False
+        atomic_write(notes_path(state_dir), content)
+    return True
