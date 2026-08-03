@@ -66,6 +66,11 @@ MENU_COMMANDS: dict[str, str] = {
 }
 
 
+def _without_btw() -> dict[str, str]:
+    """The menu minus `/btw`, for a surface with nothing to spawn one from."""
+    return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
+
+
 def skill_menu_table() -> dict[str, tuple[str, str]]:
     """``/name`` -> (description, full SKILL.md text) for enabled skills.
 
@@ -183,9 +188,9 @@ def _print_tasks(run_dir: Path) -> None:
         print(f"  {'  ' * tv.depth}{marker}{icon} {tv.title}")
 
 
-def _print_help() -> None:
-    width = max(len(c) for c in MENU_COMMANDS)
-    for cmd, what in MENU_COMMANDS.items():
+def _print_help(offered: dict[str, str]) -> None:
+    width = max(len(c) for c in offered)
+    for cmd, what in offered.items():
         print(f"  {cmd:<{width}}  {what}")
     print("  anything else is sent to the run as a steering instruction")
     print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
@@ -224,7 +229,7 @@ _ACTIONS: dict[str, str] = {"/continue": "", "/stop": "abort", "/detach": "detac
 def _run_info_command(cmd: str, run_dir: Path, btw_runner: BtwRunner | None = None) -> None:
     """Run a print-and-re-prompt command (everything not in ``_ACTIONS``)."""
     if cmd == "/help":
-        _print_help()
+        _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw())
     elif cmd == "/status":
         _print_status(run_dir)
     elif cmd == "/tasks":
@@ -253,9 +258,13 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
     skills = skill_menu_table()
+    # A surface that cannot spawn a sibling session never offers `/btw`: it
+    # used to be listed everywhere and answer "needs a live run" only once the
+    # operator had typed it.
+    offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
         if menu_capable():
-            display = {**MENU_COMMANDS, **{c: d[:70] for c, (d, _t) in skills.items()}}
+            display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
             input_fn = lambda p: menu_input(p, display, _HISTORY)  # noqa: E731
         else:
             input_fn = input

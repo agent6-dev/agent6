@@ -160,6 +160,27 @@ def apply_spawned_away_default(run_dir: Path) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class FrontendCapabilities:
+    """What this surface can actually do, declared once at wiring.
+
+    Every one of these was answered at CALL time by the callable failing, so
+    `/btw` was offered to a run that could never spawn one and answered "needs
+    a live run with a terminal" only once the operator asked. A surface that
+    knows what it cannot do never offers it.
+    """
+
+    # A pane that renders as it happens (a console view, the TUI, the web).
+    live_view: bool = True
+    # Approvals and ask_user reach a human. False for a headless run with no
+    # away-mode -- which is exactly what `headless_approval_refusal` computes.
+    can_ask: bool = True
+    # A pause menu exists: mid-run steering, /compact, /pin.
+    can_steer: bool = True
+    # May start sibling sessions: `/btw`, `/parallel`.
+    can_spawn: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class RunFrontend:
     """The presentation + process-spawn callables `ui/cli` injects into the
     run/resume lifecycle: the live console view (held cli-side; the lifecycle
@@ -169,6 +190,9 @@ class RunFrontend:
     One value serves both `run_task` and `resume_task`; resume simply never
     calls the run-only fields."""
 
+    # What this surface can do at all. Read before offering something, rather
+    # than discovered by trying it.
+    capabilities: FrontendCapabilities
     # live view: the console-view instance lives cli-side; builders that need it
     # (approver/questioner/steer/logger) close over it there.
     should_spawn_tui: Callable[[bool, bool, str], bool]

@@ -162,3 +162,18 @@ def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: Path) -> None:
     kinds = [i.kind for i in items]
     assert kinds == ["text", "marker"], "a btw must not join the turn's own prose"
     assert "because" in items[-1].body
+
+
+def test_btw_is_not_offered_where_nothing_can_spawn_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """It was listed on every surface and answered "needs a live run" only once
+    the operator had typed it. A surface that knows what it cannot do never
+    offers it."""
+    from agent6.ui.cli._steer_menu import _run_info_command  # pyright: ignore[reportPrivateUsage]
+
+    _run_info_command("/help", tmp_path, None)
+    assert "/btw" not in capsys.readouterr().out
+
+    _run_info_command("/help", tmp_path, lambda _q, _d: "")
+    assert "/btw" in capsys.readouterr().out

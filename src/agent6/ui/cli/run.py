@@ -18,7 +18,7 @@ from agent6.app._setup import (
 from agent6.app.preflight import (
     require_git_repo,
 )
-from agent6.app.run import RunFrontend, run_task
+from agent6.app.run import FrontendCapabilities, RunFrontend, run_task
 from agent6.config import (
     Config,
     ConfigError,
@@ -117,6 +117,10 @@ def run_frontend() -> RunFrontend:
             view.close()
 
     return RunFrontend(
+        # The CLI is the surface with a terminal: it can do everything. What it
+        # cannot do -- ask a human with no tty and no away-mode -- is the
+        # lifecycle's own preflight refusal, not a missing capability.
+        capabilities=FrontendCapabilities(),
         should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),
