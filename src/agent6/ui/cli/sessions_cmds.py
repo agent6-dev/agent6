@@ -47,6 +47,7 @@ from agent6.sessions.manifest import (
     manifest_for_branch,
     read_manifest,
 )
+from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -185,6 +186,13 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
             print(pruned)
             return 0
 
+    if not run_branch and (note := _no_commits_note(manifest)):
+        # HEAD here would diff the base against whatever the OPERATOR has
+        # committed since and present it as this session's work. Only a run
+        # with branch_per_run off legitimately has its commits on HEAD.
+        print(note)
+        return 0
+
     head_ref = run_branch if run_branch else "HEAD"
     # The logical command; printed without the -c hardening overrides (the
     # same convention as git_ops error messages), executed with them.
@@ -256,6 +264,15 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
         f"(no committed changes yet; {n} {files} modified in the working tree: "
         "a run commits after each verify pass)"
     )
+
+
+def _no_commits_note(manifest: SessionManifest) -> str:
+    """Why a branchless session has nothing to diff, or "" when it legitimately
+    committed onto the checked-out branch (a run with branch_per_run off)."""
+    kind = SESSION_KINDS.get(manifest.mode)
+    if kind is not None and not kind.edits:
+        return f"[agent6] a {manifest.mode} does not write to the repo, so it made no commits."
+    return ""
 
 
 def _resolve_session_manifest(

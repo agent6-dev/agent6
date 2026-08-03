@@ -417,3 +417,26 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     # The real merge record survives; the operator's commit never replaces it.
     stamped = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]["sha"]
     assert stamped == real_sha
+
+
+def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A plan has no run branch, and diffing `base..HEAD` for one presented the
+    operator's own commits as the plan's work. A plan cannot write to the repo
+    at all, so the honest answer is that it made none."""
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run(tmp_path, "plan-AAA044", commits=[], run_branch=None)
+    (tmp_path / "human.txt").write_text("mine\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "human: my own work")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="plan-AAA044")
+    m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    m["mode"] = "plan"
+    layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+    assert base
+
+    assert main(["sessions", "diff", "plan-AAA044", "--stat"]) == 0
+    out = capsys.readouterr().out
+    assert "made no commits" in out
+    assert "human.txt" not in out
