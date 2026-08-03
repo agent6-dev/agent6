@@ -13,6 +13,7 @@ dead the next time anyone looks. Nothing here blocks: there is no wait.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -30,8 +31,18 @@ from agent6.types import JailPolicy
 # out of the command's reach: a command that can rewrite its own exit code and
 # its own name is not an audit trail, it is a suggestion box. (Proven: a
 # command that exited 42 reported "exited 0: npm test (all green)".)
+#
+# The grant includes MakeSym, so the agent NEVER resolves that path again: it
+# reads through the descriptor it opened before the jail existed. Opening
+# `log/out.log` by name, outside the jail and as the operator, let a command
+# unlink it, symlink it at the operator's secrets, and have the next
+# `read_background` hand them to the model -- or point it at a FIFO and hang
+# the loop forever.
 _LOG_DIR = "log"
 _LOG_NAME = "out.log"
+# How much of a log a read considers. A build can print gigabytes; only the
+# tail is ever returned, so only the tail is read.
+_TAIL_BYTES = 1 << 20
 # What a surface needs that the run's own memory holds: the command, and when.
 # Written at start so `/shells` and any dashboard widget read the roster off
 # disk like every other run state, rather than needing the dispatcher.
@@ -70,6 +81,9 @@ class _Shell:
     command: str
     dir: Path
     job: BackgroundJob
+    # Opened before the command could exist, held for the run: the one handle
+    # to its output that no jailed process can redirect.
+    log_fd: int
     stopped: bool = False
 
 
@@ -87,7 +101,14 @@ class BackgroundShells:
         shell_dir = self._root / shell_id
         log_dir = shell_dir / _LOG_DIR
         log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / _LOG_NAME).touch()
+        # O_EXCL: we create it, so it is a regular file we own. O_CLOEXEC: no
+        # child inherits the handle. The command's own `exec >` opens the same
+        # path from inside the jail and lands on this inode.
+        log_fd = os.open(
+            log_dir / _LOG_NAME,
+            os.O_RDONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+        )
         (shell_dir / _META_NAME).write_text(
             json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
         )
@@ -95,8 +116,9 @@ class BackgroundShells:
         try:
             job = start_in_jail(policy_for(wrapped, (log_dir,)), outcome_dir=shell_dir)
         except (JailUnavailableError, OSError) as exc:
+            os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
-        shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job)
+        shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
         self._shells[shell_id] = shell
         return self._view(shell)
 
@@ -106,9 +128,10 @@ class BackgroundShells:
 
     def read(self, shell_id: str, *, tail_lines: int) -> tuple[ShellView, str]:
         shell = self._get(shell_id)
-        text = ""
         try:
-            text = (shell.dir / _LOG_DIR / _LOG_NAME).read_text(errors="replace")
+            size = os.lseek(shell.log_fd, 0, os.SEEK_END)
+            start = max(size - _TAIL_BYTES, 0)
+            text = os.pread(shell.log_fd, size - start, start).decode(errors="replace")
         except OSError as exc:
             return self._view(shell), f"(output unreadable: {exc})"
         lines = text.splitlines()

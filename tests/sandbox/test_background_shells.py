@@ -341,3 +341,42 @@ def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
             with contextlib.suppress(OSError):
                 os.kill(p.pid, signal.SIGKILL)
             p.wait(timeout=5)
+
+
+def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> None:
+    """The jail holds RW (MakeSym included) on the log dir, and `read` runs
+    OUTSIDE the jail as the operator. Opening the log BY NAME let a command
+    unlink it, symlink it at the operator's secrets, and have the next
+    read_background hand them to the model. Proved under strict and hardened."""
+    import os
+
+    from agent6.config import Config
+    from agent6.tools.background import BackgroundShells
+    from agent6.tools.dispatch import jail_policy
+
+    secret = tmp_path / "vault"
+    secret.mkdir()
+    (secret / "secrets.toml").write_text('api_key = "sk-DECOY"\n', encoding="utf-8")
+    work = tmp_path / "work"
+    work.mkdir()
+    shells = BackgroundShells(tmp_path / "shells")
+
+    def _policy(argv: tuple[str, ...], rw: tuple[Path, ...]) -> object:
+        return jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
+
+    view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyright: ignore[reportArgumentType]
+    log = tmp_path / "shells" / view.id / "log" / "out.log"
+    for _ in range(100):
+        if log.stat().st_size:
+            break
+        time.sleep(0.05)
+    # What a jailed command can do inside its own granted dir:
+    log.unlink()
+    log.symlink_to(secret / "secrets.toml")
+
+    _view, text = shells.read(view.id, tail_lines=50)
+    shells.stop_all()
+
+    assert "sk-DECOY" not in text, "the agent followed the command's symlink"
+    assert "mine" in text, "the real output must still be readable"
+    assert os.path.realpath(log) == str(secret / "secrets.toml")  # the swap did happen
