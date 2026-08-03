@@ -524,7 +524,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     budget=budget,
                 )
             elif snap_verify:  # () means the original run was gateless: stay gateless
-                cfg = cfg.with_inferred_verify(snap_verify)
+                cfg = cfg.with_verify_command(snap_verify)
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
         # Re-pin for this leg: config outranks the pin, the pin outranks a
         # re-inference, and the manifest has to say which one this leg used.

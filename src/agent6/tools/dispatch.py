@@ -697,7 +697,7 @@ class ToolDispatcher:
         exe = argv[0]
         if "/" not in exe and shutil.which(exe, path=jail_search_path()) is None:
             return False
-        self._config = self._config.with_inferred_verify(argv)
+        self._config = self._config.with_verify_command(argv)
         return True
 
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:

@@ -197,8 +197,24 @@ def infer_verify_if_unset(
     LLM call); see ``agent6.verify_infer``. Emits ``loop.verify_inferred`` and
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
+
+    ``run_commands = "no"`` withholds every command tool, the gate included, so
+    a gate is dropped rather than inferred: a run that cannot run its gate can
+    never go green, so it commits nothing, finishes red and is told to call a
+    tool it does not have.
     """
-    if mode not in ("run", "plan") or cfg.workflow.verify_command:
+    if mode not in ("run", "plan"):
+        return cfg
+    if cfg.sandbox.run_commands == "no":
+        if cfg.workflow.verify_command and mode == "run":
+            print(
+                "[agent6] run_commands = 'no' withholds the verify gate too; running"
+                " gateless\n         (per-step commits, no green gate). Set"
+                " sandbox.run_commands to 'ask' or 'yes' to gate this run.",
+                file=sys.stderr,
+            )
+        return cfg.with_verify_command(())
+    if cfg.workflow.verify_command:
         return cfg
     agents_md = ""
     agents_path = cwd / "AGENTS.md"
@@ -247,4 +263,4 @@ def infer_verify_if_unset(
         " workflow.verify_command in your per-repo config)",
         file=sys.stderr,
     )
-    return cfg.with_inferred_verify(inferred.argv)
+    return cfg.with_verify_command(inferred.argv)

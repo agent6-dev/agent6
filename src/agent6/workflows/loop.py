@@ -1418,7 +1418,7 @@ class Workflow:
             # gateless; re-inferred (and re-declined) at the next commit.
             self._log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
             return
-        self.config = self.config.with_inferred_verify(inferred.argv)
+        self.config = self.config.with_verify_command(inferred.argv)
         cmd = " ".join(inferred.argv)
         self._log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
         self._emit(

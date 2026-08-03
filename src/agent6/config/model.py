@@ -1126,16 +1126,15 @@ class Config(BaseModel):
             budget["max_tokens_fallback"] = max_tokens_fallback
         return Config.model_validate(data)
 
-    def with_inferred_verify(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy with an inferred ``workflow.verify_command``.
+    def with_verify_command(self, argv: tuple[str, ...]) -> Config:
+        """Return a copy whose ``workflow.verify_command`` is *argv*, `()` for
+        a gateless run.
 
-        Used by `agent6 run`/`plan` to inject a verify command inferred at run
-        start when none is configured. IN-MEMORY only -- runs never write config;
-        the operator is shown the inferred command and can pin it explicitly.
-        Re-validates through ``model_validate``. A no-op for empty ``argv``.
+        How `agent6 run`/`plan` inject a verify command inferred at run start,
+        and how a run whose policy withholds command tools drops the gate it
+        could never execute. IN-MEMORY only -- runs never write config; the
+        operator is shown what was picked and can pin it explicitly.
         """
-        if not argv:
-            return self
         data = self.model_dump(mode="python")
         data.setdefault("workflow", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
@@ -1147,7 +1146,7 @@ class Config(BaseModel):
         directory that is not even a repo, so it must never execute anything
         unwatched: ``"yes"`` becomes ``"ask"``. Only ever tightens -- ``"no"``
         stays refused, because a run can never loosen a boundary the operator
-        set. IN-MEMORY only, like ``with_inferred_verify``: `config show` keeps
+        set. IN-MEMORY only, like ``with_verify_command``: `config show` keeps
         reporting what the operator actually configured.
         """
         if self.sandbox.run_commands != "yes":
@@ -1161,7 +1160,7 @@ class Config(BaseModel):
 
         Used by the CLI to resolve ``"auto"`` (from the model-capability
         registry) before the workflow starts, so the engine only ever sees
-        on/off. IN-MEMORY only, like ``with_inferred_verify``.
+        on/off. IN-MEMORY only, like ``with_verify_command``.
         """
         data = self.model_dump(mode="python")
         data.setdefault("prompt", {})["decompose"] = value

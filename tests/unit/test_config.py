@@ -257,15 +257,15 @@ def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
     cfg.require_runnable("worker")  # does not raise
 
 
-def test_with_inferred_verify_injects_in_memory(tmp_path: Path) -> None:
+def test_with_verify_command_injects_in_memory(tmp_path: Path) -> None:
     # An inferred verify command is injected in-memory for one run, never
     # mutating the original config.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
-    injected = cfg.with_inferred_verify(("pytest", "-q"))
+    injected = cfg.with_verify_command(("pytest", "-q"))
     assert injected.workflow.verify_command == ("pytest", "-q")
     assert cfg.workflow.verify_command == ()  # original untouched
-    assert cfg.with_inferred_verify(()) is cfg  # empty argv is a no-op
+    assert cfg.with_verify_command(()).workflow.verify_command == ()
 
 
 def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:

@@ -82,3 +82,29 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
     # All three still disarm stray instructions to call the absent verify tool.
     for b in (run_block, plan_block, ask_block):
         assert "Ignore any" in b and "run_verify_command" in b
+
+
+def test_a_gate_the_run_may_never_execute_is_dropped_at_the_start(tmp_path: Path) -> None:
+    """`run_commands = "no"` withholds every command tool, the gate included.
+    Keeping the gate made the run unwinnable: nothing could go green, so nothing
+    committed, it finished red, and the prompt named a tool it did not have."""
+    from agent6.app.preflight import infer_verify_if_unset
+    from agent6.budget import BudgetTracker
+    from agent6.events import EventSink
+    from agent6.providers import TranscriptSink
+
+    cfg = Config.model_validate(
+        {"workflow": {"verify_command": ["true"]}, "sandbox": {"run_commands": "no"}}
+    )
+    got = infer_verify_if_unset(
+        cfg,
+        tmp_path,
+        mode="run",
+        events=EventSink(tmp_path / "logs.jsonl"),
+        transcript_sink=TranscriptSink(tmp_path / "transcript.md"),
+        budget=BudgetTracker(),
+    )
+    assert got.workflow.verify_command == ()
+    d = ToolDispatcher(root=tmp_path, config=got)
+    assert "run_verify_command" not in d.available_tool_names()
+    assert "no verify command" in build_system_prompt(config=got, repo=_repo(tmp_path)).lower()
