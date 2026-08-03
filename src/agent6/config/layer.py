@@ -858,16 +858,36 @@ def _writing_config(target: Path) -> Generator[None]:
             chown_to_real_user(target)
 
 
-def _revalidate(repo_root: Path, target: Path, prior: str | None) -> str | None:
+def config_is_valid(repo_root: Path) -> bool:
+    """Whether the merged config currently loads. Measured BEFORE a write so
+    :func:`_revalidate` can tell "this edit broke it" from "it was already
+    broken elsewhere"."""
+    try:
+        load_effective(repo_root, None)
+    except ConfigError:
+        return False
+    return True
+
+
+def _revalidate(repo_root: Path, target: Path, prior: str | None, *, was_valid: bool) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
-    freshly-created file) and return the error string if the edit is invalid.
+    freshly-created file) and return the error string if THIS edit broke it.
     The rollback publishes atomically, and the caller holds ``locked_file``
     across its whole write+revalidate+rollback cycle -- an unserialized
     rollback erased a concurrent writer's just-validated update by restoring
-    a snapshot taken before it landed."""
+    a snapshot taken before it landed.
+
+    A config that was ALREADY invalid keeps the edit, matching `config set`:
+    rolling back on any error let one stale value in an unedited layer refuse
+    every write, and `agent6 connect` saves the API key before writing the
+    provider block -- so it stored a key with no stanza to use it. The
+    pre-existing error still surfaces: every command reports it on the next
+    run, and `agent6 config fix` removes it."""
     try:
         load_effective(repo_root, None)
     except ConfigError as exc:
+        if not was_valid:
+            return None  # broken before this edit; not ours to refuse
         if prior is None:
             target.unlink(missing_ok=True)
         else:
@@ -889,11 +909,12 @@ def set_config_value(
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        was_valid = config_is_valid(repo_root)
         try:
             upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid)
 
 
 def set_config_table(
@@ -910,11 +931,12 @@ def set_config_table(
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        was_valid = config_is_valid(repo_root)
         try:
             upsert_toml_table(target, table, fields)
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid)
 
 
 def provider_choices() -> dict[str, list[str]]:
@@ -959,10 +981,11 @@ def set_config_leaves(
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        was_valid = config_is_valid(repo_root)
         for key, val in fields.items():
             if val is not None:
                 upsert_toml_leaf(target, f"{table}.{key}", val)
-        return _revalidate(repo_root, target, prior)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid)
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
@@ -976,10 +999,11 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
         return None
     with _writing_config(target):
         prior = target.read_text(encoding="utf-8")
+        was_valid = config_is_valid(repo_root)
         try:
             removed = remove_toml_leaf(target, dotted_key)
         except ValueError as exc:
             return str(exc)
         if not removed:
             return None
-        return _revalidate(repo_root, target, prior)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid)

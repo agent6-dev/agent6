@@ -171,6 +171,23 @@ def test_render_show_text_marks_adaptive(repo: Path) -> None:
 # --- shared edit path (the CLI + TUI/web editors write through this) ---
 
 
+def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
+    repo: Path, tmp_path: Path
+) -> None:
+    """An edit is rolled back only when IT broke a valid config. Rolling back on
+    any error meant a stale value in an unedited layer refused every write --
+    and `agent6 connect` saves the API key before writing the provider block, so
+    it exited having stored a key with no provider stanza to use it, and nothing
+    said `agent6 config fix`."""
+    # A pre-existing, unrelated error in the GLOBAL layer.
+    (tmp_path / "g" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
+
+    err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+
+    assert err is None, "a pre-existing error elsewhere must not refuse this edit"
+    assert "run_commands" in repo_config_path_for(repo).read_text(encoding="utf-8")
+
+
 def test_set_then_unset_config_value(repo: Path) -> None:
     # repo config starts with run_commands="yes"; global has "ask".
     err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
