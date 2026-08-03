@@ -128,7 +128,13 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
             if not leaf_errs:
                 return None
             errors.append(leaf_errs[0])
-    return f"{key}: {errors[0]}" if errors else None
+    if not errors:
+        return None
+    # Every member's complaint, de-duplicated: reporting only the first told an
+    # operator writing an OpenAI-compatible provider that 'anthropic' was the
+    # one legal api_format.
+    seen = list(dict.fromkeys(errors))
+    return f"{key}: {' / '.join(seen)}"
 
 
 def unknown_key_error(key: str) -> str:
