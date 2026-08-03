@@ -300,7 +300,9 @@ class DagAddTaskInput(_ToolInput):
     )
 
     title: str = Field(min_length=1)
-    parent_id: str | None = None
+    # ULID is exactly 26 chars, like update_task/set_cursor; None still means
+    # "under the run root". "" silently attached to root before the constraint.
+    parent_id: str | None = Field(default=None, min_length=26, max_length=26)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()

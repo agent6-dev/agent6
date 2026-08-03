@@ -112,3 +112,20 @@ def test_status_pattern_bytes_are_pinned() -> None:
     assert update["pattern"] == expected
     anyof = DagListTasksInput.model_json_schema()["properties"]["status"]["anyOf"]
     assert [s.get("pattern") for s in anyof if s.get("type") == "string"] == [expected]
+
+
+def test_add_task_parent_id_carries_the_ulid_constraint() -> None:
+    """parent_id was the one task-ULID param without the 26-char rule its
+    siblings enforce; "" passed the schema and silently attached the task to
+    the run root. None still means root; a malformed id fails loud."""
+    import pytest
+    from pydantic import ValidationError
+
+    from agent6.tools.schema import DagAddTaskInput
+
+    DagAddTaskInput(title="t")  # omitted -> root, unchanged
+    DagAddTaskInput(title="t", parent_id="01ARZ3NDEKTSV4RRFFQ69G5FAV")
+    with pytest.raises(ValidationError):
+        DagAddTaskInput(title="t", parent_id="")
+    with pytest.raises(ValidationError):
+        DagAddTaskInput(title="t", parent_id="short")
