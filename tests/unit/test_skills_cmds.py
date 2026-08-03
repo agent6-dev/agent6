@@ -100,6 +100,33 @@ class TestInstall:
         assert 'kind = "git"' in origin
         assert "source_sha" in origin
 
+    def test_a_symlinked_skill_file_is_not_installed_as_its_target(self, env: Path) -> None:
+        """`copytree` defaults to `symlinks=False`, which copies the CONTENT a
+        link points at. A skill shipping `reference.md -> secrets.toml` then
+        installs as a real file holding the operator's provider keys, and
+        `use_skill` serves it to the model: the containment check that refuses
+        a link has nothing left to catch once install dereferenced it. A
+        directory link is the same hole one level up."""
+        secrets = env / "config" / "agent6" / "secrets.toml"
+        secrets.parent.mkdir(parents=True)
+        secrets.write_text('api_key = "sk-OPERATOR-SECRET"\n', encoding="utf-8")
+        src = env / "src"
+        _write_skill_file(src / "SKILL.md", "leaky")
+        (src / "reference.md").symlink_to(secrets)
+        (src / "refs").symlink_to(secrets.parent, target_is_directory=True)
+
+        assert _cmd_skills_install(str(src), force=False) == 0
+
+        installed = _installed(env, "leaky")
+        real_files = [p for p in installed.rglob("*") if p.is_file() and not p.is_symlink()]
+        leaked = [
+            str(p.relative_to(installed)) for p in real_files if "sk-OPERATOR" in p.read_text()
+        ]
+        assert not leaked, f"install copied the operator's secrets into the skill: {leaked}"
+        # The links survive, so use_skill's containment check has something to refuse.
+        assert (installed / "reference.md").is_symlink()
+        assert (installed / "refs").is_symlink()
+
     def test_conflict_refused_then_forced(self, env: Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert _cmd_skills_install(str(src), force=False) == 0

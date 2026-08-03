@@ -140,11 +140,16 @@ def _refuse_or_clear_existing(name: str, *, force: bool) -> Path:
 
 
 def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force: bool) -> str:
-    """Copy one skill directory (SKILL.md + supplementary files) into place."""
+    """Copy one skill directory (SKILL.md + supplementary files) into place.
+
+    ``symlinks=True``: the skill comes from an untrusted source, and copying a
+    link's CONTENT turns `reference.md -> secrets.toml` into a real file
+    `use_skill` will serve. Preserved, the link stays subject to `use_skill`'s
+    containment check."""
     name = _skill_name_from_text((src / "SKILL.md").read_text(encoding="utf-8"), str(src))
     target = _refuse_or_clear_existing(name, force=force)
     mkdir_for_real_user(target.parent)
-    shutil.copytree(src, target)
+    shutil.copytree(src, target, symlinks=True)
     (target / _ORIGIN_FILE).unlink(missing_ok=True)  # never inherit a copied origin
     _write_origin(target, url=url, kind=kind, source_sha=source_sha)
     chown_to_real_user(target)
