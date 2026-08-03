@@ -23,6 +23,7 @@ from agent6.app._session import (
     build_session_providers,
     build_session_tools,
     select_isolation,
+    session_config,
     start_isolation,
 )
 from agent6.app._setup import (
@@ -274,12 +275,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     role = role_for_mode(mode)
 
-    if mode == "ask":
-        # Before anything reads the knob: an ask is a question with the operator
-        # sitting there, often in a directory that is not a repo, so it never
-        # runs a command unwatched. Clamped once here, so the tool gate, the
-        # status line and the detach prompt cannot disagree about it.
-        cfg = cfg.clamped_for_ask()
+    # Before anything reads a knob (see session_config): an ask never runs a
+    # command unwatched, whether it is starting here or resuming.
+    cfg = session_config(cfg, mode)
     try:
         isolation = select_isolation(
             cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
@@ -681,7 +679,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 state_dir=state_dir,
                 # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
                 # only looks under runs/ -- so don't write an orphan snapshot.
-                resume_state_path=(None if mode == "ask" else layout.run_dir / "loop_state.json"),
+                resume_state_path=layout.run_dir / "loop_state.json",
                 mode=mode,
                 plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
                 after_auto_commit=after_auto_commit,

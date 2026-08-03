@@ -103,3 +103,44 @@ class RunLayout:
     def checkpoint_path(self, turn: int) -> Path:
         """Path of the checkpoint for ``turn`` (zero-padded to 4 digits)."""
         return self.checkpoints_dir / f"{turn:04d}.json"
+
+
+# The buckets a session dir can live in. `run`/`plan` write to runs/, `ask` to
+# asks/, and `machine create` authoring logs to machine-drafts/. Defined beside
+# RunLayout.subdir because it is a fact about the on-disk layout, not about any
+# one front-end: both the CLI's id resolution and the resume lifecycle need it.
+RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
+
+
+def session_layout(state_dir: Path, session_id: str) -> RunLayout | None:
+    """The layout for *session_id* in whichever bucket holds it, or None.
+
+    One id-to-layout resolution, so a command that accepts a session id reaches
+    an ask the same way it reaches a run. Exact ids win over prefixes; an
+    ambiguous prefix resolves to nothing rather than a guess.
+    """
+    if not session_id:
+        return None
+    exact: list[str] = []
+    prefix: list[str] = []
+    for subdir in RUN_BUCKETS:
+        bucket = state_dir / subdir
+        if not bucket.is_dir():
+            continue
+        for entry in bucket.iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name == session_id:
+                exact.append(subdir)
+            elif entry.name.startswith(session_id):
+                prefix.append(subdir)
+    hits = exact or prefix
+    if len(hits) != 1:
+        return None
+    if exact:
+        return RunLayout(state_dir=state_dir, run_id=session_id, subdir=hits[0])
+    bucket = state_dir / hits[0]
+    matches = [e.name for e in bucket.iterdir() if e.is_dir() and e.name.startswith(session_id)]
+    if len(matches) != 1:
+        return None
+    return RunLayout(state_dir=state_dir, run_id=matches[0], subdir=hits[0])

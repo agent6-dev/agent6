@@ -201,12 +201,12 @@ class RunManifest(BaseModel):
             }
         return data
 
-    def validated_mode(self) -> Literal["run", "plan"]:
-        """The mode fork/resume may act on: anything but the two known ones is
-        refused, so a damaged manifest never silently escalates a plan run to the
+    def validated_mode(self) -> Literal["run", "plan", "ask"]:
+        """The mode fork/resume may act on: anything else is refused, so a
+        damaged manifest never silently escalates a read-only session to the
         more-privileged write ("run") tools. Pure-render consumers read the raw
         ``mode`` string for display instead."""
-        if self.mode in ("run", "plan"):
+        if self.mode in ("run", "plan", "ask"):
             return self.mode  # type: ignore[return-value]
         raise ManifestError(f"unknown run mode {self.mode!r}")
 

@@ -17,6 +17,7 @@ from agent6.app._session import (
     build_session_providers,
     build_session_tools,
     select_isolation,
+    session_config,
     start_isolation,
 )
 from agent6.app._setup import (
@@ -91,7 +92,7 @@ from agent6.runs.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import RunLayout, session_layout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -249,13 +250,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
         run_id = latest.name
         reporter.err(f"[agent6] resuming most recent run: {run_id}")
-    try:
-        resolved = resolve_run_id(runs_dir, run_id)
-    except RunIdError as exc:
-        reporter.err(f"ERROR: {exc}")
-        return 2
-    run_id = resolved
-    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+    # Across buckets: an ask is a session like any other, so `agent6 resume`
+    # continues one by id instead of only finding what lives under runs/.
+    found = session_layout(state_dir, run_id)
+    if found is None:
+        try:
+            run_id = resolve_run_id(runs_dir, run_id)
+        except RunIdError as exc:
+            reporter.err(f"ERROR: {exc}")
+            return 2
+        found = RunLayout(state_dir=state_dir, run_id=run_id)
+    layout = found
+    run_id = layout.run_id
     if not layout.run_dir.is_dir():
         reporter.err(f"ERROR: no such run dir: {layout.run_dir}")
         return 2
@@ -435,6 +441,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = budget_overrides.apply(cfg)
             if sandbox_overrides is not None:
                 cfg = sandbox_overrides.apply(cfg)
+            # Same clamp a fresh session gets: a resumed ask is still an ask,
+            # and overrides must not put back what the mode takes away.
+            cfg = session_config(cfg, mode)
             cfg.require_runnable(role)
         except ConfigError as exc:
             reporter.err(f"CONFIG ERROR:\n{exc}")

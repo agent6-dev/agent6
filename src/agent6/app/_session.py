@@ -238,3 +238,13 @@ def build_session_tools(
         compact_summarise_at_chars=compact_summarise,
         cfg=cfg,
     )
+
+
+def session_config(cfg: Config, mode: str) -> Config:
+    """The effective config for a session of *mode*.
+
+    Both lifecycles call this before anything reads a knob, so a fresh ask and
+    a resumed one are governed identically. Today it is the ask clamp; anything
+    else mode-dependent belongs here rather than at one call site.
+    """
+    return cfg.clamped_for_ask() if mode == "ask" else cfg
