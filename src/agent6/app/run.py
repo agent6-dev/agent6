@@ -56,7 +56,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import Config, role_for_mode
+from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
@@ -103,7 +103,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
+from agent6.types import IsolationLevel, session_kind
 from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -293,7 +293,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     ``<run-dir>/plan.md`` and is consumed by ``agent6 run --from-plan``.
     The ``planner`` model role drives plan mode (falls back to ``worker``).
     """
-    role = role_for_mode(mode)
+    role = session_kind(mode).role
 
     # Before anything reads a knob (see session_config): an ask never runs a
     # command unwatched, whether it is starting here or resuming.
@@ -372,7 +372,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     layout = RunLayout(
         state_dir=state_dir,
         run_id=effective_run_id,
-        subdir="asks" if mode == "ask" else "runs",
+        subdir=session_kind(mode).bucket,
     )
     # An explicit --run-id that already has a run is a resume, not a fresh start:
     # reusing the dir would write a new manifest + loop_state beside the old run's

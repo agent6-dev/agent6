@@ -23,7 +23,6 @@ from agent6.config import (
     Config,
     ConfigError,
     RoleName,
-    role_for_mode,
 )
 from agent6.config.layer import (
     load_effective,
@@ -36,6 +35,7 @@ from agent6.models.validate import (
 )
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
+from agent6.types import session_kind
 from agent6.ui.cli._ask import (
     build_ask_run_digest,
     run_ask_repl,
@@ -275,7 +275,7 @@ def _cmd_run(  # noqa: PLR0911
     # which already checks git before require_runnable.
     if mode != "ask" and not require_git_repo(Path.cwd()):
         return 2
-    role = role_for_mode(mode)
+    role = session_kind(mode).role
     try:
         cfg.require_runnable(role)
     except ConfigError as exc:

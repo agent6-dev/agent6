@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+
+from agent6.types import ResumableMode, UnknownSessionKind, session_kind
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
@@ -201,17 +203,26 @@ class RunManifest(BaseModel):
             }
         return data
 
-    def session_mode(self) -> Literal["run", "plan", "ask"]:
+    def session_mode(self) -> ResumableMode:
         """The session's mode, refusing anything this agent6 does not know.
 
         Fork and resume act on this rather than the raw ``mode`` string, so a
         damaged manifest never silently escalates a read-only session to the
         privileged write ("run") tools. Pure-render consumers read ``mode``
         directly: showing an unknown value is fine, acting on one is not.
+
+        The vocabulary is `types.SESSION_KINDS`. Keeping a second list here let
+        the two disagree -- this one refused "machine" and "agent" while the
+        tool surface happily built one.
         """
-        if self.mode in ("run", "plan", "ask"):
-            return self.mode  # type: ignore[return-value]
-        raise ManifestError(f"unknown run mode {self.mode!r}")
+        try:
+            kind = session_kind(self.mode)
+        except UnknownSessionKind as exc:
+            raise ManifestError(str(exc)) from exc
+        if not kind.resumable:
+            raise ManifestError(f"a {kind.name!r} session is not resumable")
+        # Guarded by `resumable` above, which the type system cannot follow.
+        return cast(ResumableMode, kind.name)
 
 
 def read_manifest(run_dir: Path) -> RunManifest:

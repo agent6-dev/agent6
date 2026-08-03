@@ -15,6 +15,7 @@ from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
 from agent6.tools.schema import UseSkillInput, mode_tools
+from agent6.types import session_kind
 from agent6.workflows._review import ReviewDispatch
 
 # The ONLY tools an explore-tier reviewer may use: read-only navigation, no
@@ -70,7 +71,7 @@ def tool_definitions(
     # (plan/ask/machine/agent) must not offer them at all; the dispatcher
     # refuses mcp__* in those modes as the backstop. Names already carry the
     # `mcp__<server>__` prefix so they can never collide with built-ins.
-    mgr = getattr(dispatcher, "_mcp_manager", None) if mode == "run" else None
+    mgr = getattr(dispatcher, "_mcp_manager", None) if session_kind(mode).edits else None
     if mgr is not None:
         for desc in mgr.descriptors():
             schema = dict(desc.input_schema)

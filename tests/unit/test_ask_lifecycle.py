@@ -62,7 +62,7 @@ def test_an_unknown_mode_is_still_refused(tmp_path: Path) -> None:
     """The gate's whole point: a damaged manifest must not fall open to the
     privileged write mode."""
     d = _session(tmp_path, "asks", "odd-AAAAAA", "wat")
-    with pytest.raises(ManifestError, match="unknown run mode"):
+    with pytest.raises(ManifestError, match="unknown session mode"):
         read_manifest(d).session_mode()
 
 

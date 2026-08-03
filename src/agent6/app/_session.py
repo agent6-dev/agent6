@@ -41,7 +41,7 @@ from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel
+from agent6.types import IsolationLevel, session_kind
 from agent6.workflows.review import ReviewSeat
 
 
@@ -235,4 +235,4 @@ def session_config(cfg: Config, mode: str) -> Config:
     a resumed one are governed identically. Today it is the ask clamp; anything
     else mode-dependent belongs here rather than at one call site.
     """
-    return cfg.clamped_for_ask() if mode == "ask" else cfg
+    return cfg.clamped_for_ask() if session_kind(mode).clamps_commands else cfg

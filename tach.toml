@@ -266,7 +266,9 @@ depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.c
 # graph.models: the update_task/list_tasks status pattern is derived from the
 # NodeStatus Literal (one owner for the task-status vocabulary).
 path = "agent6.tools.schema"
-depends_on = ["agent6.graph.models"]
+# The session-mode vocabulary: what a mode may do is read off one record
+# rather than re-derived here from the bare string.
+depends_on = ["agent6.graph.models", "agent6.types"]
 
 [[modules]]
 path = "agent6.git_ops"
@@ -279,7 +281,9 @@ depends_on = ["agent6.config.model"]
 
 [[modules]]
 path = "agent6.config.model"
-depends_on = []
+# RoleName and the session-mode vocabulary: shared value types, so they live
+# at the leaf rather than in whichever model declared one first.
+depends_on = ["agent6.types"]
 
 [[modules]]
 # The environment a process spawned OUTSIDE the jail inherits. A leaf because
@@ -412,7 +416,9 @@ depends_on = []
 # The single manifest.json reader (the writer is app.manifest). A pure leaf:
 # app, the viewmodel, and the CLI parse a run's manifest through this one owner.
 path = "agent6.runs.manifest"
-depends_on = []
+# The session-mode vocabulary. Keeping a second list here let the two
+# disagree: this module refused a mode the tool surface happily built.
+depends_on = ["agent6.types"]
 
 [[modules]]
 # One authoritative writer per run dir: the worker.lock flock run/resume/fork

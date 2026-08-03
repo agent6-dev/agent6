@@ -47,7 +47,6 @@ from agent6.app.run import RunFacts, RunFrontend, apply_spawned_away_default, ru
 from agent6.config import (
     Config,
     ConfigError,
-    role_for_mode,
 )
 from agent6.config.layer import (
     load_effective,
@@ -95,7 +94,7 @@ from agent6.runs.lock import (
 )
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import IsolationLevel
+from agent6.types import IsolationLevel, session_kind
 from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import RunReason, load_run_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
@@ -313,7 +312,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # (write) mode. read_manifest / session_mode fail loud on any of those --
         # the underlying cause carries in the ManifestError detail -- rather than
         # silently escalating a plan run to a write run.
-        role = role_for_mode(mode)
+        role = session_kind(mode).role
 
         if manifest.parked_task:
             # Parked at submission (the checkout was busy): nothing ever ran, so

@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent6.graph.models import NodeStatus
+from agent6.types import session_kind
 
 # Derived from the NodeStatus Literal so the task-status vocabulary has ONE
 # owner (a new status can't silently drift the tool schema). Same order, so
@@ -709,21 +710,26 @@ class ModeTools:
     permitted: frozenset[str]
 
 
+# The mode-specific additions. Everything else about a mode is read off its
+# `SessionKind`; these are the one thing a record cannot carry, being tool
+# classes this module defines.
+_EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
+    "plan": PLAN_EXTRA_TOOLS,
+    "ask": ASK_EXTRA_TOOLS,
+    "machine": MACHINE_EXTRA_TOOLS,
+    "agent": MACHINE_EXTRA_TOOLS,
+}
+
+
 @cache
-def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeTools:
-    if mode == "plan":
-        extras: tuple[type[_ToolInput], ...] = PLAN_EXTRA_TOOLS
-    elif mode == "ask":
-        extras = ASK_EXTRA_TOOLS
-    elif mode in ("machine", "agent"):
-        extras = MACHINE_EXTRA_TOOLS
-    else:
-        extras = LOOP_EXTRA_TOOLS
+def mode_tools(mode: str) -> ModeTools:
+    kind = session_kind(mode)
+    extras = _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS)
     blocked: set[str] = set()
-    if mode != "run":
+    if not kind.edits:
         # Read-only modes: no in-process file mutation.
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
-    if mode in ("machine", "agent"):
+    if not kind.runs_commands:
         # Machine authoring / agent states additionally never run commands:
         # the deliverable is the finish_run payload, and command tools only
         # tempt a weak model into spelunking.
@@ -738,10 +744,10 @@ def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeT
             ReadSessionInput.TOOL_NAME,
             FetchInput.TOOL_NAME,
         }
-    if mode != "run":
-        # Only a run can own a background command's lifetime: every other mode
-        # is a short read-only pass, and a command killed at its end would be
-        # started for nothing.
+    if not kind.edits:
+        # Only a session that edits owns a background command's lifetime: every
+        # other mode is a short read-only pass, and a command killed at its end
+        # would be started for nothing.
         blocked |= {
             RunBackgroundInput.TOOL_NAME,
             ReadBackgroundInput.TOOL_NAME,

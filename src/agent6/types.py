@@ -22,6 +22,120 @@ TernaryMode = Literal["no", "ask", "yes"]
 # `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` (self-authorizing, with a loud warning;
 # see `detect.resolve_isolation`).
 IsolationLevel = Literal["strict", "hardened", "none"]
+# The model roles a session can be driven by.
+RoleName = Literal["worker", "reviewer", "planner"]
+# The modes `agent6 resume` accepts. A narrower question than "is this a
+# known mode", which is what `session_kind` answers.
+ResumableMode = Literal["run", "plan", "ask"]
+
+
+@dataclass(frozen=True, slots=True)
+class SessionKind:
+    """What a mode MEANS, in one record.
+
+    "Is this session allowed to X" used to be answered in a dozen places, each
+    re-deriving it from a bare string -- and two of them disagreed: the
+    manifest refused to load a "machine" session while the tool surface was
+    happy to build one. The string stays the key and stays what is PERSISTED;
+    this is derived from it at read time, never written. A future agent6 that
+    changes what "plan" may do must reinterpret old sessions correctly, which
+    storing the capabilities would prevent.
+    """
+
+    name: str
+    # Which top-level bucket of the state dir it lives in.
+    bucket: str
+    role: RoleName
+    # May mutate the workspace in-process (apply_edit / apply_patch), and owns
+    # a background command's lifetime.
+    edits: bool
+    # May execute commands at all.
+    runs_commands: bool
+    # Forces approval even where config says "yes".
+    clamps_commands: bool
+    # Has a verify gate to be judged by.
+    verify: bool
+    # `agent6 resume` can pick this up. A machine's states are driven by the
+    # machine agent, not by the run lifecycle.
+    resumable: bool
+
+
+SESSION_KINDS: dict[str, SessionKind] = {
+    kind.name: kind
+    for kind in (
+        SessionKind(
+            name="run",
+            bucket="runs",
+            role="worker",
+            edits=True,
+            runs_commands=True,
+            clamps_commands=False,
+            verify=True,
+            resumable=True,
+        ),
+        SessionKind(
+            name="plan",
+            bucket="runs",
+            role="planner",
+            edits=False,
+            runs_commands=True,
+            clamps_commands=False,
+            verify=False,
+            resumable=True,
+        ),
+        # Read-only Q&A, kept out of the run history: `agent6 ask` investigates
+        # with approval-gated commands and answers, it does not change things.
+        SessionKind(
+            name="ask",
+            bucket="asks",
+            role="worker",
+            edits=False,
+            runs_commands=True,
+            clamps_commands=True,
+            verify=False,
+            resumable=True,
+        ),
+        # Authoring a machine file, and one state of one running machine. The
+        # deliverable is the finish_run payload; command tools only tempt a
+        # weak model into spelunking.
+        SessionKind(
+            name="machine",
+            bucket="runs",
+            role="worker",
+            edits=False,
+            runs_commands=False,
+            clamps_commands=True,
+            verify=False,
+            resumable=False,
+        ),
+        SessionKind(
+            name="agent",
+            bucket="runs",
+            role="worker",
+            edits=False,
+            runs_commands=False,
+            clamps_commands=True,
+            verify=False,
+            resumable=False,
+        ),
+    )
+}
+
+
+class UnknownSessionKind(ValueError):
+    """A mode string this agent6 does not know."""
+
+
+def session_kind(name: str) -> SessionKind:
+    """The record for *name*, refusing anything this agent6 does not know.
+
+    Refusing rather than defaulting: a damaged manifest must never silently
+    escalate a read-only session to the privileged write tools.
+    """
+    kind = SESSION_KINDS.get(name)
+    if kind is None:
+        raise UnknownSessionKind(f"unknown session mode {name!r}")
+    return kind
 
 
 @dataclass(frozen=True, slots=True)

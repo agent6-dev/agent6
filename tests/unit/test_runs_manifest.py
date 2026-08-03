@@ -99,7 +99,7 @@ def test_session_mode_refuses_an_unknown_mode(tmp_path: Path) -> None:
     _write(tmp_path, {"mode": "wat"})
     m = read_manifest(tmp_path)
     assert m.mode == "wat"  # lenient render read
-    with pytest.raises(ManifestError, match="unknown run mode"):
+    with pytest.raises(ManifestError, match="unknown session mode"):
         m.session_mode()
 
 
@@ -315,7 +315,7 @@ def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -
     write-tool surface -- the exact escalation session_mode exists to stop."""
     _write(tmp_path, {"version": 3, "run_id": "r", "user_task": "t"})
     m = read_manifest(tmp_path)
-    with pytest.raises(ManifestError, match="unknown run mode"):
+    with pytest.raises(ManifestError, match="unknown session mode"):
         m.session_mode()
 
 
@@ -361,3 +361,44 @@ def test_a_resumed_leg_reports_whose_gate_it_used(
     from agent6.app.resume import leg_gate_origin
 
     assert leg_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected
+
+
+def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> None:
+    """The bug this vocabulary exists to prevent.
+
+    "What kind of session is this" used to be answered in a dozen places, each
+    re-deriving it from a bare string -- and two of them disagreed: the
+    manifest's own list refused `machine` and `agent` outright while
+    `mode_tools` happily built a tool surface for both, so a real mode was
+    reported as damaged data. One table now, and the two failures are
+    distinguished: a mode this agent6 does not know, and a known mode that
+    resume cannot pick up.
+    """
+    from agent6.types import SESSION_KINDS
+
+    for name, kind in SESSION_KINDS.items():
+        run_dir = tmp_path / name
+        run_dir.mkdir()
+        _write(run_dir, {"mode": name})
+        manifest = read_manifest(run_dir)
+        if kind.resumable:
+            assert manifest.session_mode() == name
+            continue
+        with pytest.raises(ManifestError, match="not resumable"):
+            manifest.session_mode()
+
+
+def test_each_mode_gets_its_own_tool_surface() -> None:
+    """Read off the record, not re-derived per call site."""
+    from agent6.tools.schema import ASK_EXTRA_TOOLS, MACHINE_EXTRA_TOOLS, mode_tools
+    from agent6.types import SESSION_KINDS, UnknownSessionKind
+
+    assert mode_tools("machine").extras == MACHINE_EXTRA_TOOLS
+    assert mode_tools("agent").extras == MACHINE_EXTRA_TOOLS
+    assert mode_tools("ask").extras == ASK_EXTRA_TOOLS
+    for name, kind in SESSION_KINDS.items():
+        names = mode_tools(name).names
+        assert ("apply_edit" in names) is kind.edits, name
+        assert ("run_command" in names) is kind.runs_commands, name
+    with pytest.raises(UnknownSessionKind):
+        mode_tools("wat")

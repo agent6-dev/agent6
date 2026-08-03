@@ -108,7 +108,7 @@ from agent6.tools.schema import (
     mode_tools,
 )
 from agent6.tools.sessions import conversation, roster
-from agent6.types import CommandResult, IsolationLevel, JailPolicy
+from agent6.types import CommandResult, IsolationLevel, JailPolicy, session_kind
 
 
 def _coerce_stringified_args(
@@ -529,7 +529,7 @@ class ToolDispatcher:
         # MCP routing happens BEFORE the built-in handler check so mcp__* names
         # don't collide with the built-in "Unknown tool" error path.
         if name.startswith(MCP_TOOL_PREFIX):
-            if self._mode != "run":
+            if not session_kind(self._mode).edits:
                 # MCP tools are arbitrary external capabilities agent6 cannot
                 # classify as read-only, so every non-run mode refuses them --
                 # the same dispatcher backstop the built-in mutating tools get,

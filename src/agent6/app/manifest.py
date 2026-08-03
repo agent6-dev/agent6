@@ -12,7 +12,7 @@ from typing import Any
 
 from agent6 import __version__
 from agent6.app.reporter import Reporter
-from agent6.config import Config, role_for_mode
+from agent6.config import Config
 from agent6.events import EventSink
 from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
@@ -26,6 +26,7 @@ from agent6.runs.manifest import (
     WorkflowStamp,
     read_manifest,
 )
+from agent6.types import session_kind
 
 
 def _model_brief(rm: Any) -> ModelBrief | None:
@@ -107,7 +108,7 @@ def write_run_manifest(
         models=ModelsBrief(
             # The role that actually drives this mode: a plan run recorded the
             # worker here and `runs show` then named a model that never ran.
-            driver=_model_brief(cfg.models.resolve(role_for_mode(mode))),
+            driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
         ),
         workflow=WorkflowStamp(
