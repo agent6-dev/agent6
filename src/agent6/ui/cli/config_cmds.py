@@ -617,6 +617,20 @@ def _cmd_config_remove(key: str, value: str, *, repo: bool, machine: Path | None
     return _config_list_edit(key, value, repo=repo, machine=machine, add=False)
 
 
+def _entry_is_stale(entry: InvalidEntry) -> bool:
+    """Whether *entry*'s key no longer holds the value diagnosis read.
+
+    `find_invalid_entries` reads unlocked and removal deletes by key NAME, so a
+    concurrent `config set` that replaced this key with a valid value in between
+    would have it deleted -- after that writer was told it had been saved.
+    """
+    try:
+        data = read_toml_file(entry.path)
+    except ConfigError:
+        return True  # unreadable now: leave it to the loud paths
+    return read_toml_leaf(data, entry.file_key) != entry.value
+
+
 def _cmd_config_fix(*, machine: Path | None) -> int:
     """Drop every invalid entry from the config, printing what it was and where it
     lived (global / repo, or a machine's [config] overlay with --machine-file).
@@ -635,11 +649,16 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     while diag.removable:
         progressed = False
         for entry in diag.removable:
-            ok = (
-                remove_toml_table(entry.path, entry.file_key)
-                if entry.is_table
-                else remove_toml_leaf(entry.path, entry.file_key)
-            )
+            # Re-check under the file's lock: diagnosis ran unlocked, so a
+            # concurrent writer may have fixed this key since.
+            with locked_file(entry.path):
+                if _entry_is_stale(entry):
+                    continue
+                ok = (
+                    remove_toml_table(entry.path, entry.file_key)
+                    if entry.is_table
+                    else remove_toml_leaf(entry.path, entry.file_key)
+                )
             if not ok:
                 stuck.append(entry)
                 continue

@@ -846,3 +846,36 @@ def test_config_show_key_with_json_filters_to_the_key(
 
     assert main(["config", "show", "nope.nope", "--json"]) == 2
     assert "no config key matches" in capsys.readouterr().err
+
+
+def test_config_fix_skips_an_entry_another_writer_already_fixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """find_invalid_entries reads unlocked and removal deletes by key NAME, so a
+    `config set` that replaced the offending key with a VALID value in between
+    had it deleted -- after that writer was told it had been saved."""
+    from agent6.config.layer import ConfigDiagnosis, InvalidEntry
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[sandbox]\nrun_commands = "ask"\n', encoding="utf-8")
+
+    # Diagnosis saw the OLD, invalid value; the file already holds the fixed one.
+    stale = InvalidEntry(
+        leaf="sandbox.run_commands",
+        value="maybe",  # what the (unlocked) diagnosis read
+        layer="global",
+        path=cfg,
+        file_key="sandbox.run_commands",
+    )
+    calls = {"n": 0}
+
+    def _diag(*_a: object, **_k: object) -> ConfigDiagnosis:
+        calls["n"] += 1
+        return ConfigDiagnosis(removable=(stale,) if calls["n"] == 1 else (), blocked=None)
+
+    monkeypatch.setattr(cc, "find_invalid_entries", _diag)
+    cc._cmd_config_fix(machine=None)  # pyright: ignore[reportPrivateUsage]
+
+    assert 'run_commands = "ask"' in cfg.read_text(encoding="utf-8"), (
+        "the concurrent writer's value was deleted by a stale diagnosis"
+    )
