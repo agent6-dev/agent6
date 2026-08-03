@@ -103,13 +103,11 @@ def _json_default(value: Any) -> Any:
 class UserInputSink:
     """Append a structured audit record per interactive prompt.
 
-     Separate from :class:`EventSink` (which carries machine telemetry) so
-     the human-decision trail lives in its own readable JSONL file at
-     ``<run-dir>/user_inputs.jsonl``. Each line has a fixed shape
-    , ``ts``, ``kind``, ``prompt``, ``answer``, ``source``, plus any
-     extra fields the caller passes. The strict schema is the point: a
-     reviewer reading the file can answer "what did the operator decide
-     and when" without grepping past unrelated events.
+    Separate from :class:`EventSink` (machine telemetry) so the human-decision
+    trail is readable on its own at ``<run-dir>/user_inputs.jsonl``. Fixed
+    schema (``ts``, ``kind``, ``prompt``, ``answer``, ``source``, plus caller
+    extras) so "what did the operator decide, and when" needs no grepping past
+    unrelated events; reserved keys win.
     """
 
     path: Path

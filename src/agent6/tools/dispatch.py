@@ -508,13 +508,8 @@ class ToolDispatcher:
         max_symbols: int = 20,
         min_files_referenced: int = 2,
     ) -> list[tuple[str, str, str, int, int]]:
-        """Public passthrough to ``SymbolIndex.hot_symbols``.
-
-        Called by ``ImplementWorkflow._load_context`` to populate
-        ``RepoSummary.hot_symbols``. Shares the dispatcher's index so
-        a workflow that has already paid for the scan doesn't re-scan
-        on cold-plan.
-        """
+        """Public passthrough to ``SymbolIndex.hot_symbols``, sharing the
+        dispatcher's index so an already-paid scan is not repeated."""
         idx = self._ensure_index()
         return idx.hot_symbols(
             max_symbols=max_symbols,

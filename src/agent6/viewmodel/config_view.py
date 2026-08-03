@@ -32,16 +32,6 @@ def format_value(val: Any) -> str:
     return _fmt_value(val)
 
 
-# ---------------------------------------------------------------------------
-# Schema introspection + the UI-agnostic view-model
-# ---------------------------------------------------------------------------
-#
-# `config show` (CLI), the TUI config page, and a future web UI all render the
-# SAME ConfigView, so config logic (provenance, defaults, enum choices, adaptive
-# resolution) lives here once and the renderers stay thin -- the same split that
-# keeps `ui.state` (a pure event-fold) independent of any widget toolkit.
-
-
 @dataclass(frozen=True, slots=True)
 class ConfigSetting:
     """One config leaf, fully described for display + editing."""

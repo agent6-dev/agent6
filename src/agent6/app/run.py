@@ -400,12 +400,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)
     else:
-        # A front-end launcher (web/TUI hub) spawns this run detached and drives
-        # it over the bridge, but with no controlling terminal ask_user would
-        # otherwise fabricate an empty answer when no viewer happens to be
-        # connected. The launcher sets AGENT6_DETACHED_AWAY so approvals AND
-        # questions WAIT for a front-end instead. A pure headless run (CI, no
-        # launcher) sets no env, so it keeps its non-hanging default.
         apply_spawned_away_default(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
@@ -573,22 +567,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
 
-        # Workflow uses ONE provider for everything (the worker role, or the
-        # planner role in plan mode). No critic/triage/planner/reviewer/escalation
-        # cascade inside the loop.
         worker_inner = build_role_provider(
             cfg, role, transcript_sink=transcript_sink, budget=budget
         )
         rm_worker = cfg.models.resolve(role)
         assert rm_worker is not None  # require_runnable validated this
         warn_if_prompt_override_incomplete(cfg)
-        # Enable SSE streaming when stderr is a TTY (covers TUI
-        # and interactive shell use). Bench/CI runs pipe stderr, so they
-        # stay on the audited non-streaming code path UNLESS the operator
-        # sets AGENT6_FORCE_STREAM=1, the Kimi/OpenRouter bench needs
-        # streaming on because the gateway emits SSE keep-alive comment
-        # heartbeats during long requests, which corrupt the non-streaming
-        # response body (resp.json() blows up with JSONDecodeError).
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
         warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         # The interactive revision prompt reads the terminal; with the TUI owning

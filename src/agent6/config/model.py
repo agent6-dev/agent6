@@ -52,9 +52,6 @@ _BASE_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 ApiFormat = Literal["anthropic", "openai"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
-# The three live roles. ``planner`` drives ``agent6 plan`` and ``reviewer``
-# drives ``agent6 review`` + the in-loop critic; both fall back to
-# ``worker`` when unset (see ModelsConfig.resolve).
 RoleName = Literal["worker", "reviewer", "planner"]
 ThinkingLevel = Literal["off", "low", "medium", "high"]
 # The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
@@ -473,9 +470,6 @@ class SandboxConfig(BaseModel):
                 " agent_network = 'open'."
             )
         if self.agent_network == "local" and self.allow_urls:
-            # The docstring promises `local` refuses allow_urls; enforce it rather
-            # than silently ignoring the list. `local` confines egress to loopback
-            # providers, so an external allow-list can never take effect.
             raise ValueError(
                 "sandbox.agent_network = 'local' (loopback providers only) cannot"
                 " be combined with sandbox.allow_urls: offline has nothing"
@@ -488,16 +482,10 @@ class SandboxConfig(BaseModel):
 class GitCommitConfig(BaseModel):
     """Optional overrides for the author/committer identity on agent6 commits.
 
-    All three fields default to None, meaning "use whatever the project's
-    `git config user.name` / `user.email` already resolves to". The startup
-    check in `agent6 run` refuses to proceed if neither an override nor a
-    resolvable git-config identity is present, we will not silently commit
-    as `(no author) <(none)>`.
-
-    Set `name` / `email` to override the identity on commits made by this
-    agent (e.g. to commit as `agent6 <agent6@local>`). Set
-    `coauthor` to append a `Co-authored-by:` trailer naming the human
-    operator (e.g. `"Alice <alice@example.com>"`).
+    All default to None = the project's own `git config` identity; `agent6 run`
+    refuses at startup when neither an override nor a resolvable identity
+    exists, rather than committing as `(no author) <(none)>`. `coauthor` takes
+    a trailer value like `"Alice <alice@example.com>"`.
     """
 
     model_config = _BASE_MODEL_CONFIG
@@ -671,17 +659,12 @@ class ContextConfig(BaseModel):
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:
         drop, summarise = self.drop_at_chars, self.summarise_at_chars
-        # Both-or-neither: a lone value is ambiguous (is the other adaptive or
-        # fixed?). Neither set == adaptive from the model's context window.
         if (drop is None) != (summarise is None):
             raise ValueError(
                 "set BOTH context.drop_at_chars and"
                 " summarise_at_chars, or NEITHER (neither == adaptive,"
                 " sized from the worker model's context window)."
             )
-        # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
-        # tool_results): with summarise <= drop, tier 2 fires at or before
-        # tier 1 and can never be reached.
         if drop is not None and summarise is not None and summarise <= drop:
             raise ValueError(
                 "context.summarise_at_chars"
@@ -832,9 +815,6 @@ class ReviewConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_review_quorum(self) -> ReviewConfig:
-        # The quorum gate counts one block per DISTINCT model, so quorum > 1 needs
-        # at least that many distinct models -- a same-model panel can reach only 1
-        # and would never gate. Catch the footgun at load time.
         if self.decision == "quorum" and self.quorum > 1:
             models = {(s.partition("@")[2].strip() if "@" in s else "") for s in self.seats}
             if len(models) < self.quorum:
@@ -1108,14 +1088,9 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    # Named config PROFILE: a preset that fills in many settings at once (see
-    # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
-    # just ABOVE the config layer that selected it, so the profile OVERRIDES that
-    # config; a more-specific config layer (repo over global, an explicit
-    # --config FILE) or the --profile flag still overrides the profile. Only the
-    # most-specific source's profile applies -- global and repo presets do not
-    # stack. "" / "standard" = the plain defaults. The --profile CLI flag selects
-    # a profile that overrides all config except an explicit --config FILE.
+    # Named config PROFILE: a preset filling in many settings at once
+    # (BUILTIN_PROFILES + user `[profiles.<name>]`). "" / "standard" = plain
+    # defaults; injection order and stacking rules: `config.layer._apply_profile`.
     profile: str = ""
 
     @model_validator(mode="after")

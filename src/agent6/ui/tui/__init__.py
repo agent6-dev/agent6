@@ -13,11 +13,6 @@ state. The file-based write side lives in `agent6.runs.ipc` (approve / ask_user
 / steer) and `agent6.ui.spawn` (launch the CLI detached), shared with the CLI
 and web.
 
-Layout:
-    modals.py    textual modal screens (approve / steer / question).
-    app.py       the run dashboard (Agent6TUI + run_tui).
-    home.py      the `agent6 tui` hub: list runs + launch run/plan/ask.
-
 Everything is launched out-of-process and only reads `logs.jsonl` + writes the
 small answer files the workflow polls (via `agent6.runs.ipc`), so the core loop
 is untouched and any other front-end (VS Code, web, desktop) mirrors the same

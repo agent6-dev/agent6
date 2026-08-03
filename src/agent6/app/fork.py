@@ -10,23 +10,14 @@ clone-to-new-session, not in-place branching. `ui/cli/fork.py` adapts argv,
 calls :func:`create_fork`, then (unless `--no-run`) continues the new run from
 turn N over the resume path.
 
-Phase 1 scope: fork from the latest checkpoint or a recorded `--at-turn N`, and
-copy the curator DAG verbatim. Replaying the journal to reconstruct the DAG as
-of an older `graph_version` is deferred; forking a past turn copies the source's
-current DAG and says so.
-
-The tree a fork starts from: a fork cuts its branch at the checkpoint's committed
-HEAD, so its working tree is the repo exactly as of that commit. That is the whole
-mental model -- a fork is the repo at a commit plus the conversation up to that
-turn. The one thing to know: on a gated run (commits fire only on a green verify),
-an edit made but not yet committed at the forked turn is absent from the fork's
-tree even though the copied transcript mentions it. This is the same "head_sha
-tracks committed history only" posture `resume` documents (resume differs only in
-that it continues on the live working tree, which still holds the edit). The forked
-run picks it back up by re-reading the files it needs and seeing their real on-disk
-content. The committed-sha model is the design choice: a fork is a commit plus a
-conversation, which is predictable and cheap, instead of snapshotting uncommitted
-working-tree bytes into every checkpoint.
+A fork is the repo at the checkpoint's committed HEAD plus the conversation up
+to that turn. So on a gated run (commits fire only on a green verify), an edit
+made but not committed at the forked turn is ABSENT from the fork's tree even
+though the copied transcript mentions it -- the same committed-history-only
+posture `resume` documents, and deliberate: the alternative is snapshotting
+uncommitted bytes into every checkpoint. The DAG is copied verbatim; replaying
+the journal to rebuild an older `graph_version` is not implemented, so forking
+a past turn copies the current DAG and says so.
 """
 
 from __future__ import annotations
@@ -49,8 +40,8 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import load_run_snapshot
 
-# Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
-# top-level entry under the run dir; `graph/` is a directory.
+# Curator-owned DAG artifacts copied verbatim into the fork; each is a
+# top-level entry under the run dir (`graph/` is a directory).
 _DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "graph.dot", "cursor.json")
 
 

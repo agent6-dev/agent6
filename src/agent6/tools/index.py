@@ -13,28 +13,11 @@ the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
 Re-parses happen in batch on the next query, so a worker can call `apply_edit`
 many times and pay the parse cost only when it next asks for symbol info.
 
-Language support covers the common ecosystems the tree-sitter pack ships:
-
-    .py                              -> python
-    .rs                              -> rust
-    .ts, .tsx                        -> typescript
-    .js, .jsx, .mjs, .cjs            -> javascript
-    .go                              -> go
-    .java                            -> java
-    .c                               -> c
-    .h, .hpp, .hh, .hxx              -> cpp   (superset; parses C and C++ headers)
-    .cpp, .cc, .cxx                  -> cpp
-    .cs                              -> csharp
-    .rb                              -> ruby
-    .php                             -> php
-
-Other extensions are silently ignored. Adding a language is mechanical:
-extend `_LANG_TABLE` with the tree-sitter language name and a definitions
-query in the grammar's syntax. References use a generic identifier query
-per language; cross-file reference *resolution* (which `foo` is the same
-symbol?) is out of scope and requires a real LSP, for our purposes,
-identifier-level grep filtered through tree-sitter is vastly better than
-plain text grep because it never matches inside strings or comments.
+Languages live in `_LANG_TABLE` (extension -> tree-sitter name + a definitions
+query); an unlisted extension is silently ignored. Matching is
+identifier-level, never inside strings or comments, but cross-file
+*resolution* (which `foo` is the same symbol?) needs a real LSP and is out of
+scope.
 
 This module is NOT exposed via `ToolDispatcher` here; that wiring lives
 in `tools/dispatch.py` + `tools/schema.py` and requires a security review

@@ -132,6 +132,13 @@ at 4-bit).
 > next wall, and it's high-variance: the 14389 above remains its best
 > sample, not a number any single run reproduces.
 
+> **Reasoning suppression on starvation-recovery turns (N=8, kimi-k2.6).**
+> Forcing `reasoning` off for the turn after a starved one scored WORSE than
+> leaving it on: 25% vs ~38% win-rate, best 1.50× vs 7.76×. K2.6's large
+> speedups come *from* reasoning, so suppression trades the occasional big win
+> for reliable-but-mediocre output. agent6 therefore does no automatic
+> loop-level suppression; `thinking = "off"` stays an explicit operator knob.
+
 Takeaways, with the small-N / high-variance caveat firmly attached:
 
 - **The frontier gap is large.** Sonnet-4.5 reaches 7–26× and

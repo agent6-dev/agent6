@@ -196,12 +196,8 @@ def role_temperature(cfg: Config, role: RoleName) -> float | None:
 class InstrumentedProvider:
     """Wraps any Provider with role.call / role.result / budget.update emission.
 
-    Pure decoration; the inner provider is unchanged. Lives in cli.py
-    because that is the only place that owns the EventSink and the
-    BudgetTracker and the role -> model mapping all at once. ``events`` may
-    be None (a caller with no log to feed), in which case the delta events are
-    simply not emitted. The live terminal render is a separate consumer that
-    subscribes to the EventSink (see cli._console_view.ConsoleView).
+    Pure decoration; the inner provider is unchanged. ``events`` None (a caller
+    with no log to feed) simply emits nothing.
     """
 
     inner: Provider

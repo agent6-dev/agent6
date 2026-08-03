@@ -976,20 +976,10 @@ def reset_to(path: Path, sha: str, *, mode: str) -> None:
 def rollback_to_known_good(path: Path, sha: str) -> None:
     """Restore branch tip + worktree to *sha* after a regressing commit.
 
-    Used by metric-driven workflows when the latest commit measurably
-    regressed past the run's starting baseline: instead of compounding
-    edits on top of a known-broken state, we rewind the branch tip to
-    the last-known-good commit and restore the worktree to match. The
-    rewound commits remain reachable via reflog (audit trail), so this
-    is recoverable.
-
-    Implementation: ``git reset --mixed sha`` rewinds HEAD + index while
-    leaving the worktree alone; the follow-up ``git checkout -- .``
-    then snaps the worktree back to the index (i.e. to *sha*'s tree).
-    Two steps rather than ``reset --hard`` so we stay within the
-    "no destructive resets" invariant, anything orphaned is still in
-    the reflog and ``git_ops`` callers never get a primitive that
-    unconditionally clobbers uncommitted work.
+    ``reset --mixed`` then ``checkout -- .``, deliberately two steps rather
+    than ``reset --hard``: the no-destructive-resets invariant means callers
+    never get a primitive that unconditionally clobbers uncommitted work.
+    Orphaned commits stay reachable in the reflog.
     """
     if not sha:
         raise GitError("rollback_to_known_good: sha must be non-empty")

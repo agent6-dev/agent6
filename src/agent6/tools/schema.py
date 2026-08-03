@@ -285,8 +285,6 @@ class FinishPlanningInput(_ToolInput):
 # DAG-as-tool surface. Lets the agent maintain its own task
 # breakdown in the persistent curator-backed graph. Survives crashes via
 # <run-dir>/graph.jsonl; operator can inspect via `agent6 attach`.
-# DAG manipulation tools.
-# directly through its planner/worker/critic pipeline.
 
 
 class DagAddTaskInput(_ToolInput):
@@ -568,9 +566,6 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
 # finish_run, dag_*, memory). Kept separate from ALL_TOOLS so the read-only
 # ToolDispatcher surface used by tests and external callers does not
 # advertise loop-only control tools.
-# adds the DAG tools (add_task / update_task / set_cursor /
-# list_tasks) and the cross-run memory tools (add_memory /
-# invalidate_memory).
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishRunInput,

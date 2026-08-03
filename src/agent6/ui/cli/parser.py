@@ -283,11 +283,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mcp_serve.add_argument(
         "--config",
         type=Path,
-        # SUPPRESS (not None): a subparser default would otherwise clobber a
-        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
-        # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
-        # work; the top-level --config supplies the always-present default.
+        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
+        # rationale at `_run_args._add_run_parser`.
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
@@ -295,7 +292,4 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_machine_parser(sub)
 
-    # Shell tab-completion. argcomplete is a hard dependency; the call is a
-    # no-op unless the shell sourced its completion script for this binary
-    # (see `agent6 --help` and the README for activation instructions).
     return parser

@@ -12,30 +12,23 @@ from __future__ import annotations
 import hashlib
 import re
 
-# No-progress spiral guard (run mode). Observed on mistral-small (2026-07-11):
-# nine consecutive verify failures with the IDENTICAL normalized error while
-# the worker kept editing the same file, spending a third of the run's budget
-# repeating one failure. The guard fires only on that pathological pattern
-# (N consecutive fails, one signature), so a healthy run never pays for it:
-# a green verify or a DIFFERENT failure (real progress through the error
-# list) resets the streak. Signatures ignore line numbers, addresses, and
-# durations so cosmetic drift between otherwise-identical failures does not
-# defeat the detector.
+# No-progress spiral guard (run mode): N consecutive verify failures sharing
+# ONE normalized signature. A green verify or a DIFFERENT failure (progress
+# through the error list) resets the streak, so a healthy run never pays for
+# it. Signatures ignore line numbers, addresses, and durations, else cosmetic
+# drift between identical failures defeats the detector.
+# Thresholds + evidence: bench/coreagent/FINDINGS.md.
 NO_PROGRESS_NUDGE_AFTER = 4
 NO_PROGRESS_ESCALATE_AFTER = 7
-# Third stage: measured (guard2 waves, n=14) -- the detector fired on exactly
-# the doomed runs and never on a healthy one, but nudged runs still burned to
-# the iteration cap at score 0. Ten consecutive identical failures (both
-# nudges delivered and unheeded) is past any observed recovery; stop the run
-# honestly instead of burning the remaining budget on a proven non-strategy.
+# Third stage: both nudges delivered and unheeded, so stop honestly rather
+# than spend the rest of the budget on a proven non-strategy.
 NO_PROGRESS_STOP_AFTER = 10
 
 # Tool-error spiral guard (run mode). Distinct from the verify streak: this
 # counts consecutive tool calls that raise the SAME error (name + error text
 # with digits stripped, so a runaway that varies its args but trips the same
 # "arguments not valid JSON" / "pattern too long" error still accumulates).
-# Observed on SWE-bench: kimi re-issuing malformed grep calls until the run
-# timed out. Any successful tool call, or a different error, resets it.
+# Any successful tool call, or a different error, resets it.
 TOOL_ERROR_NUDGE_AFTER = 3
 TOOL_ERROR_ESCALATE_AFTER = 5
 TOOL_ERROR_STOP_AFTER = 8
@@ -67,8 +60,7 @@ TOOL_DENIED_NUDGE = (
 # A verify command that exited nonzero almost instantly with one of these
 # signatures did not RUN the tests -- the runner itself is absent/broken.
 # Treating that as a normal red misleads the model into "fixing" passing code
-# or finishing on an unchecked patch (observed on SWE-bench sympy testbeds:
-# `python -m pytest` with pytest absent, exit 1 in 0.0s, across three models).
+# or finishing on an unchecked patch.
 _VERIFY_DEAD_SIGNATURES = (
     "no module named pytest",
     "no module named _pytest",
@@ -139,11 +131,10 @@ def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
 
 
 # Opt-in spec-recheck finish gate ([workflow].spec_recheck_on_finish).
-# Measured motivation (bench/coreagent eventflow, 2026-07-11): when the
-# committed suite covers only a subset of the spec, models finish on the
-# first green verify with requirements unmet; injecting a re-check directive
-# via a skill raised scores on every model tested (haiku 0.907->0.960 with
-# the variance collapsing to zero). This gate is the same mechanism as a
+# When the committed suite covers only a subset of the spec, models finish on
+# the first green verify with requirements unmet; a re-check directive raised
+# scores on every model tested (measured: bench/coreagent eventflow). Same
+# mechanism as a
 # one-turn native bounce: the FIRST finish_run over a green verify is
 # revoked once with the directive below. Off by default until the A/B
 # quantifies the cost on tasks whose suite IS the full spec.
@@ -163,7 +154,7 @@ PLAN_NUDGE_AFTER_ITERS = 12
 # Task finish-gate: when the worker has broken the run into subtasks, don't let
 # it finish (or silently stop) while subtasks are still open -- re-prompt with
 # the open list instead. A weak model on a long task tends to quit early with
-# work pending (observed live: silent_finish at iter 7 with 7 subtasks open).
+# work pending.
 # Capped so a worker that genuinely can't close a task (and won't mark it
 # obsolete/skipped) can't bounce the loop forever; after the cap the finish is
 # honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
@@ -183,8 +174,8 @@ VERIFY_FINISH_GATE = (
 
 # verify-settled completion (run mode). A non-metric run has no positive "done"
 # signal, clean exit depends on the worker volunteering finish_run, and a weak
-# worker keeps re-running read-only commands after success (Kimi K2.6 observed:
-# 128 iters when done at ~45). Once verify has passed, count iterations that
+# worker keeps re-running read-only commands after success. Once verify has
+# passed, count iterations that
 # make no progress (no new commit + no edit): nudge to finish at the first
 # threshold, hard-stop at the second. NOT "green verify = instant stop", verify
 # fires per-edit and is often lenient, so green-but-still-editing must continue.
@@ -202,9 +193,9 @@ VERIFY_SETTLED_NUDGE = (
 )
 
 # A non-metric `run` injects a one-shot wrap-up directive when the budget gets
-# low. Observed live (Kimi K2.6): the worker solves the task, never re-runs
-# verify, never calls finish_run, and burns the remaining budget on read-only
-# commands; the verify-settled detector cannot engage without a green verify.
+# low: a worker that solves the task but never re-runs verify leaves the
+# settled detector unable to engage (it needs a green verify) and burns the
+# remainder on read-only commands.
 RUN_BUDGET_NUDGE_BELOW = 0.25
 
 RUN_BUDGET_NUDGE = (

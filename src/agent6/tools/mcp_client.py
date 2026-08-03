@@ -381,8 +381,8 @@ class _MCPServer:
 
 @dataclass
 class MCPManager:
-    """Owns N MCP server subprocesses for one agent6 run. Constructed
-    once at the top of ``_cmd_run``, closed in the finally block.
+    """Owns N MCP server subprocesses for one agent6 run; closed by the
+    lifecycle that built it.
 
     The ``configs`` arg is an iterable of (name, command, startup_timeout_s,
     call_timeout_s) tuples; we keep this constructor decoupled from the

@@ -344,6 +344,32 @@ it does not lift a capable model's resolve rate much.
   signal is host-existence (shutil.which) of the exact failing binary -- no
   tool list -- so it covers rustup/pyenv/nvm/any proxy tool generally.
 
+### Spiral-guard thresholds (the evidence behind the constants)
+
+`workflows/_nudges.py` carries the thresholds; the observations that set them:
+
+- **No-progress (verify) guard** — motivated by mistral-small (2026-07-11):
+  nine consecutive verify failures with the IDENTICAL normalized error while
+  the worker kept editing one file, burning a third of the run's budget on one
+  failure. Third stage measured on the guard2 waves (n=14): the detector fired
+  on exactly the doomed runs and never on a healthy one, but nudged runs still
+  burned to the iteration cap at score 0 -- so ten consecutive identical
+  failures (both nudges delivered and unheeded) is past any observed recovery,
+  and the run stops honestly. Thresholds: nudge 4, escalate 7, stop 10.
+- **Tool-error spiral guard** — observed on SWE-bench: kimi re-issuing
+  malformed grep calls until the run timed out. Thresholds: 3 / 5 / 8.
+- **Verify-broken detection** — observed on SWE-bench sympy testbeds across
+  three models: `python -m pytest` with pytest absent, exit 1 in 0.0s, read by
+  the model as a real red.
+- **Verify-settled completion** — Kimi K2.6 observed running to 128 iterations
+  on a task done at ~45, re-running read-only commands after success.
+- **Low-budget wrap-up** — Kimi K2.6 observed solving the task, never
+  re-running verify, never calling finish_run, and burning the remainder on
+  read-only commands (the settled detector cannot engage without a green
+  verify).
+- **Task finish-gate** — a weak model on a long task observed quitting at
+  silent_finish iter 7 with 7 subtasks still open.
+
 ### kimi re-measured (before/after, both clean full sweeps)
 
 | metric | original | fresh (all fixes) |

@@ -112,14 +112,11 @@ def _global_state_dir() -> str | None:
 def _forbid_layer_profile(layer_name: str, data: dict[str, Any]) -> None:
     """Reject a top-level ``profile`` key in a layer that cannot SELECT one.
 
-    Only the global/repo configs and the --profile flag select a profile
-    (_select_profile); the key still deep-merged from a --config FILE or a
-    machine [config] overlay, so `config show` displayed profile=<name> as
-    effective while the preset was silently never applied -- and resume then
-    replayed the manifest-stamped name as a real selection, so the resumed
-    run behaved differently from the original. Honoring it instead is not an
-    option: a machine overlay selecting an operator [profiles.*] could pick
-    one that loosens the sandbox (a security widening).
+    Only the global/repo configs and the --profile flag select one
+    (_select_profile), so the key deep-merging in from a --config FILE or a
+    machine [config] overlay would show as effective while never applying.
+    Honoring it instead is not an option: a machine overlay selecting an
+    operator [profiles.*] could pick one that loosens the sandbox.
     """
     if "profile" in data:
         raise ConfigError(
@@ -335,13 +332,10 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 def _merge_layers(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, str]]:
     """Deep-merge *layers* low->high and stamp per-leaf provenance IN the same
-    walk, so the two can never diverge. A separate provenance pass silently
-    lied whenever the merge dropped a subtree: an api_format-changing provider
-    replace discarded the lower layer's leaves, but their stale source entries
-    survived and `config show` attributed model DEFAULTS (refilled base_url,
-    timeouts) to a file holding different values. On any wholesale replace the
-    stale sub-provenance dies with the subtree, then the winner's leaves are
-    stamped."""
+    walk, so the two can never diverge: on a wholesale replace (an
+    api_format-changing provider entry) the stale sub-provenance dies with the
+    subtree, then the winner's leaves are stamped. A separate provenance pass
+    would keep source entries for leaves the merge discarded."""
     merged: dict[str, Any] = {}
     sources: dict[str, str] = {}
 
@@ -701,12 +695,10 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
 def _toml_key(key: str) -> str:
     """A TOML key: bare when it matches the bare-key grammar, else quoted.
 
-    A provider hand-named "my provider" or "openrouter.free" is valid input
-    (the loader accepts it), so the serializer must quote it -- raw
-    interpolation emitted `[providers.my provider]` (unparseable) or
-    `[providers.openrouter.free]` (silently re-nested), and `config fill
-    --force` then replaced the operator's working config with the broken
-    output."""
+    A provider hand-named "my provider" or "openrouter.free" is valid loader
+    input, so the serializer must quote it: raw interpolation yields
+    `[providers.my provider]` (unparseable) or `[providers.openrouter.free]`
+    (silently re-nested)."""
     return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else toml_basic_string(key)
 
 

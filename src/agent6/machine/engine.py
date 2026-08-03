@@ -14,10 +14,10 @@ returned blackboard replaces the current one.
 * **Replay**, the identical reconstruction runs with ``live=False`` and no
   ``World`` at all, reproducing the recorded path offline for backtesting.
 
-Phase 2 implements the four deterministic state kinds, ``tool``, ``branch``,
-``wait``, ``terminal``. Phase 3 adds the ``agent`` kind, which runs a normal
-agent6 loop through an injected :class:`World.run_agent` and captures the
-schema-validated ``finish_run`` payload into the blackboard.
+The ``agent`` kind runs a normal agent6 loop through an injected
+:class:`World.run_agent` and captures the schema-validated ``finish_run``
+payload into the blackboard; ``tool``/``branch``/``wait``/``terminal`` are
+fully deterministic.
 """
 
 from __future__ import annotations

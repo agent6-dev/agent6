@@ -137,11 +137,8 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     resume_p.add_argument(
         "--config",
         type=Path,
-        # SUPPRESS (not None): a subparser default would otherwise clobber a
-        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
-        # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
-        # work; the top-level --config supplies the always-present default.
+        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
+        # rationale at `_run_args._add_run_parser`.
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",

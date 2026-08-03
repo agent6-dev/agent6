@@ -2,20 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Per-invocation token budget tracker with hard-stop enforcement.
 
-**Scope of "per-invocation"**: The BudgetTracker is created fresh at the
-start of every `agent6 run` (or `agent6 plan ...`, etc.) command. It
-counts tokens used by that invocation only. It does NOT persist across
-invocations - a subsequent `agent6 resume <id>` gets a fresh budget
-ceiling. This is intentional and matches the "prevent runaway costs
-PER USER INTERACTION" design goal: the budget is a circuit breaker
-against runaway spend during one invocation, not a long-running
-ledger across a multi-day task.
-
-Practical implication for long-running goals: if you `agent6 run X`,
-hit the budget cap, then `agent6 resume <id>` to continue, you get
-another full ceiling. Across N resumes, total real spend can be N x
-the configured budget. The CLI logs a one-line notice on resume to
-make this visible.
+A tracker is created fresh per invocation and never persists, so `resume`
+gets a FULL ceiling again: across N resumes real spend can reach N x the cap
+(the CLI notes this on resume). Deliberate -- a per-invocation circuit breaker
+against runaway spend, not a ledger across a multi-day task.
 
 Budget enforcement is a HARD STOP (not a warning): once a ledger
 crosses its cap, the next provider call raises `BudgetExceeded`; the

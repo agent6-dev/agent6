@@ -14,13 +14,4 @@ so safety comes from the out-of-tree location, not from a single-writer
 invariant. The run-level `worker.lock` flock nonetheless keeps this the sole
 writer; the curator's own per-mutation flock guards against a concurrent
 operator-CLI read/write of the same files.
-
-Submodules:
-  - `models`:   pydantic models for task nodes and curator intents.
-  - `ulid`:     tiny self-contained ULID generator (no new dep).
-  - `storage`:  on-disk format, markdown+YAML-frontmatter per node, jsonl
-                journal, dot generation, atomic writes via fcntl flock +
-                tmp-then-rename.
-  - `curator`:  the in-process `GraphCurator` (mutation API + per-mutation
-                flock + disk-fault reload fail-safe).
 """

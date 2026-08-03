@@ -2,45 +2,19 @@
 # Copyright 2026 Eric Lesiuta
 """OpenAI Chat Completions-compatible provider.
 
-Works against any endpoint that speaks the OpenAI Chat Completions API:
-OpenAI itself, OpenRouter, Ollama (`/v1`), vLLM, LM Studio, llama.cpp's
-server, Kimi via Moonshot, DeepSeek-V3 via the official API or via
-OpenRouter. Any sub-agent role (planner, worker, critic, reviewer,
-summarizer) can be routed through this provider via
-`[models.<role>]` in your config.
+Works against any endpoint speaking the OpenAI Chat Completions API: OpenAI,
+OpenRouter, Ollama (`/v1`), vLLM, LM Studio, llama.cpp's server, Moonshot,
+DeepSeek. HTTP transport and SSE lifecycle are shared with the Anthropic
+provider (`_transport.py`, `_stream.py`); both use httpx2 directly (no SDK)
+for a smaller audit surface.
 
-HTTP transport and SSE lifecycle are shared with the Anthropic provider
-(`providers/_transport.py`, `providers/_stream.py`); both use httpx2
-directly (no SDK) for a smaller audit surface.
-
-**- tool-use translation (Shape B)**: agent6's internal
-"lingua franca" is Anthropic content-blocks (the most expressive
-format - text + tool_use + tool_result inline). OpenAI Chat
-Completions uses a parallel `tool_calls` array on assistant
-messages and a separate `role=tool` message for tool results.
-This provider translates IN/OUT internally so the workflow code
-(worker_loop, architect_loop) sees uniform Anthropic-shape
-behaviour across providers. Translation covers:
-
-- Anthropic `tool_use` block in assistant content -> OpenAI
-  `tool_calls` array (function-shape).
-- Anthropic `tool_result` block in user message -> OpenAI separate
-  `role=tool` message with `tool_call_id`.
-- `ToolDefinition` -> OpenAI `tools=[{"type":"function","function":
-  {...}}]`.
-- OpenAI `choices[0].message.tool_calls` -> agent6's
-  `ProviderResponse.tool_uses` tuple (Anthropic shape: id / name /
-  input).
-
-What's still per-provider (intentionally not abstracted):
-
-- Anthropic `cache_control` markers: OpenAI does automatic prompt
-  caching server-side; no explicit marker needed; we strip them.
-- Anthropic `extended_thinking={"type":"enabled","budget_tokens":N}`:
-  OpenAI's reasoning models use `reasoning_effort` not budget
-  tokens; the params don't translate 1:1. Currently we silently no-op the
-  Anthropic-shape param on OpenAI; if you want OpenAI reasoning,
-  add a separate per-provider knob later.
+agent6's internal lingua franca is Anthropic content-blocks (text + tool_use +
+tool_result inline, the most expressive shape); translation both ways lives in
+`_openai_messages` / `_openai_parse`, so workflow code sees one shape across
+providers. Deliberately NOT translated: `cache_control` markers are stripped
+(OpenAI caches server-side), and Anthropic's `extended_thinking` budget_tokens
+has no equivalent -- OpenAI reasoning is the `reasoning_effort` knob, wired
+from `[models.<role>].thinking`.
 """
 
 from __future__ import annotations
@@ -72,15 +46,12 @@ from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_ur
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MAX_TOKENS = 8192
 
-# Kimi-K2-Thinking, DeepSeek-R1, QwQ, and similar reasoning
-# models stream a separate ``reasoning_content`` (or ``reasoning``)
-# field whose tokens count against ``max_tokens`` on the server side.
-# At our default per-call cap of 16384, reasoning eats the budget and
-# the actual assistant ``content`` / ``tool_calls`` get truncated
-# mid-message - the loop then sees stop_reason="length" with an empty
-# text and no tool calls, and stalls. Bump the floor for these models
-# so reasoning has room without changing the budget tracker (which
-# still accounts for every emitted token via usage.completion_tokens).
+# Reasoning models stream a separate ``reasoning_content`` whose tokens count
+# against ``max_tokens`` SERVER-SIDE, so at the ordinary per-call cap reasoning
+# consumes the budget and the assistant ``content``/``tool_calls`` truncate
+# mid-message: the loop sees stop_reason="length", empty text, no tool calls,
+# and stalls. A floor gives reasoning room; the budget tracker is unaffected
+# (it counts every emitted token via usage.completion_tokens).
 REASONING_MODEL_MIN_MAX_TOKENS = 32768
 _REASONING_MODEL_HINTS: tuple[str, ...] = (
     "thinking",
@@ -90,32 +61,10 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     "o1-",
     "o3-",
     "o4-",
-    # Reasoning channel emitters that do NOT advertise it in the
-    # model name. Each entry below was added after observing
-    # finish_reason="length" with empty content + empty tool_calls and a
-    # populated reasoning_content field in the raw response:
-    #   - kimi-k:     Moonshot's K families (k2.5, k2.6, k2.6-thinking,
-    #                 k2-0905, k3, ...). K2.6 starves at the 16k loop
-    #                 default (~16k reasoning tokens for a single
-    #                 perf-takehome turn), then the loop sees no tool_use
-    #                 and emits went_quiet. K3 starved a 3-seat review
-    #                 panel at 4.5k (finish=length, 0 content chars, ~5.8k
-    #                 reasoning chars, every seat abstained) -- match the
-    #                 family, not one generation.
-    #   - minimax-m2: minimax-m2 / minimax-m2.7 (and presumably future
-    #                 m2.x). Same pattern observed on click-short-help
-    #                 and werkzeug-safe-join (19k reasoning tokens).
-    #   - nemotron:   NVIDIA Nemotron-3 nano (e.g. nemotron-3-nano-30b-a3b)
-    #                 streams reasoning_content even on the non-"reasoning"
-    #                 variant; observed starving (loop.reasoning_starvation)
-    #                 at the 16k default on the synthetic edit tasks.
-    #   - glm:        Zhipu GLM-4.x/5.x (z-ai/glm-4.6, glm-4.7, glm-5.2).
-    #                 All stream a separate ``reasoning`` channel; a direct
-    #                 OpenRouter probe at max_tokens=40 returned
-    #                 finish_reason="length" with empty content/tool_calls and
-    #                 ~all 40 tokens charged as reasoning_tokens. The "v"
-    #                 vision variants (glm-4.5v etc.) match too, which is fine:
-    #                 they reason as well, and the floor only raises a ceiling.
+    # Reasoning-channel emitters whose model name does not advertise it: they
+    # return finish_reason="length" with empty content + empty tool_calls unless
+    # given output headroom. Match the FAMILY, not one generation; a false
+    # positive is harmless (the floor only raises a ceiling).
     "kimi-k",
     "minimax-m2",
     "nemotron",
@@ -377,63 +326,17 @@ class OpenAIProvider:
         # deployment name in the URL path, so omit it from the body there.
         if model_in_body:
             body["model"] = self.model
-        # Cap reasoning tokens on OpenRouter-style gateways.
-        #
-        # Background: Kimi K2.6 (and other reasoning models) routinely
-        # spend their *entire* ``max_tokens`` budget on
-        # ``reasoning_content`` alone, returning empty
-        # ``content`` + empty ``tool_calls`` with ``finish_reason=length``.
-        # added ``REASONING_MODEL_MIN_MAX_TOKENS=32768`` so a
-        # full reasoning burst still leaves room for one tool call --
-        # but on perf-takehome runs we observed K2.6 emitting
-        # multiple consecutive 32768-token reasoning bursts, blowing
-        # through the 120k-token output budget in 3-4 turns with zero
-        # forward progress (``budget_exhausted`` runs cost $0.45-$0.58
-        # for a 1.00x speedup).
-        #
-        # OpenRouter accepts a ``reasoning`` block on the request body
-        # that maps to a per-provider reasoning cap. empirical
-        # probe (5 variants x kimi-k2.6 on a heavy-reasoning prompt):
-        #   - top-level ``reasoning_effort=low``: NO effect (4096 tok
-        #     budget consumed in full, finish=length, 0 content chars)
-        #   - nested ``reasoning.max_tokens=2000``: NO effect (hangs)
-        #   - nested ``reasoning.effort=low``: HONORED -- reasoning
-        #     dropped from ~3700 tok (medium) to ~2700 tok with
-        #     finish=stop and real content emitted
-        # originally sent ``reasoning.max_tokens=8000``; on K2.6
-        # this was silently ignored (logs showed 32768-token bursts
-        # still happening with reasoning_starvation events). Switching
-        # to nested ``effort=low`` is the verified-working knob.
-        #
-        # ``AGENT6_REASONING_EFFORT`` env override (low|medium|
-        # high|off) lets bench scripts vary the knob without code edits.
-        #
-        # per-call ``reasoning_effort`` argument takes
-        # precedence over the env override. (Used by the CLI/config and
-        # bench scripts; the run loop never drives it automatically --
-        # see the measurement below.)
-        #
-        # ``off`` must send ``reasoning={"enabled": False}``, NOT
-        # omit the block. Empirically (direct OpenRouter probe, K2.6),
-        # omitting the reasoning object leaves reasoning ON by default
-        # (~2546 reasoning tokens on a heavy prompt) -- so the
-        # "suppression" was a no-op and recovery turns still starved.
-        # ``{"enabled": False}`` truly disables the reasoning channel
-        # (0 reasoning tokens); the model writes any chain-of-thought
-        # into ``content`` and still emits a tool_use.
-        #
-        # Measured (N=8 K2.6 perf-takehome): forcing reasoning off on
-        # starvation-recovery turns scores WORSE than leaving it on
-        # (25% vs ~38% win-rate, best 1.50x vs 7.76x) -- K2.6's large
-        # speedups come *from* reasoning, so suppression trades the
-        # occasional big win for reliable-but-mediocre output. Hence no
-        # automatic loop-level suppression; the "off" knob is explicit
-        # operator/bench use only.
-        # `is_openai_direct_reasoning` (gpt-5, bare o1/o3) is a separate
-        # predicate from `_is_reasoning_model` and does NOT imply it, so gate on
-        # both: otherwise the configured `thinking`/reasoning_effort is silently
-        # dropped for exactly the api.openai.com models whose only reasoning
-        # control IS top-level `reasoning_effort`.
+        # The reasoning knob differs per host, and the wrong one is silently
+        # ignored rather than rejected:
+        #   OpenRouter-style: nested ``reasoning.effort``; top-level
+        #     ``reasoning_effort`` and ``reasoning.max_tokens`` are no-ops, and
+        #     ``off`` must SEND ``{"enabled": False}`` (omitting leaves it on).
+        #   api.openai.com o-series/gpt-5: top-level ``reasoning_effort``; the
+        #     nested object 400s as an unknown parameter.
+        # ``is_openai_direct_reasoning`` does not imply ``_is_reasoning_model``,
+        # so gate on both, else the configured effort is dropped for exactly the
+        # models whose only control is the top-level one. Suppression is never
+        # automatic (measured: bench/perf/README.md).
         if _is_reasoning_model(self.model) or is_openai_direct_reasoning:
             # Precedence: per-call argument > provider default (from config
             # `thinking`) > AGENT6_REASONING_EFFORT env > "low".

@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """agent6 state machines, declarative, replayable mini-agents.
 
-Phase 1: load + validate a `.asm.toml` file (`model`) and render it as a
-diagram (`graph`). Phase 2: execute it deterministically (`engine`) over an
-append-only `journal`, with crash recovery and offline replay. Phase 3 wires
-the `agent` state kind into a normal agent6 loop through an injected runner.
-Phase 4 adds 24/7 ergonomics: `machine status`/`poke` and an external-scheduler
-`--exit-on-wait` mode that persists the next wake instead of blocking.
+Load + validate a `.asm.toml` (`model`), render it as a diagram (`graph`), and
+execute it deterministically (`engine`) over an append-only `journal` with
+crash recovery and offline replay. The `agent` state kind runs a normal agent6
+loop through an injected runner; `machine status`/`poke` and the
+external-scheduler `--exit-on-wait` mode (persist the next wake instead of
+blocking) cover 24/7 use.
 """
 
 from __future__ import annotations

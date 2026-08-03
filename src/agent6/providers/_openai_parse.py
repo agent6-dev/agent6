@@ -170,15 +170,9 @@ def parse_response(  # noqa: PLR0912, PLR0915
     # same structure regardless of provider.
     raw_content: list[dict[str, Any]] = []
     if reasoning_text:
-        # Surface reasoning as a leading text block wrapped in
-        # ``<thinking>`` tags so downstream code that already knows the
-        # tag (e.g. workflows.loop._summarise_assistant_text_for_commit)
-        # behaves identically across providers. We do NOT promote
-        # reasoning into the user-visible ``text`` field: workflows that
-        # echo ``resp.text`` (CLI logger, transcript surface) would
-        # double-print it and the auto-commit summariser already strips
-        # the prefix. Keeping it in raw is enough for inspection /
-        # debugging while leaving the assistant's actual answer clean.
+        # A leading ``thinking`` block, so every provider yields one shape.
+        # Reasoning is NOT promoted into ``text``: surfaces that echo
+        # ``resp.text`` (CLI logger, transcripts) would double-print it.
         raw_content.append({"type": "thinking", "thinking": reasoning_text})
     if text:
         raw_content.append({"type": "text", "text": text})

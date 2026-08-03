@@ -8,19 +8,9 @@ text, every tool call with its result, commits, and the verdict -- with the same
 glyphs the CLI stream uses.
 
 Completed turns scroll in the main pane; a docked live pane at the bottom streams
-the turn IN PROGRESS (a reasoning model can think for 30-60s before it produces a
-tool call, so without this the view looks frozen). Follows live: new turns append
-and, unless the operator scrolled up to read, the pane sticks to the bottom.
-A composer bar sits at the bottom, focused on open: on a live run Enter sends a
-steer (Ctrl-J newlines); on a finished run (primary view only) Enter RESUMES the
-run with the typed follow-up. Ctrl+C copies the mouse selection (or the whole transcript) via the
-``copy_method`` UI preference; PageUp/PageDown scroll, Ctrl+Home/End jump to
-top/bottom. As the run app's PRIMARY screen (`agent6 run --tui` opens here)
-Ctrl+D toggles the dashboard and Esc leaves for the hub; as a pushed read-only
-viewer (from the hub or the dashboard) Esc just dismisses. The menu bar
-(File/View/Help) and the command palette (Ctrl+P) hold the rest -- the detail
-cycle, reload, and the pager/terminal/file copies -- each showing its shortcut
-from the live bindings.
+the turn IN PROGRESS -- a reasoning model can think for 30-60s before producing a
+tool call, so without it the view looks frozen. Bindings and menu entries are
+declared in BINDINGS/MENUS.
 
 The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
 ``RichLog`` renders as line Strips, which the framework's text selection cannot

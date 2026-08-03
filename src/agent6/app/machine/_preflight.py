@@ -3,9 +3,8 @@
 """Host-side preflight for `machine run`/`create`.
 
 Before the engine composition drives a machine, these checks refuse a run that
-can't be honored: a tool-network need the profile can't enforce
-(`machine_network_refusal`), a hard `max_usd` with no price data
-and they resolve the machine's own read-only
+can't be honored -- a tool-network need the profile cannot enforce
+(`machine_network_refusal`) -- and they resolve the machine's own read-only
 protect paths (`machine_protect_paths`) and the operator notify hook
 (`build_machine_notify_hook`). Pure computations plus the one host subprocess
 (the notify hook, whose argv comes from `[machine.notify]`, never LLM output).

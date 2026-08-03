@@ -238,22 +238,9 @@ _DIRTY_NOTE_CAP = 500
 def _summarise_assistant_text_for_commit(
     text: str, iteration: int, *, fallback: str = "verify passed"
 ) -> str:
-    """Build a one-line commit subject from the LLM's most recent prose.
-
-    Replaces the constant "agent6 iter N: verify passed" subject
-    line with the agent's own first non-empty sentence/line, prefixed
-    with the iteration number for traceability. No extra LLM call -
-    we already have ``resp.text`` from the same turn that produced the
-    verify-passing edits, so the subject is free.
-
-    Behaviour:
-      - Strip leading XML/markdown noise (``<thinking>...</thinking>``,
-        ``#`` headers, list bullets).
-      - Take the first non-empty line, truncate to 72 chars (git's
-        ``--oneline`` width), keep the rest as the body for ``git log``.
-      - Fall back to "verify passed" when the assistant emitted no
-        prose this turn (pure tool-call rounds).
-    """
+    """``agent6 iter N: <first line>`` from the agent's own prose, truncated to
+    72 chars (git ``--oneline`` width). Free: ``resp.text`` is already in hand.
+    Falls back to "verify passed" on a pure tool-call turn."""
     cleaned = text
     # Drop any leading <thinking>...</thinking> block - common with reasoning models.
     while cleaned.lstrip().startswith("<thinking>"):
@@ -533,25 +520,17 @@ class Workflow:
     per_call_max_tokens: int = 16384
     # Per-call output cap for the worker on metric-optimization runs (mode
     # "run" with a configured continuous metric). Those tasks reward large
-    # single-turn edits, rewriting a hot function wholesale beats nibbling
-    # at it across turns, and the worker routinely truncated mid-apply_patch
-    # against the 16k default, wasting the whole turn. Lifting the ceiling
-    # only when a metric goal is present keeps ordinary feature/bugfix runs
-    # (where giant turns mostly mean a confused model) on the tighter cap.
-    #
-    # Bumped 32768 -> 65536: a heavy reasoner (Kimi K2.6, perf-takehome) was
-    # *still* hitting the 32k cap with stop_reason="length", its reasoning ate
-    # the whole budget and the turn ended before it could emit a tool call, so
-    # ~30% of turns were pure waste and the run made no progress. The bigger
-    # ceiling lets a reason-heavy turn finish and actually apply its edit.
+    # single-turn edits, so a tight cap truncates mid-apply_patch and wastes the
+    # turn; ordinary feature/bugfix runs stay on the tighter default, where a
+    # giant turn mostly means a confused model. At 32k a heavy reasoner still
+    # hit stop_reason="length" on ~30% of turns before emitting a tool call
+    # (measured: bench/perf/README.md).
     metric_task_max_tokens: int = 65536
     # Sampling temperature pinned for every provider call (worker and
-    # critic); unset, each provider routes to its own default, and
-    # OpenRouter's per-model defaults are high enough that Kimi K2.6
-    # emitted 15997 literal `\n` escapes inside a single `old_string`
-    # argument before hitting the completion-tokens cap. Pinning 0.0 makes the
-    # tool-use loop reproducible and removes one large degenerate-output
-    # surface. CLI wires these from `cfg.models.<role>.temperature`.
+    # critic); unset, each provider routes to its own default, and OpenRouter's
+    # per-model defaults are high enough to produce degenerate output. Pinning
+    # 0.0 makes the tool-use loop reproducible. CLI wires these from
+    # `cfg.models.<role>.temperature`.
     temperature: float | None = 0.0
     critic_temperature: float | None = 0.0
     # Tiered context compaction thresholds (chars).
@@ -570,10 +549,9 @@ class Workflow:
     provider_retry_count: int = 4
     provider_retry_delay_s: float = 2.0
     provider_retry_max_delay_s: float = 30.0
-    # Steering interrupt callbacks . Polled
-    # between iterations; on request the workflow prompts the operator for an
-    # instruction or "abort". When unset (the defaults) the loop runs without
-    # operator interaction. audit finding wired this in.
+    # Steering interrupt callbacks, polled between iterations; on request the
+    # workflow prompts the operator for an instruction or "abort". When unset
+    # (the defaults) the loop runs without operator interaction.
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
@@ -694,11 +672,8 @@ class Workflow:
     # short [harness] notice into the conversation and re-asks the
     # model, up to this many times PER RUN. Reset on any non-empty
     # turn. Set to 0 to restore the "fail fast on went_quiet"
-    # behaviour. Raised from 2 to 4 after observing K2.6 perf
-    # runs terminating after 5 tool calls because reasoning-starvation
-    # bursts (32k tokens spent on reasoning, empty content + empty
-    # tool_calls) count as went_quiet and exhausted the nudge budget
-    # before the model had a chance to make real progress.
+    # behaviour. Reasoning-starvation bursts count as went_quiet, so the cap is
+    # sized to survive a few of them.
     went_quiet_max_nudges: int = 4
     # loop-guard escalation. The guard injects a one-shot
     # notice when the same (tool, args) signature streak hits
@@ -1227,9 +1202,7 @@ class Workflow:
                 self._note_jail_exec_failure(state, turn, name, tool_input, result)
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
-                # from, and capturing it ended the run through a tool that
-                # never ran -- a hallucinated finish_planning in run mode even
-                # ended it all_passed=True.
+                # from, not an end to the run.
                 self._capture_finish(turn, name, tool_input)
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
@@ -1361,11 +1334,9 @@ class Workflow:
             if isinstance(tool_input, dict):
                 plan_md = str(tool_input.get("plan_markdown", ""))
                 summary = str(tool_input.get("summary", ""))
-            # Salvage a title-only plan_markdown: weak models put the real plan in
-            # `summary` (observed live: kimi's plan_markdown was 126 bytes, just
-            # '# Plan: ...', while summary held the whole plan). Without this the
-            # $0.12 planning pass writes a stub plan.md that --from-plan then
-            # re-derives from scratch. Fold the summary under the title so the plan
+            # Salvage a title-only plan_markdown: weak models put the real plan
+            # in `summary`, leaving plan.md a stub that --from-plan must
+            # re-derive. Fold the summary under the title so the plan
             # carries content. The critic pass gated content quality; this only
             # rescues field misuse.
             if _plan_is_title_only(plan_md) and len(summary) > len(plan_md):
@@ -2645,11 +2616,9 @@ class Workflow:
         # reasoning-starvation trip-wire. When a model spends its entire output
         # budget on reasoning_content and emits nothing user-visible, the
         # provider returns stop_reason="length" with empty text + no tool_uses.
-        # Without this breadcrumb the failure mode is indistinguishable from a
-        # model that genuinely gave up, and the only way to diagnose it is to
-        # read raw transcripts (took ~7 minutes per case forensics). Surface it
-        # explicitly so the next undetected reasoning model is one log line
-        # away.
+        # Otherwise indistinguishable from a model that genuinely gave up, so
+        # surface it explicitly rather than leaving raw transcripts as the only
+        # diagnosis.
         reasoning_chars = 0
         raw_content = (resp.raw or {}).get("content") or []
         if isinstance(raw_content, list):
@@ -2681,11 +2650,8 @@ class Workflow:
             state.went_quiet_nudges_used += 1
             conversation.pop_quiet_assistant()
             # starvation-specific nudge. When the previous turn ended with
-            # stop_reason=length AND reasoning_content ate the entire budget,
-            # the generic "your turn was empty" message gives the model no
-            # actionable feedback and it repeats the same reasoning loop next
-            # turn. Tell it explicitly to stop thinking and commit to a tool
-            # call.
+            # The generic empty-turn message gives a starved reasoner nothing
+            # actionable, so it repeats the same loop next turn.
             if starved:
                 nudge_text = (
                     "[harness] Your previous turn spent its entire"
@@ -2916,15 +2882,8 @@ class Workflow:
         self._emit("graph.update", nodes=nodes, cursor=cursor)
 
     def _load_repo_summary(self) -> RepoSummary:
-        """Reuse the shared `load_repo_summary` and extend with structural priors
-        (co-change, hot symbols) - structural priors
-        delivered directly into the loop's system prompt.
-
-        Hot-symbols / co-change calls are best-effort: a missing git history
-        or a tree-sitter parser hiccup shouldn't block the run. -era
-        audit: re-raise BudgetExceeded and KeyboardInterrupt so the loop's
-        budget guarantee and operator-abort path stay intact.
-        """
+        """Base summary plus structural priors when `prompt.structural_priors`
+        is on; see `load_repo_summary`."""
         # prompt.structural_priors=false -> base summary only (no hot symbols /
         # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
         disp = self.dispatcher if self.config.prompt.structural_priors else None
@@ -2945,9 +2904,7 @@ class Workflow:
             entries = memory_list_entries(self.state_dir)
         except (MemoryStoreError, OSError) as exc:
             # An event, not just a log line: the console view filters "LOOP:"
-            # unless AGENT6_DEBUG=1 and a detached run's stdout is DEVNULL, so
-            # the log alone reached no surface while every recorded memory
-            # silently left the prompt.
+            # unless AGENT6_DEBUG=1 and a detached run's stdout is DEVNULL.
             self._log(f"LOOP: WARNING: cross-run memories unavailable: {exc}")
             self._emit("loop.memories.unavailable", error=str(exc))
             return ()
@@ -2999,13 +2956,6 @@ class Workflow:
             return
         goal = metric_goal(self.config.workflow.metric)
         best = best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
-        # One RunSnapshot owns every persisted fact: resume reuses the exact verify
-        # resolution (gated argv or () for gateless) instead of re-inferring; the
-        # completion scalars keep the metric / verify-settled stop logic from
-        # restarting at zero; the fork extras (head_sha / graph_version, best-effort
-        # "" / 0 when git/curator was unreadable) let `fork --at-turn N` cut the
-        # branch and clone the DAG. loop_state.json and the checkpoint get the same
-        # bytes.
         snapshot = RunSnapshot(
             system=system,
             messages=messages,
@@ -3272,13 +3222,9 @@ class Workflow:
                 paths=list(stats.gist_paths),
                 demoted_paths=list(stats.demoted_paths),
             )
-        # Tier 2 must measure something tier 1 does NOT already bound. Tier 1
-        # just capped tool_result bytes to ``compact_drop_at_chars``, so
-        # re-measuring only tool_results here could never exceed the (larger)
-        # tier-2 threshold -- tier 2 was unreachable. Measure the WHOLE post-
-        # elision context (text + tool_use inputs + surviving tool_results),
-        # which keeps growing across a long run from assistant prose and
-        # tool-call args even after old tool_results are dropped.
+        # Measure the WHOLE post-elision context, not just tool_results: tier 1
+        # already bounded those, so re-measuring them could never cross the
+        # larger tier-2 threshold.
         total = context_chars(conversation)
         # Tier 2 needs at least an original-task turn plus enough history
         # to be worth summarising; below that a restart would lose more than
@@ -3866,9 +3812,7 @@ class Workflow:
         text = (resp.text or "").strip()
         if output_cap_truncated(resp) or not text:
             # A starved/empty critic response is a FAILED call, not a verdict:
-            # folding it into NEEDS_WORK revoked finish_run with an empty
-            # critique and burned iterations against a phantom rejection. Treat
-            # it like a ProviderError -- no critique, proceed.
+            # treat it like a ProviderError -- no critique, proceed.
             self._log(
                 f"  critic produced no verdict (stop_reason={resp.stop_reason!r},"
                 f" {len(text)} chars); skipping the critique"

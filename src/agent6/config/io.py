@@ -18,20 +18,17 @@ from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 
 def _write(path: Path, text: str) -> None:
-    """Publish config text via tmp+rename, matching every other agent6 state
-    writer. Plain `write_text` truncated in place, so a crash mid-write left a
-    truncated/empty config; the rename makes the update all-or-nothing."""
+    """Publish config text via tmp+rename (all-or-nothing), matching every
+    other agent6 state writer."""
     atomic_write(path, text)
 
 
 def _header_name(line: str) -> str | None:
     """The table name of a ``[table]`` header line, or None if it is not one.
 
-    The single owner of header matching. Exact-matching the stripped line made
-    `[sandbox]  # the jail` and `[ sandbox ]` -- both ordinary TOML -- invisible
-    to the surgery: unset reported nothing to unset for a leaf that was set, and
-    upsert appended a SECOND table, leaving the file unparseable. An
-    array-of-tables (`[[x]]`) is deliberately not a match.
+    THE single owner of header matching; tolerates a trailing comment and
+    interior whitespace (`[sandbox]  # the jail`, `[ sandbox ]`), both ordinary
+    TOML. An array-of-tables (`[[x]]`) is deliberately not a match.
     """
     stripped = line.strip()
     if not stripped.startswith("["):
@@ -175,9 +172,8 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
 
     TOML forbids a bare top-level key and a same-named ``[table]`` coexisting
     (``profile`` vs ``[profile]``), so a write REPLACES the conflicting other
-    shape; emitting both published an unparseable file that the lenient
-    already-invalid set path then kept, wedging every later config read.
-    Revalidation still arbitrates whether the new value is semantically valid.
+    shape. Revalidation still arbitrates whether the new value is semantically
+    valid.
     """
     table, leaf = _split_dotted_key(dotted_key)
     new_line = f"{leaf} = {format_toml_value(value)}"
@@ -185,15 +181,12 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         lines = text.splitlines()
         if table:
-            # Refuse a leaf whose ancestor is a table written WITHOUT a header
-            # (an inline table or a dotted key). The surgery only knows
-            # `[table]` headers, so it would emit one that collides with the
-            # ancestor -- and _drop_top_region_key below, whose job is the bare
-            # SCALAR vs `[table]` conflict (`profile` vs `[profile]`), matches a
-            # table-valued top-level key too and would delete it with every
-            # sibling setting inside it. Raised here rather than in one command
-            # so `config add`/`remove` and the engine-level writers behind the
-            # TUI, connect, init and model cannot skip the check.
+            # Refuse a leaf whose ancestor is a headerless table (inline table
+            # or dotted key): the surgery only knows `[table]` headers, so it
+            # would emit one that collides with the ancestor, and
+            # _drop_top_region_key would then delete that ancestor with every
+            # sibling inside it. Raised here, not in one command, so every
+            # writer hits it (see `undeclared_table_ancestor`).
             if owner := undeclared_table_ancestor(path, dotted_key):
                 raise ValueError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
@@ -247,21 +240,16 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
     while j < len(lines):
         line = lines[j]
         if line.strip().startswith("["):
-            # _section_name, not _header_name: a `[[table.sub]]` array-of-tables
-            # is a SUBTABLE that must be dropped with its parent. _header_name
-            # (the single-table lookup matcher) reports `[[x]]` as not-a-table,
-            # so keying the drop on it kept the subtable and everything after,
-            # leaving the config unloadable.
+            # _section_name, not _header_name: a `[[table.sub]]` is a subtable
+            # that must be dropped with its parent (_header_name reports `[[x]]`
+            # as not-a-table).
             name = _section_name(line)
             dropping = name is not None and (name == table or name.startswith(f"{table}."))
             removed = removed or dropping
             span = 1
         else:
-            # Jump a multi-line value whole (like _region_end): a triple-quoted
-            # or bracketed-array value whose interior line starts with `[` must
-            # NOT be re-read as a header and flip `dropping` mid-value -- that
-            # leaked the value's tail and every sibling below into the output and
-            # left the file unparseable.
+            # Jump a multi-line value whole (see `_region_end`), else an
+            # interior line starting with `[` flips `dropping` mid-value.
             span = _value_line_span(lines, j) if _ASSIGN_RE.match(line) else 1
         if not dropping:
             kept.extend(lines[j : j + span])
@@ -279,12 +267,10 @@ def _region_end(lines: list[str], region: int) -> int:
     """Index of the first real ``[header]`` line at or after *region*, skipping
     the INTERIOR of every multi-line value on the way.
 
-    THE single owner of "where does this table's body end". A plain per-line
-    ``startswith("[")`` scan stopped inside a triple-quoted value whose line
-    began with ``[`` (a regex character class is the natural case), so the leaf
-    search that this bounds ended early: it missed the real leaf and the insert
-    landed inside the operator's string, silently destroying a sibling while
-    reporting success.
+    THE single owner of "where does this table's body end", and the reason it
+    cannot be a per-line ``startswith("[")`` scan: a triple-quoted value whose
+    line begins with ``[`` (a regex character class) would end the region early
+    and land the insert inside the operator's string.
     """
     j = region
     while j < len(lines):
@@ -299,27 +285,21 @@ def _region_end(lines: list[str], region: int) -> int:
 def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
     """Index of the line assigning *leaf* within ``[region, end)``, or None.
 
-    Skips the INTERIOR of every multi-line value: a plain per-line regex would
-    match an ``x = 5`` inside a triple-quoted string and rewrite that instead of
-    the real leaf below it."""
+    Skips multi-line value interiors (see `_region_end`)."""
     leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
     j = region
     while j < end:
         if leaf_re.match(lines[j]):
             return j
-        # A value that spans lines is jumped whole, so its contents are never
-        # candidates; _value_line_span is >= 1, so this always advances.
+        # _value_line_span is >= 1, so this always advances.
         j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
     return None
 
 
 def _iter_headers(lines: list[str]) -> list[tuple[int, str]]:
-    """``(index, name)`` for each real ``[table]`` header, skipping the INTERIOR
-    of every multi-line value so a ``[header]``-looking line inside a triple-
-    quoted string is never taken for a header. THE owner every header lookup
-    uses: a plain per-line ``_header_name`` scan matched a fake ``[table]`` inside
-    an earlier value's string and shadowed the real header, so the surgery wrote
-    into the wrong table (or a remove silently corrupted the operator's string).
+    """``(index, name)`` for each real ``[table]`` header, skipping multi-line
+    value interiors so a ``[header]``-looking line inside a string is never taken
+    for one. THE owner every header lookup uses (see `_region_end`).
     """
     out: list[tuple[int, str]] = []
     j = 0
@@ -433,10 +413,10 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     with locked_file(path):
         if not path.is_file():
             return False
-        # The removal twin of upsert_toml_leaf's refusal: the surgery only
-        # knows `[table]` headers, so a leaf living inside an inline table or
-        # a dotted top-level key would read "not found" here -- and callers
-        # translate False into "nothing to unset" while `config get` shows
+        # The removal twin of upsert_toml_leaf's refusal: without it a leaf
+        # inside an inline table or dotted key reads "not found" here, and
+        # callers translate False into "nothing to unset" while `config get`
+        # shows
         # the leaf set.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
             raise ValueError(
