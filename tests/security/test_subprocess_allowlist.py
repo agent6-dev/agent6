@@ -17,16 +17,20 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 import agent6
 
 # Any subprocess-module call (dotted or aliased), plus the os-level spawn
 # family. Kept as source text (not AST) so a match inside a generated-code
 # string literal is still surfaced for review rather than silently skipped.
 _PATTERN = re.compile(
-    r"subprocess\.(run|Popen|call|check_call|check_output)"
+    r"subprocess\.(run|Popen|call|check_call|check_output|getoutput|getstatusoutput)"
     r"|from subprocess import"
     r"|import subprocess as"
-    r"|os\.(system|posix_spawn|posix_spawnp|execv|execve|execvp|execvpe|execl|execle|execlp|spawn\w+)"
+    r"|os\.(system|popen|posix_spawn|posix_spawnp"
+    r"|execv|execve|execvp|execvpe|execl|execle|execlp|spawn\w+)"
+    r"|pty\.spawn"
     r"|create_subprocess_(exec|shell)"
 )
 
@@ -76,3 +80,36 @@ def test_direct_subprocess_stays_on_the_allowlist() -> None:
     stale = ALLOWED - matches
     assert not unexpected, f"unreviewed direct subprocess use: {sorted(unexpected)}"
     assert not stale, f"allow-list entries with no match left (prune them): {sorted(stale)}"
+
+
+# Every stdlib call that RUNS something. The allow-list above is only as good as
+# this list: a form missing here is a new execution site the suite waves through.
+_EXECUTING_FORMS = (
+    "subprocess.run(argv)",
+    "subprocess.Popen(argv)",
+    "subprocess.call(argv)",
+    "subprocess.check_call(argv)",
+    "subprocess.check_output(argv)",
+    "subprocess.getoutput(cmd)",
+    "subprocess.getstatusoutput(cmd)",
+    "from subprocess import run",
+    "import subprocess as sp",
+    "asyncio.create_subprocess_exec(*argv)",
+    "asyncio.create_subprocess_shell(cmd)",
+    "os.system(cmd)",
+    "os.popen(cmd)",
+    "os.posix_spawn(exe, argv, env)",
+    "os.execv(exe, argv)",
+    "os.execvpe(exe, argv, env)",
+    "os.spawnv(mode, exe, argv)",
+    "pty.spawn(argv)",
+)
+
+
+@pytest.mark.parametrize("form", _EXECUTING_FORMS)
+def test_the_scan_catches_every_way_to_run_something(form: str) -> None:
+    """`getoutput`/`getstatusoutput`/`os.popen`/`pty.spawn` each run a command
+    through a SHELL and were absent from the pattern, so adding one would have
+    kept this file green -- the one test standing between a new execution site
+    and the release."""
+    assert _PATTERN.search(form), f"a new execution site written as {form!r} would pass unnoticed"
