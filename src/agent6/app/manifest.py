@@ -86,7 +86,7 @@ def write_run_manifest(
     m = RunManifest(
         agent6_version=__version__,
         run_id=run_id,
-        # run | plan | ask. Only run/plan pass strict_mode (the fork/resume
+        # run | plan | ask. Only run/plan pass validated_mode (the fork/resume
         # privilege gate); an ask writes its manifest under asks/, which
         # neither command looks in.
         mode=mode,

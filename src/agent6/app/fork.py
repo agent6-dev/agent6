@@ -251,11 +251,11 @@ def create_fork(  # noqa: PLR0911
     # fall open to the more-privileged "run" (write) mode -- forking a plan run
     # as a write run would hand it the mutating tools. A valid run always wrote
     # a manifest, so a damaged run dir (unreadable, corrupt, or an unknown mode
-    # value) fails loud via read_manifest / strict_mode rather than silently
+    # value) fails loud via read_manifest / validated_mode rather than silently
     # escalating (same contract as resume).
     try:
         sm = read_manifest(src.run_dir)
-        src_mode = sm.strict_mode()
+        src_mode = sm.validated_mode()
     except ManifestError as exc:
         reporter.err(f"ERROR: cannot read source run manifest {src.manifest_path}: {exc}")
         return "", 2

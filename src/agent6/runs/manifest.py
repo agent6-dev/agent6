@@ -12,7 +12,7 @@ rendering, so the model defaults every field and folds legacy shapes (``version:
 1`` dirs, the pre-nesting flat ``merged_*`` keys). Reading is lenient
 (``read_manifest`` degrades a corrupt file through ``ManifestError``, which the
 render consumers already catch and degrade on); the ONE strict contract is
-``strict_mode`` -- the fork/resume privilege gate, which refuses an unknown mode
+``validated_mode`` -- the fork/resume privilege gate, which refuses an unknown mode
 rather than falling open to the write ("run") tools.
 """
 
@@ -29,7 +29,7 @@ _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
 class ManifestError(Exception):
     """A run's manifest.json is missing, unreadable, corrupt, not a JSON object,
-    does not validate, or (via ``strict_mode``) records an unknown privilege
+    does not validate, or (via ``validated_mode``) records an unknown privilege
     mode. Carries the underlying cause as its message, so a caller that wants to
     surface a detail can render it."""
 
@@ -181,11 +181,11 @@ class RunManifest(BaseModel):
             }
         return data
 
-    def strict_mode(self) -> Literal["run", "plan"]:
-        """The privilege-gating mode for fork/resume. Refuses anything but the two
-        known modes, so a damaged manifest never silently escalates a plan run to
-        the more-privileged write ("run") tools. Pure-render consumers read the
-        raw ``mode`` string for display instead."""
+    def validated_mode(self) -> Literal["run", "plan"]:
+        """The mode fork/resume may act on: anything but the two known ones is
+        refused, so a damaged manifest never silently escalates a plan run to the
+        more-privileged write ("run") tools. Pure-render consumers read the raw
+        ``mode`` string for display instead."""
         if self.mode in ("run", "plan"):
             return self.mode  # type: ignore[return-value]
         raise ManifestError(f"unknown run mode {self.mode!r}")
