@@ -57,7 +57,7 @@ from agent6.config.layer import (
     load_effective,
     resolved_state_dir,
 )
-from agent6.events import EventSink
+from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -607,13 +607,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except KeyboardInterrupt:
                 interrupted = True
                 reporter.err("\n[agent6] resume interrupted")
+                # suppress: the interrupt exit (130 + resume hint) must not be
+                # masked by a dead journal.
                 reason: RunReason = "interrupted"
-                events.emit(
-                    "run.end",
-                    reason=reason,
-                    iterations=wf.iterations_reached,
-                    all_passed=False,
-                )
+                with contextlib.suppress(EventWriteError):
+                    events.emit(
+                        "run.end",
+                        reason=reason,
+                        iterations=wf.iterations_reached,
+                        all_passed=False,
+                    )
         finally:
             steer_state.restore()
             if dispatcher is not None:

@@ -20,6 +20,7 @@ from agent6.app._setup import (
     SandboxOverrides,
 )
 from agent6.config import ConfigError
+from agent6.events import EventWriteError
 from agent6.ui.cli._ask import (
     build_ask_run_digest,
     cmd_ask_list,
@@ -570,4 +571,11 @@ def main(argv: list[str] | None = None) -> int:
     handler = _DISPATCH.get(args.command)
     if handler is None:  # pragma: no cover -- the top-level subparser is required
         parser.error("unknown command")
-    return handler(args)
+    try:
+        return handler(args)
+    except EventWriteError as exc:
+        # A lifecycle stopped because the durable run journal could not be
+        # appended; its finally already released locks and egress. One report
+        # here beats a per-command arm in every lifecycle.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1

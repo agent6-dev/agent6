@@ -443,6 +443,11 @@ spawns the CLI detached, and
 holds the approval / question / steer / compact-request file contract the
 workflow process polls. See [the web UI](web.md).
 
+The journal is durable by contract: an append failure on anything but the
+streaming deltas (`role.*_delta`, best-effort by design) stops the run loudly
+(`EventWriteError`) rather than letting it run on with an unrecordable
+outcome, and in-process listeners see an event only after its write landed.
+
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
 [src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):

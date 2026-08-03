@@ -62,7 +62,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config, role_for_mode
 from agent6.config.layer import resolved_state_dir
-from agent6.events import EventSink
+from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -670,13 +670,16 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # The loop was cut mid-step, so it never emitted run.end; do it
                 # here so an attached watcher/TUI stops instead of hanging. Carry
                 # the iteration the loop reached so run.end keeps one shape.
+                # suppress: the interrupt exit (130 + resume hint) must not be
+                # masked by a dead journal.
                 reason: RunReason = "interrupted"
-                events.emit(
-                    "run.end",
-                    reason=reason,
-                    iterations=wf.iterations_reached,
-                    all_passed=False,
-                )
+                with contextlib.suppress(EventWriteError):
+                    events.emit(
+                        "run.end",
+                        reason=reason,
+                        iterations=wf.iterations_reached,
+                        all_passed=False,
+                    )
         finally:
             steer_state.restore()
             if dispatcher is not None:

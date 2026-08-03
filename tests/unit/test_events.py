@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.events import EventSink
+from agent6.events import EventSink, EventWriteError
 
 
 def _read_lines(path: Path) -> list[dict[str, object]]:
@@ -59,13 +59,24 @@ def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
     assert isinstance(weird, str) and "Bad" in weird  # repr'd, not dropped
 
 
-def test_emit_swallows_oserror(tmp_path: Path) -> None:
-    # Point at a path under a regular file → mkdir will fail.
+def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
+    """A durable event that cannot land raises: the journal is the read model
+    every surface trusts, and a run whose run.end was silently lost rendered
+    "running" with live affordances forever. The in-process listener is NOT
+    notified on the failure, so the live view can never show an event the
+    durable record lost; deltas stay best-effort and still render live (the
+    lossless transcripts keep their copy)."""
+    # Point at a path under a regular file -> mkdir will fail.
     blocker = tmp_path / "blocker"
     blocker.write_text("", encoding="utf-8")
     sink = EventSink(blocker / "subdir" / "logs.jsonl")
-    # Must not raise.
-    sink.emit("anything")
+    seen: list[dict[str, object]] = []
+    sink.subscribe(seen.append)
+    with pytest.raises(EventWriteError, match="unwritable"):
+        sink.emit("run.end", reason="finish_run", all_passed=True)
+    assert seen == []
+    sink.emit("role.text_delta", text="still live")  # ephemeral: must not raise
+    assert [e["type"] for e in seen] == ["role.text_delta"]
 
 
 def test_delta_events_flush_but_do_not_fsync(
