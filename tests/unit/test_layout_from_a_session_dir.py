@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Rebuilding a layout must not lose the bucket it came from.
+
+`SessionLayout(state_dir=..., session_id=...)` defaults to `runs`, so any site
+that rebuilds one from an id -- or from a directory it already had -- silently
+retargets a plan or an ask at a directory that does not exist.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from agent6.graph.models import TaskNode
+from agent6.graph.storage import write_node
+from agent6.sessions.layout import SessionLayout, bucket_dir, layout_of
+
+_TS = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_a_layout_round_trips_through_its_own_directory() -> None:
+    for bucket in ("runs", "plans", "asks", "machines"):
+        original = SessionLayout(state_dir=Path("/s"), session_id="brave-oak-AAAAAA", subdir=bucket)
+        assert layout_of(original.session_dir) == original
+
+
+def test_the_end_of_run_task_tree_renders_for_a_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """It rebuilt the layout from the dir NAME, so a plan's graph was read from
+    runs/ -- and the whole block sits under `suppress(Exception)`, so it failed
+    by printing nothing at all."""
+    from agent6.ui.cli.plan_watch import _print_task_tree  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    session = bucket_dir(tmp_path / "state", "plans") / "brave-oak-AAAAAA"
+    layout = SessionLayout(
+        state_dir=tmp_path / "state", session_id="brave-oak-AAAAAA", subdir="plans"
+    )
+    layout.ensure()
+    # Written by the real writer: a hand-rolled node file would test the
+    # fixture's idea of the format, not the graph's.
+    nodes: dict[str, TaskNode] = {}
+    for node_id, title, parent in (
+        ("01AAAAAAAAAAAAAAAAAAAAAAAA", "root task", None),
+        ("01BBBBBBBBBBBBBBBBBBBBBBBB", "step one", "01AAAAAAAAAAAAAAAAAAAAAAAA"),
+    ):
+        node = TaskNode(
+            id=node_id,
+            title=title,
+            parent_id=parent,
+            created_at=_TS,
+            updated_at=_TS,
+            created_by="planner",
+        )
+        nodes[node_id] = node
+        write_node(layout, nodes, node)
+
+    _print_task_tree(session)
+    # The subject is that the PLAN's graph is read at all: before, the layout
+    # pointed at runs/, load_graph found nothing, and the block printed nothing.
+    out = capsys.readouterr().out
+    assert "plan:" in out and "root task" in out
+
+
+def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
+    """A forked PLAN cuts `agent6/<id>` like any other session but lives in
+    plans/. A runs/-only manifest read returned "" -- which prune reads as
+    "never merged", so the branch was kept forever."""
+    from agent6.ui.cli.sessions_cmds import (  # pyright: ignore[reportPrivateUsage]
+        _manifest_merged_into,
+    )
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="brave-oak-AAAAAA", subdir="plans")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "brave-oak-AAAAAA",
+                "mode": "plan",
+                "user_task": "t",
+                "merged": {"into": "master", "sha": "abc123", "tip": "def456"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _manifest_merged_into(tmp_path, "agent6/brave-oak-AAAAAA") == "master"

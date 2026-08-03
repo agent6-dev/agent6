@@ -178,7 +178,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** graph/{replay}, tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, _parallel_dispatch, loop}
-- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (9 test files exercise it)
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (10 test files exercise it)
 
 ## Run/machine wire snapshot
 

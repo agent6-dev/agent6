@@ -139,6 +139,21 @@ def bucket_dir(state_dir: Path, bucket: str) -> Path:
     return state_dir / SESSIONS_ROOT / bucket
 
 
+def layout_of(session_dir: Path) -> SessionLayout:
+    """The layout of an ALREADY-RESOLVED session directory.
+
+    Rebuilding one from the directory's NAME loses the bucket and defaults to
+    runs/, which for a plan or an ask silently retargets a path that does not
+    exist -- and the callers that do it sit inside a `suppress`, so it goes
+    unnoticed.
+    """
+    return SessionLayout(
+        state_dir=session_dir.parent.parent.parent,
+        session_id=session_dir.name,
+        subdir=session_dir.parent.name,
+    )
+
+
 def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
     """Every session *session_id* names or prefixes, across all buckets.
 

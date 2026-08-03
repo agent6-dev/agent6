@@ -36,7 +36,12 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop, worker_is_alive
-from agent6.sessions.layout import HUB_BUCKETS, SessionLayout, bucket_dir
+from agent6.sessions.layout import (
+    HUB_BUCKETS,
+    SessionLayout,
+    bucket_dir,
+    session_layout,
+)
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
@@ -515,6 +520,22 @@ def _cmd_merge(
     return 0
 
 
+def _branch_manifest(state_dir: Path, branch: str) -> SessionManifest | None:
+    """The manifest of the session a run branch belongs to, or None.
+
+    Across buckets: a FORKED PLAN cuts a branch like any other session but
+    lives in plans/, and a runs/-only lookup could never read its manifest --
+    so prune could never confirm the branch merged, and kept it forever.
+    """
+    layout = session_layout(state_dir, branch.removeprefix("agent6/"))
+    if layout is None:
+        return None
+    try:
+        return read_manifest(layout.session_dir)
+    except ManifestError:
+        return None
+
+
 def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     """The base branch the run owning *branch* (agent6/<session_id>) was merged into, or
     "" if there is no (readable) manifest or it was never recorded as merged.
@@ -525,12 +546,8 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     force-deleted (fail-safe). The model's leniency preserves that: the legacy flat
     merged_into/merged_sha keys fold into `merged`, and any parse failure raises
     ManifestError -> ""."""
-    session_id = branch.removeprefix("agent6/")
-    try:
-        manifest = read_manifest(
-            SessionLayout(state_dir=state_dir, session_id=session_id).session_dir
-        )
-    except ManifestError:
+    manifest = _branch_manifest(state_dir, branch)
+    if manifest is None:
         return ""
     return manifest.merged.into if (manifest.merged and manifest.merged.sha) else ""
 
@@ -538,12 +555,8 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
 def _merged_tip(state_dir: Path, branch: str) -> str:
     """The run-branch tip recorded when the merge happened, or "" when none was
     recorded (a pre-``tip`` manifest, or no readable manifest)."""
-    session_id = branch.removeprefix("agent6/")
-    try:
-        manifest = read_manifest(
-            SessionLayout(state_dir=state_dir, session_id=session_id).session_dir
-        )
-    except ManifestError:
+    manifest = _branch_manifest(state_dir, branch)
+    if manifest is None:
         return ""
     return manifest.merged.tip if manifest.merged else ""
 

@@ -347,11 +347,11 @@ def _print_task_tree(session_dir: Path) -> None:
     visible for a headless run (no TUI #plan pane), the decompose case the user
     could not see. A single root (no decomposition) is not worth the block."""
     from agent6.graph.storage import load_graph  # noqa: PLC0415
-    from agent6.sessions.layout import SessionLayout  # noqa: PLC0415
+    from agent6.sessions.layout import layout_of  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
 
     with contextlib.suppress(Exception):
-        layout = SessionLayout(state_dir=_state_dir(Path.cwd()), session_id=session_dir.name)
+        layout = layout_of(session_dir)
         nodes = load_graph(layout)
         if len(nodes) <= 1:
             return

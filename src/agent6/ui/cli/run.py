@@ -34,7 +34,7 @@ from agent6.models.validate import (
     warning_message,
 )
 from agent6.paths import data_dir
-from agent6.sessions.layout import bucket_dir
+from agent6.sessions.layout import bucket_dir, layout_of
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.types import session_kind
 from agent6.ui.cli._ask import (
@@ -101,7 +101,7 @@ def _asks_dir(session_dir: Path) -> Path:
     Derived from the running session's dir rather than re-resolving the state
     base: the two must agree even when `[agent6].state_dir` is overridden.
     """
-    return bucket_dir(session_dir.parent.parent.parent, "asks")
+    return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
 def session_frontend() -> SessionFrontend:
