@@ -491,3 +491,70 @@ def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
         monkey.undo()
     assert seen == ["worker.pid"]
     assert worker_is_alive(tmp_path) is True  # still a valid record
+
+
+def test_a_started_session_with_no_pid_file_is_not_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker writes its pid BEFORE session.start, so a started session with
+    no pid file cleared it on the way out: it is gone, whatever the log says.
+
+    Reachable by an ordinary `agent6 run ... | head`: SIGPIPE unwinds through
+    the finally, which clears the pid but writes no session.end. Treating the
+    absence as weaker evidence than a dead pid inverted the two -- `kill -9`
+    leaves the pid file and read "stale" at once, while the tidier death read
+    "running" for the whole 600s silence window.
+    """
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(20), "type": "session.start", "mode": "run"},
+            {"ts": _ts(2), "type": "loop.tool.call", "iteration": 2},
+        ],
+    )
+    assert not (d / "worker.pid").exists()
+
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "running" not in out, "a session with no live worker must never render as running"
+    assert "stale" in out
+
+
+def test_a_worker_writes_its_pid_before_it_starts() -> None:
+    """The invariant `_running_is_stale` rests on: no pid file under a started
+    session means the worker cleared it, not that it has not written it yet.
+
+    Emitting session.start first opens a window where a live session reads as
+    dead on every surface. machine create had exactly that ordering.
+    """
+    import ast
+
+    src = Path(__file__).resolve().parents[1].parent / "src" / "agent6"
+    for path in src.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if "write_worker_pid" not in text or 'emit("session.start"' not in text:
+            continue
+        tree = ast.parse(text)
+        writes = [
+            n.lineno
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
+            and n.func.id == "write_worker_pid"
+        ]
+        starts = [
+            n.lineno
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "emit"
+            and n.args
+            and isinstance(n.args[0], ast.Constant)
+            and n.args[0].value == "session.start"
+        ]
+        assert writes and starts, f"{path.name}: expected both calls"
+        assert min(writes) < min(starts), (
+            f"{path.name}:{min(starts)} emits session.start before writing the worker pid;"
+            " a live session reads as dead until the write lands"
+        )

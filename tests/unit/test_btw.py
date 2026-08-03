@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,10 @@ def _ask_dir(root: Path, name: str, *, events: list[dict[str, object]]) -> Path:
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}), encoding="utf-8")
     (d / "logs.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
+    # A started ask has a live worker.pid on disk (written before its start
+    # event); without one the status fold reads it as a worker that exited.
+    if any(e.get("type") == "session.start" for e in events):
+        (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     return d
 
 

@@ -10,17 +10,14 @@ from __future__ import annotations
 
 import contextlib
 import json
-import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.sessions.ipc import read_worker_pid, worker_is_alive
+from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel.events import event_epoch
-
-STALE_AFTER_S = 600.0
 
 
 def session_mtime(session_dir: Path) -> float:
@@ -216,24 +213,29 @@ class StatusFacts:
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
 
 
-def status_for_session_dir(
-    session_dir: Path, facts: StatusFacts, *, stale_after_s: float = STALE_AFTER_S
-) -> tuple[str, str]:
+def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
     """THE ``(word, reason)`` for a session that has a dir on disk.
 
     Every listing and header feeds this the event facts and lets the DIR
-    supply what events cannot: a parked submission (manifest), worker
-    liveness (worker.pid), log silence. The pure fold's ``session_status_label``
+    supply what events cannot: a parked submission (manifest) and worker
+    liveness (worker.pid). The pure fold's ``session_status_label``
     is only for a stream with genuinely no dir (``attach --json``); a surface
     with a run dir that folds events alone reads every non-``session.end`` state
     as "running" and disagrees with the hub -- parked/starting/created/stale/
     waiting each shipped a real surface-disagreement bug before this existed.
+
+    A started session is live iff its worker is: the pid is written before
+    session.start, so no pid file means the worker cleared it on the way out.
+    Log silence used to stand in for this, and inverted the evidence -- a
+    `kill -9` LEAVES the pid file and read "stale" at once, while an abnormal
+    exit through the finally (SIGPIPE from `run ... | head`) cleared it and
+    read "running" for the whole 600s window.
     """
     if facts.finished:
         return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
     if not facts.started:
         return _unstarted_status(session_dir)
-    if _running_is_stale(session_dir, stale_after_s):
+    if not worker_is_alive(session_dir):
         return "stale", ""
     if facts.operator_blocked:
         return "waiting", "needs answer"
@@ -251,16 +253,6 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
         if read_manifest(session_dir).parked_task:
             return PARKED_STATUS
     return "created", ""
-
-
-def _running_is_stale(session_dir: Path, stale_after_s: float) -> bool:
-    """Probe the worker pid when the run recorded one: a killed run reads
-    "stale" at once (not after the silence window), and a live worker blocked
-    in a long provider call stays "running" however quiet the log. Runs
-    without a pid record keep the log-silence fallback."""
-    if read_worker_pid(session_dir) is not None:
-        return not worker_is_alive(session_dir)
-    return (time.time() - session_mtime(session_dir)) > stale_after_s
 
 
 # Status words for a run that reached terminal WITHOUT its own session.end: the
@@ -285,7 +277,7 @@ def died_without_end(status: str) -> bool:
 LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
-def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
+def session_is_live(session_dir: Path) -> bool:
     """Whether the operator can still act on this session: THE affordance question,
     "will anything read what I write", not ``worker_is_alive``'s "is a pid
     running" (a parked run resumes; a dead worker's buttons reach nobody).
@@ -295,10 +287,7 @@ def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) 
     """
     logs = session_dir / LOGS_NAME
     facts = scan_session_log(logs).status_facts() if logs.is_file() else StatusFacts()
-    return (
-        status_for_session_dir(session_dir, facts, stale_after_s=stale_after_s)[0]
-        in LIVE_STATUS_WORDS
-    )
+    return status_for_session_dir(session_dir, facts)[0] in LIVE_STATUS_WORDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -473,9 +462,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     )
 
 
-def summarize_session_dir(
-    session_dir: Path, *, stale_after_s: float = STALE_AFTER_S
-) -> SessionSummary:
+def summarize_session_dir(session_dir: Path) -> SessionSummary:
     """One listing row from ``logs.jsonl`` + the manifest. Replaced the
     near-duplicate scanners in the TUI hub and the web hub that badged a
     provider_error death as a neutral "done". An "ask" run's task is replaced by
@@ -498,9 +485,7 @@ def summarize_session_dir(
             manifest = read_manifest(session_dir)
             mode = manifest.mode
             task = manifest.user_task or "(no logs)"
-    word, reason = status_for_session_dir(
-        session_dir, scan.status_facts(), stale_after_s=stale_after_s
-    )
+    word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")

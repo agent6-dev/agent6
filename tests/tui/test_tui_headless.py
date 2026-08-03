@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -225,6 +226,9 @@ def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
 
 
 def test_render_and_modals(tmp_path: Path) -> None:
+    # The app suppresses live affordances for a session whose worker is gone;
+    # these drive a LIVE run, so its pid belongs on disk as it would be.
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -540,6 +544,9 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
     """`agent6 resume` appends a new session whose prompt ids restart at
     approval-1; a dashboard held across the resume must pop the new session's
     modal, not swallow it as already seen."""
+    # The app suppresses live affordances for a session whose worker is gone;
+    # these drive a LIVE run, so its pid belongs on disk as it would be.
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -1113,6 +1120,9 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
+    # "live-but-silent" is the whole subject: a run with no worker.pid is one
+    # whose worker exited, and a dead run must NOT show a ticking heartbeat.
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     import re
 

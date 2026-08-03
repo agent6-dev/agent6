@@ -162,13 +162,14 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # subprocess appends its own role.*_delta / tool.* events to the same file.
     events_log = scratch / LOGS_NAME
     events = EventSink(events_log)
-    events.emit("session.start", user_task=task, mode="machine")
     # Liveness marker, mirroring machine run: the draft dir is watchable (the
-    # hub lists it, the SSE endpoints stream it), and without a pid a draft that
-    # died read "running" until the 10-minute log-silence window expired, with
-    # its stream held open the whole time. A terminal draft has its own session.end,
-    # which the status decision reads first, so the marker needs no clearing.
+    # hub lists it, the SSE endpoints stream it). BEFORE session.start, because
+    # the status fold reads a started session with no pid as one whose worker
+    # exited; emitting first opens a window where a live draft reads dead.
+    # A terminal draft has its own session.end, which the status decision reads
+    # first, so the marker needs no clearing.
     write_worker_pid(scratch, os.getpid())
+    events.emit("session.start", user_task=task, mode="machine")
     # Authoring can take minutes with nothing on this terminal; say where the
     # live reasoning streams so the operator can follow instead of wondering.
     reporter.err(

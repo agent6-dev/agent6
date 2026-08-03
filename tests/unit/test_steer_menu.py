@@ -54,9 +54,13 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     """Info commands print and re-prompt; action commands return the canonical
     steer values; free text passes through as the instruction."""
     import json
+    import os
 
     from agent6.ui.cli._steer_menu import pause_menu
 
+    # The menu IS Ctrl-C on a live attach, so the worker is alive: without its
+    # pid on disk the status line reads the run as one that exited.
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text(
         "".join(
             json.dumps(e) + "\n"
@@ -130,10 +134,13 @@ def test_pause_menu_prefixes_and_word_rule(
     with spaces is always a steering instruction (no quoting needed)."""
     import json
 
+    # A run mid-pause has session.start AND a live worker.pid on disk (the menu
+    # is Ctrl-C on a live attach), which is what reads "running".
+    import os
+
     from agent6.ui.cli._steer_menu import pause_menu
 
-    # A run mid-pause always has session.start on disk (the menu is Ctrl-C on a
-    # live attach); a fresh log mtime reads "running".
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",

@@ -95,11 +95,17 @@ def test_format_compare_headline_and_rationale() -> None:
 
 
 def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, object]]) -> Path:
+    """A session dir as one really looks on disk: a started session has a LIVE
+    worker.pid, because the worker writes it before emitting its start event.
+    Tests that model a death overwrite or unlink it."""
     import json
+    import os
 
     rd = base / "sessions" / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    if any(e.get("type") in ("session.start", "loop.resume.start") for e in events):
+        (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     return rd
 
 
@@ -193,13 +199,16 @@ def test_summary_resume_unfinishes(tmp_path: Path) -> None:
             {"type": "loop.resume.start", "iteration": 2},
         ],
     )
-    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd).status == "running"
 
 
 def test_summary_running_and_stale(tmp_path: Path) -> None:
+    """Liveness is the worker, not log silence: the pid file present-and-live
+    is the whole difference between "running" and "stale"."""
     rd = _write_run(tmp_path, "runs", "r2", [{"type": "session.start", "mode": "plan"}])
-    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
-    assert summarize_session_dir(rd, stale_after_s=0.0).status == "stale"
+    assert summarize_session_dir(rd).status == "running"
+    (rd / "worker.pid").unlink()  # the worker's finally cleared it on the way out
+    assert summarize_session_dir(rd).status == "stale"
 
 
 def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
@@ -215,12 +224,12 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
             {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
         ],
     )
-    s = summarize_session_dir(rd, stale_after_s=10_000_000)
+    s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("waiting", "needs answer")
     # Once answered, the run is running again (the approver appends the answer).
     with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "approval.answer", "id": "a1", "approved": true}\n')
-    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd).status == "running"
 
 
 def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
@@ -228,17 +237,17 @@ def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
     # read "running" for the whole silence window; the pid probe settles it now.
     rd = _write_run(tmp_path, "runs", "r3", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max: never alive
-    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "stale"
+    assert summarize_session_dir(rd).status == "stale"
 
 
-def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Path) -> None:
+def test_summary_live_worker_with_a_silent_log_stays_running(tmp_path: Path) -> None:
     # The converse: a live worker blocked in a long provider call emits no
-    # events, but it is not stale -- the pid probe wins over log silence.
+    # events for minutes, and must not read stale for it.
     import os
 
     rd = _write_run(tmp_path, "runs", "r4", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert summarize_session_dir(rd, stale_after_s=0.0).status == "running"
+    assert summarize_session_dir(rd).status == "running"
 
 
 def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
@@ -396,7 +405,7 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
         json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
-    s = summarize_session_dir(rd, stale_after_s=0.0)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
 
 
@@ -409,7 +418,7 @@ def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> N
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    assert summarize_session_dir(rd, stale_after_s=0.0).status == "created"
+    assert summarize_session_dir(rd).status == "created"
 
 
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
@@ -543,7 +552,7 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
             {"type": "role.call", "role": "worker", "model": "m"},
         ],
     )
-    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd).status == "running"
 
 
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
