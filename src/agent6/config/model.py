@@ -1010,8 +1010,10 @@ class MCPServerEntry(BaseModel):
 
     The server runs as a long-lived subprocess speaking JSON-RPC 2.0
     over stdio. Its ``command`` (argv) is operator-controlled and never
-    contains LLM output. The server runs OUTSIDE the agent6 jail with
-    the user's environment - same trust model as ``[notify].on_complete``.
+    contains LLM output. The server runs OUTSIDE the agent6 jail with the
+    agent6 process's FULL ``os.environ`` (provider API keys included; the
+    spawn passes no ``env``) -- NOT the notify hook's curated ``hook_env``,
+    so an MCP server sees keys a ``[notify]`` hook no longer does.
 
     The LLM sees each MCP-server tool as
     ``mcp__<name>__<server-side-tool-name>`` and can call it through

@@ -20,11 +20,13 @@ Threat model
 ============
 
 Each MCP server runs as the *operator's* user, OUTSIDE the agent6 jail,
-with whatever environment the operator's shell has. The argv comes
-exclusively from your config (``[[mcp.servers]] command = [...]``);
-the LLM cannot influence it. This is the same trust model as the
-``[notify].on_complete`` hook: operator-controlled argv, full user
-authority, no sandboxing.
+inheriting the agent6 process's FULL ``os.environ`` -- provider API keys
+included (the spawn passes no ``env``). The argv comes exclusively from
+your config (``[[mcp.servers]] command = [...]``); the LLM cannot
+influence it: operator-controlled argv, full user authority, no
+sandboxing. (The ``[notify]`` hook is NARROWER -- it runs under a curated
+``hook_env`` -- so this is not that trust model; an MCP server sees the
+keys a notify hook no longer does.)
 
 What the LLM *can* influence is the *arguments* to ``tools/call`` once
 a server is connected. The MCP server is responsible for validating
