@@ -1640,3 +1640,46 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
     with pytest.raises(ToolDenied):
         d.dispatch("run_verify_command", {})
     assert asked and asked[0].startswith("Allow run_verify_command: true")
+
+
+def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tool symlink must not drag agent6's private dirs into the jail.
+
+    `operator_tool_paths` mounts `real.parent` for every symlink in a bin dir.
+    A symlink resolving into the config dir mounted `secrets.toml` (provider API
+    keys) read-only into the jail; one into the state dir mounted notes,
+    memories and transcripts -- against the invariant docs/security.md states.
+    Not model-reachable (a jailed `ln -s` into a bin dir is refused), but the
+    invariant should hold by construction, not by luck of directory layout.
+    """
+    from agent6.sandbox.jail import operator_tool_paths
+
+    home = tmp_path / "home"
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    # The authoritative overrides (conftest sets these too, so XDG_* is ignored).
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(home / ".config" / "agent6"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(home / ".local" / "state" / "agent6"))
+
+    private = {
+        "cfg": home / ".config" / "agent6",
+        "state": home / ".local" / "state" / "agent6" / "repo-1",
+        "ordinary": home / "tools" / "bin",  # the control: this MUST still mount
+    }
+    for name, d in private.items():
+        d.mkdir(parents=True)
+        exe = d / f"{name}-tool"
+        exe.write_text("#!/bin/sh\n", encoding="utf-8")
+        exe.chmod(0o755)
+        (bin_dir / f"link-{name}").symlink_to(exe)
+
+    _, mounts = operator_tool_paths()
+
+    assert private["cfg"] not in mounts, "a symlink mounted the dir holding secrets.toml"
+    assert private["state"] not in mounts, "a symlink mounted the per-repo state dir"
+    # The converse, so the fix cannot degrade into "mount nothing": an ordinary
+    # tool dir a symlink resolves into is still mounted.
+    assert private["ordinary"] in mounts, "a legitimate tool mount was dropped"

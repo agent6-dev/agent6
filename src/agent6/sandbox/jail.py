@@ -25,6 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
 from agent6.types import CommandResult, JailPolicy
 
 # --- operator tool reachability ----------------------------------------------
@@ -54,6 +55,20 @@ def _under_system_root(p: Path) -> bool:
     return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
 
 
+def _is_agent6_private(p: Path) -> bool:
+    """agent6's own config/state/data/cache dirs, which never belong in a jail
+    mount however a tool symlink resolves into them.
+
+    ``operator_tool_paths`` mounts ``real.parent`` for every symlink in a bin
+    dir, so one resolving into the config dir mounted ``secrets.toml`` -- the
+    provider API keys -- read-only into the jail, and one into the state dir
+    mounted notes, memories and transcripts. Denied by identity rather than by
+    inspecting what the file is. Read per call: the XDG vars are per-process.
+    """
+    private = (global_config_dir(), state_base(), data_dir(), cache_dir())
+    return any(p == d or p.is_relative_to(d) for d in private)
+
+
 def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     """Return (PATH string, real-location mount dirs) so operator-installed tools
     resolve in the jail. Recomputed per call so a tool the operator (or model)
@@ -75,7 +90,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
         if not d.is_dir():
             continue
         path_dirs.append(str(d))
-        if not _under_system_root(d):
+        if not _under_system_root(d) and not _is_agent6_private(d):
             mounts.add(d)  # real binaries in a non-system dir need the dir itself
         try:
             entries = list(d.iterdir())
@@ -88,7 +103,11 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
                 real = entry.resolve()
             except OSError:
                 continue
-            if real.is_file() and not _under_system_root(real):
+            if (
+                real.is_file()
+                and not _under_system_root(real)
+                and not _is_agent6_private(real.parent)
+            ):
                 mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
     # Interpreter toolchains a repo venv's python may symlink to: uv-managed
     # CPython lives under XDG data, not any bin dir. Without this mount the
