@@ -603,3 +603,25 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert not scan_run_log(log).operator_blocked  # answered by the same int id
+
+
+def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
+    """A run whose loop escaped with a fault records run.end reason=crashed, so
+    every surface calls it failed immediately. Without that record the dying
+    process still cleared worker.pid -- the only immediate liveness evidence --
+    and the fold fell back to the silence window, so `runs list`, `runs show`,
+    attach, the web hub and the TUI all showed a dead run as "running" for ten
+    minutes. (A SIGKILLed run leaves its pid file, which is why that case
+    always read stale at once.)"""
+    run_dir = tmp_path / "runs" / "gone"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "run.end", "reason": "crashed", "all_passed": False})
+        + "\n",
+        encoding="utf-8",
+    )
+    summary = summarize_run_dir(run_dir)
+    assert (summary.status, summary.reason) == ("failed", "crashed")
+    assert run_is_live(run_dir) is False

@@ -615,6 +615,21 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                         iterations=wf.iterations_reached,
                         all_passed=False,
                     )
+            except Exception:
+                # Any other escape (a broken stdout pipe from `| head`, an
+                # unexpected fault) also leaves the loop without a run.end,
+                # and the outer finally then clears worker.pid -- the only
+                # immediate liveness evidence -- so every surface read the
+                # dead run as "running" until the silence window expired.
+                # Record the end, then let the error surface as before.
+                with contextlib.suppress(EventWriteError):
+                    events.emit(
+                        "run.end",
+                        reason="crashed",
+                        iterations=wf.iterations_reached,
+                        all_passed=False,
+                    )
+                raise
         finally:
             steer_state.restore()
             if dispatcher is not None:

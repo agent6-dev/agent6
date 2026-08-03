@@ -34,6 +34,7 @@ RunReason = Literal[
     "loop_guard_killed",
     "interactive_stop",
     "interrupted",  # KeyboardInterrupt; emitted by the app layer, not the loop
+    "crashed",  # the loop escaped with a fault; also app-layer only
     "steer_abort",
     "detached",
     "prompt_revision_failed",
