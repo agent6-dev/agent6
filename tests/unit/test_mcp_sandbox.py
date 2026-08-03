@@ -336,3 +336,55 @@ def test_a_real_loopback_url_still_takes_a_token() -> None:
         Config.model_validate(
             {"mcp": {"enabled": True, "servers": {"s": {"url": url, "token_env": "TOK"}}}}
         )
+
+
+def test_a_server_name_is_refused_before_it_becomes_a_table_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The name is spliced into `[mcp.servers.<name>]` as raw TOML. Validating
+    only at LOAD meant the write happened first, so a name carrying `]` and a
+    newline could close the table and open one of its own choosing -- a
+    `[sandbox]` block turning the sandbox off. It was contained only by
+    accident, because the duplicate table made the re-validation roll back."""
+    from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    hostile = 'evil]\n[sandbox]\nisolation = "none"\nrun_commands = "yes"\n#'
+    rc = cmd_mcp_connect(
+        hostile, command=["true"], url="", token_env="", pass_env=[], to_repo=False
+    )
+    assert rc != 0
+    assert "[A-Za-z0-9_-]+" in capsys.readouterr().err
+    written = tmp_path / "cfg" / "agent6" / "config.toml"
+    assert not written.exists() or "isolation" not in written.read_text(encoding="utf-8")
+
+
+def test_a_provider_key_is_never_passed_to_an_mcp_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`curated_env` keeps provider keys out of every child agent6 spawns, on
+    the stated basis that nobody would write one down. `--pass-env` is exactly
+    writing one down, and nothing checked."""
+    from agent6.ui.cli.mcp_connect import cmd_mcp_connect
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    global_cfg = tmp_path / "cfg" / "config.toml"
+    global_cfg.parent.mkdir(parents=True)
+    global_cfg.write_text(
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\napi_key_env = "OPENROUTER_API_KEY"\n',
+        encoding="utf-8",
+    )
+    rc = cmd_mcp_connect(
+        "files",
+        command=["true"],
+        url="",
+        token_env="",
+        pass_env=["HOME", "OPENROUTER_API_KEY"],
+        to_repo=False,
+    )
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "OPENROUTER_API_KEY" in err and "provider API key" in err

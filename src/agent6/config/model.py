@@ -1062,6 +1062,28 @@ def _is_loopback(url: str) -> bool:
         return False
 
 
+def mcp_server_name_refusal(name: str) -> str:
+    """Why *name* cannot be an MCP server key, or "".
+
+    The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing recovers
+    the server by splitting on the FIRST ``__`` after the prefix, so the key
+    must be identifier-shaped and ``__``-free.
+
+    Shared with `agent6 mcp connect`, which must refuse BEFORE it writes: the
+    name becomes a TOML table header, and validating only at load meant a
+    name carrying `]` and a newline could close the table and open one of its
+    own choosing.
+    """
+    if not name or not all(c.isalnum() or c in "_-" for c in name):
+        return f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}"
+    if "__" in name:
+        return (
+            f"[mcp] server name must not contain '__' (it separates server"
+            f" from tool in mcp__<server>__<tool>): {name!r}"
+        )
+    return ""
+
+
 class MCPConfig(BaseModel):
     """``[mcp]`` section. Empty / absent / ``enabled = false`` means no
     MCP servers are spawned and the LLM sees zero ``mcp__*`` tools.
@@ -1079,17 +1101,10 @@ class MCPConfig(BaseModel):
     @field_validator("servers")
     @classmethod
     def _valid_server_names(cls, v: dict[str, MCPServerEntry]) -> dict[str, MCPServerEntry]:
-        # The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing
-        # recovers the server by splitting on the FIRST ``__`` after the
-        # prefix, so the key must be identifier-shaped and ``__``-free.
         for name in v:
-            if not name or not all(c.isalnum() or c in "_-" for c in name):
-                raise ValueError(f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}")
-            if "__" in name:
-                raise ValueError(
-                    f"[mcp] server name must not contain '__' (it separates server"
-                    f" from tool in mcp__<server>__<tool>): {name!r}"
-                )
+            refusal = mcp_server_name_refusal(name)
+            if refusal:
+                raise ValueError(refusal)
         return v
 
 

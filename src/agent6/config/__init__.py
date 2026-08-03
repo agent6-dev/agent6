@@ -37,6 +37,7 @@ from agent6.config.model import (
     WorkflowConfig,
     is_loopback_host,
     load_config,
+    mcp_server_name_refusal,
     validate_base_url,
     validate_config,
 )
@@ -71,6 +72,7 @@ __all__ = [
     "WorkflowConfig",
     "is_loopback_host",
     "load_config",
+    "mcp_server_name_refusal",
     "validate_base_url",
     "validate_config",
 ]

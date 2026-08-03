@@ -17,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.config import ConfigError
+from agent6.config import Config, ConfigError, mcp_server_name_refusal
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
@@ -47,7 +47,9 @@ def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
         server.close()
 
 
-def _refuse_bad_flags(*, command: list[str], url: str, token_env: str, pass_env: list[str]) -> str:
+def _refuse_bad_flags(
+    *, name: str, command: list[str], url: str, token_env: str, pass_env: list[str], cfg: Config
+) -> str:
     """Why this invocation cannot be acted on, or "". Each transport owns one
     env flag, so the wrong pairing is a mistake worth naming rather than a
     setting that silently does nothing."""
@@ -62,6 +64,21 @@ def _refuse_bad_flags(*, command: list[str], url: str, token_env: str, pass_env:
         return "--token-env is for --url servers; a spawned one uses --pass-env"
     if pass_env and url:
         return "--pass-env is for spawned servers; a --url one uses --token-env"
+    name_refusal = mcp_server_name_refusal(name)
+    if name_refusal:
+        # BEFORE the write: the name becomes a TOML table header.
+        return name_refusal
+    keys = {str(getattr(e, "api_key_env", "")) for e in cfg.providers.values()} - {""}
+    leaked = sorted(keys.intersection(pass_env))
+    if leaked:
+        # An MCP server is third-party code running as the operator. A provider
+        # key is the one thing agent6 keeps out of every child it spawns, and
+        # `--pass-env` is the only way to hand one over by name.
+        return (
+            f"{', '.join(leaked)} holds a provider API key; agent6 does not pass one"
+            " to an MCP server.\n"
+            "  If the server needs its own credential, give it a different variable."
+        )
     return ""
 
 
@@ -81,7 +98,10 @@ def cmd_mcp_connect(
     to_repo: bool,
 ) -> int:
     """Prove the server answers, then write it into config. Returns an exit code."""
-    refusal = _refuse_bad_flags(command=command, url=url, token_env=token_env, pass_env=pass_env)
+    cfg = load_effective(Path.cwd()).config
+    refusal = _refuse_bad_flags(
+        name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
+    )
     if refusal:
         print(f"ERROR: {refusal}", file=sys.stderr)
         return 2
