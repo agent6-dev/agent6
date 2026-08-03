@@ -815,10 +815,13 @@ function paintPrompts(cards, s) {
 }
 
 function paintRun(cards, s) {
-  if (!cards._readOnly) paintPrompts(cards, s);
-  // Stop/compact only mean something on a live run; a finished run ignores the
-  // bridge markers. The composer flips to resume mode instead of disabling.
+  // Stop/compact/answers only mean something on a live run; a finished run
+  // ignores the bridge markers. The composer flips to resume mode instead of
+  // disabling, and a dead run's prompt boxes reconcile away like the machine
+  // view's: the server refuses the POST, so live-looking Approve/Deny beside
+  // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
+  if (!cards._readOnly) paintPrompts(cards, isDead ? {} : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
   // Merge needs a run branch: an ask (or a branch_per_run=false run) has none,
   // and a merged branch is gone, so clicking could only produce a git error.
