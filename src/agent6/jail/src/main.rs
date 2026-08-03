@@ -1150,12 +1150,22 @@ fn apply_seccomp() -> io::Result<()> {
     // filter exists to stop. libc 0.2.x does not define SYS_fchmodat2 for every
     // target, so name it -- 452 on both x86_64 and aarch64.
     const SYS_FCHMODAT2: i64 = 452;
-    for (syscall, mode_arg) in [
-        (libc::SYS_chmod, 1_u8),
+    // arm64 has no bare chmod(2), only fchmod and the *at forms -- the same
+    // shape as the mknod pair below, whose guard this one was missing.
+    #[cfg(target_arch = "aarch64")]
+    let chmod_syscalls: [(i64, u8); 3] = [
         (libc::SYS_fchmod, 1),
         (libc::SYS_fchmodat, 2),
         (SYS_FCHMODAT2, 2),
-    ] {
+    ];
+    #[cfg(not(target_arch = "aarch64"))]
+    let chmod_syscalls: [(i64, u8); 4] = [
+        (libc::SYS_chmod, 1),
+        (libc::SYS_fchmod, 1),
+        (libc::SYS_fchmodat, 2),
+        (SYS_FCHMODAT2, 2),
+    ];
+    for (syscall, mode_arg) in chmod_syscalls {
         let mut per_bit = Vec::new();
         for bit in [0o4000_u64, 0o2000] {
             per_bit.push(
