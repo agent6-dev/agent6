@@ -48,6 +48,14 @@ def event_epoch(value: object) -> float | None:
     return None
 
 
+def tool_result_ok(value: Any) -> bool:
+    """The persisted `tool.result.ok` flag, tolerating the historical
+    stringified form: "True" is ok, "False" (and everything else) is not. THE
+    one coercion both folds use, so a run-state surface and the conversation
+    can never disagree on a tool's verdict."""
+    return value in (True, "True")
+
+
 def readable_summary(value: Any) -> str:
     """A tool result's `summary` should be a string; a malformed dict/list value
     renders as neutral JSON, not the single-quoted Python repr `str()` produces
@@ -350,7 +358,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "tool.result":
             return ToolResult(
                 name=str(raw.get("name", "")),
-                ok=bool(raw.get("ok", False)),
+                ok=tool_result_ok(raw.get("ok")),
                 summary=readable_summary(raw.get("summary", "")),
                 call_id=_call_id(raw),
             )

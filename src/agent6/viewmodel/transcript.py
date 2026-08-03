@@ -20,6 +20,8 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from agent6.viewmodel.events import tool_result_ok
+
 # ANSI/CSI escape sequences (colored tool output). Stripped from fold previews:
 # the fold is plain data consumed by non-terminal surfaces (web, saved
 # transcripts, TUI widgets) that render escapes as literal garbage; the live CLI
@@ -283,7 +285,7 @@ class TranscriptFold:
             ok, detail = self._verify
             self._verify = None
         else:
-            ok = event.get("ok") in (True, "True")
+            ok = tool_result_ok(event.get("ok"))
             detail = str(event.get("summary", "")).strip()
         # A failed tool shows why (stderr, else stdout). run_command succeeds
         # silently otherwise, so show a short stdout tail on success too: the

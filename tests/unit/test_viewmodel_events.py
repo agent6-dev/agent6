@@ -37,8 +37,12 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
     assert ev.parse_event({"type": "role.call"}) == ev.RoleCall(role="", model="", provider="")
     # _as_int swallows a non-numeric token to 0 (role.result context math).
     assert ev.parse_event({"type": "role.result", "tokens_in": "nope"}).tokens_in == 0  # type: ignore[union-attr]
-    # ok is bool()-coerced (a legacy string "True" folds truthy).
+    # ok tolerates the legacy stringified booleans: "True" folds ok, "False"
+    # folds FAILED. bool()-coercion read any non-empty string -- "False"
+    # included -- as success, so a historical failed tool rendered green in the
+    # RunState surfaces while the conversation fold showed it red.
     assert ev.parse_event({"type": "tool.result", "name": "t", "ok": "True"}).ok is True  # type: ignore[union-attr]
+    assert ev.parse_event({"type": "tool.result", "name": "t", "ok": "False"}).ok is False  # type: ignore[union-attr]
     # A non-string cursor drops to None; nodes stays raw for the tree walker.
     gu = ev.parse_event({"type": "graph.update", "nodes": {"a": {}}, "cursor": 123})
     assert isinstance(gu, ev.GraphUpdate) and gu.cursor is None and gu.nodes == {"a": {}}
