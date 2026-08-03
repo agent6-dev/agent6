@@ -41,6 +41,10 @@ table below), so a repo needs nothing repo-specific to run.
   file is impossible; the worst case is one lost update.
 - `agent6 config fill`: materialize every resolved value (defaults plus
   global, never the repo layer) into the global config file.
+- A config file that is a **symlink** (dotfiles) stays one: edits follow the
+  link and rewrite its target, provided that target is yours. A symlink to a
+  file another user owns is refused, naming both paths, so `sudo agent6 config
+  set` cannot be redirected through it.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values left by a
   schema change) from the global and repo config, printing each and whether it was
   global or repo. Use `--machine-file FILE` to repair a machine `[config]` overlay

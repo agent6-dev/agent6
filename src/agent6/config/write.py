@@ -46,13 +46,40 @@ from agent6.config.model import (
     Deployment,
     ProviderEntry,
 )
-from agent6.errors import read_operator_file
-from agent6.paths import chown_to_real_user, global_config_path, mkdir_for_real_user
+from agent6.errors import OperatorError, read_operator_file
+from agent6.paths import (
+    chown_to_real_user,
+    effective_user,
+    global_config_path,
+    mkdir_for_real_user,
+)
 from agent6.portable import atomic_write, locked_file
 
 
 def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
-    return repo_config_path_for(repo_root) if to_repo else global_config_path()
+    """The config file to edit, symlinks resolved.
+
+    ``atomic_write`` publishes by rename, which replaces the NAME: a
+    dotfiles-managed ``config.toml`` symlinked into a repo would stop being
+    what agent6 reads after one ``config set``. The link is followed only to a
+    target the REAL operator owns, so ``sudo agent6 config set`` cannot be
+    redirected through it into a root-owned file.
+    """
+    target = repo_config_path_for(repo_root) if to_repo else global_config_path()
+    if not target.is_symlink():
+        return target
+    resolved = target.resolve()
+    owner = effective_user().uid
+    try:
+        target_uid = resolved.stat().st_uid
+    except OSError as exc:
+        raise OperatorError(f"config symlink {target} -> {resolved} is unreadable: {exc}") from exc
+    if target_uid != owner:
+        raise OperatorError(
+            f"config {target} is a symlink to {resolved}, owned by uid {target_uid},"
+            f" not you (uid {owner}); agent6 will not write through it"
+        )
+    return resolved
 
 
 def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
