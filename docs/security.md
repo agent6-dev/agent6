@@ -462,8 +462,9 @@ effective profile decides what's enforceable. "offline" = no egress.
 default, degrade or refuse"): on `strict` it is `offline` above; on `hardened`
 (no netns) it cannot be offline, so a jailed child inherits the agent process's
 network (`agent_network`-scoped) and a once-per-run warning says so. `block` is
-the ENFORCE form — it refuses on `hardened`/`none` rather than run
-under-confined.
+the ENFORCE form — it refuses on `hardened` rather than run under-confined. (On
+`none` nothing is enforced or refused: it is the explicit unsandboxed opt-out
+with its own loud warning, below.)
 
 **Refusals** (fail-closed):
 

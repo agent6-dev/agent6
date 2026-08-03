@@ -80,7 +80,7 @@ _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     # "disable the sandbox" one keystroke away. Type it explicitly to set it.
     "sandbox.profile": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
-    "sandbox.tool_network": ("block", "only_explicit_states", "allow"),
+    "sandbox.tool_network": ("auto", "block", "only_explicit_states", "allow"),
     "sandbox.run_commands": ("yes", "no", "ask"),
     "git.merge_strategy": ("squash", "merge", "ff"),
     "review.trigger": ("off", "on_verify_fail", "before_finish", "periodic"),

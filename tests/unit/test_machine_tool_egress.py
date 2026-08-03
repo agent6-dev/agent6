@@ -454,6 +454,9 @@ def test_network_refusal_hardened_allow_tool_names_runnable_fix(tmp_path: Path) 
     assert "sandbox.tool_network = 'allow'" in refusal
     assert "sandbox.agent_network = 'open'" in refusal
     assert "only_explicit_states" not in refusal
+    # The config here is the DEFAULT (auto), so the refusal must name 'auto', not
+    # a hardcoded 'block' -- misstating the operator's config on a refusal surface.
+    assert "'auto'" in refusal and "= 'block'" not in refusal
 
 
 def test_suggested_network_fix_strict(tmp_path: Path) -> None:
