@@ -22,6 +22,7 @@ depends_on = []
 # (see app/__init__.py: RunFrontend, LaneRuntime).
 path = "agent6.app"
 depends_on = [
+  "agent6.child_env",
   "agent6",
   "agent6.budget",
   "agent6.config",
@@ -224,7 +225,7 @@ path = "agent6.tools"
 # effective command policy (config + the operator's session choice + away-mode)
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.runs.layout", "agent6.runs.manifest", "agent6.runs.ipc"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.runs.layout", "agent6.runs.manifest", "agent6.runs.ipc"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
@@ -243,6 +244,13 @@ depends_on = ["agent6.config.model"]
 
 [[modules]]
 path = "agent6.config.model"
+depends_on = []
+
+[[modules]]
+# The environment a process spawned OUTSIDE the jail inherits. A leaf because
+# its two callers sit on opposite sides of the layering: the operator's notify
+# hooks (app) and the MCP servers (tools). Pure stdlib.
+path = "agent6.child_env"
 depends_on = []
 
 [[modules]]

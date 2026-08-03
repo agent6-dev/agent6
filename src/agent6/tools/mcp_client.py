@@ -51,6 +51,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from agent6.child_env import curated_env
+
 # MCP protocol version we speak. The spec is versioned by date string;
 # we negotiate this in `initialize` and accept whatever the server says
 # back (we don't validate compatibility beyond "we got a result").
@@ -100,6 +102,20 @@ class MCPToolDescriptor:
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
+@dataclass(frozen=True, slots=True)
+class MCPServerSpec:
+    """What starting one MCP server needs. The config's shape, at the boundary:
+    a positional tuple grew a field per feature and every caller had to count."""
+
+    name: str
+    command: tuple[str, ...]
+    startup_timeout_s: float
+    call_timeout_s: float
+    # Environment variables this server needs BY NAME. Everything else comes
+    # from the curated base; naming each one is what keeps a provider key out.
+    pass_env: tuple[str, ...] = ()
+
+
 @dataclass
 class _MCPServer:
     """One running MCP server. Owns its subprocess + an id counter +
@@ -110,6 +126,7 @@ class _MCPServer:
     command: tuple[str, ...]
     startup_timeout_s: float
     call_timeout_s: float
+    pass_env: tuple[str, ...] = ()
     _proc: subprocess.Popen[bytes] | None = None
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -141,6 +158,11 @@ class _MCPServer:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 bufsize=0,
+                # A curated env, not this process's: the full one carries the
+                # provider API keys, and an MCP server is third-party code that
+                # may log or forward what it was given. A server that needs a
+                # token names it in `pass_env`.
+                env=curated_env(passthrough=self.pass_env),
                 # Its own session: a terminal Ctrl-C signals the foreground
                 # process group, and an MCP server that dies with it breaks its
                 # tools for the rest of the run.
@@ -395,19 +417,21 @@ class MCPManager:
     @classmethod
     def start(
         cls,
-        configs: Iterable[tuple[str, tuple[str, ...], float, float]],
+        configs: Iterable[MCPServerSpec],
         *,
         logger: Callable[[str], None] | None = None,
     ) -> MCPManager:
         mgr = cls()
-        for name, command, startup_s, call_s in configs:
+        for spec in configs:
+            name = spec.name
             if name in mgr._servers:
                 raise MCPError(f"duplicate MCP server name {name!r}")
             srv = _MCPServer(
                 name=name,
-                command=command,
-                startup_timeout_s=startup_s,
-                call_timeout_s=call_s,
+                command=spec.command,
+                startup_timeout_s=spec.startup_timeout_s,
+                call_timeout_s=spec.call_timeout_s,
+                pass_env=spec.pass_env,
             )
             try:
                 srv.start()

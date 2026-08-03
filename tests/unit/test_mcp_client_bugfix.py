@@ -21,6 +21,7 @@ from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
     MCPError,
     MCPManager,
+    MCPServerSpec,
 )
 
 
@@ -113,7 +114,16 @@ def _server_request_collision_argv() -> tuple[str, ...]:
 
 
 def test_iserror_tool_result_surfaces_as_error() -> None:
-    mgr = MCPManager.start([("fake", _iserror_server_argv(), 5.0, 5.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_iserror_server_argv(),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ]
+    )
     try:
         with pytest.raises(MCPError) as ei:
             mgr.call(f"{MCP_TOOL_PREFIX}fake__boom", {})
@@ -123,7 +133,16 @@ def test_iserror_tool_result_surfaces_as_error() -> None:
 
 
 def test_server_initiated_request_not_treated_as_response() -> None:
-    mgr = MCPManager.start([("fake", _server_request_collision_argv(), 5.0, 5.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_server_request_collision_argv(),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ]
+    )
     try:
         # Pre-fix: the colliding server request (id=N, method=roots/list) was
         # popped as the response, failing the non-dict-result check. Post-fix:
@@ -179,7 +198,16 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
     provider tools array every turn; both are dropped at registration (first
     occurrence wins) like the invalid-char skip, so one bad entry cannot take
     the run down."""
-    mgr = MCPManager.start([("fake", _poison_tools_server_argv(), 5.0, 5.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_poison_tools_server_argv(),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ]
+    )
     try:
         descs = mgr.descriptors()
         assert [d.qualified_name for d in descs] == [f"{MCP_TOOL_PREFIX}fake__echo"]
@@ -233,7 +261,16 @@ def test_timed_out_requests_leave_no_pending_residue() -> None:
     the reader retained ANY response-shaped message forever once no _request
     was left to pop it, growing _pending (up to 8 MiB per entry) without
     bound against a slow or runaway server."""
-    mgr = MCPManager.start([("fake", _slow_call_server_argv(), 5.0, 0.15)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_slow_call_server_argv(),
+                startup_timeout_s=5.0,
+                call_timeout_s=0.15,
+            )
+        ]
+    )
     try:
         srv = mgr._servers["fake"]  # pyright: ignore[reportPrivateUsage]
         for _ in range(2):

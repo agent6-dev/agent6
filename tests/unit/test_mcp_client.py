@@ -9,6 +9,7 @@ dependency.
 
 from __future__ import annotations
 
+import json
 import sys
 import textwrap
 import threading
@@ -19,6 +20,7 @@ from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
     MCPError,
     MCPManager,
+    MCPServerSpec,
 )
 
 
@@ -99,7 +101,11 @@ def _fake_server_argv(
 
 def test_manager_starts_and_discovers_tools() -> None:
     mgr = MCPManager.start(
-        [("fake", _fake_server_argv(), 5.0, 5.0)],
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+        ],
     )
     try:
         descs = mgr.descriptors()
@@ -117,7 +123,16 @@ def test_manager_starts_and_discovers_tools() -> None:
 def test_manager_skips_tools_with_invalid_names() -> None:
     # A server-advertised tool whose name isn't [A-Za-z0-9_-] can't form a valid
     # provider tool name; it must be skipped, not poison the whole tools array.
-    mgr = MCPManager.start([("fake", _fake_server_argv(bad_tool=True), 5.0, 5.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_fake_server_argv(bad_tool=True),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ]
+    )
     try:
         names = sorted(d.qualified_name for d in mgr.descriptors())
         assert names == [f"{MCP_TOOL_PREFIX}fake__echo", f"{MCP_TOOL_PREFIX}fake__shout"]
@@ -127,7 +142,11 @@ def test_manager_skips_tools_with_invalid_names() -> None:
 
 def test_manager_routes_calls_to_right_server_and_tool() -> None:
     mgr = MCPManager.start(
-        [("fake", _fake_server_argv(), 5.0, 5.0)],
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+        ],
     )
     try:
         echo = mgr.call(f"{MCP_TOOL_PREFIX}fake__echo", {"text": "hi"})
@@ -159,7 +178,14 @@ def test_manager_rejects_unknown_server() -> None:
 def test_manager_logs_and_skips_unstartable_server() -> None:
     logs: list[str] = []
     mgr = MCPManager.start(
-        [("bogus", ("/this/binary/does/not/exist/agent6-test", "x"), 1.0, 1.0)],
+        [
+            MCPServerSpec(
+                name="bogus",
+                command=("/this/binary/does/not/exist/agent6-test", "x"),
+                startup_timeout_s=1.0,
+                call_timeout_s=1.0,
+            )
+        ],
         logger=logs.append,
     )
     try:
@@ -176,7 +202,14 @@ def test_manager_times_out_on_hanging_server() -> None:
     # design is "one bad server doesn't take the run down".
     logs: list[str] = []
     mgr = MCPManager.start(
-        [("hang", _fake_server_argv(hang=True), 0.5, 0.5)],
+        [
+            MCPServerSpec(
+                name="hang",
+                command=_fake_server_argv(hang=True),
+                startup_timeout_s=0.5,
+                call_timeout_s=0.5,
+            )
+        ],
         logger=logs.append,
     )
     try:
@@ -187,7 +220,13 @@ def test_manager_times_out_on_hanging_server() -> None:
 
 
 def test_manager_close_is_idempotent() -> None:
-    mgr = MCPManager.start([("fake", _fake_server_argv(), 5.0, 5.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+        ]
+    )
     mgr.close()
     mgr.close()  # must not raise
 
@@ -198,7 +237,16 @@ def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
     pipe writes larger than PIPE_BUF interleave across unlocked writers,
     corrupting the JSON-RPC framing -- the server read malformed JSON and
     died, failing every in-flight call."""
-    mgr = MCPManager.start([("fake", _fake_server_argv(), 10.0, 30.0)])
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_fake_server_argv(),
+                startup_timeout_s=10.0,
+                call_timeout_s=30.0,
+            )
+        ]
+    )
     try:
         payloads = {i: f"p{i}-" + "x" * 300_000 for i in range(8)}
         results: dict[int, str] = {}
@@ -220,3 +268,41 @@ def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
         assert results == payloads
     finally:
         mgr.close()
+
+
+def test_a_server_is_not_handed_the_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The spawn passed no `env`, so a server inherited the agent's FULL
+    environment -- including the keys resolved via `[providers.*].api_key_env`.
+    An MCP server is third-party code that may log or forward what it is given.
+    Proved by asking the server itself what it can see."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-DECOY")
+    monkeypatch.setenv("MCP_PROBE_TOKEN", "named-and-wanted")
+    script = (
+        "import json,os,sys\n"
+        "def w(o): sys.stdout.write(json.dumps(o)+chr(10)); sys.stdout.flush()\n"
+        "for line in sys.stdin:\n"
+        "    m=json.loads(line)\n"
+        "    if m.get('method')=='initialize':\n"
+        "        w({'jsonrpc':'2.0','id':m['id'],'result':{'protocolVersion':'2024-11-05',"
+        "'capabilities':{},'serverInfo':{'name':'p','version':'1'}}})\n"
+        "    elif m.get('method')=='tools/list':\n"
+        "        seen=sorted(k for k in os.environ if 'API_KEY' in k or k=='MCP_PROBE_TOKEN')\n"
+        "        w({'jsonrpc':'2.0','id':m['id'],'result':{'tools':[{'name':'x',"
+        "'description':json.dumps(seen),'inputSchema':{'type':'object'}}]}})\n"
+    )
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="probe",
+                command=(sys.executable, "-c", script),
+                startup_timeout_s=10.0,
+                call_timeout_s=10.0,
+                pass_env=("MCP_PROBE_TOKEN",),
+            )
+        ]
+    )
+    try:
+        seen = json.loads(mgr.descriptors()[0].description)
+    finally:
+        mgr.close()
+    assert seen == ["MCP_PROBE_TOKEN"], "a server sees only what it named"

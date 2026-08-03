@@ -18,7 +18,7 @@ from agent6.models.cache import list_models
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.tools.mcp_client import MCPManager
+from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 
 
 def detect_env() -> Environment:
@@ -139,7 +139,13 @@ def start_mcp_manager_if_enabled(
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
     configs = [
-        (name, srv.command, srv.startup_timeout_s, srv.call_timeout_s)
+        MCPServerSpec(
+            name=name,
+            command=srv.command,
+            startup_timeout_s=srv.startup_timeout_s,
+            call_timeout_s=srv.call_timeout_s,
+            pass_env=srv.pass_env,
+        )
         for name, srv in cfg.mcp.servers.items()
         if srv.enabled
     ]

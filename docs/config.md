@@ -509,7 +509,9 @@ Spawn Model Context Protocol servers at run start; their tools appear to the LLM
 as `mcp__<name>__<tool>`. Each server runs as your user, outside the jail
 (the `command` is operator-controlled, never LLM-influenced); the LLM *can*
 influence the arguments it passes, so audit each server like a `run_command`
-allow-list.
+allow-list. It gets the same curated environment a `[notify]` hook gets, plus
+whatever `pass_env` names -- never agent6's own, which carries your provider
+keys.
 
 Servers are a name-keyed map like `[providers.<name>]`: the table key is the
 tool prefix (`mcp__<name>__<tool>`), duplicates cannot exist, and a repo
@@ -520,6 +522,7 @@ overlay can flip one server without restating the rest.
 | `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |
 | `servers.<name>.command` | *(required)* | argv for the stdio JSON-RPC server. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
+| `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
 

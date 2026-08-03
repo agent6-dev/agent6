@@ -939,10 +939,10 @@ class MCPServerEntry(BaseModel):
 
     The server runs as a long-lived subprocess speaking JSON-RPC 2.0
     over stdio. Its ``command`` (argv) is operator-controlled and never
-    contains LLM output. The server runs OUTSIDE the agent6 jail with the
-    agent6 process's FULL ``os.environ`` (provider API keys included; the
-    spawn passes no ``env``) -- NOT the notify hook's curated ``hook_env``,
-    so an MCP server sees keys a ``[notify]`` hook does not (its env is curated).
+    contains LLM output. The server runs OUTSIDE the agent6 jail, with the
+    same curated environment a ``[notify]`` hook gets -- never the agent6
+    process's full ``os.environ``, which carries the provider API keys -- plus
+    whatever ``pass_env`` names.
 
     The LLM sees each MCP-server tool as
     ``mcp__<name>__<server-side-tool-name>`` and can call it through
@@ -958,6 +958,11 @@ class MCPServerEntry(BaseModel):
 
     command: tuple[str, ...] = Field(min_length=1)
     enabled: bool = True
+    # Environment variables this server needs, BY NAME (e.g. ["GITHUB_TOKEN"]).
+    # Everything else comes from the curated base agent6 gives any child it
+    # spawns outside the jail. Naming each one is the point: a provider key is
+    # never among them, because nobody would write it down.
+    pass_env: tuple[str, ...] = ()
     # Time budget for the initialize + tools/list handshake. If the
     # server doesn't respond in this window we log and skip it.
     startup_timeout_s: float = Field(gt=0.0, default=10.0)
