@@ -291,3 +291,25 @@ def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
         assert ran  # body ran despite the unopenable lock, no wedge, no raise
     finally:
         lock.chmod(0o600)
+
+
+def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fail-open contract is unchanged; the yielded bool exists so a
+    transaction that would restore a whole-file snapshot on failure can tell
+    a real serialized cycle from a fictional one (a stale root-owned .lock)."""
+    import agent6.portable as portable_mod
+
+    target = tmp_path / "c.toml"
+    with portable_mod.locked_file(target) as held:
+        assert held is True
+        with portable_mod.locked_file(target) as inner:
+            assert inner is True  # reentrant: the outer acquisition's truth
+
+    def _no_lock(_p: Path) -> int | None:
+        return None
+
+    monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
+    with portable_mod.locked_file(target) as held:
+        assert held is False
+        with portable_mod.locked_file(target) as inner:
+            assert inner is False

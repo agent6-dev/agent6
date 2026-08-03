@@ -100,8 +100,15 @@ def _acquire_lock(lock_path: Path) -> int | None:
 
 
 @contextlib.contextmanager
-def locked_file(target: Path) -> Generator[None]:
+def locked_file(target: Path) -> Generator[bool]:
     """Serialize read-modify-write cycles on *target* across processes.
+
+    Yields whether the lock is actually HELD. The fail-open contract below is
+    unchanged; the bool exists for the one caller class that must NOT act on
+    a fiction of serialization -- a transaction that would restore a
+    whole-file snapshot on failure can erase a concurrent writer's
+    just-validated update when the cycle never was serialized, so it degrades
+    to keep-and-warn instead (see ``config.layer._revalidate``).
 
     Blocks on a sibling ``<name>.lock`` file, NOT the target: atomic_write
     replaces the target's inode on publish, so a lock taken on the target
@@ -136,17 +143,17 @@ def locked_file(target: Path) -> Generator[None]:
     _ensure_parent_dirs(target.parent)
     lock_path = target.with_name(target.name + ".lock")
     key = str(target.parent.resolve() / lock_path.name)
-    held: set[str] = getattr(_HELD_LOCKS, "paths", set())
+    held: dict[str, bool] = getattr(_HELD_LOCKS, "paths", {})
     if key in held:
-        yield
+        yield held[key]  # reentrant: the outer acquisition's truth applies
         return
     fd = _acquire_lock(lock_path)
-    held.add(key)
+    held[key] = fd is not None
     _HELD_LOCKS.paths = held
     try:
-        yield
+        yield fd is not None
     finally:
-        held.discard(key)
+        held.pop(key, None)
         if fd is not None:
             # Unlink BEFORE unlock, while still the holder: waiters queued on
             # this inode then fail the identity check and requeue on the fresh

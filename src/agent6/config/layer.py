@@ -842,18 +842,19 @@ def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
 
 
 @contextlib.contextmanager
-def _writing_config(target: Path) -> Generator[None]:
+def _writing_config(target: Path) -> Generator[bool]:
     """Hold the config write lock, and hand *target* back to the real operator
-    on every exit path.
+    on every exit path. Yields whether the lock is actually held (see
+    :func:`agent6.portable.locked_file`), for :func:`_revalidate`'s rollback.
 
     Under ``sudo`` every publish creates the file as root -- including
     :func:`_revalidate`'s rollback, which republishes through ``atomic_write``
     onto a new inode -- so the handover cannot be conditional on the edit
     turning out to be valid.
     """
-    with locked_file(target):
+    with locked_file(target) as held:
         try:
-            yield
+            yield held
         finally:
             chown_to_real_user(target)
 
@@ -878,13 +879,20 @@ def config_is_valid(repo_root: Path) -> bool:
     return True
 
 
-def _revalidate(repo_root: Path, target: Path, prior: str | None, *, was_valid: bool) -> str | None:
+def _revalidate(
+    repo_root: Path, target: Path, prior: str | None, *, was_valid: bool, held: bool = True
+) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
     freshly-created file) and return the error string if THIS edit broke it.
     The rollback publishes atomically, and the caller holds ``locked_file``
     across its whole write+revalidate+rollback cycle -- an unserialized
     rollback erased a concurrent writer's just-validated update by restoring
-    a snapshot taken before it landed.
+    a snapshot taken before it landed. When the lock FAILED OPEN (*held*
+    False: a stale root-owned ``.lock`` a killed ``sudo`` writer left), that
+    is exactly what the snapshot restore could do, so the edit is kept and
+    the error surfaced instead -- the same keep-and-warn contract as an
+    already-invalid config, and the exposure narrows back to the unlocked
+    RMW the lock's fail-open always tolerated.
 
     A config that was ALREADY invalid keeps the edit, matching `config set`:
     rolling back on any error let one stale value in an unedited layer refuse
@@ -902,6 +910,12 @@ def _revalidate(repo_root: Path, target: Path, prior: str | None, *, was_valid: 
         # provider block to an unparseable file and reported success.
         if not was_valid and not _target_unparseable(target):
             return None  # broken before this edit; not ours to refuse
+        if not held:
+            return (
+                f"{exc}\n(kept as written: the config lock could not be taken, so an"
+                " automatic rollback might erase a concurrent edit; undo by hand or"
+                " run `agent6 config fix`)"
+            )
         if prior is None:
             target.unlink(missing_ok=True)
         else:
@@ -921,14 +935,14 @@ def set_config_value(
     back and left as it was), else None.
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with _writing_config(target):
+    with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         try:
             upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
 
 
 def set_config_table(
@@ -943,14 +957,14 @@ def set_config_table(
     the merged config and rolls the file back on failure. Returns an error string
     on invalid config, else None. ``None`` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with _writing_config(target):
+    with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         try:
             upsert_toml_table(target, table, fields)
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
 
 
 def provider_choices() -> dict[str, list[str]]:
@@ -993,13 +1007,13 @@ def set_config_leaves(
     all the leaf writes, so a bad merged config restores the prior file whole.
     ``None`` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with _writing_config(target):
+    with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         for key, val in fields.items():
             if val is not None:
                 upsert_toml_leaf(target, f"{table}.{key}", val)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
@@ -1011,7 +1025,7 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
     target = _write_target(repo_root, to_repo=to_repo)
     if not target.is_file():
         return None
-    with _writing_config(target):
+    with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8")
         was_valid = config_is_valid(repo_root)
         try:
@@ -1020,4 +1034,4 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
             return str(exc)
         if not removed:
             return None
-        return _revalidate(repo_root, target, prior, was_valid=was_valid)
+        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)

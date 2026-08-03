@@ -521,3 +521,25 @@ def test_engine_writers_roll_back_a_write_into_an_unparseable_target(
 
     assert err is not None, "a write into an unparseable target must not report success"
     assert gcfg.read_text(encoding="utf-8") == before, "the broken write was kept"
+
+
+def test_no_lock_rollback_keeps_the_write_and_says_so(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the config lock fails open (a stale root-owned .lock a killed sudo
+    writer left), _revalidate's whole-file restore could erase a concurrent
+    writer's just-validated update -- the snapshot predates it. Without the
+    lock the write is KEPT and the error says so, narrowing the exposure back
+    to the unlocked RMW the fail-open always tolerated."""
+    import agent6.portable as portable_mod
+
+    def _no_lock(_p: Path) -> int | None:
+        return None
+
+    monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
+    err = set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
+    assert err is not None
+    assert "kept as written" in err and "lock" in err
+    # NOT restored: the invalid value is still in the file for the operator.
+    text = repo_config_path_for(repo).read_text(encoding="utf-8")
+    assert 'run_commands = "bogus_value"' in text

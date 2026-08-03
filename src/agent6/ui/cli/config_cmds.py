@@ -330,12 +330,22 @@ def _written_value_error(key: str, value: object) -> str | None:
     return None
 
 
+# Appended to a validation error when the config lock FAILED OPEN (a stale
+# root-owned .lock): a snapshot restore without the lock could erase a
+# concurrent writer's update, so the write is kept and the operator undoes it.
+_KEPT_NO_LOCK = (
+    "(kept as written: the config lock could not be taken, so an automatic"
+    " rollback might erase a concurrent edit; undo by hand or run `agent6 config fix`)"
+)
+
+
 def _revalidate_layered(
     target: Path,
     prior_text: str | None,
     *,
     was_valid: bool,
     written: tuple[str, object] | None = None,
+    held: bool = True,
 ) -> str | None:
     """Re-validate after a plain (global/repo) config write: revert only if this write
     BROKE a previously-valid config. If the config was already invalid -- a value left
@@ -345,10 +355,15 @@ def _revalidate_layered(
 
     *written* is the ``(key, value)`` a `config set` just wrote; its value is
     validated against the model even when a higher layer masks it in the merge.
+    *held* is whether the config lock was actually taken: a snapshot restore
+    without it could erase a concurrent writer's update, so the write is kept
+    and the error surfaced instead (layer._revalidate's rule).
     """
     if written is not None:
         value_err = _written_value_error(*written)
         if value_err is not None:
+            if not held:
+                return f"{value_err}\n{_KEPT_NO_LOCK}"
             _restore_file(target, prior_text)
             return value_err
     after = _merged_config_error()
@@ -358,6 +373,8 @@ def _revalidate_layered(
     # value in another layer": keeping it there left a config no command could
     # read, and each retry appended more surgery to it.
     if was_valid or _target_unparseable(target):
+        if not held:
+            return f"{after}\n{_KEPT_NO_LOCK}"
         _restore_file(target, prior_text)  # the write broke the config -> fail loud
         return after
     print(
@@ -375,6 +392,7 @@ def _revalidate_config(
     machine: Path | None,
     was_valid: bool = False,
     written: tuple[str, object] | None = None,
+    held: bool = True,
 ) -> str | None:
     """Re-validate the config after a write; restore *prior_text* on real failure.
 
@@ -387,7 +405,9 @@ def _revalidate_config(
     keeps its own spec guard.
     """
     if machine is None:
-        return _revalidate_layered(target, prior_text, was_valid=was_valid, written=written)
+        return _revalidate_layered(
+            target, prior_text, was_valid=was_valid, written=written, held=held
+        )
     err: str | None = None
     try:
         data = read_toml_file(target)
@@ -444,7 +464,7 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     _open_target(target)
     parsed = parse_cli_value(value)
     try:
-        with locked_file(target):
+        with locked_file(target) as held:
             prior = target.read_text(encoding="utf-8") if target.is_file() else None
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this write?
             try:
@@ -461,7 +481,12 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 2
             if err := _revalidate_config(
-                target, prior, machine=machine, was_valid=was_valid, written=(key, parsed)
+                target,
+                prior,
+                machine=machine,
+                was_valid=was_valid,
+                written=(key, parsed),
+                held=held,
             ):
                 print(f"ERROR: {err}", file=sys.stderr)
                 return 2
@@ -487,7 +512,7 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
         return 2
     try:
-        with locked_file(target):
+        with locked_file(target) as held:
             prior = target.read_text(encoding="utf-8")
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this unset?
             try:
@@ -502,7 +527,9 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
             if not removed:
                 print(f"{key} is not set in {target}; nothing to unset.")
                 return 0
-            if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
+            if err := _revalidate_config(
+                target, prior, machine=machine, was_valid=was_valid, held=held
+            ):
                 print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
                 return 2
     finally:
@@ -553,7 +580,7 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
 def _locked_list_edit(  # noqa: PLR0911
     target: Path, prefix: str, key: str, value: str, *, machine: Path | None, add: bool
 ) -> int:
-    with locked_file(target):
+    with locked_file(target) as held:
         current = read_toml_leaf(read_toml_file(target), prefix + key)
         if current is None:
             if _schema_says_not_a_list(key):
@@ -583,7 +610,9 @@ def _locked_list_edit(  # noqa: PLR0911
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-        if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
+        if err := _revalidate_config(
+            target, prior, machine=machine, was_valid=was_valid, held=held
+        ):
             print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
             return 2
     verb, prep = ("Added", "to") if add else ("Removed", "from")
