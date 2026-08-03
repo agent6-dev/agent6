@@ -186,11 +186,11 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
             print(pruned)
             return 0
 
-    if not run_branch and (note := _no_commits_note(manifest)):
+    if not run_branch and (reason := _no_commits_reason(manifest)):
         # HEAD here would diff the base against whatever the OPERATOR has
         # committed since and present it as this session's work. Only a run
         # with branch_per_run off legitimately has its commits on HEAD.
-        print(note)
+        print(f"[agent6] {reason}.")
         return 0
 
     head_ref = run_branch if run_branch else "HEAD"
@@ -266,12 +266,12 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     )
 
 
-def _no_commits_note(manifest: SessionManifest) -> str:
-    """Why a branchless session has nothing to diff, or "" when it legitimately
+def _no_commits_reason(manifest: SessionManifest) -> str:
+    """Why a branchless session made no commits, or "" when it legitimately
     committed onto the checked-out branch (a run with branch_per_run off)."""
     kind = SESSION_KINDS.get(manifest.mode)
     if kind is not None and not kind.edits:
-        return f"[agent6] a {manifest.mode} does not write to the repo, so it made no commits."
+        return f"a {manifest.mode} does not write to the repo, so it made no commits"
     return ""
 
 
@@ -436,11 +436,10 @@ def _plan_merge(  # noqa: PLR0911
         return 2
     run_branch = manifest.run_branch
     if not run_branch:
-        print(
-            "ERROR: this run has no branch to merge (branch_per_run was off, so the "
-            "work already landed on your current branch).",
-            file=sys.stderr,
+        why = _no_commits_reason(manifest) or (
+            "branch_per_run was off, so the work already landed on your current branch"
         )
+        print(f"ERROR: this session has no branch to merge ({why}).", file=sys.stderr)
         return 2
     target = into or manifest.base_branch
     if not target:

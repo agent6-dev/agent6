@@ -102,7 +102,7 @@ def unregister_frontend(session_dir: Path, pid: int) -> None:
         (session_dir / FRONTENDS_DIR / str(pid)).unlink()
 
 
-def _pid_alive(pid: int) -> bool:
+def pid_alive(pid: int) -> bool:
     """True iff a live process WE OWN has *pid* (signal 0 probes without killing).
 
     PermissionError reads as DEAD: agent6's workers and front-ends are always
@@ -202,7 +202,7 @@ def worker_is_alive(session_dir: Path) -> bool:
     # `os.kill(0, 0)` probes the process GROUP and `os.kill(-1, 0)` every
     # process, so both answer alive: 0 and -1 are not pids, as frontend_is_live
     # already knows.
-    if pid <= 0 or not _pid_alive(pid):
+    if pid <= 0 or not pid_alive(pid):
         return False
     if not recorded_start:
         return True
@@ -223,7 +223,7 @@ def frontend_is_live(session_dir: Path) -> bool:
             pid = int(f.name)
         except ValueError:
             pid = -1
-        if pid > 0 and _pid_alive(pid):
+        if pid > 0 and pid_alive(pid):
             live = True
         else:
             with contextlib.suppress(OSError):

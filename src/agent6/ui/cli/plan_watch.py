@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
+    pid_alive,
     read_worker_pid,
     register_frontend,
     set_session_allow,
@@ -316,7 +317,14 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     if alive:
         pid_note = f"  (worker pid {pid} alive)"
     elif pid is not None and not scan.finished:
-        pid_note = f"  (worker pid {pid} not running)"
+        # Liveness matches the recorded start time, so a pid the OS has since
+        # handed to something else reads dead -- correctly. Saying "not running"
+        # about a number the operator can look up is still false.
+        pid_note = (
+            f"  (worker pid {pid} was recycled)"
+            if pid_alive(pid)
+            else f"  (worker pid {pid} not running)"
+        )
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
