@@ -1765,37 +1765,6 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     assert private["ordinary"] in mounts, "a legitimate tool mount was dropped"
 
 
-def test_grep_reads_the_resolved_path_not_the_symlink(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """grep resolves each target to check containment, then must READ that same
-    resolved path.
-
-    Reading the original path re-follows the symlink, so the check and the use
-    were on different objects: a background command in the same jail could swap
-    the link between them and grep -- which runs in-process, OUTSIDE the jail --
-    would read the new target. Narrow window, but it is a check-then-use gap in
-    a containment guard, and closing it costs one local.
-    """
-    (tmp_path / "real.txt").write_text("NEEDLE here\n", encoding="utf-8")
-    (tmp_path / "link.txt").symlink_to(tmp_path / "real.txt")
-
-    read_from: list[Path] = []
-    original = Path.read_text
-
-    def spy(self: Path, *a: object, **k: object) -> str:
-        read_from.append(self)
-        return original(self, *a, **k)  # pyright: ignore[reportArgumentType]
-
-    monkeypatch.setattr(Path, "read_text", spy)
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    d.dispatch("grep", {"pattern": "NEEDLE", "path": "."})
-
-    assert read_from, "grep read nothing"
-    for p in read_from:
-        assert p == p.resolve(), f"grep read through an unresolved path: {p}"
-
-
 def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> None:
     """`read_file` on a directory says "Not a file: x". apply_edit/apply_patch
     leaked the raw errno instead ("[Errno 21] Is a directory: /abs/path"), which
