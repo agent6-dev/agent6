@@ -311,7 +311,9 @@ class LogScan:
     lets a renderer say which scope a figure describes when they differ.
     """
 
-    saw_start: bool = False  # run.start seen (a run without it is still launching)
+    saw_start: bool = (
+        False  # run.start OR loop.resume.start seen (a leg began); neither = unstarted
+    )
     mode: str = "?"
     task: str = ""
     finished: bool = False  # a later resume un-finishes
@@ -402,8 +404,11 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
                 if isinstance(ev.get("iteration"), int):
                     iteration = ev["iteration"]
                 if etype in OPERATOR_PROMPT_EVENTS:
-                    if isinstance(pid := ev.get("id"), str):
-                        pending_prompts.add(pid)
+                    # Coerce like events.py: the answer side discards str(id), so a
+                    # non-string id (an int) must be stored as str to match and
+                    # clear -- else the run stays "waiting" forever.
+                    if (pid := ev.get("id")) is not None:
+                        pending_prompts.add(str(pid))
                 elif etype in OPERATOR_ANSWER_EVENTS:
                     pending_prompts.discard(str(ev.get("id")))
                 if etype == "run.start":
@@ -476,13 +481,17 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     logs = run_dir / "logs.jsonl"
     scan = scan_run_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
-    if not scan.saw_start:
-        # Before run.start the log carries no mode/task: either a launching run
-        # still in preflight (verify inference is a ~80s LLM call BEFORE the
-        # loop's first turn), or a manifest-only `fork --no-run`. Read mode+task
-        # from the manifest so the row shows its real work, not a blank
-        # "? ? (no logs)". A truly empty husk (no manifest) keeps "(no logs)".
-        mode, task = "?", "(no logs)"
+    if mode == "?" and not task:
+        # The log gave us no mode AND no task: a launching run still in preflight
+        # (verify inference is a ~80s LLM call BEFORE the loop's first turn), a
+        # manifest-only `fork --no-run`, or a forked/resumed leg whose log holds
+        # only loop.resume.start (which begins a leg but records no mode/task).
+        # saw_start alone is now true in that last case, so gate on the missing
+        # mode+task instead. The `not task` guard keeps a run.start that carried
+        # a user_task but no `mode` field (mode stays "?") from being blanked.
+        # Read mode+task from the manifest so the row shows its real work, not a
+        # bare "? (no logs)". A truly empty husk (no manifest) keeps "(no logs)".
+        task = "(no logs)"
         with contextlib.suppress(ManifestError):
             manifest = read_manifest(run_dir)
             mode = manifest.mode

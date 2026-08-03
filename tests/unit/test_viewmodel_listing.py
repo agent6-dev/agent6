@@ -566,3 +566,40 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
     husk.mkdir()
 
     assert newest_run_dir([bucket]) == real
+
+
+def test_summary_forked_leg_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
+    """A fork/resumed leg's log holds only loop.resume.start, which sets
+    saw_start=True but records no mode/task (only run.start carries them). Gating
+    the manifest fallback on saw_start therefore blanked the row to "? (no logs)";
+    gate on the missing mode instead so the row shows the run's real work."""
+    rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "loop.resume.start"}])
+    (rd / "manifest.json").write_text(
+        json.dumps({"version": 2, "run_id": "forked-0001", "mode": "run", "user_task": "carry on"}),
+        encoding="utf-8",
+    )
+    s = summarize_run_dir(rd)
+    assert (s.mode, s.task) == ("run", "carry on")
+
+
+def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
+    """The answer side discards str(id), but the prompt side only registered
+    string ids -- so an int id (events.py coerces ids to str) left a run blocked
+    on the operator reading as plain "running". Coerce on the prompt side too."""
+    from agent6.viewmodel.listing import scan_run_log
+
+    log = tmp_path / "logs.jsonl"
+    log.write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "approval.prompt", "id": 7})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert scan_run_log(log).operator_blocked  # the int id still registers as unanswered
+
+    log.write_text(
+        log.read_text(encoding="utf-8") + json.dumps({"type": "approval.answer", "id": 7}) + "\n",
+        encoding="utf-8",
+    )
+    assert not scan_run_log(log).operator_blocked  # answered by the same int id
