@@ -887,7 +887,7 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
 
 def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
     """Regression: typing a known provider name (openrouter) in the Add-provider
-    form prefills its api_format + base_url from PROVIDER_PRESETS, so submitting
+    form prefills its api_format + base_url from PROVIDER_DEFAULTS, so submitting
     WITHOUT hand-typing a URL lands on openrouter.ai -- not the api.openai.com
     fallback in config._default_base_url. The form used to ignore the presets
     that `agent6 connect` applies, silently pointing openrouter at OpenAI."""

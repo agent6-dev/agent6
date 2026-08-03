@@ -323,7 +323,7 @@ def provider_choices() -> dict[str, list[str]]:
 # in `config._default_base_url` -- which only knows api.openai.com for the
 # `openai` format and would otherwise point an "openrouter" provider at OpenAI.
 # Advanced deployments (vertex/azure/token_command) are hand-edited per CONFIG.md.
-PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
     "anthropic": {"api_format": "anthropic"},
     "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
     "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},

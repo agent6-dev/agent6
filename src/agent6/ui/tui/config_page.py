@@ -44,7 +44,7 @@ from agent6.config import ConfigError
 from agent6.config.io import format_toml_value
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import (
-    PROVIDER_PRESETS,
+    PROVIDER_DEFAULTS,
     provider_choices,
     set_config_table,
     set_config_value,
@@ -188,7 +188,7 @@ def _provider_preset_base_url(key: str) -> str:
     ``config._default_base_url`` fills in for any unset openai-format provider."""
     parts = key.split(".")
     if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
-        return PROVIDER_PRESETS.get(parts[1], {}).get("base_url", "")
+        return PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
     return ""
 
 
@@ -480,7 +480,7 @@ class ProviderModal(ModalScreen[None]):
         than the api.openai.com fallback in config._default_base_url. Visible and
         editable; only overwrites a base_url we ourselves autofilled (or a blank
         one), never a URL the user typed."""
-        preset = PROVIDER_PRESETS.get(event.value.strip())
+        preset = PROVIDER_DEFAULTS.get(event.value.strip())
         if preset is None:
             return
         self.query_one("#prov-format", ChoiceField).select_value(preset["api_format"])

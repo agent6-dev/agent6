@@ -67,8 +67,8 @@ _RUN_SUBDIRS = ("runs", "asks")
 # last word -- bold-cyan "running" -- until a keypress.
 _HUB_POLL_S = 4.0
 # The new-work preset dropdown's first entry: "" => no --preset, so the run
-# uses [workflow].preset from config (or the plain defaults).
-_DEFAULT_PROFILE_LABEL = "(config default)"
+# uses the top-level `preset` from config (or the plain defaults).
+_DEFAULT_PRESET_LABEL = "(config default)"
 
 
 def _available_presets(repo_cwd: Path) -> list[str]:
@@ -76,9 +76,9 @@ def _available_presets(repo_cwd: Path) -> list[str]:
     custom ``[presets.<name>]`` tables). Delegates to ``config_layer`` -- the
     TUI's config entry point (see config_page.py) -- so the dropdown and the
     ``--preset`` CLI flag resolve against the same source."""
-    from agent6.config.layer import available_profile_names  # noqa: PLC0415
+    from agent6.config.layer import available_preset_names  # noqa: PLC0415
 
-    return available_profile_names(repo_cwd, None)
+    return available_preset_names(repo_cwd, None)
 
 
 def _available_models(repo_cwd: Path) -> list[str]:
@@ -157,7 +157,7 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
     """Type a task, pick an optional config preset, then start it as a run /
     plan / ask. The mode IS the button you pick (flat actions, like the config
     dialogs); Enter in the box runs. The preset dropdown maps to the
-    ``--preset`` CLI flag; "(config default)" => no flag (so [workflow].preset
+    ``--preset`` CLI flag; "(config default)" => no flag (so the config's `preset`
     applies). Result: (mode, task, preset) or None, where preset="" means the
     config default (no --preset)."""
 
@@ -193,7 +193,7 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
         # the known model ids offered as `/parallel` spec autocomplete (empty = the
         # affordance is inert, e.g. a bare test or a fresh machine with no cache).
         super().__init__()
-        self._profiles = presets if presets is not None else []
+        self._presets = presets if presets is not None else []
         self._models = models if models is not None else []
 
     def compose(self) -> ComposeResult:
@@ -206,9 +206,9 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
             with Horizontal(id="new-preset-row"):
                 yield Static("preset:", id="new-preset-label")
                 # value="" is the "(config default)" sentinel: NO --preset, so
-                # the config's [workflow].preset (or plain defaults) applies.
+                # the config's own `preset` (or plain defaults) applies.
                 yield Select(
-                    [(_DEFAULT_PROFILE_LABEL, ""), *((p, p) for p in self._profiles)],
+                    [(_DEFAULT_PRESET_LABEL, ""), *((p, p) for p in self._presets)],
                     value="",
                     allow_blank=False,
                     id="new-preset",

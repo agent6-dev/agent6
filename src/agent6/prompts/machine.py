@@ -147,7 +147,7 @@ string (target must be `str`).
 
 ## Accumulating records across iterations (e.g. a paper-trade log)
 
-Two durable stores, both available on every sandbox profile:
+Two durable stores, both available at every isolation level:
 
   - The JOURNAL (`machines/<id>/journal.jsonl` under the per-repo state dir) already records every
     transition with its fact (each `tool` stdout, each `agent` payload), so it
@@ -155,7 +155,7 @@ Two durable stores, both available on every sandbox profile:
   - `$AGENT6_MACHINE_DATA_DIR` is a persistent, WRITABLE directory every `tool`
     script may write to (the one writable spot under `hardened`, where new
     top-level files in the workspace are read-only). It's an absolute path valid
-    inside the tool jail, so just open it — works on every profile:
+    inside the tool jail, so just open it — works at every isolation level:
     `open(os.environ["AGENT6_MACHINE_DATA_DIR"] + "/trades.jsonl", "a")`.
 
 For values you branch on or template later, capture them into the blackboard:

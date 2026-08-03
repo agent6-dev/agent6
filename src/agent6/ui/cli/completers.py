@@ -11,12 +11,12 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.config.layer import (
-    available_profile_names,
+    available_preset_names,
     leaf_keys,
     load_effective,
-    profile_catalog,
+    preset_catalog,
 )
-from agent6.config.write import PROVIDER_PRESETS
+from agent6.config.write import PROVIDER_DEFAULTS
 from agent6.ui.cli._common import _machines_dir, _runs_dir
 from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
@@ -24,13 +24,13 @@ from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 
 def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: connected provider names + known presets."""
-    names = set(_connected_providers(None)) | set(PROVIDER_PRESETS)
+    names = set(_connected_providers(None)) | set(PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
 
 
 def _complete_presets(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: built-in presets + configured [presets.*] names."""
-    return [n for n in available_profile_names(Path.cwd()) if n.startswith(prefix)]
+    return [n for n in available_preset_names(Path.cwd()) if n.startswith(prefix)]
 
 
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
@@ -76,7 +76,7 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
 # valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     # `sandbox.isolation` also accepts "none" (the unsandboxed opt-out, see
-    # config.SandboxConfig.preset), deliberately omitted here: TAB should not put
+    # config.Config.preset), deliberately omitted here: TAB should not put
     # "disable the sandbox" one keystroke away. Type it explicitly to set it.
     "sandbox.isolation": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
@@ -91,13 +91,13 @@ _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _user_profile_names() -> list[str]:
+def _user_preset_names() -> list[str]:
     """USER-defined [presets.*] names only, for key completion. Built-in names
     are deliberately absent: writing presets.ultra.* creates a user table that
     REPLACES the built-in wholesale, a footgun TAB should not put one keystroke
     away (the same rule keeps `none` out of sandbox.isolation completion)."""
     try:
-        return [p.name for p in profile_catalog(Path.cwd()).presets if p.origin != "built-in"]
+        return [p.name for p in preset_catalog(Path.cwd()).presets if p.origin != "built-in"]
     except ConfigError:
         return []
 
@@ -113,14 +113,14 @@ def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
     keys |= set(_CONFIG_ENUM_CHOICES)
     if prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
-        keys |= {f"presets.{name}.{k}" for name in _user_profile_names() for k in pool}
+        keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
     return sorted(k for k in keys if k.startswith(prefix))
 
 
 # Presets offered for any `providers.<name>.extra_body` value (the provider name
 # varies, so this is matched by suffix, not in _CONFIG_ENUM_CHOICES). The first
 # is the recommended OpenRouter routing, a fast, prefix-caching backend.
-_EXTRA_BODY_PRESETS: tuple[str, ...] = (
+_EXTRA_BODY_RECIPES: tuple[str, ...] = (
     '{ provider = { sort = "throughput" } }',
     '{ provider = { sort = "latency" } }',
     '{ provider = { sort = "price" } }',
@@ -136,7 +136,7 @@ def _complete_config_values(
         return _complete_presets(prefix)
     choices = list(_CONFIG_ENUM_CHOICES.get(key, ()))
     if key.endswith(".extra_body"):
-        choices += list(_EXTRA_BODY_PRESETS)
+        choices += list(_EXTRA_BODY_RECIPES)
     return [v for v in choices if v.startswith(prefix)]
 
 

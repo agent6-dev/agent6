@@ -122,7 +122,7 @@ def _fold(run_dir: Path) -> RunState:
     return fold_run(tail_events(run_dir / "logs.jsonl", follow=False))
 
 
-def _read_profile(run_dir: Path) -> str:
+def _read_preset(run_dir: Path) -> str:
     """The effective preset the run started with (manifest.json), or ""."""
     try:
         return read_manifest(run_dir).workflow.preset
@@ -149,7 +149,7 @@ def _print_status(run_dir: Path) -> None:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:
         ctx += f" · pins {len(s.pins)}"
-    preset = _read_profile(run_dir)
+    preset = _read_preset(run_dir)
     prof = f" · preset {preset}" if preset else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {s.user_task[:80]}")

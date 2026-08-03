@@ -262,7 +262,7 @@ def create_fork(  # noqa: PLR0911
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch
     src_user_task = sm.user_task
-    src_profile_from_flag = sm.workflow.preset_from_flag
+    src_preset_from_flag = sm.workflow.preset_from_flag
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
@@ -275,7 +275,7 @@ def create_fork(  # noqa: PLR0911
     try:
         # The source's preset: resume replays it (preset or manifest_preset),
         # so the child manifest's models/workflow stamp must be derived from
-        # the SAME profiled config or `runs show` reports a model the forked
+        # the SAME preset-resolved config or `runs show` reports a model the forked
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
     except ConfigError as exc:
@@ -309,7 +309,7 @@ def create_fork(  # noqa: PLR0911
         user_task=src_user_task,
         mode=src_mode,
         preset=forked_preset,
-        preset_from_flag=src_profile_from_flag,
+        preset_from_flag=src_preset_from_flag,
         cfg=cfg,
         reporter=reporter,
     )

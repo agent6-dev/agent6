@@ -50,7 +50,7 @@ struct Policy {
     #[serde(default)]
     allow_network: bool,
     /// Operator-granted extra paths, bind-mounted at their REAL locations in
-    /// strict (like tool_paths and the hardened profile), so a granted
+    /// strict (like tool_paths and hardened), so a granted
     /// toolchain works via its own absolute paths and shebangs. ro is
     /// read+execute, rw is read+write. A ro grant under a system mount is
     /// redundant (already visible read+exec) and skipped; an rw grant under
@@ -158,7 +158,7 @@ fn run_hardened(policy: &Policy) -> ! {
     // No namespaces, no pivot_root. Landlock confines the FS; seccomp +
     // NO_NEW_PRIVS bound the syscall surface; we still operate on the real cwd
     // and inherit the original /proc, /tmp, network namespace from the parent.
-    // This is the profile that runs under default-seccomp Docker where
+    // This is the isolation level that runs under default-seccomp Docker where
     // CLONE_NEWUSER is blocked.
     if let Err(e) = apply_landlock_hardened(policy) {
         die(format!("landlock failed: {e}"));
@@ -473,7 +473,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         })?;
     }
     // Extra RO paths, at their REAL locations (matching tool_paths and the
-    // hardened profile, and the documented contract: a granted toolchain works
+    // hardened, and the documented contract: a granted toolchain works
     // via its own absolute paths and shebangs). A grant under a system bind is
     // redundant (already visible read+exec) and skipped. Failures are LOUD:
     // the operator listed the path, so a broken grant must not pass silently.
@@ -580,7 +580,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
 }
 
 fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
-    // Strict profile runs inside the pivoted rootfs; /workspace (the cwd bind)
+    // Strict runs inside the pivoted rootfs; /workspace (the cwd bind)
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
     // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
     // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
@@ -615,7 +615,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // in setup_rootfs), discarded when the jail exits. Grant it RW so toolchain
     // caches that key off $HOME or TMPDIR work (go-build, cargo, pip/uv); the
     // tmpfs is isolated, so RW here cannot reach the host. Mirrors the hardened
-    // profile, which already grants /tmp RW.
+    // isolation level, which already grants /tmp RW.
     if let Ok(fd) = PathFd::new("/tmp") {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_all))
@@ -696,7 +696,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     }
     // Deliberately no NotEnforced check (contrast apply_landlock_hardened):
     // strict's boundary is namespaces + the pivoted rootfs with MS_RDONLY
-    // binds + seccomp; Landlock is defense-in-depth, and the profile contract
+    // binds + seccomp; Landlock is defense-in-depth, and the isolation contract
     // (docs/security.md) admits strict on Landlock-less kernels. The gap is
     // not silent: `warn_sandbox_gaps` says so once at run entry. Warning here
     // instead would land on every spawn's stderr, inside model-visible tool
@@ -760,7 +760,7 @@ fn grant_rw_carved(
         // get a recursive RW rule on that outside inode (PathFd::new follows
         // symlinks; Landlock attaches to the resolved inode), letting the
         // child write outside the workspace and defeating cwd confinement
-        // under the hardened profile. Skip any entry that does not resolve
+        // under hardened. Skip any entry that does not resolve
         // inside cwd. Mirrors the strip_prefix(cwd) check in setup_rootfs.
         if !canon.starts_with(canon_cwd) {
             eprintln!(
@@ -792,7 +792,7 @@ fn grant_rw_carved(
 }
 
 fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
-    // Hardened profile runs in the real filesystem. We protect the host by
+    // Hardened runs in the real filesystem. We protect the host by
     // listing exactly the paths the child may read or write — its own cwd
     // (read+write), the extra_rw_paths, /tmp (write), and the system dirs
     // (read+execute only).
@@ -935,7 +935,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
                 })?;
         }
     }
-    // Same sink-device carve-out as the strict profile; see comment there.
+    // Same sink-device carve-out as strict; see comment there.
     for dev in ["null", "zero", "full"] {
         let p = format!("/dev/{dev}");
         if let Ok(fd) = PathFd::new(&p) {
@@ -951,7 +951,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // than erroring — enforcing nothing. Refuse instead of running a child
     // with zero confinement behind the "hardened" label. (PartiallyEnforced on
     // an older ABI is real, if reduced, confinement and is accepted.) The
-    // Python profile resolution already refuses hardened without Landlock; this
+    // Python isolation resolution already refuses hardened without Landlock; this
     // is the launcher's own boundary check, not a substitute for it.
     let status = ruleset
         .restrict_self()
@@ -959,7 +959,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     if status.ruleset == RulesetStatus::NotEnforced {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "hardened profile requires Landlock, but the kernel enforced no \
+            "hardened isolation requires Landlock, but the kernel enforced no \
              ruleset (Landlock unavailable); refusing to run unconfined",
         ));
     }

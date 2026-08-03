@@ -265,7 +265,7 @@ def refuse_protected_writes(
     protect paths (a machine bundle's ``.asm.toml`` + ``scripts/``), which the
     jail marks read-only for ``run_command`` but the in-process edit tools
     would otherwise let a ``mode="run"`` state rewrite -- persisting a payload
-    for the next run. Applies on both sandbox profiles."""
+    for the next run. Applies at both isolation levels."""
     if config.sandbox.protect_git:
         _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
     if resolved is not None:

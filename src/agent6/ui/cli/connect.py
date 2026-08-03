@@ -18,7 +18,7 @@ from agent6.config import (
     validate_base_url,
 )
 from agent6.config.layer import repo_config_path_for
-from agent6.config.write import PROVIDER_PRESETS, set_config_leaves
+from agent6.config.write import PROVIDER_DEFAULTS, set_config_leaves
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
 from agent6.secrets import SecretsError, save_secret
@@ -86,7 +86,7 @@ def _resolve_provider_name(provider: str) -> str | None:
     """
     name = provider.strip()
     if not name:
-        print("Known presets: " + ", ".join(sorted(PROVIDER_PRESETS)) + " (or any custom name).")
+        print("Known presets: " + ", ".join(sorted(PROVIDER_DEFAULTS)) + " (or any custom name).")
         try:
             name = input("Provider name [anthropic]: ").strip() or "anthropic"
         except EOFError:
@@ -155,7 +155,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
-    preset = PROVIDER_PRESETS.get(name)
+    preset = PROVIDER_DEFAULTS.get(name)
     api_format = preset["api_format"] if preset else ""
     if not api_format:
         try:

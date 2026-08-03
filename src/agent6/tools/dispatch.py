@@ -205,7 +205,7 @@ class ToolDispatcher:
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        self._sandbox_profile: IsolationLevel = isolation
+        self._isolation: IsolationLevel = isolation
         # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
         # this is the defense-in-depth backstop so the dispatcher itself refuses
         # a source mutation even if something dispatched one directly.
@@ -743,7 +743,7 @@ class ToolDispatcher:
         # denying new top-level entries (breaking toolchains), so .git is
         # writable there. It is recoverable, gated by run_commands, and run
         # state lives out of the workspace, so nothing sensitive is exposed.
-        if self._sandbox_profile == "strict" and self._config.sandbox.protect_git:
+        if self._isolation == "strict" and self._config.sandbox.protect_git:
             protect_paths.append((self._root / ".git").resolve())
         protect_paths.extend(self._extra_protect_paths)
         # caller-provided timeout overrides the JailPolicy default
@@ -773,7 +773,7 @@ class ToolDispatcher:
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,
-            isolation=self._sandbox_profile,
+            isolation=self._isolation,
             env=tuple(sorted(env.items())),
             allow_network=allow_network,
             extra_protect_paths=tuple(protect_paths),

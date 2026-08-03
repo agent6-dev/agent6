@@ -50,7 +50,7 @@ the loop will halt if you exceed it.
   environment reasons (missing tool, unwritable path), do not probe the
   sandbox with diagnostic commands; use `run_verify_command` and read its
   output.
-- On the hardened sandbox profile, jailed commands cannot CREATE new
+- Under hardened isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry
   (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with

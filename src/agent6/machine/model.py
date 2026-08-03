@@ -306,7 +306,7 @@ class ToolState(BaseModel):
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
     # This tool's network stance for its jailed subprocess:
-    #  - ``auto`` (default): no network; isolated (empty netns) where the profile
+    #  - ``auto`` (default): no network; isolated (empty netns) where the isolation level
     #    can (``strict``), tolerant where it can't (``hardened`` shares the host
     #    netns), the deterministic, offline default that runs anywhere.
     #  - ``allow``: wants the host network. Granted only if the operator permits

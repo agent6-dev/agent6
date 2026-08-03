@@ -28,7 +28,7 @@ from agent6.config.layer import (
     load_effective,
     load_effective_with_overlay,
     materialize,
-    profile_catalog,
+    preset_catalog,
     repo_config_path_for,
 )
 from agent6.config.write import target_unparseable, written_value_error
@@ -86,10 +86,10 @@ def _cmd_config_path() -> int:
     return 0
 
 
-def _cmd_config_profiles() -> int:
+def _cmd_config_presets() -> int:
     """List every known preset with the overrides it applies; mark the selection."""
     try:
-        cat = profile_catalog(Path.cwd(), None)
+        cat = preset_catalog(Path.cwd(), None)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
