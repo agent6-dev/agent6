@@ -80,6 +80,23 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
         session.close()
 
 
+def test_a_session_command_gets_the_configured_memory_cap(tmp_path: Path) -> None:
+    """The cap belongs to the run's policy, and the requests carry it: sending
+    only argv left every command in the run on the launcher's own default,
+    silently ignoring `[sandbox] memory_limit_mb`."""
+    session = JailSession.open(
+        JailPolicy(
+            cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
+        )
+    )
+    try:
+        got = session.run(("python3", "-c", "bytearray(600 * 1024 * 1024)"))
+        assert got.returncode != 0, got
+        assert "MemoryError" in got.stderr, got.stderr
+    finally:
+        session.close()
+
+
 def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> None:
     """Its pid is namespace-local, so only the launcher can signal it: stop
     forwards the pid there. The kill is followed by a reap, or the pid stays

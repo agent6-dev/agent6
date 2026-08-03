@@ -694,6 +694,9 @@ class JailSession:
 
     _proc: subprocess.Popen[bytes]
     _binary: Path
+    # The run's cap, carried on every request: the launcher's own default
+    # applies to what a request omits, which would ignore the operator's.
+    _memory_limit_mb: int
 
     @classmethod
     def open(cls, policy: JailPolicy) -> JailSession:
@@ -716,7 +719,7 @@ class JailSession:
         assert proc.stdin is not None
         proc.stdin.write((json.dumps(spec) + "\n").encode())
         proc.stdin.flush()
-        return cls(_proc=proc, _binary=binary)
+        return cls(_proc=proc, _binary=binary, _memory_limit_mb=policy.memory_limit_mb)
 
     def run(
         self,
@@ -733,6 +736,7 @@ class JailSession:
                 "argv": list(argv),
                 "env": [list(p) for p in env],
                 "timeout_s": timeout_s,
+                "memory_limit_mb": self._memory_limit_mb,
             }
         )
         return _result_from_json(answer, argv, time.monotonic() - start)
@@ -744,7 +748,12 @@ class JailSession:
         answering with its pid. That pid is namespace-local: only this session
         can report on it or stop it."""
         answer = self._request(
-            {"kind": "background", "argv": list(argv), "env": [list(p) for p in env]}
+            {
+                "kind": "background",
+                "argv": list(argv),
+                "env": [list(p) for p in env],
+                "memory_limit_mb": self._memory_limit_mb,
+            }
         )
         pid = answer.get("pid")
         if not isinstance(pid, int):
