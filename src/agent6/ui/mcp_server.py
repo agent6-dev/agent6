@@ -47,7 +47,7 @@ from agent6.sessions.layout import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
-from agent6.viewmodel import session_mtime
+from agent6.viewmodel import is_session_husk, session_mtime
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -114,7 +114,10 @@ def _session_dirs(agent6_dir: Path) -> list[Path]:
         for bucket in SESSION_BUCKETS
         if bucket_dir(agent6_dir, bucket).is_dir()
         for d in bucket_dir(agent6_dir, bucket).iterdir()
-        if d.is_dir()
+        # Husks are what every other listing hides: a crash-orphaned dir with no
+        # manifest and no log. Listing them here showed an editor sessions the
+        # CLI and the web hub denied existed.
+        if d.is_dir() and not is_session_husk(d)
     ]
 
 

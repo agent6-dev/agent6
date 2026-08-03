@@ -203,7 +203,13 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     (runs / "run-a" / "manifest.json").write_text(
         json.dumps({"user_task": "alpha"}), encoding="utf-8"
     )
-    # run-b has no manifest -> entry without one. Pin the dir mtimes so the
+    # run-b has no manifest -> entry without one. It DOES get a log: a dir with
+    # neither is a husk, which every listing hides, so a manifest-less session
+    # has to be modelled with one or it is not a session at all.
+    (runs / "run-b" / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run"}) + "\n", encoding="utf-8"
+    )
+    # Pin the dir mtimes so the
     # newest-first ordering is deterministic regardless of the filesystem's
     # mtime granularity: writing run-a's manifest bumps run-a's dir mtime, so
     # without this run-a can sort first on a fine-grained fs (and the tie-break
@@ -548,3 +554,35 @@ def test_serve_drains_oversized_line_and_recovers(
     server._stdout.seek(0)  # type: ignore[attr-defined]
     resps = [json.loads(line) for line in server._stdout.readlines()]  # type: ignore[attr-defined]
     assert [r["id"] for r in resps] == [7]
+
+
+def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> None:
+    """A husk is a dir a crash orphaned before any manifest or log. Every other
+    listing hides it -- `viewmodel.listing` and `sessions list` both filter on
+    `is_session_husk` -- because "(no logs)" forever is noise, not a session.
+
+    MCP enumerated every directory, so an editor driving agent6 saw sessions the
+    CLI and the web hub denied existed.
+    """
+    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    (runs / "real-run").mkdir(parents=True)
+    (runs / "real-run" / "manifest.json").write_text(
+        json.dumps({"user_task": "alpha"}), encoding="utf-8"
+    )
+    (runs / "husk-run").mkdir(parents=True)  # no manifest, no log, no live worker
+
+    server = _server(tmp_path)
+    resps = _roundtrip(
+        server,
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "list_sessions", "arguments": {}},
+            }
+        ],
+    )
+    ids = {s["session_id"] for s in resps[0]["result"]["structuredContent"]["sessions"]}
+    assert "real-run" in ids
+    assert "husk-run" not in ids, f"MCP listed a husk the other surfaces hide: {ids}"
