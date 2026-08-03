@@ -351,10 +351,10 @@ individual flag still beats the profile.
 
 | Profile | Bundles |
 |---|---|
-| `quick` | review off, tighter output budget; fast/cheap. |
+| `quick` | review off; fast/cheap. |
 | `standard` | the plain defaults (no review). The default. |
 | `ultra` | a 3-seat grounded `before_finish` veto panel; thorough review. |
-| `paranoid` | 5 explore-tier seats, `before_finish` veto, bigger budget. |
+| `paranoid` | 5 explore-tier seats, `before_finish` veto. |
 
 Define your own with a `[profiles.<name>]` table (a partial config; edit leaves
 with `agent6 config set profiles.<name>.<leaf> <value>`); a built-in's name

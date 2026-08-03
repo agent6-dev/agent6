@@ -594,7 +594,7 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishPlanningInput,
 )
 
-# Tool list for ask mode (`agent6 ask`). Read-only Q&A: like plan it filters
+# Tool list for ask mode (`agent6 ask`). Edit-free Q&A: like plan it filters
 # `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, and it
 # exposes NO control tools (no DAG, no finish_planning, no finish_run -- the
 # agent answers by emitting its final message as prose, a "silent finish"). It

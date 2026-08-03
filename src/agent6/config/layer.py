@@ -182,7 +182,7 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
 BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     # The pre-feature baseline: plain defaults, no review panel.
     "standard": {},
-    # Fast/cheap: no review, tighter output budget.
+    # Fast/cheap: no review.
     "quick": {
         "review": {"trigger": "off"},
     },
@@ -197,7 +197,7 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
             "concurrency": 3,  # seats in parallel: panel latency = slowest seat
         },
     },
-    # Maximum scrutiny: 5 explore-tier seats, before_finish veto, bigger budget.
+    # Maximum scrutiny: 5 explore-tier seats, before_finish veto.
     "paranoid": {
         "review": {
             "trigger": "before_finish",

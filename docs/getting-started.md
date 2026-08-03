@@ -48,13 +48,13 @@ the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+
 
 ## Inspect a run
 
-`agent6 attach [<target>]` follows live as a plain event stream (a run tails its log, a
-machine streams its state overview and reasoning); `--tui` opens the full-screen TUI
-instead. `agent6 runs <verb> [<run-id>]` inspects or merges a run. The id is a positional
+`agent6 attach [<target>]` follows live: a run renders its conversation (the same view
+as `agent6 run`; `--raw` tails the plain event stream), a machine streams its state
+overview and reasoning; `--tui` opens the full-screen TUI instead. `agent6 runs <verb> [<run-id>]` inspects or merges a run. The id is a positional
 argument everywhere (an exact id or an unambiguous prefix); omit it for the most recent run.
 
 ```sh
-agent6 attach              # follow live as a plain stream; --tui for the TUI, --json for a snapshot
+agent6 attach              # follow the conversation live; --raw, --tui, or --json instead
 agent6 runs show          # status, iteration, elapsed, cost; --json for scripts
 agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch
@@ -80,14 +80,14 @@ copy back to a turn and continues it as a new run; the original is never changed
 ## Plan, review, and ask
 
 ```sh
-agent6 plan "refactor the config loader"      # read-only plan; run with --from-plan
+agent6 plan "refactor the config loader"      # edit-free plan; run with --from-plan
 agent6 review --base origin/main --head HEAD  # read-only diff review
 agent6 ask "how does the task-graph curator work?"
 ```
 
 `agent6 review --reviewers 3 --personas security,correctness,tests` runs a panel of
 reviewers whose findings are checked against the diff, so only real problems gate.
-`ask` is read-only and works in any directory, git repository or not; `run` and
+`ask` edits nothing and works in any directory, git repository or not; `run` and
 `plan` require one (agent6 builds on git for run branches, diffs, and merges).
 `agent6 run --profile ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
 `paranoid`); `agent6 config profiles` lists them with their contents, and

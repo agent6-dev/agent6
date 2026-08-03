@@ -145,10 +145,11 @@ class RunSnapshot(BaseModel):
     # restart. Run-lifetime like the group counter above (additive default:
     # a snapshot written before pins existed loads with none).
     pins: tuple[str, ...] = ()
-    # Fork extras: the workspace HEAD and curator graph_version at this turn, so
-    # ``fork --at-turn N`` cuts the branch at the right sha and clones the DAG as of
-    # that version. Best-effort at write time: "" / 0 when git/curator was
-    # unreadable. Plain resume reads head_sha (its divergence guard) only.
+    # Fork extras: the workspace HEAD and curator graph_version at this turn.
+    # ``fork --at-turn N`` cuts the branch at head_sha; graph_version is recorded
+    # but the DAG is copied at its latest state, not rebuilt (see app/fork.py).
+    # Best-effort at write time: "" / 0 when git/curator was unreadable. Plain
+    # resume reads head_sha (its divergence guard) only.
     head_sha: str = ""
     graph_version: int = 0
 

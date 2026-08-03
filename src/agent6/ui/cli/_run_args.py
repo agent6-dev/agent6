@@ -41,8 +41,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--profile",
         default="",
         help="Config profile preset (quick/standard/ultra/paranoid or a custom"
-        " [profiles.<name>]). Overrides the top-level `profile` key; your explicit"
-        " settings win.",
+        " [profiles.<name>]). Overrides the top-level `profile` key and your config"
+        " files; an explicit --config FILE or individual flags still win.",
     )
     run_profile.completer = _complete_profiles  # type: ignore[attr-defined]
     run_p.add_argument(

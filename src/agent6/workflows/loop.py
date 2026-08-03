@@ -751,7 +751,7 @@ class Workflow:
         dag_hint = initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
         if self.mode == "plan":
             instructions = (
-                "Begin planning. Use the read-only tools to gather what you"
+                "Begin planning. Use the investigation tools to gather what you"
                 " need, then call `finish_planning` exactly once with the"
                 " plan markdown."
             )

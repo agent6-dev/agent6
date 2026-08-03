@@ -18,8 +18,8 @@ open-ended agent loop.
   `pivot_root`, rebinds `.git` read-only, and confines egress to your provider
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
-- Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, token
-  budgets with hard stops and a best-effort USD ceiling
+- Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, a hard
+  metered USD budget with a token fallback for calls the meter cannot price
 - Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history

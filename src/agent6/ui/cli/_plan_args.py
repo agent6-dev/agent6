@@ -18,7 +18,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "plan",
         help=(
-            "Planning pass: same loop, read-only tools, writes plan.md."
+            "Planning pass: same loop, no edit tools, writes plan.md."
             " Pair with `agent6 run --from-plan <run-id>` to execute."
             " Inspect with `plan show <id>` / `plan edit <id>`."
         ),
@@ -78,8 +78,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         sub,
         "ask",
         help=(
-            "Read-only Q&A: investigate the repo and answer a question in prose"
-            " (no edits/commits). Brainstorm, rubber-duck, or ask how to do"
+            "Q&A: investigate the repo and answer a question in prose"
+            " (no edit tools, no commits). Brainstorm, rubber-duck, or ask how to do"
             " something. `ask list` enumerates saved asks."
         ),
     )

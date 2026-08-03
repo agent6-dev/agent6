@@ -380,7 +380,7 @@ at. A second `agent6 run` refuses loudly and PARKS the submitted task verbatim
 in a new run's manifest (`parked_task`; listings show "parked"); the refusal
 prints the two follow-ups -- `agent6 resume <id>` once the checkout is free
 (resume runs the parked task as written), or a `/parallel 1 <task>` steer that
-hands it to the live run as an isolated lane. Plan/ask are read-only and spawn
+hands it to the live run as an isolated lane. Plan/ask expose no edit tools and spawn
 freely; `--parallel` lanes work in isolated workdirs under the coordinator's
 one lock.
 

@@ -53,7 +53,7 @@ the original stays intact.
 
 <div class="a6-card" markdown>
 ### Plan, run, review, ask
-Read-only planning and repository Q&A, a diff-review panel, and the run loop, each its own
+Edit-free planning and repository Q&A, a diff-review panel, and the run loop, each its own
 command. A live terminal dashboard, full transcripts, and searchable run history.
 </div>
 
@@ -78,8 +78,8 @@ operator-configured MCP server, off by default. No telemetry, no auto-update.
   <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
-`agent6 run` is headless by default: a scrolling event stream in your terminal, the CLI
-mode. `agent6 tui` opens the hub instead: every run for the repository, with its mode,
+`agent6 run` is headless by default: the run's conversation streaming in your terminal,
+the CLI mode. `agent6 tui` opens the hub instead: every run for the repository, with its mode,
 status, and cost, where you open a run to read its live conversation, toggle the
 dashboard (Ctrl+D), or scroll the event log. `agent6 run --tui` jumps straight to that
 conversation view; `-i` drives the run from a stdin REPL. The [tour](tour.md) has a
