@@ -633,7 +633,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     def fake_summary(rd: Path) -> RunSummary:
         return RunSummary(
             run_id=rd.name, mode="run", task="t", status=next(statuses),
-            reason="", cost_usd=0.0, mtime=0.0,
+            reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
         )  # fmt: skip
 
     def fake_worker_is_alive(_run_dir: Path) -> bool:

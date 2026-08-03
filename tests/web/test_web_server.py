@@ -825,6 +825,91 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     assert last["status_label"] == "stale"
 
 
+def test_sse_run_created_frame_is_terminal(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `created` run (worker killed in preflight before run.start, or a
+    fork --no-run) reaches terminal WITHOUT a run.end, but the close only
+    checked "stale": the tailer pinged forever, holding the thread and the
+    frontends/ claim. The close now asks the codebase's own died_without_end,
+    and the terminal frame keeps the truthful label ("created", not a
+    hardcoded "stale")."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "created-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    seen = b""
+    eof = False
+    try:
+        conn.request("GET", "/api/run/created-run/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        import time as _time
+
+        deadline = _time.monotonic() + 4.0
+        while _time.monotonic() < deadline:
+            try:
+                chunk = resp.read1(65536)
+            except TimeoutError:
+                continue
+            if chunk == b"":
+                eof = True
+                break
+            seen += chunk
+    finally:
+        conn.close()
+    assert eof, "stream never closed for a created run"
+    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+    last = json.loads(frames[-1][len(b"data:") :])
+    assert last["finished"] is True
+    assert last["status_label"] == "created"
+    assert last["live"] is False
+
+
+def test_sse_run_parked_keeps_streaming(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`parked` also never reached run.end, but its stream deliberately stays
+    open: a parked submission the operator resumes starts logging into this
+    same stream. Pin the exclusion so the died_without_end close cannot
+    swallow it."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": "queued", "parked_task": "queued"}),
+        encoding="utf-8",
+    )
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=1)
+    eof = False
+    try:
+        conn.request("GET", "/api/run/parked-run/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        import time as _time
+
+        deadline = _time.monotonic() + 1.5  # several heartbeats
+        while _time.monotonic() < deadline:
+            try:
+                chunk = resp.read1(65536)
+            except TimeoutError:
+                continue
+            if chunk == b"":
+                eof = True
+                break
+    finally:
+        conn.close()
+    assert not eof, "the parked run's stream must stay open for a future resume"
+
+
 def test_sse_machine_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int],
     tmp_path: Path,

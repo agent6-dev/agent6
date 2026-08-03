@@ -50,6 +50,7 @@ from agent6.ui.web.page import (
 )
 from agent6.viewmodel import (
     apply_event,
+    died_without_end,
     initial_state,
     machine_is_parked,
     run_state_as_dict,
@@ -626,16 +627,15 @@ class _Handler(BaseHTTPRequestHandler):
             d = {**run_state_as_dict(state, run_dir), **header}
             if dead and not d.get("finished"):
                 # Fold the liveness truth the dead-worker branch already knows
-                # into the frame: a crashed run (no run.end) folds to
+                # into the frame: a run with no run.end folds to
                 # finished=false/"running", but s.finished is the client's ONLY
                 # stream-terminate signal (onerror deliberately lets
                 # EventSource auto-retry). Without this the close never sticks:
                 # the tab reconnects and re-folds the whole log every ~18s
                 # forever, painting a live "working…" spinner over a dead run.
-                # "stale" is the hub's word for the same pid-dead condition, so
-                # the two surfaces agree.
+                # status_label already carries the dir word (stale/created), so
+                # only the terminate bit needs forcing.
                 d["finished"] = True
-                d["status_label"] = "stale"
             return d
 
         try:
@@ -647,12 +647,14 @@ class _Handler(BaseHTTPRequestHandler):
                 except queue.Empty:
                     if not self._sse_ping():
                         return
-                    # A run that died without a run.end (crash / went quiet) would
-                    # otherwise pin this worker forever. The one dir decision
-                    # (the hub's word) covers both dead shapes: a recorded pid
-                    # that no longer runs, and a pid-less run silent past its
-                    # window.
-                    if summarize_run_dir(run_dir).status == "stale":
+                    # A run that reached terminal without its own run.end
+                    # (crash, went quiet, killed in preflight) would otherwise
+                    # pin this worker forever; ask the codebase's own
+                    # died_without_end rather than one word of it. `parked` is
+                    # deliberately excluded: a parked submission the operator
+                    # resumes starts logging into this same stream.
+                    word = summarize_run_dir(run_dir).status
+                    if word != "parked" and died_without_end(word):
                         self._sse_send(frame(dead=True))
                         return
                     continue
