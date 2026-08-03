@@ -106,6 +106,9 @@ main { padding: 0; }
 .pill.parked { color: var(--warn); border-color: var(--warn); }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
+/* A corrupt machine source/journal ("unreadable"): a problem, not a neutral
+   finish -- flag it red like a failure, not the bare .pill chrome. */
+.pill.unreadable { color: var(--err); border-color: var(--err); }
 
 .list { display: flex; flex-direction: column; }
 .item {
