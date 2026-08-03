@@ -120,9 +120,6 @@ class BackgroundShells:
         log_dir = self.log_root / shell_id
         shell_dir.mkdir(parents=True, exist_ok=True)
         log_fd = self._open_log(shell_id)
-        (shell_dir / _META_NAME).write_text(
-            json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
-        )
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
         policy = policy_for(wrapped, (log_dir,))
         job: BackgroundJob | SessionJob
@@ -139,6 +136,13 @@ class BackgroundShells:
         except (JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
+        # AFTER the start: this file is the whole roster for a surface in
+        # another process, so writing it first listed a command that never
+        # started as "still running" -- while this run's own roster did not
+        # have it and read_background denied the id existed.
+        (shell_dir / _META_NAME).write_text(
+            json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
+        )
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
         self._shells[shell_id] = shell
         return self._view(shell)

@@ -455,3 +455,28 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
     got = shells.stop(view.id)
     assert got.state != "stopped", f"a stop that failed rendered as {got.state!r}"
     assert "did not exit" in got.detail, got
+
+
+def test_a_command_that_failed_to_start_is_not_listed_as_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """meta.json is what the out-of-process surfaces read (`/shells`, a
+    dashboard widget), and it was written BEFORE the start attempt. A command
+    that never started therefore showed up there as "still running", while the
+    run's own roster did not list it and read_background said no such id --
+    two surfaces contradicting each other about one command.
+    """
+    import agent6.tools.background as bg
+    from agent6.sandbox.jail import JailUnavailableError
+
+    def refuses(*_a: object, **_k: object) -> BackgroundJob:
+        raise JailUnavailableError("no launcher today")
+
+    monkeypatch.setattr(bg, "start_in_jail", refuses)
+    root = tmp_path / "shells"
+    shells = BackgroundShells(root)
+
+    with pytest.raises(BackgroundError):
+        shells.start(("/bin/true",), _policy_for(tmp_path))
+    assert shells.roster() == []
+    assert bg.roster_from_dir(root) == [], "a command that never started is listed on disk"
