@@ -209,7 +209,6 @@ The security boundary. Profiles and the network model are specified in
 | `auto_merge` | `false` | After a successful run, run `merge_strategy` automatically to land the run branch on its base (what `agent6 runs merge` does, for you). Requires `branch_per_run` (config refuses the pair otherwise: without a run branch there is nothing to merge). On conflict the run branch is left intact with instructions. With `auto_stash_pop`, the merge lands first, then your stashed pre-run changes. |
 | `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (reachable-merged, i.e. `merge`/`ff` strategies). A squash-merged branch is unreachable, so it is reported with the `git branch -D` to remove it by hand, never force-deleted. Requires `auto_merge` (config refuses it otherwise). With both on, run branches stop accumulating. |
 | `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the host (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo, and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
-| `allow_push` / `allow_force` / `allow_history_rewrite` | `false` | Reserved. `git_ops.py` refuses push / `--force` / history rewrite / `reset --hard` unconditionally regardless of these (SECURITY §5). |
 
 ### `[git.commit]`
 

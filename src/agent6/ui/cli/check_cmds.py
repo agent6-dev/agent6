@@ -338,14 +338,7 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
             )
         )
 
-    ok_git = cfg.git.allow_push is False
-    detail_git = "git.allow_push=False (push is blocked, as required)"
-    if not ok_git:
-        detail_git = "git.allow_push=True; agent6 never pushes; set it back to false"
-    print(f"[{'PASS' if ok_git else 'FAIL'}] config.git_policy: {detail_git}")
-    out.append(
-        _DoctorCheck(
-            name="config.git_policy", status="PASS" if ok_git else "FAIL", detail=detail_git
-        )
-    )
+    detail_git = "push/--force/history rewrites are refused unconditionally (git_ops, no override)"
+    print(f"[PASS] config.git_policy: {detail_git}")
+    out.append(_DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
     return out

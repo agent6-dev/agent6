@@ -47,9 +47,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 [workflow]
 verify_command = ["true"]
 [budget]

@@ -186,9 +186,6 @@ run_commands = "ask"
 protect_git = true
 
 [git]
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = ["true"]

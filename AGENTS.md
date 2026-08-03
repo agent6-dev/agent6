@@ -291,8 +291,9 @@ these are the invariants a change must preserve.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "auto"`,
-  `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`,
-  `git.allow_* = false`). Every leaf is auditable via `agent6 config show`;
+  `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; push, force,
+  and history rewrites have NO config knob at all -- `git_ops` refuses them
+  unconditionally). Every leaf is auditable via `agent6 config show`;
   `Config` stays `extra="forbid", frozen=True`. Loosening a security default
   gets the same scrutiny as adding a tool.
 - Secrets (provider API keys) live in `$XDG_CONFIG_HOME/agent6/secrets.toml`,

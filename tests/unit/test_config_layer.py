@@ -75,7 +75,7 @@ def test_source_map_attribution(repo: Path) -> None:
     assert eff.sources["workflow.verify_command"] == "repo"
     assert eff.sources["sandbox.run_commands"] == "repo"  # repo wins
     # Untouched secure default:
-    assert eff.sources["git.allow_push"] == "default"
+    assert eff.sources["git.run_repo_hooks"] == "default"
 
 
 def test_allow_urls_last_overlay_wins(repo: Path) -> None:
@@ -130,7 +130,7 @@ def test_build_config_view_provenance_type_choices(repo: Path) -> None:
     assert rc.source == "repo" and rc.modified is True
     # enum field -> a dropdown's worth of choices, typed "choice"
     assert rc.py_type == "choice" and rc.choices is not None and "yes" in rc.choices
-    ap = settings["git.allow_push"]
+    ap = settings["git.run_repo_hooks"]
     assert ap.source == "default" and ap.modified is False
     assert ap.py_type == "bool" and ap.default is False
 

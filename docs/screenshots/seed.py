@@ -45,7 +45,6 @@ protect_git = true
 [git]
 require_clean_worktree = true
 branch_per_run = true
-allow_push = false
 
 [budget]
 max_tokens_fallback = 2000000

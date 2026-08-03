@@ -37,9 +37,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = ["true"]
@@ -73,11 +70,11 @@ def test_extra_key_forbidden(tmp_path: Path) -> None:
 
 
 def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
-    # `allow_push` is a security field; omitting it must default to the SAFE
-    # (disabled) value rather than failing to load (secure-by-default).
-    body = _VALID_TOML.replace("allow_push = false\n", "")
+    # protect_git is a security field; omitting it must default to the SAFE
+    # (enabled) value rather than failing to load (secure-by-default).
+    body = _VALID_TOML.replace("protect_git = true\n", "")
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.git.allow_push is False
+    assert cfg.sandbox.protect_git is True
 
 
 def test_with_sandbox_overrides_disable_forces_none() -> None:
@@ -502,9 +499,6 @@ run_commands = "ask"
 protect_git = true
 
 [git]
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = ["true"]

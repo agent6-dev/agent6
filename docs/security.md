@@ -312,8 +312,6 @@ syscall for hardened), never guessed from the kernel version.
       `push`, `reset --hard`, `commit --amend`, `rebase`,
       `filter-branch`/`filter-repo`, `branch -D`/`--force`, and any `--force`/`-f`
       on a destructive verb.
-    - `git.allow_push`/`allow_force`/`allow_history_rewrite` exist for
-      forward-compat but are ignored.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list.**
     - On `strict`, `protect_git` read-only-binds `.git`, so a rewrite fails and

@@ -8,9 +8,9 @@ pydantic and surface field-pointing errors.
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
 (``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "auto"``,
-``sandbox.run_commands = "ask"``,
-``sandbox.protect_git = true``, ``git.allow_push/force/history_rewrite =
-false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
+``sandbox.run_commands = "ask"``, ``sandbox.protect_git = true``; git push,
+``--force``, and history rewrites are refused unconditionally by ``git_ops``,
+with no config override at all). This means a config can be layered (global ``$XDG_CONFIG_HOME``
 defaults, per-repo config (out of the workspace, under the state dir) overrides)
 and a repo can be
 zero-config when the global config supplies providers + models. Use
@@ -558,13 +558,6 @@ class GitConfig(BaseModel):
     # way `core.fsmonitor`/`diff.external` stay neutralized (those fire on
     # status/diff and have no legitimate use here).
     run_repo_hooks: bool = False
-    # Security-sensitive: default to the safe (disabled) value. agent6's
-    # git_ops layer refuses push / force / history rewrite unconditionally
-    # regardless of these toggles; they are reserved (nothing honors them
-    # today) and `agent6 check` flags allow_push=True as a misconfiguration.
-    allow_push: bool = False
-    allow_force: bool = False
-    allow_history_rewrite: bool = False
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
 
     @model_validator(mode="after")
