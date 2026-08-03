@@ -806,6 +806,40 @@ def test_a_jailed_command_cannot_set_the_setuid_bit(
 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_the_setuid_block_covers_fchmodat2(
+    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """The same threat via the syscall that SUPERSEDED fchmodat.
+
+    fchmodat2 (Linux 6.6+) takes the mode in the same argument and was absent
+    from the filter, so on a new kernel the exact write the block exists to stop
+    went through: probed against a build without it, the bit landed and the file
+    came back mode 4755. `chmod` cannot reach it -- coreutils still calls
+    fchmodat -- so it takes a direct syscall to pin.
+    """
+    probe = (
+        "import ctypes, os\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "open('x', 'w').close()\n"
+        "libc.syscall(ctypes.c_long(452), ctypes.c_int(-100), b'x',"
+        " ctypes.c_uint(0o4755), ctypes.c_int(0))\n"
+    )
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("python3", "-c", probe),
+            isolation=isolation,
+            timeout_s=20.0,
+        )
+    )
+    target = tmp_path / "x"
+    if not target.exists():
+        pytest.skip(f"probe did not run: {res.stderr[:200]}")
+    assert not target.stat().st_mode & stat.S_ISUID
+    assert not target.stat().st_mode & stat.S_ISGID
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_ordinary_chmod_still_works(
     jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
 ) -> None:

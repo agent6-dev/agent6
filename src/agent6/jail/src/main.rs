@@ -335,7 +335,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         {
             continue;
         }
-        let _ = mount(
+        // Best-effort means UNREACHABLE, never writable: if the read-only
+        // remount fails the bind is already up, so drop it rather than leave the
+        // operator's tool dir writable from inside the jail (a jailed command
+        // could then rewrite a binary that later runs on the HOST).
+        if mount(
             Some(""),
             &dst,
             Some(""),
@@ -345,7 +349,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 | MsFlags::MS_REC
                 | carried_mount_flags(&dst),
             Some(""),
-        );
+        )
+        .is_err()
+        {
+            let _ = umount2(&dst, MntFlags::MNT_DETACH);
+        }
     }
     // /proc — bind from host /proc (it's still our PID namespace's view from outside,
     // but inside the new pid ns we'll mount a fresh one below).
@@ -545,6 +553,23 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             &dst,
             Some(""),
             MsFlags::MS_BIND | MsFlags::MS_REC,
+            Some(""),
+        )
+        .map_err(io_err)?;
+        // The nosuid/nodev floor every other bind here carries. This one is
+        // writable by design, which is the case that most needs it: without the
+        // remount a setuid binary or device node placed in a granted dir keeps
+        // those bits inside the jail.
+        mount(
+            Some(""),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND
+                | MsFlags::MS_REMOUNT
+                | MsFlags::MS_NOSUID
+                | MsFlags::MS_NODEV
+                | MsFlags::MS_REC
+                | carried_mount_flags(&dst),
             Some(""),
         )
         .map_err(io_err)?;
@@ -1030,10 +1055,16 @@ fn apply_seccomp() -> io::Result<()> {
     // One rule per bit: rules for a syscall are OR-ed, conditions within a rule
     // are AND-ed, so a single MaskedEq(0o6000) would only catch a mode that set
     // BOTH -- `chmod 4755` sets just S_ISUID.
+    // fchmodat2 (Linux 6.6+) supersedes fchmodat and takes the mode in the same
+    // argument, so without it the newest kernels hand back the exact write this
+    // filter exists to stop. libc 0.2.x does not define SYS_fchmodat2 for every
+    // target, so name it -- 452 on both x86_64 and aarch64.
+    const SYS_FCHMODAT2: i64 = 452;
     for (syscall, mode_arg) in [
         (libc::SYS_chmod, 1_u8),
         (libc::SYS_fchmod, 1),
         (libc::SYS_fchmodat, 2),
+        (SYS_FCHMODAT2, 2),
     ] {
         let mut per_bit = Vec::new();
         for bit in [0o4000_u64, 0o2000] {
