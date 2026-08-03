@@ -880,11 +880,13 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         rw_paths.push(p.clone());
     }
     for p in &rw_paths {
-        // Skip any rw_path that would shadow a protect_path. Landlock
-        // rules combine permissively: if any rule grants W on a path,
-        // the write is allowed. A blanket RW grant on an ancestor of a
-        // protected path defeats the carve-out, so drop the ancestor.
-        if has_protect && protect_set.iter().any(|prot| prot.starts_with(p)) {
+        // Skip any rw_path that would shadow a protect_path: Landlock combines
+        // permissively, so a blanket RW grant on an ancestor of a protected path
+        // defeats the carve-out. Compare the CANONICAL rw_path (protect_set is
+        // canonical too) so a symlinked rw_path resolving to a protect ancestor
+        // can't slip past -- PathFd::new below follows the symlink.
+        let canon_p = p.canonicalize().unwrap_or_else(|_| p.clone());
+        if has_protect && protect_set.iter().any(|prot| prot.starts_with(&canon_p)) {
             eprintln!(
                 "agent6-jail: hardened: skipping rw grant on {} (would shadow a protect_path)",
                 p.display()

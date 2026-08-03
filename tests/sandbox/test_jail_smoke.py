@@ -300,6 +300,32 @@ def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path:
         _shutil.rmtree(outside, ignore_errors=True)
 
 
+def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
+    jail_bin: Path, tmp_path: Path
+) -> None:
+    """A symlinked extra_rw_path resolving to a protect-path ancestor must get no
+    RW. The rw-shadow guard compares the CANONICAL rw_path against the (canonical)
+    protect set, so a blanket grant can't slip past and shadow the carve-out."""
+    secret = tmp_path / "secret"
+    secret.mkdir()
+    protected = secret / "key.txt"
+    protected.write_text("SECRET\n", encoding="utf-8")
+    (tmp_path / "rwlink").symlink_to(secret, target_is_directory=True)
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "echo pwned > secret/key.txt; true"),
+            profile="hardened",
+            extra_protect_paths=(protected,),
+            extra_rw_paths=(tmp_path / "rwlink",),
+            timeout_s=10.0,
+        )
+    )
+    assert protected.read_text(encoding="utf-8").strip() == "SECRET", (
+        f"a symlinked rw_path shadowed the protect path; stderr={res.stderr!r}"
+    )
+
+
 def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path) -> None:
     """Hardened profile blocks writes to protect_paths via Landlock carve-out.
 
