@@ -73,6 +73,7 @@ from agent6.ui.cli.memory_cmds import (
     _cmd_memory_unpin,
 )
 from agent6.ui.cli.model import _cmd_model
+from agent6.ui.cli.notes_cmds import _cmd_notes_edit, _cmd_notes_show
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 from agent6.ui.cli.plan_watch import (
     _cmd_plan_edit,
@@ -439,6 +440,12 @@ def _dispatch_model(args: argparse.Namespace) -> int:
     )
 
 
+def _dispatch_notes(args: argparse.Namespace) -> int:
+    if args.notes_command == "show":
+        return _cmd_notes_show()
+    return _cmd_notes_edit()
+
+
 def _dispatch_memory(args: argparse.Namespace) -> int:
     if args.memory_command == "add":
         return _cmd_memory_add(args.scope, args.body)
@@ -555,6 +562,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": _dispatch_check,
     "connect": _dispatch_connect,
     "model": _dispatch_model,
+    "notes": _dispatch_notes,
     "memory": _dispatch_memory,
     "skills": _dispatch_skills,
     "history": _dispatch_history,

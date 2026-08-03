@@ -190,6 +190,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_model_parser(sub)
 
+    notes_p = _sub(sub, "notes", help="Show or edit the agent's notes scratchpad.")
+    notes_sub = notes_p.add_subparsers(dest="notes_command", required=True, metavar="<subcommand>")
+    _sub(notes_sub, "show", help="Print this repo's notes.md and exit.")
+    _sub(notes_sub, "edit", help="Open this repo's notes.md in $EDITOR (default: vi).")
+
     mem_p = _sub(sub, "memory", help="Manage persistent agent memories.")
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
     mem_add = _sub(mem_sub, "add", help="Append a new memory entry.")

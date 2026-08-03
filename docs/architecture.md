@@ -181,7 +181,8 @@ Notes:
 - **Notes scratchpad.** One durable rewritable document per repo
   (`<state-dir>/<repo-id>/notes.md`, 16000 chars), injected verbatim as
   `<notes>` and rewritten whole with `write_notes`; `read_notes` re-reads it
-  mid-session. Where memories are append-only so an invalidation keeps its
+  mid-session. `agent6 notes show` prints it and `agent6 notes edit` opens it
+  in `$EDITOR`, so the operator reads and edits the same file the agent does. Where memories are append-only so an invalidation keeps its
   audit trail, notes are restructured freely -- resolved items deleted,
   duplicates merged -- which is what keeps a working document readable past
   twenty sessions. Whole-file replace, not patch. Over the cap the write is

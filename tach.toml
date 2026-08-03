@@ -62,6 +62,8 @@ path = "agent6.ui.cli"
 depends_on = [
   "agent6.app",
   "agent6.config",
+  # the notes verbs read/edit the same store the loop injects
+  "agent6.notes",
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.write",

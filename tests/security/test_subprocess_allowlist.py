@@ -56,6 +56,7 @@ ALLOWED = {
     "ui/cli/_steer.py",
     "ui/cli/completions_cmd.py",
     "ui/cli/history_cmds.py",
+    "ui/cli/notes_cmds.py",
     "ui/cli/plan_watch.py",
     "ui/cli/review_cmds.py",
     "ui/cli/sessions_cmds.py",

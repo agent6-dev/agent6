@@ -253,7 +253,7 @@ fixed argv depending only on operator input, never LLM output.
   machine notification; the message is inert data, never a command or an
   option.
 - `ui/cli/` helpers:
-    - `$EDITOR` for plan and steer editing.
+    - `$EDITOR` for plan, notes and steer editing.
     - `git diff/log` for the review subcommand and the `sessions`/`ask` diff views;
       argv from the run manifest the CLI wrote outside the jail.
     - `rg` for history search.
