@@ -23,6 +23,11 @@ def is_safe_run_id(run_id: str) -> bool:
     return bool(run_id) and "/" not in run_id and "\\" not in run_id and run_id not in {".", ".."}
 
 
+# The event journal's filename. Named once: a reader that hardcodes the wrong
+# one silently finds nothing, which is indistinguishable from an empty session.
+LOGS_NAME = "logs.jsonl"
+
+
 @dataclass(frozen=True, slots=True)
 class RunLayout:
     """Filesystem layout for one `agent6 run`.
@@ -83,7 +88,7 @@ class RunLayout:
 
     @property
     def logs_path(self) -> Path:
-        return self.run_dir / "logs.jsonl"
+        return self.run_dir / LOGS_NAME
 
     @property
     def user_inputs_path(self) -> Path:

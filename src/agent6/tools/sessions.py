@@ -75,7 +75,7 @@ def conversation(layout: RunLayout, *, max_chars: int) -> str:
     usually wants, and the head is the task the roster already carries.
     """
     lines: list[str] = []
-    journal = layout.run_dir / "events.jsonl"
+    journal = layout.logs_path
     try:
         raw = journal.read_text(errors="replace")
     except OSError as exc:
@@ -120,7 +120,7 @@ def matching_sessions(state_dir: Path, query: str) -> list[SessionBrief]:
         if layout is None:
             continue
         try:
-            raw = (layout.run_dir / "events.jsonl").read_text(errors="replace")
+            raw = layout.logs_path.read_text(errors="replace")
         except OSError:
             continue
         if needle in raw.lower():

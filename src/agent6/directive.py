@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`), shared by
+"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`), shared by
 the coordinator steer parser (``workflows/loop.py``) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
@@ -113,6 +113,21 @@ def parse_compact(text: str) -> str | None:
     """The summary focus a `/compact` composer message carries ("" for a bare
     /compact), or ``None`` when *text* is not a compact directive."""
     m = _COMPACT_TOKEN.match(text)
+    if m is None:
+        return None
+    return text[m.end() :].strip()
+
+
+# A leading `/btw` token, same discipline as the two above. A btw is a
+# QUESTION asked beside the run, never steer text: it must not reach the loop.
+_BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)")
+
+
+def parse_btw(text: str) -> str | None:
+    """The question a `/btw` composer message carries, or ``None`` when *text*
+    is not a btw directive. A bare `/btw` carries "" -- there is nothing to
+    ask, and the caller says so rather than opening an empty session."""
+    m = _BTW_TOKEN.match(text)
     if m is None:
         return None
     return text[m.end() :].strip()

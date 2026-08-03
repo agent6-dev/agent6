@@ -30,7 +30,7 @@ def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: li
     )
     lines = [json.dumps({"type": "run.start", "user_task": task})]
     lines += [json.dumps({"type": "role.result", "text": t}) for t in turns]
-    (d / "events.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return d
 
 
@@ -85,7 +85,7 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
 def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
     """A live session's last line can be half-written."""
     d = _session(tmp_path, "runs", "live-BBBBBB", "run", "t", ["first"])
-    with (d / "events.jsonl").open("a", encoding="utf-8") as fh:
+    with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "role.res')
     layout = session_layout(tmp_path, "live-BBBBBB")
     assert layout is not None
