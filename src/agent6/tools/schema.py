@@ -240,11 +240,12 @@ class RunBackgroundInput(_ToolInput):
         " test suite, a file watcher. Same sandbox, PATH and approval as run_command; argv must"
         " be an array of strings (no shell). Returns the new command's id and the state of every"
         " background command this run started. Its output goes to a log you read with"
-        " read_background -- nothing here ever blocks, so poll instead of waiting. Each command"
-        " gets its own sandbox instance, so what one starts serving no other command can reach"
-        " unless the operator has opened the sandbox network: use this for a command whose"
-        " OUTPUT you want. Every background command is killed when the run ends, so never use"
-        " this for work whose result you need after the run."
+        " read_background -- nothing here ever blocks, so poll instead of waiting. Under the"
+        " default isolation this run's commands share one sandbox network, so a server you start"
+        " here is reachable by a later run_command at the address it prints (this is how you run"
+        " a dev server and then curl it); a weaker isolation gives each command its own, and"
+        " nothing outside reaches it either way. Every background command is killed when the run"
+        " ends, so never use this for work whose result you need after the run."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)
