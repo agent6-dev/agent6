@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agent6.app.baseline import gate_on_base
 from agent6.app.merge import execute_merge
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config, NotifyConfig
 from agent6.git_ops import (
@@ -93,8 +94,13 @@ def _print_next_session(layout: RunLayout) -> None:
             print(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
 
 
-def _print_baseline(
-    result: RunResult, *, layout: RunLayout, cfg: Config, isolation: IsolationLevel
+def print_baseline(
+    result: RunResult,
+    *,
+    layout: RunLayout,
+    cfg: Config,
+    isolation: IsolationLevel,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """On a red gate, say whether it was red BEFORE this run.
 
@@ -102,6 +108,9 @@ def _print_baseline(
     and the operator cannot tell them apart from a red exit alone -- least of
     all when the task WAS to change the tests. Only on red: green raises no
     question, and the answer would change nothing.
+
+    Runs OUTSIDE the run's lock scope (it is a second full gate) and announces
+    itself first: a silent wait as long as the gate reads as a hang.
     """
     if result.verified != "failed":
         return
@@ -113,15 +122,19 @@ def _print_baseline(
     pinned = ()
     with contextlib.suppress(ManifestError):
         pinned = read_manifest(layout.run_dir).workflow.verify_command
+    argv = tuple(pinned) or tuple(cfg.workflow.verify_command)
+    if not (argv and base_sha):
+        return
+    reporter.out(f"\nchecking the gate on the base commit ({shlex.join(argv)}) ...")
     baseline = gate_on_base(
         Path.cwd(),
         base_sha,
-        argv=tuple(pinned) or tuple(cfg.workflow.verify_command),
+        argv=argv,
         config=cfg,
         isolation=isolation,
         timeout_s=cfg.workflow.verify_timeout_s,
     )
-    print(f"\n{baseline.line()}")
+    reporter.out(baseline.line())
 
 
 def _print_stale_gate(result: RunResult) -> None:
@@ -145,8 +158,6 @@ def print_run_end(
     layout: RunLayout,
     budget: BudgetTracker,
     console_stream: bool,
-    cfg: Config,
-    isolation: IsolationLevel,
 ) -> None:
     """One composed end-of-run block: outcome, summary, cost, and the next step.
 
@@ -184,7 +195,6 @@ def print_run_end(
         print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout)
-    _print_baseline(result, layout=layout, cfg=cfg, isolation=isolation)
     _print_stale_gate(result)
     print(budget.format_summary())
     _print_run_total_across_legs(layout)

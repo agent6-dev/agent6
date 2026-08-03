@@ -18,7 +18,6 @@ import pytest
 from agent6.app import finalize as _finalize
 from agent6.app.finalize import print_interrupt_end, print_run_end
 from agent6.budget import BudgetTracker
-from agent6.config import Config
 from agent6.git_ops import GitStatus
 from agent6.runs.layout import RunLayout
 from agent6.workflows._run_state import RunResult
@@ -48,8 +47,6 @@ def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, caps
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "finished" in out
@@ -73,8 +70,6 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "passed" in out
@@ -112,8 +107,6 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out
     assert "changes merged into main" in out
@@ -150,8 +143,6 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out
     assert "you are on agent6/r3" in out
@@ -201,8 +192,6 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "failed" in out and "provider error" in out
@@ -231,8 +220,6 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     out = capsys.readouterr().out
     assert "RUN TOTAL (all 2 legs): $0.0316" in out
@@ -256,8 +243,6 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
-        cfg=Config(),
-        isolation="none",
     )
     assert "RUN TOTAL" not in capsys.readouterr().out
 

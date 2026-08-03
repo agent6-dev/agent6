@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from agent6.app._session import (
     SessionRefused,
@@ -35,13 +35,14 @@ from agent6.app.finalize import (
     finalize_auto_merge,
     finalize_auto_stash,
     fire_notify_hook,
+    print_baseline,
     print_interrupt_end,
     print_run_end,
     run_exit_code,
     stash_recovery_hint,
 )
 from agent6.app.manifest import (
-    stamp_verify_gate,
+    pin_gate,
     write_run_manifest,
 )
 from agent6.app.preflight import (
@@ -390,6 +391,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # the verbatim task and `agent6 resume <id>` starts it once the checkout
     # frees up.
     repo_lock_fd: int | None = None
+    # Bound before the lock scope so the teardown can report on the run whatever
+    # went wrong inside it.
+    result: RunResult | None = None
     if mode == "run":
         repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_run_id)
         if repo_lock_fd is None:
@@ -567,15 +571,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             gate_origin = "inferred"
         # Pin it: from here the run is judged by THIS gate, whatever the file it
         # was inferred from says later.
-        stamp_verify_gate(layout.run_dir, cfg.workflow.verify_command, gate_origin)
-
-        def _repin_adopted_gate(event: dict[str, Any]) -> None:
-            """A gateless run that adopts a gate mid-run re-pins it, so the
-            manifest never reads gateless while a gate is live."""
-            if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
-                stamp_verify_gate(layout.run_dir, tuple(event.get("command", ())), "adopted")
-
-        events.subscribe(_repin_adopted_gate)
+        pin_gate(
+            layout.run_dir,
+            cfg.workflow.verify_command,
+            gate_origin,
+            events=events,
+            reporter=reporter,
+        )
 
         # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
         # console view's heartbeat spinner is suspended for the prompt so its
@@ -595,7 +597,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         steer_state = frontend.make_steer_state(events, layout.run_dir, _run_facts)
 
-        result = None
         interrupted = False
         dispatcher: ToolDispatcher | None = None
         # Spawned inside the try so the finally below tears it down even if a
@@ -785,8 +786,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             layout=layout,
             budget=budget,
             console_stream=console_stream,
-            cfg=cfg,
-            isolation=isolation,
         )
         fire_notify_hook(
             cfg.notify,
@@ -835,6 +834,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 )
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
+        # Only now: the baseline is a full second gate run, and holding the
+        # checkout for it left `agent6 run` refusing, naming a run the operator
+        # had already watched end.
+        if result is not None:
+            print_baseline(result, layout=layout, cfg=cfg, isolation=isolation, reporter=reporter)
         if detach_requested:
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so

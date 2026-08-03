@@ -29,11 +29,12 @@ from agent6.app._setup import (
 from agent6.app.finalize import (
     finalize_auto_merge,
     fire_notify_hook,
+    print_baseline,
     print_interrupt_end,
     print_run_end,
     run_exit_code,
 )
-from agent6.app.manifest import stamp_verify_gate
+from agent6.app.manifest import pin_gate
 from agent6.app.preflight import (
     headless_approval_refusal,
     infer_verify_if_unset,
@@ -96,9 +97,10 @@ from agent6.runs.lock import (
 )
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.types import IsolationLevel
 from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import RunReason, load_run_snapshot
-from agent6.workflows.loop import ResumeError, Workflow
+from agent6.workflows.loop import ResumeError, RunResult, Workflow
 
 
 def ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
@@ -289,6 +291,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     repo_lock_fd: int | None = None
+    # Bound before the lock scope so the teardown can report on the leg.
+    result: RunResult | None = None
+    isolation: IsolationLevel | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `preset` (resume
@@ -528,17 +533,20 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
         # Re-pin for this leg: config outranks the pin, the pin outranks a
         # re-inference, and the manifest has to say which one this leg used.
+        pinned_origin = ""
         with contextlib.suppress(ManifestError, OSError):
-            pinned = read_manifest(layout.run_dir).workflow
-            stamp_verify_gate(
-                layout.run_dir,
-                cfg.workflow.verify_command,
-                leg_gate_origin(
-                    configured=leg_configured,
-                    has_gate=bool(cfg.workflow.verify_command),
-                    pinned=pinned.verify_origin,
-                ),
-            )
+            pinned_origin = read_manifest(layout.run_dir).workflow.verify_origin
+        pin_gate(
+            layout.run_dir,
+            cfg.workflow.verify_command,
+            leg_gate_origin(
+                configured=leg_configured,
+                has_gate=bool(cfg.workflow.verify_command),
+                pinned=pinned_origin,
+            ),
+            events=events,
+            reporter=reporter,
+        )
 
         # Bound now, not read in the handler: these never change for the leg.
         facts_model, facts_commands = session.rm_role.model, cfg.sandbox.run_commands
@@ -555,7 +563,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         steer_state = frontend.make_steer_state(events, layout.run_dir, _run_facts)
 
-        result = None
         interrupted = False
         dispatcher: ToolDispatcher | None = None
         # Spawned inside the try so the finally below tears it down even if a
@@ -715,8 +722,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             layout=layout,
             budget=budget,
             console_stream=console_stream,
-            cfg=cfg,
-            isolation=isolation,
         )
         fire_notify_hook(
             cfg.notify,
@@ -734,6 +739,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
+        # Only now: a second full gate run must not hold the checkout past the
+        # leg the operator watched end.
+        if result is not None and cfg is not None and isolation is not None:
+            print_baseline(result, layout=layout, cfg=cfg, isolation=isolation, reporter=reporter)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)

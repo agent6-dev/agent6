@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from agent6 import __version__
+from agent6.app.reporter import Reporter
 from agent6.config import Config, role_for_mode
+from agent6.events import EventSink
 from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import (
@@ -69,7 +71,7 @@ def write_run_manifest(
     mode: str = "run",
     effective_preset: str = "",
     preset_from_flag: bool = False,
-    verify_origin: str = "",
+    gate: tuple[Sequence[str], str] | None = None,
     parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -82,10 +84,10 @@ def write_run_manifest(
     *liquid* until 1.0 - bump ``RunManifest.version`` only when the new shape
     genuinely improves a downstream consumer.
 
-    ``parent_run_id`` / ``forked_from_turn`` / ``forked_from_sha`` are set only
-    for a run created by ``agent6 fork``; they record the lineage (source run +
-    the turn forked from + the workspace sha at that turn). A non-forked run
-    leaves them null.
+    ``parent_run_id`` / ``forked_from_turn`` / ``forked_from_sha`` / ``gate`` are
+    set only for a run created by ``agent6 fork``; they record the lineage
+    (source run + the turn forked from + the workspace sha at that turn + the
+    gate the source was judged by). A non-forked run leaves them null.
     """
     m = RunManifest(
         agent6_version=__version__,
@@ -115,8 +117,10 @@ def write_run_manifest(
             # replayed as an override on resume (see WorkflowStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
-            verify_command=tuple(cfg.workflow.verify_command),
-            verify_origin=verify_origin,
+            # A fork passes the source's pin; a fresh run has only what config
+            # carries, and `pin_gate` stamps the resolved pair moments later.
+            verify_command=tuple(gate[0] if gate else cfg.workflow.verify_command),
+            verify_origin=gate[1] if gate else "",
         ),
         policy=PolicyStamp(
             run_commands=cfg.sandbox.run_commands,
@@ -142,3 +146,37 @@ def stamp_verify_gate(run_dir: Path, argv: Sequence[str], origin: str) -> None:
         update={"verify_command": tuple(argv), "verify_origin": origin}
     )
     write_manifest(run_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
+
+
+def pin_gate(
+    run_dir: Path,
+    argv: Sequence[str],
+    origin: str,
+    *,
+    events: EventSink,
+    reporter: Reporter,
+) -> None:
+    """Pin this leg's gate and KEEP it pinned when the loop adopts one mid-run.
+
+    Every lifecycle that starts a leg calls this. Stamping and re-stamping were
+    two separate concerns wired only in ``run``, so a resumed leg that adopted a
+    gate kept a manifest reading gateless. A failure is reported rather than
+    raised (a leg is still worth running) and never swallowed: the manifest is
+    what every viewer, the baseline and the next leg read the gate from.
+    """
+
+    def _stamp(gate: Sequence[str], why: str) -> None:
+        try:
+            stamp_verify_gate(run_dir, gate, why)
+        except (ManifestError, OSError) as exc:
+            reporter.err(f"[agent6] could not record this run's verify gate: {exc}")
+
+    _stamp(argv, origin)
+
+    def _repin_adopted_gate(event: dict[str, Any]) -> None:
+        if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
+            _stamp(tuple(event.get("command", ())), "adopted")
+
+    # EventSink swallows a listener's exceptions so a UI consumer cannot break
+    # the run; _stamp reports for itself rather than relying on that.
+    events.subscribe(_repin_adopted_gate)

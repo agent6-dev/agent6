@@ -26,6 +26,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -311,6 +312,7 @@ def create_fork(  # noqa: PLR0911
         preset=forked_preset,
         preset_from_flag=src_preset_from_flag,
         cfg=cfg,
+        gate=(sm.workflow.verify_command, sm.workflow.verify_origin),
         reporter=reporter,
     )
     if rc != 0:
@@ -334,11 +336,16 @@ def _materialize_fork(
     preset: str,
     preset_from_flag: bool,
     cfg: Config,
+    gate: tuple[Sequence[str], str],
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest,
     the git branch, and the lineage record. Returns 0 on success, else an error
-    code (after printing). The source run is never touched."""
+    code (after printing). The source run is never touched.
+
+    *gate* is the source's pinned verify command and its origin. A fork inherits
+    it: derived from the current config instead, a source whose gate was
+    inferred or adopted forked to a run the manifest called gateless."""
     if dst.run_dir.exists():
         reporter.err(f"ERROR: target run dir already exists: {dst.run_dir}")
         return 2
@@ -366,6 +373,7 @@ def _materialize_fork(
         parent_run_id=src.run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
+        gate=gate,
     )
 
     # Cut the fork's branch at the historical sha WITHOUT touching the operator's
