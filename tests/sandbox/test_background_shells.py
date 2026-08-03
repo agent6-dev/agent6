@@ -480,3 +480,34 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
         shells.start(("/bin/true",), _policy_for(tmp_path))
     assert shells.roster() == []
     assert bg.roster_from_dir(root) == [], "a command that never started is listed on disk"
+
+
+def test_a_platform_without_proc_still_starts_a_background_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The escapee sweep is a /proc mechanism, and macOS resolves to
+    `isolation = "none"` -- which agent6 advertises as supported. Reading /proc
+    unconditionally raised FileNotFoundError while taking the descendant
+    snapshot, AFTER the command had been spawned: the model was told it failed
+    to start, the process was never tracked, and stop_all could never reach it,
+    so it outlived the run.
+    """
+    import agent6.sandbox.jail as jail_mod
+
+    real_iterdir = Path.iterdir
+
+    def no_proc(self: Path):  # pyright: ignore[reportMissingParameterType]
+        if str(self) == "/proc":
+            raise FileNotFoundError(2, "No such file or directory", "/proc")
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", no_proc)
+    assert jail_mod._own_children() == {}  # pyright: ignore[reportPrivateUsage]
+
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("/bin/sh", "-c", "echo up; sleep 300"), _policy_for(tmp_path, "none"))
+    try:
+        assert view.state == "running", view
+    finally:
+        monkeypatch.undo()
+        shells.stop_all()

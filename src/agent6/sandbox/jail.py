@@ -340,10 +340,19 @@ def _own_children() -> dict[int, int]:
 
     Read as bytes: comm is whatever a process named itself, so the line need
     not be valid UTF-8 and one hostile name must not break the scan.
+
+    Empty where there is no /proc: the sweep is a Linux mechanism, and macOS
+    resolves to `isolation = "none"`, which agent6 supports. Letting the error
+    out told the model a background command had failed to start AFTER it was
+    already running, and left it untracked, so nothing could stop it.
     """
     me = str(os.getpid()).encode()
     found: dict[int, int] = {}
-    for entry in Path("/proc").iterdir():
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return found
+    for entry in entries:
         if not entry.name.isdigit():
             continue
         try:
