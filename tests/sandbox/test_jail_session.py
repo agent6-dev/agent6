@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
 from agent6.sandbox.jail import JailSession, JailUnavailableError
-from agent6.types import JailPolicy
+from agent6.types import CommandResult, JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -101,6 +102,36 @@ def test_a_jailed_command_cannot_write_the_launchers_answer_pipe(tmp_path: Path)
         after = session.run(("sh", "-c", "echo REAL; exit 3"))
         assert after.returncode == 3, f"the channel is desynced: {after}"
         assert "REAL" in after.stdout, f"the channel is desynced: {after}"
+    finally:
+        session.close()
+
+
+def test_a_daemonizing_command_does_not_wedge_the_run(tmp_path: Path) -> None:
+    """`setsid` puts a grandchild outside the command's process group, so the
+    teardown killpg misses it and it keeps the capture pipe open. Joining the
+    reader threads then never returns: the launcher never answers, and the
+    request read above it has nothing to time out -- the whole run hangs on one
+    tool call, with no error and no diagnostic. Any command that daemonizes by
+    double-fork + setsid does this, not just a hostile one.
+
+    Bounded here rather than by the suite: an unfixed hang must fail this test,
+    not stall every test after it.
+    """
+    session = _session(tmp_path)
+    answered: list[CommandResult] = []
+
+    def run_it() -> None:
+        answered.append(session.run(("sh", "-c", "setsid sleep 300 & echo started"), timeout_s=5.0))
+
+    worker = threading.Thread(target=run_it, daemon=True)
+    worker.start()
+    worker.join(timeout=60.0)
+    try:
+        assert not worker.is_alive(), "the launcher never answered: the run is wedged"
+        assert answered and answered[0].returncode == 0, answered
+        assert "started" in answered[0].stdout, answered[0]
+        after = session.run(("echo", "next"))
+        assert after.returncode == 0 and "next" in after.stdout, after
     finally:
         session.close()
 

@@ -22,6 +22,8 @@ use std::io::{self, BufRead, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use landlock::{
@@ -1521,8 +1523,22 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     // polling try_wait() forever.
     let stdout_pipe = child.stdout.take().expect("stdout piped");
     let stderr_pipe = child.stderr.take().expect("stderr piped");
-    let stdout_handle = std::thread::spawn(move || read_capped(stdout_pipe));
-    let stderr_handle = std::thread::spawn(move || read_capped(stderr_pipe));
+    let stdout_buf = Arc::new(Mutex::new(CapBuf::default()));
+    let stderr_buf = Arc::new(Mutex::new(CapBuf::default()));
+    let drained = Arc::new(AtomicUsize::new(0));
+    for (pipe, buf) in [
+        (
+            Box::new(stdout_pipe) as Box<dyn Read + Send>,
+            Arc::clone(&stdout_buf),
+        ),
+        (Box::new(stderr_pipe), Arc::clone(&stderr_buf)),
+    ] {
+        let done = Arc::clone(&drained);
+        std::thread::spawn(move || {
+            read_capped_into(pipe, &buf);
+            done.fetch_add(1, Ordering::SeqCst);
+        });
+    }
 
     // Poll the direct child WITHOUT reaping it (WNOWAIT leaves the zombie), so
     // child_pid (== pgid) cannot be recycled by the kernel before we tear the
@@ -1568,8 +1584,31 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
             .code()
             .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(-1))
     };
-    let stdout = stdout_handle.join().unwrap_or_default();
-    let mut stderr = stderr_handle.join().unwrap_or_default();
+    // Take what the readers have, never wait on them: a grandchild that left
+    // the process group (`setsid`, and every double-fork daemonize) survives
+    // the killpg above and holds the write end, so the pipe never reaches EOF.
+    // Joining here hung the launcher, and with it every later command in the
+    // run -- one tool call, no error, no diagnostic. The threads keep draining
+    // into the buffers; the process exit closes their fds.
+    let drain_deadline = std::time::Instant::now() + Duration::from_millis(CAPTURE_DRAIN_MS);
+    while drained.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < drain_deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let held_open = drained.load(Ordering::SeqCst) < 2;
+    let stdout = stdout_buf
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .render();
+    let mut stderr = stderr_buf
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .render();
+    if held_open {
+        stderr.push_str(concat!(
+            "\n[agent6-jail] output capture ended early: a process outside the",
+            " command's group still holds its pipe",
+        ));
+    }
     if timed_out {
         stderr.push_str("\n[agent6-jail] timeout");
     }
@@ -1781,6 +1820,9 @@ fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
 // before the timeout. 4 MiB + 4 MiB keeps real build/test logs (whose tail
 // carries the verdict) intact while bounding the launcher and the JSON result
 // line the Python side buffers in turn.
+/// How long a command's teardown waits for its output readers before
+/// answering anyway. Only an escapee holding the pipe reaches it.
+const CAPTURE_DRAIN_MS: u64 = 2000;
 const STREAM_RETAIN_HEAD: usize = 4 * 1024 * 1024;
 const STREAM_RETAIN_TAIL: usize = 4 * 1024 * 1024;
 
@@ -1788,46 +1830,75 @@ const STREAM_RETAIN_TAIL: usize = 4 * 1024 * 1024;
 /// Bytes (not read_to_string): a strict decode returned Err and dropped the
 /// whole stream to "" on the first non-UTF-8 byte (a grep over a binary, a
 /// latin-1 file), misleading every consumer while the real rc was reported.
-fn read_capped(mut stream: impl Read) -> String {
-    let mut head: Vec<u8> = Vec::new();
-    let mut tail: VecDeque<u8> = VecDeque::new();
-    let mut dropped: u64 = 0;
+/// The capped head+tail of one stream, readable while it is still filling.
+#[derive(Default)]
+struct CapBuf {
+    head: Vec<u8>,
+    tail: VecDeque<u8>,
+    dropped: u64,
+}
+
+impl CapBuf {
+    fn push(&mut self, mut rest: &[u8]) {
+        if self.head.len() < STREAM_RETAIN_HEAD {
+            let take = (STREAM_RETAIN_HEAD - self.head.len()).min(rest.len());
+            self.head.extend_from_slice(&rest[..take]);
+            rest = &rest[take..];
+        }
+        if !rest.is_empty() {
+            self.tail.extend(rest.iter().copied());
+            if self.tail.len() > STREAM_RETAIN_TAIL {
+                let excess = self.tail.len() - STREAM_RETAIN_TAIL;
+                self.tail.drain(..excess);
+                self.dropped += excess as u64;
+            }
+        }
+    }
+
+    fn render(&self) -> String {
+        let mut out = self.head.clone();
+        if self.dropped > 0 {
+            out.extend_from_slice(
+                format!(
+                    "\n[agent6-jail] output over the retained cap; {} bytes omitted here\n",
+                    self.dropped
+                )
+                .as_bytes(),
+            );
+        }
+        out.extend(self.tail.iter().copied());
+        String::from_utf8_lossy(&out).into_owned()
+    }
+}
+
+/// Drain *stream* into *sink* until EOF. Runs on its own thread, which may
+/// outlive the command: a grandchild outside its process group keeps the write
+/// end open, and nothing can make that read return.
+fn read_capped_into(mut stream: impl Read, sink: &Mutex<CapBuf>) {
     let mut chunk = [0u8; 64 * 1024];
     loop {
         match stream.read(&mut chunk) {
             Ok(0) | Err(_) => break,
-            Ok(n) => {
-                let mut rest = &chunk[..n];
-                if head.len() < STREAM_RETAIN_HEAD {
-                    let take = (STREAM_RETAIN_HEAD - head.len()).min(rest.len());
-                    head.extend_from_slice(&rest[..take]);
-                    rest = &rest[take..];
-                }
-                if !rest.is_empty() {
-                    tail.extend(rest.iter().copied());
-                    if tail.len() > STREAM_RETAIN_TAIL {
-                        let excess = tail.len() - STREAM_RETAIN_TAIL;
-                        tail.drain(..excess);
-                        dropped += excess as u64;
-                    }
-                }
-            }
+            Ok(n) => sink
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(&chunk[..n]),
         }
     }
-    let mut out = head;
-    if dropped > 0 {
-        out.extend_from_slice(
-            format!("\n[agent6-jail] output over the retained cap; {dropped} bytes omitted here\n")
-                .as_bytes(),
-        );
-    }
-    out.extend(tail.iter().copied());
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Drain to EOF and render, the shape these retention tests pin. The
+    /// launcher itself never waits for EOF (see the teardown in run_child).
+    fn read_capped(stream: impl Read) -> String {
+        let sink = Mutex::new(CapBuf::default());
+        read_capped_into(stream, &sink);
+        let rendered = sink.lock().unwrap_or_else(|e| e.into_inner()).render();
+        rendered
+    }
 
     #[test]
     fn read_capped_passes_small_output_through_verbatim() {
