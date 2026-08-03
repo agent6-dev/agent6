@@ -139,9 +139,10 @@ def _add_runs_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "stop",
         help="Ask a running detached run to stop cleanly after its current step (resumable).",
     )
-    runs_stop.add_argument(
+    runs_stop_id = runs_stop.add_argument(
         "run_id", nargs="?", default="", help="Run id or unique prefix; omit for the most recent."
     )
+    runs_stop_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
     runs_prune = _sub(
         runs_sub,
