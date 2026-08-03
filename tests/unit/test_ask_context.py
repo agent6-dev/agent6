@@ -466,3 +466,58 @@ def test_ask_run_digest_reports_unavailable_diff(
     digest = _build_ask_run_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "diff unavailable" in digest
+
+
+def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: str | None) -> None:
+    d = resolved_state_dir(tmp_path) / bucket / sid
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "run_id": sid,
+                "mode": mode,
+                "user_task": f"the {mode} task",
+                "base_sha": "0" * 40,
+                "run_branch": run_branch,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "run.end", "reason": "finish_run", "all_passed": True}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_a_session_that_wrote_no_code_shows_no_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan and an ask cut no branch. The digest fell back to HEAD, so it
+    handed the model whatever the operator had uncommitted, labelled as the
+    session's work."""
+    _make_run(tmp_path)  # a repo with real, unrelated commits on HEAD
+    _session(tmp_path, "runs", "plan-only-BBB222", "plan", run_branch=None)
+    monkeypatch.chdir(tmp_path)
+
+    digest = _build_ask_run_digest(tmp_path, "plan-only-BBB222", latest=False)
+
+    assert digest is not None
+    assert "the plan task" in digest
+    assert "wrote no code" in digest
+    assert "changed by the run" not in digest, "an unrelated diff was attributed to the plan"
+
+
+def test_from_latest_skips_a_machine_draft(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A machine draft is an authoring log, not a session with a task and an
+    outcome: picking the newest one made `--from-latest` fail outright on a
+    project that had just written a machine."""
+    rid = _make_run(tmp_path)
+    # A real draft, newer than the run: a husk with no manifest is skipped by
+    # every listing anyway, so it would not prove anything.
+    _session(tmp_path, "machine-drafts", "draft-CCC333", "machine", run_branch=None)
+    monkeypatch.chdir(tmp_path)
+
+    digest = _build_ask_run_digest(tmp_path, "", latest=True)
+
+    assert digest is not None and rid in digest

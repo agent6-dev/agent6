@@ -18,7 +18,6 @@ from agent6.runs.layout import RunLayout, session_layout
 from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.ui.cli._common import (
     _state_dir,
-    run_bucket_dirs,
 )
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import first_task_line, newest_run_dir, run_mtime
@@ -169,9 +168,12 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     """
     state_dir = _state_dir(cwd)
     if latest:
-        newest = newest_run_dir(run_bucket_dirs(cwd))
+        # runs/ and asks/ only: a machine draft is an authoring log, not a
+        # session with a task and an outcome, and picking the newest one made
+        # `--from-latest` fail on a project that had just written a machine.
+        newest = newest_run_dir([state_dir / "runs", state_dir / "asks"])
         if newest is None:
-            print(f"ERROR: --from-latest: no sessions under {state_dir}", file=sys.stderr)
+            print(f"ERROR: --from-latest: no run or ask under {state_dir}", file=sys.stderr)
             return None
         found = session_layout(state_dir, newest.name)
     else:
@@ -190,11 +192,16 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         return None
     base_sha = manifest.base_sha
     run_branch = manifest.run_branch
-    head_ref = run_branch if run_branch else "HEAD"
-    diff_label = f"{base_sha}..{head_ref}"
+    diff_label = f"{base_sha}..{run_branch}"
     diff_body = "(no diff: the run recorded no base_sha)"
-    if base_sha:
-        rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{head_ref}")
+    if not run_branch:
+        # A plan and an ask cut no branch and commit nothing. Diffing HEAD
+        # instead handed the model whatever the operator happened to have
+        # uncommitted, labelled as the session's work.
+        diff_label = "(none)"
+        diff_body = "(no diff: this session wrote no code)"
+    elif base_sha:
+        rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{run_branch}")
         if rc != 0:
             fallback = _diff_via_merge_stamp(cwd, manifest, base_sha, run_branch)
             if fallback is not None:
