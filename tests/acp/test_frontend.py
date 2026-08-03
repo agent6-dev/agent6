@@ -68,13 +68,56 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty() -> None
     assert silent((UserQuestion(question="Theme?"),)) == ("",)
 
 
-def test_an_unsandboxed_autorun_needs_a_yes_from_a_human() -> None:
-    """The one prompt that must never default to yes: refusing costs a run,
-    agreeing costs the host."""
+def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:
+    """The lifecycle calls this on EVERY run; the "is this dangerous" test
+    lives in the answer. Asking regardless told the editor a confined run was
+    unsandboxed -- a false statement about the run, on the one approval that
+    must never become reflexive."""
+    from agent6.config import Config
+
+    front, asked = _frontend(reply="allow")
+    assert front.confirm_unconfined_autorun("strict", Config()) is True
+    assert asked == [], "a confined run is not dangerous and must not prompt"
+
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
+    assert front.confirm_unconfined_autorun("none", dangerous) is True
+    assert len(asked) == 1 and "UNSANDBOXED" in asked[0][0]
+
+
+def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
+    from agent6.config import Config
+
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
     mute, _ = _frontend(can_ask=False)
-    assert mute.confirm_unconfined_autorun("none", None) is False  # pyright: ignore[reportArgumentType]
-    asked_front, _ = _frontend(reply="allow")
-    assert asked_front.confirm_unconfined_autorun("none", None) is True  # pyright: ignore[reportArgumentType]
+    assert mute.confirm_unconfined_autorun("none", dangerous) is False
+    denied, _ = _frontend(reply="deny")
+    assert denied.confirm_unconfined_autorun("none", dangerous) is False
+
+
+def test_the_configured_branch_start_point_is_honoured() -> None:
+    """`None` means "stack on whatever is checked out", which for
+    `branch_from = "base"` is the opposite of what the operator configured --
+    and can carry another run's unmerged branch into this run's diff."""
+    from agent6.config import Config
+
+    front, _asked = _frontend()
+    for setting, expected in (("base", "main"), ("ask", "main"), ("current", None)):
+        cfg = Config.model_validate({"git": {"branch_from": setting}})
+        choice = front.choose_branch_start_point(cfg, Path("/repo"), "main")
+        assert choice.start_point == expected, setting
+
+
+def test_an_approval_that_must_not_be_remembered_says_so() -> None:
+    """`standing=False` is the fetch tool's off-list host, where a GET can
+    carry data out in its path. An editor that offers "always allow" needs
+    something to key that decision on."""
+    front, asked = _frontend(reply="allow once")
+    approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert approve("Allow fetch: evil.example (1.2.3.4) /x", standing=False) is True
+    assert asked[-1][1] == ("allow once", "deny")
+
+    approve("Allow run_command: ls")
+    assert asked[-1][1] == ("allow", "deny")
 
 
 def test_nothing_is_drawn_and_deltas_still_reach_the_journal() -> None:

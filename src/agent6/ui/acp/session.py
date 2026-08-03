@@ -35,9 +35,14 @@ class Session:
     run_id: str = ""
     thread: threading.Thread | None = None
     cancelled: bool = False
+    # Cleared BEFORE the turn answers. `thread.is_alive()` is still true while
+    # `finish` runs -- and `finish` IS the reply -- so a conforming editor that
+    # writes its next prompt the instant it reads the answer was refused at
+    # random.
+    turn_live: bool = False
 
     def is_running(self) -> bool:
-        return self.thread is not None and self.thread.is_alive()
+        return self.turn_live
 
 
 @dataclass
@@ -80,10 +85,28 @@ class Sessions:
                 reason = self.run(session, text)
             except Exception:  # a run that dies must still end the turn
                 reason = "refusal"
-            finish("cancelled" if session.cancelled else reason)
+            answer = "cancelled" if session.cancelled else reason
+            session.turn_live = False
+            finish(answer)
 
+        session.turn_live = True
         session.thread = threading.Thread(target=_work, name=f"acp-{session.id}", daemon=True)
         session.thread.start()
+
+    def wait_for_turns(self, *, timeout_s: float) -> None:
+        """Let live turns finish before the process goes.
+
+        Closing the editor is the ordinary way EOF arrives, and a daemon worker
+        torn down mid-git holds the repo and worker single-writer locks and the
+        run-dir pid. Cancel first so it stops at its next boundary rather than
+        running to completion nobody is watching.
+        """
+        live = [s for s in self._by_id.values() if s.is_running()]
+        for session in live:
+            self.cancel(session)
+        for session in live:
+            if session.thread is not None:
+                session.thread.join(timeout=timeout_s)
 
     def cancel(self, session: Session) -> None:
         """Ask the run to stop at its next boundary.

@@ -27,6 +27,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.runs.layout import RunLayout
 from agent6.tools.schema import UserQuestion
+from agent6.types import IsolationLevel
 from agent6.workflows.loop import RunResult, Workflow
 
 # What the client is asked, and what an unaskable client is assumed to have
@@ -71,7 +72,13 @@ def acp_frontend(
     def _approve(prompt: str, /, *, standing: bool = True) -> bool:
         if not capabilities.can_ask:
             return False  # nobody to ask, so the answer is no
-        return ask(prompt, ("allow", "deny")) == "allow"
+        # `standing=False` means an "always allow" the editor remembers must
+        # NOT cover this one -- the fetch tool's off-list host, where a GET can
+        # carry data out in its path. The option names carry it, because an
+        # editor that offers "always" needs something to key that decision on.
+        options = ("allow", "deny") if standing else ("allow once", "deny")
+        answer = ask(prompt, options)
+        return bool(answer) and answer.startswith("allow")
 
     def _questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         answers: list[str] = []
@@ -81,6 +88,29 @@ def acp_frontend(
             # already treats as "the operator said nothing", not as a value.
             answers.append(reply or "")
         return tuple(answers)
+
+    def _confirm_unconfined(isolation: IsolationLevel, cfg: Config) -> bool:
+        """Only ask when it is actually true.
+
+        The lifecycle calls this on EVERY run; the "is this dangerous" test
+        lives in the answer, not the call. Asking regardless told the editor a
+        confined run was unsandboxed -- a false statement about the run, on the
+        one approval that must never become reflexive.
+        """
+        if isolation != "none" or cfg.sandbox.run_commands != "yes":
+            return True
+        return _approve("Run commands UNSANDBOXED on this host, with no per-command prompt?")
+
+    def _branch_choice(cfg: Config, _cwd: Path, base: str) -> BranchChoice:
+        """`git.branch_from`, honoured rather than discarded.
+
+        `None` means "stack on whatever is checked out", which for
+        `branch_from = "base"` is the opposite of what the operator configured
+        -- and can carry another run's unmerged branch into this run's diff.
+        With no terminal to ask on, `ask` takes the CLI's own headless
+        fallback: the clean base.
+        """
+        return BranchChoice(start_point=None if cfg.git.branch_from == "current" else base)
 
     def _steer(_events: EventSink, _run_dir: Path, _facts: Callable[[], RunFacts]) -> SteerHooks:
         return _NoSteer()
@@ -111,11 +141,11 @@ def acp_frontend(
         build_approver=lambda _run_dir, _events: _approve,
         build_questioner=lambda _run_dir, _events: _questioner,
         make_steer_state=_steer,
-        # An unconfined autorun is the one prompt that must never default to
-        # yes: refusing costs a run, agreeing costs the host.
-        confirm_unconfined_autorun=lambda _iso, _cfg: _approve("Run commands UNSANDBOXED?"),
-        confirm_run_on_run_branch=lambda _branch: _approve("Continue on this run branch?"),
-        choose_branch_start_point=lambda _cfg, _cwd, _base: BranchChoice(start_point=None),
+        confirm_unconfined_autorun=_confirm_unconfined,
+        confirm_run_on_run_branch=lambda branch: _approve(
+            f"Continue this run on {branch!r}, which is already a run branch?"
+        ),
+        choose_branch_start_point=_branch_choice,
         prompt_detach_away_mode=lambda _run_dir: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,
         build_repl_hook=_no_repl,

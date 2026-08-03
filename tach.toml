@@ -165,6 +165,7 @@ depends_on = [
   "agent6.runs.ipc",
   "agent6.runs.layout",
   "agent6.tools.schema",
+  "agent6.types",
   # session/update is the shared transcript fold, projected. Reading the
   # journal again with ACP's own rules is how a fourth surface starts
   # disagreeing with the other three about what happened.

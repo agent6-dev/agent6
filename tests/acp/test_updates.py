@@ -100,3 +100,55 @@ def test_a_headless_run_still_has_something_to_show() -> None:
     ]
     updates = updates_for_events(events, session_id="s")
     assert updates[0]["params"]["update"]["content"]["text"] == "done it"
+
+
+def test_a_run_that_failed_does_not_render_as_silence() -> None:
+    """The fold sets `body` only for a clean finish, carrying everything else
+    in ok/name/detail. Reading body alone made a provider error, a budget stop
+    and an iteration cap produce ZERO notifications -- an editor watching a run
+    that simply stops."""
+    for reason in ("provider_error", "budget_exhausted", "max_iterations", "steer_abort"):
+        events = [{"type": "run.end", "reason": reason, "all_passed": False}]
+        updates = updates_for_events(events, session_id="s")
+        assert updates, f"{reason} rendered as nothing"
+        assert "did not pass" in updates[-1]["params"]["update"]["content"]["text"]
+
+
+def test_a_red_gate_does_not_look_like_a_green_one() -> None:
+    """`finish_run` with all_passed=False is a finish over a RED verify."""
+    red = updates_for_events(
+        [{"type": "run.end", "reason": "finish_run", "all_passed": False}], session_id="s"
+    )
+    green = updates_for_events(
+        [{"type": "run.end", "reason": "finish_run", "all_passed": True}], session_id="s"
+    )
+    assert (
+        red[-1]["params"]["update"]["content"]["text"]
+        != green[-1]["params"]["update"]["content"]["text"]
+    )
+
+
+def test_a_commit_is_not_dropped() -> None:
+    """A commit's sha and line count live in `detail`; `body` is empty, so
+    keying on body alone dropped every auto-commit."""
+    updates = updates_for(TranscriptItem("commit", arg="abc1234", detail="3 lines"), session_id="s")
+    text = updates[0]["params"]["update"]["content"]["text"]
+    assert "abc1234" in text and "3 lines" in text
+
+
+def test_two_identical_tool_calls_do_not_share_an_id() -> None:
+    """ACP models a tool call as ONE thing with a lifecycle. Sharing an id made
+    an editor overwrite the first call's FAILURE with the second's success --
+    the red run vanished from view."""
+    events: list[dict[str, Any]] = [
+        {"type": "tool.call", "name": "run_command", "args": {"argv": ["pytest"]}, "call_id": 1},
+        {"type": "tool.result", "name": "run_command", "call_id": 1, "ok": False},
+        {"type": "tool.call", "name": "run_command", "args": {"argv": ["pytest"]}, "call_id": 2},
+        {"type": "tool.result", "name": "run_command", "call_id": 2, "ok": True},
+    ]
+    ids = {
+        u["params"]["update"]["toolCallId"]
+        for u in updates_for_events(events, session_id="s")
+        if "toolCallId" in u["params"]["update"]
+    }
+    assert len(ids) == 2, f"the two calls collided on {ids}"

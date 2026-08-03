@@ -90,6 +90,11 @@ class TranscriptItem:
     ok: bool | None = None  # tool or run outcome (None = not applicable / in flight)
     detail: str = ""  # tool result summary, verify badge, or commit/done metadata
     tail: str = ""  # a failed tool's captured output tail
+    # The provider's stamped call_id, for a surface that pairs a tool's start
+    # with its outcome by identity. Reconstructing one from name+arg made two
+    # identical calls collide, and an editor keyed on it overwrote the first
+    # call's FAILURE with the second's success.
+    call_id: str = ""
 
 
 _PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "title", "summary")
@@ -294,6 +299,7 @@ class TranscriptFold:
         if key not in self._pending:  # a finish tool's result, or an unmatched one
             return []
         arg = self._pending.pop(key)
+        call_id = str(key)
         if name == "run_verify_command" and self._verify is not None:
             ok, detail = self._verify
             self._verify = None
@@ -315,6 +321,7 @@ class TranscriptFold:
                 name=name,
                 arg=arg,
                 ok=ok,
+                call_id=call_id,
                 detail=_strip_ansi(detail),
                 tail=_strip_ansi(tail),
             )

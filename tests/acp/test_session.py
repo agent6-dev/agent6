@@ -202,3 +202,75 @@ def _pipe() -> tuple[Any, Any]:
 
     read_fd, write_fd = os.pipe()
     return os.fdopen(read_fd, "rb", buffering=0), os.fdopen(write_fd, "wb", buffering=0)
+
+
+def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
+    """`thread.is_alive()` is still true while `finish` runs -- and `finish` IS
+    the reply -- so a conforming editor that writes its next prompt the instant
+    it reads the answer was refused at random."""
+    sessions = _sessions(_ends)
+    session = Session(id="s1", cwd=Path("/repo"))
+    seen: list[bool] = []
+
+    def _finish(_reason: str) -> None:
+        seen.append(session.is_running())
+
+    sessions.start_turn(session, "one", finish=_finish)
+    if session.thread is not None:
+        session.thread.join(timeout=5)
+    assert seen == [False], "the turn was still 'in flight' as it answered"
+
+
+def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
+    """Closing the editor is the ordinary way EOF arrives. A daemon worker torn
+    down mid-git holds the repo and worker locks and the run-dir pid."""
+    started = threading.Event()
+    finished = threading.Event()
+
+    def _slow(_session: Session, _text: str) -> str:
+        started.set()
+        time.sleep(0.2)
+        finished.set()
+        return "end_turn"
+
+    sessions = _sessions(_slow)
+    session = Session(id="s1", cwd=Path("/repo"))
+    sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
+
+    out = io.BytesIO()
+    reader, writer = _pipe()
+    server = ACPServer(stdin=reader, stdout=out, sessions=sessions)
+    loop = threading.Thread(target=server.serve, daemon=True)
+    loop.start()
+    writer.write(
+        _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "go"}]) + b"\n"
+    )
+    writer.flush()
+    assert started.wait(timeout=5)
+    writer.close()  # the editor goes away mid-turn
+    loop.join(timeout=10)
+    assert finished.is_set(), "the turn was cut off instead of reaching a boundary"
+
+
+def test_a_prompt_sent_as_a_notification_is_refused() -> None:
+    """A turn's whole point is the stopReason it answers with; replying with a
+    null id is not valid JSON-RPC."""
+    sessions = _sessions(_ends)
+    sessions._by_id["s1"] = Session(id="s1", cwd=Path("/repo"))  # pyright: ignore[reportPrivateUsage]
+    payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "method": "session/prompt",
+            "params": {"sessionId": "s1", "prompt": [{"type": "text", "text": "go"}]},
+        }
+    ).encode()
+    assert _drive(payload + b"\n", sessions) == []
+
+
+def test_a_cancel_for_an_unknown_session_says_so() -> None:
+    """It is a notification, so an error reply is dropped with zero bytes
+    written -- the stop button does nothing and reports nothing."""
+    sessions = _sessions(_ends)
+    replies = _drive(_msg(0, "session/cancel", sessionId="typo") + b"\n", sessions)
+    assert replies, "the editor was told nothing at all"
+    assert "cancel" in replies[0]["params"]["update"]["content"]["text"]
