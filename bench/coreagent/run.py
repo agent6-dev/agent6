@@ -41,7 +41,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 TASKS_DIR = ROOT / "tasks"
 RESULTS_DIR = ROOT / "results"
-AGENT6_BIN = os.environ.get("AGENT6_BIN", "/home/eric/agent6/.venv/bin/agent6")
+AGENT6_BIN = os.environ.get("AGENT6_BIN") or shutil.which("agent6") or "agent6"
 RUNS_ROOT = Path(os.environ.get("COREAGENT_RUNS", str(Path.home() / "coreagent-runs")))
 
 # Per-task module name + the neutral prompt. The prompt never mentions the DAG or

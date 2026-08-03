@@ -44,7 +44,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 TASKS_DIR = ROOT / "tasks"
 RESULTS_DIR = ROOT / "results"
-AGENT6_BIN = os.environ.get("AGENT6_BIN", "/home/eric/agent6/.venv/bin/agent6")
+AGENT6_BIN = os.environ.get("AGENT6_BIN") or shutil.which("agent6") or "agent6"
 RUNS_ROOT = Path(os.environ.get("LONGHORIZON_RUNS", str(Path.home() / "longhorizon-runs")))
 
 READ_TOOLS = {"read_file", "grep", "outline", "find_definition", "find_references", "list_dir"}

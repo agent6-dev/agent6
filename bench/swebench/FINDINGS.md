@@ -58,7 +58,7 @@ it ran to ~$6 on one instance, draining ~$11.80 of credit.
 **Decision: warn, don't guess or kill.** (commit `c06f17e`) Run startup now warns
 clearly when the USD cap can't be enforced (unpriced worker), naming the model
 and pointing at the token ceilings. We deliberately do **not** guess a price (a
-wrong guess could terminate a run mid-task — Eric: "I don't want to risk things
+wrong guess could terminate a run mid-task — the operator: "I don't want to risk things
 being terminated early") nor auto-convert. The `--max-usd` *flag* was already
 guarded by `_explicit_usd_flag_error`; this closes the TOML-config path.
 
