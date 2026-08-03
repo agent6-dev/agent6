@@ -165,6 +165,7 @@
   "compact_elided": 0,
   "compact_gists_live": 0,
   "pins": [],
+  "live": null,
   "status": "passed",
   "status_label": "passed",
   "operator_blocked": false

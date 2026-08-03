@@ -11,7 +11,6 @@ are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
 
 from __future__ import annotations
 
-import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -253,19 +252,11 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
 
 def manifest_header(run_dir: Path) -> dict[str, Any]:
     """Manifest-derived run-header fields the event fold doesn't carry: branch
-    facts (run/base/merged), the fan-out compare outcome (rank/winner/
-    rationale), and ``fallback_task`` -- the fold sets user_task only from
-    run.start, so without it a parked/created/forked run's page said
-    "task: (none)" while the hub row showed the real work (the TUI's
-    fallback_task, on the wire). Merged into the RunState snapshot by BOTH the
-    one-shot `/api/run/<id>` and the SSE stream, so the header the page paints
-    from can never drift between them. Empty for a run with no (readable)
-    manifest."""
+    facts (run/base/merged) and the fan-out compare outcome (rank/winner/
+    rationale). Merged into the RunState snapshot by BOTH the one-shot
+    `/api/run/<id>` and the SSE stream, so the header the page paints from can
+    never drift between them. Empty for a run with no (readable) manifest."""
     header: dict[str, Any] = dict(manifest_branches(run_dir))
-    with contextlib.suppress(ManifestError):
-        task = read_manifest(run_dir).user_task
-        if task:
-            header["fallback_task"] = task
     compare = run_compare(run_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
@@ -274,14 +265,10 @@ def manifest_header(run_dir: Path) -> dict[str, Any]:
 
 def run_snapshot(run_dir: Path) -> dict[str, Any]:
     """A run's folded RunState as the wire dict (the same fold as
-    `agent6 attach <id> --json`), plus dir-derived metadata: the authoritative
-    run id and the manifest's branch/compare facts."""
+    `agent6 attach <id> --json`, which owns the dir-backed run_id/user_task
+    fill), plus the manifest's branch/compare facts."""
     state = fold_run(tail_events(run_dir / "logs.jsonl", follow=False))
     snap = run_state_as_dict(state, run_dir)
-    # The dir we looked up under is the authoritative run id: stamp it so the
-    # payload never carries an empty run_id (older logs predate run.start
-    # carrying one) and matches sibling endpoints like /conversation.
-    snap["run_id"] = snap.get("run_id") or run_dir.name
     snap.update(manifest_header(run_dir))
     return snap
 

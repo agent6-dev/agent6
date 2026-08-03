@@ -2,23 +2,27 @@
 # Copyright 2026 Eric Lesiuta
 """Pure event-fold: list[event_dict] -> RunState.
 
-Mirroring this in TypeScript (for the VS Code extension) is the intended
-extension path. The shape of `RunState` IS the data contract for any
-external viewer; keep field names stable.
+The wire form `run_state_as_dict` builds from a RunState IS the data
+contract for any external viewer (`attach --json`, the web page, a future
+TS mirror): RunState's fields plus `status`/`status_label`/`live`/
+`operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.
 
-No I/O, no textual, no async, just dataclasses and a `apply_event`
-function that returns a new `RunState` (frozen so the TUI can rely on
-"if state is state_prev, nothing changed").
+The fold itself does no I/O (dataclasses + an `apply_event` that returns a
+new frozen `RunState`, so "if state is state_prev, nothing changed");
+`run_state_as_dict` with a run_dir also reads the dir's status probes and
+manifest to fill the dir-backed fields.
 """
 
 from __future__ import annotations
 
+import contextlib
 import shlex
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import (
@@ -724,18 +728,28 @@ def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str,
     web/CLI render verbatim so the label logic lives in one place.
 
     Pass *run_dir* whenever the caller has one: the label is then THE dir-aware
-    status (parked/starting/stale/waiting, not the fold's blanket "running"), and
-    ``live`` says whether steer/stop/compact would reach anything. Without it the
-    payload keeps the fold-only label -- correct only for a genuinely dir-less
-    stream."""
+    status (parked/starting/stale/waiting, not the fold's blanket "running"),
+    ``live`` says whether steer/stop/compact would reach anything, and the
+    dir-backed identity (run_id, the manifest's user_task) fills what the fold
+    left empty. Without it the payload keeps the fold-only label and
+    ``live: None`` -- correct only for a genuinely dir-less stream (the machine
+    reasoning snapshot)."""
     d = asdict(state)
     if run_dir is not None:
         word, reason = status_for_run_dir(run_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS
+        # The dir is authoritative for identity: a resumed/forked leg's log can
+        # start at loop.resume.start, folding run_id/user_task empty. Fill them
+        # HERE so every consumer (web, watch, SSE) carries the same identity.
+        d["run_id"] = d["run_id"] or run_dir.name
+        if not d["user_task"]:
+            with contextlib.suppress(ManifestError):
+                d["user_task"] = read_manifest(run_dir).user_task
     else:
-        # A genuinely dir-less stream (attach --json): the fold reads every
-        # unfinished state as "running"; only a run dir knows parked/starting/
-        # stale/waiting (run_status_label's contract).
+        # A genuinely dir-less stream (the machine reasoning snapshot): the fold
+        # reads every unfinished state as "running"; only a run dir knows
+        # parked/starting/stale/waiting, so liveness is unknowable here.
+        d["live"] = None
         word, reason = status_word(
             finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
         )

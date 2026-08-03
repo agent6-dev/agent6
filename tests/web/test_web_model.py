@@ -111,11 +111,11 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
     assert "compare" not in model.run_snapshot(plain)
 
 
-def test_run_snapshot_falls_back_to_the_manifest_task(tmp_path: Path) -> None:
+def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> None:
     """The fold sets user_task only from run.start, so a parked/created/forked
-    run's page said "task: (none)" while the hub row (summarize_run_dir's
-    manifest fallback) showed the real work. The snapshot now carries the
-    manifest's task as fallback_task, on both the one-shot and SSE paths."""
+    run folds it empty. The wire owner (run_state_as_dict) fills it from the
+    manifest -- ONE task field; a second fallback_task the client had to
+    coalesce is gone."""
     d = model.runs_root(tmp_path) / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
@@ -123,8 +123,8 @@ def test_run_snapshot_falls_back_to_the_manifest_task(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     snap = model.run_snapshot(d)
-    assert snap.get("user_task", "") == ""  # the fold has no run.start
-    assert snap["fallback_task"] == "queued work"
+    assert snap["user_task"] == "queued work"
+    assert "fallback_task" not in snap
 
 
 def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:

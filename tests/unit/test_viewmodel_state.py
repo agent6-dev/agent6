@@ -395,6 +395,32 @@ def test_run_state_as_dict_is_json_serializable() -> None:
     json.dumps(d)  # the wire form must serialize
 
 
+def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: Path) -> None:
+    """A resumed/forked leg's log can start at loop.resume.start (no run.start),
+    folding run_id/user_task empty. With the dir in hand THE wire owner fills
+    them (dir name + manifest task) so no consumer patches its own copy."""
+    import json
+
+    run_dir = tmp_path / "sunny-otter-K4Q7B2"
+    run_dir.mkdir()
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "user_task": "queued work"}), encoding="utf-8"
+    )
+    d = run_state_as_dict(fold_run([]), run_dir)
+    assert d["run_id"] == "sunny-otter-K4Q7B2"
+    assert d["user_task"] == "queued work"
+    assert d["live"] is False  # no worker: the dir word is not live
+
+
+def test_run_state_as_dict_always_carries_live(tmp_path: Path) -> None:
+    # `live` is part of the wire shape: None (unknowable) without a dir, a real
+    # bool with one -- never an absent key a client must typeof-probe.
+    assert run_state_as_dict(fold_run([]))["live"] is None
+    d = tmp_path / "r"
+    d.mkdir()
+    assert isinstance(run_state_as_dict(fold_run([]), d)["live"], bool)
+
+
 def test_run_state_as_dict_flags_operator_blocked() -> None:
     """The wire carries operator_blocked from the fold so a DIR-LESS consumer (the
     machine watch, which folds an agent-state log with no run_dir) can quiet its

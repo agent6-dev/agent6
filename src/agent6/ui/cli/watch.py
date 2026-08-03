@@ -60,7 +60,6 @@ def _run_json_snapshot(run_dir: Path) -> int:
     # With the run dir in hand the label is the dir-aware status (parked /
     # stale / waiting), not the fold's blanket "running".
     snap = run_state_as_dict(fold_run(events), run_dir)
-    snap["run_id"] = snap.get("run_id") or run_dir.name  # authoritative from the dir
     print(json.dumps(snap))
     return 0
 
