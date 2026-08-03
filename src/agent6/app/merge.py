@@ -190,7 +190,13 @@ def _model_squash_message(
         return None
     try:
         provider = build_role_provider(
-            cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=BudgetTracker()
+            cfg,
+            "worker",
+            transcript_sink=TranscriptSink(transcript_dir),
+            budget=BudgetTracker(
+                max_usd=cfg.budget.max_usd,
+                max_tokens_fallback=cfg.budget.max_tokens_fallback,
+            ),
         )
         steps = "\n".join(f"- {r.subject}" for r in rows[:100])
         files = "\n".join(

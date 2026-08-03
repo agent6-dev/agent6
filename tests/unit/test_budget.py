@@ -149,3 +149,30 @@ def test_format_summary_marks_exhausted() -> None:
         model="m", input_tokens=10, output_tokens=0, cache_read_tokens=0, cache_creation_tokens=0
     )
     assert "BUDGET EXCEEDED" in t.format_summary()
+
+
+def test_the_caps_have_one_home() -> None:
+    """A bare BudgetTracker() silently used its own 10.0/2M while the config
+    supplied the real caps, so changing the config default left an unconfigured
+    tracker on the old number. The caps are required now; BudgetConfig is the
+    one place the defaults live, and the docs quote it."""
+    import inspect
+    from pathlib import Path
+
+    from agent6.budget import BudgetTracker
+    from agent6.config.model import BudgetConfig
+
+    params = inspect.signature(BudgetTracker).parameters
+    for name in ("max_usd", "max_tokens_fallback"):
+        assert params[name].default is inspect.Parameter.empty, name
+
+    cfg = BudgetConfig()
+    docs = Path(__file__).resolve().parents[2] / "docs" / "config.md"
+    row_usd, row_tokens = "", ""
+    for line in docs.read_text(encoding="utf-8").splitlines():
+        if line.startswith("| `max_usd`"):
+            row_usd = line
+        elif line.startswith("| `max_tokens_fallback`"):
+            row_tokens = line
+    assert f"`{cfg.max_usd}`" in row_usd, row_usd
+    assert f"`{cfg.max_tokens_fallback}`" in row_tokens, row_tokens

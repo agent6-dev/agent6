@@ -162,10 +162,14 @@ class BudgetTracker:
     exclusive ceiling -- the call that brings a ledger to or over its cap
     triggers ``BudgetExceeded`` on the *next* ``check()``, so a single call may
     cross the line but no further call is issued.
+
+    Both caps are REQUIRED: ``[budget]`` is where their defaults live, and a
+    tracker carrying its own copy meant an unconfigured one silently metered
+    against a different number than the operator set.
     """
 
-    max_usd: float = 10.0
-    max_tokens_fallback: int = 2_000_000
+    max_usd: float
+    max_tokens_fallback: int
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)
     _input_total: int = 0
