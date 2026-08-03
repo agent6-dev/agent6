@@ -54,14 +54,22 @@ Under that adversary, agent6 aims to hold:
       `strict`; push needs egress).
 5. **No persistence after the run:** no daemon, cron, `.bashrc` write, or
    setuid binary.
-    - **No setuid/setgid bit can be set.** `chmod`/`fchmod`/`fchmodat` are
-      denied by seccomp when the mode carries `S_ISUID`/`S_ISGID` (ordinary
-      chmod is untouched). The bit would land on the HOST inode and outlive the
-      jail, and under `sudo agent6 --allow-root` the uid_map makes the jailed
-      child real root -- a setuid-root binary left in the workspace is local
-      root for anyone who runs it. Mount `nosuid` does not cover this: it stops
-      the JAIL honouring the bit, not the host. The workspace carries `nosuid`
-      and `nodev` anyway, the same floor the protect and read-only binds have.
+    - **No setuid/setgid bit can be set.** `chmod`/`fchmod`/`fchmodat`/
+      `fchmodat2` are denied by seccomp when the mode carries
+      `S_ISUID`/`S_ISGID` (ordinary chmod is untouched). `fchmodat2` is named
+      separately because it SUPERSEDED `fchmodat` on Linux 6.6+: a filter
+      listing only the older spelling is open on any current kernel, and
+      `chmod` never reaches it, so only a direct syscall test finds that.
+      The bit would land on the HOST inode and outlive the jail, and under
+      `sudo agent6 --allow-root` the uid_map makes the jailed child real root
+      -- a setuid-root binary left in the workspace is local root for anyone
+      who runs it. Mount `nosuid` does not cover this: it stops the JAIL
+      honouring the bit, not the host. Every mount carries `nosuid`
+      and `nodev` anyway -- the workspace, the system binds, the protect and
+      read-only binds, the writable grants, and the private `/tmp`. Not
+      `noexec` on `/tmp`: HOME lives there and toolchains run helpers from it,
+      and a child that can already execute from the workspace gains nothing
+      from being stopped there.
     - Children can only write inside the jail's mount namespace (strict) or the
       Landlock write grants (hardened).
     - **Nothing a command starts outlives it.** strict's PID namespace takes the
@@ -114,8 +122,13 @@ Under `strict` it:
   at their real paths (`extra_rw` grants writable at theirs). Operator-tool
   dirs join as read+exec `tool_paths` mounts (standard bin dirs that exist, the
   real dirs their symlinks resolve to, uv-managed CPythons), derived by
-  `sandbox.jail.operator_tool_paths`; run_command/verify jails and machine tool
-  jails share that one computation, and `machine check` probes the same PATH.
+  `sandbox.jail.operator_tool_paths` -- which never mounts agent6's OWN config,
+  state, data or cache dirs however a tool symlink resolves into them, so
+  `secrets.toml` and the run history stay outside the jail by construction
+  rather than by directory layout. A tool dir whose read-only remount fails is
+  detached, and a failed detach refuses the run: best-effort means unreachable,
+  never writable. run_command/verify jails and machine tool jails share that one
+  computation, and `machine check` probes the same PATH.
 - Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
