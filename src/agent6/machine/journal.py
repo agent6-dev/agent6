@@ -191,6 +191,14 @@ class MachineEnd(BaseModel):
     reason: str
     state: str
     transitions: int = Field(ge=0)
+    # Spend of a slice that ended WITHOUT a StepEvent to book it. A capture that
+    # cannot be reduced halts before journaling the step (a poison fact would
+    # re-crash every later replay), which also discarded the agent's real usd and
+    # tokens: `machine run` then reported $0.0000 for a state that burned money.
+    usd: float = 0.0
+    usd_partial: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 JournalEvent = Annotated[

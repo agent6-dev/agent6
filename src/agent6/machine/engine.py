@@ -747,10 +747,24 @@ def _emit_end(
     reason: str,
     state: str,
     transitions: int,
+    unbooked: AgentFact | None = None,
 ) -> MachineResult:
-    """Journal a `machine.end` and fire the operator notify hook for it."""
+    """Journal a `machine.end` and fire the operator notify hook for it.
+
+    *unbooked* is an agent slice that ran but whose StepEvent was never written
+    (a capture that could not be reduced): its spend rides on the end event so
+    the ledger still sees the dollars actually spent.
+    """
     end = MachineEnd(
-        ts=_now_iso(), status=status, reason=reason, state=state, transitions=transitions
+        ts=_now_iso(),
+        status=status,
+        reason=reason,
+        state=state,
+        transitions=transitions,
+        usd=unbooked.usd if unbooked is not None else 0.0,
+        usd_partial=unbooked.usd_partial if unbooked is not None else False,
+        input_tokens=unbooked.input_tokens if unbooked is not None else 0,
+        output_tokens=unbooked.output_tokens if unbooked is not None else 0,
     )
     journal.append(end)
     world.notify("end", state, reason, status)
@@ -758,7 +772,12 @@ def _emit_end(
 
 
 def _end_failed(
-    journal: MachineJournal, world: World, state: str, transitions: int, exc: Exception
+    journal: MachineJournal,
+    world: World,
+    state: str,
+    transitions: int,
+    exc: Exception,
+    unbooked: AgentFact | None = None,
 ) -> MachineResult:
     """Journal a clean failed `MachineEnd` for a runtime state error and return it."""
     return _emit_end(
@@ -768,6 +787,7 @@ def _end_failed(
         reason=f"state {state!r}: {exc}",
         state=state,
         transitions=transitions,
+        unbooked=unbooked,
     )
 
 
@@ -941,7 +961,17 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
         try:
             next_blackboard = reduce(spec, current, fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            return _end_failed(journal, world, state, transitions, exc)
+            # The agent already ran and billed; the step is deliberately NOT
+            # journaled (a fact whose capture fails would re-crash every later
+            # replay), so hand its spend to the end event instead of dropping it.
+            return _end_failed(
+                journal,
+                world,
+                state,
+                transitions,
+                exc,
+                unbooked=fact if isinstance(fact, AgentFact) else None,
+            )
         journal.append(
             StepEvent(
                 ts=_now_iso(),

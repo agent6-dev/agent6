@@ -132,3 +132,33 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
     assert format_cost(spend.usd, partial=spend.partial).startswith("~$")
     # The flag survives folding with priced (non-partial) slices.
     assert (spend + Spend(1.0)).partial is True
+
+
+def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -> None:
+    """A capture that cannot be reduced halts BEFORE the StepEvent is journaled
+    -- deliberately, since a fact whose capture fails would re-crash every later
+    replay -- which also discarded the agent's real usd and tokens. `machine run`
+    then reported spent $0.0000 for a state that had burned money. The end event
+    carries the unbooked slice so the ledger still sees it."""
+    from agent6.machine.journal import MachineEnd
+
+    root = tmp_path / "inst"
+    root.mkdir()
+    events = [
+        MachineEnd(
+            ts="2026-07-27T00:00:00+00:00",
+            status="failed",
+            reason="state 'judge': record has no field 'note'",
+            state="judge",
+            transitions=0,
+            usd=1.23,
+            usd_partial=True,
+            input_tokens=40_000,
+            output_tokens=8_000,
+        )
+    ]
+    spend, _inflight = machine_spend(events, root, alive=False)
+    assert spend.usd == 1.23, "the dollars actually spent were dropped"
+    assert spend.input_tokens == 40_000
+    assert spend.output_tokens == 8_000
+    assert spend.partial is True  # an unpriced slice keeps its lower-bound flag

@@ -4,4 +4,4 @@
 {"type":"step","ts":"2026-07-16T00:00:03.000000+00:00","seq":2,"state":"poll","label":"signal","goto":"review","fact":{"kind":"wait","wake_epoch":null,"woke_by":"signal","payload":{"from":"operator"}}}
 {"type":"step","ts":"2026-07-16T00:00:04.000000+00:00","seq":3,"state":"review","label":"ok","goto":"stop_ok","fact":{"kind":"agent","outcome":"ok","reason":"finish_run","payload":{"approved":true},"usd":0.25,"usd_partial":false,"input_tokens":1000,"output_tokens":200}}
 {"type":"machine.notify","ts":"2026-07-16T00:00:05.000000+00:00","state":"review","message":"all checks passed","level":"info"}
-{"type":"machine.end","ts":"2026-07-16T00:00:06.000000+00:00","status":"ok","reason":"approved","state":"stop_ok","transitions":4}
+{"type":"machine.end","ts":"2026-07-16T00:00:06.000000+00:00","status":"ok","reason":"approved","state":"stop_ok","transitions":4,"usd":0.0,"usd_partial":false,"input_tokens":0,"output_tokens":0}

@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.machine import AgentFact, StepEvent
+from agent6.machine import AgentFact, MachineEnd, StepEvent
 from agent6.viewmodel.machine_state import newest_state_log
 
 
@@ -112,6 +112,10 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
                     event.fact.output_tokens,
                     event.fact.usd_partial,
                 )
+        elif isinstance(event, MachineEnd) and event.usd:
+            # A slice that ran but never got a StepEvent (a capture that could
+            # not be reduced) rides on the end event.
+            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
     inflight_state = ""
     newest = newest_state_log(root) if alive else None
     if newest is not None:
