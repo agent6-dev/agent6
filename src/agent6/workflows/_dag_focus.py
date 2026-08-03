@@ -64,15 +64,46 @@ def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
 
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
-    """First focusable subtask (open, deps satisfied, no open child) in node
-    creation order. Node ids are time-sortable ULIDs, so sorting by id restores
-    creation order even on a resumed run, where the nodes dict is in filesystem
-    order. Returns None when nothing is ready (no subtasks, all done, or all
-    blocked / waiting on open children)."""
-    for nid in sorted(nodes):
+    """First focusable subtask (open, deps satisfied, no open child), in the
+    order the task tree shows: depth-first through each parent's ``children``
+    list. That list is what every renderer and ``list_tasks`` display, so a
+    reordered or positionally-inserted child executes where it appears.
+
+    Roots (and any node an ancestor does not reach, e.g. a stale parent
+    reference) fall back to id order: ids are time-sortable ULIDs, so that is
+    creation order even on a resumed run, where the nodes dict arrives in
+    filesystem order. Returns None when nothing is ready (no subtasks, all
+    done, or all blocked / waiting on open children)."""
+    for nid in _tree_order(nodes):
         if is_focusable_subtask(nodes, nodes[nid]):
             return nid
     return None
+
+
+def _tree_order(nodes: dict[str, TaskNode]) -> list[str]:
+    """Every node id, depth-first through ``children``, roots in id order.
+
+    A child named by a parent but absent from *nodes* is skipped, and a node no
+    walk reached (a cycle, a dangling parent_id) is appended in id order, so
+    every node is still visited exactly once.
+    """
+    order: list[str] = []
+    seen: set[str] = set()
+
+    def walk(nid: str) -> None:
+        if nid in seen or nid not in nodes:
+            return
+        seen.add(nid)
+        order.append(nid)
+        for child in nodes[nid].children:
+            walk(child)
+
+    for nid in sorted(nodes):
+        if nodes[nid].parent_id is None:
+            walk(nid)
+    for nid in sorted(nodes):
+        walk(nid)  # anything the roots did not reach
+    return order
 
 
 def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | None:

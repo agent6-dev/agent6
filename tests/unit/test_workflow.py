@@ -6051,3 +6051,41 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
     assert _compact_via_wire(wf, history) is True
     sent = str(summariser.call.call_args)
     assert "SUMMARY-1" in sent, "the first restart's summary never reached the summariser"
+
+
+def test_the_frontier_executes_the_order_the_children_list_shows() -> None:
+    """`list_tasks` and every task tree render a parent's children in its
+    `children` order, but the frontier walked node ids (creation order), so a
+    reordered or positionally-inserted child was shown in one order and
+    executed in another."""
+    from agent6.workflows._dag_focus import (
+        first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    nodes = _typed(
+        {
+            "root": {"parent_id": None, "status": "in_progress", "children": ("b", "a")},
+            "a": {"parent_id": "root", "status": "pending"},
+            "b": {"parent_id": "root", "status": "pending"},
+        }
+    )
+    assert first_ready_subtask(nodes) == "b", "the frontier ignored the children order"
+
+
+def test_the_frontier_walks_depth_first_through_children() -> None:
+    """A decomposed child's own leaves come before its later siblings, the
+    order the tree shows top to bottom."""
+    from agent6.workflows._dag_focus import (
+        first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    nodes = _typed(
+        {
+            "root": {"parent_id": None, "status": "in_progress", "children": ("p", "z")},
+            "p": {"parent_id": "root", "status": "in_progress", "children": ("p2", "p1")},
+            "p1": {"parent_id": "p", "status": "pending"},
+            "p2": {"parent_id": "p", "status": "pending"},
+            "z": {"parent_id": "root", "status": "pending"},
+        }
+    )
+    assert first_ready_subtask(nodes) == "p2"
