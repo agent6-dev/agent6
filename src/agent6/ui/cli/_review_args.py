@@ -86,10 +86,12 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Head ref (default: HEAD). Only used when --base is set.",
     )
     review_p.add_argument(
-        "--paths",
-        nargs="*",
-        default=(),
-        help="Restrict the diff to these paths (forwarded to `git diff -- PATHS`).",
+        "--path",
+        dest="paths",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Restrict the diff to PATH (repeatable; forwarded to `git diff -- PATH...`).",
     )
     review_p.add_argument(
         "--model",

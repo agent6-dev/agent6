@@ -67,10 +67,12 @@ def _add_runs_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         help="Show --stat summary instead of the full patch.",
     )
     runs_diff.add_argument(
-        "--paths",
-        nargs="*",
-        default=(),
-        help="Restrict the diff to these paths.",
+        "--path",
+        dest="paths",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Restrict the diff to PATH (repeatable).",
     )
 
     runs_merge = _sub(
