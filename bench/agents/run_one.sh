@@ -72,8 +72,8 @@ CFG
     fi
     BUDGET_FLAGS="--max-usd 0.60"
     if [ "$A6_PROVIDER" = "anthropic" ]; then
-      # anthropic is unpriced for agent6; cap tokens instead (as bench/coreagent)
-      BUDGET_FLAGS="--max-input-tokens 4000000 --max-output-tokens 400000"
+      # anthropic is unpriced for agent6; cap the token ledger (as bench/coreagent)
+      BUDGET_FLAGS="--max-tokens-fallback 4400000"
     fi
     AGENT6_FORCE_STREAM=1 timeout $TIMEOUT "${AGENT6_BIN:-agent6}" run "$PROMPT" --config "$A6_CFG" $BUDGET_FLAGS > agent.log 2>&1
     STATUS=$?

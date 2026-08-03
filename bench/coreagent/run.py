@@ -362,8 +362,9 @@ def one_run(
 
     budget_flags: list[str]
     if provider == "anthropic":
-        # Anthropic is unpriced: --max-usd is refused. Cap tokens instead.
-        budget_flags = ["--max-input-tokens", "4000000", "--max-output-tokens", "400000"]
+        # Anthropic is unpriced, so max_usd cannot bound it: cap the token
+        # ledger that prices-unknown calls count against instead.
+        budget_flags = ["--max-tokens-fallback", "4400000"]
     else:
         budget_flags = ["--max-usd", str(budget)]
 

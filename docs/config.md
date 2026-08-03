@@ -410,7 +410,7 @@ is present (`claude-opus-4-8` → `anthropic/claude-opus-4.8`, same list
 prices), so USD budgets and cost summaries work on direct Anthropic runs too.
 
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
-`--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).
+`--max-tokens-fallback` (on `run`, `plan`, `resume`).
 Passing `--max-usd` explicitly refuses to start when the worker model has no
 price data, since the flag could not be honored.
 

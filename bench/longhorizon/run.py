@@ -460,13 +460,11 @@ def one_sequence(
 
         budget_flags: list[str]
         if provider == "anthropic":
-            # Anthropic legs are bounded by raw tokens rather than --max-usd.
-            # 2.0M in / 200k out per leg is generous for these tasks yet caps a
-            # haiku leg near $3 worst-case ($1/M in + $5/M out); prompt caching
-            # and early finishes land well under. budget_scale dials the wave.
-            bi = int(2_000_000 * budget_scale)
-            bo = int(200_000 * budget_scale)
-            budget_flags = ["--max-input-tokens", str(bi), "--max-output-tokens", str(bo)]
+            # Anthropic has no price data, so the token ledger bounds these legs.
+            # 2.2M in+out per leg is generous for these tasks yet caps a haiku leg
+            # near $3 worst-case ($1/M in + $5/M out); prompt caching and early
+            # finishes land well under. budget_scale dials the wave.
+            budget_flags = ["--max-tokens-fallback", str(int(2_200_000 * budget_scale))]
         else:
             budget_flags = ["--max-usd", str(round(leg.max_usd * budget_scale, 2))]
 

@@ -718,9 +718,9 @@ branch reads are in the journal.
   arbitrary Python names: an `Attribute` chain is walked against the
   blackboard dict, a `Name` must be a declared variable, and any other
   free name is a load error.
-- Wall-clock, randomness, and external reads are captured as facts. A
-  `--replay <journal>` mode feeds recorded facts instead of touching the
-  world, so a completed run replays to the identical path offline.
+- Wall-clock, randomness, and external reads are captured as facts.
+  `agent6 machine replay <machine-id>` feeds those recorded facts instead of
+  touching the world, so a completed run replays to the identical path offline.
 
 ### 5.3 Persistence layout
 
