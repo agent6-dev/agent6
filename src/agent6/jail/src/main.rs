@@ -1058,9 +1058,12 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_reboot,
         libc::SYS_swapon,
         libc::SYS_swapoff,
+        // The whole clock-setting family, not three of its four names:
+        // clock_adjtime sets the offset just as adjtimex does.
         libc::SYS_settimeofday,
         libc::SYS_adjtimex,
         libc::SYS_clock_settime,
+        libc::SYS_clock_adjtime,
     ];
     // Deliberately NOT here: clone/clone3 with CLONE_NEWUSER|CLONE_NEWNS. A
     // nested namespace grants no new access -- the whole mount family above is
