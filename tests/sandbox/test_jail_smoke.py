@@ -106,6 +106,56 @@ def test_jail_blocks_write_outside_workspace(jail_bin: Path, tmp_path: Path) -> 
     assert not marker.exists()
 
 
+def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: Path) -> None:
+    """TRUNCATE is an ABI-v3 Landlock right. A ruleset that handles only through
+    ABI v2 does not restrict truncate(2) at all, so a hardened jailed child could
+    zero any file the operator can write -- the run state dir (transcripts,
+    manifests, the memory store), ~/.ssh -- with no write grant. Truncate outside
+    every grant must be refused; truncate inside the workspace must still work
+    (every '>' redirect onto an existing file relies on it)."""
+    shm = Path("/dev/shm")
+    if not (shm.is_dir() and os.access(shm, os.W_OK)):
+        pytest.skip("/dev/shm not usable as an out-of-grant target")
+    victim = shm / "agent6-jail-truncate-victim"
+    victim.write_text("SECRET-DO-NOT-ZERO\n", encoding="utf-8")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    inside = ws / "mine.txt"
+    inside.write_text("rewrite me\n", encoding="utf-8")
+    # os.truncate is the path-based truncate(2) syscall: it does NOT open the
+    # file, so it is gated only by LANDLOCK_ACCESS_FS_TRUNCATE (not WRITE_FILE).
+    # coreutils `truncate` opens O_WRONLY first and would be stopped by the write
+    # rule, masking whether truncate itself is handled.
+    try:
+        run_in_jail(
+            JailPolicy(
+                cwd=ws,
+                argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(inside)!r}, 0)"),
+                profile="hardened",
+                timeout_s=10.0,
+            )
+        )
+        run_in_jail(
+            JailPolicy(
+                cwd=ws,
+                argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(victim)!r}, 0)"),
+                profile="hardened",
+                timeout_s=10.0,
+            )
+        )
+    except JailUnavailableError:
+        pytest.skip("jail unavailable")
+    # Inside the workspace: truncate must still succeed.
+    assert inside.read_text(encoding="utf-8") == "", (
+        "hardened jail wrongly denied truncate inside cwd"
+    )
+    # Outside every grant: truncate must be refused, the file left intact.
+    assert victim.read_text(encoding="utf-8") == "SECRET-DO-NOT-ZERO\n", (
+        "hardened jail truncated a file outside its grants (TRUNCATE unhandled)"
+    )
+    victim.unlink(missing_ok=True)
+
+
 def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
     """Writes to /dev/null and friends must succeed under both profiles.
 

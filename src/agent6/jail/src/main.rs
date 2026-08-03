@@ -583,15 +583,20 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // Strict profile runs inside the pivoted rootfs; /workspace (the cwd bind)
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
     // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
-    // ABI::V2 (not V1): V2 adds LANDLOCK_ACCESS_FS_REFER. A ruleset that
-    // does not handle REFER keeps ABI-1 semantics where EVERY cross-directory
-    // rename/hardlink fails with EXDEV, which breaks `cargo` (hardlinks build
-    // artifacts between target/ subdirs), `mv` across dirs, and similar tools
-    // even inside fully-writable paths. Granting REFER on rw paths only allows
-    // re-parenting within hierarchies the child can already write; the crate's
-    // best-effort mode degrades gracefully on ABI-1 kernels.
-    let access_all = AccessFs::from_all(ABI::V2);
-    let access_read = AccessFs::from_read(ABI::V2);
+    // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
+    // EVERY cross-directory rename/hardlink fails EXDEV -- that breaks `cargo`
+    // (hardlinks build artifacts between target/ subdirs), `mv` across dirs, and
+    // similar tools even inside fully-writable paths. V3 added
+    // LANDLOCK_ACCESS_FS_TRUNCATE, which MUST be handled: Landlock leaves any
+    // right the ruleset does not handle unrestricted, so a V2 handled set never
+    // checks truncate(2)/ftruncate(2) and a jailed child could zero any file it
+    // can name outside its write grants (the run state dir, ~/.ssh) with no
+    // write access at all. Granting these on rw paths only lets the child act
+    // within hierarchies it can already write; the crate's best-effort mode
+    // drops TRUNCATE (and REFER) on kernels too old to know them, matching
+    // sandbox/landlock.py, which masks the same bit below its ABI.
+    let access_all = AccessFs::from_all(ABI::V3);
+    let access_read = AccessFs::from_read(ABI::V3);
     // from_read excludes EXECUTE; system paths must be read+execute so spawned
     // binaries can actually run (otherwise execve EACCES).
     let access_read_exec = access_read | AccessFs::Execute;
@@ -707,8 +712,12 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // listing exactly the paths the child may read or write — its own cwd
     // (read+write), the extra_rw_paths, /tmp (write), and the system dirs
     // (read+execute only).
-    let access_all = AccessFs::from_all(ABI::V2);
-    let access_read = AccessFs::from_read(ABI::V2);
+    // V3 handled set (TRUNCATE included): see apply_landlock_strict for why
+    // handling truncate matters. It matters more here -- hardened has no
+    // mount-namespace RO binds to fall back on, so Landlock is the only thing
+    // standing between a jailed child and truncating files outside its grants.
+    let access_all = AccessFs::from_all(ABI::V3);
+    let access_read = AccessFs::from_read(ABI::V3);
     let access_read_exec = access_read | AccessFs::Execute;
     let ruleset = Ruleset::default()
         .handle_access(access_all)
