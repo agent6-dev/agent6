@@ -286,20 +286,41 @@ fn mountinfo_path(field: &[u8]) -> PathBuf {
     PathBuf::from(OsString::from_vec(out))
 }
 
-/// The mount points nested UNDER `dir` in this mount namespace.
+/// The mount points nested UNDER `dir` in this mount namespace that a path
+/// still resolves to. `dir` is canonicalized first: mountinfo prints resolved
+/// paths, so a symlinked component (a symlinked /tmp) would miss every prefix
+/// match and silently skip a floor.
 fn submounts_under(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let raw = fs::read("/proc/self/mountinfo")?;
+    Ok(live_submounts(&raw, &dir))
+}
+
+/// The mountinfo entries under `dir` that are still reachable by path.
+///
+/// Lines appear in mount order, and a mount KEEPS its line after a later
+/// mount covers its mount point or an ancestor of it. A remount addressed
+/// through such a shadowed path lands on whatever the path resolves to now;
+/// where that is not a mount point the remount is EINVAL and would abort the
+/// whole rootfs setup. A recursive covering bind lists its carried copies on
+/// their own later lines, so dropping shadowed entries loses nothing.
+fn live_submounts(raw: &[u8], dir: &Path) -> Vec<PathBuf> {
+    let mounts: Vec<PathBuf> = raw
+        .split(|b| *b == b'\n')
+        .filter_map(|line| line.split(|b| *b == b' ').nth(4))
+        .map(mountinfo_path)
+        .collect();
     let mut out = Vec::new();
-    for line in raw.split(|b| *b == b'\n') {
-        let Some(field) = line.split(|b| *b == b' ').nth(4) else {
+    for (i, mp) in mounts.iter().enumerate() {
+        if mp == dir || !mp.starts_with(dir) {
             continue;
-        };
-        let mp = mountinfo_path(field);
-        if mp != dir && mp.starts_with(dir) {
-            out.push(mp);
         }
+        if mounts[i + 1..].iter().any(|later| mp.starts_with(later)) {
+            continue; // shadowed: a later mount covers it or an ancestor
+        }
+        out.push(mp.clone());
     }
-    Ok(out)
+    out
 }
 
 /// Repeat a bind's own `flags` on every mount NESTED under `dst`.
@@ -372,7 +393,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 Some(""),
                 &dst,
                 Some(""),
-                MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR,
+                MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&dst),
                 Some(""),
             )
             .map_err(io_err)?;
@@ -538,12 +559,17 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         // then remount read-only. Binding from the host path (rather than
         // self-binding inside the new mount) avoids EPERM on kernels that
         // refuse re-binding paths already covered by a recursive parent
-        // bind in a user namespace.
+        // bind in a user namespace. RECURSIVE: a mount nested under the
+        // protect path (`.git/objects` on its own bind) makes a plain bind
+        // of the subtree EINVAL in a user namespace -- it would expose what
+        // the locked child mount covers -- and would otherwise present an
+        // empty directory in place of the nested mount's content. Carried
+        // in, the copy is floored read-only just below.
         mount(
             Some(canon_src.as_path()),
             &target,
             Some(""),
-            MsFlags::MS_BIND,
+            MsFlags::MS_BIND | MsFlags::MS_REC,
             Some(""),
         )
         .map_err(|e| {
@@ -1447,5 +1473,52 @@ mod tests {
         assert!(out.contains(&format!("{dropped} bytes omitted")));
         // Bounded: retained payload + marker, nowhere near `total`.
         assert!(out.len() < STREAM_RETAIN_HEAD + STREAM_RETAIN_TAIL + 200);
+    }
+
+    #[test]
+    fn live_submounts_lists_carried_submounts_and_decodes_escapes() {
+        let raw: &[u8] = b"22 1 0:1 / / rw - ext4 /dev/x rw\n\
+23 22 0:2 / /ws rw - ext4 /dev/y rw\n\
+24 23 0:3 / /ws/a\\040b rw - tmpfs tmpfs rw\n";
+        let got = live_submounts(raw, Path::new("/ws"));
+        assert_eq!(got, vec![PathBuf::from("/ws/a b")]);
+    }
+
+    #[test]
+    fn a_later_bind_over_an_ancestor_shadows_the_subtree() {
+        // The workspace bind carried /ws/.git/objects in; the protect bind
+        // then covered /ws/.git, so the old objects line no longer resolves
+        // to its mount. The protect bind's own recursive copy does.
+        let raw: &[u8] = b"23 22 0:2 / /ws rw - ext4 /dev/y rw\n\
+24 23 0:3 / /ws/.git/objects rw - tmpfs tmpfs rw\n\
+25 23 0:4 / /ws/.git ro - ext4 /dev/y ro\n\
+26 25 0:3 / /ws/.git/objects ro - tmpfs tmpfs ro\n";
+        let got = live_submounts(raw, Path::new("/ws"));
+        assert_eq!(
+            got,
+            vec![PathBuf::from("/ws/.git"), PathBuf::from("/ws/.git/objects")]
+        );
+    }
+
+    #[test]
+    fn an_overmount_at_the_same_path_shadows_the_earlier_one() {
+        let raw: &[u8] = b"23 22 0:2 / /ws rw - ext4 /dev/y rw\n\
+24 23 0:3 / /ws/v rw - tmpfs a rw\n\
+25 23 0:4 / /ws/v rw - tmpfs b rw\n";
+        let got = live_submounts(raw, Path::new("/ws"));
+        assert_eq!(got, vec![PathBuf::from("/ws/v")]);
+    }
+
+    #[test]
+    fn a_descendant_mount_shadows_nothing_and_prefixes_are_component_wise() {
+        let raw: &[u8] = b"23 22 0:2 / /ws rw - ext4 /dev/y rw\n\
+24 23 0:3 / /ws/v rw - tmpfs a rw\n\
+25 24 0:4 / /ws/v/deep rw - tmpfs b rw\n\
+26 22 0:5 / /wsx rw - tmpfs c rw\n";
+        let got = live_submounts(raw, Path::new("/ws"));
+        assert_eq!(
+            got,
+            vec![PathBuf::from("/ws/v"), PathBuf::from("/ws/v/deep")]
+        );
     }
 }

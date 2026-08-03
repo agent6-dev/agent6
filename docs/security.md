@@ -364,7 +364,9 @@ syscall for hardened), never guessed from the kernel version.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
     - `protect_git` (default on) keeps `.git` unwritable under `strict`, which
-      re-binds it read-only. A rewrite fails and `push` has no egress. It is
+      re-binds it read-only, recursively: a mount nested under it (e.g.
+      `.git/objects` on its own bind) stays visible and read-only rather than
+      shadowed. A rewrite fails and `push` has no egress. It is
       STRICT-ONLY: see below. On `hardened` the default degrades with a warning
       and an explicitly-set `true` refuses to run.
     - **The protected scope is the project's own `.git`**: agent6's operational

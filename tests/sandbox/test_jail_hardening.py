@@ -213,6 +213,160 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
             assert flags.startswith("ro"), f"{mountpoint} is writable inside a RO grant: {flags}"
 
 
+def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> None:
+    """A mount nested under a protect path (`.git/objects` on its own bind) is
+    carried in by the recursive workspace bind and then covered by the protect
+    bind. Its stale mountinfo line made the protect floor remount a path that
+    is no longer a mount point -- EINVAL, and every jailed command refused.
+    The nested mount's content must instead stay visible and read-only under
+    the protect bind."""
+    import shutil
+    import subprocess
+    import sys
+    import textwrap
+
+    if shutil.which("unshare") is None:
+        pytest.skip("needs unshare to nest a mount under a protect path")
+
+    ws = tmp_path / "ws"
+    (ws / ".git" / "objects").mkdir(parents=True)
+
+    probe = (
+        "echo run-ok; "
+        "cat .git/objects/seed; "
+        "{ echo x > .git/objects/tamper; } 2>/dev/null"
+        " && echo OBJECTS-WRITABLE || echo objects-protected; "
+        "{ echo x > .git/tamper; } 2>/dev/null"
+        " && echo GIT-WRITABLE || echo git-protected; "
+        "echo w > note.txt && echo ws-writable"
+    )
+    inner = textwrap.dedent(
+        f"""
+        import ctypes, sys
+        from pathlib import Path
+        from agent6.sandbox.jail import run_in_jail
+        from agent6.types import JailPolicy
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        ws = Path(sys.argv[1])
+        sub = ws / ".git" / "objects"
+        if libc.mount(b"tmpfs", str(sub).encode(), b"tmpfs", 0, None) != 0:
+            print("MOUNT_FAILED", ctypes.get_errno())
+            raise SystemExit(0)
+        (sub / "seed").write_text("seeded-content")
+        try:
+            res = run_in_jail(
+                JailPolicy(
+                    cwd=ws,
+                    argv=("sh", "-c", {probe!r}),
+                    isolation="strict",
+                    extra_protect_paths=(ws / ".git",),
+                    timeout_s=20.0,
+                )
+            )
+        except Exception as exc:
+            print("JAIL-REFUSED:", exc)
+        else:
+            print(res.stdout)
+            print("STDERR", res.stderr[:300])
+        """
+    )
+    proc = subprocess.run(
+        [
+            "unshare",
+            "--map-root-user",
+            "--mount",
+            "--propagation",
+            "private",
+            sys.executable,
+            "-c",
+            inner,
+            str(ws),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    out = proc.stdout
+    if "MOUNT_FAILED" in out or proc.returncode != 0:
+        pytest.skip(f"could not nest a mount: {out[:200]} {proc.stderr[:200]}")
+    assert "run-ok" in out, f"the jail refused outright: {out[:400]}"
+    assert "seeded-content" in out, f"the nested mount's content is hidden: {out[:400]}"
+    assert "objects-protected" in out and "OBJECTS-WRITABLE" not in out, out[:400]
+    assert "git-protected" in out and "GIT-WRITABLE" not in out, out[:400]
+    assert "ws-writable" in out, out[:400]
+
+
+def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: Path) -> None:
+    """A system bind whose source carries a locked flag (/etc/alternatives on a
+    noexec tmpfs, a hardened host's shape): the read-only remount must repeat
+    the source's flags -- clearing a locked one in a user namespace is refused
+    EPERM, and the jail then failed closed on exactly the hosts hardened the
+    way its own floor recommends."""
+    import shutil
+    import subprocess
+    import sys
+    import textwrap
+
+    if shutil.which("unshare") is None:
+        pytest.skip("needs unshare to overmount a system bind source")
+    if not Path("/etc/alternatives").is_dir():
+        pytest.skip("no /etc/alternatives on this host")
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+
+    inner = textwrap.dedent(
+        """
+        import ctypes, sys
+        from pathlib import Path
+        from agent6.sandbox.jail import run_in_jail
+        from agent6.types import JailPolicy
+
+        MS_NOSUID, MS_NODEV, MS_NOEXEC = 2, 4, 8
+        libc = ctypes.CDLL(None, use_errno=True)
+        flags = MS_NOSUID | MS_NODEV | MS_NOEXEC
+        if libc.mount(b"tmpfs", b"/etc/alternatives", b"tmpfs", flags, None) != 0:
+            print("MOUNT_FAILED", ctypes.get_errno())
+            raise SystemExit(0)
+        try:
+            res = run_in_jail(
+                JailPolicy(
+                    cwd=Path(sys.argv[1]),
+                    argv=("sh", "-c", "echo probe-ok"),
+                    isolation="strict",
+                    timeout_s=20.0,
+                )
+            )
+        except Exception as exc:
+            print("JAIL-REFUSED:", exc)
+        else:
+            print(res.stdout)
+            print("STDERR", res.stderr[:300])
+        """
+    )
+    proc = subprocess.run(
+        [
+            "unshare",
+            "--map-root-user",
+            "--mount",
+            "--propagation",
+            "private",
+            sys.executable,
+            "-c",
+            inner,
+            str(ws),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    out = proc.stdout
+    if "MOUNT_FAILED" in out or proc.returncode != 0:
+        pytest.skip(f"could not overmount: {out[:200]} {proc.stderr[:200]}")
+    assert "probe-ok" in out, f"the jail refused on a hardened system mount: {out[:400]}"
+
+
 def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
     """umount2 is the unmount call to deny, and syscall 22 is not a spelling of
     it on x86_64: 22 is `pipe(2)` there, and the 64-bit table has no legacy
