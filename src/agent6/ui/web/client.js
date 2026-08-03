@@ -292,6 +292,14 @@ function runsCard(runs) {
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
   prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
   card.appendChild(prune);
+  const rmAsks = el('button', 'danger'); rmAsks.textContent = 'Clear saved asks';
+  rmAsks.style.marginTop = '10px'; rmAsks.style.marginLeft = '6px';
+  rmAsks.onclick = async () => {
+    if (!confirm('Delete every saved ask?')) return;
+    try { const d = await postJSON('/api/runs/rm_asks', {}); toast(d.message || 'cleared'); route(); }
+    catch (e) { toast(e.message, true); }
+  };
+  card.appendChild(rmAsks);
   return card;
 }
 
@@ -684,7 +692,17 @@ async function renderRun(id, opts, gen) {
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = post('merge', 'merged');
     cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
-    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn]) actions.appendChild(b);
+    const rmBtn = el('button', 'danger', 'Delete');
+    rmBtn.onclick = async () => {
+      // History only, and not undoable, so it asks. The CLI refuses a live run.
+      if (!confirm('Delete this run\'s history? The branch and its commits are kept.')) return;
+      try {
+        const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/rm', {});
+        toast(d.message || 'removed');
+        location.hash = '#/';
+      } catch (e) { toast(e.message, true); }
+    };
+    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
   }
   app.appendChild(actions);

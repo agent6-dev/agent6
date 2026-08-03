@@ -71,7 +71,7 @@ from agent6.runs.ipc import (
     write_steer_answer,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.ui.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
+from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -1086,6 +1086,35 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 "The current step finishes (its tool results and auto-commit land), "
                 "then the run stops. Resume later with `agent6 resume`.",
                 confirm_label="Stop",
+            ),
+            _confirmed,
+        )
+
+    def action_delete_run(self) -> None:
+        """Delete this run's history and return to the hub. History only: the run
+        branch and its commits are git's (`runs prune` is the branch verb)."""
+        if self.run_controllable():
+            self.notify("run is still live -- stop it first", severity="warning")
+            return
+
+        def _confirmed(yes: bool | None) -> None:
+            if yes:
+                ok, msg = run_cli_capture(
+                    [agent6_exe(), "runs", "rm", "--", self.run_dir.name], Path.cwd()
+                )
+                self.notify(
+                    msg or ("removed" if ok else "could not remove"),
+                    severity="information" if ok else "error",
+                )
+                if ok:
+                    self.action_to_hub()
+
+        self.push_screen(
+            ConfirmModal(
+                "Delete this run's history?",
+                "Removes its transcripts, events and manifest from the state dir. "
+                "The run branch and its commits are kept.",
+                confirm_label="Delete",
             ),
             _confirmed,
         )

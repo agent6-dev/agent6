@@ -168,6 +168,7 @@ RUN_MENU = Menu(
         MenuItem("Stop now", "stop_now"),
         MenuItem("Resume the run", "resume"),
         MenuItem("Fork the run", "fork"),
+        MenuItem("Delete this run…", "delete_run"),
     ),
 )
 

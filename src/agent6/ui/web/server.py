@@ -335,6 +335,11 @@ class _Handler(BaseHTTPRequestHandler):
             run_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.preset)
             self._ok_or_err(run_id is not None, {"run_id": run_id}, err)
             return
+        if path == "/api/runs/rm_asks":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
+            ok, msg = actions.remove_asks(self.cwd)
+            self._ok_or_err(ok, {"message": msg}, msg)
+            return
         if path == "/api/runs/prune":
             # Drain the body (the client posts `{}`) even though prune takes no
             # params: an unread body would sit on the keep-alive socket and the
@@ -399,6 +404,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "compact":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.compact_run(self.cwd, run_id)
+        elif verb == "rm":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
+            ok, msg = actions.remove_run(self.cwd, run_id)
         else:
             self._post_not_found(f"run/{run_id}/{verb}")
             return

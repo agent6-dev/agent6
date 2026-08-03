@@ -413,6 +413,19 @@ def prune_runs(cwd: Path) -> tuple[bool, str]:
     return run_cli_capture([agent6_exe(), "runs", "prune"], cwd)
 
 
+def remove_run(cwd: Path, run_id: str) -> tuple[bool, str]:
+    """Delete one run's history: `agent6 runs rm <id>`. History only -- the run
+    branch is git's, and `runs prune` is the branch verb. The CLI refuses a live
+    run, so this surface inherits that."""
+    return run_cli_capture([agent6_exe(), "runs", "rm", "--", run_id], cwd)
+
+
+def remove_asks(cwd: Path) -> tuple[bool, str]:
+    """Clear every saved ask: `agent6 runs rm --asks`. The bucket that
+    accumulates, since an ask runs in any directory."""
+    return run_cli_capture([agent6_exe(), "runs", "rm", "--asks"], cwd)
+
+
 def set_config(cwd: Path, key: str, value: str, *, repo: bool = False) -> tuple[bool, str]:
     """Set one config leaf: `agent6 config set <key> <value> [--repo]`. The CLI
     validates the key and value; the write lands in the global config by default.
