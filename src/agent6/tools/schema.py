@@ -194,10 +194,11 @@ class RunCommandInput(_ToolInput):
         " (`/usr/local/bin`, `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`, `/snap/bin`),"
         " each mounted read-only, so operator-installed tools like `uv` resolve. Prefer absolute"
         " paths like `/usr/bin/python3`; bare `python` may fail where only `python3` exists."
-        " Mutating git subcommands such as `checkout`, `reset`, `restore`, `clean`, `stash`,"
-        " and `commit` are refused because `.git/` is protected; to undo a bad edit, read"
-        " prior content with `git show HEAD:path/to/file` and restore it with `apply_patch`"
-        " or `apply_edit`."
+        " Nothing screens the argv: `.git/` is protected by the sandbox instead, so"
+        " mutating git subcommands such as `checkout`, `reset`, `restore`, `clean`,"
+        " `stash` and `commit` FAIL against a read-only `.git/` rather than being"
+        " refused up front. To undo a bad edit, read prior content with"
+        " `git show HEAD:path/to/file` and restore it with `apply_patch` or `apply_edit`."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)

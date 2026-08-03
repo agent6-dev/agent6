@@ -155,8 +155,13 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
         # in-repo symlinks whose destination can be anywhere on the host, and
         # this read runs in-process (outside the jail). Resolve and require
         # the real file to still be under root; skip escapees.
+        #
+        # READ the resolved path, not the original: reading `path` re-follows
+        # the symlink, so the check and the use land on different objects and a
+        # background command in the same jail can swap the link between them.
         try:
-            path.resolve().relative_to(root_resolved)
+            resolved = path.resolve()
+            resolved.relative_to(root_resolved)
         except (OSError, ValueError):
             continue
         if time.monotonic() > deadline:
@@ -165,7 +170,7 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
             return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
         try:
             for lineno, line in enumerate(
-                path.read_text(encoding="utf-8", errors="ignore").splitlines(),
+                resolved.read_text(encoding="utf-8", errors="ignore").splitlines(),
                 start=1,
             ):
                 # Re-check the wall-clock inside the line loop too: the
