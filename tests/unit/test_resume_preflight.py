@@ -98,3 +98,92 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     # A config-selected profile re-resolves from the config files; only a
     # --profile flag is replayed (WorkflowStamp.replay_profile's contract).
     assert seen == [""]
+
+
+class _StubGit:
+    run_repo_hooks = False
+
+
+class _StubCfg:
+    git = _StubGit()
+
+    def require_runnable(self, _role: str) -> None:
+        return None
+
+
+class _StubLoaded:
+    config = _StubCfg()
+
+
+def _park_manifest(run_dir: Path, *, profile: str, from_flag: bool) -> None:
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "run_id": run_dir.name,
+                "mode": "run",
+                "user_task": "queued work",
+                "parked_task": "queued work",
+                "workflow": {"profile": profile, "profile_from_flag": from_flag},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _stub_start_of_run(resume: object, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Let a parked resume reach `run_task`; capture the kwargs it hands over."""
+
+    def _load(*_a: object, **_k: object) -> _StubLoaded:
+        return _StubLoaded()
+
+    def _hook_policy(_v: object) -> None:
+        return None
+
+    captured: dict[str, object] = {}
+
+    def _capture_run_task(*_a: object, **k: object) -> int:
+        captured.update(k)
+        return 0
+
+    monkeypatch.setattr(resume, "load_effective", _load)
+    monkeypatch.setattr(resume, "set_repo_hook_policy", _hook_policy)
+    monkeypatch.setattr(resume, "run_task", _capture_run_task)
+    return captured
+
+
+def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parked leg never ran, but its manifest recorded a FLAG-selected profile.
+    Restarting it must re-stamp the SAME (name, from_flag) so a later resume/fork
+    replays the flag precedence; deriving the stamp from the (empty) resume
+    `profile` dropped the from_flag bit and silently downgraded a flag-selected
+    profile's blocking veto on the next leg."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-BBBB22", profile="strict", from_flag=True)
+    captured = _stub_start_of_run(resume_mod, monkeypatch)
+
+    assert _cmd_resume(None, "parked-BBBB22", force=False) == 0
+    assert captured["profile_stamp"] == ("strict", True)
+
+
+def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume that DOES pass --profile is a fresh flag choice for this leg, so
+    it must NOT pin the manifest's old stamp -- run_task derives from `profile`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-CCCC33", profile="strict", from_flag=True)
+    captured = _stub_start_of_run(resume_mod, monkeypatch)
+
+    assert _cmd_resume(None, "parked-CCCC33", force=False, profile="none") == 0
+    assert captured["profile_stamp"] is None
+    assert captured["profile"] == "none"

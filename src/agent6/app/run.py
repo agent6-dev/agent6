@@ -231,6 +231,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     profile: str = "",
     initial_steer: str = "",
     pins: Sequence[str] = (),
+    profile_stamp: tuple[str, bool] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -248,6 +249,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     provider keys, and routed ``--parallel`` away. *budget_overrides* /
     *sandbox_overrides* are passed through for the flags the lifecycle re-reads
     (`--max-usd` enforcement, lane dispatch).
+
+    *profile_stamp* ``(name, from_flag)`` overrides the manifest's stamped
+    profile instead of deriving it from *profile*. A parked resume has no
+    ``--profile`` flag but must record the ORIGINAL submission's stamp so a
+    later resume/fork replays the same precedence (fork carries it likewise);
+    deriving from the empty *profile* dropped it, and the veto a flag-selected
+    profile carried vanished on the next leg.
 
     When ``mode="plan"`` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
@@ -425,8 +433,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # The CONFIG profile, not the sandbox one: resume feeds this
                 # back to load_effective, and a sandbox word ("strict") there
                 # made every parked resume die with "unknown profile".
-                effective_profile=profile or cfg.profile,
-                profile_from_flag=bool(profile),
+                effective_profile=(profile_stamp[0] if profile_stamp else (profile or cfg.profile)),
+                profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
                 parked_task=task,
             )
             reporter.err(
@@ -553,8 +561,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             run_branch=run_branch,
             cfg=cfg,
             mode=mode,
-            effective_profile=profile or cfg.profile,
-            profile_from_flag=bool(profile),
+            effective_profile=(profile_stamp[0] if profile_stamp else (profile or cfg.profile)),
+            profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
         )
 
         # ask gets a small default USD ceiling so an exploratory question can't run
