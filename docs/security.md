@@ -194,7 +194,7 @@ Everything the model can influence runs through `run_in_jail` (§2). A fixed set
 of modules also shells out directly with `subprocess.run`/`Popen`; each has
 fixed argv depending only on operator input, never LLM output.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with
-`rg 'subprocess\.(run|Popen)' src/agent6/`.
+`rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
 - `git_ops.py`: agent6's own git operations (§5).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.

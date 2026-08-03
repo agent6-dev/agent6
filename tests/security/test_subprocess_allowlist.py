@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The CLAUDE.md subprocess audit (`rg 'subprocess\\.(run|Popen)' src/agent6/`)
-as a test: every module that spawns a child process directly is on the reviewed
-allow-list below (argv fixed or operator-chosen, never LLM output -- that goes
-through run_in_jail). A new name here is a security review with a
-`Security review note:` commit paragraph, not a test to update in passing."""
+"""The subprocess audit as a test: every module that spawns a child process
+directly is on the reviewed allow-list below (argv fixed or operator-chosen,
+never LLM output -- that goes through run_in_jail). A new name here is a
+security review with a `Security review note:` commit paragraph, not a test to
+update in passing.
+
+Broader than the AGENTS.md `rg` one-liner on purpose: subprocess.call /
+check_call / check_output, a bare `from subprocess import Popen`, an aliased
+`import subprocess as sp`, and the os.system / os.exec* / os.posix_spawn family
+all spawn children too, and a regex for run|Popen alone would wave them
+through."""
 
 from __future__ import annotations
 
@@ -13,7 +19,16 @@ from pathlib import Path
 
 import agent6
 
-_PATTERN = re.compile(r"subprocess\.(run|Popen)")
+# Any subprocess-module call (dotted or aliased), plus the os-level spawn
+# family. Kept as source text (not AST) so a match inside a generated-code
+# string literal is still surfaced for review rather than silently skipped.
+_PATTERN = re.compile(
+    r"subprocess\.(run|Popen|call|check_call|check_output)"
+    r"|from subprocess import"
+    r"|import subprocess as"
+    r"|os\.(system|posix_spawn|posix_spawnp|execv|execve|execvp|execvpe|execl|execle|execlp|spawn\w+)"
+    r"|create_subprocess_(exec|shell)"
+)
 
 # Reviewed direct-subprocess modules; the rationale for each is recorded in the
 # security invariants section of CLAUDE.md/AGENTS.md and docs/security.md.

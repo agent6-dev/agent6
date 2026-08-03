@@ -16,7 +16,7 @@ The load-bearing invariants, collected; each is detailed below or in `docs/`.
   the commit survives in the reflog). That path never touches LLM output.
 - Every child process whose argv depends on LLM output goes through
   `run_in_jail`; never a direct `subprocess` of model output
-  (audit: `rg 'subprocess\.(run|Popen)' src/agent6/`).
+  (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
 - Adding a tool (`tools/schema.py`), loosening a security default, or dialling a
   host not derived from a provider `base_url` each require a `Security review
   note:` in the commit message.
@@ -287,7 +287,7 @@ these are the invariants a change must preserve.
   per-module allowlist with each module's rationale lives in
   `docs/security.md` and is pinned by
   `tests/security/test_subprocess_allowlist.py`. Audit:
-  `rg 'subprocess\.(run|Popen)' src/agent6/`.
+  `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "auto"`,
