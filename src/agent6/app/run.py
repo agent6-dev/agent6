@@ -22,7 +22,6 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
     detect_env,
-    explicit_usd_flag_error,
     start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
@@ -51,10 +50,10 @@ from agent6.app.manifest import (
 )
 from agent6.app.preflight import (
     BranchChoice,
+    budget_preflight,
     infer_verify_if_unset,
     warn_if_headless_ask,
     warn_if_prompt_override_incomplete,
-    warn_if_usd_unenforceable,
 )
 from agent6.app.providers import (
     InstrumentedProvider,
@@ -122,10 +121,6 @@ from agent6.types import SandboxProfile
 from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
-
-# Default USD ceiling for `agent6 ask` when no budget is configured, so an
-# exploratory question can't quietly run up a bill.
-_ASK_DEFAULT_MAX_USD = 0.50
 
 
 class SteerHooks(Protocol):
@@ -299,9 +294,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(egress_err)
         return 2
 
-    usd_err = explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
-    if usd_err is not None:
-        reporter.err(f"REFUSING: {usd_err}")
+    budget_err = budget_preflight(cfg)
+    if budget_err is not None:
+        reporter.err(f"REFUSING: {budget_err}")
         return 2
 
     # Git pre-flight (verify identity).
@@ -573,14 +568,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
         )
 
-        # ask gets a small default USD ceiling so an exploratory question can't run
-        # away; an explicit [budget].best_effort_usd_limit or --max-usd overrides it.
-        usd_limit = cfg.budget.best_effort_usd_limit
-        ask_max_usd = usd_limit or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
         budget = BudgetTracker(
-            max_input_tokens=cfg.budget.max_input_tokens,
-            max_output_tokens=cfg.budget.max_output_tokens,
-            max_usd=ask_max_usd,
+            max_usd=cfg.budget.max_usd,
+            max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
 
         # Workflow uses ONE provider for everything (the worker role, or the
@@ -591,7 +581,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
         rm_worker = cfg.models.resolve(role)
         assert rm_worker is not None  # require_runnable validated this
-        warn_if_usd_unenforceable(cfg)
         warn_if_prompt_override_incomplete(cfg)
         # Enable SSE streaming when stderr is a TTY (covers TUI
         # and interactive shell use). Bench/CI runs pipe stderr, so they

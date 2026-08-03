@@ -309,8 +309,7 @@ def run_one(
             thinking=r.thinking,
             temperature=r.temperature,
             max_usd=r.max_usd,
-            max_input_tokens=r.max_input_tokens,
-            max_output_tokens=r.max_output_tokens,
+            max_tokens_fallback=r.max_tokens_fallback,
         )
         cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, ValidationError) as exc:
@@ -343,9 +342,8 @@ def run_one(
             reporter.err(f"REFUSING: {landlock_err}")
             return _result("error", None, None)
         budget = BudgetTracker(
-            max_input_tokens=cfg.budget.max_input_tokens,
-            max_output_tokens=cfg.budget.max_output_tokens,
-            max_usd=cfg.budget.best_effort_usd_limit,
+            max_usd=cfg.budget.max_usd,
+            max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
         provider, summariser_provider, events_sink = _build_agent_providers(
             cfg, req, budget=budget, attach_console=attach_console

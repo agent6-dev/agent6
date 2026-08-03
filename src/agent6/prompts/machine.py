@@ -23,16 +23,14 @@ plain TOML. Author one complete machine per task.
     initial = "<state name>"          # the entry state
 
     [budget]
-    max_usd = 1.0                     # optional hard USD cap (see below)
+    max_usd = 1.0                     # optional cap on metered spend (see below)
     max_transitions = 100             # > 0; hard cap on state hops
 
-  The USD cap is optional, at most one of `max_usd` /
-  `best_effort_usd_limit` (both > 0). `max_usd` is hard: `machine run`
-  refuses to start when an agent state's model has no price data.
-  `best_effort_usd_limit` always runs but binds only when spend is
-  measurable. Default to `best_effort_usd_limit` -- it runs on any model;
-  pick `max_usd` only when every agent model is priced and you want a hard
-  ceiling. `max_transitions` is the always-binding runaway guard.
+  `max_usd` (optional, > 0) caps the machine's cumulative METERED spend
+  (provider-reported cost, else price x tokens). A state whose model has
+  no price data is bounded by the operator config's
+  `[budget].max_tokens_fallback` instead, so the machine runs on any
+  model. `max_transitions` is the always-binding runaway guard.
 
 ## The blackboard: three owner tables (write-authorization, one read namespace)
 

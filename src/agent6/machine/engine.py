@@ -146,8 +146,7 @@ class AgentRequest(BaseModel):
     thinking: str | None = None
     temperature: float | None = None
     max_usd: float | None = None
-    max_input_tokens: int | None = None
-    max_output_tokens: int | None = None
+    max_tokens_fallback: int | None = None
     # Workflow mode for the nested loop: "agent" (default) for a machine
     # `agent` state, a read-only structured-output judge; "run" for an agent
     # state that opted into coding work; "machine" for the `machine create`
@@ -685,9 +684,8 @@ def _execute(
                 provider=state.provider,
                 thinking=state.thinking,
                 temperature=state.temperature,
-                max_usd=state.usd_limit,
-                max_input_tokens=state.max_input_tokens,
-                max_output_tokens=state.max_output_tokens,
+                max_usd=state.max_usd,
+                max_tokens_fallback=state.max_tokens_fallback,
                 # Per-state: "agent" (default) is a read-only structured-output
                 # judge; "run" lets the state do real coding work (opt-in).
                 mode=state.mode,
@@ -908,11 +906,9 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
             return _emit_end(
                 journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )
-        usd_limit = spec.budget.usd_limit
+        usd_limit = spec.budget.max_usd
         if usd_limit is not None and spent_usd >= usd_limit:
-            reason = (
-                f"{spec.budget.usd_field_name} (${usd_limit}) exceeded (spent ~${spent_usd:.4f})"
-            )
+            reason = f"max_usd (${usd_limit}) exceeded (spent ~${spent_usd:.4f})"
             return _emit_end(
                 journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )

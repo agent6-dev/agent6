@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for USD budget enforcement guards.
+"""Config-side budget guards: the `budget_preflight` refusals/notice and the
+override path.
 
-USD is a single runtime bound (`BudgetTracker.max_usd`), not a load-time
-token conversion: the config-side guards here refuse an unenforceable
-`--max-usd` flag and warn on an unenforceable config limit.
-
-Pricing has no static table: it comes from the provider-fetched models cache
-(agent6.models.pricing reads $AGENT6_CACHE_HOME/models/*.json). Tests inject prices
-by writing a real cache file, exercising the same path production uses.
+USD is a single runtime bound (`BudgetTracker.max_usd`), never a load-time
+token conversion. Pricing has no static table: it comes from the
+provider-fetched models cache (agent6.models.pricing reads
+$AGENT6_CACHE_HOME/models/*.json). Tests inject prices by writing a real cache
+file, exercising the same path production uses.
 """
 
 from __future__ import annotations
@@ -40,110 +39,74 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return cache
 
 
-def test_max_usd_override_does_not_ratchet_token_caps(price_cache: Path) -> None:
-    """A later --max-usd (via with_budget_overrides) must not be bounded by an
-    earlier USD limit. The token ceilings are the operator's DECLARED values,
-    never rewritten from best_effort_usd_limit; USD is enforced by the runtime
-    BudgetTracker.max_usd. Previously a load-time USD->token conversion
-    overwrote the declared caps, and with_budget_overrides re-fed the tightened
-    value as if operator-set, so raising the USD limit could never win."""
+def _cfg(worker: str, budget: dict[str, Any] | None = None, reviewer: str | None = None) -> Any:
     from agent6.config import Config
 
-    cfg = Config.model_validate(
+    models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}
+    if reviewer is not None:
+        models["reviewer"] = {"provider": "p", "model": reviewer}
+    return Config.model_validate(
         {
             "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
-            "models": {"worker": {"provider": "p", "model": PRICED_MODEL}},
-            "budget": {
-                "best_effort_usd_limit": 5.0,
-                "max_input_tokens": 999_999_999,
-                "max_output_tokens": 999_999_999,
-            },
+            "models": models,
+            **({"budget": budget} if budget else {}),
         }
     )
-    # Declared ceilings are preserved verbatim (priced worker, USD limit set).
-    assert cfg.budget.max_input_tokens == 999_999_999
-    assert cfg.budget.max_output_tokens == 999_999_999
-    # Raising the USD limit takes full effect; nothing ratchets it down.
+
+
+def test_budget_overrides_write_the_fields_they_name(price_cache: Path) -> None:
+    """--max-usd / --max-tokens-fallback override exactly their config fields;
+    nothing is derived or ratcheted from one into the other."""
+    cfg = _cfg(PRICED_MODEL, budget={"max_usd": 5.0, "max_tokens_fallback": 999_999_999})
     out = cfg.with_budget_overrides(max_usd=50.0)
-    assert out.budget.best_effort_usd_limit == 50.0
-    assert out.budget.max_input_tokens == 999_999_999
+    assert out.budget.max_usd == 50.0
+    assert out.budget.max_tokens_fallback == 999_999_999  # untouched
+    out2 = cfg.with_budget_overrides(max_tokens_fallback=7)
+    assert out2.budget.max_usd == 5.0
+    assert out2.budget.max_tokens_fallback == 7
 
 
-def test_explicit_usd_flag_refused_when_unpriced(
+def test_fallback_zero_refuses_an_unpriced_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # An explicit --max-usd is a promise for the run; with no price data for
-    # the worker model it cannot be kept, so the CLI refuses to start.
-    from agent6.app._setup import (
-        explicit_usd_flag_error as _explicit_usd_flag_error,
-    )
-    from agent6.config import Config
+    # max_tokens_fallback = 0 is the strict "never run unmetered" promise:
+    # refuse up front when a configured role model has no price data.
+    from agent6.app.preflight import budget_preflight
 
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
-    cfg = Config.model_validate(
-        {
-            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
-            "models": {"worker": {"provider": "p", "model": "nobody/unpriced"}},
-        }
-    )
-    err = _explicit_usd_flag_error(2.5, cfg)
-    assert err is not None and "no price data" in err
-    # no flag, or a priced model, passes
-    assert _explicit_usd_flag_error(None, cfg) is None
-    assert _explicit_usd_flag_error(0, cfg) is None
+    err = budget_preflight(_cfg("nobody/unpriced", budget={"max_tokens_fallback": 0}))
+    assert err is not None and "max_tokens_fallback" in err and "nobody/unpriced" in err
 
 
-def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
-    from agent6.app._setup import (
-        explicit_usd_flag_error as _explicit_usd_flag_error,
-    )
-    from agent6.config import Config
+def test_fallback_zero_ok_when_all_models_priced(price_cache: Path) -> None:
+    from agent6.app.preflight import budget_preflight
 
-    cfg = Config.model_validate(
-        {
-            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
-            "models": {"worker": {"provider": "p", "model": PRICED_MODEL}},
-        }
-    )
-    assert _explicit_usd_flag_error(2.5, cfg) is None
+    assert budget_preflight(_cfg(PRICED_MODEL, budget={"max_tokens_fallback": 0})) is None
 
 
-def testwarn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """A TOML best_effort_usd_limit on an unpriced worker can't enforce (Anthropic
-    publishes no pricing), so run startup must warn instead of silently no-op'ing.
-    The --max-usd *flag* is already guarded by _explicit_usd_flag_error; this is
-    the config-path complement."""
-    from agent6.app.preflight import warn_if_usd_unenforceable
-    from agent6.config import Config
+def test_usd_zero_refuses_a_priced_model(price_cache: Path) -> None:
+    # max_usd = 0 is the run-nothing-metered policy (local-only rig).
+    from agent6.app.preflight import budget_preflight
 
-    def _cfg(usd: float, worker: str, reviewer: str | None = None) -> Config:
-        models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}
-        if reviewer is not None:
-            models["reviewer"] = {"provider": "p", "model": reviewer}
-        return Config.model_validate(
-            {
-                "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
-                "models": models,
-                "budget": {"best_effort_usd_limit": usd},
-            }
-        )
+    err = budget_preflight(_cfg(PRICED_MODEL, budget={"max_usd": 0}))
+    assert err is not None and "max_usd" in err and PRICED_MODEL in err
 
-    # unpriced worker + usd>0 -> warns, names the model, points at token ceilings
-    warn_if_usd_unenforceable(_cfg(1.0, "nobody/unpriced"))
-    warned = capsys.readouterr().err
-    assert "cannot be enforced" in warned and "nobody/unpriced" in warned
 
-    # priced worker -> the USD ceiling works, so stay silent
-    warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL))
-    assert capsys.readouterr().err == ""
+def test_unpriced_model_gets_the_fallback_notice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unpriced role model is not an error: its spend is bounded by the
+    fallback ledger, and startup says so once, naming the model."""
+    from agent6.app.preflight import budget_preflight
 
-    # priced worker but UNPRICED reviewer -> still warns (its spend is invisible
-    # to the dollar ceiling). Names the reviewer, not the priced worker.
-    warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL, reviewer="nobody/unpriced-reviewer"))
-    warned = capsys.readouterr().err
-    assert "cannot be enforced" in warned and "nobody/unpriced-reviewer" in warned
-    assert PRICED_MODEL not in warned
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    assert budget_preflight(_cfg("nobody/unpriced")) is None
+    noted = capsys.readouterr().err
+    assert "nobody/unpriced" in noted and "fallback" in noted
 
-    # no USD limit -> nothing to enforce, stay silent
-    warn_if_usd_unenforceable(_cfg(0.0, "nobody/unpriced"))
+
+def test_priced_models_are_silent(price_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from agent6.app.preflight import budget_preflight
+
+    assert budget_preflight(_cfg(PRICED_MODEL, reviewer=CHEAP_MODEL)) is None
     assert capsys.readouterr().err == ""

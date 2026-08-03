@@ -42,25 +42,18 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=None,
         metavar="USD",
+        help="Override [budget].max_usd for this run (-1 unlimited, 0 refuses metered calls).",
+    )
+    parser.add_argument(
+        "--max-tokens-fallback",
+        type=int,
+        default=None,
+        metavar="N",
         help=(
-            "Override [budget].best_effort_usd_limit for this run (0 disables)."
-            " Passing the flag explicitly refuses to start when the worker model"
-            " has no price data, since the limit could not be enforced."
+            "Override [budget].max_tokens_fallback for this run: the input+output"
+            " token cap for calls with no price data (-1 unlimited, 0 refuses"
+            " unmetered calls)."
         ),
-    )
-    parser.add_argument(
-        "--max-input-tokens",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Override [budget].max_input_tokens for this run.",
-    )
-    parser.add_argument(
-        "--max-output-tokens",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Override [budget].max_output_tokens for this run.",
     )
 
 

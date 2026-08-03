@@ -293,10 +293,11 @@ class InstrumentedProvider:
                 "budget.update",
                 input_total=snap.input_total,
                 output_total=snap.output_total,
-                input_cap=snap.max_input_tokens,
-                output_cap=snap.max_output_tokens,
                 usd_total=usd_total,
                 usd_partial=usd_partial,
+                usd_cap=snap.max_usd,
+                tokens_unmetered=snap.unmetered_tokens,
+                tokens_fallback_cap=snap.max_tokens_fallback,
             )
         return resp
 

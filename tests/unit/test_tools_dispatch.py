@@ -41,8 +41,7 @@ allow_history_rewrite = false
 [workflow]
 verify_command = ["true"]
 [budget]
-max_input_tokens = 100000
-max_output_tokens = 10000
+max_tokens_fallback = 2000000
 """
 
 

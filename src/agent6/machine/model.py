@@ -193,36 +193,16 @@ class VarsSection(BaseModel):
 class BudgetSpec(BaseModel):
     """Whole-machine spend bounds. `max_transitions` always binds.
 
-    The USD limit is optional, at most one of the two: `max_usd` is hard
-    (`machine run` refuses up front when a covered agent state's model has
-    no price data); `best_effort_usd_limit` binds only when spend is
-    measurable, for unpriced or local models. Spend is metered as an
-    estimate (reported cost, else price times tokens).
+    ``max_usd`` (optional) caps the machine's cumulative METERED spend
+    (reported cost, else price x tokens); a state whose model has no price
+    data is bounded per state by ``[budget].max_tokens_fallback`` in the
+    effective config instead (0 there refuses unmetered models outright).
     """
 
     model_config = _MODEL_CONFIG
 
     max_usd: float | None = Field(default=None, gt=0.0)
-    best_effort_usd_limit: float | None = Field(default=None, gt=0.0)
     max_transitions: int = Field(gt=0)
-
-    @model_validator(mode="after")
-    def _at_most_one_usd(self) -> BudgetSpec:
-        if self.max_usd is not None and self.best_effort_usd_limit is not None:
-            raise ValueError(
-                "[budget] may set at most one of `max_usd` (hard cap, machine run"
-                " refuses unpriced models) and `best_effort_usd_limit` (enforced"
-                " when spend is measurable)"
-            )
-        return self
-
-    @property
-    def usd_limit(self) -> float | None:
-        return self.max_usd if self.max_usd is not None else self.best_effort_usd_limit
-
-    @property
-    def usd_field_name(self) -> str:
-        return "max_usd" if self.max_usd is not None else "best_effort_usd_limit"
 
 
 class Capture(BaseModel):
@@ -297,25 +277,11 @@ class AgentState(BaseModel):
     provider: str | None = None
     thinking: Literal["off", "low", "medium", "high"] | None = None
     temperature: float | None = None
-    # Same contract as [budget]: `max_usd` is hard (machine run refuses when
-    # this state's model is unpriced), `best_effort_usd_limit` binds when
-    # spend is measurable. At most one; both unset means no per-state cap.
+    # Per-state overrides of the effective config's [budget] ledgers: metered
+    # spend (max_usd) and the unmetered input+output token bound
+    # (max_tokens_fallback, -1 unlimited / 0 refuse). Unset inherits.
     max_usd: float | None = Field(default=None, gt=0.0)
-    best_effort_usd_limit: float | None = Field(default=None, gt=0.0)
-    max_input_tokens: int | None = Field(default=None, gt=0)
-    max_output_tokens: int | None = Field(default=None, gt=0)
-
-    @model_validator(mode="after")
-    def _at_most_one_usd(self) -> AgentState:
-        if self.max_usd is not None and self.best_effort_usd_limit is not None:
-            raise ValueError(
-                "an agent state may set at most one of `max_usd` and `best_effort_usd_limit`"
-            )
-        return self
-
-    @property
-    def usd_limit(self) -> float | None:
-        return self.max_usd if self.max_usd is not None else self.best_effort_usd_limit
+    max_tokens_fallback: int | None = Field(default=None, ge=-1)
 
 
 class ToolState(BaseModel):

@@ -44,7 +44,6 @@ def build_authoring_prompt(
     prior_toml: str | None = None,
     diagnostics: list[str] | None = None,
     prior_scripts: dict[str, str] | None = None,
-    worker_unpriced: bool = False,
 ) -> str:
     """Assemble the user-task prompt for one draft→check→fix attempt.
 
@@ -54,10 +53,6 @@ def build_authoring_prompt(
     re-deriving everything (most retries are a one-line script fix; without the
     prior script source the model regenerates every file blind).
 
-    When ``worker_unpriced`` is set, the operator's configured worker model (the
-    one the machine's agent states inherit) has no price data, so the draft must
-    use ``best_effort_usd_limit``; a ``max_usd`` cap would make `machine run`
-    refuse to start, leaving the freshly-created machine unrunnable.
     """
     parts = [
         MACHINE_AUTHOR_GUIDE,
@@ -69,17 +64,6 @@ def build_authoring_prompt(
         task.strip(),
         "",
     ]
-    if worker_unpriced:
-        parts += [
-            "## Budget",
-            "",
-            "The configured worker model (which this machine's agent states will"
-            " inherit) has NO price data. Use `best_effort_usd_limit` in `[budget]`"
-            " and on any per-state cap, NOT `max_usd` -- a hard `max_usd` would make"
-            " `machine run` refuse to start. `max_transitions` remains the binding"
-            " runaway guard.",
-            "",
-        ]
     parts += [
         "## How to return it",
         "",

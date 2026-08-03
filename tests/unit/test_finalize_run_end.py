@@ -45,7 +45,7 @@ def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, caps
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
@@ -68,7 +68,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
@@ -105,7 +105,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out
@@ -141,7 +141,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out
@@ -167,7 +167,7 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
     monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
     print_interrupt_end(
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
     )
     out = capsys.readouterr().out
     assert "Token + cost summary" in out  # the budget/cost block
@@ -190,7 +190,7 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
@@ -218,7 +218,7 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     out = capsys.readouterr().out
@@ -241,7 +241,7 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
     print_run_end(
         result,
         layout=layout,
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
     assert "RUN TOTAL" not in capsys.readouterr().out

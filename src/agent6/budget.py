@@ -17,19 +17,17 @@ another full ceiling. Across N resumes, total real spend can be N x
 the configured budget. The CLI logs a one-line notice on resume to
 make this visible.
 
-Budget enforcement is a HARD STOP (not a warning). When
-`max_input_tokens` or `max_output_tokens` is exceeded, the next
-provider call raises `BudgetExceeded`; the workflow drains and the
-process exits with a distinct exit code so resume tooling can
-recognise the condition.
+Budget enforcement is a HARD STOP (not a warning): once a ledger
+crosses its cap, the next provider call raises `BudgetExceeded`; the
+workflow drains and the process exits with a distinct exit code so
+resume tooling can recognise the condition.
 
-USD budgets: configure `[budget].best_effort_usd_limit` to specify a
-dollar cap. It flows to `BudgetTracker.max_usd`, the single USD bound,
-enforced at runtime against the estimated spend (provider-reported cost
-when available, else price x tokens, INCLUDING cache_read/cache_creation
-cost the token caps omit). Best-effort: with no price data and no reported
-cost it does nothing. The token ceilings are a separate, operator-declared
-bound; the two are independent knobs, not one derived from the other.
+Every call is bounded in exactly ONE currency. A call the meter can
+price -- provider-reported cost when available, else price x tokens at
+the model's fetched rates, cache_read/cache_creation included -- counts
+against ``max_usd``. A call with neither counts its input+output tokens
+against ``max_tokens_fallback``. Both caps: -1 unlimited, 0 refuse that
+ledger, > 0 the cap (see `[budget]` in config).
 
 This module is import-light (stdlib + agent6.models.pricing, which is itself
 stdlib + cache-file reads); the AnthropicProvider wires it in via
@@ -143,8 +141,9 @@ class BudgetSnapshot:
     output_total: int
     cache_read_total: int
     cache_creation_total: int
-    max_input_tokens: int
-    max_output_tokens: int
+    unmetered_tokens: int
+    max_usd: float
+    max_tokens_fallback: int
     exhausted: bool
     exhausted_reason: str
     per_model: dict[str, ModelUsage]
@@ -152,30 +151,26 @@ class BudgetSnapshot:
 
 @dataclass(slots=True)
 class BudgetTracker:
-    """Thread-safe token accumulator with a hard ceiling.
+    """Thread-safe spend accumulator: every call is bounded in ONE currency.
 
-    `max_input_tokens` and `max_output_tokens` are exclusive ceilings: a call
-    that *brings* the running total to or above the ceiling triggers
-    `BudgetExceeded` on the *next* `check()`. This means a single call may
-    cross the line, but no subsequent call will be issued.
+    A call the meter can price (provider-reported cost, else a table price for
+    its model) counts against ``max_usd``; a call it cannot price counts its
+    input+output tokens against ``max_tokens_fallback``. Both caps share one
+    rule: ``-1`` = unlimited, ``0`` = refuse calls in that ledger, ``> 0`` = an
+    exclusive ceiling -- the call that brings a ledger to or over its cap
+    triggers ``BudgetExceeded`` on the *next* ``check()``, so a single call may
+    cross the line but no further call is issued.
     """
 
-    max_input_tokens: int
-    max_output_tokens: int
-    # Estimated-dollar ceiling (0 = off). Set directly from `[budget]
-    # best_effort_usd_limit`; the single USD bound. Unlike the token caps --
-    # which `record` thresholds on fresh input/output only -- this bounds the
-    # estimated spend INCLUDING cache_read/cache_creation tokens, which cost
-    # real money but never count toward the token caps, and bounds COMBINED
-    # in+out. Without it, a heavily-cached run can blow well past its dollar
-    # budget while the token caps still read plenty of headroom.
-    max_usd: float = 0.0
+    max_usd: float = 10.0
+    max_tokens_fallback: int = 2_000_000
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)
     _input_total: int = 0
     _output_total: int = 0
     _cache_read_total: int = 0
     _cache_creation_total: int = 0
+    _unmetered_tokens: int = 0
     _exceeded_reason: str = ""
 
     def record(
@@ -193,7 +188,8 @@ class BudgetTracker:
         ``cost_usd`` is the provider-reported USD figure for this single
         call when available (OpenRouter surfaces it as ``usage.cost``).
         Pass 0.0 (the default) when no authoritative figure is supplied;
-        the price-table estimate will be used at summary time.
+        a table price meters the call instead, and a call with neither
+        lands in the fallback token ledger.
         """
         with self._lock:
             totals = self._per_model.setdefault(model, _ModelTotals())
@@ -209,14 +205,13 @@ class BudgetTracker:
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
             self._cache_creation_total += cache_creation_tokens
-            if self._input_total >= self.max_input_tokens:
+            metered = cost_usd > 0.0 or lookup_price(model) is not None
+            if not metered:
+                self._unmetered_tokens += input_tokens + output_tokens
+            if metered and self.max_usd == 0.0:
                 self._exceeded_reason = (
-                    f"input token budget exhausted: {self._input_total} >= {self.max_input_tokens}"
-                )
-            elif self._output_total >= self.max_output_tokens:
-                self._exceeded_reason = (
-                    f"output token budget exhausted: "
-                    f"{self._output_total} >= {self.max_output_tokens}"
+                    "USD budget is 0: metered calls are refused"
+                    f" (model {model!r} is priced; raise [budget].max_usd)"
                 )
             elif self.max_usd > 0.0:
                 cost, _ = self._estimate_usd_locked()
@@ -225,6 +220,18 @@ class BudgetTracker:
                         f"USD budget exhausted: ~${cost:.4f} >= ${self.max_usd:.2f}"
                         " (includes cache_read/cache_creation cost)"
                     )
+            if not metered and self.max_tokens_fallback == 0:
+                self._exceeded_reason = (
+                    f"unmetered call refused: model {model!r} has no reported cost and no"
+                    " price data, and [budget].max_tokens_fallback is 0"
+                )
+            elif (
+                self.max_tokens_fallback > 0 and self._unmetered_tokens >= self.max_tokens_fallback
+            ):
+                self._exceeded_reason = (
+                    f"fallback token budget exhausted: {self._unmetered_tokens} unmetered"
+                    f" tokens >= {self.max_tokens_fallback}"
+                )
 
     def check(self) -> None:
         """Raise `BudgetExceeded` if a prior `record()` crossed a ceiling."""
@@ -247,28 +254,20 @@ class BudgetTracker:
         budget remains to keep pivoting, and when to nudge a graceful wind-down
         (verify + finish_run) before the hard stop.
 
-        The USD ceiling counts too when set: ``max_usd`` is the AUTHORITATIVE
-        spend bound and, unlike the token caps, it includes cache_read /
-        cache_creation cost (which never counts toward the token caps). On a
-        USD-budgeted, cache-heavy run the USD ceiling is what actually
-        hard-stops the run, so leaving it out here reported plenty of budget
-        left while ``record`` was about to raise ``BudgetExceeded`` -- every
-        wind-down threshold stayed un-triggered and the worker was hard-killed
-        mid-edit instead of finishing cleanly. An unpriced model contributes $0
-        to the estimate (max_usd is unenforceable there anyway), so this stays a
-        no-op exactly when the USD bound is a no-op.
+        Each ledger contributes its own used-fraction (spent/cap for the USD
+        meter, unmetered-tokens/cap for the fallback); an unlimited (-1) or
+        refuse (0) cap contributes nothing -- 0 either never engaged (nothing
+        recorded in that ledger) or already tripped ``_exceeded_reason``.
         """
         with self._lock:
-            input_used = (
-                self._input_total / self.max_input_tokens if self.max_input_tokens > 0 else 1.0
-            )
-            output_used = (
-                self._output_total / self.max_output_tokens if self.max_output_tokens > 0 else 1.0
-            )
-            used = max(input_used, output_used)
+            if self._exceeded_reason:
+                return 0.0
+            used = 0.0
             if self.max_usd > 0.0:
                 usd_spent, _ = self._estimate_usd_locked()
                 used = max(used, usd_spent / self.max_usd)
+            if self.max_tokens_fallback > 0:
+                used = max(used, self._unmetered_tokens / self.max_tokens_fallback)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
@@ -291,8 +290,9 @@ class BudgetTracker:
                 output_total=self._output_total,
                 cache_read_total=self._cache_read_total,
                 cache_creation_total=self._cache_creation_total,
-                max_input_tokens=self.max_input_tokens,
-                max_output_tokens=self.max_output_tokens,
+                unmetered_tokens=self._unmetered_tokens,
+                max_usd=self.max_usd,
+                max_tokens_fallback=self.max_tokens_fallback,
                 exhausted=bool(self._exceeded_reason),
                 exhausted_reason=self._exceeded_reason,
                 per_model=per_model,
@@ -353,11 +353,16 @@ class BudgetTracker:
                 f"cache_c={totals.cache_creation_tokens} "
                 f"calls={totals.calls} {cost_str}"
             )
+        usd_cap = "unlimited" if snap.max_usd == -1 else f"${snap.max_usd:.2f}"
         budget_line = (
-            f"  TOTAL: in={snap.input_total}/{snap.max_input_tokens} "
-            f"out={snap.output_total}/{snap.max_output_tokens} "
-            f"cost~${total_usd:.4f}"
+            f"  TOTAL: in={snap.input_total} out={snap.output_total} "
+            f"cost~${total_usd:.4f} of {usd_cap}"
         )
+        if snap.unmetered_tokens:
+            fb_cap = (
+                "unlimited" if snap.max_tokens_fallback == -1 else str(snap.max_tokens_fallback)
+            )
+            budget_line += f" (unmetered: {snap.unmetered_tokens}/{fb_cap} fallback tokens)"
         if any_unknown:
             # The figure is a lower bound; at least one model has no cached
             # provider price (see agent6.models.pricing: no static fallback).

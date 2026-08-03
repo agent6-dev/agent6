@@ -38,7 +38,7 @@ def _wrap(inner: MagicMock) -> InstrumentedProvider:
         model="moonshotai/kimi-k2.6",
         provider_name="openai",
         events=MagicMock(),
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
     )
 
 

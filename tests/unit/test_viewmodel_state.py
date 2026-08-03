@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -200,12 +201,15 @@ def test_budget_update_populates_view() -> None:
             "type": "budget.update",
             "input_total": 100,
             "output_total": 50,
-            "input_cap": 1000,
-            "output_cap": 500,
+            "usd_cap": 10.0,
+            "tokens_unmetered": 30,
+            "tokens_fallback_cap": 1000,
         },
     )
     assert s.budget.input_total == 100
-    assert s.budget.input_cap == 1000
+    assert s.budget.usd_cap == 10.0
+    assert s.budget.tokens_unmetered == 30
+    assert s.budget.tokens_fallback_cap == 1000
     # USD fields default cleanly when the event omits them.
     assert s.budget.usd_total == 0.0
     assert s.budget.usd_partial is False
@@ -532,17 +536,19 @@ def test_resume_resets_the_leg_token_counters() -> None:
             "type": "budget.update",
             "input_total": 9500,
             "output_total": 480,
-            "input_cap": 10000,
-            "output_cap": 500,
             "usd_total": 0.2,
+            "usd_cap": 10.0,
+            "tokens_unmetered": 700,
+            "tokens_fallback_cap": 1000,
         },
     )
     s = apply_event(s, {"type": "run.end", "all_passed": False, "reason": "budget_exhausted"})
     s = apply_event(s, {"type": "loop.resume.start"})
     assert s.budget.input_total == 0
     assert s.budget.output_total == 0
-    assert s.budget.input_cap == 0
-    assert s.budget.output_cap == 0
+    assert s.budget.usd_cap == 0.0
+    assert s.budget.tokens_unmetered == 0
+    assert s.budget.tokens_fallback_cap == 0
     assert s.budget.usd_total == pytest.approx(0.2)
     assert s.budget.usd_prior_legs == pytest.approx(0.2)
 

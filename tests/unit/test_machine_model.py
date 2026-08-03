@@ -574,8 +574,7 @@ provider = "anthropic"
 thinking = "high"
 temperature = 0.2
 max_usd = 1.5
-max_input_tokens = 100000
-max_output_tokens = 4096""",
+max_tokens_fallback = 100000""",
     )
     spec = load_machine(_write(tmp_path, body))
     state = spec.states["classify"]
@@ -584,8 +583,7 @@ max_output_tokens = 4096""",
     assert state.thinking == "high"
     assert state.temperature == 0.2
     assert state.max_usd == 1.5
-    assert state.max_input_tokens == 100000
-    assert state.max_output_tokens == 4096
+    assert state.max_tokens_fallback == 100000
 
 
 def test_agent_state_knobs_default_none(tmp_path: Path) -> None:
@@ -614,12 +612,12 @@ def test_machine_config_overlay_parses(tmp_path: Path) -> None:
 critic = "on_verify_fail"
 
 [config.budget]
-best_effort_usd_limit = 50.0
+max_tokens_fallback = 50000
 """
     )
     spec = load_machine(_write(tmp_path, body))
     assert spec.config["workflow"]["critic"] == "on_verify_fail"
-    assert spec.config["budget"]["best_effort_usd_limit"] == 50.0
+    assert spec.config["budget"]["max_tokens_fallback"] == 50000
 
 
 def test_machine_config_overlay_rejects_providers(tmp_path: Path) -> None:
@@ -649,33 +647,26 @@ tool_network = "allow"
     assert any("sandbox" in p for p in problems)
 
 
-def test_budget_usd_field_optional_at_most_one(tmp_path: Path) -> None:
+def test_budget_max_usd_is_optional(tmp_path: Path) -> None:
     # No USD limit is valid; max_transitions is the always-on runaway guard.
     neither = VALID_MACHINE.replace("max_usd         = 25.0", "")
     spec = load_machine(_write(tmp_path, neither))
-    assert spec.budget.usd_limit is None
-    both = VALID_MACHINE.replace(
-        "max_usd         = 25.0",
-        "max_usd = 25.0\nbest_effort_usd_limit = 25.0",
-    )
-    with pytest.raises(MachineError, match="at most one"):
-        load_machine(_write(tmp_path, both))
-
-
-def test_budget_best_effort_usd_limit_accepted(tmp_path: Path) -> None:
-    body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
-    spec = load_machine(_write(tmp_path, body))
-    assert spec.budget.best_effort_usd_limit == 25.0
     assert spec.budget.max_usd is None
-    assert spec.budget.usd_limit == 25.0
-    assert spec.budget.usd_field_name == "best_effort_usd_limit"
 
 
-def test_agent_state_at_most_one_usd_field(tmp_path: Path) -> None:
+def test_budget_best_effort_usd_limit_is_gone(tmp_path: Path) -> None:
+    # The hard/soft pair collapsed to one metered cap; the old soft field must
+    # fail the grammar loudly, never load as an ignored knob.
+    body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
+    with pytest.raises(MachineError, match="best_effort_usd_limit"):
+        load_machine(_write(tmp_path, body))
+
+
+def test_agent_state_best_effort_field_is_gone(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace(
         'kind  = "agent"',
-        'kind  = "agent"\nmax_usd = 1.0\nbest_effort_usd_limit = 1.0',
+        'kind  = "agent"\nbest_effort_usd_limit = 1.0',
         1,
     )
-    with pytest.raises(MachineError, match="at most one"):
+    with pytest.raises(MachineError, match="best_effort_usd_limit"):
         load_machine(_write(tmp_path, body))

@@ -32,14 +32,16 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
 
 
-def _t(*, input_max: int = 100, output_max: int = 100) -> BudgetTracker:
-    return BudgetTracker(max_input_tokens=input_max, max_output_tokens=output_max)
+def _t(*, fallback: int = 100) -> BudgetTracker:
+    # model "m" is unpriced in the fixture cache, so its tokens land in the
+    # fallback ledger; max_usd stays unlimited to keep the tests single-ledger.
+    return BudgetTracker(max_usd=-1, max_tokens_fallback=fallback)
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     # Token caps huge (never fire) + fresh input ~0, but cache_creation alone
     # costs > $1: the USD ceiling must catch the overspend the token caps miss.
-    t = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000, max_usd=1.0)
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1)
     # sonnet-4 input $3/M; cache_creation surcharge 1.25x -> $3.75/M.
     # 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
@@ -54,10 +56,9 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     assert "USD budget" in str(exc.value)
 
 
-def test_usd_ceiling_off_when_max_usd_zero() -> None:
-    # max_usd defaults to 0 (disabled) -- the same heavy-cache call does not trip
-    # any ceiling, so token-capped runs (e.g. benches) are unaffected.
-    t = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+def test_usd_ceiling_off_when_unlimited() -> None:
+    # max_usd = -1 (unlimited): the same heavy-cache call trips nothing.
+    t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
     t.record(
         model="claude-sonnet-4-20250514",
         input_tokens=10,
@@ -85,28 +86,20 @@ def test_record_accumulates() -> None:
     t.check()  # should not raise
 
 
-def test_input_ceiling_hard_stop() -> None:
-    t = _t(input_max=10, output_max=1000)
+def test_fallback_ceiling_hard_stop() -> None:
+    # The unmetered ledger sums input+output; the call that reaches the cap
+    # exhausts it (exclusive ceiling, enforced on the next check).
+    t = _t(fallback=10)
     t.record(
-        model="m", input_tokens=10, output_tokens=0, cache_read_tokens=0, cache_creation_tokens=0
+        model="m", input_tokens=7, output_tokens=3, cache_read_tokens=0, cache_creation_tokens=0
     )
     assert t.is_exhausted()
-    with pytest.raises(BudgetExceeded, match="input token budget"):
-        t.check()
-
-
-def test_output_ceiling_hard_stop() -> None:
-    t = _t(input_max=1000, output_max=5)
-    t.record(
-        model="m", input_tokens=0, output_tokens=5, cache_read_tokens=0, cache_creation_tokens=0
-    )
-    assert t.is_exhausted()
-    with pytest.raises(BudgetExceeded, match="output token budget"):
+    with pytest.raises(BudgetExceeded, match="fallback token budget"):
         t.check()
 
 
 def test_per_model_tracking() -> None:
-    t = _t(input_max=1000, output_max=1000)
+    t = _t(fallback=1000)
     t.record(
         model="a", input_tokens=10, output_tokens=2, cache_read_tokens=0, cache_creation_tokens=0
     )
@@ -124,7 +117,7 @@ def test_per_model_tracking() -> None:
 
 
 def test_format_summary_renders_known_and_unknown_prices() -> None:
-    t = _t(input_max=10000, output_max=10000)
+    t = _t(fallback=10000)
     t.record(
         model="claude-opus-4-5-20250929",
         input_tokens=1000,
@@ -147,7 +140,7 @@ def test_format_summary_renders_known_and_unknown_prices() -> None:
 
 
 def test_format_summary_marks_exhausted() -> None:
-    t = _t(input_max=5, output_max=1000)
+    t = _t(fallback=5)
     t.record(
         model="m", input_tokens=10, output_tokens=0, cache_read_tokens=0, cache_creation_tokens=0
     )

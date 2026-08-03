@@ -44,8 +44,7 @@ allow_history_rewrite = false
 [workflow]
 verify_command = ["true"]
 [budget]
-max_input_tokens = 100000
-max_output_tokens = 10000
+max_tokens_fallback = 100000
 """
 
 
@@ -511,8 +510,7 @@ allow_history_rewrite = false
 verify_command = ["true"]
 
 [budget]
-max_input_tokens = 100000
-max_output_tokens = 10000
+max_tokens_fallback = 100000
 """
     cfg = load_config(_write(tmp_path, body))
     # Defaulted fields:
@@ -579,11 +577,11 @@ def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
 
 def test_with_budget_overrides(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    out = cfg.with_budget_overrides(max_input_tokens=5, max_output_tokens=7)
-    assert out.budget.max_input_tokens == 5
-    assert out.budget.max_output_tokens == 7
+    out = cfg.with_budget_overrides(max_usd=5.0, max_tokens_fallback=7)
+    assert out.budget.max_usd == 5.0
+    assert out.budget.max_tokens_fallback == 7
     # Original is unchanged (frozen, returns a copy).
-    assert cfg.budget.max_input_tokens == 100000
+    assert cfg.budget.max_tokens_fallback == 100000
 
 
 def test_with_budget_overrides_noop_returns_self(tmp_path: Path) -> None:
@@ -603,7 +601,7 @@ def test_with_machine_agent_overrides(tmp_path: Path) -> None:
     assert out.models.worker.model == "claude-y"
     assert out.models.worker.thinking == "high"
     assert out.models.worker.temperature == 0.5
-    assert out.budget.best_effort_usd_limit == 2.0
+    assert out.budget.max_usd == 2.0
     # Provider name untouched when not overridden.
     assert out.models.worker.provider == "anthropic"
 

@@ -540,11 +540,14 @@ class DashboardScreen(Screen[None]):
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         finished = self._end_label(s)
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
-        # The token-budget consumption as a readout. Labelled "token budget": a
-        # bare "budget: 11%" right after "cost: $0.05" reads as a dollar cap.
-        used = s.budget.input_total + s.budget.output_total
-        cap = s.budget.input_cap + s.budget.output_cap
-        budget = f"   token budget: {min(used / cap, 1.0):.0%}" if cap > 0 else ""
+        # Consumption of the binding ledger: metered spend vs usd_cap, plus the
+        # unmetered-token fraction when that ledger has traffic.
+        budget = ""
+        if s.budget.usd_cap > 0:
+            budget = f"   budget: {min(s.budget.usd_total / s.budget.usd_cap, 1.0):.0%}"
+        if s.budget.tokens_unmetered and s.budget.tokens_fallback_cap > 0:
+            unmet = min(s.budget.tokens_unmetered / s.budget.tokens_fallback_cap, 1.0)
+            budget += f"   unmetered: {unmet:.0%}"
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(

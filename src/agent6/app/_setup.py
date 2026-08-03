@@ -15,7 +15,6 @@ from agent6.config import (
     Config,
 )
 from agent6.models.cache import list_models
-from agent6.models.pricing import lookup_price
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
@@ -43,22 +42,19 @@ class BudgetOverrides:
     """Per-run budget overrides parsed from ``--max-*`` flags."""
 
     max_usd: float | None = None
-    max_input_tokens: int | None = None
-    max_output_tokens: int | None = None
+    max_tokens_fallback: int | None = None
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> BudgetOverrides:
         return cls(
             max_usd=getattr(args, "max_usd", None),
-            max_input_tokens=getattr(args, "max_input_tokens", None),
-            max_output_tokens=getattr(args, "max_output_tokens", None),
+            max_tokens_fallback=getattr(args, "max_tokens_fallback", None),
         )
 
     def apply(self, cfg: Config) -> Config:
         return cfg.with_budget_overrides(
             max_usd=self.max_usd,
-            max_input_tokens=self.max_input_tokens,
-            max_output_tokens=self.max_output_tokens,
+            max_tokens_fallback=self.max_tokens_fallback,
         )
 
 
@@ -126,30 +122,6 @@ def check_provider_keys(cfg: Config) -> str | None:
         # clearly expects one; local endpoints legitimately need none, so we
         # do not block here.
     return None
-
-
-def explicit_usd_flag_error(explicit_usd: float | None, cfg: Config) -> str | None:
-    """Refusal message when an explicit --max-usd cannot be enforced.
-
-    The config field is best-effort by name (best_effort_usd_limit), but a
-    flag typed on the command line is a promise for THIS run. With no price
-    data for the worker model the limit only binds if the provider happens to
-    report per-call cost, so refuse up front instead of maybe overspending.
-    Called after check_provider_keys so the models cache (which carries the
-    pricing) has been refreshed.
-    """
-    if explicit_usd is None or explicit_usd <= 0:
-        return None
-    worker = cfg.models.resolve("worker")
-    if worker is None or lookup_price(worker.model) is not None:
-        return None
-    return (
-        f"--max-usd {explicit_usd:g} cannot be enforced: no price data for"
-        f" {worker.model!r} (its provider's models endpoint publishes none, and"
-        " agent6 keeps no price table). Set [budget] best_effort_usd_limit in"
-        " config for a best-effort limit, or bound the run with"
-        " --max-input-tokens / --max-output-tokens."
-    )
 
 
 def start_mcp_manager_if_enabled(

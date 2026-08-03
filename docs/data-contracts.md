@@ -54,7 +54,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing}
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, state}
 - **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (4 test files exercise it)
 
 ## RunSnapshot
@@ -86,8 +86,8 @@ How a run ends and how it resumes: the RunResult the workflow returns, the Resum
 | `graph_version` | `int` | `0` |
 
 - **Written by:** workflows/{loop}
-- **Read by:** app/{fork, resume}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (6 test files exercise it)
+- **Read by:** app/{fork, resume, run}
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (7 test files exercise it)
 
 ## ToolResult family
 
@@ -112,7 +112,7 @@ Typed read model for the ~22 logs.jsonl event families the RunState fold consume
 Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `RunEnd`, `RawEvent`
 
 - **Written by:** viewmodel/{events}
-- **Read by:** viewmodel/{__init__, listing, state}
+- **Read by:** viewmodel/{__init__, listing, state, transcript}
 - **Guarded by:** [golden_run_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_logs.jsonl) (2 test files exercise it)
 
 ## MachineSpec

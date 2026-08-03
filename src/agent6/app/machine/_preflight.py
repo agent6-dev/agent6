@@ -5,7 +5,7 @@
 Before the engine composition drives a machine, these checks refuse a run that
 can't be honored: a tool-network need the profile can't enforce
 (`machine_network_refusal`), a hard `max_usd` with no price data
-(`hard_usd_preflight_error`), and they resolve the machine's own read-only
+and they resolve the machine's own read-only
 protect paths (`machine_protect_paths`) and the operator notify hook
 (`build_machine_notify_hook`). Pure computations plus the one host subprocess
 (the notify hook, whose argv comes from `[machine.notify]`, never LLM output).
@@ -22,8 +22,7 @@ from agent6.app.egress import check_network_profile
 from agent6.app.finalize import hook_env
 from agent6.app.machine._bundle import is_inside
 from agent6.config import Config
-from agent6.machine import AgentState, MachineSpec, ToolState
-from agent6.models.pricing import lookup_price
+from agent6.machine import ToolState
 from agent6.types import SandboxProfile
 
 
@@ -80,36 +79,6 @@ def machine_network_refusal(
             ' strict, or use allow_network = "auto" to tolerate the host network.'
         )
     return None
-
-
-def hard_usd_preflight_error(spec: MachineSpec, cfg: Config) -> str | None:
-    """Refusal message when a hard `max_usd` cannot be honored.
-
-    `max_usd` (machine-level or per agent state) promises a real dollar
-    ceiling, so every model it covers must have price data; without it the
-    cap only binds if the provider happens to report per-call cost.
-    `best_effort_usd_limit` never refuses. Called after check_provider_keys
-    so the models cache (which carries pricing) has been refreshed.
-    """
-    worker = cfg.models.resolve("worker")
-    unpriced: list[str] = []
-    for name, state in spec.states.items():
-        if not isinstance(state, AgentState):
-            continue
-        hard = spec.budget.max_usd is not None or state.max_usd is not None
-        if not hard:
-            continue
-        model = worker.model if state.model == "inherit" and worker else state.model
-        if lookup_price(model) is None and f"{model!r} (state {name!r})" not in unpriced:
-            unpriced.append(f"{model!r} (state {name!r})")
-    if not unpriced:
-        return None
-    return (
-        "[budget] max_usd is a hard cap but there is no price data for "
-        + ", ".join(unpriced)
-        + ". Switch to best_effort_usd_limit, pin a priced model, or tighten"
-        " max_transitions and per-state token caps."
-    )
 
 
 def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:

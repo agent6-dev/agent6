@@ -24,12 +24,12 @@ from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
-    hard_usd_preflight_error,
     machine_network_refusal,
     machine_protect_paths,
 )
 from agent6.app.machine._spend import machine_spend
 from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.preflight import budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
@@ -252,9 +252,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err(missing)
                 return 2
             # After check_provider_keys so the price cache has been refreshed.
-            usd_err = hard_usd_preflight_error(spec, cfg)
-            if usd_err is not None:
-                reporter.err(f"REFUSING: {usd_err}")
+            budget_err = budget_preflight(cfg)
+            if budget_err is not None:
+                reporter.err(f"REFUSING: {budget_err}")
                 return 2
             # Resolve the commit identity HERE on the host, where global git
             # config is visible, so a mode="run" state's confined agent (which

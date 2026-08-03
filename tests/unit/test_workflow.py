@@ -40,6 +40,7 @@ def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
         "config": MagicMock(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
         ),
@@ -644,6 +645,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -706,6 +708,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
             raise AssertionError(f"unexpected tool: {name}")
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -751,6 +754,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
             raise ProviderError(raw_body, status_code=400)
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -848,6 +852,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
     steer = _OneShotSteer("add a median() function too")
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -897,6 +902,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
             return _resp("done")
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -965,6 +971,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1039,6 +1046,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1103,12 +1111,13 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     # Non-metric run: always per_call, regardless of the quiet streak.
     plain = _wf(
         config=SimpleNamespace(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             workflow=SimpleNamespace(
                 require_verify_to_finish=False,
                 spec_recheck_on_finish=False,
                 verify_command=("true",),
                 metric=None,
-            )
+            ),
         )
     )
     pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
@@ -1156,12 +1165,13 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -1229,6 +1239,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1312,6 +1323,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1408,6 +1420,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1630,12 +1643,13 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -1690,12 +1704,13 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
             )
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     events: list[dict[str, Any]] = []
 
@@ -1756,12 +1771,13 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path, config=config, mode="run", provider=provider, dispatcher=DispatcherStub()
@@ -1802,12 +1818,13 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -1864,12 +1881,13 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
     provider = ProviderStub()
     # goal set -> this is a metric run (still mode=="run")
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -1973,6 +1991,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -1982,7 +2001,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     )
     # Fresh budget with huge ceilings -> fraction_remaining stays ~1.0, well
     # above the final-slice threshold, so the plateau never becomes terminal.
-    budget = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
     max_iters = 12
     wf = _wf(
         root=tmp_path,
@@ -2044,6 +2063,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -2052,7 +2072,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
-    budget = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -2103,6 +2123,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -2218,6 +2239,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -2227,7 +2249,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
     # the early-finish guard would reject the finish here.
-    budget = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -2359,6 +2381,7 @@ def test_format_metric_feedback_shows_next_target() -> None:
 
 def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -2377,12 +2400,13 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
 
 def test_worker_max_tokens_keeps_default_without_metric() -> None:
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         config=config,
@@ -2395,6 +2419,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
 
 def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -3176,6 +3201,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
     provider = ProviderStub()
     pending = {"stop": True}
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -3269,6 +3295,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         }
     )
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -3907,6 +3934,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     events = EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -4015,12 +4043,13 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4054,12 +4083,13 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
@@ -4095,6 +4125,7 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
     snap = blocker / "loop_state.json"  # parent "blocker" is a file -> mkdir fails
     logs: list[str] = []
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -4203,12 +4234,13 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),
             metric=None,
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4295,12 +4327,13 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4362,12 +4395,13 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4406,12 +4440,13 @@ def test_verify_failure_signature_normalizes_cosmetics() -> None:
 
 def _spec_recheck_wf(tmp_path: Path, provider: Any, dispatcher: Any, *, on: bool) -> Any:
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=on,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     return _wf(
         root=tmp_path,
@@ -4570,12 +4605,13 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4621,12 +4657,13 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4680,12 +4717,13 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4753,12 +4791,13 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     provider = ProviderStub()
     # metric configured -> this is an optimization run
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4810,12 +4849,13 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4888,12 +4928,13 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -4968,12 +5009,13 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5031,12 +5073,13 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5157,12 +5200,13 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5214,12 +5258,13 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5272,12 +5317,13 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
 
     provider = ProviderStub()
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),  # GATELESS
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     events: list[dict[str, Any]] = []
 
@@ -5333,12 +5379,13 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
             )
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     events: list[dict[str, Any]] = []
 
@@ -5563,12 +5610,13 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
             events.append({"type": event_type, **fields})
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5618,12 +5666,13 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
             events.append({"type": event_type, **fields})
 
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
-        )
+        ),
     )
     wf = _wf(
         root=tmp_path,
@@ -5719,6 +5768,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
 
     cleared = {"n": 0}
     config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
             spec_recheck_on_finish=False,
@@ -5838,6 +5888,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     wf = _wf(
         curator=fake,
         config=MagicMock(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=("false",), require_verify_to_finish=False),
         ),

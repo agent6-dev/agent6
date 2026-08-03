@@ -188,7 +188,6 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     # Fast/cheap: no review, tighter output budget.
     "quick": {
         "review": {"trigger": "off"},
-        "budget": {"max_output_tokens": 50_000},
     },
     # The "ultracode" tier: a 3-seat grounded panel that advises + gates by quorum.
     "ultra": {
@@ -218,7 +217,6 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
             ],
             "concurrency": 5,  # seats in parallel: panel latency = slowest seat
         },
-        "budget": {"max_output_tokens": 400_000},
     },
 }
 

@@ -17,7 +17,6 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from agent6.app._setup import explicit_usd_flag_error
 from agent6.app.egress import HostLaneLaunch
 from agent6.app.parallel import (
     LaneRuntime,
@@ -28,6 +27,7 @@ from agent6.app.parallel import (
 from agent6.app.parallel import (
     build_coordinator_spawner as app_build_coordinator_spawner,
 )
+from agent6.app.preflight import budget_preflight
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError
@@ -112,9 +112,9 @@ def dispatch_parallel(
     `auto_approve` forwards `--auto-approve` to every lane, same as `max_usd`."""
     origin = cwd
     origin_state = resolved_state_dir(origin)
-    usd_err = explicit_usd_flag_error(max_usd, cfg)
-    if usd_err is not None:
-        print(f"REFUSING: {usd_err}", file=sys.stderr)
+    budget_err = budget_preflight(cfg)
+    if budget_err is not None:
+        print(f"REFUSING: {budget_err}", file=sys.stderr)
         return 2
     try:
         st = git_status(origin)

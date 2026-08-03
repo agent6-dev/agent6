@@ -91,14 +91,12 @@ def test_build_authoring_prompt_first_attempt() -> None:
     assert "fix the previous draft" not in prompt
 
 
-def test_build_authoring_prompt_unpriced_steers_to_best_effort() -> None:
-    # An unpriced worker model would make a drafted `max_usd` machine refuse to
-    # run, so the prompt must steer the draft to `best_effort_usd_limit`.
-    priced = build_authoring_prompt("Poll a queue", attempt=1, worker_unpriced=False)
-    assert "## Budget" not in priced
-    unpriced = build_authoring_prompt("Poll a queue", attempt=1, worker_unpriced=True)
-    assert "best_effort_usd_limit" in unpriced
-    assert "NO price data" in unpriced
+def test_authoring_guide_describes_the_metered_budget() -> None:
+    # One budget story for every draft: max_usd caps metered spend; unpriced
+    # models fall to the operator's max_tokens_fallback. No per-draft steering.
+    prompt = build_authoring_prompt("Poll a queue", attempt=1)
+    assert "max_usd" in prompt and "max_tokens_fallback" in prompt
+    assert "best_effort_usd_limit" not in prompt
 
 
 def test_build_authoring_prompt_retry_includes_diagnostics() -> None:

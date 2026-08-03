@@ -94,11 +94,12 @@ class BudgetView:
     # (listing.scan_run_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
-    input_cap: int = 0
-    output_cap: int = 0
     usd_total: float = 0.0
     usd_prior_legs: float = 0.0  # banked spend of completed resume legs
     usd_partial: bool = False  # True if some models had no price (under-estimate)
+    usd_cap: float = 0.0  # [budget].max_usd for this leg (-1 unlimited, 0 unknown/old log)
+    tokens_unmetered: int = 0  # input+output tokens of calls the meter could not price
+    tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown/old log)
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,8 +289,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     usd_prior_legs=state.budget.usd_total,
                     input_total=0,
                     output_total=0,
-                    input_cap=0,
-                    output_cap=0,
+                    usd_cap=0.0,
+                    tokens_unmetered=0,
+                    tokens_fallback_cap=0,
                 ),
             )
 
@@ -424,10 +426,11 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case events.BudgetUpdate(
             input_total=it,
             output_total=ot,
-            input_cap=ic,
-            output_cap=oc,
             usd_total=usd,
             usd_partial=partial,
+            usd_cap=ucap,
+            tokens_unmetered=unmet,
+            tokens_fallback_cap=fcap,
         ):
             # The event's usd_total is the current LEG's; the view's is
             # cumulative. usd_partial is sticky: unpriced spend in any prior
@@ -437,11 +440,12 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 budget=BudgetView(
                     input_total=it,
                     output_total=ot,
-                    input_cap=ic,
-                    output_cap=oc,
                     usd_total=state.budget.usd_prior_legs + usd,
                     usd_prior_legs=state.budget.usd_prior_legs,
                     usd_partial=partial or state.budget.usd_partial,
+                    usd_cap=ucap,
+                    tokens_unmetered=unmet,
+                    tokens_fallback_cap=fcap,
                 ),
             )
 

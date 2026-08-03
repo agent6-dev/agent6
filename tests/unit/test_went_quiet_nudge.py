@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess as _sp
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -96,6 +97,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
     return Workflow(
         root=repo,
         config=MagicMock(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
         ),

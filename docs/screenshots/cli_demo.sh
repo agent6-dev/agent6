@@ -62,8 +62,8 @@ branch_per_run = true
 name = "agent6 demo"
 email = "demo@agent6.dev"
 [budget]
-best_effort_usd_limit = 0.50
-max_output_tokens = 120000
+max_usd = 0.50
+max_tokens_fallback = 2000000
 [workflow]
 verify_command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
 [providers.openrouter]

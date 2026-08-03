@@ -26,31 +26,40 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 
-def warn_if_usd_unenforceable(cfg: Config) -> None:
-    """Warn at startup when ``best_effort_usd_limit`` is set but a configured
-    role model has no published price. The USD ceiling sums per-model estimated
-    cost, and an unpriced model contributes $0, so ANY unpriced role that spends
-    tokens (the worker, but also a distinct reviewer/critic/planner) makes the
-    ceiling silently under-count and spend is bounded only by the token
-    ceilings. We deliberately do NOT guess a price or terminate early (a wrong
-    guess could kill a run mid-task); we just make the gap visible. Anthropic
-    publishes no pricing, so this fires for Claude in any role."""
-    usd = cfg.budget.best_effort_usd_limit
-    if usd <= 0:
-        return
-    unpriced = sorted(
-        {rm.model for rm in cfg.models.configured().values() if lookup_price(rm.model) is None}
-    )
-    if unpriced:
+def budget_preflight(cfg: Config) -> str | None:
+    """Budget refusals + notices over the RESOLVED role models, before any spend.
+
+    ``max_tokens_fallback = 0`` refuses when a configured role model cannot be
+    metered (zero unmetered tokens allowed); ``max_usd = 0`` refuses when one
+    CAN be (a run-nothing-metered rig). Otherwise an unpriced model gets a
+    one-line notice naming the fallback bound that covers it. Models chosen
+    later (a `/parallel` lane spec) are caught by the tracker's runtime
+    backstop instead."""
+    models = {rm.model for rm in cfg.models.configured().values()}
+    unpriced = sorted(m for m in models if lookup_price(m) is None)
+    priced = sorted(m for m in models if lookup_price(m) is not None)
+    if cfg.budget.max_tokens_fallback == 0 and unpriced:
+        return (
+            "[budget].max_tokens_fallback is 0 (unmetered calls refused), but "
+            f"{', '.join(repr(m) for m in unpriced)} carr{'ies' if len(unpriced) == 1 else 'y'}"
+            " no price data. Raise max_tokens_fallback or use priced models."
+        )
+    if cfg.budget.max_usd == 0.0 and priced:
+        return (
+            "[budget].max_usd is 0 (metered calls refused), but "
+            f"{', '.join(repr(m) for m in priced)} {'is' if len(priced) == 1 else 'are'} priced."
+            " Raise max_usd or use unpriced/local models."
+        )
+    if unpriced and cfg.budget.max_usd != 0.0:
+        fb = cfg.budget.max_tokens_fallback
+        bound = "unlimited tokens" if fb == -1 else f"{fb:,} fallback tokens"
         print(
-            f"[agent6] WARNING: best_effort_usd_limit=${usd:g} cannot be enforced "
-            f"for {', '.join(repr(m) for m in unpriced)} (no published price); their "
-            f"spend is invisible to the dollar ceiling, so it is bounded only by "
-            f"max_input_tokens={cfg.budget.max_input_tokens:,} / "
-            f"max_output_tokens={cfg.budget.max_output_tokens:,}. Set explicit "
-            f"token ceilings if you need a precise dollar bound.",
+            f"[agent6] NOTE: {', '.join(repr(m) for m in unpriced)} ha"
+            f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
+            f" metered by max_usd and is bounded by {bound} instead.",
             file=sys.stderr,
         )
+    return None
 
 
 def warn_if_prompt_override_incomplete(cfg: Config) -> None:

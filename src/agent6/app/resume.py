@@ -17,7 +17,6 @@ from agent6.app._setup import (
     SandboxOverrides,
     check_provider_keys,
     detect_env,
-    explicit_usd_flag_error,
     start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
@@ -39,11 +38,11 @@ from agent6.app.finalize import (
     run_exit_code,
 )
 from agent6.app.preflight import (
+    budget_preflight,
     infer_verify_if_unset,
     require_git_repo,
     warn_if_headless_ask,
     warn_if_prompt_override_incomplete,
-    warn_if_usd_unenforceable,
 )
 from agent6.app.providers import (
     InstrumentedProvider,
@@ -236,8 +235,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
     of the prior run's accounting. Each ``agent6 resume`` invocation
-    starts at 0 tokens against ``[budget].max_input_tokens`` /
-    ``max_output_tokens``. This is by design - the budget is a per-
+    starts at 0 against the ``[budget]`` ledgers. This is by design - the budget is a per-
     invocation runaway-cost circuit breaker.
     """
     cwd = Path.cwd()
@@ -469,11 +467,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
         missing = check_provider_keys(cfg)
-        usd_err = explicit_usd_flag_error(
-            budget_overrides.max_usd if budget_overrides else None, cfg
-        )
-        if usd_err is not None:
-            reporter.err(f"REFUSING: {usd_err}")
+        budget_err = budget_preflight(cfg)
+        if budget_err is not None:
+            reporter.err(f"REFUSING: {budget_err}")
             return 2
         if missing is not None:
             reporter.err(missing)
@@ -526,9 +522,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
         budget = BudgetTracker(
-            max_input_tokens=cfg.budget.max_input_tokens,
-            max_output_tokens=cfg.budget.max_output_tokens,
-            max_usd=cfg.budget.best_effort_usd_limit,
+            max_usd=cfg.budget.max_usd,
+            max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
 
         worker_inner = build_role_provider(
@@ -536,7 +531,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
         rm_worker = cfg.models.resolve("worker")
         assert rm_worker is not None  # require_runnable validated this
-        warn_if_usd_unenforceable(cfg)
         warn_if_prompt_override_incomplete(cfg)
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         warn_if_headless_ask(cfg, tui_enabled=tui_enabled)

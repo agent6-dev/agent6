@@ -526,7 +526,7 @@ def test_streaming_refreshes_token_command_on_401(
 def test_streaming_with_budget_requires_usage_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=1)
     provider = AnthropicProvider(api_key="sk-test", model="claude-test", budget=budget)
     lines = _sse(
         [

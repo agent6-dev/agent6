@@ -120,7 +120,7 @@ version = 1                                # schema version; bumped only on real
 initial = "poll"                           # name of the entry state
 
 [budget]
-max_usd        = 25.0     # optional hard cap; or best_effort_usd_limit (see below)
+max_usd        = 25.0     # optional cap on metered spend (see below)
 max_transitions = 100000  # hard stop on total edges taken (runaway guard)
 
 # The blackboard is three subtables, named by WHO may write each variable.
@@ -244,10 +244,8 @@ on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll
 # provider = "anthropic"           # which [providers.*] entry backs this call
 # thinking = "high"                # off | low | medium | high (extended thinking)
 # temperature = 0.2
-# max_usd = 1.5                    # this agent slice's caps; or
-# best_effort_usd_limit = 1.5      # ...the soft variant (at most one of the two)
-# max_input_tokens = 100000
-# max_output_tokens = 4096
+# max_usd = 1.5                    # this agent slice's metered-spend cap
+# max_tokens_fallback = 100000     # ...and its unmetered-token cap (-1/0/>0)
 ```
 
 An `agent` state spins up a normal agent6 `run` with its own snapshot
@@ -278,8 +276,7 @@ verify slot over shelling out where you can.
 
 The optional per-state knobs above tune *how* that loop runs: `provider`
 / `thinking` / `temperature` select and tune the model, and the
-`max_usd` / `best_effort_usd_limit` / `max_input_tokens` /
-`max_output_tokens` caps bound this one agent slice. Each falls back to the effective config (machine `[config]`
+`max_usd` / `max_tokens_fallback` caps bound this one agent slice. Each falls back to the effective config (machine `[config]`
 overlay < repo < global < defaults; §4.7) when omitted. Connection
 secrets are never expressed here, only a `provider` *name* that must
 already exist in the effective config.
@@ -656,7 +653,7 @@ verify_command = ["uv", "run", "pytest", "-q"]
 trigger = "on_verify_fail"
 
 [config.budget]
-best_effort_usd_limit = 50.0
+max_usd = 50.0
 ```
 
 Unset keys read straight through to the lower layers, so a machine only
@@ -933,12 +930,11 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   per-state network model and its refusals are specified in
   [security.md](security.md) §8.
 - **Spend bounds.** `[budget].max_transitions` is required and always
-  binds. The USD limit is optional, at most one of: `max_usd` (hard:
-  `machine run` refuses up front when a covered agent state's model has
-  no price data; per-state `max_usd` likewise) or `best_effort_usd_limit`
-  (binds only when spend is measurable; for unpriced or local models).
-  Spend is metered as an estimate: reported cost when available, else
-  cached price times tokens.
+  binds. `max_usd` (optional) caps the machine's cumulative METERED spend
+  (reported cost when available, else cached price times tokens); a state
+  whose model has no price data is bounded per state by the effective
+  config's `[budget].max_tokens_fallback` instead (`0` there refuses
+  unmetered models outright).
 - **Machines are operator artifacts, never LLM-authored.** The threat
   model assumes the file is written by the operator and reviewed like
   code. An LLM proposing a machine is fine, and `agent6 machine create`

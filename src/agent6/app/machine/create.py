@@ -41,7 +41,6 @@ from agent6.machine import (
     extract_toml,
     load_machine,
 )
-from agent6.models.pricing import lookup_price
 from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
@@ -177,13 +176,6 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
     runner = build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 
-    # The drafted machine's agent states inherit this worker model. If it is
-    # unpriced (anthropic-direct, local), steer the draft to best_effort_usd_limit
-    # so the freshly-created machine actually runs -- a hard max_usd would refuse.
-    # Checked after check_provider_keys refreshed the price cache.
-    worker = cfg.models.resolve("worker")
-    worker_unpriced = worker is None or lookup_price(worker.model) is None
-
     prior_toml: str | None = None
     prior_scripts: dict[str, str] = {}
     diagnostics: list[str] | None = None
@@ -201,7 +193,6 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             prior_toml=prior_toml,
             diagnostics=diagnostics,
             prior_scripts=prior_scripts,
-            worker_unpriced=worker_unpriced,
         )
         reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
         events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")

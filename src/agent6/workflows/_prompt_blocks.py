@@ -290,8 +290,16 @@ def build_system_prompt(
     if mode in ("machine", "agent"):
         parts.append(
             V2_BUDGET_BLOCK_TEMPLATE.format(
-                in_cap=config.budget.max_input_tokens,
-                out_cap=config.budget.max_output_tokens,
+                usd_cap=(
+                    "unlimited USD"
+                    if config.budget.max_usd == -1
+                    else f"${config.budget.max_usd:g}"
+                ),
+                fallback_cap=(
+                    "unlimited"
+                    if config.budget.max_tokens_fallback == -1
+                    else f"{config.budget.max_tokens_fallback:,}"
+                ),
             )
         )
         return "\n".join(parts)
@@ -321,8 +329,14 @@ def build_system_prompt(
 
     parts.append(
         V2_BUDGET_BLOCK_TEMPLATE.format(
-            in_cap=config.budget.max_input_tokens,
-            out_cap=config.budget.max_output_tokens,
+            usd_cap=(
+                "unlimited USD" if config.budget.max_usd == -1 else f"${config.budget.max_usd:g}"
+            ),
+            fallback_cap=(
+                "unlimited"
+                if config.budget.max_tokens_fallback == -1
+                else f"{config.budget.max_tokens_fallback:,}"
+            ),
         )
     )
 

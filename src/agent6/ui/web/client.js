@@ -891,15 +891,23 @@ function paintRun(cards, s) {
   // budget
   const b = s.budget || {};
   cards.budget.innerHTML = '';
-  const inFrac = b.input_cap ? Math.min(1, b.input_total / b.input_cap) : 0;
-  const outFrac = b.output_cap ? Math.min(1, b.output_total / b.output_cap) : 0;
-  const barRow = (label, frac, tot, cap) => {
-    const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${tot}${cap ? ' / ' + cap : ''}`));
+  const barRow = (label, frac, text) => {
+    const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${text}`));
     const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
   };
-  cards.budget.appendChild(barRow('input tokens', inFrac, b.input_total||0, b.input_cap||0));
-  cards.budget.appendChild(barRow('output tokens', outFrac, b.output_total||0, b.output_cap||0));
-  cards.budget.appendChild(el('div', 'sub muted', 'cost: ' + fmtUsd(b.usd_total, b.usd_partial)));
+  // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
+  // cap only when that ledger has traffic.
+  const usdCap = b.usd_cap || 0;
+  const usdFrac = usdCap > 0 ? Math.min(1, (b.usd_total || 0) / usdCap) : 0;
+  const usdText = fmtUsd(b.usd_total, b.usd_partial) + (usdCap > 0 ? ' / $' + usdCap : (usdCap === -1 ? ' (unlimited)' : ''));
+  cards.budget.appendChild(barRow('cost', usdFrac, usdText));
+  if (b.tokens_unmetered) {
+    const fbCap = b.tokens_fallback_cap || 0;
+    const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
+    const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
+    cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
+  }
+  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}`));
 
   // task tree
   cards.tasks.innerHTML = '';

@@ -359,7 +359,7 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=1),
     )
     lines = [
         *_chunk({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}),
@@ -392,7 +392,7 @@ def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
@@ -689,7 +689,7 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: Path) -> N
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
-        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         transcript_sink=TranscriptSink(tmp_path),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]

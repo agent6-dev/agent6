@@ -48,8 +48,7 @@ branch_per_run = true
 allow_push = false
 
 [budget]
-max_input_tokens = 2000000
-max_output_tokens = 200000
+max_tokens_fallback = 2000000
 best_effort_usd_limit = 10.0
 
 [workflow]

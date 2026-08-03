@@ -72,11 +72,12 @@
   "budget": {
     "input_total": 0,
     "output_total": 0,
-    "input_cap": 0,
-    "output_cap": 0,
     "usd_total": 0.004841036,
     "usd_prior_legs": 0.004841036,
-    "usd_partial": false
+    "usd_partial": false,
+    "usd_cap": 0.0,
+    "tokens_unmetered": 0,
+    "tokens_fallback_cap": 0
   },
   "pending_approvals": [
     {

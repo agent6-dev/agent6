@@ -338,7 +338,7 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "set", "budget.best_effort_usd_limit", "5"])
+    rc = main(["config", "set", "budget.max_usd", "5"])
     captured = capsys.readouterr()
     assert rc == 0  # the valid write is kept...
     assert "Set budget" in captured.out  # ...it succeeded,
@@ -404,7 +404,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     monkeypatch.setattr(cc, "chown_to_real_user", handed.append)
     monkeypatch.setattr(cc, "mkdir_for_real_user", handed.append)  # the dir handover
     gpath = global_config_path()
-    gpath.write_text("[budget]\nbest_effort_usd_limit = 5.0\n", encoding="utf-8")
+    gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     assert main(["config", "set", "prompt.decompose", "bogus"]) == 2  # rolled back
@@ -595,9 +595,7 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
 
     gpath = global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text(
-        "[prompt]\ndecompose = true\n[budget]\nbest_effort_usd_limit = 5.0\n", encoding="utf-8"
-    )
+    gpath.write_text("[prompt]\ndecompose = true\n[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     rc = main(["config", "fix"])
@@ -606,7 +604,7 @@ def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     assert "prompt.decompose" in out and "global" in out  # named the entry + its layer
     text = gpath.read_text(encoding="utf-8")
     assert "decompose" not in text  # the invalid entry is gone
-    assert "best_effort_usd_limit" in text  # the valid one stays
+    assert "max_usd" in text  # the valid one stays
     assert main(["config", "show"]) == 0  # config is valid now
 
 
@@ -654,7 +652,7 @@ def test_config_fix_on_valid_config_reports_nothing_to_fix(
 
     gpath = global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    before = "[budget]\nbest_effort_usd_limit = 5.0\n"
+    before = "[budget]\nmax_usd = 5.0\n"
     gpath.write_text(before, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -739,9 +737,7 @@ def test_config_fix_drops_an_unknown_top_level_table(
 
     gpath = global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text(
-        '[cli]\ninput = "bar"\n[budget]\nbest_effort_usd_limit = 5.0\n', encoding="utf-8"
-    )
+    gpath.write_text('[cli]\ninput = "bar"\n[budget]\nmax_usd = 5.0\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     rc = main(["config", "fix"])
@@ -750,7 +746,7 @@ def test_config_fix_drops_an_unknown_top_level_table(
     assert "cli" in out  # named the removed table
     text = gpath.read_text(encoding="utf-8")
     assert "[cli]" not in text  # the whole table is gone, not just a leaf line
-    assert "best_effort_usd_limit" in text  # the valid section stays
+    assert "max_usd" in text  # the valid section stays
     assert main(["config", "show"]) == 0  # config is valid now
 
 

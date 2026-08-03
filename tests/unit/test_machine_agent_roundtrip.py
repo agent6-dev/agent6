@@ -68,7 +68,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
     req = MachineAgentRequest(
         cwd=cwd,
         root=cwd,
-        overlay={"budget": {"max_input_tokens": -5}},
+        overlay={"budget": {"max_tokens_fallback": -5}},
         profile="none",
         transcript_dir=cwd / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),

@@ -404,11 +404,12 @@ When the score plateaus despite several distinct edits, call `finish_run`.
 """
 
 V2_BUDGET_BLOCK_TEMPLATE = """<budget-awareness>
-Hard caps: max_input_tokens={in_cap}, max_output_tokens={out_cap}.
-The loop will halt if either is exceeded. Track your spend - tool
-results contribute to input on every subsequent turn (they get
-re-sent in the conversation), so prefer narrow `read_file` ranges
-and specific `grep` patterns over broad reads.
+Hard budget: {usd_cap} for metered spend; {fallback_cap} input+output
+tokens for calls with no price data. The loop halts when a cap is
+crossed. Track your spend - tool results contribute to input on every
+subsequent turn (they get re-sent in the conversation), so prefer
+narrow `read_file` ranges and specific `grep` patterns over broad
+reads.
 </budget-awareness>
 """
 

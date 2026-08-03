@@ -17,7 +17,6 @@ from agent6.app.machine._bundle import is_inside, validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
-    hard_usd_preflight_error,
     machine_network_refusal,
     machine_protect_paths,
 )
@@ -38,7 +37,6 @@ __all__ = [
     "Spend",
     "available_tools",
     "build_machine_notify_hook",
-    "hard_usd_preflight_error",
     "is_inside",
     "lint_and_typecheck",
     "machine_network_refusal",

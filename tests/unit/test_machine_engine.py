@@ -949,8 +949,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
         'thinking = "high"\n'
         "temperature = 0.3\n"
         "max_usd = 2.5\n"
-        "max_input_tokens = 90000\n"
-        "max_output_tokens = 5000",
+        "max_tokens_fallback = 90000",
     )
     journal, f = _load(tmp_path, body)
     spec = load_machine(f)
@@ -961,8 +960,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
     assert req.thinking == "high"
     assert req.temperature == 0.3
     assert req.max_usd == 2.5
-    assert req.max_input_tokens == 90000
-    assert req.max_output_tokens == 5000
+    assert req.max_tokens_fallback == 90000
 
 
 def test_agent_ok_but_rejected_routes_fail(tmp_path: Path) -> None:
@@ -1200,28 +1198,28 @@ def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
     assert seen == [None]
 
 
-def test_machine_stops_on_best_effort_usd_limit(tmp_path: Path) -> None:
-    # Same guard as max_usd; only the run-start price preflight differs.
+def test_best_effort_usd_limit_no_longer_validates(tmp_path: Path) -> None:
+    # The hard/soft pair collapsed to one max_usd (unmetered spend is bounded
+    # by [budget].max_tokens_fallback in the effective config); the old field
+    # must fail the grammar loudly, never load as an ignored knob.
+    from agent6.machine import MachineError
+
     body = _SPENDER.replace("max_usd = 0.05", "best_effort_usd_limit = 0.05")
-    journal, f = _load(tmp_path, body)
-    spec = load_machine(f)
-    world = FakeWorld(
-        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
-    )
-    result = drive(spec, journal, world, live=True)
-    assert result.status == "failed"
-    assert "best_effort_usd_limit" in result.reason
+    f = tmp_path / "m.asm.toml"
+    f.write_text(body, encoding="utf-8")
+    with pytest.raises(MachineError, match="best_effort_usd_limit"):
+        load_machine(f)
 
 
-def test_agent_state_best_effort_limit_flows_to_request(tmp_path: Path) -> None:
-    body = _SPENDER.replace('kind = "agent"', 'kind = "agent"\nbest_effort_usd_limit = 1.25', 1)
+def test_agent_state_max_tokens_fallback_flows_to_request(tmp_path: Path) -> None:
+    body = _SPENDER.replace('kind = "agent"', 'kind = "agent"\nmax_tokens_fallback = 5000', 1)
     journal, f = _load(tmp_path, body)
     spec = load_machine(f)
     world = FakeWorld(
         {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
     )
     drive(spec, journal, world, live=True)
-    assert world.agent_calls[0].max_usd == 1.25
+    assert world.agent_calls[0].max_tokens_fallback == 5000
 
 
 NOTIFY_WAIT = """

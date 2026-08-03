@@ -82,7 +82,7 @@ def test_revert_head_raises_on_non_repo(tmp_path: Path) -> None:
 
 
 def _budget() -> BudgetTracker:
-    return BudgetTracker(max_input_tokens=1000, max_output_tokens=1000)
+    return BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
 
 
 def test_hook_pauses_the_console_heartbeat_while_prompting(

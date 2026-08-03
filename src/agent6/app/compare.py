@@ -93,9 +93,8 @@ def rank(
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
         budget = BudgetTracker(
-            max_input_tokens=cfg.budget.max_input_tokens,
-            max_output_tokens=cfg.budget.max_output_tokens,
-            max_usd=cfg.budget.best_effort_usd_limit,
+            max_usd=cfg.budget.max_usd,
+            max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
         try:
             provider: Provider = build_provider(cfg, sink, budget)

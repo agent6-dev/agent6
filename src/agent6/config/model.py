@@ -853,23 +853,29 @@ class ReviewConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
+    """``[budget]``: every provider call is bounded in exactly ONE currency.
+
+    A call the runtime can meter (provider-reported cost, else price x tokens
+    at the model's fetched rates, cache-aware) counts against ``max_usd``; a
+    call it cannot price counts its input+output tokens against
+    ``max_tokens_fallback``. Both fields share one rule: ``-1`` = unlimited,
+    ``0`` = refuse calls in that ledger up front (``max_tokens_fallback = 0``
+    means never run an unmeterable model), ``> 0`` = the cap. Hitting a cap
+    ends the run resumably (``budget_exhausted``); each resumed leg gets a
+    fresh budget. The ``--max-usd`` / ``--max-tokens-fallback`` flags override
+    per run."""
+
     model_config = _BASE_MODEL_CONFIG
 
-    # Hard stops on token spend. Defaults are generous safety ceilings (the
-    # run is resumable from the persistent task graph if hit); tighten them
-    # per-repo or use `best_effort_usd_limit` for a dollar-denominated bound.
-    max_input_tokens: int = Field(gt=0, default=2_000_000)
-    max_output_tokens: int = Field(gt=0, default=200_000)
-    # Optional best-effort dollar limit (0 = off). The token ceilings above are
-    # the authoritative constraint; this field sizes and bounds them when price
-    # data exists. At load it converts to token ceilings (worker-model pricing,
-    # the lower of the two wins per axis); at runtime it stops the run when the
-    # ESTIMATED spend (provider-reported cost, else price x tokens, including
-    # cache cost the token caps omit) crosses it. With no price data and no
-    # reported cost it does nothing, hence best effort. The `--max-usd` flag
-    # writes this field and, because an explicit flag is a promise, refuses to
-    # start when the worker model has no price data.
-    best_effort_usd_limit: float = Field(ge=0.0, default=0.0)
+    max_usd: float = 10.0
+    max_tokens_fallback: int = Field(ge=-1, default=2_000_000)
+
+    @field_validator("max_usd")
+    @classmethod
+    def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
+        if v < 0 and v != -1:
+            raise ValueError("max_usd is a cap >= 0, or exactly -1 for unlimited")
+        return v
 
 
 class MachineNotifyConfig(BaseModel):
@@ -1131,26 +1137,19 @@ class Config(BaseModel):
         self,
         *,
         max_usd: float | None = None,
-        max_input_tokens: int | None = None,
-        max_output_tokens: int | None = None,
+        max_tokens_fallback: int | None = None,
     ) -> Config:
-        """Return a copy with budget fields overridden (e.g. from CLI flags).
-
-        The token ceilings are the operator's DECLARED values and are never
-        rewritten from ``best_effort_usd_limit``; the USD limit is enforced at
-        runtime by ``BudgetTracker.max_usd`` (cache-inclusive, the authoritative
-        bound). ``None`` means "keep the existing value".
-        """
-        if max_usd is None and max_input_tokens is None and max_output_tokens is None:
+        """Return a copy with budget fields overridden (the per-run CLI flags,
+        each writing the config field of the same name). ``None`` keeps the
+        existing value."""
+        if max_usd is None and max_tokens_fallback is None:
             return self
         data = self.model_dump(mode="python")
         budget = data.setdefault("budget", {})
         if max_usd is not None:
-            budget["best_effort_usd_limit"] = max_usd
-        if max_input_tokens is not None:
-            budget["max_input_tokens"] = max_input_tokens
-        if max_output_tokens is not None:
-            budget["max_output_tokens"] = max_output_tokens
+            budget["max_usd"] = max_usd
+        if max_tokens_fallback is not None:
+            budget["max_tokens_fallback"] = max_tokens_fallback
         return Config.model_validate(data)
 
     def with_sandbox_overrides(
@@ -1185,17 +1184,13 @@ class Config(BaseModel):
         thinking: str | None = None,
         temperature: float | None = None,
         max_usd: float | None = None,
-        max_input_tokens: int | None = None,
-        max_output_tokens: int | None = None,
+        max_tokens_fallback: int | None = None,
     ) -> Config:
         """Return a copy with a machine ``agent`` state's per-state knobs applied.
 
         Overrides the ``worker`` role (the role machine agent loops run as)
-        and the budget caps. ``None`` means "inherit the effective config".
-        Re-validates so the provider-name checks run against the merged result;
-        the token ceilings stay the declared values (USD is enforced at runtime
-        by ``BudgetTracker.max_usd``).
-        """
+        and the budget ledgers. ``None`` means "inherit the effective config".
+        Re-validates so the provider-name checks run against the merged result."""
         data = self.model_dump(mode="python")
         worker = data.setdefault("models", {}).get("worker")
         if worker is None:
@@ -1211,11 +1206,9 @@ class Config(BaseModel):
             worker["temperature"] = temperature
         budget = data.setdefault("budget", {})
         if max_usd is not None:
-            budget["best_effort_usd_limit"] = max_usd
-        if max_input_tokens is not None:
-            budget["max_input_tokens"] = max_input_tokens
-        if max_output_tokens is not None:
-            budget["max_output_tokens"] = max_output_tokens
+            budget["max_usd"] = max_usd
+        if max_tokens_fallback is not None:
+            budget["max_tokens_fallback"] = max_tokens_fallback
         return Config.model_validate(data)
 
     def with_inferred_verify(self, argv: tuple[str, ...]) -> Config:

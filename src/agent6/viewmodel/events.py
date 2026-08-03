@@ -162,10 +162,11 @@ class VerifyEnd:
 class BudgetUpdate:
     input_total: int
     output_total: int
-    input_cap: int
-    output_cap: int
     usd_total: float
     usd_partial: bool
+    usd_cap: float
+    tokens_unmetered: int
+    tokens_fallback_cap: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,10 +377,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return BudgetUpdate(
                 input_total=int(raw.get("input_total", 0)),
                 output_total=int(raw.get("output_total", 0)),
-                input_cap=int(raw.get("input_cap", 0)),
-                output_cap=int(raw.get("output_cap", 0)),
                 usd_total=float(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
+                # Post-redesign keys; a historical log without them folds 0.
+                usd_cap=float(raw.get("usd_cap", 0.0)),
+                tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
+                tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
             )
         case "approval.prompt":
             return ApprovalPrompt(id=str(raw.get("id", "")), prompt=str(raw.get("prompt", "")))

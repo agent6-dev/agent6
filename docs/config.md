@@ -386,25 +386,25 @@ like `verify_command`; `pattern`'s first capture group is parsed as a number.
 
 ## `[budget]`
 
-Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
-`agent6 resume <run-id>`).
+Hard stops; on hit the run ends (exit 3) and is resumable (`agent6 resume
+<run-id>` starts a fresh leg with a fresh budget, from the last checkpoint).
+
+Every provider call is bounded in exactly ONE currency: a call the meter can
+price (provider-reported cost, else cached price x tokens, cache-aware) counts
+against `max_usd`; a call with neither counts its input+output tokens against
+`max_tokens_fallback`. Both fields share one rule: `-1` = unlimited, `0` =
+refuse calls in that ledger up front (`max_tokens_fallback = 0` means never
+run an unmeterable model; `max_usd = 0` means run nothing metered), `> 0` =
+the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_input_tokens` | `2000000` | Input-token ceiling. Exact and always enforced. |
-| `max_output_tokens` | `200000` | Output-token ceiling. Exact and always enforced. |
-| `best_effort_usd_limit` | `0.0` (off) | Dollar-denominated bound, enforced where price data exists. |
+| `max_usd` | `10.0` | The budget: caps metered spend (reported cost first, else price x tokens including cache reads/writes, per model). |
+| `max_tokens_fallback` | `2000000` | Input+output token cap for UNMETERED calls only (no reported cost, no price data -- local models, feed gaps). |
 
-The token ceilings are exact and always enforced. When the worker model's
-price is cached, `best_effort_usd_limit` also converts to token ceilings at
-load (the lower wins per axis), sizing each axis to the full dollar budget;
-the run then stops when estimated spend (reported cost, else price times
-tokens, cache included) crosses the limit. That combined, cache-inclusive USD
-check is the authoritative bound on a USD-budgeted run -- it trips before
-either full-budget axis cap, so an output-heavy workload (e.g. a reasoning
-model whose hidden reasoning dominates output) can spend the whole budget
-instead of halting once a ratio-split output cap is hit. With no price and no
-reported cost the USD limit does nothing, hence best effort.
+The `--max-usd` / `--max-tokens-fallback` flags override the fields of the
+same name for one run. An unpriced role model is announced at startup with
+the fallback bound that covers it.
 
 Price data comes from provider model listings (today OpenRouter's; Anthropic's
 API publishes none), cached under `$XDG_CACHE_HOME/agent6/models/`. A
