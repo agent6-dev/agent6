@@ -24,7 +24,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "task",
         nargs="?",
         default="",
-        help="Task description (in quotes). Omit when using --continue.",
+        help="Task description (in quotes). Omit to execute the most recent plan.",
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     run_p.add_argument(
@@ -56,16 +56,6 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
-    )
-    run_p.add_argument(
-        "--continue",
-        dest="continue_run",
-        action="store_true",
-        help=(
-            "Resume the most recent run for this cwd"
-            " instead of starting a new one. Mutually exclusive with a"
-            " task argument."
-        ),
     )
     run_p.add_argument(
         "-i",

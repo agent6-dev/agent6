@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 run --continue` routing helpers."""
+"""`agent6 run` with no task: the newest-run/plan fallbacks and refusals."""
 
 from __future__ import annotations
 
@@ -60,43 +60,7 @@ def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_pa
     assert _most_recent_plan_run_id(runs) == "newer-plan"
 
 
-def test_continue_with_task_argument_rejected(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
-    rc = main(["run", "do a thing", "--continue"])
-    assert rc == 2
-    assert "either a task OR --continue" in capsys.readouterr().err
-
-
-def test_continue_with_explicit_run_id_rejected(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
-    rc = main(["run", "--continue", "--run-id", "x"])
-    assert rc == 2
-    assert "--run-id is incompatible with --continue" in capsys.readouterr().err
-
-
-def test_continue_without_any_runs_errors(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
-    rc = main(["run", "--continue"])
-    assert rc == 2
-    assert "no prior runs" in capsys.readouterr().err
-
-
-def test_run_without_task_or_continue_errors(
+def test_run_without_task_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -127,28 +91,11 @@ def test_run_no_task_points_at_most_recent_plan(
     assert "--from-plan" in err
 
 
-@pytest.mark.parametrize(
-    "flags",
-    [
-        ["--from-plan", "0718-abcd"],
-        ["-i"],
-        ["--skill", "x"],
-        ["--decompose"],
-        ["--profile", "p"],
-        ["--pin", "never touch schema"],  # --pin seeds a FRESH run; refuse, don't drop
-    ],
-)
-def test_continue_rejects_run_start_only_flags(
-    flags: list[str],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Resume cannot honor run-start flags (no --from-plan/-i/--skill/
-    --decompose/--profile in _cmd_resume; the manifest drives mode/profile);
-    they were silently dropped while an unrelated newest run resumed."""
+def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # `run --continue` was a strict subset of `resume`; the one obvious way
+    # remains `agent6 resume`. argparse refuses the dropped flag like any
+    # unknown flag (no alias, no special-cased message).
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
-    rc = main(["run", "--continue", *flags])
-    assert rc == 2
-    assert "--continue resumes an existing run" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--continue"])
+    assert exc.value.code == 2

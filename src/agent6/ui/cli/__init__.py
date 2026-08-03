@@ -103,7 +103,6 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
-from agent6.viewmodel import newest_run_dir
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -165,60 +164,14 @@ def cli_main() -> int:
         return 1
 
 
-def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
-    if getattr(args, "parallel", "") and (args.continue_run or args.interactive or args.tui):
+def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    if getattr(args, "parallel", "") and (args.interactive or args.tui):
         print(
-            "ERROR: --parallel cannot combine with --continue, -i, or --tui"
+            "ERROR: --parallel cannot combine with -i or --tui"
             " (each lane runs headless and detached).",
             file=sys.stderr,
         )
         return 2
-    if args.continue_run:
-        if args.task:
-            print("ERROR: pass either a task OR --continue, not both.", file=sys.stderr)
-            return 2
-        if args.run_id:
-            print(
-                "ERROR: --run-id is incompatible with --continue"
-                " (--continue resolves the most recent run automatically).",
-                file=sys.stderr,
-            )
-            return 2
-        if (
-            args.from_plan
-            or args.interactive
-            or args.skill
-            or args.decompose
-            or args.pins
-            or getattr(args, "profile", "")
-        ):
-            # Resume cannot honor run-start flags (the manifest drives
-            # mode/profile; --pin seeds a FRESH run's pins); refuse loudly like
-            # the task/--run-id conflicts instead of silently dropping them.
-            print(
-                "ERROR: --continue resumes an existing run; it cannot combine with"
-                " --from-plan, -i, --skill, --decompose, --pin, or --profile"
-                " (those apply only when starting a new run).",
-                file=sys.stderr,
-            )
-            return 2
-        newest = newest_run_dir([_runs_dir(Path.cwd())])
-        if newest is None:
-            print(
-                "ERROR: --continue: no prior runs for this cwd.",
-                file=sys.stderr,
-            )
-            return 2
-        target = newest.name
-        print(f"[agent6] --continue: resuming {target}", file=sys.stderr)
-        return _cmd_resume(
-            args.config,
-            target,
-            force=False,
-            tui=args.tui,
-            budget_overrides=BudgetOverrides.from_args(args),
-            sandbox_overrides=SandboxOverrides.from_args(args),
-        )
     if args.from_plan:
         if args.task:
             print(
@@ -239,8 +192,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         last_plan = _most_recent_plan_run_id(_runs_dir(Path.cwd()))
         if last_plan is None:
             print(
-                "ERROR: 'run' needs a task (or --from-plan <id> / --continue);"
-                " no prior plan found to execute.",
+                "ERROR: 'run' needs a task (or --from-plan <id>); no prior plan found to execute.",
                 file=sys.stderr,
             )
             return 2
