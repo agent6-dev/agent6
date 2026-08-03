@@ -368,3 +368,50 @@ def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
             assert not jump.display  # back at the tail: hidden
 
     asyncio.run(scenario())
+
+
+class _LivenessHost(App[None]):
+    """Stands in for Agent6TUI, whose dir status knows a dead worker."""
+
+    def __init__(self, logs_path: Path, *, live: bool) -> None:
+        super().__init__()
+        self._logs = logs_path
+        self._live = live
+
+    def run_controllable(self) -> bool:
+        return self._live
+
+    def on_mount(self) -> None:
+        self.push_screen(ConversationScreen(self._logs, title="conversation · test"))
+
+
+def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
+    """A worker killed mid-stream leaves its deltas in the buffers forever (only
+    role.call/role.result clear them), so the pane kept saying "thinking…" over a
+    corpse -- on the primary view, which carries no status label to contradict
+    it. The host's dir status knows the corpse; the composer already read it."""
+    logs = tmp_path / "logs.jsonl"
+    _write(
+        logs,
+        [
+            {"type": "run.start", "user_task": "fix it"},
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.thinking_delta", "text": "planning the edit"},
+            {"type": "role.text_delta", "text": "I will now edit"},
+            # killed here: no role.result, no run.end
+        ],
+    )
+
+    async def scenario(live: bool) -> tuple[bool, str]:
+        app = _LivenessHost(logs, live=live)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            pane = app.screen.query_one("#conv-live", Static)
+            return bool(pane.display), str(pane.content)
+
+    shown_live, text_live = asyncio.run(scenario(True))
+    assert shown_live and "thinking" in text_live  # a live turn still streams
+
+    shown_dead, _ = asyncio.run(scenario(False))
+    assert not shown_dead, "a dead worker has no in-progress turn to show"

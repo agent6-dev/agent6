@@ -520,6 +520,13 @@ class ConversationScreen(Screen[None]):
 
     def _render_live(self) -> None:
         live = self.query_one("#conv-live", Static)
+        if not self._host_live():
+            # The deltas of the turn a killed worker never finished sit in the
+            # buffers forever (only role.call/role.result clear them), so this
+            # pane kept saying "thinking…" over a corpse -- on the primary view,
+            # which carries no status label to contradict it.
+            live.display = False
+            return
         think = "".join(self._live_think).strip()
         text = "".join(self._live_text).strip()
         if not think and not text:
@@ -604,6 +611,13 @@ class ConversationScreen(Screen[None]):
         # only while there is a live run to steer.
         return self._live or self._primary
 
+    def _host_live(self) -> bool:
+        """Whether the run is still live, per the Agent6TUI host's dir status
+        (which knows a dead worker and a parked run) and falling back to this
+        screen's event-derived tracking on a pushed viewer with no host."""
+        live_fn = getattr(self.app, "run_controllable", None)
+        return bool(live_fn()) if callable(live_fn) else self._live
+
     def _sync_input(self) -> None:
         """Show the composer bar (steer when live, continue when finished on the
         primary view) and keep its labels matching the run's state. The
@@ -620,9 +634,7 @@ class ConversationScreen(Screen[None]):
             if bar.display:
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
-                live_fn = getattr(self.app, "run_controllable", None)
-                live = bool(live_fn()) if callable(live_fn) else self._live
-                bar.set_mode(live=live, ctx_pct=pct if isinstance(pct, int) else None)
+                bar.set_mode(live=self._host_live(), ctx_pct=pct if isinstance(pct, int) else None)
 
     def refresh_liveness(self) -> None:
         """Relabel the composer for a liveness change that came with no event
@@ -630,6 +642,8 @@ class ConversationScreen(Screen[None]):
         resumed) -- called by the Agent6TUI host, covered or not, so the two
         run views can never disagree about the bar's mode."""
         self._sync_input()
+        with contextlib.suppress(NoMatches):
+            self._render_live()
 
     def focus_bar(self) -> None:
         """Focus the composer bar if it is shown (an external steer request
