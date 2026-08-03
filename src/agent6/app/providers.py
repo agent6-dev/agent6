@@ -89,8 +89,11 @@ def build_role_provider(
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
     model_override: str = "",
+    seat: str = "",
 ) -> Provider:
-    """Construct the configured provider for `role`.
+    """Construct the configured provider for `role`. *seat* is the transcript
+    seat stamp when the caller is a distinct actor sharing the role's route
+    (critic, summariser, ...); default = the role itself.
 
     Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
     by `api_key_env` first, then `secrets.toml`). `model_override` (if
@@ -116,7 +119,7 @@ def build_role_provider(
         # Stamp the seat on this provider's transcripts: the conversation fold
         # keeps the worker's round-trips and skips compaction's side-calls,
         # whose one-message requests otherwise read as a restart.
-        transcript_sink=transcript_sink.for_seat(role),
+        transcript_sink=transcript_sink.for_seat(seat or role),
         budget=budget,
     )
 
@@ -311,7 +314,7 @@ def build_critic_provider(
     if cfg.review.trigger == "off":
         return None
     critic_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="critic"
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # critic only runs once a worker/reviewer model exists
@@ -395,6 +398,7 @@ def build_review_seats(
                     transcript_sink=transcript_sink,
                     budget=budget,
                     model_override=model_override,
+                    seat=f"review:{persona}",
                 )
                 label = model_override or (rm.model if rm is not None else "reviewer")
             seats.append(
@@ -418,6 +422,7 @@ def build_review_seats(
             transcript_sink=transcript_sink,
             budget=budget,
             model_override=model_override,
+            seat=f"review:{pool[i % len(pool)]}",
         )
         seats.append(
             ReviewSeat(
@@ -441,7 +446,7 @@ def build_prompt_reviser_provider(
     if cfg.prompt.revise_prompt == "off":
         return None
     reviser_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="prompt_reviser"
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # reviser only runs once a worker/reviewer model exists
@@ -466,7 +471,7 @@ def build_summariser_provider(
     available (context compaction can fire on any run) and cheaper than the
     worker model."""
     summariser_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="summariser"
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # summariser falls back to the worker model
