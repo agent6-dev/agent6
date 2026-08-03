@@ -65,6 +65,22 @@ def test_custom_user_profile(repo: Path) -> None:
     assert cfg.review.panel_size == 2 and cfg.review.trigger == "before_finish"
 
 
+def test_user_profile_named_standard_replaces_the_builtin(repo: Path) -> None:
+    """A user table named after a built-in replaces it wholesale (docs/config.md,
+    and resolve_profile's own "user profiles win over built-ins" contract). The
+    name "standard" short-circuited to the empty built-in before the user table
+    was ever consulted, so its overrides were silently dropped -- while
+    `agent6 config profiles` reported it selected and applied."""
+    _write_repo_config(
+        repo,
+        'profile = "standard"\n\n[profiles.standard]\nreview = { trigger = "before_finish",'
+        " panel_size = 4 }\n",
+    )
+    cfg = load_effective(repo).config
+    assert cfg.review.trigger == "before_finish"
+    assert cfg.review.panel_size == 4
+
+
 def test_unknown_profile_errors(repo: Path) -> None:
     _write_repo_config(repo, 'profile = "nope"\n')
     with pytest.raises(ConfigError, match="unknown profile"):

@@ -233,10 +233,15 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
 
 def resolve_profile(name: str, user_profiles: dict[str, Any]) -> dict[str, Any]:
     """The config-override dict for profile *name* (user profiles win over
-    built-ins of the same name). "" / "standard" -> {} (plain defaults). Raises
-    ConfigError for an unknown name so a typo'd profile fails loudly."""
-    if name in ("", "standard"):
-        return BUILTIN_PROFILES.get(name, {})
+    built-ins of the same name). "" -> {} (nothing selected). Raises
+    ConfigError for an unknown name so a typo'd profile fails loudly.
+
+    "standard" is not special-cased: it is a built-in like any other (an empty
+    override), so a user table of that name replaces it exactly as the docs
+    promise. Short-circuiting it here dropped those overrides silently while
+    `config profiles` reported them applied."""
+    if not name:
+        return {}
     if name in user_profiles:
         prof = user_profiles[name]
         if not isinstance(prof, dict):
