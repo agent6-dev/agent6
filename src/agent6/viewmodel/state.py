@@ -631,6 +631,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.compact.requested":
             focus = str(event.get("focus", ""))
             salient = f"focus: {focus[:120]}" if focus else "no focus"
+        case "loop.compact.refused":
+            salient = str(event.get("reason", ""))[:160]
         case "loop.resume.start":
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":

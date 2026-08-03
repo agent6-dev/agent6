@@ -3231,6 +3231,13 @@ class Workflow:
         over = total > self.compact_summarise_at_chars
         if (forced is not None or over) and len(conversation) > 3:
             return self._summarise_and_restart(conversation, state, focus=forced or "")
+        if forced is not None:
+            # The request was consumed above (one request, one compaction), so a
+            # silent return would drop it: the front-end has already told the
+            # operator it "applies before the next model call", and the focus
+            # text is gone. Say the floor refused it.
+            self._log("LOOP: manual compaction skipped: too little history to summarise")
+            self._emit("loop.compact.refused", reason="too little history to summarise")
         return False
 
     def _distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:

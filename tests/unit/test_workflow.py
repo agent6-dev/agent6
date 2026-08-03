@@ -2556,6 +2556,30 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
     assert req and req[-1]["focus"] == "weigh the auth decisions"
 
 
+def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
+    """The history floor is deliberate -- a restart below it loses more than it
+    saves -- but the request was consumed and cleared with no second event: the
+    front-end had already said "applies before the next model call", so the
+    operator saw a success toast, lost the focus text, and had to guess."""
+    ev = _EventCapture()
+    summariser = MagicMock()
+    cleared: list[bool] = []
+    wf = _wf(
+        events=ev,
+        summariser_provider=summariser,
+        compact_requested=lambda: "keep the auth work",
+        compact_clear=lambda: cleared.append(True),
+        compact_drop_at_chars=10**9,
+        compact_summarise_at_chars=10**9,
+    )
+    assert _compact_via_wire(wf, _long_history(1)) is False
+    assert cleared == [True]
+    summariser.call.assert_not_called()
+    refused = [e for e in ev.events if e["type"] == "loop.compact.refused"]
+    assert refused, "the consumed request must say why nothing happened"
+    assert "history" in str(refused[-1].get("reason", ""))
+
+
 def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
     """A plain /compact ("" focus) forces tier-2 with the byte-identical
     summariser prompt of an automatic tier-2 (no focus clause)."""
