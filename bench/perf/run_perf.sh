@@ -31,11 +31,10 @@ PERF_REPO_URL="${PERF_REPO_URL:-https://github.com/anthropics/original_performan
 PERF_REPO_COMMIT="${PERF_REPO_COMMIT:-5452f74bd977807ac2e74f3d29432b9df6f25197}"
 MODEL="${AGENT6_PERF_MODEL:-claude-sonnet-4-5}"
 SUMMARY_MODEL="${AGENT6_PERF_SUMMARY_MODEL:-claude-haiku-4-5}"
-# Budget. $5 at sonnet-4.5 pricing ($3/M in, $15/M out) ~= 1.4M in + 100k out.
-# These hard-stop the run via the BudgetExceeded exit-3 path; whichever cap
-# is hit first ends the run.
-MAX_INPUT_TOKENS="${AGENT6_PERF_MAX_IN:-1500000}"
-MAX_OUTPUT_TOKENS="${AGENT6_PERF_MAX_OUT:-120000}"
+# Budget: the same $5 the claude-code side gets, metered; the fallback bounds
+# any call the meter cannot price. Either cap ends the run via the exit-3 path.
+MAX_USD="${AGENT6_PERF_MAX_USD:-5.0}"
+MAX_TOKENS_FALLBACK="${AGENT6_PERF_MAX_TOKENS_FALLBACK:-1500000}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 
 cd "$REPO"
@@ -181,9 +180,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 # Verify only checks correctness — speed-tier tests would always fail
@@ -218,8 +214,8 @@ pattern = 'CYCLES:\s*(\d+)'
 goal = "minimize"
 
 [budget]
-max_input_tokens = $MAX_INPUT_TOKENS
-max_output_tokens = $MAX_OUTPUT_TOKENS
+max_usd = $MAX_USD
+max_tokens_fallback = $MAX_TOKENS_FALLBACK
 EOF
 
 # Ignore the bench-only files so agent6's require_clean_worktree is happy.

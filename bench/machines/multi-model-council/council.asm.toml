@@ -13,7 +13,7 @@ initial = "juror_a"
 
 [budget]
 max_transitions = 20
-best_effort_usd_limit = 2.0   # anthropic is unpriced; soft cap (binds on openrouter)
+max_usd = 2.0
 
 [vars.operator]
 question = { type = "str", value = "Is 91 a prime number? Answer strictly yes or no." }

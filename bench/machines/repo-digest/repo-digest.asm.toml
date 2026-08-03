@@ -16,7 +16,7 @@ initial = "collect"
 
 [budget]
 max_transitions = 20
-best_effort_usd_limit = 2.0
+max_usd = 2.0
 
 [vars.operator]
 max_commits = { type = "int", value = 20 }

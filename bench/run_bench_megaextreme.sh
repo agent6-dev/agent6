@@ -60,16 +60,13 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = ["python3", "-m", "unittest", "-v"]
 
 [budget]
-max_input_tokens = 3000000
-max_output_tokens = 250000
+max_usd = 20.0
+max_tokens_fallback = 3000000
 EOF
 }
 

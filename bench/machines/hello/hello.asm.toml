@@ -4,7 +4,7 @@ initial = "greet"
 
 [budget]
 max_transitions = 10
-best_effort_usd_limit = 1.0
+max_usd = 1.0
 
 [vars.agent]
 out = { type = "greeting", default = {} }

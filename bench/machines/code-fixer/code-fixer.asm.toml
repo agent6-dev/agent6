@@ -10,7 +10,7 @@ initial = "attempt"
 
 [budget]
 max_transitions = 40
-best_effort_usd_limit = 4.0   # anthropic is unpriced, so this is the soft cap
+max_usd = 4.0
 
 [vars.operator]
 max_attempts = { type = "int", value = 4 }
@@ -39,7 +39,7 @@ kind   = "agent"
 mode   = "run"                  # edits + verify + commit tools (not the default read-only)
 model  = "claude-sonnet-4-6"
 provider = "anthropic"
-max_output_tokens = 8192
+max_tokens_fallback = 200000
 prompt = """
 A test in this repository is failing. Run the test to see the failure:
     python3 scripts/verify.py

@@ -70,11 +70,11 @@ not collide.
 
 ## Budget mapping
 
-claude-code accepts `--max-budget-usd` directly. agent6's budget is
-token-based, so the harness sets `max_input_tokens = 1.5M` and
-`max_output_tokens = 120k` which lands a hair under $5 at sonnet-4.5
-pricing ($3 / M input, $15 / M output). Whichever cap fires first
-ends the run via the `BudgetExceeded` exit-3 path.
+claude-code accepts `--max-budget-usd` directly, and agent6's
+`[budget].max_usd` is the same currency, so both sides get the identical
+dollar cap (default $5, `AGENT6_PERF_MAX_USD`). `max_tokens_fallback`
+bounds any call the meter cannot price. Whichever cap fires first ends
+the run via the `BudgetExceeded` exit-3 path.
 
 ## Why both agents will spend the full budget
 

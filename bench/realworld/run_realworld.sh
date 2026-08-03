@@ -89,9 +89,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = $verify_cmd_json
@@ -107,8 +104,8 @@ revise_prompt = "${AGENT6_REALWORLD_REVISE_PROMPT:-off}"
 ${metric_block}
 
 [budget]
-max_input_tokens = 1500000
-max_output_tokens = 200000
+max_usd = 10.0
+max_tokens_fallback = 1500000
 EOF
 }
 

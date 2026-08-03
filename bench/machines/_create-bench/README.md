@@ -66,6 +66,6 @@ transitions).
 That run also surfaced a fix: `machine create` runs with the operator's worker
 model, which the draft's agent states inherit. The guide used to prefer
 `max_usd`, so a draft made against an unpriced model (anthropic-direct, local)
-got a hard cap and then `machine run` refused to start it. Authoring now steers
-to `best_effort_usd_limit` when the worker model is unpriced, so a freshly
-created machine runs on the same config that made it.
+got a hard cap and then `machine run` refused to start it. (Superseded by the
+budget redesign: metered spend counts against `max_usd`, unpriced calls
+against `max_tokens_fallback`, so a draft runs on any provider.)

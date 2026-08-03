@@ -28,22 +28,11 @@ PERF_REPO_COMMIT="${PERF_REPO_COMMIT:-5452f74bd977807ac2e74f3d29432b9df6f25197}"
 MODEL="${AGENT6_OR_MODEL:-moonshotai/kimi-k2.6}"
 # Result label, used in result_agent6.json. Derive from the model slug
 # (e.g. qwen/qwen3-max -> agent6-qwen3-max) unless overridden.
-# Budget envelope. Two modes:
-#   - Token mode (default): same token caps as the sonnet milestone.
-#   - USD mode: set AGENT6_PERF_MAX_USD to give every model the SAME dollar
-#     budget. The config loader sizes per-model token ceilings from each
-#     model's pricing (budget.usd_budget_to_tokens), so we raise the raw
-#     token caps high enough that the USD cap is the binding constraint
-#     (config.resolve takes min(token_cap, usd_derived_cap)).
+# Budget: one dollar cap for every model (metered spend); the fallback bounds
+# any call the meter cannot price. Either cap ends the run via the exit-3 path.
 LABEL="${AGENT6_OR_LABEL:-agent6-$(printf '%s' "$MODEL" | sed 's#.*/##; s/[^A-Za-z0-9._-]/-/g')}"
-MAX_USD="${AGENT6_PERF_MAX_USD:-0}"
-if [ "$(printf '%s' "$MAX_USD" | awk '{print ($1>0)}')" = "1" ]; then
-  MAX_INPUT_TOKENS="${AGENT6_PERF_MAX_IN:-1000000000}"
-  MAX_OUTPUT_TOKENS="${AGENT6_PERF_MAX_OUT:-1000000000}"
-else
-  MAX_INPUT_TOKENS="${AGENT6_PERF_MAX_IN:-1500000}"
-  MAX_OUTPUT_TOKENS="${AGENT6_PERF_MAX_OUT:-120000}"
-fi
+MAX_USD="${AGENT6_PERF_MAX_USD:-5.0}"
+MAX_TOKENS_FALLBACK="${AGENT6_PERF_MAX_TOKENS_FALLBACK:-1500000}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 
 [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "OPENROUTER_API_KEY not set" >&2; exit 1; }
@@ -167,9 +156,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = [
@@ -188,9 +174,8 @@ pattern = 'CYCLES:\s*(\d+)'
 goal = "minimize"
 
 [budget]
-max_input_tokens = $MAX_INPUT_TOKENS
-max_output_tokens = $MAX_OUTPUT_TOKENS
-best_effort_usd_limit = $MAX_USD
+max_usd = $MAX_USD
+max_tokens_fallback = $MAX_TOKENS_FALLBACK
 EOF
 
 {

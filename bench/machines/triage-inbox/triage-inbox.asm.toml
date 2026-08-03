@@ -13,7 +13,7 @@ initial = "scan"
 
 [budget]
 max_transitions = 200
-best_effort_usd_limit = 2.0
+max_usd = 2.0
 
 [vars.operator]
 poll_secs       = { type = "int",   value = 2 }
