@@ -40,6 +40,7 @@ from agent6.viewmodel import (
     StatusFacts,
     event_epoch,
     scan_session_log,
+    session_is_live,
     session_mtime,
     status_for_session_dir,
     tail_events,
@@ -603,13 +604,18 @@ def _watch_transcript(target: Path) -> int:
             print(f"start it with: agent6 resume {target.name}")
         return 0
 
-    def worker_dead() -> bool:
-        # pid None is NOT dead: a not-yet-started or mid-detach-handoff worker
-        # clears the pid, and a live detached run must keep being followed.
-        return read_worker_pid(target) is not None and not worker_is_alive(target)
-
-    if worker_dead():
+    # THE liveness question, answered where every other surface answers it: a
+    # second rule here read "no pid" as not-dead, so attach followed a log
+    # nothing would append to while `sessions list` called it stale.
+    if not session_is_live(target):
         return _render_dead_session(target, events_path)
+
+    def worker_dead() -> bool:
+        # Per poll, so it stays O(1): once we are following, the session has
+        # started and the worker IS the liveness evidence (session_is_live above
+        # folds the log once, for the parked/created distinction it needs).
+        return not worker_is_alive(target)
+
     view = ConsoleView(sys.stdout)
     front_end = _install_front_end(target, view)
     interrupted = False

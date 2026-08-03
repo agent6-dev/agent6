@@ -202,3 +202,38 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
     out = capsys.readouterr().out
     assert "starting" in out
     assert "resume" not in out  # not resumable; it is already running
+
+
+def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The sibling of the crashed-run case, and the commoner one: a worker that
+    unwound through its finally CLEARS worker.pid and writes no session.end.
+
+    attach had its own liveness rule -- "no pid is not dead" -- so it followed a
+    log nothing would ever append to, while `sessions list` called the same
+    session stale. One session, two surfaces, opposite answers.
+    """
+    import threading
+
+    _make_run(
+        tmp_path,
+        "vanished-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "tool.call", "name": "run_command", "args": {}},
+        ],
+    )
+    monkeypatch.chdir(tmp_path)
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "vanished-run"
+    assert not (session_dir / "worker.pid").exists()
+
+    result: list[int] = []
+    t = threading.Thread(
+        target=lambda: result.append(main(["attach", "vanished-run"])), daemon=True
+    )
+    t.start()
+    t.join(timeout=5)
+    assert not t.is_alive(), "attach followed a session with no worker"
+    assert result == [0]
+    assert "crashed or killed" in capsys.readouterr().err
