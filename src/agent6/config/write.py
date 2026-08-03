@@ -74,13 +74,21 @@ def resolved_write_path(target: Path) -> Path:
         return target
     resolved = target.resolve()
     owner = effective_user().uid
+    # A dotfiles link is usually made BEFORE the file it points at exists
+    # (`ln -s ~/dotfiles/agent6.toml ...`, then configure), so a missing target
+    # is a file to create, not a refusal. The ownership question moves to the
+    # nearest directory that does exist, which is where it would be created.
+    checked = resolved
+    while not checked.exists() and checked != checked.parent:
+        checked = checked.parent
     try:
-        target_uid = resolved.stat().st_uid
+        checked_uid = checked.stat().st_uid
     except OSError as exc:
         raise OperatorError(f"config symlink {target} -> {resolved} is unreadable: {exc}") from exc
-    if target_uid != owner:
+    if checked_uid != owner:
+        whose = "" if checked == resolved else f" (its directory {checked})"
         raise OperatorError(
-            f"config {target} is a symlink to {resolved}, owned by uid {target_uid},"
+            f"config {target} is a symlink to {resolved}{whose}, owned by uid {checked_uid},"
             f" not you (uid {owner}); agent6 will not write through it"
         )
     return resolved

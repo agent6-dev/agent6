@@ -93,3 +93,26 @@ def test_every_writer_keeps_the_link_not_just_config_set(
 
     assert main(["config", "fill", "--force"]) == 0
     assert link.is_symlink(), "`config fill` replaced the dotfiles symlink"
+
+
+def test_a_symlink_whose_target_does_not_exist_yet_is_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Linking the config into a dotfiles repo BEFORE writing the file is the
+    ordinary order (`ln -s ~/dotfiles/agent6.toml ~/.config/agent6/config.toml`,
+    then configure). Resolving the link stat()ed the target and raised, so
+    every write refused -- `agent6 init`, `connect` and `config set` alike --
+    over a link that was perfectly valid, just not filled in yet.
+    """
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    real = tmp_path / "dotfiles" / "agent6.toml"
+    real.parent.mkdir()  # the dotfiles dir exists; the file does not
+    link = global_config_path()
+    link.symlink_to(real)
+
+    assert set_config_value(tmp_path, "sandbox.protect_git", "false") is None
+
+    assert link.is_symlink(), "the dangling link was replaced instead of filled"
+    assert "protect_git" in real.read_text(encoding="utf-8")
