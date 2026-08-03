@@ -242,3 +242,36 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
         assert f"{OPERATOR} try it" in flat and "again" in flat
     # An old log without the text field adds no item.
     assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
+
+
+def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
+    """Only the role DRIVING the session speaks to the operator.
+
+    agent6 makes side calls with their own roles -- the verify-command inferer
+    runs before the loop even starts. Its `role.result` was folded into a
+    message like any other, so an editor over ACP and the web conversation both
+    opened with a bare "[]": the inferer's raw answer for "no verify command
+    found", presented as the agent talking.
+    """
+    events: list[dict[str, object]] = [
+        {"type": "role.call", "role": "verify_inferer", "model": "m"},
+        {"type": "role.result", "role": "verify_inferer", "ok": True, "text": "[]"},
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m"},
+        {"type": "role.result", "role": "worker", "ok": True, "text": "the real answer"},
+    ]
+    bodies = [i.body for i in fold_transcript(events) if i.kind == "text"]
+    assert "the real answer" in bodies, "the driving role must still speak"
+    assert "[]" not in bodies, f"a side call was rendered as agent speech: {bodies}"
+
+
+def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
+    """Older events and the delta path carry no role; they must keep working.
+    The guard drops a side call, not every result."""
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.text_delta", "text": "streamed prose"},
+        {"type": "role.result"},
+    ]
+    assert "streamed prose" in [i.body for i in fold_transcript(events) if i.kind == "text"]

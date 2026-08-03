@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from agent6.types import SESSION_KINDS
 from agent6.viewmodel.events import tool_result_ok
 
 # ANSI/CSI escape sequences (colored tool output). Stripped from fold previews:
@@ -213,6 +214,12 @@ def _pending_key(event: dict[str, Any], name: str) -> int | str:
     return cid if isinstance(cid, int) else name
 
 
+# The roles whose output IS the session talking. Derived from the code table so
+# it cannot drift: everything else (verify_inferer, summariser, critic,
+# reviewer) is a side call whose raw answer is not addressed to the operator.
+DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
+
+
 class TranscriptFold:
     """Incremental event -> `TranscriptItem` fold. Feed events in order; each
     `feed` returns the items that event completed (usually zero or one)."""
@@ -243,7 +250,14 @@ class TranscriptFold:
         if etype == "role.result":
             # The settled text, used only when no deltas arrived: a streaming
             # leg already has the same prose in `self._text`.
-            return self._flush_message(settled=str(event.get("text", "")))
+            #
+            # Only the role DRIVING the session speaks. agent6 makes side calls
+            # with their own roles -- the verify-command inferer runs before the
+            # loop starts -- and folding their results as messages opened an ACP
+            # editor and the web conversation with a bare "[]", the inferer's
+            # answer for "no verify command found", looking like the agent.
+            settled = "" if self._is_side_call(event) else str(event.get("text", ""))
+            return self._flush_message(settled=settled)
         if etype == "tool.call":
             out = self._flush_message()  # a turn's prose precedes its calls
             name = str(event.get("name", ""))
@@ -303,6 +317,18 @@ class TranscriptFold:
             )
             return out
         return []
+
+    def _is_side_call(self, event: dict[str, Any]) -> bool:
+        """Whether this result belongs to a role other than one that DRIVES a
+        session -- an inferer, summariser, critic or reviewer.
+
+        Allowlisted from the SessionKind table rather than listing the side
+        roles, so a new driving mode is covered and a new side call is silent by
+        default. An unnamed role is not a side call: older events carry none,
+        and a streamed leg keeps its prose in the deltas anyway.
+        """
+        role = str(event.get("role", ""))
+        return bool(role) and role not in DRIVING_ROLES
 
     def _flush_message(self, *, settled: str = "") -> list[TranscriptItem]:
         out: list[TranscriptItem] = []

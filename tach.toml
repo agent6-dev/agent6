@@ -219,6 +219,7 @@ depends_on = [
 path = "agent6.viewmodel"
 depends_on = [
   "agent6.sessions.layout",
+  "agent6.types",
   "agent6.config.layer",
   "agent6.machine.journal",
   "agent6.machine.model",
