@@ -62,7 +62,7 @@ def test_an_answer_that_lands_after_the_last_turn_is_not_lost() -> None:
     Without this a btw answered just as the run finished vanished silently."""
     view, out = _view()
     view.queue_btw("\n--- btw: late\nthe answer\n--- end btw\n")
-    view.feed({"type": "session.end", "reason": "finish_run", "all_passed": True})
+    view.feed({"type": "session.end", "reason": "finish_session", "all_passed": True})
     assert "--- btw: late" in out.getvalue()
     assert "the answer" in out.getvalue()
 

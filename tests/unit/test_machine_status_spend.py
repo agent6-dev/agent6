@@ -20,7 +20,7 @@ def _agent_step(seq: int, usd: float) -> StepEvent:
         goto="next",
         fact=AgentFact(
             outcome="ok",
-            reason="finish_run",
+            reason="finish_session",
             payload=None,
             usd=usd,
             input_tokens=100,

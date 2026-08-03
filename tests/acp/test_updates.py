@@ -116,12 +116,14 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
 
 
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
-    """`finish_run` with all_passed=False is a finish over a RED verify."""
+    """`finish_session` with all_passed=False is a finish over a RED verify."""
     red = updates_for_events(
-        [{"type": "session.end", "reason": "finish_run", "all_passed": False}], acp_session_id="s"
+        [{"type": "session.end", "reason": "finish_session", "all_passed": False}],
+        acp_session_id="s",
     )
     green = updates_for_events(
-        [{"type": "session.end", "reason": "finish_run", "all_passed": True}], acp_session_id="s"
+        [{"type": "session.end", "reason": "finish_session", "all_passed": True}],
+        acp_session_id="s",
     )
     assert (
         red[-1]["params"]["update"]["content"]["text"]

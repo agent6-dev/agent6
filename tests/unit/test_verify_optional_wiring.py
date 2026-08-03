@@ -74,10 +74,10 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         return text[start : text.index("</no-verify-command>", start)]
 
     run_block, plan_block, ask_block = block(run), block(plan), block(ask)
-    assert "finish_run" in run_block and "commits each editing step" in run_block
+    assert "finish_session" in run_block and "commits each editing step" in run_block
     assert "finish_planning" in plan_block
-    assert "finish_run" not in plan_block and "commits" not in plan_block
-    assert "finish_run" not in ask_block and "finish_planning" not in ask_block
+    assert "finish_session" not in plan_block and "commits" not in plan_block
+    assert "finish_session" not in ask_block and "finish_planning" not in ask_block
     assert "commits" not in ask_block
     # All three still disarm stray instructions to call the absent verify tool.
     for b in (run_block, plan_block, ask_block):

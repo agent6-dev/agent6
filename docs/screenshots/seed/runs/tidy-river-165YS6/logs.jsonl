@@ -366,9 +366,9 @@
 {"ts": "2026-06-23T12:25:01.164401+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T12:25:33.678623+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 1018, "tokens_out": 231, "cache_read": 20480, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-23T12:25:33.683963+00:00", "type": "budget.update", "input_total": 307670, "output_total": 37147, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.06857793599999998, "usd_partial": false}
-{"ts": "2026-06-23T12:25:33.685939+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 55}
-{"ts": "2026-06-23T12:25:33.687782+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "Replaced the stub `html_to_text` in `mylib/html_strip.py` with a proper implementation using `html.parser.HTMLParser`. The solution handles: tag stripping (case-insensitive), 6 named entities (`&amp;`… (595 chars)"}}
-{"ts": "2026-06-23T12:25:33.692890+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
+{"ts": "2026-06-23T12:25:33.685939+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 55}
+{"ts": "2026-06-23T12:25:33.687782+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "Replaced the stub `html_to_text` in `mylib/html_strip.py` with a proper implementation using `html.parser.HTMLParser`. The solution handles: tag stripping (case-insensitive), 6 named entities (`&amp;`… (595 chars)"}}
+{"ts": "2026-06-23T12:25:33.692890+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T12:25:33.695138+00:00", "type": "loop.metric_early_finish.rejected", "iteration": 55, "nudges_used": 1, "budget_remaining": 0.7948866666666666}
 {"ts": "2026-06-23T12:25:33.701862+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T12:26:03.054541+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 749, "tokens_out": 120, "cache_read": 21248, "cache_creation": 0, "stop_reason": "tool_calls"}
@@ -388,9 +388,9 @@
 {"ts": "2026-06-23T12:26:33.491419+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T12:27:01.655265+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 971, "tokens_out": 234, "cache_read": 21504, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-23T12:27:01.659787+00:00", "type": "budget.update", "input_total": 309954, "output_total": 37819, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.07089219199999998, "usd_partial": false}
-{"ts": "2026-06-23T12:27:01.661722+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 58}
-{"ts": "2026-06-23T12:27:01.663846+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "Replaced the stub `html_to_text` in `mylib/html_strip.py` with a full implementation using `html.parser.HTMLParser`. The solution handles all requirements: tag stripping (case-insensitive), named & nu… (477 chars)"}}
-{"ts": "2026-06-23T12:27:01.666274+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
+{"ts": "2026-06-23T12:27:01.661722+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 58}
+{"ts": "2026-06-23T12:27:01.663846+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "Replaced the stub `html_to_text` in `mylib/html_strip.py` with a full implementation using `html.parser.HTMLParser`. The solution handles all requirements: tag stripping (case-insensitive), named & nu… (477 chars)"}}
+{"ts": "2026-06-23T12:27:01.666274+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T12:27:01.668081+00:00", "type": "loop.metric_early_finish.rejected", "iteration": 58, "nudges_used": 2, "budget_remaining": 0.793364}
 {"ts": "2026-06-23T12:27:01.673219+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T12:27:03.431326+00:00", "type": "role.text_delta", "role": "worker", "text": "The"}
@@ -417,9 +417,9 @@
 {"ts": "2026-06-23T12:27:03.732233+00:00", "type": "role.text_delta", "role": "worker", "text": " to optimize"}
 {"ts": "2026-06-23T12:27:26.545892+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 618, "tokens_out": 234, "cache_read": 22272, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-23T12:27:26.549404+00:00", "type": "budget.update", "input_total": 310572, "output_total": 38053, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.07166784799999998, "usd_partial": false}
-{"ts": "2026-06-23T12:27:26.551666+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 59}
-{"ts": "2026-06-23T12:27:26.555255+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "Full implementation of html_to_text completed. Score is maximized at 29/29 — all hidden edge-case tests pass. The solution uses html.parser.HTMLParser with custom callbacks to handle tag stripping, en… (442 chars)"}}
-{"ts": "2026-06-23T12:27:26.557334+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
+{"ts": "2026-06-23T12:27:26.551666+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 59}
+{"ts": "2026-06-23T12:27:26.555255+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "Full implementation of html_to_text completed. Score is maximized at 29/29 — all hidden edge-case tests pass. The solution uses html.parser.HTMLParser with custom callbacks to handle tag stripping, en… (442 chars)"}}
+{"ts": "2026-06-23T12:27:26.557334+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T12:27:26.559025+00:00", "type": "loop.metric_early_finish.rejected", "iteration": 59, "nudges_used": 3, "budget_remaining": 0.792952}
 {"ts": "2026-06-23T12:27:26.563622+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T12:27:28.229818+00:00", "type": "role.thinking_delta", "role": "worker", "text": "The"}
@@ -482,8 +482,8 @@
 {"ts": "2026-06-23T12:27:29.399835+00:00", "type": "role.text_delta", "role": "worker", "text": " possible"}
 {"ts": "2026-06-23T12:27:50.831927+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 506, "tokens_out": 187, "cache_read": 22784, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-23T12:27:50.836624+00:00", "type": "budget.update", "input_total": 311078, "output_total": 38240, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.07242899999999998, "usd_partial": false}
-{"ts": "2026-06-23T12:27:50.838824+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 60}
-{"ts": "2026-06-23T12:27:50.840780+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "html_to_text implementation complete. Metric is at maximum possible value: 29/29 (all hidden test cases pass). No further optimization is possible — this is the ceiling of the scoring function."}}
-{"ts": "2026-06-23T12:27:50.842585+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
+{"ts": "2026-06-23T12:27:50.838824+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 60}
+{"ts": "2026-06-23T12:27:50.840780+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "html_to_text implementation complete. Metric is at maximum possible value: 29/29 (all hidden test cases pass). No further optimization is possible — this is the ceiling of the scoring function."}}
+{"ts": "2026-06-23T12:27:50.842585+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T12:27:50.858962+00:00", "type": "graph.update", "nodes": {"01KVT5187TQ6CYD25RK80WW97P": {"title": "# Implement `html_to_text` (HTML → plain text with entities)", "status": "passed", "parent_id": null, "children": ["01KVT578N2JZR9TJATGA0YFVZ9"]}, "01KVT578N2JZR9TJATGA0YFVZ9": {"title": "Implement html_to_text using HTMLParser", "status": "passed", "parent_id": "01KVT5187TQ6CYD25RK80WW97P", "children": []}}, "cursor": null}
-{"ts": "2026-06-23T12:27:50.862916+00:00", "type": "session.end", "reason": "finish_run", "iterations": 60, "all_passed": true}
+{"ts": "2026-06-23T12:27:50.862916+00:00", "type": "session.end", "reason": "finish_session", "iterations": 60, "all_passed": true}

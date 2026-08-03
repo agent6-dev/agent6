@@ -294,7 +294,7 @@ def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path
             {"type": "session.start", "mode": "run", "user_task": "task c"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     status, body, _ = _get(port, "/api/session/run-c/conversation")

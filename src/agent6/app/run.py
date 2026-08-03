@@ -289,7 +289,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     When ``mode="plan"`` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
     edit-tools filtered out, ``finish_planning`` instead of
-    ``finish_run``, no auto-commit. The plan markdown lands at
+    ``finish_session``, no auto-commit. The plan markdown lands at
     ``<run-dir>/plan.md`` and is consumed by ``agent6 run --from-plan``.
     The ``planner`` model role drives plan mode (falls back to ``worker``).
     """

@@ -68,7 +68,7 @@
     }
   },
   {
-    "name": "finish_run",
+    "name": "finish_session",
     "required": [
       "summary"
     ],

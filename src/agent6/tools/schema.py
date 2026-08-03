@@ -284,8 +284,8 @@ class RunMetricInput(_ToolInput):
     )
 
 
-class FinishRunInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "finish_run"
+class FinishSessionInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "finish_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Signal that the agent has completed its work and the workflow "
         "should exit cleanly. Call this when (a) the task is done and "
@@ -293,7 +293,7 @@ class FinishRunInput(_ToolInput):
         "is unlikely to improve it, or (c) you are blocked and cannot "
         "make progress. `summary` is a one-paragraph description of what "
         "was done / left undone, surfaced to the operator. Do not call any "
-        "other tools after finish_run."
+        "other tools after finish_session."
     )
 
     summary: str = Field(min_length=1)
@@ -324,7 +324,7 @@ class FinishPlanningInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Signal that the planning pass is complete and the workflow should "
         "exit. Available ONLY in plan mode (`agent6 plan`); in execution "
-        "mode use `finish_run` instead. `plan_markdown` is the full plan "
+        "mode use `finish_session` instead. `plan_markdown` is the full plan "
         "document (markdown) that gets saved to the run directory as "
         "`plan.md`. Include: a one-line `# Plan: <title>`, the original "
         "task, context discovered, an ordered task list with acceptance "
@@ -341,7 +341,7 @@ class FinishPlanningInput(_ToolInput):
     # model fills, not only in the prose above. finish_planning is the one finish
     # tool whose fields were self-undocumented, and models put the whole plan
     # into `summary` (listed first, and a natural sink for "primary output"),
-    # leaving a degenerate plan.md that still passed min_length=1. finish_run's
+    # leaving a degenerate plan.md that still passed min_length=1. finish_session's
     # `result` already carries a field description; this matches it.
     summary: str = Field(
         min_length=1,
@@ -646,12 +646,12 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
 )
 
 # Extra tools exposed only to the single-loop workflow (run_metric,
-# finish_run, dag_*, memory). Kept separate from ALL_TOOLS so the read-only
+# finish_session, dag_*, memory). Kept separate from ALL_TOOLS so the read-only
 # ToolDispatcher surface used by tests and external callers does not
 # advertise loop-only control tools.
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
-    FinishRunInput,
+    FinishSessionInput,
     AskUserInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
@@ -666,7 +666,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 )
 
 # Tool list for plan mode (`agent6 plan`). Excludes the
-# execution-mode terminal tool (`finish_run`) and the metric tool
+# execution-mode terminal tool (`finish_session`) and the metric tool
 # (planning never iterates a metric); adds `finish_planning` instead.
 # Plan-mode also filters `apply_edit` / `apply_patch` out of `ALL_TOOLS`
 # at the workflow layer so a planner cannot accidentally mutate source.
@@ -681,17 +681,17 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 
 # Tool list for ask mode (`agent6 ask`). Edit-free Q&A: like plan it filters
 # `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, and it
-# exposes NO control tools (no DAG, no finish_planning, no finish_run -- the
+# exposes NO control tools (no DAG, no finish_planning, no finish_session -- the
 # agent answers by emitting its final message as prose, a "silent finish"). It
 # DOES add `agent6_docs` so it can answer "how do I use agent6" questions.
 ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 
 # Tool list for machine-authoring mode (`agent6 machine create`). The agent's
-# only deliverable is a `.asm.toml` returned via `finish_run`'s `result.toml`,
+# only deliverable is a `.asm.toml` returned via `finish_session`'s `result.toml`,
 # so it gets read-only navigation (in case the task references existing files)
-# plus `finish_run`, no edit/patch/verify/run_command/DAG/metric tools, which
+# plus `finish_session`, no edit/patch/verify/run_command/DAG/metric tools, which
 # only tempt a weak model into writing the file or spelunking the repo.
-MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishRunInput,)
+MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -731,7 +731,7 @@ def mode_tools(mode: str) -> ModeTools:
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
     if not kind.runs_commands:
         # Machine authoring / agent states additionally never run commands:
-        # the deliverable is the finish_run payload, and command tools only
+        # the deliverable is the finish_session payload, and command tools only
         # tempt a weak model into spelunking.
         # `ask` keeps run_command for read-only, approval-gated investigation.
         # read_session and fetch go with them: a machine state answers about

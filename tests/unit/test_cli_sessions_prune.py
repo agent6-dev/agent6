@@ -366,7 +366,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
         )
     write_worker_pid(live, os.getpid())  # this test process is genuinely alive
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "session.end", "reason": "finish_run", "all_passed": true}\n')
+        fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
 
     assert main(["sessions", "rm", "live-run"]) == 2
     assert "still live" in capsys.readouterr().err

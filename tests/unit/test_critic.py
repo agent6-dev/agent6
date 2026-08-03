@@ -143,7 +143,7 @@ def _finish_tool_use(tu_id: str = "tu1", summary: str = "done") -> dict[str, Any
     return {
         "type": "tool_use",
         "id": tu_id,
-        "name": "finish_run",
+        "name": "finish_session",
         "input": {"summary": summary},
     }
 
@@ -164,10 +164,10 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
 
 
 def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
-    """When critic returns NEEDS_WORK on a finish_run, the loop must NOT
-    return finish_run on this iteration; instead it appends a `[critic]`
+    """When critic returns NEEDS_WORK on a finish_session, the loop must NOT
+    return finish_session on this iteration; instead it appends a `[critic]`
     text block to the user message and continues to the next iter."""
-    # Worker turn 1: calls finish_run (rejected by critic).
+    # Worker turn 1: calls finish_session (rejected by critic).
     # Worker turn 2: emits plain text, no tool_use -> silent_finish exit.
     # silent_finish now also goes through critic, so the
     # iter-2 critic must return SATISFIED for the loop to exit cleanly.
@@ -228,8 +228,8 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
 
 
 def test_before_finish_critic_satisfied_accepts_finish() -> None:
-    """When critic says SATISFIED on a finish_run, the loop returns
-    immediately with reason=finish_run on that same iteration."""
+    """When critic says SATISFIED on a finish_session, the loop returns
+    immediately with reason=finish_session on that same iteration."""
     worker = MagicMock()
     worker.call.return_value = _resp_with_tool_use(
         "wrapping up", _finish_tool_use("tu1", "all done")
@@ -259,16 +259,16 @@ def test_before_finish_critic_satisfied_accepts_finish() -> None:
     )
 
     assert result.iterations == 1
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert result.summary == "all done"
     assert critic.call.call_count == 1
 
 
 def test_before_finish_rejection_cap_lets_finish_through() -> None:
     """After `max_consecutive_critic_rejections` back-to-back NEEDS_WORK
-    verdicts, the next finish_run must be accepted even if the critic
+    verdicts, the next finish_session must be accepted even if the critic
     still disagrees. Prevents stubborn-worker budget burn."""
-    # Worker calls finish_run every iteration. With cap=2, iters 1 and 2
+    # Worker calls finish_session every iteration. With cap=2, iters 1 and 2
     # get rejected; iter 3's finish goes through with the rejection-cap
     # message attached.
     worker = MagicMock()
@@ -303,7 +303,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     )
 
     assert result.iterations == 3
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert critic.call.call_count == 3
     # The iter-3 user message must carry the cap-reached critic warning.
     # iter N user msg is at index 2N (initial user + 2 entries per iter).
@@ -349,7 +349,7 @@ def test_before_finish_satisfied_resets_rejection_counter() -> None:
         original_task="t",
     )
     assert result.iterations == 2
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert result.summary == "v2"
 
 
@@ -524,7 +524,7 @@ def _resp_capped(text: str = "", *, stop_reason: str = "length") -> ProviderResp
 def test_run_critic_none_when_output_capped() -> None:
     """A reasoning-model critic can spend its whole output cap before emitting a
     verdict (stop_reason=length / max_tokens, empty text). Folding that into
-    NEEDS_WORK revoked finish_run with an EMPTY critique and burned iterations
+    NEEDS_WORK revoked finish_session with an EMPTY critique and burned iterations
     against a phantom rejection; a truncated call is a FAILED call -> None (like
     a ProviderError), 'no critique, proceed'."""
     for reason in ("length", "max_tokens", "MAX_TOKENS"):

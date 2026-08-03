@@ -75,7 +75,7 @@ go-kvstore-debug (agent6 ran with all fixes):
 On go-logwindow the fixes took agent6 from $0.60 and 52 calls to $0.037
 and 4 calls on the same task and model. On go-kvstore-debug agent6 made
 4 tool calls (read, one edit fixing all four bugs, jailed verify,
-finish_run) and had the lowest wall time of the four agents.
+finish_session) and had the lowest wall time of the four agents.
 
 ## Code quality notes
 

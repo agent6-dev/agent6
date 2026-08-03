@@ -6,7 +6,7 @@ tests + dry-run), and write the first fully-valid draft.
 
 Authoring runs the same confined agent subprocess a running machine's `agent`
 state uses (`build_machine_agent_runner`), in `mode="machine"` with a
-finish_run-focused prompt. Output goes through the injected `MachineFrontend`
+finish_session-focused prompt. Output goes through the injected `MachineFrontend`
 reporter; the watchable per-draft event log is a separate `EventSink`.
 """
 
@@ -216,7 +216,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         candidate = extract_toml(result.payload)
         if candidate is None:
             diagnostics = [
-                f"You did not return a draft: call finish_run with result.{TOML_PAYLOAD_KEY}"
+                f"You did not return a draft: call finish_session with result.{TOML_PAYLOAD_KEY}"
                 " set to the complete .asm.toml source as a single string."
                 f" (agent loop reason: {result.reason})"
             ]
@@ -237,7 +237,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # the agent at result.scripts.
             if any("not found in bundle" in p for p in problems):
                 hint = (
-                    f"Return each missing scripts/... file in finish_run"
+                    f"Return each missing scripts/... file in finish_session"
                     f" result.{SCRIPTS_PAYLOAD_KEY} (a map of the path to its complete source)."
                 )
                 problems = [*problems, hint]

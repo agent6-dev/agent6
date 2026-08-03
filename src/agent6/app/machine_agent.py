@@ -335,7 +335,7 @@ def run_one(
     # running machine's `agent` state, unless it opted into mode="run") are
     # read-only structured-output loops: the dispatcher refuses edits AND
     # run_command/run_verify (defense in depth alongside the read-only tool
-    # list) and the loop uses a finish_run-focused prompt.
+    # list) and the loop uses a finish_session-focused prompt.
     mode = r.mode
     read_only = mode in ("machine", "agent")
     # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
@@ -386,7 +386,7 @@ def run_one(
         steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
     )
     result = wf.run(r.prompt)
-    payload = result.finish_payload if result.reason == "finish_run" else None
+    payload = result.finish_payload if result.reason == "finish_session" else None
     return _result(result.reason, payload, budget)
 
 

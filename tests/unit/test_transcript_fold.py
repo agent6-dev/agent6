@@ -42,9 +42,9 @@ def test_verify_badge_folds_into_the_tool_item() -> None:
 
 def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     events = [
-        {"type": "tool.call", "name": "finish_run", "args": {"summary": "all green"}},
-        {"type": "tool.result", "name": "finish_run", "ok": True, "summary": "finish_run"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": "all green"}},
+        {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "finish_session"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
     ]
     items = fold_transcript(events)
     assert [i.kind for i in items] == ["done"]

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The verify finish gate: finish_run can never report 'passed' over a red or
+"""The verify finish gate: finish_session can never report 'passed' over a red or
 stale verify (honest default), and require_verify_to_finish turns that into an
 opt-in hard gate. Both ground on _tree_is_verify_green."""
 

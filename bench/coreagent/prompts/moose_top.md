@@ -55,7 +55,7 @@ the loop will halt if you exceed it.
   best-scoring commit at the end. If you DO want a specific commit
   message you can still call `run_command` with `git commit`, but
   it's optional.
-- `finish_run` is the only way to terminate cleanly. Call it when the
+- `finish_session` is the only way to terminate cleanly. Call it when the
   task is done, when the metric plateaued, or when you are blocked.
 </tool-use-rules>
 

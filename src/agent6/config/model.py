@@ -544,14 +544,14 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
-    # When true, finish_run is refused while the last verify is red (or a verify
+    # When true, finish_session is refused while the last verify is red (or a verify
     # command is configured but was never run): the worker must get verify green
-    # or explicitly stop. Default false keeps finish_run always honorable, but
+    # or explicitly stop. Default false keeps finish_session always honorable, but
     # even then a finish over a red verify is reported honestly (session.end
     # all_passed=False -> "finished", never "passed"); this flag turns the honest
     # signal into a hard gate for operators who want it.
     require_verify_to_finish: bool = False
-    # Opt-in: bounce the FIRST finish_run over a green verify once, with a
+    # Opt-in: bounce the FIRST finish_session over a green verify once, with a
     # directive to re-check every spec requirement (the committed suite may
     # cover a subset). Targets the finish-on-green-but-incomplete failure
     # mode measured on bench/coreagent's eventflow task; costs about one
@@ -625,7 +625,7 @@ class PromptConfig(BaseModel):
     # metric, budget, repo-priors + AGENTS.md) still append, so repo context and
     # the budget cap are preserved. Empty = the built-in default. You own keeping
     # the tool contracts intact (apply_edit/apply_patch, run_verify_command,
-    # finish_run); run startup warns if the override omits them. Inspect the
+    # finish_session); run startup warns if the override omits them. Inspect the
     # assembled result with `agent6 prompt show`.
     system_prompt_file: str = ""
     # Include the structural-prior blocks in the run-mode <repo-priors>: hot
@@ -702,7 +702,7 @@ class ReviewConfig(BaseModel):
     # its critique as a user message the worker sees next turn.
     #   off              - never (default; behaviour unchanged).
     #   on_verify_fail   - after every verify failure.
-    #   before_finish    - intercept ``finish_run``; reject if critic
+    #   before_finish    - intercept ``finish_session``; reject if critic
     #                      is not satisfied and inject critique.
     #   periodic         - every ``period`` iterations.
     # The reviewer provider must already be configured in
@@ -912,7 +912,7 @@ class NotifyConfig(BaseModel):
 
     - ``AGENT6_SESSION_ID``      , session id under the per-repo state dir
     - ``AGENT6_SESSION_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
-    - ``AGENT6_SESSION_REASON``  , workflow termination reason (e.g. ``finish_run``,
+    - ``AGENT6_SESSION_REASON``  , workflow termination reason (e.g. ``finish_session``,
                                  ``budget_exhausted``, ``provider_error``)
     - ``AGENT6_SESSION_DIR``     , absolute path to the session dir
 

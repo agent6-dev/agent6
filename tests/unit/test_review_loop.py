@@ -46,7 +46,7 @@ def _disp() -> MagicMock:
     d = MagicMock()
     d.dispatch.return_value = RawResult(
         {"ok": True}
-    )  # JSON-serializable (finish_run is dispatched)
+    )  # JSON-serializable (finish_session is dispatched)
     return d
 
 
@@ -77,8 +77,8 @@ def test_has_reviewer_true_with_seats() -> None:
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
-    """A grounded security block under veto revokes the first finish_run; once the
-    seat passes, the second finish_run is accepted."""
+    """A grounded security block under veto revokes the first finish_session; once the
+    seat passes, the second finish_session is accepted."""
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
@@ -96,19 +96,19 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
     )
     messages = _begin()
     result = _drive(wf, messages)
-    assert result.reason == "finish_run" and result.iterations == 2
+    assert result.reason == "finish_session" and result.iterations == 2
     assert seat_provider.call.call_count == 2  # panel ran at each finish attempt
     # the first (blocked) finish injected the findings for the worker to address
     injected = "".join(
         b.get("text", "") for m in messages for b in (m.get("content") or []) if isinstance(b, dict)
     )
-    assert "rejected your finish_run" in injected and "hardcoded key" in injected
+    assert "rejected your finish_session" in injected and "hardcoded key" in injected
 
 
 def test_panel_skipped_when_budget_fraction_low() -> None:
     """When remaining budget < review_budget_fraction the panel is SKIPPED
     (approve-and-proceed): reviewing costs most when budget is scarcest. The
-    seat that WOULD block is never called, and finish_run is accepted. This is
+    seat that WOULD block is never called, and finish_session is accepted. This is
     the only behavioural test of review_budget_fraction (previously dead config)."""
     worker = MagicMock()
     worker.call.return_value = _resp_with_tool_use("f1", _finish_tool_use("a", "done"))
@@ -125,7 +125,7 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
     with patch.object(Workflow, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
     assert seat_provider.call.call_count == 0  # panel skipped, not run
-    assert result.reason == "finish_run" and result.iterations == 1
+    assert result.reason == "finish_session" and result.iterations == 1
 
 
 def test_panel_advisory_does_not_block_finish() -> None:
@@ -143,7 +143,7 @@ def test_panel_advisory_does_not_block_finish() -> None:
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    assert result.reason == "finish_run" and result.iterations == 1
+    assert result.reason == "finish_session" and result.iterations == 1
     assert seat_provider.call.call_count == 1  # panel still ran (events), just didn't gate
 
 
@@ -163,7 +163,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         base_sha="b",
     )
     result = _drive(wf, _begin())
-    assert result.reason == "finish_run" and result.iterations == 1
+    assert result.reason == "finish_session" and result.iterations == 1
 
 
 def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
@@ -188,7 +188,7 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
     )
     result = _drive(wf, _begin())
     # blocks on rejections 1 and 2, disarms on the 3rd attempt -> finish accepted
-    assert result.reason == "finish_run" and result.iterations == 3
+    assert result.reason == "finish_session" and result.iterations == 3
 
 
 def test_in_loop_panel_all_abstain_names_the_abstention() -> None:

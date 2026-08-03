@@ -57,7 +57,7 @@ _REQUEST_BYTES = (
 )
 
 _RESULT = AgentExecResult(
-    reason="finish_run",
+    reason="finish_session",
     payload={"ok": True, "notes": "queue drained"},
     usd=0.0588752,
     input_tokens=66084,
@@ -65,7 +65,7 @@ _RESULT = AgentExecResult(
 )
 
 _RESULT_BYTES = (
-    '{"reason":"finish_run","payload":{"ok":true,"notes":"queue drained"},'
+    '{"reason":"finish_session","payload":{"ok":true,"notes":"queue drained"},'
     '"usd":0.0588752,"usd_partial":false,"input_tokens":66084,"output_tokens":838}'
 )
 
@@ -87,7 +87,7 @@ def test_result_bytes_validate_to_same_object() -> None:
 
 
 def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
-    """A model's finish_run arguments reach the payload through json.loads,
+    """A model's finish_session arguments reach the payload through json.loads,
     which accepts a lone surrogate, while model_dump_json refuses one. The
     subprocess writes result.json with exactly that call, so an unscrubbed
     payload killed it before the write; the host then read the dead subprocess
@@ -95,7 +95,7 @@ def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
     """
     import json
 
-    res = AgentExecResult(reason="finish_run", payload={"note": "bad \ud800 tail"})
+    res = AgentExecResult(reason="finish_session", payload={"note": "bad \ud800 tail"})
     text = res.model_dump_json()
     assert json.loads(text)["payload"]["note"].startswith("bad ")
     assert "\ud800" not in json.loads(text)["payload"]["note"]

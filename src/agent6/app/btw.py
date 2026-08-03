@@ -101,7 +101,7 @@ def btw_answer(session: BtwSession) -> str | None:
     """The btw's answer once it has finished, else None (still thinking).
 
     An ask ends by emitting its final prose AS the answer (a silent finish, no
-    finish_run), so the last assistant message is the answer. A session that
+    finish_session), so the last assistant message is the answer. A session that
     ended without one says so rather than rendering blank.
     """
     # "created" is the window between the child making its dir -- which is what

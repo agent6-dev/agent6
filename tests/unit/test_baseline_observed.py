@@ -208,7 +208,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     state.baseline_ok = False
     turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     turn.finish_signal = MagicMock()
-    turn.finish_kind = "finish_run"
+    turn.finish_kind = "finish_session"
 
     wf._gate_verify_green(state, turn)  # pyright: ignore[reportPrivateUsage]
 

@@ -163,7 +163,7 @@ def _cfg_with_verify() -> Any:
 def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
     """A run-mode silent finish (prose, no tool_use) over a RED or stale verify
     must emit session.end all_passed=False — the same honest-finish rule as the
-    explicit finish_run path, so no surface renders the failed run as 'passed'."""
+    explicit finish_session path, so no surface renders the failed run as 'passed'."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
@@ -637,7 +637,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
                 and "score=42" in rendered
                 and "first parsed metric sample" in rendered
             )
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
@@ -658,7 +658,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
                     exec_failed=False,
                     score=42.0,
                 )
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
@@ -693,9 +693,9 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
         )
 
     assert result.completed is True
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert provider.saw_metric_feedback is True
-    assert dispatcher.calls == ["run_verify_command", "run_metric_command", "finish_run"]
+    assert dispatcher.calls == ["run_verify_command", "run_metric_command", "finish_session"]
 
 
 def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
@@ -714,7 +714,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
             self.n += 1
             if self.n == 1:
                 return _tool_resp("run_verify_command")
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -722,7 +722,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
                 return ExecResult(
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
                 )
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
@@ -756,7 +756,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
         )
 
     assert result.completed is True
-    # verify ran at iter 7, finish_run at iter 8 -> the loop reached iteration 8.
+    # verify ran at iter 7, finish_session at iter 8 -> the loop reached iteration 8.
     assert wf.iterations_reached == 8
 
 
@@ -858,11 +858,11 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
             # The follow-up is present: act on it, then finish.
             if len(self.calls) == 1:
                 return _tool_resp("run_command", {"command": "add median"}, tool_id="m1")
-            return _tool_resp("finish_run", {"summary": "added median()"}, tool_id="m2")
+            return _tool_resp("finish_session", {"summary": "added median()"}, tool_id="m2")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             return RawResult({"content": "ok"})
 
@@ -903,7 +903,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
     # The seeded steer entered the conversation BEFORE the first provider call.
     assert "median" in provider.calls[0]
     # It drove the run to a real finish, not a dropped-steer silent finish.
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert result.completed is True
     assert len(provider.calls) >= 2  # at least one more iteration than the silent finish
 
@@ -1044,7 +1044,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
             if self.n == 1:
                 # verify (green) THEN edit, in that order, in ONE turn.
                 return _multi("run_verify_command", "apply_edit")
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -1054,7 +1054,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
                 )
             if name == "apply_edit":
                 return RawResult({"ok": True})
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
@@ -1097,7 +1097,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
 
     # The verify->edit turn produced no 'verify passed' commit (old code did).
     assert commits == []
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
 
 
 def test_worker_max_tokens_starvation_backoff() -> None:
@@ -1168,11 +1168,11 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
                     raw={"content": []},
                 )
             # Tightened cap: the model is forced to act.
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
@@ -1205,7 +1205,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
         original_task="t",
     )
     # Recovered (finished) rather than dying on went_quiet.
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     # Two quiet turns at the lifted ceiling, then the backoff to per_call.
     assert provider.caps_seen[:3] == [65536, 65536, 16384]
 
@@ -1303,7 +1303,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
             rendered = str(kwargs["messages"][-1])
             if "[harness plateau]" in rendered:
                 self.saw_plateau_nudge = True
-                return _tool_resp("finish_run", {"summary": "pivoted"}, tool_id="fin")
+                return _tool_resp("finish_session", {"summary": "pivoted"}, tool_id="fin")
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
@@ -1327,7 +1327,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
                     exec_failed=False,
                     score=score,
                 )
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
@@ -1367,7 +1367,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     # The plateau at the 5th sample injected a pivot nudge instead of
     # stopping; the worker saw it and finished on its own terms.
     assert provider.saw_plateau_nudge is True
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
 
 
 def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Path) -> None:
@@ -1575,7 +1575,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
 ) -> None:
     """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low.
     Observed live: the worker solves the task but never re-verifies or calls
-    finish_run, so the budget dies on read-only commands."""
+    finish_session, so the budget dies on read-only commands."""
     from agent6.workflows import loop as loopmod
     from agent6.workflows.loop import RUN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
 
@@ -1683,7 +1683,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
 def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path) -> None:
     """A green verify followed by edits that never re-verify must not settle as
     'verify passed': the settle end grounds on the same tree probe as
-    finish_run, so it downgrades to reason='settled' with the stale-green
+    finish_session, so it downgrades to reason='settled' with the stale-green
     summary (all_passed=False)."""
 
     class ProviderStub:
@@ -1764,12 +1764,12 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
             if VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.saw_nudge = True
             if self.calls >= 6:
-                return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             return RawResult({"content": "..."})
 
@@ -1797,7 +1797,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     )
     # never verified -> never nudged/stopped by the settled detector
     assert provider.saw_nudge is False
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
 
 
 def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
@@ -2035,7 +2035,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
 
 
 def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> None:
-    """A finish_run on a metric run with most of the budget unspent is rejected
+    """A finish_session on a metric run with most of the budget unspent is rejected
     and nudged a few times before the loop honours it."""
     from agent6.budget import BudgetTracker
 
@@ -2051,7 +2051,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
                 self.finish_nudges_seen += 1
             # Vary the summary so the loop-guard repeat detector stays quiet.
             return _tool_resp(
-                "finish_run",
+                "finish_session",
                 {"summary": f"done-{self.calls}"},
                 tool_id=f"finish-{self.calls}",
             )
@@ -2094,13 +2094,13 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
     )
 
     # Rejected for the fixed patience of 3, then honoured on the 4th call.
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert provider.finish_nudges_seen == 3
     assert provider.calls == 4
 
 
 def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
-    """With no budget tracker wired in, an early finish_run is honoured at once
+    """With no budget tracker wired in, an early finish_session is honoured at once
     so the guard can never deadlock a run that lacks a budget signal."""
 
     class ProviderStub:
@@ -2113,7 +2113,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
             rendered = str(kwargs["messages"][-1])
             if "[harness budget]" in rendered:
                 self.finish_nudges_seen += 1
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"finish-{self.calls}")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"finish-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -2150,7 +2150,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         original_task="t",
     )
 
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert provider.finish_nudges_seen == 0
     assert provider.calls == 1
 
@@ -2190,7 +2190,7 @@ def test_metric_at_fraction_ceiling_requires_the_score_line_when_pattern_given()
 
 
 def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
-    """A finish_run on a maximize metric that is already at its provable
+    """A finish_session on a maximize metric that is already at its provable
     ceiling (SCORE: N/N) is honoured immediately — even with most of the
     budget unspent — instead of being rejected and nudged. This is the guard
     against weak models burning their whole budget re-deriving a solved task.
@@ -2212,7 +2212,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
             return _tool_resp(
-                "finish_run",
+                "finish_session",
                 {"summary": f"done-{self.calls}"},
                 tool_id=f"finish-{self.calls}",
             )
@@ -2272,8 +2272,8 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             original_task="t",
         )
 
-    # Honoured on the very first finish_run, with no budget nudges.
-    assert result.reason == "finish_run"
+    # Honoured on the very first finish_session, with no budget nudges.
+    assert result.reason == "finish_session"
     assert provider.finish_nudges_seen == 0
     assert provider.calls == 2
 
@@ -3253,7 +3253,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             del kwargs
             self.calls += 1
             if self.calls >= 6:
-                return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"f{self.calls}")
             big = "y" * 3000  # accumulates each turn so tier-2 fires mid-run
             tid = f"t{self.calls}"
             return ProviderResponse(
@@ -3279,7 +3279,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
             return RawResult({"ok": True})
 
@@ -3892,7 +3892,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
             del kwargs
             self.calls += 1
             if self.calls >= 6:
-                return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"f{self.calls}")
             # Large assistant text accumulates each turn; tier-1 can't elide it.
             big = "y" * 3000
             tid = f"t{self.calls}"
@@ -3923,7 +3923,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            if name == "finish_run":
+            if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
             return RawResult({"ok": True})
 
@@ -3965,7 +3965,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         )
 
     assert result.completed is True
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert summ.calls >= 1  # tier-2 fired mid-run
     types = [
         json.loads(line)["type"]
@@ -3977,7 +3977,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
 def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
     """_pass_pending_root_tasks marks pending/in-progress ROOT tasks passed and
     leaves everything else (already-terminal roots, non-root subtasks) alone --
-    so a finish_run-only ask/run reads N/N, not 0/1."""
+    so a finish_session-only ask/run reads N/N, not 0/1."""
 
     class _FakeClient:
         def __init__(self, nodes: dict[str, dict[str, Any]]) -> None:
@@ -4182,7 +4182,7 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
                 reasons.add(kw.value.value)
     # `reason=finish_kind` is the one non-literal construction; its Literal type
     # covers exactly these two.
-    reasons |= {"finish_run", "finish_planning"}
+    reasons |= {"finish_session", "finish_planning"}
     assert reasons >= {
         "loop_guard_killed",
         "verify_settled",
@@ -4291,7 +4291,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
             if NO_PROGRESS_ESCALATION[:28] in last:
                 self.escalations += 1
             if self.calls >= 18:
-                return _tool_resp("finish_run", {"summary": "stuck"}, tool_id="f")
+                return _tool_resp("finish_session", {"summary": "stuck"}, tool_id="f")
             if self.calls % 2 == 1:
                 return _tool_resp(
                     "apply_edit",
@@ -4366,7 +4366,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
             if NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 20:
-                return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
@@ -4459,7 +4459,7 @@ class _GreenDispatcher(_StubDispatcher):
 
 
 def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> None:
-    """With the knob on, the FIRST finish_run over a green verify is bounced
+    """With the knob on, the FIRST finish_session over a green verify is bounced
     once with the spec-recheck directive (the eventflow failure mode: a green
     subset-suite taken as done while spec requirements remain unmet); the
     second finish goes through."""
@@ -4476,7 +4476,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"f{self.calls}")
 
     provider = ProviderStub()
     wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
@@ -4492,7 +4492,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
         )
     assert provider.nudges == 1
     assert result.completed is True
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
 
 
 def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path) -> None:
@@ -4509,7 +4509,7 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
 
     provider = ProviderStub()
     wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=False)
@@ -4541,7 +4541,7 @@ def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> 
             self.calls += 1
             if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
 
     provider = ProviderStub()
     wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
@@ -4750,7 +4750,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
             if NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 18:
-                return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
             if self.calls % 2 == 1:
                 return _tool_resp(
                     "apply_edit",
@@ -4821,7 +4821,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
             self.calls += 1
             if self.calls <= 3:
                 return _tool_resp("read_file", {"path": "big.py"}, tool_id=f"r{self.calls}")
-            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
 
     big = "X" * 4000
 
@@ -5039,7 +5039,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
             if TOOL_ERROR_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 12:
-                return _tool_resp("finish_run", {"summary": "ok"}, tool_id="f")
+                return _tool_resp("finish_session", {"summary": "ok"}, tool_id="f")
             return _tool_resp("grep", {"pattern": "p", "path": "."}, tool_id=f"g{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
@@ -5774,7 +5774,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
 
 def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     """The plateau stop grounds on the tree like its sibling clean ends
-    (finish_run, verify_settled): a same-turn edit AFTER the green verify
+    (finish_session, verify_settled): a same-turn edit AFTER the green verify
     means nothing verified the FINAL tree, so the end must not claim
     all_passed=True."""
     from agent6.workflows._conversation import ToolUse
@@ -5837,7 +5837,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
 
 def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     """A deliberate end over a red verify passed its roots on the settled path
-    and not on the finish_run/metric_plateau path, so the same epistemic state
+    and not on the finish_session/metric_plateau path, so the same epistemic state
     (completed, not verify-green) left one of them reading `tasks 0/1` forever.
     The DAG tracks work items; the run-level word carries the verify truth."""
 
@@ -5870,7 +5870,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     events: list[dict[str, Any]] = []
     wf._emit = lambda event_type, **fields: events.append({"type": event_type, **fields})  # pyright: ignore[reportPrivateUsage]
 
-    wf._emit_run_end_grounded(reason="finish_run", iteration=3, state=state)  # pyright: ignore[reportPrivateUsage]
+    wf._emit_run_end_grounded(reason="finish_session", iteration=3, state=state)  # pyright: ignore[reportPrivateUsage]
 
     (end,) = [e for e in events if e["type"] == "session.end"]
     assert end["all_passed"] is False  # the verify truth is unchanged...

@@ -22,7 +22,7 @@ passed   = { type = "bool", default = false }   # set by scripts/verify.py
 summary  = { type = "str", default = "" }       # last verifier message
 
 [vars.agent]
-report = { type = "fix_report", default = {} }  # the agent's finish_run payload
+report = { type = "fix_report", default = {} }  # the agent's finish_session payload
 
 [schemas.verify_result]
 passed  = "bool"
@@ -45,7 +45,7 @@ A test in this repository is failing. Run the check to see the failure:
 It prints a JSON line with "passed" and "summary". The bug is in the SOURCE
 module under the repo root (do not edit anything under scripts/ or the test
 harness). Fix the source so the check passes, then re-run scripts/verify.py to
-confirm. When the check reports passed=true, call finish_run with
+confirm. When the check reports passed=true, call finish_session with
 {changed: true, rationale: "<one line on what you fixed>"}.
 """
 output_schema = "fix_report"

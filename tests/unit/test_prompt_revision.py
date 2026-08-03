@@ -84,7 +84,7 @@ def _finish_resp(summary: str) -> ProviderResponse:
     tool_use = {
         "type": "tool_use",
         "id": "finish-1",
-        "name": "finish_run",
+        "name": "finish_session",
         "input": {"summary": summary},
     }
     return ProviderResponse(
@@ -189,7 +189,7 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
     with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert reviser.call.call_count == 1
     first_worker_messages = worker.call.call_args.kwargs["messages"]
     task_text = first_worker_messages[0]["content"][0]["text"]
@@ -237,7 +237,7 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
     with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     first_worker_messages = worker.call.call_args.kwargs["messages"]
     task_text = first_worker_messages[0]["content"][0]["text"]
     assert "keep this exact task" in task_text

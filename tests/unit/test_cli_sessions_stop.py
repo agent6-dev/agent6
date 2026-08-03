@@ -46,7 +46,7 @@ def test_runs_stop_on_a_finished_run_with_lingering_pid_is_a_noop(
     rd = _session_dir(tmp_path, "done-run-CCC333")
     (rd / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "all_passed": true, "reason": "finish_run"}\n',
+        '{"type": "session.end", "all_passed": true, "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     write_worker_pid(rd, os.getpid())  # teardown not finished yet

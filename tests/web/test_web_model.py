@@ -405,7 +405,12 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
         "done1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+            {
+                "type": "session.end",
+                "reason": "finish_session",
+                "iterations": 1,
+                "all_passed": True,
+            },
         ],
     )
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
@@ -443,7 +448,12 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
         "done2",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+            {
+                "type": "session.end",
+                "reason": "finish_session",
+                "iterations": 1,
+                "all_passed": True,
+            },
         ],
     )
     assert model.session_snapshot(done)["live"] is False

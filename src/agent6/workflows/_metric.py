@@ -286,7 +286,7 @@ METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
 METRIC_PLATEAU_NUDGE_EXPLORE = (
     "[harness plateau] Your recent verified edits have stopped improving the"
     " metric \u2014 you have hit a local optimum. You still have most of your"
-    " budget left, so you can afford to explore boldly. Do NOT call finish_run"
+    " budget left, so you can afford to explore boldly. Do NOT call finish_session"
     " yet. Keep the current best commit, then run an experiment you have not"
     " tried: a structurally different algorithm, a different data layout, or a"
     " property of the problem you have not exploited. A failed experiment is"
@@ -296,7 +296,7 @@ METRIC_PLATEAU_NUDGE_PIVOT = (
     "[harness plateau] Your recent verified edits have stopped improving the"
     " metric \u2014 you are polishing the same approach and have hit a local"
     " optimum. About half your budget is gone and micro-tuning is no longer"
-    " paying off. Do NOT call finish_run yet. Pivot decisively to a"
+    " paying off. Do NOT call finish_session yet. Pivot decisively to a"
     " fundamentally different strategy: re-read the problem for a structurally"
     " better algorithm (vectorise/batch the hot loop, change the data layout,"
     " eliminate redundant work) rather than nibbling at what you already have."
@@ -315,24 +315,24 @@ METRIC_PLATEAU_NUDGE_FINAL = (
 # Budget fraction above which a plateau is treated as cheap to explore.
 METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE = 0.5
 
-# Nudge injected when the worker calls finish_run on an optimisation run while
+# Nudge injected when the worker calls finish_session on an optimisation run while
 # real budget still remains. On metric runs the task explicitly asks the worker
-# to keep optimising up to the cap, but workers routinely call finish_run with
+# to keep optimising up to the cap, but workers routinely call finish_session with
 # most of the budget unspent \u2014 leaving measurable gains (and money) on the
 # table. This is a worker-initiated early stop, distinct from a metric plateau,
 # so it carries its own "[harness budget]" prefix to stay greppable.
 METRIC_FINISH_NUDGE = (
-    "[harness budget] You called finish_run, but this is an optimisation run"
+    "[harness budget] You called finish_session, but this is an optimisation run"
     " and a large share of your budget is still unspent. Stopping now leaves"
     " measurable gains on the table \u2014 the task asks you to keep optimising"
     " right up to the budget cap. Do NOT finish yet. Keep your current best"
     " commit as a floor, then make another concrete attempt to move the metric:"
     " profile the hot path again, try a structurally different approach, or"
     " exploit a property of the problem you have not used. You may call"
-    " finish_run once your budget is nearly spent."
+    " finish_session once your budget is nearly spent."
 )
 
-# How many times an early finish_run on a metric run is rejected (with a
+# How many times an early finish_session on a metric run is rejected (with a
 # keep-going nudge) before the loop honours it. Bounds the nudging so a worker
 # that genuinely has nothing left to try can still stop cleanly.
 METRIC_EARLY_FINISH_PATIENCE = 3

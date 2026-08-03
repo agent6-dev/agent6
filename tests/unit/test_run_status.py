@@ -157,7 +157,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `sessions show` must agree with `sessions list`: a finish_run+all_passed run reads
+    # `sessions show` must agree with `sessions list`: a finish_session+all_passed run reads
     # "passed", not the opposite "finished" the raw reason alone used to print.
     # The raw reason stays in parens as the diagnostic.
     _make_run(
@@ -165,11 +165,11 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(1), "type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
-    assert "passed (finish_run)" in capsys.readouterr().out
+    assert "passed (finish_session)" in capsys.readouterr().out
 
 
 def test_status_finish_without_all_passed_reads_finished(
@@ -180,11 +180,11 @@ def test_status_finish_without_all_passed_reads_finished(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(1), "type": "session.end", "reason": "finish_run", "all_passed": False},
+            {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
-    assert "finished (finish_run)" in capsys.readouterr().out
+    assert "finished (finish_session)" in capsys.readouterr().out
 
 
 def test_status_error_reason_reads_failed(
@@ -311,7 +311,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "usd_total": 0.02,
                 "usd_partial": True,
             },
-            {"ts": _ts(40), "type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(40), "type": "session.end", "reason": "finish_session", "all_passed": True},
             {"ts": _ts(30), "type": "loop.resume.start", "iteration": 4},
             {
                 "ts": _ts(5),
@@ -330,7 +330,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     obj = json.loads(capsys.readouterr().out)
     assert obj["cost_usd"] == pytest.approx(0.025)
     assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
-    assert obj["state"] == "running"  # not leg 1's "passed (finish_run)"
+    assert obj["state"] == "running"  # not leg 1's "passed (finish_session)"
     assert obj["input_tokens"] == 300  # token gauges stay per-leg
 
 
@@ -368,7 +368,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
                 "output_total": 500,
                 "usd_total": 0.02,
             },
-            {"ts": _ts(70), "type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
             {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
             {
                 "ts": _ts(10),
@@ -377,7 +377,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
                 "output_total": 50,
                 "usd_total": 0.005,
             },
-            {"ts": _ts(5), "type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     write_worker_pid(d, 999999999)

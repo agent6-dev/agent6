@@ -86,7 +86,7 @@ TASKS: dict[str, Task] = {
                     " ./verify.sh passes and the auditor enforces EVERY rule exactly as"
                     " its file states it, including the edge cases. Do not modify"
                     " test_audit.py or verify.sh. Run verify, fix what fails, and call"
-                    " finish_run when the suite passes."
+                    " finish_session when the suite passes."
                 ),
             ),
         ),
@@ -103,7 +103,7 @@ TASKS: dict[str, Task] = {
                     " stage exactly to its spec, not just the ones the starter tests"
                     " cover; the stages consume each other's outputs, so interface"
                     " details matter. Do not modify test_relay.py or verify.sh. Run"
-                    " verify, fix what fails, and call finish_run when the whole suite"
+                    " verify, fix what fails, and call finish_session when the whole suite"
                     " passes."
                 ),
                 timeout_s=3000,

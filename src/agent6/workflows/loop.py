@@ -74,7 +74,7 @@ from agent6.tools.mcp_client import MCP_TOOL_PREFIX
 from agent6.tools.results import ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     FinishPlanningInput,
-    FinishRunInput,
+    FinishSessionInput,
 )
 from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command
@@ -348,7 +348,7 @@ class _LoopState:
     silent_no_work_nudges_used: int = 0
     plan_finish_nudged: bool = False
     # A turn that ends in a prose question with no tool_use is nudged ONCE to
-    # call ask_user (or finish_run) instead of narrating; then silent_finish is
+    # call ask_user (or finish_session) instead of narrating; then silent_finish is
     # accepted so a model that ignores the nudge cannot loop the run.
     question_nudged: bool = False
     # verify-settled completion (run mode): once verify has passed -- or, on a
@@ -361,7 +361,7 @@ class _LoopState:
     run_budget_nudged: bool = False
     # Cross-run memory write nudges (run mode, memory store wired): one flip
     # advisory when verify first goes green after failing, one deferred
-    # finish_run as the backstop. Both suppressed once the worker records
+    # finish_session as the backstop. Both suppressed once the worker records
     # anything; a run whose verify never failed is never nudged.
     verify_ever_failed: bool = False
     memory_written: bool = False
@@ -395,7 +395,7 @@ class _LoopState:
 def _restore_completion_state(state: _LoopState, snap: SessionSnapshot) -> None:
     """Carry a resume snapshot's completion-relevant bookkeeping into fresh loop
     state, so the review gate-disarm, metric, and verify-settled stop logic don't
-    regress to zero after a resume (re-rejecting a correct finish_run, re-counting
+    regress to zero after a resume (re-rejecting a correct finish_session, re-counting
     idle). A fresh run() never calls this and keeps _LoopState's defaults. Adding a
     persisted completion field is one field on SessionSnapshot plus one line here."""
     state.review_rejections_total = snap.review_rejections_total
@@ -447,14 +447,14 @@ class _TurnState:
     # The response's turn in the conversation; its parsed tool_uses drive the
     # dispatch (the conversation is the single source of what was called).
     assistant: AssistantTurn
-    # A finish_run/finish_planning call captured this turn; the finish gates
+    # A finish_session/finish_planning call captured this turn; the finish gates
     # may revoke it (set back to None) before the stop checks honour it.
     finish_signal: str | None = None
     finish_payload: dict[str, Any] | None = None
     # A finish that declared the configured gate stale, with the replacement it
     # proposes. Recorded and surfaced; the gate itself never moves.
     finish_stale_gate: str = ""
-    finish_kind: Literal["finish_run", "finish_planning"] = "finish_run"
+    finish_kind: Literal["finish_session", "finish_planning"] = "finish_session"
     # The user-turn items accumulated for this turn: tool results in dispatch
     # order, with advisory notices (critic, metric, nudges) appended after
     # (or, for the broken-verify flag, between them).
@@ -604,7 +604,7 @@ class Workflow:
     lane_spawner: GroupLaneSpawner | None = None
     # critic-in-loop. When `critic_provider` is set AND
     # `critic_mode != "off"`, the workflow invokes the critic at the
-    # configured trigger (verify-failure / before finish_run / every
+    # configured trigger (verify-failure / before finish_session / every
     # critic_period iters) and injects its critique back into the
     # conversation as a synthetic text block on the next user turn so
     # the worker sees it on the following iteration. Default off keeps
@@ -639,9 +639,9 @@ class Workflow:
     # per drop event) before the bare marker. Off = pre-gist behavior.
     compact_elision_gists: bool = True
     # Cap on consecutive `before_finish` rejections.
-    # When the worker repeatedly calls finish_run and the critic keeps
+    # When the worker repeatedly calls finish_session and the critic keeps
     # saying NEEDS_WORK, the loop would otherwise burn budget bouncing.
-    # After this many back-to-back rejections, the next finish_run is
+    # After this many back-to-back rejections, the next finish_session is
     # accepted (with a `[critic]` warning still injected so the
     # transcript records the disagreement). 0 disables the cap.
     max_consecutive_critic_rejections: int = 2
@@ -669,7 +669,7 @@ class Workflow:
     resume_state_path: Path | None = None
     # Plan mode. When ``mode="plan"``, the workflow uses the
     # planning system prompt + plan-mode tool list (no apply_edit /
-    # apply_patch; finish_planning replaces finish_run), skips auto-
+    # apply_patch; finish_planning replaces finish_session), skips auto-
     # commit-on-verify-pass, and on finish_planning writes the
     # ``plan_markdown`` argument to ``plan_output_path`` before exiting.
     # ``plan_output_path`` is required when ``mode="plan"``.
@@ -769,12 +769,12 @@ class Workflow:
         elif self.mode == "machine":
             instructions = (
                 "Author the machine now and return it via a single"
-                " `finish_run` call (the complete `.asm.toml` in `result.toml`)."
+                " `finish_session` call (the complete `.asm.toml` in `result.toml`)."
                 " Do not edit files or run anything."
             )
         elif self.mode == "agent":
             instructions = (
-                "Do the task above, then call `finish_run` exactly once with a"
+                "Do the task above, then call `finish_session` exactly once with a"
                 " `result` object matching the schema named in the task. This is"
                 " ONE step of a state machine, not a coding session — read only"
                 " what the task needs and do NOT edit the repo or run verify."
@@ -782,7 +782,7 @@ class Workflow:
         else:
             instructions = (
                 "Begin. Use the tools to read what you need, make edits,"
-                " run verify, and call `finish_run` when done."
+                " run verify, and call `finish_session` when done."
             )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
@@ -1043,7 +1043,7 @@ class Workflow:
         return SessionResult(
             completed=False,
             reason="max_iterations",
-            summary=f"max_iterations={self.max_iterations} reached without finish_run",
+            summary=f"max_iterations={self.max_iterations} reached without finish_session",
             iterations=self.max_iterations,
             tool_calls=state.tool_calls,
         )
@@ -1397,13 +1397,13 @@ class Workflow:
             turn.dag_mutated = True  # snapshot once after the turn
 
     def _capture_finish(self, turn: _TurnState, name: str, tool_input: Any) -> None:
-        """Capture a finish_run / finish_planning call's summary + payload on
+        """Capture a finish_session / finish_planning call's summary + payload on
         the turn (the finish gates may still revoke it). finish_planning also
         persists the plan markdown: schema validation already guaranteed the
         field when the dispatcher dispatched it, but the raw tool_input is what
         the model sent us, so stay defensive against a malformed call."""
-        if name == FinishRunInput.TOOL_NAME:
-            turn.finish_kind = "finish_run"
+        if name == FinishSessionInput.TOOL_NAME:
+            turn.finish_kind = "finish_session"
             turn.finish_signal = (
                 tool_input.get("summary", "(no summary)")
                 if isinstance(tool_input, dict)
@@ -1679,7 +1679,7 @@ class Workflow:
     def _turn_finish_gates(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
-        """Gates that can revoke this turn's finish_run, in precedence order:
+        """Gates that can revoke this turn's finish_session, in precedence order:
         critic (before_finish), metric early-finish, open subtasks, verify
         green, memory backstop. Each clears ``turn.finish_signal`` and appends
         its nudge; later gates then see the finish as already revoked and stay
@@ -1694,7 +1694,7 @@ class Workflow:
     def _gate_before_finish_critic(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
-        """Gate the agent's finish_run on critic approval. If the critic says
+        """Gate the agent's finish_session on critic approval. If the critic says
         NEEDS_WORK, suppress the finish (the tool_result still goes back so the
         call isn't half-applied) and inject the critique - the loop carries on
         with the critique visible. After ``max_consecutive_critic_rejections``
@@ -1702,7 +1702,7 @@ class Workflow:
         injected) so the worker can't bounce indefinitely."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.critic_mode == "before_finish"
             and self._has_reviewer()
         ):
@@ -1716,18 +1716,18 @@ class Workflow:
         cap = self.max_consecutive_critic_rejections
         cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
         if critique is not None and not critique.satisfied and not cap_reached:
-            self._log(f"  critic rejected finish_run at iter {turn.iteration}")
+            self._log(f"  critic rejected finish_session at iter {turn.iteration}")
             self._emit("loop.critic.rejected_finish", iteration=turn.iteration)
             turn.finish_signal = None
             turn.finish_payload = None
             state.consecutive_critic_rejections += 1
             turn.critic_text = (
-                "The critic rejected your finish_run call. Address the"
-                " issues below before calling finish_run again.\n\n" + critique.text
+                "The critic rejected your finish_session call. Address the"
+                " issues below before calling finish_session again.\n\n" + critique.text
             )
         elif critique is not None and not critique.satisfied and cap_reached:
             self._log(
-                f"  critic rejected finish_run at iter {turn.iteration} but"
+                f"  critic rejected finish_session at iter {turn.iteration} but"
                 f" rejection cap ({cap}) reached - letting finish through"
             )
             self._emit(
@@ -1737,25 +1737,25 @@ class Workflow:
             )
             turn.critic_text = (
                 "The critic flagged issues but the rejection cap was"
-                " reached; finish_run will be accepted. Critique:\n\n" + critique.text
+                " reached; finish_session will be accepted. Critique:\n\n" + critique.text
             )
             state.consecutive_critic_rejections = 0
         elif critique is not None:
-            self._log("  critic approved finish_run")
+            self._log("  critic approved finish_session")
             state.consecutive_critic_rejections = 0
 
     def _gate_metric_early_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Metric-run early-finish guard. On optimisation runs the worker often
-        calls finish_run with most of its budget unspent, even though the task
+        calls finish_session with most of its budget unspent, even though the task
         asks it to keep optimising up to the cap. Mirror the plateau policy:
         while the run still has runway above the final budget slice, reject an
-        early finish_run a few times and nudge the worker to keep going; only
+        early finish_session a few times and nudge the worker to keep going; only
         honour it once we are in the final budget slice or patience is
         exhausted. Requires a real budget signal - with none (tests / MCP) we
         defer to the worker's own judgement so a finish can never deadlock."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and metric_goal(self.config.workflow.metric) is not None
             and not self._metric_at_ceiling(state.metric_history)
@@ -1784,11 +1784,11 @@ class Workflow:
             )
 
     def _gate_task_finish(self, state: _LoopState, turn: _TurnState) -> None:
-        """Task finish-gate: don't let finish_run through while the worker's
+        """Task finish-gate: don't let finish_session through while the worker's
         own subtasks are still open (capped; see _task_finish_gate_nudge)."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.mode == "run"
         ):
             return
@@ -1799,7 +1799,7 @@ class Workflow:
         turn.finish_payload = None
         turn.tool_results.append(Notice(task_nudge))
         self._log(
-            f"  finish_run gated: open subtasks remain (nudge"
+            f"  finish_session gated: open subtasks remain (nudge"
             f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
         )
         self._emit(
@@ -1809,14 +1809,14 @@ class Workflow:
         )
 
     def _gate_verify_green(self, state: _LoopState, turn: _TurnState) -> None:
-        """Opt-in hard finish gate: refuse finish_run while verify is red or
+        """Opt-in hard finish gate: refuse finish_session while verify is red or
         stale (bounded, so a genuinely-unpassable task can't pin the loop). The
         honest all_passed=False signal in the stop checks applies whether or
         not this is on; this just gives the worker a few pushes to get green
         first."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and self._tree_is_verify_green(state) is False
             # A gate that was already red before this run touched anything is
@@ -1832,7 +1832,7 @@ class Workflow:
         turn.finish_payload = None
         turn.tool_results.append(Notice(VERIFY_FINISH_GATE))
         self._log(
-            f"  finish_run gated: verify not green (nudge"
+            f"  finish_session gated: verify not green (nudge"
             f" #{state.verify_finish_nudges_used}) at iter {turn.iteration}"
         )
         self._emit(
@@ -1847,7 +1847,7 @@ class Workflow:
         or red tree is the verify gates' territory, not this one's."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and self.config.workflow.spec_recheck_on_finish
             and not state.spec_recheck_done
@@ -1858,18 +1858,18 @@ class Workflow:
         turn.finish_signal = None
         turn.finish_payload = None
         turn.tool_results.append(Notice(SPEC_RECHECK_NUDGE))
-        self._log(f"  finish_run gated: spec recheck at iter {turn.iteration}")
+        self._log(f"  finish_session gated: spec recheck at iter {turn.iteration}")
         self._emit("loop.spec_recheck.gated", iteration=turn.iteration)
 
     def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:
-        """Memory write-side backstop: defer the first finish_run ONCE when the
+        """Memory write-side backstop: defer the first finish_session ONCE when the
         run recovered from a red verify to green and recorded nothing via
         add_memory - the nudge asks for the root cause or an immediate re-finish
-        (see _nudges for the measurement behind it). Explicit finish_run only: a
+        (see _nudges for the measurement behind it). Explicit finish_session only: a
         went-quiet worker is never bounced here."""
         if not (
             turn.finish_signal is not None
-            and turn.finish_kind == "finish_run"
+            and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and self.state_dir is not None
             and state.verify_ever_failed
@@ -1882,7 +1882,7 @@ class Workflow:
         turn.finish_signal = None
         turn.finish_payload = None
         turn.tool_results.append(Notice(MEMORY_FINISH_NUDGE))
-        self._log(f"  finish_run deferred once: memory backstop at iter {turn.iteration}")
+        self._log(f"  finish_session deferred once: memory backstop at iter {turn.iteration}")
         self._emit("loop.memory_finish.gated", iteration=turn.iteration)
 
     def _turn_notices(self, state: _LoopState, turn: _TurnState) -> None:
@@ -1928,7 +1928,7 @@ class Workflow:
                 " The tool result has not changed. Re-issuing the same"
                 " call again will not yield new information. Change"
                 " your approach: try different arguments, a different"
-                " tool, commit to an edit, or call `finish_run` if"
+                " tool, commit to an edit, or call `finish_session` if"
                 " you have already done what the task requires."
             )
             turn.tool_results.append(Notice(notice))
@@ -2232,7 +2232,7 @@ class Workflow:
             self._final_checkpoint(turn.iteration)
             # Ground on the TREE, not on verify_ever_passed: a green verify
             # followed by un-reverified edits must not settle as "passed"
-            # (finish_run grounds on the same probe, so the two clean ends
+            # (finish_session grounds on the same probe, so the two clean ends
             # cannot disagree).
             if state.verify_ever_passed and self._tree_is_verify_green(state) is not False:
                 self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
@@ -2275,7 +2275,7 @@ class Workflow:
             assert turn.metric_plateau_finish is not None
             self._log(f"LOOP: metric_plateau at iter {turn.iteration}")
             self._final_checkpoint(turn.iteration)
-            # Ground on the tree like the sibling clean ends (finish_run,
+            # Ground on the tree like the sibling clean ends (finish_session,
             # verify_settled): an edit after the plateau's green verify means
             # nothing verified the FINAL tree, so this must not claim passed.
             self._emit_run_end_grounded(
@@ -2331,11 +2331,11 @@ class Workflow:
             self._log(f"LOOP: {turn.finish_kind} called at iter {turn.iteration}")
             self._final_checkpoint(turn.iteration)
             # Honest finish: finish_planning is always a clean finish, but a
-            # finish_run over a red/stale verify is "finished", not "passed"
+            # finish_session over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
-            # model called finish_run".
+            # model called finish_session".
             reason = self._finish_reason(turn, state)
-            if turn.finish_kind == "finish_run":
+            if turn.finish_kind == "finish_session":
                 self._emit_run_end_grounded(reason=reason, iteration=turn.iteration, state=state)
             else:
                 self._emit_run_end_passed(reason=reason, iterations=turn.iteration)
@@ -2506,7 +2506,7 @@ class Workflow:
         iteration: int,
     ) -> SessionResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
-        emitted text; gated like an explicit finish_run) or went-quiet (an
+        emitted text; gated like an explicit finish_session) or went-quiet (an
         empty turn; nudged up to a cap). Returns a terminal SessionResult, or None
         to continue the loop after appending a nudge.
 
@@ -2531,7 +2531,7 @@ class Workflow:
         self, text: str, conversation: Conversation, state: _LoopState, *, iteration: int
     ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
-        it through the same gates as an explicit finish_run. Returns None (with
+        it through the same gates as an explicit finish_session. Returns None (with
         a nudge appended to the conversation) when a gate sends the worker back to
         work; the silent_finish SessionResult once every gate lets it through."""
         # An EARLY prose turn on an untouched tree is a stall, not an
@@ -2558,7 +2558,7 @@ class Workflow:
                 nudges_used=state.silent_no_work_nudges_used,
             )
             return None
-        # Same before_finish critic gate as an explicit finish_run tool_use.
+        # Same before_finish critic gate as an explicit finish_session tool_use.
         # Without this, an agent that stops emitting tool calls bypasses
         # critic review entirely. The rejection cap is shared with the
         # tool_use path so a stubborn worker can't bounce the loop forever.
@@ -2568,7 +2568,7 @@ class Workflow:
             and self._silent_finish_critic_rejects(state, conversation, iteration=iteration)
         ):
             return None
-        # metric-run early-finish guard, mirroring the finish_run path: a
+        # metric-run early-finish guard, mirroring the finish_session path: a
         # silent finish on an optimisation run with budget to spare should be
         # nudged to keep optimising rather than accepted. Without this,
         # dropping tool_use was a way to skip the plateau/early-finish policy
@@ -2602,7 +2602,7 @@ class Workflow:
                 return None
         # Task finish-gate (silent path): a worker that stops emitting tool
         # calls with its own subtasks still open is steered back to the list
-        # rather than silently finished (shares the cap with the finish_run
+        # rather than silently finished (shares the cap with the finish_session
         # path).
         task_nudge = self._task_finish_gate_nudge(state)
         if task_nudge is not None:
@@ -2621,7 +2621,7 @@ class Workflow:
         # Question-nudge (run mode, once): the model ended by asking the
         # operator something in prose without calling ask_user, so the run
         # would silently finish with an unanswered question. Nudge once to
-        # call ask_user / finish_run; if it asks again, accept the finish
+        # call ask_user / finish_session; if it asks again, accept the finish
         # (bounded, so a stubborn model cannot loop the run).
         if self.mode == "run" and not state.question_nudged and ends_with_question(text):
             state.question_nudged = True
@@ -2632,7 +2632,7 @@ class Workflow:
         # In ask mode a prose answer with no tool call is the NORMAL success (the
         # answer IS the text), so end as "answered", not "silent_finish" -- the
         # latter read as a failure diagnostic on a perfectly good answer. run/plan
-        # keep silent_finish: there, stopping without finish_run is mildly anomalous.
+        # keep silent_finish: there, stopping without finish_session is mildly anomalous.
         reason: SessionEndReason = "answered" if self.mode == "ask" else "silent_finish"
         if self.mode == "ask":
             self._log(f"  ask answered at iter {iteration}")
@@ -2641,7 +2641,7 @@ class Workflow:
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
         self._final_checkpoint(iteration)
-        # Honest finish, same rule as the explicit finish_run path: a run/plan
+        # Honest finish, same rule as the explicit finish_session path: a run/plan
         # silent finish over a red or stale verify is "finished", not "passed".
         # Ask mode's prose answer is the success (it never runs verify), so it
         # always ends passed.
@@ -2779,7 +2779,7 @@ class Workflow:
                     " further. If you genuinely don't know what to do"
                     " next, call `read_file` on the most relevant"
                     " source file to ground your next decision, or"
-                    " call `finish_run` if the task is complete. Any"
+                    " call `finish_session` if the task is complete. Any"
                     " response that is not a tool_use will waste the"
                     " entire run."
                 )
@@ -2788,7 +2788,7 @@ class Workflow:
                     "[harness] Your previous turn was empty: no text"
                     " content and no tool_use. This is a synthetic"
                     " prompt from the agent6 harness. Either call a"
-                    " tool to make progress, or call `finish_run`"
+                    " tool to make progress, or call `finish_session`"
                     " with a summary if the task is complete. Do"
                     " not reply with another empty turn."
                 )
@@ -2912,7 +2912,7 @@ class Workflow:
         """On successful completion, mark still-pending root task(s) as passed.
 
         The loop seeds one root task per ``run()`` (each ask REPL follow-up seeds
-        another), but the worker finishes via ``finish_run`` without ever
+        another), but the worker finishes via ``finish_session`` without ever
         touching it -- so a completed ask/run otherwise reads ``tasks 0/1``. Pass
         any root (``parent_id is None``) still pending/in-progress so the DAG --
         and every viewer + resume -- agrees the run completed. Subtasks the
@@ -2950,7 +2950,7 @@ class Workflow:
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
         """Emit a successful ``session.end``, first auto-passing any still-pending
         root task so the DAG (and every viewer + resume) agrees the run
-        completed -- otherwise a finish_run-only ask/run reads ``tasks 0/1``."""
+        completed -- otherwise a finish_session-only ask/run reads ``tasks 0/1``."""
         self._pass_pending_root_tasks()
         self._emit("session.end", reason=reason, iterations=iterations, all_passed=True)
 
@@ -2979,7 +2979,7 @@ class Workflow:
         this run's failure. Only ever from an observation, never a guess -- a
         run where nothing ever verified a clean tree says nothing.
         """
-        if turn.finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
+        if turn.finish_kind == "finish_session" and self._tree_is_verify_green(state) is False:
             if turn.finish_stale_gate:
                 return "gate_stale"
             if state.baseline_ok is False:
@@ -2988,7 +2988,7 @@ class Workflow:
 
     def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:
         """Emit a clean end honestly: all_passed only when the FINAL tree is
-        verify-green. finish_run and metric_plateau ground the same way, so
+        verify-green. finish_session and metric_plateau ground the same way, so
         'passed' can never mean 'ended over a red or stale verify'.
 
         The roots pass either way, like the settled path: the DAG tracks work
@@ -3258,7 +3258,7 @@ class Workflow:
     def _metric_at_ceiling(self, history: list[MetricSample]) -> bool:
         """True once any verified sample reached the metric's provable
         ceiling (e.g. ``SCORE: 27/27``). Such a metric cannot be improved, so
-        the loop honours an early ``finish_run`` and stops nudging instead of
+        the loop honours an early ``finish_session`` and stops nudging instead of
         spending the rest of the budget chasing an unbeatable number."""
         return any(sample.at_ceiling for sample in history)
 
@@ -3595,7 +3595,7 @@ class Workflow:
             f"{len(open_subtasks)} task(s) are pending/in_progress:\n{listing}\n"
             "Continue with the next one. If a task is genuinely not needed or you"
             " cannot do it, call update_task to mark it skipped or obsolete -- do"
-            " not just abandon it. Then finish_run once the list is clear."
+            " not just abandon it. Then finish_session once the list is clear."
         )
 
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:

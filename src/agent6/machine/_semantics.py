@@ -299,7 +299,7 @@ def _py_type(value: Any) -> str:
 
 
 # --------------------------------------------------------------------------
-# Runtime payload validation (the agent `finish_run` trust boundary)
+# Runtime payload validation (the agent `finish_session` trust boundary)
 # --------------------------------------------------------------------------
 
 
@@ -308,7 +308,7 @@ def validate_record_payload(
 ) -> list[str]:
     """Strictly validate a captured *payload* against a record schema.
 
-    The one runtime capture gate for both an agent `finish_run` payload and a
+    The one runtime capture gate for both an agent `finish_session` payload and a
     `tool` state's parsed stdout (*where* names which, for the error text).
     Stricter than the load-time placeholder check on variable defaults: every
     non-optional field must be present, `enum` constraints are enforced, and

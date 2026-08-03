@@ -159,7 +159,7 @@ def test_machine_agent_wires_the_summariser_seat(
 
         def run(self, _prompt: str) -> SessionResult:
             return SessionResult(
-                reason="finish_run", completed=True, summary="done", iterations=1, tool_calls=0
+                reason="finish_session", completed=True, summary="done", iterations=1, tool_calls=0
             )
 
     def _fake_role(*_a: Any, **k: Any) -> object:
@@ -188,6 +188,6 @@ def test_machine_agent_wires_the_summariser_seat(
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
     )
     out = machine_agent.run_one(req)
-    assert out.reason == "finish_run"
+    assert out.reason == "finish_session"
     assert wf_kwargs["summariser_provider"] is summariser
     assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter

@@ -201,7 +201,7 @@ def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: Path) -> None:
     p.write_text(
         '{"type": "session.start"}\n'
         '{"type": "tool.call", "name": "x"}\n'
-        '{"type": "session.end", "reason": "finish_run"}\n',
+        '{"type": "session.end", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=True, stop_when_finished=True))
@@ -217,12 +217,12 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
         '{"type": "session.start"}\n'
         '{"type": "session.end", "reason": "steer_abort"}\n'
         '{"type": "role.call"}\n'
-        '{"type": "session.end", "reason": "finish_run"}\n',
+        '{"type": "session.end", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=True, stop_when_finished=True))
     assert [e.get("reason") for e in out if e["type"] == "session.end"] == [
         "steer_abort",
-        "finish_run",
+        "finish_session",
     ]
-    assert out[-1]["reason"] == "finish_run"  # stopped at the final end, not the stop
+    assert out[-1]["reason"] == "finish_session"  # stopped at the final end, not the stop

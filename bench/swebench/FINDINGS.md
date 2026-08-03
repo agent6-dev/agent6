@@ -94,7 +94,7 @@ adversarially verified against the source by a review workflow:
 **Rejected** (medium-risk code levers, by the adversarial pass): read-dedup
 short-circuits and stale-mtime read caching (can feed stale content → corrupt
 edits), loop-guard broadening (false positives on legitimate paging), per-turn
-budget heartbeats / lowered nudge thresholds (can rush premature `finish_run`).
+budget heartbeats / lowered nudge thresholds (can rush premature `finish_session`).
 All four chosen levers are text-only — they cannot corrupt an edit or break a
 call path, and current behavior is their floor.
 

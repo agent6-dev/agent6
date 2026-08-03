@@ -364,7 +364,7 @@ it does not lift a capable model's resolve rate much.
 - **Verify-settled completion** — Kimi K2.6 observed running to 128 iterations
   on a task done at ~45, re-running read-only commands after success.
 - **Low-budget wrap-up** — Kimi K2.6 observed solving the task, never
-  re-running verify, never calling finish_run, and burning the remainder on
+  re-running verify, never calling finish_session, and burning the remainder on
   read-only commands (the settled detector cannot engage without a green
   verify).
 - **Task finish-gate** — a weak model on a long task observed quitting at

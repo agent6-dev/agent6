@@ -161,7 +161,7 @@ def print_session_end(
     lacks: cost and the branch / next-step footer."""
     # Read the outcome from the SAME fold `agent6 sessions` uses, not from
     # result.completed: completed means "the agent finished deliberately", which
-    # is true for a finish_run even when verify never went green. status_word off
+    # is true for a finish_session even when verify never went green. status_word off
     # result.completed then prints "passed" while runs list reads the session.end
     # event's real all_passed and prints "finished" -- the exact disagreement
     # status_word exists to prevent. summarize_session_dir folds that event, so the

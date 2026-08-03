@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.app.reporter import STDIO_REPORTER
-from agent6.tools.results import FinishRunResult
+from agent6.tools.results import FinishSessionResult
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._session_state import SessionResult
 
@@ -36,12 +36,12 @@ def test_a_green_tree_is_still_what_passes() -> None:
 def test_the_tool_result_says_nothing_changed() -> None:
     """A model that finished believing it swapped the gate would carry that
     belief into its summary."""
-    wire = FinishRunResult(
+    wire = FinishSessionResult(
         summary_text="done", result=None, stale_gate="uv run pytest tests/unit"
     ).to_wire()
     assert "unchanged" in wire["stale_gate"]
     assert "does not pass" in wire["stale_gate"]
-    assert FinishRunResult(summary_text="d", result=None).to_wire().get("stale_gate") is None
+    assert FinishSessionResult(summary_text="d", result=None).to_wire().get("stale_gate") is None
 
 
 def test_the_operator_gets_a_paste_ready_line() -> None:
@@ -77,7 +77,7 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
         _print_stale_gate(
             SessionResult(
                 completed=True,
-                reason="finish_run",
+                reason="finish_session",
                 summary="s",
                 iterations=1,
                 tool_calls=1,
@@ -96,7 +96,7 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     with redirect_stdout(out):
         _print_stale_gate(
             SessionResult(
-                completed=True, reason="finish_run", summary="s", iterations=1, tool_calls=1
+                completed=True, reason="finish_session", summary="s", iterations=1, tool_calls=1
             ),
             reporter=STDIO_REPORTER,
         )
@@ -107,11 +107,11 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     ("declared", "green", "expected"),
     [
         ("uv run pytest tests/unit", False, "gate_stale"),  # red + declared
-        ("uv run pytest tests/unit", True, "finish_run"),  # green: it passed, truthfully
+        ("uv run pytest tests/unit", True, "finish_session"),  # green: it passed, truthfully
         # None = GATELESS: no gate exists, so none can be stale. Reading this as
         # "not green" made such a run pass, exit 0 and auto-merge.
-        ("uv run pytest tests/unit", None, "finish_run"),
-        ("", False, "finish_run"),  # red with no declaration is an ordinary finish
+        ("uv run pytest tests/unit", None, "finish_session"),
+        ("", False, "finish_session"),  # red with no declaration is an ordinary finish
     ],
 )
 def test_a_declaration_names_the_end_only_over_a_red_tree(
@@ -125,7 +125,7 @@ def test_a_declaration_names_the_end_only_over_a_red_tree(
 
     wf = Workflow.__new__(Workflow)
     turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    turn.finish_kind = "finish_run"
+    turn.finish_kind = "finish_session"
     turn.finish_stale_gate = declared
     object.__setattr__(wf, "_tree_is_verify_green", MagicMock(return_value=green))
     reason = wf._finish_reason(turn, MagicMock(spec=_LoopState))  # pyright: ignore[reportPrivateUsage]

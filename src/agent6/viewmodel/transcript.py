@@ -46,13 +46,13 @@ OPERATOR = "❯"  # noqa: RUF001 -- deliberate prompt glyph, not a mistyped >
 # Tool names the loop treats as terminal; their call is folded into the final
 # verdict rather than shown as an ordinary step. Kept as literals so viewmodel
 # stays free of a tools import (layering).
-_FINISH_TOOLS = frozenset({"finish_run", "finish_planning"})
+_FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
 # Friendly word for a session.end reason on the terminal/TUI "done" line, so a stop
 # reads as "stopped" (not the raw "steer_abort") and an error names itself.
 _END_REASON_LABEL = {
     "steer_abort": "stopped",
-    "finish_run": "finished",
+    "finish_session": "finished",
     "answered": "answered",
     "provider_error": "provider error",
     "budget_exhausted": "budget exhausted",
@@ -289,9 +289,9 @@ class TranscriptFold:
             counts = f"{tools} · {commits}"
             reason = str(event.get("reason", ""))
             # Pair the finish summary with the done line ONLY on a clean finish.
-            # On a failure/stop the summary is from an EARLIER finish_run call and
+            # On a failure/stop the summary is from an EARLIER finish_session call and
             # pairing it (e.g. "provider error  Plan seeded.") misreads as success.
-            body = self._finish if reason in ("", "finish_run") else ""
+            body = self._finish if reason in ("", "finish_session") else ""
             out.append(
                 TranscriptItem(
                     "done",

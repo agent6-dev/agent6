@@ -333,7 +333,7 @@ class MetricResult(ToolResult):
 
 
 @dataclass(frozen=True, slots=True)
-class FinishRunResult(ToolResult):
+class FinishSessionResult(ToolResult):
     summary_text: str
     result: dict[str, Any] | None
     stale_gate: str = ""

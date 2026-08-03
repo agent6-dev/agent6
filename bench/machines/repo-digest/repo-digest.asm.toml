@@ -63,7 +63,7 @@ Here are the {{ count }} most recent commits in range {{ range }}:
 
 {{ log }}
 
-Write a short digest a teammate could skim. Call finish_run with JSON
+Write a short digest a teammate could skim. Call finish_session with JSON
 {headline: "<one line>", highlights: ["<bullet>", ...]} (2-5 highlights).
 """
 output_schema = "digest"

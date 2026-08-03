@@ -27,8 +27,8 @@ from agent6.tools.schema import (
 )
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_tool_schemas.json"
-# The loop-only control tools (finish_run, run_metric, dag_*, memory, use_skill),
-# plan's finish_planning, ask's agent6_docs, and machine's finish_run -- the
+# The loop-only control tools (finish_session, run_metric, dag_*, memory, use_skill),
+# plan's finish_planning, ask's agent6_docs, and machine's finish_session -- the
 # LLM-facing surface OUTSIDE ALL_TOOLS that schemas_as_provider_tools() (and so
 # _GOLDEN) does not cover. Pinned as a deduped, name-sorted digest.
 _GOLDEN_EXTRA = Path(__file__).parent / "data" / "golden_extra_tool_schemas.json"
@@ -71,7 +71,7 @@ def _digest() -> list[dict[str, Any]]:
 
 def _extra_digest() -> list[dict[str, Any]]:
     """Structural digest of every tool OUTSIDE ALL_TOOLS, deduped by name (dag_*
-    appear in both LOOP and PLAN; finish_run in both LOOP and MACHINE) and sorted,
+    appear in both LOOP and PLAN; finish_session in both LOOP and MACHINE) and sorted,
     so the pin is order-independent of the tuples."""
     by_name: dict[str, dict[str, Any]] = {}
     for cls in (*LOOP_EXTRA_TOOLS, *PLAN_EXTRA_TOOLS, *ASK_EXTRA_TOOLS, *MACHINE_EXTRA_TOOLS):

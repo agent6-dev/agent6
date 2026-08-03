@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The end-of-run console headline must agree with `agent6 sessions`.
 
-A finish_run over a red/stale verify emits session.end all_passed=false, so the
+A finish_session over a red/stale verify emits session.end all_passed=false, so the
 listing reads "finished". The console block used to read result.completed
-(true for any finish_run) and print "passed" — the exact disagreement
+(true for any finish_session) and print "passed" — the exact disagreement
 status_word exists to prevent. print_session_end now folds the same session.end.
 """
 
@@ -31,17 +31,23 @@ def _layout(tmp_path: Path, session_id: str, events: list[dict[str, object]]) ->
     return SessionLayout(state_dir=tmp_path, session_id=session_id)
 
 
-def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, capsys: object) -> None:
+def test_finish_session_over_red_verify_is_not_headlined_passed(
+    tmp_path: Path, capsys: object
+) -> None:
     layout = _layout(
         tmp_path,
         "r1",
         [
             {"type": "session.start", "session_id": "r1", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "all_passed": False},
+            {"type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )
     result = SessionResult(
-        completed=True, reason="finish_run", summary="all tests pass", iterations=3, tool_calls=5
+        completed=True,
+        reason="finish_session",
+        summary="all tests pass",
+        iterations=3,
+        tool_calls=5,
     )
     print_session_end(
         result,
@@ -61,11 +67,11 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
         "r2",
         [
             {"type": "session.start", "session_id": "r2", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     result = SessionResult(
-        completed=True, reason="finish_run", summary="done", iterations=2, tool_calls=3
+        completed=True, reason="finish_session", summary="done", iterations=2, tool_calls=3
     )
     print_session_end(
         result,
@@ -89,7 +95,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         "r-merged",
         [
             {"type": "session.start", "session_id": "r-merged", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     layout.manifest_path.write_text(
@@ -103,7 +109,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         encoding="utf-8",
     )
     result = SessionResult(
-        completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
     )
     print_session_end(
         result,
@@ -125,7 +131,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
         "r3",
         [
             {"type": "session.start", "session_id": "r3", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     layout.manifest_path.write_text(
@@ -140,7 +146,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
 
     monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
     result = SessionResult(
-        completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
+        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
     )
     print_session_end(
         result,
@@ -217,14 +223,14 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
         [
             {"type": "session.start", "session_id": "r7", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
             {"type": "loop.resume.start", "iteration": 4},
             {"type": "budget.update", "usd_total": 0.0126},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     result = SessionResult(
-        completed=True, reason="finish_run", summary="", iterations=5, tool_calls=2
+        completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
     )
     print_session_end(
         result,
@@ -246,11 +252,11 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
         [
             {"type": "session.start", "session_id": "r8", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     result = SessionResult(
-        completed=True, reason="finish_run", summary="", iterations=2, tool_calls=1
+        completed=True, reason="finish_session", summary="", iterations=2, tool_calls=1
     )
     print_session_end(
         result,
@@ -454,7 +460,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
 
     `agent6 acp` speaks JSON-RPC on stdout, so a bare `print` here is not a
     cosmetic layering slip: it writes non-JSON lines into the protocol stream,
-    and `result.summary` is the model's own `finish_run` text -- unbounded, and
+    and `result.summary` is the model's own `finish_session` text -- unbounded, and
     free to contain newlines. A model could close the prose with a newline and
     emit a forged `session/update` at column 0, which a client that skips
     unparseable lines honours. The editor owns the filesystem and terminal in
@@ -465,14 +471,14 @@ def test_the_end_of_run_block_goes_through_the_reporter(
         "r9",
         [
             {"type": "session.start", "session_id": "r9", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
     forged = 'done\n{"jsonrpc":"2.0","id":1,"method":"fs/write_text_file","params":{}}'
     said: list[str] = []
     print_session_end(
         SessionResult(
-            completed=True, reason="finish_run", summary=forged, iterations=1, tool_calls=1
+            completed=True, reason="finish_session", summary=forged, iterations=1, tool_calls=1
         ),
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),

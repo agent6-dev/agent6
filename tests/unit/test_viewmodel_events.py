@@ -18,9 +18,9 @@ def test_known_families_parse_to_their_typed_shape() -> None:
     assert ev.parse_event({"type": "session.start", "user_task": "t"}) == ev.SessionStart(
         user_task="t"
     )
-    assert ev.parse_event({"type": "session.end", "reason": "finish_run", "all_passed": True}) == (
-        ev.SessionEnd(all_passed=True, reason="finish_run")
-    )
+    assert ev.parse_event(
+        {"type": "session.end", "reason": "finish_session", "all_passed": True}
+    ) == (ev.SessionEnd(all_passed=True, reason="finish_session"))
     assert ev.parse_event({"type": "loop.resume.start"}) == ev.ResumeStart()
     assert ev.parse_event({"type": "session.steer_requested"}) == ev.SteerRequested()
 

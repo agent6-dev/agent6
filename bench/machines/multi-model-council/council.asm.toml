@@ -36,7 +36,7 @@ temperature = 0.0
 prompt = """
 You are juror A. Answer this question, reasoning carefully first:
 {{ question }}
-Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
+Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_a" }
@@ -51,7 +51,7 @@ temperature = 0.0
 prompt = """
 You are juror B. Answer this question, reasoning carefully first:
 {{ question }}
-Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
+Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_b" }
@@ -78,7 +78,7 @@ Juror A said: {{ verdict_a | json }}
 Juror B said: {{ verdict_b | json }}
 
 You are the senior tiebreaker. Decide the correct answer.
-Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<why>"}.
+Call finish_session with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<why>"}.
 """
 output_schema = "verdict"
 capture = { finish_json = "verdict_c" }

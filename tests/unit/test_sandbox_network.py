@@ -123,7 +123,7 @@ def test_run_one_returns_finish_payload(
 
         def run(self, _prompt: str) -> SessionResult:
             return SessionResult(
-                reason="finish_run",
+                reason="finish_session",
                 completed=True,
                 summary="done",
                 iterations=1,
@@ -148,7 +148,7 @@ def test_run_one_returns_finish_payload(
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
     )
     out = machine_agent.run_one(req)
-    assert out.reason == "finish_run"
+    assert out.reason == "finish_session"
     assert out.payload == {"label": "ok"}
 
 
@@ -162,7 +162,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
         def run(self, _prompt: str) -> SessionResult:
             return SessionResult(
-                reason="finish_run",
+                reason="finish_session",
                 completed=True,
                 summary="d",
                 iterations=1,
@@ -231,7 +231,7 @@ def test_run_one_exports_commit_identity(
         ),
     )
     out = machine_agent.run_one(req)
-    assert out.reason == "finish_run"
+    assert out.reason == "finish_session"
     assert os.environ["GIT_AUTHOR_NAME"] == "Machine Bot"
     assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"
     assert os.environ["GIT_AUTHOR_EMAIL"] == "bot@example.com"

@@ -55,7 +55,7 @@ def _make_run(tmp_path: Path) -> str:
                 json.dumps({"type": "session.start", "user_task": "make x equal 2"}),
                 json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
                 json.dumps({"type": "verify.end", "exit_code": 0}),
-                json.dumps({"type": "session.end", "reason": "finish_run", "iterations": 3}),
+                json.dumps({"type": "session.end", "reason": "finish_session", "iterations": 3}),
             ]
         )
         + "\n",
@@ -73,7 +73,7 @@ def test_ask_run_digest_includes_task_diff_and_outcome(
     assert digest is not None
     assert "make x equal 2" in digest  # the run's task
     assert "changed by the run" in digest  # the diff
-    assert "reason=finish_run" in digest  # the outcome
+    assert "reason=finish_session" in digest  # the outcome
     assert rid in digest  # identifies the prior run
     # Run state is out of the workspace; the digest says so rather than pointing
     # the jailed worker at unreachable paths.
@@ -485,7 +485,7 @@ def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: st
         encoding="utf-8",
     )
     (d / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_run", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
         encoding="utf-8",
     )
 

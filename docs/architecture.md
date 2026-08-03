@@ -74,7 +74,7 @@ stateDiagram-v2
     dispatch --> snapshot: non-terminal tool
     dispatch --> commit: run_verify_command (exit 0)
     commit --> snapshot
-    dispatch --> [*]: finish_run
+    dispatch --> [*]: finish_session
 ```
 
 Notes:
@@ -108,7 +108,7 @@ Notes:
   a long task. Each turn it surfaces the current task -- the cursor when it
   still points at an open subtask, else the first dependency-satisfied
   pending subtask -- into the prompt, advances the cursor as tasks pass,
-  and marks the surfaced task `in_progress`. It also refuses `finish_run`
+  and marks the surfaced task `in_progress`. It also refuses `finish_session`
   while the worker's own subtasks are still open (capped, so a task it
   cannot close cannot stall the run forever). The surfaced banner survives
   tier-1 elision and is re-injected after each tier-2 restart, so the
@@ -162,7 +162,7 @@ Notes:
   the rest of its system prompt. Because models never call `add_memory`
   unprompted (measured: 46 bench legs, zero calls), the loop surfaces it
   twice: an advisory when verify first goes green after a red one, and a
-  once-deferred `finish_run` after such a recovery if nothing was
+  once-deferred `finish_session` after such a recovery if nothing was
   recorded. Each fires at most once per run and never on a run whose
   verify never failed. `agent6 memory pin <id>` exempts a load-bearing
   entry from the block's newest-win trim (never from the byte bound:
@@ -175,7 +175,7 @@ Notes:
   Run mode only. Delivery is measured, not assumed: small models never call
   `use_skill` from the index alone, so the reliable paths are `always`,
   `/name` in the pause menu, and `run --skill` (see docs/config.md).
-- **`finish_run(summary)`** is the only terminal tool. Calling it
+- **`finish_session(summary)`** is the only terminal tool. Calling it
   emits a `session.end` event and returns control to the CLI.
 
 ## Workflow: `review`

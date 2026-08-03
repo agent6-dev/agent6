@@ -39,7 +39,7 @@ detected the bad output, re-prompted, and after 4 attempts failed cleanly with a
 precise diagnostic:
 
 - **gpt-oss-120b** `silent_finish`ed every attempt: it answered in prose instead
-  of calling `finish_run`, so no `result.toml` was ever returned. (The harmony
+  of calling `finish_session`, so no `result.toml` was ever returned. (The harmony
   format does not reliably emit tool calls in this headless structured-output
   loop.)
 - **deepseek-v3.2** double-encoded the payload: it returned `result` as a

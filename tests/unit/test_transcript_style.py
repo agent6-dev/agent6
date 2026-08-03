@@ -107,7 +107,7 @@ def test_every_line_is_a_single_line() -> None:
     multi = "first thought\nsecond thought\nthird"
     for item in (
         TranscriptItem("thinking", body=multi),
-        TranscriptItem("done", ok=True, body="all good\non two lines", detail="finish_run"),
+        TranscriptItem("done", ok=True, body="all good\non two lines", detail="finish_session"),
     ):
         for detail in ("expanded", "collapsed", "hidden"):
             for line in item_lines(item, detail=detail):  # type: ignore[arg-type]

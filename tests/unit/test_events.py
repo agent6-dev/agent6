@@ -73,7 +73,7 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: Path) -> None:
     seen: list[dict[str, object]] = []
     sink.subscribe(seen.append)
     with pytest.raises(EventWriteError, match="unwritable"):
-        sink.emit("session.end", reason="finish_run", all_passed=True)
+        sink.emit("session.end", reason="finish_session", all_passed=True)
     assert seen == []
     sink.emit("role.text_delta", text="still live")  # ephemeral: must not raise
     assert [e["type"] for e in seen] == ["role.text_delta"]

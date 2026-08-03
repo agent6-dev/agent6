@@ -98,7 +98,7 @@ Typed tool-handler results: every handler returns one of these frozen values ins
 
 **ToolResult** &mdash; One tool handler's typed result: it owns the model-facing `to_wire()` dict and its one-line `summary()`.
 
-Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `GrepResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishRunResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `SetCursorResult`, `AddDependencyResult`, `ListTasksResult`, `AddMemoryResult`, `InvalidateMemoryResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
+Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `GrepResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `SetCursorResult`, `AddDependencyResult`, `ListTasksResult`, `AddMemoryResult`, `InvalidateMemoryResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _memory_tools, _nav_tools}
 - **Read by:** tools/{dispatch}, workflows/{_review, _toolset, loop}

@@ -21,7 +21,7 @@ from agent6.tools.schema import (
     ApplyPatchInput,
     DagAddTaskInput,
     FinishPlanningInput,
-    FinishRunInput,
+    FinishSessionInput,
     ReadFileInput,
     RunCommandInput,
 )
@@ -94,10 +94,10 @@ def test_finish_planning_fields_are_documented_in_the_schema() -> None:
     assert "NOT the plan" in props["summary"]["description"]
 
 
-def test_plan_extra_tools_includes_finish_planning_excludes_finish_run() -> None:
+def test_plan_extra_tools_includes_finish_planning_excludes_finish_session() -> None:
     names = {t.TOOL_NAME for t in PLAN_EXTRA_TOOLS}
     assert FinishPlanningInput.TOOL_NAME in names
-    assert FinishRunInput.TOOL_NAME not in names
+    assert FinishSessionInput.TOOL_NAME not in names
 
 
 # --- dispatcher ---------------------------------------------------------
@@ -122,17 +122,17 @@ def test_dispatch_finish_planning_rejects_empty(tmp_path: Path) -> None:
         d.dispatch("finish_planning", {"summary": "", "plan_markdown": "x"})
 
 
-def test_dispatch_finish_run_echoes_structured_result(tmp_path: Path) -> None:
+def test_dispatch_finish_session_echoes_structured_result(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("finish_run", {"summary": "done", "result": {"approved": True}}).to_wire()
+    out = d.dispatch("finish_session", {"summary": "done", "result": {"approved": True}}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": {"approved": True}}
 
 
-def test_dispatch_finish_run_result_defaults_none(tmp_path: Path) -> None:
+def test_dispatch_finish_session_result_defaults_none(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("finish_run", {"summary": "done"}).to_wire()
+    out = d.dispatch("finish_session", {"summary": "done"}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": None}
 
 
@@ -158,7 +158,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
 
 def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Path) -> None:
     custom = tmp_path / "prompt.txt"
-    custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_run.</role>", encoding="utf-8")
+    custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_session.</role>", encoding="utf-8")
     cfg = Config.model_validate({"prompt": {"system_prompt_file": str(custom)}})
     repo = RepoSummary(
         root=tmp_path,
@@ -241,7 +241,7 @@ def testwarn_if_prompt_override_incomplete(
     from agent6.app.preflight import warn_if_prompt_override_incomplete
 
     good = tmp_path / "good.txt"
-    good.write_text("use apply_edit and call finish_run when done", encoding="utf-8")
+    good.write_text("use apply_edit and call finish_session when done", encoding="utf-8")
     bad = tmp_path / "bad.txt"
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
@@ -254,7 +254,7 @@ def testwarn_if_prompt_override_incomplete(
         Config.model_validate({"prompt": {"system_prompt_file": str(bad)}})
     )
     err = capsys.readouterr().err
-    assert "finish_run" in err and "apply_edit/apply_patch" in err
+    assert "finish_session" in err and "apply_edit/apply_patch" in err
     # no override -> silent
     warn_if_prompt_override_incomplete(Config())
     assert capsys.readouterr().err == ""
@@ -320,7 +320,7 @@ def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
     names = {t.name for t in defs}
     assert ApplyEditInput.TOOL_NAME not in names
     assert ApplyPatchInput.TOOL_NAME not in names
-    assert FinishRunInput.TOOL_NAME not in names
+    assert FinishSessionInput.TOOL_NAME not in names
     assert FinishPlanningInput.TOOL_NAME in names
 
 
@@ -331,13 +331,13 @@ def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
     names = {t.name for t in defs}
     assert ApplyEditInput.TOOL_NAME in names
     assert ApplyPatchInput.TOOL_NAME in names
-    assert FinishRunInput.TOOL_NAME in names
+    assert FinishSessionInput.TOOL_NAME in names
     assert FinishPlanningInput.TOOL_NAME not in names
 
 
 def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path: Path) -> None:
-    # machine authoring + machine agent-state: read-only navigation + finish_run,
-    # NO edit/patch/verify/run_command/DAG (the deliverable is a finish_run result).
+    # machine authoring + machine agent-state: read-only navigation + finish_session,
+    # NO edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)
@@ -345,7 +345,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path:
     for mode in ("machine", "agent"):
         names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert ReadFileInput.TOOL_NAME in names, mode
-        assert FinishRunInput.TOOL_NAME in names, mode
+        assert FinishSessionInput.TOOL_NAME in names, mode
         assert ApplyEditInput.TOOL_NAME not in names, mode
         assert ApplyPatchInput.TOOL_NAME not in names, mode
         assert RunCommandInput.TOOL_NAME not in names, mode
@@ -416,7 +416,7 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
 
 def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) -> None:
     # ask: read tools + run_command (when the config allows it), but NO edits and
-    # NO control tools (no finish_run/finish_planning/DAG) -- it silent-finishes.
+    # NO control tools (no finish_session/finish_planning/DAG) -- it silent-finishes.
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)
@@ -426,7 +426,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) ->
     assert RunCommandInput.TOOL_NAME in names  # can run commands to investigate
     assert ApplyEditInput.TOOL_NAME not in names  # but not edit
     assert ApplyPatchInput.TOOL_NAME not in names
-    assert FinishRunInput.TOOL_NAME not in names
+    assert FinishSessionInput.TOOL_NAME not in names
     assert FinishPlanningInput.TOOL_NAME not in names
     assert DagAddTaskInput.TOOL_NAME not in names
     assert "agent6_docs" in names  # self-help is available in ask mode

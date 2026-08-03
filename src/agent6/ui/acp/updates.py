@@ -80,7 +80,7 @@ def updates_for(
 def _ending(item: TranscriptItem) -> str:
     """How a run ended, in words.
 
-    The fold sets `body` only for a clean `finish_run`, carrying everything
+    The fold sets `body` only for a clean `finish_session`, carrying everything
     else in `ok`/`name`/`detail`. Reading `body` alone made a provider error, a
     budget stop and an iteration cap render as SILENCE -- an editor watching a
     run that simply stops -- and made a finish over a red gate look identical

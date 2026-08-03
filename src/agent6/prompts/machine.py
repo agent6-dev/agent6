@@ -91,7 +91,7 @@ grammar. Terminal states end the machine.
     # OMIT it unless you must pin a specific one, a hardcoded model the
     # operator hasn't configured passes `machine check` but dies at run time.
     prompt = "Review the change and return a verdict."
-    output_schema = "verdict"                # finish_run payload validated against this
+    output_schema = "verdict"                # finish_session payload validated against this
     capture = { finish_json = "verdict" }    # whole payload -> a [vars.agent] var
     # or: capture = { set = { total = "{{ result.points }}" } }  # one field
     timeout_secs = 600
@@ -100,7 +100,7 @@ grammar. Terminal states end the machine.
   agent labels are exactly: ok, failed, budget_exhausted, timeout.
   An agent state may write ONLY [vars.agent] vars.
   By default an agent state is a READ-ONLY structured-output judge (classify /
-  score / decide -> a finish_run result; it cannot edit the repo). For a state
+  score / decide -> a finish_session result; it cannot edit the repo). For a state
   that must do real coding work, add `mode = "run"` to give it the full edit /
   verify / commit tool set.
 

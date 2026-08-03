@@ -6,7 +6,7 @@
 a `.asm.toml` state machine from a natural-language task. This module holds
 the prompt-assembly pieces of that flow: the per-attempt draft→check→fix
 prompt (built around the grammar reference in `agent6.prompts.machine`) and
-the extractor that pulls the drafted source out of the `finish_run` payload.
+the extractor that pulls the drafted source out of the `finish_session` payload.
 
 It deliberately imports nothing from the workflow stack, the orchestration
 (running the agent loop, validating with `load_machine`, writing the draft)
@@ -67,7 +67,7 @@ def build_authoring_prompt(
     parts += [
         "## How to return it",
         "",
-        "Do NOT write any files. When the machine is complete, call `finish_run`"
+        "Do NOT write any files. When the machine is complete, call `finish_session`"
         " with a `result` object containing BOTH:",
         f"  - `{TOML_PAYLOAD_KEY}`: the entire `.asm.toml` source as a single string.",
         f"  - `{SCRIPTS_PAYLOAD_KEY}`: an object mapping EACH `scripts/...` path your"
@@ -122,7 +122,7 @@ def build_authoring_prompt(
 
 
 def extract_toml(payload: dict[str, Any] | None) -> str | None:
-    """Pull the drafted `.asm.toml` source out of a `finish_run` payload.
+    """Pull the drafted `.asm.toml` source out of a `finish_session` payload.
 
     Returns the source string, or ``None`` if the agent did not return a
     non-empty ``toml`` string (the caller turns that into a diagnostic and
@@ -137,7 +137,7 @@ def extract_toml(payload: dict[str, Any] | None) -> str | None:
 
 
 def extract_scripts(payload: dict[str, Any] | None) -> dict[str, str]:
-    """Pull the helper-script bundle out of a `finish_run` payload.
+    """Pull the helper-script bundle out of a `finish_session` payload.
 
     Returns a {bundle-relative-path: content} map, keeping only safe entries:
     a path under `scripts/`, relative (not absolute), with no `..` segment, and

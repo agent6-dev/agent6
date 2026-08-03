@@ -63,7 +63,7 @@ Item ({{ head }}):
 ---
 {{ head_text }}
 ---
-Call finish_run with JSON {label: "urgent"|"normal"|"spam", confidence: 0..1}.
+Call finish_session with JSON {label: "urgent"|"normal"|"spam", confidence: 0..1}.
 """
 output_schema = "classification"
 capture = { finish_json = "verdict" }

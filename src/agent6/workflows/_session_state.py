@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 # was asked, ui/cli/_ask.py). Typed so a new outcome must be declared here
 # before a SessionResult can carry it.
 SessionEndReason = Literal[
-    "finish_run",
+    "finish_session",
     "finish_planning",
     "answered",  # ask mode: the final prose IS the answer (a normal, successful end)
     "silent_finish",
@@ -49,7 +49,7 @@ SessionEndReason = Literal[
 
 # Whether the verify gate was green when the run ended, on its own axis: a
 # deliberate finish and a verified one are different facts, and collapsing them
-# into ``completed`` made a finish_run over a red verify exit 0 and auto-merge.
+# into ``completed`` made a finish_session over a red verify exit 0 and auto-merge.
 # ``not_applicable`` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
 Verification = Literal["passed", "failed", "not_applicable"]
@@ -60,7 +60,7 @@ class SessionResult:
     """Final state of a session.
 
     ``reason`` values (each constructed in loop.py):
-      finish_run        - agent called the finish_run tool explicitly.
+      finish_session        - agent called the finish_session tool explicitly.
       finish_planning   - plan-mode agent called the finish_planning tool.
       silent_finish     - agent emitted text but no tool_use (talking).
       went_quiet        - agent emitted neither text nor tool_use.

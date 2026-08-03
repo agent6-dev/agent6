@@ -28,7 +28,7 @@ def _result(
 
 
 def test_exit_code_success_is_zero() -> None:
-    assert session_exit_code(_result(completed=True, reason="finish_run")) == 0
+    assert session_exit_code(_result(completed=True, reason="finish_session")) == 0
 
 
 def test_exit_code_budget_exhausted_is_three() -> None:
@@ -43,15 +43,19 @@ def test_exit_code_other_failures_are_one() -> None:
 
 def test_exit_code_finish_over_a_red_verify_is_four() -> None:
     """`completed` means the agent stopped deliberately, not that the work
-    verified: a finish_run over a red or stale gate exited 0 and read as
+    verified: a finish_session over a red or stale gate exited 0 and read as
     success to every script. Its own code, distinct from a broken run (1)."""
-    assert session_exit_code(_result(completed=True, reason="finish_run", verified="failed")) == 4
+    assert (
+        session_exit_code(_result(completed=True, reason="finish_session", verified="failed")) == 4
+    )
     assert session_exit_code(_result(completed=True, reason="settled", verified="failed")) == 4
 
 
 def test_exit_code_verified_finish_is_zero() -> None:
     # Green, and gateless (nothing to verify) -- both are exit 0.
-    assert session_exit_code(_result(completed=True, reason="finish_run", verified="passed")) == 0
+    assert (
+        session_exit_code(_result(completed=True, reason="finish_session", verified="passed")) == 0
+    )
     assert (
         session_exit_code(_result(completed=True, reason="settled", verified="not_applicable")) == 0
     )

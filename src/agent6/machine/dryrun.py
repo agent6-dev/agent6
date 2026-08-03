@@ -6,7 +6,7 @@ Pure validation of a loaded :class:`MachineSpec` with **no** real-world I/O,
 no jail, no network, no provider calls, no clock. Two passes:
 
 - **Per-state**: synthesize the success fact each non-branch state would emit
-  (a tool's ``output_schema``-shaped JSON / an agent's ``finish_run`` payload),
+  (a tool's ``output_schema``-shaped JSON / an agent's ``finish_session`` payload),
   push it through the real :func:`agent6.machine.engine.reduce`, and confirm the
   capture binds cleanly and the produced label routes to a declared state.
 - **Per-branch**: evaluate every ``when`` clause against an operator-supplied
@@ -149,11 +149,11 @@ def _check_agent(
 ) -> StateCheck:
     payload = synthesize_record(spec, state.output_schema)
     problems = validate_record_payload(
-        spec, state.output_schema, payload, where="finish_run payload"
+        spec, state.output_schema, payload, where="finish_session payload"
     )
     if problems:  # pragma: no cover - synthesis is schema-valid by construction
         return StateCheck(name, "agent", False, "ok", None, "; ".join(problems))
-    fact = AgentFact(outcome="ok", reason="finish_run", payload=payload)
+    fact = AgentFact(outcome="ok", reason="finish_session", payload=payload)
     reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
     if goto not in spec.states:

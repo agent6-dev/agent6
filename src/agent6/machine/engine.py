@@ -15,7 +15,7 @@ returned blackboard replaces the current one.
   ``World`` at all, reproducing the recorded path offline for backtesting.
 
 The ``agent`` kind runs a normal agent6 loop through an injected
-:class:`World.run_agent` and captures the schema-validated ``finish_run``
+:class:`World.run_agent` and captures the schema-validated ``finish_session``
 payload into the blackboard; ``tool``/``branch``/``wait``/``terminal`` are
 fully deterministic.
 """
@@ -164,9 +164,9 @@ class AgentRequest(BaseModel):
 class AgentExecResult(BaseModel):
     """The observable result of one agent loop.
 
-    ``reason`` is the agent loop's stop reason (e.g. ``"finish_run"``,
+    ``reason`` is the agent loop's stop reason (e.g. ``"finish_session"``,
     ``"budget_exhausted"``, ``"timeout"``, ``"max_iterations"``); ``payload`` is
-    the structured object the agent passed to ``finish_run`` (``None`` if it
+    the structured object the agent passed to ``finish_session`` (``None`` if it
     never called it or passed no structured result). ``usd`` and the token
     counts report the slice this agent loop spent, summed into machine-level
     spend for ``machine status`` (§6).
@@ -192,7 +192,7 @@ class AgentExecResult(BaseModel):
     @field_validator("payload")
     @classmethod
     def _scrub_payload(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        """The payload is the model's `finish_run` arguments, parsed by
+        """The payload is the model's `finish_session` arguments, parsed by
         `json.loads`, which accepts a lone surrogate that `model_dump_json`
         then refuses. The subprocess writes `result.json` with exactly that
         call, so an unscrubbed payload killed it before the write and the host
@@ -472,7 +472,7 @@ def _apply_capture(
     # nonconforming value (a str where the schema says int) silently corrupts the
     # blackboard and misroutes downstream branches. Raised as a StateRuntimeError
     # so _step halts cleanly before journaling a poison fact, exactly like the
-    # invalid-JSON case above and the agent finish_run path. output_schema is
+    # invalid-JSON case above and the agent finish_session path. output_schema is
     # optional on a tool (unlike an agent state); a schema-less tool declares no
     # shape, so there is nothing to check.
     if state.output_schema is not None:
@@ -621,9 +621,9 @@ def _agent_outcome(
         return "budget_exhausted"
     if result.reason == "timeout":
         return "timeout"
-    if result.reason == "finish_run" and result.payload is not None:
+    if result.reason == "finish_session" and result.payload is not None:
         problems = validate_record_payload(
-            spec, state.output_schema, result.payload, where="finish_run payload"
+            spec, state.output_schema, result.payload, where="finish_session payload"
         )
         if not problems:
             return "ok"

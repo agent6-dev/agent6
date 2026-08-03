@@ -48,7 +48,7 @@ _EVENTS: list[dict[str, object]] = [
     {"type": "role.result", "role": "worker"},
     {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-    {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+    {"type": "session.end", "all_passed": True, "reason": "finish_session"},
 ]
 
 

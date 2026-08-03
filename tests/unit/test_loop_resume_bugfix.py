@@ -278,7 +278,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -287,7 +287,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
                 {
                     "type": "tool_use",
                     "id": "t1",
-                    "name": "finish_run",
+                    "name": "finish_session",
                     "input": {"summary": "done"},
                 }
             ]
@@ -327,7 +327,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         ),
     )
     assert result.completed is True
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     # The early-finish guard consulted the restored at-ceiling history.
     assert captured.get("at_ceiling") is True
 
@@ -357,7 +357,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -366,7 +366,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
                 {
                     "type": "tool_use",
                     "id": "t1",
-                    "name": "finish_run",
+                    "name": "finish_session",
                     "input": {"summary": "done"},
                 }
             ]
@@ -435,13 +435,18 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
         raw={
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "done"}}
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "done"},
+                }
             ]
         },
     )
@@ -481,13 +486,18 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
         raw={
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "d"}}
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "d"},
+                }
             ]
         },
     )
@@ -542,7 +552,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     )
     provider = MagicMock()
     # Iter 1: a run_command tool_use (non-idempotent side effect).
-    # Iter 2: finish_run.
+    # Iter 2: finish_session.
     provider.call.side_effect = [
         SimpleNamespace(
             text="",
@@ -563,7 +573,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         ),
         SimpleNamespace(
             text="",
-            tool_uses=({"id": "f1", "name": "finish_run", "input": {"summary": "done"}},),
+            tool_uses=({"id": "f1", "name": "finish_session", "input": {"summary": "done"}},),
             stop_reason="tool_use",
             input_tokens=1,
             output_tokens=1,
@@ -572,7 +582,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
                     {
                         "type": "tool_use",
                         "id": "f1",
-                        "name": "finish_run",
+                        "name": "finish_session",
                         "input": {"summary": "x"},
                     }
                 ]
@@ -768,11 +778,11 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
-        raw={"content": [{"type": "tool_use", "id": "t1", "name": "finish_run", "input": {}}]},
+        raw={"content": [{"type": "tool_use", "id": "t1", "name": "finish_session", "input": {}}]},
     )
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"ok": True})
@@ -853,7 +863,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     provider = MagicMock()
     provider.call.return_value = ProviderResponse(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -861,7 +871,12 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         cache_creation_tokens=0,
         raw={
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "d"}}
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "d"},
+                }
             ]
         },
     )
@@ -912,7 +927,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     provider = MagicMock()
     provider.call.return_value = ProviderResponse(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "d"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "d"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
@@ -920,7 +935,12 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         cache_creation_tokens=0,
         raw={
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "d"}}
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "d"},
+                }
             ]
         },
     )
@@ -991,13 +1011,18 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
         text="",
-        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        tool_uses=({"id": "t1", "name": "finish_session", "input": {"summary": "done"}},),
         stop_reason="tool_use",
         input_tokens=1,
         output_tokens=1,
         raw={
             "content": [
-                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "done"}}
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "finish_session",
+                    "input": {"summary": "done"},
+                }
             ]
         },
     )

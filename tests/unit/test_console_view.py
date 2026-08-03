@@ -29,7 +29,7 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
             {"type": "role.result", "role": "worker"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ]
     )
     assert "fix the failing test" in out

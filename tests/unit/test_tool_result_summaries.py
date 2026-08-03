@@ -37,7 +37,7 @@ from agent6.tools.results import (
     ExecResult,
     FetchResult,
     FinishPlanningResult,
-    FinishRunResult,
+    FinishSessionResult,
     GrepResult,
     InvalidateMemoryResult,
     ListDirResult,
@@ -173,7 +173,7 @@ CASES: list[tuple[str, ToolResult, str]] = [
         "exit=0 in 0.5s",
     ),
     # run control
-    ("finish_run", FinishRunResult(summary_text="done", result=None), "ok"),
+    ("finish_session", FinishSessionResult(summary_text="done", result=None), "ok"),
     ("finish_planning", FinishPlanningResult(summary_text="s", plan_bytes=7), "ok"),
     ("ask_user", AnswersResult(answers=("yes", "", " ", "no")), "2/4 answered"),
     # DAG

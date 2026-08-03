@@ -184,7 +184,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
         return no_verify[end_reason]
     if all_passed:
         return "passed", ""
-    if end_reason and end_reason != "finish_run":
+    if end_reason and end_reason != "finish_session":
         return "failed", end_reason
     return "finished", ""
 

@@ -74,7 +74,7 @@ def _golden_events() -> list[object]:
             goto="stop_ok",
             fact=AgentFact(
                 outcome="ok",
-                reason="finish_run",
+                reason="finish_session",
                 payload={"approved": True},
                 usd=0.25,
                 input_tokens=1000,
@@ -288,7 +288,7 @@ def test_agent_fact_roundtrip(tmp_path: Path) -> None:
             goto="route",
             fact=AgentFact(
                 outcome="ok",
-                reason="finish_run",
+                reason="finish_session",
                 payload={"approved": True, "note": "lgtm"},
             ),
         )
@@ -299,7 +299,7 @@ def test_agent_fact_roundtrip(tmp_path: Path) -> None:
     assert isinstance(step, StepEvent)
     assert isinstance(step.fact, AgentFact)
     assert step.fact.outcome == "ok"
-    assert step.fact.reason == "finish_run"
+    assert step.fact.reason == "finish_session"
     assert step.fact.payload == {"approved": True, "note": "lgtm"}
 
 
@@ -315,7 +315,7 @@ def test_agent_fact_spend_roundtrip(tmp_path: Path) -> None:
             goto="route",
             fact=AgentFact(
                 outcome="ok",
-                reason="finish_run",
+                reason="finish_session",
                 payload=None,
                 usd=0.1234,
                 input_tokens=1500,
@@ -333,7 +333,7 @@ def test_agent_fact_spend_roundtrip(tmp_path: Path) -> None:
 
 
 def test_agent_fact_spend_defaults_to_zero(tmp_path: Path) -> None:
-    fact = AgentFact(outcome="ok", reason="finish_run", payload=None)
+    fact = AgentFact(outcome="ok", reason="finish_session", payload=None)
     assert fact.usd == 0.0
     assert fact.input_tokens == 0
     assert fact.output_tokens == 0

@@ -63,7 +63,7 @@ def task_prompt(task: str, module: str) -> str:
             f" and ref5.md (each holds one precise rule). Implement {module}.py to"
             " satisfy EVERY rule so ./verify.sh passes (stdlib unittest). Do not"
             " modify the test file or verify.sh. Run verify, fix what fails, and"
-            " call finish_run when the whole suite passes."
+            " call finish_session when the whole suite passes."
         )
     if task == "eventflow":
         return (
@@ -72,7 +72,7 @@ def task_prompt(task: str, module: str) -> str:
             " the code conforms to spec.md. ./verify.sh runs the committed unittest"
             " suite, but it covers only a SUBSET of the spec: a green suite does"
             " not mean the code is correct. Check every module against the spec."
-            " Do not modify test_eventflow.py or verify.sh. Call finish_run when"
+            " Do not modify test_eventflow.py or verify.sh. Call finish_session when"
             " you are confident the code matches the spec."
         )
     if task == "bugs":
@@ -81,14 +81,14 @@ def task_prompt(task: str, module: str) -> str:
             " bugs. Find and fix EVERY bug so that ./verify.sh passes (it runs the"
             " stdlib unittest suite). Check every function against the spec, not"
             " just the first failures. Do not modify the test file or verify.sh."
-            " Run verify, fix what fails, and call finish_run when the whole suite"
+            " Run verify, fix what fails, and call finish_session when the whole suite"
             " passes."
         )
     return (
         f"Read spec.md and fully implement {module}.py so that ./verify.sh passes"
         " (it runs the stdlib unittest suite). Implement EVERY component described"
         " in the spec, not just the first. Do not modify the test file or"
-        " verify.sh. Run verify, fix what fails, and call finish_run when the"
+        " verify.sh. Run verify, fix what fails, and call finish_session when the"
         " whole suite passes."
     )
 

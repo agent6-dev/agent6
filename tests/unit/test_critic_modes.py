@@ -69,8 +69,8 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
             original_task="t",
         )
     assert result.iterations == 5
-    assert result.reason == "finish_run"
-    # iters 2 and 4 trigger periodic critic. iter 5 is finish_run which
+    assert result.reason == "finish_session"
+    # iters 2 and 4 trigger periodic critic. iter 5 is finish_session which
     # under critic_mode=periodic is NOT gated -> total 2 critic calls.
     assert critic.call.call_count == 2
 
@@ -155,7 +155,7 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
         original_task="t",
     )
     assert result.iterations == 4
-    assert result.reason == "finish_run"
+    assert result.reason == "finish_session"
     assert critic.call.call_count == 1
     iter2_user_msg = conversation.to_wire()[4]
     text_blocks = [b for b in iter2_user_msg["content"] if b.get("type") == "text"]

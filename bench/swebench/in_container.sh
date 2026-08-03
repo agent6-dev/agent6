@@ -53,7 +53,7 @@ fi
 
 # Optional review panel (Fugu dimension). AGENT6_SB_REVIEW_SEATS is a
 # semicolon-separated list of "persona@provider/model" seats; when set the panel
-# reviews before finish_run and gates per AGENT6_SB_REVIEW_DECISION (default
+# reviews before finish_session and gates per AGENT6_SB_REVIEW_DECISION (default
 # quorum). Same-model vs distinct-model panels are just different seat lists.
 REVIEW_LINES=""
 if [ -n "${AGENT6_SB_REVIEW_SEATS:-}" ]; then

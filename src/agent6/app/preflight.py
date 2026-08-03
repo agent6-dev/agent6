@@ -65,7 +65,7 @@ def budget_preflight(cfg: Config) -> str | None:
 
 def warn_if_prompt_override_incomplete(cfg: Config) -> None:
     """Warn when a custom ``prompt.system_prompt_file`` omits the core tool
-    contracts the worker needs: ``finish_run`` is the only clean exit, and an
+    contracts the worker needs: ``finish_session`` is the only clean exit, and an
     edit primitive (``apply_edit``/``apply_patch``) is needed to do work. The
     override is advanced + operator-owned, so we don't block -- just flag the
     likely-broken case loudly and point at ``agent6 prompt show``."""
@@ -76,14 +76,14 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
         text = Path(path).expanduser().read_text(encoding="utf-8")
     except OSError:
         return  # config validation already enforces existence; nothing to add
-    missing = [t for t in ("finish_run",) if t not in text]
+    missing = [t for t in ("finish_session",) if t not in text]
     if "apply_edit" not in text and "apply_patch" not in text:
         missing.append("apply_edit/apply_patch")
     if missing:
         # Name every capability that is actually absent, not just one of them, so
-        # a prompt missing both finish_run AND an edit primitive reads correctly.
+        # a prompt missing both finish_session AND an edit primitive reads correctly.
         actions = []
-        if "finish_run" in missing:
+        if "finish_session" in missing:
             actions.append("terminate")
         if "apply_edit/apply_patch" in missing:
             actions.append("make edits")

@@ -133,7 +133,7 @@ poll_secs = { type = "int", value = 300 }
 pending = { type = "list[str]", default = [] }
 cursor  = { type = "str",       default = "" }
 
-[vars.agent]              # written by an agent state's validated finish_run
+[vars.agent]              # written by an agent state's validated finish_session
 verdict = { type = "classification", default = {} }  # a [schemas.*] record type
 
 [schemas.<name>]          # named record types; see 4.6
@@ -156,7 +156,7 @@ in, not a runtime convention.
 |-------------------|---------------------------------------------------|-------------------|---------------|---------|
 | `[vars.operator]` | the human, at author time                         | immutable at runtime | `value`    | `inbox_dir`, `poll_secs`, thresholds, an API base |
 | `[vars.code]`     | a `tool` state's `capture`                         | mutable (deterministic) | `default` | `pending`, `cursor` |
-| `[vars.agent]`    | an `agent` state's validated `finish_run` payload | mutable (LLM)     | `default`     | `verdict` (a `[schemas.*]` record) |
+| `[vars.agent]`    | an `agent` state's validated `finish_session` payload | mutable (LLM)     | `default`     | `verdict` (a `[schemas.*]` record) |
 
 Only `tool` states (into `[vars.code]`) and `agent` states (into
 `[vars.agent]`) ever mutate the blackboard; `branch`/`wait`/`terminal`
@@ -232,10 +232,10 @@ kind  = "agent"
 model = "inherit"                # default: the configured worker model; or pin any provider model
 prompt = """
 Classify the item at path {{ cursor }}.
-Call finish_run with JSON {label, confidence}.
+Call finish_session with JSON {label, confidence}.
 """
-output_schema = "classification"   # named schema in [schemas.*]; validates finish_run payload
-capture = { finish_json = "verdict" }   # parsed finish_run payload -> blackboard var `verdict`
+output_schema = "classification"   # named schema in [schemas.*]; validates finish_session payload
+capture = { finish_json = "verdict" }   # parsed finish_session payload -> blackboard var `verdict`
 timeout_secs = 600
 on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
 
@@ -251,16 +251,16 @@ on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll
 An `agent` state spins up a normal agent6 `run` with its own snapshot
 dir, transcript, budget slice, and jail. The *only* control-flow signal
 it returns is the outcome label; its structured product is whatever
-`finish_run` emitted, validated against `output_schema`, captured into
+`finish_session` emitted, validated against `output_schema`, captured into
 the blackboard. The LLM cannot pick the next state; it can only
 populate variables that a downstream `branch` reads.
 
 `mode` chooses the tool surface. The default `"agent"` is a read-only,
 structured-output loop: the dispatcher refuses edit, `run_command`, and
-`run_verify`, so the state can only read and call `finish_run`. Set
+`run_verify`, so the state can only read and call `finish_session`. Set
 `mode = "run"` for a state that must do real coding work (edit + verify +
 commit tools), exactly like `agent6 run`. A `mode = "run"` state still
-returns only its outcome label and `finish_run` payload as control-flow
+returns only its outcome label and `finish_session` payload as control-flow
 signals; `machine run` resolves a git commit identity up front (from
 `[git.commit]` or the repo's git config) so the confined agent's commits
 succeed. In any agent state `run_command` is gated by
@@ -305,7 +305,7 @@ stdout is parsed as JSON and bound to the capture-scope name `result`
   `[schemas.*]` type, §4.6) to type `result`, then pull fields with
   `set = { <var> = "{{ result.<field> }}" }`. Because `result` is typed,
   every `result.<field>` is statically checked, mirroring how an
-  `agent` state validates `finish_run`.
+  `agent` state validates `finish_session`.
 
 A `list`-typed variable spliced as a bare argv element
 (`"{{ pending }}"`) expands in place to one argument per element (§4.4).
@@ -612,7 +612,7 @@ otherwise), and every declared state must be reachable from `initial`
 A **record type** is a named, field-typed structure declared once under
 `[schemas.<name>]` and used in two places: as a variable's `type`
 (making the variable navigable, §4.2) and as an `agent` state's
-`output_schema` (validating the `finish_run` payload at the trust
+`output_schema` (validating the `finish_session` payload at the trust
 boundary). One mechanism serves both, so there is exactly one way to
 describe structured data in a machine.
 
@@ -633,7 +633,7 @@ Rules (all enforced at `machine check`):
 |---|---|
 | **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch; itself not dottable, §4.2) |
 | **Required by default** | every field must be present in a validated payload unless `optional = true` (mirrors `Config`'s `extra="forbid"`); unknown fields are rejected |
-| **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_run`/capture boundary (earlier than a `branch` would re-check it) |
+| **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_session`/capture boundary (earlier than a `branch` would re-check it) |
 | **Dotting** | a `.field` in a predicate/template is type-checked against the schema (field must exist); a `list`/`json`/non-record field may not be dotted further |
 
 ### 4.7 Machine config overlay (`[config]`)
@@ -760,7 +760,7 @@ for replay, and size `[budget] max_transitions` as the primary runaway guard.
 A state runs, then exactly one fsync'd `StepEvent` records its outcome and
 captured fact. That single line is the commit point: the engine validates
 the capture (a tool's stdout against its `output_schema`, an agent's
-`finish_run` against it) *before* writing the StepEvent, so a malformed
+`finish_session` against it) *before* writing the StepEvent, so a malformed
 output halts the machine loudly without ever journaling a fact that a later
 `reduce` could not replay. On restart the engine rehydrates from the last
 StepEvent and continues.
@@ -807,7 +807,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine bundle: the `.asm.toml` plus every `scripts/...` file its tool states run, plus a `scripts/<name>_test.py` mock test per script with an external seam (network/clock/files). Each draft is gated before acceptance: `machine check` validation, ruff lint, ty type check, and the mock tests executed in a no-network jail; failures loop back to the model with the failing source (up to `--max-attempts`, default 3). Writes a *draft* the operator reviews, edits, and commits; running it still requires the operator (see §9). |
 | `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), every predicate `len()` argument and `wait` timing value well-typed (an `every_secs` resolving to an int ≥ 1, a parseable `until`), the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle), and static script health (ruff lint + ty type check). No execution, no network. |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked (no real network, no model calls). |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_session` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked (no real network, no model calls). |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
@@ -829,7 +829,7 @@ specialized prompt: the model is handed this document's grammar (state
 kinds, the three-owner blackboard
 (`[vars.operator]`/`[vars.code]`/`[vars.agent]`), the total-branch rule)
 and the task, and is told to return one complete machine by calling
-`finish_run` with a `result.toml` field holding the entire `.asm.toml`
+`finish_session` with a `result.toml` field holding the entire `.asm.toml`
 and a `result.scripts` map holding every `scripts/...` file the tool
 states run (plus a `scripts/<name>_test.py` mock test per script with an
 external seam); no new tool and no file-writing capability is
@@ -892,7 +892,7 @@ internal value types):
 
 - `machine/model.py`: pydantic `MachineSpec`/state/var specs (the parse
   boundary).
-- `machine/_semantics.py`: semantic validation and `finish_run` payload
+- `machine/_semantics.py`: semantic validation and `finish_session` payload
   validation.
 - `machine/dryrun.py`: the pure, no-I/O dry-run behind `agent6 machine
   test`.
@@ -918,7 +918,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   capabilities; the LLM inside an `agent` state sees the same tools it
   always did. `machine create` is no exception: the drafting agent runs
   the same fixed toolset and returns its `.asm.toml` through the
-  existing `finish_run` payload, not a new file-writing tool.
+  existing `finish_session` payload, not a new file-writing tool.
 - **No arbitrary code execution from a file.** Predicates and templates
   are parsed-then-walked against an allow-list; never `eval`/`exec`,
   never `getattr`. Dotted references are agent6-interpreted json data
@@ -975,10 +975,10 @@ poll_secs = { type = "int", value = 300 }
 pending = { type = "list[str]", default = [] }  # set by the scan tool
 cursor  = { type = "str",       default = "" }  # set by the scan tool
 
-[vars.agent]                      # set by an agent state's finish_run
-verdict = { type = "classification", default = {} }  # set by classify's finish_run
+[vars.agent]                      # set by an agent state's finish_session
+verdict = { type = "classification", default = {} }  # set by classify's finish_session
 
-[schemas.classification]          # validates the agent's finish_run payload
+[schemas.classification]          # validates the agent's finish_session payload
 label      = { type = "str", enum = ["urgent", "normal", "spam"] }
 confidence = "float"
 
@@ -1010,7 +1010,7 @@ when = [
 kind  = "agent"
 prompt = """
 Classify these pending items: {{ pending | json }}
-Call finish_run with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
+Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
 """
 output_schema = "classification"
 capture = { finish_json = "verdict" }
@@ -1080,7 +1080,7 @@ Settled design choices, recorded so the rationale travels with the spec:
 - **Schema language**: inline `[schemas.*]` TOML (§4.6), not JSON Schema;
   no new dependency, human-editable, one mechanism for both
   `output_schema` validation and navigable record vars.
-- **`agent` writes**: exactly one validated `finish_run` payload per
+- **`agent` writes**: exactly one validated `finish_session` payload per
   `agent` state is the LLM's only write channel (§4.2); multiple outputs
   are fields of one record.
 - **Concurrency**: strictly sequential (one active state, no fork/join);

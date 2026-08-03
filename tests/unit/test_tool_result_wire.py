@@ -205,15 +205,15 @@ def test_wire_apply_patch_preview_omits_would_apply(tmp_path: Path) -> None:
 # --- run-control family ------------------------------------------------------
 
 
-def test_wire_finish_run(tmp_path: Path) -> None:
+def test_wire_finish_session(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    out = d.dispatch("finish_run", {"summary": "done", "result": {"k": 1}})
+    out = d.dispatch("finish_session", {"summary": "done", "result": {"k": 1}})
     assert _dumps(out) == '{"acknowledged": true, "summary": "done", "result": {"k": 1}}'
 
 
-def test_wire_finish_run_null_result(tmp_path: Path) -> None:
+def test_wire_finish_session_null_result(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    out = d.dispatch("finish_run", {"summary": "done"})
+    out = d.dispatch("finish_session", {"summary": "done"})
     assert _dumps(out) == '{"acknowledged": true, "summary": "done", "result": null}'
 
 

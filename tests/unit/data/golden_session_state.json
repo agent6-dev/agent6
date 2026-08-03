@@ -49,10 +49,10 @@
       "call_id": null
     },
     {
-      "name": "finish_run",
+      "name": "finish_session",
       "args_preview": "summary=all green",
       "args_full": "summary=all green",
-      "result_summary": "finish_run",
+      "result_summary": "finish_session",
       "ok": true,
       "task_id": null,
       "call_id": null
@@ -144,9 +144,9 @@
     "10:00:16.000  loop.resume.start  iteration=22 messages=44",
     "10:00:16.500  role.call          worker/kimi-k2",
     "10:00:17.000  role.result        worker error: boom upstream",
-    "10:00:18.000  tool.call          finish_run(summary=all green)",
-    "10:00:18.200  tool.result        finish_run ok=True finish_run",
-    "10:00:18.500  session.end        finish_run all_passed=True"
+    "10:00:18.000  tool.call          finish_session(summary=all green)",
+    "10:00:18.200  tool.result        finish_session ok=True finish_session",
+    "10:00:18.500  session.end        finish_session all_passed=True"
   ],
   "log_count": 36,
   "recent_diffs": [
@@ -159,7 +159,7 @@
   "started": true,
   "finished": true,
   "all_passed": true,
-  "end_reason": "finish_run",
+  "end_reason": "finish_session",
   "finish_summary": "all green",
   "latest_diff": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",
   "steer_requests": 1,

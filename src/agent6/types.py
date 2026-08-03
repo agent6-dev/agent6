@@ -86,7 +86,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             resumable=True,
         ),
         # Authoring a machine file, and one state of one running machine. The
-        # deliverable is the finish_run payload; command tools only tempt a
+        # deliverable is the finish_session payload; command tools only tempt a
         # weak model into spelunking.
         SessionKind(
             name="machine",

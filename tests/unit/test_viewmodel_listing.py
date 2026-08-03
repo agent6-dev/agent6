@@ -112,7 +112,7 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
             {"type": "session.start", "mode": "run", "user_task": "fix [the] bug"},
             {"type": "tool.call", "name": "read_file"},
             {"type": "budget.update", "usd_total": 0.12},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
@@ -251,7 +251,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(rd).usd_partial is True
@@ -262,7 +262,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(clean).usd_partial is False
@@ -280,7 +280,7 @@ def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path)
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -361,14 +361,14 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
     )
     s = summarize_session_dir(rd)
     assert (s.mode, s.status, s.reason) == ("plan", "planned", "")
-    # A real run still reads "passed" (finish_run + all_passed) -- unchanged.
+    # A real run still reads "passed" (finish_session + all_passed) -- unchanged.
     rd2 = _write_run(
         tmp_path,
         "runs",
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(rd2).status == "passed"
@@ -427,7 +427,7 @@ def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
             {"type": "loop.resume.start", "iteration": 3},
             {"type": "budget.update", "usd_total": 0.003},
             {"type": "budget.update", "usd_total": 0.007},  # leg 2 ends at $0.007
-            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
@@ -472,7 +472,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
         + "\n"
         + "[1, 2, 3]\n"  # valid JSON, not a dict
         + '"a bare string"\n'
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -501,7 +501,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": False})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )

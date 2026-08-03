@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""finish_run result coercion: a stringified JSON object still lands as the
+"""finish_session result coercion: a stringified JSON object still lands as the
 structured finish payload (weak models routinely stringify it; a machine
 agent state's whole cycle used to fail on shape)."""
 
@@ -33,7 +33,7 @@ def _wf(**kw: Any) -> Workflow:
 def _capture(tool_input: dict[str, Any]) -> _TurnState:
     wf = _wf()
     turn = _TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
-    wf._capture_finish(turn, "finish_run", tool_input)  # pyright: ignore[reportPrivateUsage]
+    wf._capture_finish(turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
     return turn
 
 

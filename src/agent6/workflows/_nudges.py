@@ -142,14 +142,14 @@ def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
 # the first green verify with requirements unmet; a re-check directive raised
 # scores on every model tested (measured: bench/coreagent eventflow). Same
 # mechanism as a
-# one-turn native bounce: the FIRST finish_run over a green verify is
+# one-turn native bounce: the FIRST finish_session over a green verify is
 # revoked once with the directive below. Off by default until the A/B
 # quantifies the cost on tasks whose suite IS the full spec.
 SPEC_RECHECK_NUDGE = (
     "[harness spec-check] Verify is green, but the test suite may cover only"
     " part of the requirements. Before finishing: re-read the task and its"
     " spec, check EACH stated requirement against your implementation, and"
-    " fix anything unmet. Then call finish_run again."
+    " fix anything unmet. Then call finish_session again."
 )
 
 # Plan-mode wrap-up: nudge once the budget fraction drops below the threshold,
@@ -168,19 +168,19 @@ PLAN_NUDGE_AFTER_ITERS = 12
 TASK_FINISH_PATIENCE = 3
 
 # Opt-in hard finish gate (`require_verify_to_finish`): how many times to bounce a
-# finish_run over a red/stale verify before honouring it anyway (as an honest
+# finish_session over a red/stale verify before honouring it anyway (as an honest
 # all_passed=False "finished"). Bounded so a task that genuinely can't pass can't
 # pin the loop to the iteration cap.
 VERIFY_FINISH_PATIENCE = 3
 VERIFY_FINISH_GATE = (
-    "[harness] finish_run refused: the verify command is not green"
+    "[harness] finish_session refused: the verify command is not green"
     " (require_verify_to_finish is on). Run run_verify_command, fix what it"
-    " reports, and only call finish_run once it passes. If this task genuinely"
+    " reports, and only call finish_session once it passes. If this task genuinely"
     " cannot pass verify, say so and stop rather than finishing."
 )
 
 # verify-settled completion (run mode). A non-metric run has no positive "done"
-# signal, clean exit depends on the worker volunteering finish_run, and a weak
+# signal, clean exit depends on the worker volunteering finish_session, and a weak
 # worker keeps re-running read-only commands after success. Once verify has
 # passed, count iterations that
 # make no progress (no new commit + no edit): nudge to finish at the first
@@ -195,7 +195,7 @@ VERIFY_SETTLED_STOP_AFTER = 6
 VERIFY_SETTLED_NUDGE = (
     "[harness settled] Your recent changes are committed and your last turns"
     " made no new changes (no commit, no edit). If the task is complete, call"
-    " finish_run now with a short summary. If not, make a concrete edit toward"
+    " finish_session now with a short summary. If not, make a concrete edit toward"
     " what remains — do not keep re-running read-only commands."
 )
 
@@ -207,15 +207,15 @@ RUN_BUDGET_NUDGE_BELOW = 0.25
 
 RUN_BUDGET_NUDGE = (
     "[harness budget] You are running low on budget. Run `run_verify_command`"
-    " NOW. If it passes, call finish_run immediately with a short summary. If"
+    " NOW. If it passes, call finish_session immediately with a short summary. If"
     " it fails, fix ONLY the smallest blocking issue, re-verify, and finish."
     " Do not run any other commands."
 )
 
 # Gateless variant (no verify command this run): there is nothing to verify, so
-# steer straight to finish_run.
+# steer straight to finish_session.
 RUN_BUDGET_NUDGE_GATELESS = (
-    "[harness budget] You are running low on budget. Call finish_run NOW with a"
+    "[harness budget] You are running low on budget. Call finish_session NOW with a"
     " short summary of what you changed. Do not run any other commands."
 )
 
@@ -242,7 +242,7 @@ SILENT_NO_WORK_NUDGE = (
     " changed anything yet. Text alone cannot finish this task. Use your"
     " tools: read_file/grep/outline to explore, apply_edit or apply_patch to"
     " change code, run_verify_command to check. If you are truly blocked,"
-    " call finish_run and say why."
+    " call finish_session and say why."
 )
 
 
@@ -251,7 +251,7 @@ QUESTION_NUDGE = (
     " tool, so nobody can answer it and the run is about to end. If you need the"
     " operator's input, call `ask_user` with the question (a front-end delivers"
     " it and returns the answer). If you have enough to proceed, do the work. If"
-    " you are truly done, call `finish_run`. Do not just write the question as"
+    " you are truly done, call `finish_session`. Do not just write the question as"
     " text again."
 )
 
@@ -260,7 +260,7 @@ QUESTION_NUDGE = (
 # 46 legs across 2 models produced ZERO unprompted add_memory calls, so the
 # <memories> header alone never causes writes. Surface the tool at the two
 # moments a durable discovery is actually in hand: the first red-to-green
-# verify flip (advisory, free) and the first finish_run after such a recovery
+# verify flip (advisory, free) and the first finish_session after such a recovery
 # (deferred once, the backstop). Each fires at most once per run, only in run
 # mode with a memory store wired, and only while the worker has recorded
 # nothing; a run whose verify never failed is never nudged.
@@ -278,13 +278,13 @@ MEMORY_FLIP_NUDGE = (
 )
 
 MEMORY_FINISH_NUDGE = (
-    "[harness memory] finish_run deferred once: verify failed earlier in this"
+    "[harness memory] finish_session deferred once: verify failed earlier in this"
     " run before going green, and nothing was recorded for future runs. If the"
     " root cause was a durable non-obvious fact about this repository (a"
     " generated file, a hidden coupling, a convention), record it with"
     " add_memory(scope, body), stating the general rule in words rather than"
-    " one instance, then call finish_run again. If nothing qualifies, call"
-    " finish_run again immediately."
+    " one instance, then call finish_session again. If nothing qualifies, call"
+    " finish_session again immediately."
 )
 
 

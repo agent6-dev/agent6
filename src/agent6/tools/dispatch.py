@@ -41,7 +41,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.tools._control_tools import ask_user, finish_planning, finish_run
+from agent6.tools._control_tools import ask_user, finish_planning, finish_session
 from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, grep, list_dir, read_file
 from agent6.tools._memory_tools import add_memory, invalidate_memory, use_skill
@@ -90,7 +90,7 @@ from agent6.tools.schema import (
     FindReferencesInput,
     FindReferencesLspInput,
     FinishPlanningInput,
-    FinishRunInput,
+    FinishSessionInput,
     GrepInput,
     InvalidateMemoryInput,
     ListDirInput,
@@ -377,10 +377,10 @@ class ToolDispatcher:
             # loop can call it after a successful verify when
             # [workflow.metric] is configured.
             RunMetricInput.TOOL_NAME: self._run_metric,
-            # finish_run signals the loop should exit. Handler
+            # finish_session signals the loop should exit. Handler
             # just echoes the summary; the workflow checks for this tool name
             # in resp.tool_uses and terminates after dispatching it.
-            FinishRunInput.TOOL_NAME: self._finish_run,
+            FinishSessionInput.TOOL_NAME: self._finish_session,
             FinishPlanningInput.TOOL_NAME: self._finish_planning,
             AskUserInput.TOOL_NAME: self._ask_user,
             # DAG-as-tool. Handlers raise ToolError if no curator was
@@ -491,7 +491,7 @@ class ToolDispatcher:
         # model-supplied content.
         # The finish tools' `summary` is the human end-of-run statement (shown on
         # the done line + in `watch`); keep it whole. Generic args stay clipped.
-        max_chars = 2000 if name in ("finish_run", "finish_planning") else 200
+        max_chars = 2000 if name in ("finish_session", "finish_planning") else 200
         preview = truncate_args(raw_input, max_value_chars=max_chars)
         # Correlation id shared by this dispatch's call/result pair: concurrent
         # review seats interleave events through the one shared sink, and
@@ -858,8 +858,8 @@ class ToolDispatcher:
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
         return ask_user(self._questioner, raw)
 
-    def _finish_run(self, raw: dict[str, Any]) -> ToolResult:
-        return finish_run(raw)
+    def _finish_session(self, raw: dict[str, Any]) -> ToolResult:
+        return finish_session(raw)
 
     def _finish_planning(self, raw: dict[str, Any]) -> ToolResult:
         return finish_planning(raw)

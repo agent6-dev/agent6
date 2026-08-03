@@ -18,7 +18,7 @@ kind = "agent"
 model = "claude-haiku-4-5"
 provider = "anthropic"
 prompt = """
-Reply with a one-sentence friendly greeting. Call finish_run with JSON
+Reply with a one-sentence friendly greeting. Call finish_session with JSON
 {message: "<your greeting>", mood: "happy"}.
 """
 output_schema = "greeting"

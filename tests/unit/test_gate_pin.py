@@ -138,7 +138,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_run", "all_passed": False}) + "\n",
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": False}) + "\n",
         encoding="utf-8",
     )
     (rd / "manifest.json").write_text(
@@ -156,7 +156,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     finalize.print_session_end(
         SessionResult(
             completed=True,
-            reason="finish_run",
+            reason="finish_session",
             summary="s",
             iterations=1,
             tool_calls=1,

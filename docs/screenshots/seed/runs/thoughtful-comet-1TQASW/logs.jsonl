@@ -239,7 +239,7 @@
 {"ts": "2026-06-17T21:55:19.116105+00:00", "type": "role.text_delta", "role": "worker", "text": " done:\n\n"}
 {"ts": "2026-06-17T21:55:26.285541+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 129, "tokens_out": 299, "cache_read": 36416, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-17T21:55:26.288056+00:00", "type": "budget.update", "input_total": 302743, "output_total": 11086, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.16822127999999997, "usd_partial": false}
-{"ts": "2026-06-17T21:55:26.289798+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 26}
-{"ts": "2026-06-17T21:55:26.291670+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "I have successfully restored the `format_filename` function in `src/click/utils.py`. The implementation now correctly handles all the required cases:\n\n1. For bytes input like `b\"foo.txt\"`, it decodes … (1075 chars)"}}
-{"ts": "2026-06-17T21:55:26.293680+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
-{"ts": "2026-06-17T21:55:26.308202+00:00", "type": "session.end", "reason": "finish_run", "iterations": 26, "all_passed": true}
+{"ts": "2026-06-17T21:55:26.289798+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 26}
+{"ts": "2026-06-17T21:55:26.291670+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "I have successfully restored the `format_filename` function in `src/click/utils.py`. The implementation now correctly handles all the required cases:\n\n1. For bytes input like `b\"foo.txt\"`, it decodes … (1075 chars)"}}
+{"ts": "2026-06-17T21:55:26.293680+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
+{"ts": "2026-06-17T21:55:26.308202+00:00", "type": "session.end", "reason": "finish_session", "iterations": 26, "all_passed": true}

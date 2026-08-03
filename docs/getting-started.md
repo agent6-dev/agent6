@@ -34,7 +34,7 @@ agent6 run "add a --json output mode to the CLI"
 ```
 
 agent6 works on a per-run branch, edits files, runs the verify command, and commits each
-step that passes. It stops when the model calls `finish_run` or a budget ceiling is hit.
+step that passes. It stops when the model calls `finish_session` or a budget ceiling is hit.
 
 The verify command is the success gate. If the repo has not set
 `workflow.verify_command`, agent6 infers one per run (from AGENTS.md, then the repo's

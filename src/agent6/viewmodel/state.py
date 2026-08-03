@@ -170,7 +170,7 @@ class SessionState:
     started: bool = False  # a session.start was folded (a parked/created run has none)
     finished: bool = False
     all_passed: bool | None = None
-    end_reason: str = ""  # session.end reason: finish_run | steer_abort | provider_error | ...
+    end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
@@ -371,7 +371,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             # The finish tools' summary is the agent's closing statement; keep it
             # so an ended run's panes can render the end story, not a dead one.
             finish_summary = state.finish_summary
-            if name in ("finish_run", "finish_planning") and isinstance(raw_args, dict):
+            if name in ("finish_session", "finish_planning") and isinstance(raw_args, dict):
                 finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
             return replace(
                 state,

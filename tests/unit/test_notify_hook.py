@@ -26,7 +26,7 @@ def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
         session_id="abcdef0123456789",
         session_dir=tmp_path,
         ok=True,
-        reason="finish_run",
+        reason="finish_session",
         verified="passed",
         reporter=STDIO_REPORTER,
     )
@@ -53,7 +53,7 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
         session_id="run-xyz",
         session_dir=tmp_path,
         ok=True,
-        reason="finish_run",
+        reason="finish_session",
         verified="passed",
         reporter=STDIO_REPORTER,
     )
@@ -61,7 +61,7 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
     assert payload == {
         "id": "run-xyz",
         "ok": "1",
-        "reason": "finish_run",
+        "reason": "finish_session",
         "dir": str(tmp_path),
     }
 
@@ -240,7 +240,7 @@ def test_notify_hook_env_carries_no_secrets(
         session_id="r1",
         session_dir=tmp_path,
         ok=True,
-        reason="finish_run",
+        reason="finish_session",
         verified="passed",
         reporter=STDIO_REPORTER,
     )
@@ -288,7 +288,7 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
         session_id="r1",
         session_dir=tmp_path,
         ok=True,
-        reason="finish_run",
+        reason="finish_session",
         verified="failed",
         reporter=STDIO_REPORTER,
     )
@@ -313,7 +313,7 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
         session_id="brave-oak-AAAAAA",
         session_dir=tmp_path,
         ok=True,
-        reason="finish_run",
+        reason="finish_session",
         verified="passed",
         reporter=STDIO_REPORTER,
     )
@@ -322,6 +322,6 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: Path) -> None:
     assert env["AGENT6_SESSION_ID"] == "brave-oak-AAAAAA"
     assert env["AGENT6_SESSION_DIR"] == str(tmp_path)
     assert env["AGENT6_SESSION_OK"] == "1"
-    assert env["AGENT6_SESSION_REASON"] == "finish_run"
+    assert env["AGENT6_SESSION_REASON"] == "finish_session"
     assert env["AGENT6_SESSION_VERIFIED"] == "passed"
     assert not [k for k in env if k.startswith("AGENT6_RUN_")], sorted(env)

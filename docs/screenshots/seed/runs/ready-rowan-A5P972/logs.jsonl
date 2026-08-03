@@ -223,8 +223,8 @@
 {"ts": "2026-06-23T09:08:06.184056+00:00", "type": "role.call", "role": "worker", "model": "moonshotai/kimi-k2.7-code-20260612", "provider": "openrouter"}
 {"ts": "2026-06-23T09:08:11.271244+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 339, "tokens_out": 116, "cache_read": 13760, "cache_creation": 0, "stop_reason": "tool_calls"}
 {"ts": "2026-06-23T09:08:11.274104+00:00", "type": "budget.update", "input_total": 15236, "output_total": 8599, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.08873639999999999, "usd_partial": false}
-{"ts": "2026-06-23T09:08:11.276363+00:00", "type": "loop.tool.call", "name": "finish_run", "iteration": 22}
-{"ts": "2026-06-23T09:08:11.278204+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "Restored `parse_csv_row` in `mylib/csv_parse.py` to parse a single CSV row per RFC 4180. The implementation strips a trailing CR/LF or LF, then delegates to Python's `csv.reader` (which already handle… (396 chars)"}}
-{"ts": "2026-06-23T09:08:11.279982+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
+{"ts": "2026-06-23T09:08:11.276363+00:00", "type": "loop.tool.call", "name": "finish_session", "iteration": 22}
+{"ts": "2026-06-23T09:08:11.278204+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "Restored `parse_csv_row` in `mylib/csv_parse.py` to parse a single CSV row per RFC 4180. The implementation strips a trailing CR/LF or LF, then delegates to Python's `csv.reader` (which already handle… (396 chars)"}}
+{"ts": "2026-06-23T09:08:11.279982+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T09:08:11.296205+00:00", "type": "graph.update", "nodes": {"01KVSVA6FAP70KDFGXBA36AZQC": {"title": "# Implement `parse_csv_row` per RFC 4180", "status": "passed", "parent_id": null, "children": []}}, "cursor": null}
-{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "session.end", "reason": "finish_run", "iterations": 22, "all_passed": true}
+{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "session.end", "reason": "finish_session", "iterations": 22, "all_passed": true}

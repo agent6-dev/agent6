@@ -96,7 +96,7 @@ def test_the_answer_is_none_until_the_btw_finishes(tmp_path: Path) -> None:
 
 
 def test_the_answer_is_the_final_prose(tmp_path: Path) -> None:
-    """An ask ends by emitting its answer as prose, not via finish_run."""
+    """An ask ends by emitting its answer as prose, not via finish_session."""
     d = _ask_dir(
         tmp_path,
         "quiet-fox-AAAAAA",

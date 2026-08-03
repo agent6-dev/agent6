@@ -157,7 +157,7 @@ class _Dispatcher(_StubDispatcher):
         if name == "grep":
             self._compact_flag[0] = True
             return RawResult({"hits": ["b.md:12: needle"]})
-        if name == "finish_run":
+        if name == "finish_session":
             return RawResult({"acknowledged": True})
         raise AssertionError(f"unexpected tool: {name}")
 
@@ -210,7 +210,7 @@ _RESPONSES = [
     # iter 4: grep; serving it arms the manual compact marker.
     _resp(tool_uses=(("tu-4", "grep", {"pattern": "needle"}),), stop_reason="tool_use"),
     # iter 5 (post tier-2 restart): finish.
-    _resp(tool_uses=(("tu-5", "finish_run", {"summary": "done"}),), stop_reason="tool_use"),
+    _resp(tool_uses=(("tu-5", "finish_session", {"summary": "done"}),), stop_reason="tool_use"),
 ]
 
 
@@ -258,7 +258,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         root_task_id=None,
         original_task=_TASK,
     )
-    assert result.completed is True and result.reason == "finish_run"
+    assert result.completed is True and result.reason == "finish_session"
     assert len(worker.captured) == len(_RESPONSES)
     assert len(summariser.captured) == 2
     assert len(pre_restart_state) == 1
@@ -270,7 +270,11 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     resume_snap.parent.mkdir(parents=True, exist_ok=True)
     resume_snap.write_text(pre_restart_state[0], encoding="utf-8")
     resume_worker = _WorkerScript(
-        [_resp(tool_uses=(("tu-r", "finish_run", {"summary": "done"}),), stop_reason="tool_use")],
+        [
+            _resp(
+                tool_uses=(("tu-r", "finish_session", {"summary": "done"}),), stop_reason="tool_use"
+            )
+        ],
         resume_snap,
     )
     wf2 = Workflow(
@@ -283,7 +287,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
         resume_state_path=resume_snap,
     )
     resumed = wf2.resume()
-    assert resumed.completed is True and resumed.reason == "finish_run"
+    assert resumed.completed is True and resumed.reason == "finish_session"
 
     return {
         "worker_calls": worker.captured,

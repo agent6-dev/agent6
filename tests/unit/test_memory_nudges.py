@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Cross-run memory write nudges: the one-shot add_memory advisory at the
-first red-to-green verify flip, and the once-deferred finish_run backstop
+first red-to-green verify flip, and the once-deferred finish_session backstop
 after such a recovery. Both fire only in run mode with a memory store wired,
 and only while nothing has been recorded (bench/longhorizon FINDINGS #2)."""
 

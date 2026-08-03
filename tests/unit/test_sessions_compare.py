@@ -91,7 +91,7 @@ def _setup_run(
         {"type": "budget.update", "usd_total": cost},
     ]
     if status == "passed":
-        events.append({"type": "session.end", "reason": "finish_run", "all_passed": True})
+        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
     elif status == "failed":
         events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
     layout.logs_path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")

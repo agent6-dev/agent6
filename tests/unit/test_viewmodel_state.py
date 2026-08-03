@@ -246,7 +246,7 @@ def test_budget_usd_cumulative_across_resume_legs() -> None:
         return {"type": "budget.update", "usd_total": usd, "usd_partial": partial}
 
     s = apply_event(initial_state(), _update(0.02, partial=True))
-    s = apply_event(s, {"type": "session.end", "reason": "finish_run", "all_passed": True})
+    s = apply_event(s, {"type": "session.end", "reason": "finish_session", "all_passed": True})
     s = apply_event(s, {"type": "loop.resume.start"})
     # Banked, and the header keeps the old total until the new leg reports.
     assert s.budget.usd_total == 0.02
@@ -451,8 +451,8 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
 
     assert session_status_label(initial_state()) == "running"
     assert session_status_label(end("steer_abort", False)) == "stopped"
-    assert session_status_label(end("finish_run", True)) == "passed"
-    assert session_status_label(end("finish_run", False)) == "finished"
+    assert session_status_label(end("finish_session", True)) == "passed"
+    assert session_status_label(end("finish_session", False)) == "finished"
     assert session_status_label(end("provider_error", False)) == "failed · provider error"
     # and the computed label rides along on the wire dict for the web client
     assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
@@ -461,7 +461,7 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # blocked on the operator).
     assert session_state_as_dict(initial_state())["status"] == "running"
     assert session_state_as_dict(end("steer_abort", False))["status"] == "stopped"
-    assert session_state_as_dict(end("finish_run", True))["status"] == "passed"
+    assert session_state_as_dict(end("finish_session", True))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
@@ -709,7 +709,7 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
         [
             {"type": "session.start", "user_task": "t"},
             bad,
-            {"type": "session.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ]
     )
     assert state.finished  # the fold survived the bad line and kept folding

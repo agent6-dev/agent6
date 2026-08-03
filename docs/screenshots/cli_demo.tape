@@ -49,7 +49,7 @@ Type@55ms "agent6 sessions diff"
 Enter
 Sleep 5s
 
-# 3. The event log behind it: verify passed, auto-commit, finish_run.
+# 3. The event log behind it: verify passed, auto-commit, finish_session.
 Type@55ms "agent6 attach --since 14"
 Enter
 Sleep 7s

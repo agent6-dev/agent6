@@ -933,7 +933,7 @@ def test_agent_ok_captures_payload_and_routes(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     payload = {"approved": True, "note": "lgtm"}
-    world = FakeWorld({}, agent_results=[_agent("finish_run", payload)])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "approved", "stop_ok", 2)
     snap = journal.latest_snapshot()
@@ -956,7 +956,7 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
     )
     journal, f = _load(tmp_path, body)
     spec = load_machine(f)
-    world = FakeWorld({}, agent_results=[_agent("finish_run", {"approved": True})])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
     assert req.provider == "anthropic"
@@ -970,7 +970,7 @@ def test_agent_ok_but_rejected_routes_fail(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     payload = {"approved": False, "note": "needs work"}
-    world = FakeWorld({}, agent_results=[_agent("finish_run", payload)])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     result = drive(spec, journal, world, live=True)
     # Valid payload (label ok) captured, then branch routes to stop_fail.
     assert result.status == "failed"
@@ -984,7 +984,7 @@ def test_agent_invalid_payload_routes_failed_no_capture(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     # Missing the required `note` field -> schema validation fails -> "failed".
-    world = FakeWorld({}, agent_results=[_agent("finish_run", {"approved": True})])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     result = drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert result.state == "stop_fail"
@@ -994,10 +994,10 @@ def test_agent_invalid_payload_routes_failed_no_capture(tmp_path: Path) -> None:
     assert snap.blackboard["verdict"] == {}
 
 
-def test_agent_finish_run_without_payload_routes_failed(tmp_path: Path) -> None:
+def test_agent_finish_session_without_payload_routes_failed(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
-    world = FakeWorld({}, agent_results=[_agent("finish_run", None)])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", None)])
     result = drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert result.state == "stop_fail"
@@ -1060,7 +1060,7 @@ def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, _SPENDER)
     spec = load_machine(f)
     world = FakeWorld(
-        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
+        {}, agent_results=[AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.10)]
     )
     result = drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -1072,7 +1072,7 @@ def test_agent_spend_threaded_into_fact(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     result = AgentExecResult(
-        reason="finish_run",
+        reason="finish_session",
         payload={"approved": True, "note": "ok"},
         usd=0.25,
         input_tokens=2000,
@@ -1092,7 +1092,7 @@ def test_agent_spend_threaded_into_fact(tmp_path: Path) -> None:
 def test_agent_set_capture_extracts_scalar_field(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, SCORER)
     spec = load_machine(f)
-    world = FakeWorld({}, agent_results=[_agent("finish_run", {"points": 7})])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", {"points": 7})])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "done", "stop_ok", 1)
     snap = journal.latest_snapshot()
@@ -1104,7 +1104,7 @@ def test_agent_replay_reproduces_path_without_world(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
     payload = {"approved": True, "note": "ok"}
-    world = FakeWorld({}, agent_results=[_agent("finish_run", payload)])
+    world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     live = drive(spec, journal, world, live=True)
     replayed = drive(spec, journal, None, live=False)
     assert replayed == live
@@ -1127,7 +1127,7 @@ def test_agent_crash_recovery_does_not_rerun(tmp_path: Path) -> None:
             goto="route",
             fact=AgentFact(
                 outcome="ok",
-                reason="finish_run",
+                reason="finish_session",
                 payload={"approved": True, "note": "lgtm"},
             ),
         )
@@ -1164,7 +1164,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: Path) -> None:
         if events_log is not None:  # the real subprocess creates the log; simulate it
             events_log.parent.mkdir(parents=True, exist_ok=True)
             events_log.write_text("{}\n", encoding="utf-8")
-        return AgentExecResult(reason="finish_run", payload=None)
+        return AgentExecResult(reason="finish_session", payload=None)
 
     world = LiveWorld(
         cwd=tmp_path,
@@ -1192,7 +1192,7 @@ def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
 
     def fake_runner(req: AgentRequest, events_log: Path | None) -> AgentExecResult:
         seen.append(events_log)
-        return AgentExecResult(reason="finish_run", payload=None)
+        return AgentExecResult(reason="finish_session", payload=None)
 
     world = LiveWorld(
         cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), agent_runner=fake_runner
@@ -1219,7 +1219,7 @@ def test_agent_state_max_tokens_fallback_flows_to_request(tmp_path: Path) -> Non
     journal, f = _load(tmp_path, body)
     spec = load_machine(f)
     world = FakeWorld(
-        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
+        {}, agent_results=[AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.10)]
     )
     drive(spec, journal, world, live=True)
     assert world.agent_calls[0].max_tokens_fallback == 5000

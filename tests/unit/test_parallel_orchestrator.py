@@ -63,14 +63,14 @@ def _write_fake_run(session_dir: Path, task: str, *, status: str, cost: float) -
         {"type": "budget.update", "usd_total": cost},
     ]
     if status == "passed":
-        events.append({"type": "session.end", "reason": "finish_run", "all_passed": True})
+        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
     elif status == "failed":
         events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
     elif status == "stale":
         # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
         (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     else:  # "finished": a deliberate finish without all-passed
-        events.append({"type": "session.end", "reason": "finish_run", "all_passed": False})
+        events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
     (session_dir / "logs.jsonl").write_text(
         "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
     )

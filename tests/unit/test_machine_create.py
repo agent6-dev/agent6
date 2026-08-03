@@ -87,7 +87,7 @@ def test_build_authoring_prompt_first_attempt() -> None:
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "authoring guide" in prompt
     assert "Poll a queue" in prompt
-    assert "finish_run" in prompt
+    assert "finish_session" in prompt
     assert "fix the previous draft" not in prompt
 
 
@@ -188,7 +188,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append(request)
             return AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
             )
 
         return run
@@ -211,7 +211,11 @@ def test_create_writes_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.02)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.02
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
@@ -238,7 +242,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
         def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
             captured_log.append(events_log)  # events_log is now per CALL, not per build
             return AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
             )
 
         return run
@@ -275,10 +279,10 @@ def test_create_logs_the_cumulative_spend_across_attempts(
         [
             # First attempt returns no draft (fails), second succeeds.
             AgentExecResult(
-                reason="finish_run", payload=None, usd=0.01, input_tokens=100, output_tokens=20
+                reason="finish_session", payload=None, usd=0.01, input_tokens=100, output_tokens=20
             ),
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={TOML_PAYLOAD_KEY: VALID_MACHINE},
                 usd=0.02,
                 input_tokens=150,
@@ -305,7 +309,11 @@ def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user warmly"])
     assert code == 0
@@ -323,10 +331,10 @@ def test_create_retries_then_succeeds(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
             ),
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.03
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.03
             ),
         ],
     )
@@ -348,7 +356,11 @@ def test_create_refuses_to_overwrite_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 1
@@ -373,7 +385,11 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     assert main(["machine", "create", "Greet the user"]) == 1
     capsys.readouterr()
@@ -397,7 +413,11 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
 
     real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
@@ -430,7 +450,11 @@ def test_create_output_flag_overwrites(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
@@ -446,10 +470,10 @@ def test_create_never_valid_exits_1(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
             ),
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
             ),
         ],
     )
@@ -475,7 +499,7 @@ def test_create_surfaces_a_reason_per_failed_attempt(
         [
             AgentExecResult(reason="max_iterations", payload=None, usd=0.0),  # returned no draft
             AgentExecResult(  # a structurally invalid draft
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
             ),
         ],
     )
@@ -506,7 +530,7 @@ def test_create_no_payload_gives_diagnostic_and_retries(
         [
             AgentExecResult(reason="max_iterations", payload=None, usd=0.0),
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.01
             ),
         ],
     )
@@ -532,7 +556,11 @@ def test_create_output_flag_creates_parent_dirs(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     target = tmp_path / "new" / "deep" / "m.asm.toml"
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
@@ -557,7 +585,7 @@ def test_create_retry_prompt_carries_prior_scripts(
     responses = iter(
         [
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
@@ -565,7 +593,7 @@ def test_create_retry_prompt_carries_prior_scripts(
                 usd=0.01,
             ),
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": good},
@@ -653,7 +681,7 @@ def test_create_writes_script_bundle(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
@@ -688,7 +716,7 @@ def test_create_refuses_to_overwrite_existing_script(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
@@ -718,11 +746,11 @@ def test_create_rejects_missing_script_then_succeeds(
         [
             # attempt 1: references the script but omits it -> rejected.
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
             ),
             # attempt 2: now ships it -> accepted.
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
@@ -754,7 +782,7 @@ def test_create_rejects_lint_bad_script(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run",
+                reason="finish_session",
                 payload={
                     TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
                     SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
@@ -779,7 +807,7 @@ def test_create_never_ships_script_exits_1(
         monkeypatch,
         [
             AgentExecResult(
-                reason="finish_run", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
             )
         ],
     )
@@ -894,7 +922,11 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+        [
+            AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+        ],
     )
     assert main(["machine", "create", "Greet the user"]) == 0
 

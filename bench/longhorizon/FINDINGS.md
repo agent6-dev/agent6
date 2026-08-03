@@ -45,7 +45,7 @@ pipeline), n=3 per cell:
   below.
 - Task fairness check: kimi-k2.6 produced a PERFECT 1.0 stylebook (all 12
   components) under window32k with a drop — the ceiling is reachable under
-  compaction pressure; it just timed out at 2400s before finish_run
+  compaction pressure; it just timed out at 2400s before finish_session
   (103k output tokens of reasoning; see methodology).
 
 **Day 2 (gist elision shipped, gist1-qwen, n=3 per cell):** tier-1 elision
@@ -108,7 +108,7 @@ orchard generated-file trap) never record it.
 
 **Day 2 (nudges shipped, mem2-qwen, n=4 per cell):** two loop surfaces now
 nudge `add_memory` — an advisory at the first red-to-green verify flip, and a
-once-deferred finish_run after such a recovery when nothing was recorded.
+once-deferred finish_session after such a recovery when nothing was recorded.
 Result: `memory_writes` went 0.0 → 0.5–0.8 per leg. In per-run traces the
 flip advisory alone converted about half the writers; the finish backstop
 caught the rest; decliners finished cleanly on the second call (no bounce
@@ -181,7 +181,7 @@ scores are capability-bound: 3/3 leg-1 trap falls at exactly 0.889, weekend
 ## 4. The orchard trap catches real behavior
 
 qwen leg-1 (smoke2): hand-edited the generated `data/catalog.tsv` 3 times,
-tested around verify, called finish_run believing it was done — hidden
+tested around verify, called finish_session believing it was done — hidden
 score 0.889 (exactly the unfixed-seed signature). Leg 2 then went through
 verify, which regenerated the file and resurfaced the failure; the agent
 root-caused `tools/catalog_source.tsv` properly and scored 1.0 including

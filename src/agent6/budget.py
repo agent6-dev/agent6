@@ -259,7 +259,7 @@ class BudgetTracker:
         the conservative, decision-relevant figure. Used by the workflow to
         decide whether a metric plateau is worth quitting on, whether enough
         budget remains to keep pivoting, and when to nudge a graceful wind-down
-        (verify + finish_run) before the hard stop.
+        (verify + finish_session) before the hard stop.
 
         Each ledger contributes its own used-fraction (spent/cap for the USD
         meter, unmetered-tokens/cap for the fallback); an unlimited (-1) or

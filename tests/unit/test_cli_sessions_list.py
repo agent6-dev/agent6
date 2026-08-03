@@ -24,7 +24,7 @@ def _run(runs: Path, session_id: str, *, winner: bool | None = None) -> None:
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": session_id})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -66,7 +66,7 @@ def test_runs_list_marks_a_partial_cost(
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": 0.0123, "usd_partial": True})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )

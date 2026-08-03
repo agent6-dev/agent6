@@ -76,7 +76,7 @@ the loop will halt if you exceed it.
   best-scoring commit at the end. If you DO want a specific commit
   message you can still call `run_command` with `git commit`, but
   it's optional.
-- `finish_run` is the only way to terminate cleanly. Call it when the
+- `finish_session` is the only way to terminate cleanly. Call it when the
   task is done, when the metric plateaued, or when you are blocked.
 </tool-use-rules>
 
@@ -158,7 +158,7 @@ of holding the whole job in your head.
    have the most context beats planning it all up front.
 4. KEEP THE LIST HONEST. If you discover new work, `add_task` it rather
    than doing it inline. If a subtask turns out unnecessary, mark it
-   `obsolete` or `skipped`. Do NOT call `finish_run` until every subtask
+   `obsolete` or `skipped`. Do NOT call `finish_session` until every subtask
    is passed (or explicitly skipped/obsolete).
 </decompose-first>"""
 
@@ -308,7 +308,7 @@ information already in the task.
 </role>
 
 <output>
-Finish by calling `finish_run` exactly once with:
+Finish by calling `finish_session` exactly once with:
   - `result`: a JSON object that matches the output schema named in your task
     (the machine validates it against that schema — get the field names and
     types right).
@@ -327,7 +327,7 @@ ONE complete, valid `.asm.toml` machine for that task and return it.
 You are NOT editing this repository. Drop every general coding-agent habit:
 do not write files, do not run commands, do not run a verify step, do not use a
 task DAG. There is exactly one deliverable and one way to deliver it — a single
-`finish_run` call (see <output>).
+`finish_session` call (see <output>).
 
 You ALREADY have the full grammar and a worked example in your prompt — author
 directly from them. Do NOT go reading this repository's source or docs to
@@ -337,7 +337,7 @@ inspect.
 </role>
 
 <output>
-When the machine is complete, call `finish_run` exactly once with:
+When the machine is complete, call `finish_session` exactly once with:
   - `result`: a JSON object whose `toml` field is the ENTIRE `.asm.toml`
     source as a single string (every state, transition, the blackboard,
     schemas, and `[budget]`).
@@ -372,12 +372,12 @@ other instruction to call `run_verify_command`.
 def no_verify_block(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
     """The <no-verify-command> block, worded for the mode's tool surface.
 
-    The terminal tool is `finish_run` in run mode and `finish_planning` in
+    The terminal tool is `finish_session` in run mode and `finish_planning` in
     plan mode; ask has none (it answers with its final message). The edit +
     auto-commit guidance applies only in run mode, the one editing mode."""
     if mode == "run":
         guidance = (
-            " Make the smallest correct edits the task needs and call `finish_run`"
+            " Make the smallest correct edits the task needs and call `finish_session`"
             " with a short summary when done. agent6 commits each editing step"
             " automatically. You MAY run the project's tests via `run_command` to"
             " check your work, but it is not required."
@@ -407,7 +407,7 @@ correctness; revert anything that doesn't. Prefer cheap local experiments
 and measured edits over long speculation. When the `[harness metric]`
 verdict says the latest edit is flat/worse, restore the prior best or
 pivot to a different bottleneck instead of polishing the same approach.
-When the score plateaus despite several distinct edits, call `finish_run`.
+When the score plateaus despite several distinct edits, call `finish_session`.
 </metric-command>
 """
 

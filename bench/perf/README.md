@@ -149,7 +149,7 @@ Takeaways, with the small-N / high-variance caveat firmly attached:
   $0.21–$1.04), rather than iterating to the budget like sonnet does.
   Lower spend here reflects *giving up sooner*, not efficiency.
 - **A dollar budget is not a dollar floor.** agent6 stops when the
-  worker calls `finish_run`; the cap only bounds the *maximum* spend.
+  worker calls `finish_session`; the cap only bounds the *maximum* spend.
 - **Reasoning-heavy models need an output-weighted budget.** Kimi is
   output-heavy, so the default 5:1 input:output split (see
   `INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET` in `src/agent6/budget.py`)
