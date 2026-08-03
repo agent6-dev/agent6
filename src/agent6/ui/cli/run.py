@@ -122,7 +122,9 @@ def run_frontend() -> RunFrontend:
         tui_session=lambda run_dir, enabled: tui_session(run_dir, enabled=enabled),
         build_approver=lambda run_dir, events: build_approver(run_dir, events, console_cell[0]),
         build_questioner=lambda run_dir, events: build_questioner(run_dir, events, console_cell[0]),
-        make_steer_state=lambda events, run_dir: make_steer_state(events, run_dir, console_cell[0]),
+        make_steer_state=lambda events, run_dir, facts: make_steer_state(
+            events, run_dir, console_cell[0], facts
+        ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,
         choose_branch_start_point=choose_branch_start_point,

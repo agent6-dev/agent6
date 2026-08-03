@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent6.app.run import RunFacts
 from agent6.events import EventSink
 from agent6.runs.ipc import (
     clear_steer_answer,
@@ -33,6 +34,7 @@ from agent6.runs.ipc import (
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable
 from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu
+from agent6.viewmodel.format import format_cost
 
 
 @dataclass
@@ -206,8 +208,48 @@ def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
         return None
 
 
+def format_run_facts(facts: RunFacts) -> str:
+    """The one-line status the pause banner and Ctrl-Z print: the few things a
+    CLI operator cannot otherwise see (a TUI/web viewer has widgets for them).
+    Spend first -- it is the fact that decides whether to interrupt now."""
+    return (
+        f"{format_cost(facts.spend_usd, partial=facts.spend_partial)}"
+        f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
+    )
+
+
+def _status_suffix(run_facts: Callable[[], RunFacts] | None) -> str:
+    """The indented status line under the pause banner, or nothing when the
+    lifecycle passed no facts (a detached leg has no terminal anyway)."""
+    if run_facts is None:
+        return ""
+    return f"          {format_run_facts(run_facts())}\n"
+
+
+def _install_status_signal(state: dict[str, Any], run_facts: Callable[[], RunFacts] | None) -> Any:
+    """Ctrl-Z: print the run's state, and stand an armed pause back down, so
+    checking on a run never costs it a step. Replaces SIGTSTP's default on
+    purpose -- suspending a run mid-step would freeze it holding its worker
+    lock and its egress broker until someone went looking for it."""
+    if not hasattr(signal, "SIGTSTP"):
+        return None
+
+    def _handler(_signum: int, _frame: Any) -> None:
+        line = _status_suffix(run_facts).strip() or "no live facts for this leg"
+        if state["stage"] == 1:
+            state["stage"] = 0
+            tty_message(f"\n[agent6] {line}\n[agent6] pause cancelled; the run continues.\n")
+        else:
+            tty_message(f"\n[agent6] {line}\n")
+
+    return signal.signal(signal.SIGTSTP, _handler)
+
+
 def install_steer_sigint(
-    events: EventSink, run_dir: Path, console_view: ConsoleView | None = None
+    events: EventSink,
+    run_dir: Path,
+    console_view: ConsoleView | None = None,
+    run_facts: Callable[[], RunFacts] | None = None,
 ) -> SteerState:
     """Install a SIGINT handler with escalating stages.
 
@@ -220,6 +262,10 @@ def install_steer_sigint(
     * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
     * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
       stopping the run (resumable with ``agent6 resume``).
+    * Ctrl-Z prints the same one-line status WITHOUT arming anything, and
+      cancels an armed pause -- so checking on a run costs it nothing. It also
+      replaces SIGTSTP's default: suspending a run mid-step would freeze it
+      holding its locks and its egress broker.
 
     ``console_view``, when given, has its heartbeat spinner suspended for the
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
@@ -254,10 +300,11 @@ def install_steer_sigint(
         if not frontend_is_live(run_dir):
             tty_message(
                 "\n[agent6] pausing after this step: steer / continue / stop / detach."
-                " Ctrl-C again to interrupt now.\n"
+                " Ctrl-C again to interrupt now.\n" + _status_suffix(run_facts)
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
+    previous_tstp = _install_status_signal(state, run_facts)
 
     def requested() -> bool:
         # Either a Ctrl-C (any stage) OR a front-end steer request marker.
@@ -308,6 +355,9 @@ def install_steer_sigint(
     def restore() -> None:
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGINT, previous)
+        if previous_tstp is not None:
+            with contextlib.suppress(Exception):
+                signal.signal(signal.SIGTSTP, previous_tstp)
 
     def reset_stage() -> None:
         state["stage"] = 0
@@ -355,7 +405,10 @@ def file_bridge_steer(run_dir: Path) -> SteerState:
 
 
 def make_steer_state(
-    events: EventSink, run_dir: Path, console_view: ConsoleView | None = None
+    events: EventSink,
+    run_dir: Path,
+    console_view: ConsoleView | None = None,
+    run_facts: Callable[[], RunFacts] | None = None,
 ) -> SteerState:
     """Install the steer SIGINT handler when a controlling terminal exists
     (covers run/plan/ask with or without the TUI); else steer purely over the
@@ -365,4 +418,4 @@ def make_steer_state(
             pass
     except OSError:
         return file_bridge_steer(run_dir)
-    return install_steer_sigint(events, run_dir, console_view)
+    return install_steer_sigint(events, run_dir, console_view, run_facts)

@@ -112,6 +112,21 @@ from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
 
 
+@dataclass(frozen=True, slots=True)
+class RunFacts:
+    """The live facts the CLI pause banner shows, so an operator deciding
+    whether to interrupt can see what this run is doing without the widgets a
+    TUI/web viewer has. Built by the lifecycle (which holds the tracker and the
+    resolved config) and rendered by the front-end; read inside a signal
+    handler, so every field is already in memory -- no file read, no fold."""
+
+    spend_usd: float
+    spend_partial: bool  # a model with no price data contributed: a lower bound
+    model: str
+    run_commands: str
+    isolation: str
+
+
 class SteerHooks(Protocol):
     """What the lifecycle needs of the front-end's steer state (the SIGINT
     pause menu or the file-bridge steer); `ui/cli/_steer.SteerState` satisfies
@@ -171,7 +186,7 @@ class RunFrontend:
     build_questioner: Callable[
         [Path, EventSink], Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
     ]
-    make_steer_state: Callable[[EventSink, Path], SteerHooks]
+    make_steer_state: Callable[[EventSink, Path, Callable[[], RunFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
     choose_branch_start_point: Callable[[Config, Path, str], BranchChoice]
@@ -486,6 +501,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg, isolation, agent6_exe=frontend.agent6_exe, reporter=reporter
             )
         except SessionRefused as refusal:
+            # Nothing ran, so leave no run dir behind: every other refusal
+            # discards its husk, and one that survives is listed forever as a
+            # run that produced nothing.
+            discard_husk_dir(layout.run_dir)
             return refusal.rc
 
         # Cut the run branch, then write the manifest that records it. The cut
@@ -550,7 +569,20 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
         # console view's heartbeat spinner is suspended for the prompt so its
         # line-erase cannot wipe the pause-menu line.
-        steer_state = frontend.make_steer_state(events, layout.run_dir)
+        # Bound now, not read in the handler: these never change for the leg.
+        facts_model, facts_commands = session.rm_role.model, cfg.sandbox.run_commands
+
+        def _run_facts() -> RunFacts:
+            spend, partial = budget.estimate_usd()
+            return RunFacts(
+                spend_usd=spend,
+                spend_partial=partial,
+                model=facts_model,
+                run_commands=facts_commands,
+                isolation=isolation,
+            )
+
+        steer_state = frontend.make_steer_state(events, layout.run_dir, _run_facts)
 
         result = None
         interrupted = False

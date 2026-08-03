@@ -382,3 +382,52 @@ def test_pause_menu_compact_accepts_focus(
     assert pause_menu(tmp_path, input_fn=_feed(["/c keep it"])) == "/c keep it"
     # /pin with args is the loop's directive, never a menu route
     assert pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"
+
+
+def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C's first stage now carries the facts a CLI operator cannot
+    otherwise see, and Ctrl-Z shows the same line without arming anything --
+    de-escalating an armed pause so checking on a run costs it nothing. It also
+    replaces SIGTSTP's default: suspending a run mid-step would freeze it
+    holding its worker lock and its egress broker."""
+    import signal
+
+    from agent6.app.run import RunFacts
+    from agent6.events import EventSink
+    from agent6.ui.cli import _steer
+
+    printed: list[str] = []
+    monkeypatch.setattr(_steer, "tty_message", printed.append)
+    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)
+
+    facts = RunFacts(
+        spend_usd=1.42,
+        spend_partial=False,
+        model="claude-sonnet-4-6",
+        run_commands="ask",
+        isolation="strict",
+    )
+    state = _steer.install_steer_sigint(
+        EventSink(tmp_path / "logs.jsonl"), tmp_path, None, lambda: facts
+    )
+    try:
+        sigint = signal.getsignal(signal.SIGINT)
+        sigtstp = signal.getsignal(signal.SIGTSTP)
+        assert callable(sigint) and callable(sigtstp)
+
+        sigint(signal.SIGINT, None)  # first Ctrl-C: arm + show the facts
+        assert state.requested() is True
+        assert "$1.42 · claude-sonnet-4-6 · commands ask · strict" in printed[0]
+
+        sigtstp(signal.SIGTSTP, None)  # Ctrl-Z: same facts, and stand down
+        assert "$1.42" in printed[1] and "pause cancelled" in printed[1]
+
+        # Disarmed: the next Ctrl-C arms again rather than escalating to an
+        # interrupt the operator never asked for.
+        printed.clear()
+        sigint(signal.SIGINT, None)
+        assert "pausing after this step" in printed[0]
+    finally:
+        state.restore()

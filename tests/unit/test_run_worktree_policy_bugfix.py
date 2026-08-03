@@ -29,6 +29,7 @@ from agent6.config import (
     RoleModel,
 )
 from agent6.git_ops import status as git_status
+from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -192,3 +193,27 @@ def test_post_guard_refusal_leaves_checkout_untouched(
         check=True,
     ).stdout.strip()
     assert cut == ""  # the run branch was never cut
+
+
+def test_egress_refusal_leaves_no_husk_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every refusal discards its run dir; the egress one used to return without
+    doing so, leaving a husk with worker.lock/checkpoints/graph but no manifest
+    and no logs -- a run that produced nothing, on disk forever."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    monkeypatch.chdir(repo)
+    cfg = _runnable_cfg(GitConfig())
+    _patch_common(monkeypatch, cfg)
+
+    def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
+        return session_mod.EgressGuard(), "no egress today"
+
+    monkeypatch.setattr(session_mod, "maybe_start_egress", _refuse_egress)
+
+    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
+    assert "REFUSING: no egress today" in capsys.readouterr().err
+    runs = _state_dir(repo) / "runs"
+    assert not runs.exists() or not any(runs.iterdir())

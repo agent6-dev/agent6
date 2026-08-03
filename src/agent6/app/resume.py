@@ -47,7 +47,7 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import RunFrontend, apply_spawned_away_default, run_task
+from agent6.app.run import RunFacts, RunFrontend, apply_spawned_away_default, run_task
 from agent6.config import (
     Config,
     ConfigError,
@@ -509,7 +509,20 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = cfg.with_inferred_verify(snap_verify)
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
 
-        steer_state = frontend.make_steer_state(events, layout.run_dir)
+        # Bound now, not read in the handler: these never change for the leg.
+        facts_model, facts_commands = session.rm_role.model, cfg.sandbox.run_commands
+
+        def _run_facts() -> RunFacts:
+            spend, partial = budget.estimate_usd()
+            return RunFacts(
+                spend_usd=spend,
+                spend_partial=partial,
+                model=facts_model,
+                run_commands=facts_commands,
+                isolation=isolation,
+            )
+
+        steer_state = frontend.make_steer_state(events, layout.run_dir, _run_facts)
 
         result = None
         interrupted = False
