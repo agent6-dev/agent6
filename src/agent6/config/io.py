@@ -172,6 +172,22 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         lines = text.splitlines()
         if table:
+            # Refuse a leaf whose ancestor is a table written WITHOUT a header
+            # (an inline table or a dotted key). The surgery only knows
+            # `[table]` headers, so it would emit one that collides with the
+            # ancestor -- and _drop_top_region_key below, whose job is the bare
+            # SCALAR vs `[table]` conflict (`profile` vs `[profile]`), matches a
+            # table-valued top-level key too and would delete it with every
+            # sibling setting inside it. Raised here rather than in one command
+            # so `config add`/`remove` and the engine-level writers behind the
+            # TUI, connect, init and model cannot skip the check.
+            if owner := undeclared_table_ancestor(path, dotted_key):
+                raise ValueError(
+                    f"{dotted_key} lives inside the value of {owner}, which is written"
+                    " without a [table] header (an inline table or a dotted key), so it"
+                    f" cannot be set on its own. Set {owner} as a whole, or edit {path}"
+                    " by hand."
+                )
             lines = _drop_top_region_key(lines, table.split(".", 1)[0])
             start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
             if start is None:

@@ -23,11 +23,11 @@ from agent6.config.io import (
     read_toml_leaf,
     remove_toml_leaf,
     remove_toml_table,
-    undeclared_table_ancestor,
     upsert_toml_leaf,
 )
 from agent6.config.layer import (
     InvalidEntry,
+    _target_unparseable,  # pyright: ignore[reportPrivateUsage]
     effective_leaf,
     find_invalid_entries,
     flatten_leaves,
@@ -330,15 +330,6 @@ def _written_value_error(key: str, value: object) -> str | None:
     return None
 
 
-def _target_unparseable(target: Path) -> bool:
-    """Whether *target* itself is no longer valid TOML (a missing file is fine)."""
-    try:
-        read_toml_file(target)
-    except ConfigError:
-        return True
-    return False
-
-
 def _revalidate_layered(
     target: Path,
     prior_text: str | None,
@@ -440,7 +431,7 @@ def _cmd_config_get(key: str, *, machine: Path | None) -> int:
     return 0
 
 
-def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -> int:  # noqa: PLR0911
+def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
     """Set a scalar leaf in the target file (global / repo / machine overlay)."""
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
@@ -462,15 +453,6 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
                 # the write lands as a duplicate table), and the already-invalid
                 # branch below would then report it as another layer's fault.
                 read_toml_file(target)
-                if owner := undeclared_table_ancestor(target, prefix + key):
-                    print(
-                        f"ERROR: {key} lives inside the value of {owner}, which is written"
-                        " without a [table] header (an inline table or a dotted key), so it"
-                        f" cannot be set on its own. Set {owner} as a whole, or edit"
-                        f" {target} by hand.",
-                        file=sys.stderr,
-                    )
-                    return 2
                 upsert_toml_leaf(target, prefix + key, parsed)
             except ConfigError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)

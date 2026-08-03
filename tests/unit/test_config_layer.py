@@ -503,3 +503,21 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
     monkeypatch.setattr(layer_mod, "chown_to_real_user", handed.append)
     assert set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True) is not None
     assert repo_config_path_for(repo) in handed
+
+
+def test_engine_writers_roll_back_a_write_into_an_unparseable_target(
+    repo: Path, tmp_path: Path
+) -> None:
+    """`agent6 connect`, `agent6 init`, `agent6 model` and the TUI config page
+    write through this path, not the CLI one. Over a target that does not parse,
+    the surgery appends a block and the file still does not parse -- and the
+    "already invalid, so blame another layer" arm kept it and reported success,
+    leaving a config no command could read. The CLI writers already refused."""
+    gcfg = tmp_path / "g" / "config.toml"
+    gcfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
+    before = gcfg.read_text(encoding="utf-8")
+
+    err = set_config_value(repo, "sandbox.run_commands", "no")
+
+    assert err is not None, "a write into an unparseable target must not report success"
+    assert gcfg.read_text(encoding="utf-8") == before, "the broken write was kept"

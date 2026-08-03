@@ -858,6 +858,15 @@ def _writing_config(target: Path) -> Generator[None]:
             chown_to_real_user(target)
 
 
+def _target_unparseable(target: Path) -> bool:
+    """Whether *target* itself is no longer valid TOML (a missing file is fine)."""
+    try:
+        read_toml_file(target)
+    except ConfigError:
+        return True
+    return False
+
+
 def config_is_valid(repo_root: Path) -> bool:
     """Whether the merged config currently loads. Measured BEFORE a write so
     :func:`_revalidate` can tell "this edit broke it" from "it was already
@@ -886,7 +895,12 @@ def _revalidate(repo_root: Path, target: Path, prior: str | None, *, was_valid: 
     try:
         load_effective(repo_root, None)
     except ConfigError as exc:
-        if not was_valid:
+        # A target that no longer PARSES is always this write's doing, never a
+        # stale value in another layer: keeping it leaves a config no command
+        # can read. The CLI writers had this guard; the engine-level ones the
+        # TUI, connect, init and model use did not, so `connect` appended a
+        # provider block to an unparseable file and reported success.
+        if not was_valid and not _target_unparseable(target):
             return None  # broken before this edit; not ours to refuse
         if prior is None:
             target.unlink(missing_ok=True)

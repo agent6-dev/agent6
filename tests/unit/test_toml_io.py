@@ -291,3 +291,25 @@ def test_upsert_toml_leaf_replaces_a_whole_multiline_string(tmp_path: Path) -> N
     upsert_toml_leaf(path, "a.x", "flat")
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert data["a"] == {"x": "flat", "y": 1}
+
+
+def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
+    """`sandbox = { protect_git = false, ... }` is legal TOML. The bare-key drop
+    exists for the SCALAR-vs-[table] conflict (`profile` vs `[profile]`), but its
+    regex matched a table-valued key too, so writing any sandbox.* leaf deleted
+    the whole line -- every sibling setting in it -- and reported success. The
+    refusal lives in the writer so `config add`/`remove` and the engine-level
+    writers behind the TUI, connect and init cannot skip it."""
+    p = tmp_path / "c.toml"
+    body = 'sandbox = { protect_git = false, run_commands = "yes", memory_limit_mb = 8000 }\n'
+    p.write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="without a \\[table\\] header"):
+        upsert_toml_leaf(p, "sandbox.allow_urls", ["https://example.com"])
+    assert p.read_text(encoding="utf-8") == body, "the operator's settings were deleted"
+
+    # The conflict it DOES exist for still resolves: a bare scalar gives way.
+    p.write_text('profile = "ultra"\n', encoding="utf-8")
+    upsert_toml_leaf(p, "profile.nested", 1)
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert parsed["profile"] == {"nested": 1}
