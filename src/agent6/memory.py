@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from agent6.errors import OperatorError
 from agent6.graph.ulid import new_ulid
 from agent6.portable import atomic_write, lock_exclusive, unlock
 
@@ -50,8 +51,12 @@ _ID_RE = re.compile(r"^### ([0-9A-HJKMNP-TV-Z]{26})\s*$")
 _KEY_RE = re.compile(r"^([a-z_]+):\s*(.+)$")
 
 
-class MemoryStoreError(Exception):
-    """Memory-store operation failed."""
+class MemoryStoreError(OperatorError):
+    """Memory-store operation failed.
+
+    An OperatorError: a bad id/scope/body or an unreadable store refuses at
+    the CLI boundary; the run loop keeps its own degrade catches.
+    """
 
 
 @dataclass(frozen=True, slots=True)

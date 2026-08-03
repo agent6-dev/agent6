@@ -195,16 +195,38 @@ def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
 
 
 def test_cli_machine_test_missing_fixture(tmp_path: Path) -> None:
+    from agent6.errors import OperatorError
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
-    assert main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")]) == 2
+    with pytest.raises(OperatorError, match="could not read"):
+        main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")])
 
 
 def test_cli_machine_test_bad_fixture_toml(tmp_path: Path) -> None:
+    from agent6.errors import OperatorError
     from agent6.ui.cli import main
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
     bb.write_text("not = valid = toml", encoding="utf-8")
-    assert main(["machine", "test", str(f), "--blackboard", str(bb)]) == 2
+    with pytest.raises(OperatorError, match="not valid TOML"):
+        main(["machine", "test", str(f), "--blackboard", str(bb)])
+
+
+def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
+    """The fixture read caught a TOML parse error but not an OSError, so a
+    root-owned blackboard crashed through the bug reporter instead of the
+    operator-error refusal every other unreadable operator file gets."""
+    from agent6.errors import OperatorError
+    from agent6.ui.cli import main
+
+    f = _write(tmp_path)
+    bb = tmp_path / "bb.toml"
+    bb.write_text("approved = true\n", encoding="utf-8")
+    bb.chmod(0o000)
+    try:
+        with pytest.raises(OperatorError, match="could not read"):
+            main(["machine", "test", str(f), "--blackboard", str(bb)])
+    finally:
+        bb.chmod(0o600)

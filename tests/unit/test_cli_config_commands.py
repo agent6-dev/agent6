@@ -313,7 +313,7 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     (iso / "g").mkdir(parents=True, exist_ok=True)
     cfg = iso / "g" / "config.toml"
     cfg.write_text("sandbox.protect_git = false\n", encoding="utf-8")
-    rc = _run(["config", "unset", "sandbox.protect_git"])
+    rc = _refuse(["config", "unset", "sandbox.protect_git"])
     assert rc == 2
     assert "cannot be unset on its own" in capsys.readouterr().err
     # The file is untouched: nothing was silently dropped or rewritten.
@@ -379,3 +379,68 @@ def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
         assert _refuse(["config", "show"]) == 2
     finally:
         cfg.chmod(0o600)
+
+
+_CRASH_MARKERS = ("unexpected", "full traceback", "report this")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["config", "set", "workflow.max_iterations", "7"],
+        ["config", "unset", "review.period"],
+        ["config", "add", "sandbox.allow_urls", "https://example.com"],
+        ["config", "remove", "sandbox.allow_urls", "https://example.com"],
+    ],
+    ids=["set", "unset", "add", "remove"],
+)
+def test_write_commands_refuse_an_unreadable_target(
+    iso: Path, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    """The unreadable-config fix landed in the readers while every write command
+    still read the target directly first: `config set`/`unset` crashed through
+    the bug reporter at exit 1 on a root-owned config the readers refused."""
+    gdir = iso / "g"
+    gdir.mkdir(parents=True, exist_ok=True)
+    cfg = gdir / "config.toml"
+    cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    cfg.chmod(0o000)
+    try:
+        assert _refuse(argv) == 2
+    finally:
+        cfg.chmod(0o600)
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: ")
+    assert "config.toml" in err
+    assert not any(marker in err for marker in _CRASH_MARKERS)
+
+
+def test_a_write_command_bug_still_crash_reports(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Routing operator errors to the boundary must not soften real bugs: an
+    unexpected exception inside `config set` keeps the crash report at exit 1."""
+    from agent6.ui.cli import config_cmds
+
+    def _boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(config_cmds, "upsert_toml_leaf", _boom)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    assert _refuse(["config", "set", "workflow.max_iterations", "7"]) == 1
+    err = capsys.readouterr().err
+    assert "unexpected RuntimeError" in err
+    tb_line = next(line for line in err.splitlines() if "full traceback:" in line)
+    Path(tb_line.split("full traceback:", 1)[1].strip()).unlink()
+
+
+def test_set_of_an_unserializable_cli_value_refuses(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """parse_cli_value reads `2024-01-01` as a TOML date, which the writer cannot
+    serialize. That refusal used to live in a per-command except arm; it must
+    survive the arm's deletion as a refusal, never become a crash report."""
+    assert _refuse(["config", "set", "workflow.max_iterations", "2024-01-01"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: ")
+    assert not any(marker in err for marker in _CRASH_MARKERS)

@@ -32,7 +32,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.config.write import target_unparseable, written_value_error
-from agent6.errors import OperatorError
+from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
@@ -159,7 +159,7 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
     """
     if machine is not None:
         if repo:
-            raise ValueError("use either --repo or --machine-file, not both")
+            raise OperatorError("use either --repo or --machine-file, not both")
         return machine, "config."
     if repo:
         return repo_config_path_for(Path.cwd()), ""
@@ -363,30 +363,19 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
-    try:
-        target, prefix = _config_write_target(repo=repo, machine=machine)
-    except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    target, prefix = _config_write_target(repo=repo, machine=machine)
     _open_target(target)
     parsed = parse_cli_value(value)
     try:
         with locked_file(target) as held:
-            prior = target.read_text(encoding="utf-8") if target.is_file() else None
+            prior = read_operator_file(target) if target.is_file() else None
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this write?
-            try:
-                # Line surgery on a file we cannot parse only appends to the
-                # damage (a malformed header is invisible to the lookups, so
-                # the write lands as a duplicate table), and the already-invalid
-                # branch below would then report it as another layer's fault.
-                read_toml_file(target)
-                upsert_toml_leaf(target, prefix + key, parsed)
-            except ConfigError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 2
-            except ValueError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 2
+            # Line surgery on a file we cannot parse only appends to the
+            # damage (a malformed header is invisible to the lookups, so
+            # the write lands as a duplicate table), and the already-invalid
+            # branch below would then report it as another layer's fault.
+            read_toml_file(target)
+            upsert_toml_leaf(target, prefix + key, parsed)
             if err := _revalidate_config(
                 target,
                 prior,
@@ -405,32 +394,21 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     return 0
 
 
-def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # noqa: PLR0911
+def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:
     """Remove a leaf so it reverts to the next-lower layer / built-in default."""
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
-    try:
-        target, prefix = _config_write_target(repo=repo, machine=machine)
-    except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
         return 2
     try:
         with locked_file(target) as held:
-            prior = target.read_text(encoding="utf-8")
+            prior = read_operator_file(target)
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this unset?
-            try:
-                read_toml_file(target)  # see _cmd_config_set: never edit what we cannot read
-                removed = remove_toml_leaf(target, prefix + key)
-            except ConfigError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 2
-            except ValueError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 2
+            read_toml_file(target)  # see _cmd_config_set: never edit what we cannot read
+            removed = remove_toml_leaf(target, prefix + key)
             if not removed:
                 print(f"{key} is not set in {target}; nothing to unset.")
                 return 0
@@ -470,11 +448,7 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
-    try:
-        target, prefix = _config_write_target(repo=repo, machine=machine)
-    except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    target, prefix = _config_write_target(repo=repo, machine=machine)
     # The lock spans from the current-items read: the list RMW starts there,
     # and two concurrent adds otherwise both read the same base list and the
     # later publish drops the earlier element.
@@ -484,7 +458,7 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         chown_to_real_user(target)
 
 
-def _locked_list_edit(  # noqa: PLR0911
+def _locked_list_edit(
     target: Path, prefix: str, key: str, value: str, *, machine: Path | None, add: bool
 ) -> int:
     with locked_file(target) as held:
@@ -510,13 +484,9 @@ def _locked_list_edit(  # noqa: PLR0911
                 return 0
             items = [x for x in items if x != parsed]
         _open_target(target)
-        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        prior = read_operator_file(target) if target.is_file() else None
         was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this edit?
-        try:
-            upsert_toml_leaf(target, prefix + key, items)
-        except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
+        upsert_toml_leaf(target, prefix + key, items)
         if err := _revalidate_config(
             target, prior, machine=machine, was_valid=was_valid, held=held
         ):
@@ -597,7 +567,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
                         if entry.is_table
                         else remove_toml_leaf(entry.path, entry.file_key)
                     )
-                except ValueError:
+                except ConfigError:
                     # A leaf inside an inline table / dotted key: the surgery
                     # cannot carve it out, so it is stuck (fix has always
                     # reported this shape as stuck; the owner now refuses

@@ -27,8 +27,9 @@ almost always a sign of the wrong design.
 
 - **cli** ([src/agent6/ui/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)): argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. `cli_main` is the
-  one error boundary: an `OperatorError` (`agent6.errors`; `ConfigError`
-  subclasses it) means the operator's input or file is bad and prints as an
+  one error boundary: an `OperatorError` (`agent6.errors`; `ConfigError` and
+  `MemoryStoreError` subclass it) means the operator's input or file is bad
+  and prints as an
   `ERROR:` refusal at exit 2; anything else is a bug and crash-reports with a
   saved traceback at exit 1. Config is
   resolved by [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (built-in

@@ -1383,4 +1383,6 @@ def load_config(path: Path) -> Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
     return validate_config(raw, source=str(path))

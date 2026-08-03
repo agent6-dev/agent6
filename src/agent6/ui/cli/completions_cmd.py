@@ -36,6 +36,7 @@ from pathlib import Path
 
 from argcomplete.shell_integration import shellcode
 
+from agent6.errors import read_operator_file
 from agent6.paths import global_config_dir
 
 SHELLS = ("bash", "zsh", "fish", "xonsh")
@@ -184,7 +185,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
         f'[ -f "{script}" ] && source "{script}"  # agent6 tab-completion\n'
         f"{_MARK_END}\n"
     )
-    existing = rc.read_text(encoding="utf-8") if rc.exists() else ""
+    existing = read_operator_file(rc) if rc.exists() else ""
     if _MARK_BEGIN in existing:
         print(f"[agent6] refreshed {script} (already sourced from {rc})")
     else:

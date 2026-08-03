@@ -626,7 +626,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
     def _fail_second(path: Path, key: str, value: object) -> None:
         calls["n"] += 1
         if calls["n"] == 2:
-            raise ValueError("second leaf refused")
+            raise ConfigError("second leaf refused")
         real(path, key, value)
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
@@ -640,3 +640,16 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 
     assert err == "second leaf refused"
     assert rcfg.read_text(encoding="utf-8") == before  # the first leaf's write rolled back
+
+
+def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:
+    """The single-file loader caught the TOML parse error but not the OSError
+    its layered sibling wraps: chmod-000 escaped as a raw PermissionError."""
+    p = tmp_path / "c.toml"
+    p.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    p.chmod(0o000)
+    try:
+        with pytest.raises(ConfigError, match="cannot be read"):
+            load_config(p)
+    finally:
+        p.chmod(0o600)

@@ -1,16 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 memory add/list/invalidate` commands."""
+"""`agent6 memory add/list/invalidate` commands.
+
+Store refusals (a bad id, an unreadable store) raise MemoryStoreError, an
+OperatorError the cli_main boundary presents; no per-command arms.
+"""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from agent6.memory import (
     MemoryEntry,
     MemoryScope,
-    MemoryStoreError,
 )
 from agent6.memory import (
     add as memory_add,
@@ -29,24 +31,16 @@ from agent6.workflows import MEMORIES_MAX_CHARS, MEMORY_ENTRY_MAX_CHARS
 
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
-    try:
-        entry = memory_add(_state_dir(Path.cwd()), scope, body)
-    except MemoryStoreError as exc:
-        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
-        return 2
+    entry = memory_add(_state_dir(Path.cwd()), scope, body)
     print(f"{entry.scope} {entry.id} created at {entry.created_at}")
     return 0
 
 
 def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) -> int:
-    try:
-        entries = memory_list(_state_dir(Path.cwd()), scope)
-        # The block trims across ALL scopes, so the over-cap warning must too --
-        # a --scope listing would otherwise miss a global overflow.
-        everything = entries if scope is None else memory_list(_state_dir(Path.cwd()), None)
-    except MemoryStoreError as exc:
-        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
-        return 2
+    entries = memory_list(_state_dir(Path.cwd()), scope)
+    # The block trims across ALL scopes, so the over-cap warning must too --
+    # a --scope listing would otherwise miss a global overflow.
+    everything = entries if scope is None else memory_list(_state_dir(Path.cwd()), None)
     shown = [e for e in entries if include_invalidated or e.is_active]
     pinned_cost = sum(
         min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
@@ -87,30 +81,18 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
 
 
 def _cmd_memory_invalidate(memory_id: str, reason: str) -> int:
-    try:
-        entry = memory_invalidate(_state_dir(Path.cwd()), memory_id, reason)
-    except MemoryStoreError as exc:
-        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
-        return 2
+    entry = memory_invalidate(_state_dir(Path.cwd()), memory_id, reason)
     print(f"invalidated {entry.scope} {entry.id} at {entry.invalidated_at}")
     return 0
 
 
 def _cmd_memory_pin(memory_id: str) -> int:
-    try:
-        entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, True)
-    except MemoryStoreError as exc:
-        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
-        return 2
+    entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, True)
     print(f"pinned {entry.scope} {entry.id} (trimmed last; the <memories> byte cap still binds)")
     return 0
 
 
 def _cmd_memory_unpin(memory_id: str) -> int:
-    try:
-        entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, False)
-    except MemoryStoreError as exc:
-        print(f"MEMORY ERROR: {exc}", file=sys.stderr)
-        return 2
+    entry = memory_set_pinned(_state_dir(Path.cwd()), memory_id, False)
     print(f"unpinned {entry.scope} {entry.id}")
     return 0

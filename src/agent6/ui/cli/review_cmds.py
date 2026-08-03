@@ -223,8 +223,15 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
+    # Tolerant read, mirroring the run path's AGENTS.md reads: optional context
+    # degrades to a review without it, never a crash.
     agents_md_path = root / "AGENTS.md"
-    agents_md = agents_md_path.read_text(encoding="utf-8") if agents_md_path.is_file() else ""
+    agents_md = ""
+    if agents_md_path.is_file():
+        try:
+            agents_md = agents_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            agents_md = ""
 
     # Reviewer-only: route the "reviewer" role per [models.reviewer]. Budget
     # is per-invocation since this command is a one-shot.

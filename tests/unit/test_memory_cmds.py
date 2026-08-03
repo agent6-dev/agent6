@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.memory import MemoryStoreError
 from agent6.ui.cli.memory_cmds import (
     _cmd_memory_add,  # pyright: ignore[reportPrivateUsage]
     _cmd_memory_invalidate,  # pyright: ignore[reportPrivateUsage]
@@ -75,9 +76,9 @@ def test_pin_unpin_roundtrip_and_list_marker(env: Path, capsys: pytest.CaptureFi
     assert "[pinned]" in capsys.readouterr().out
     assert _cmd_memory_unpin(mem_id) == 0
     assert "unpinned" in capsys.readouterr().out
-    # errors are loud and non-zero
-    assert _cmd_memory_unpin(mem_id) == 2
-    assert "not pinned" in capsys.readouterr().err
+    # errors are loud: the store's refusal carries to the CLI boundary
+    with pytest.raises(MemoryStoreError, match="not pinned"):
+        _cmd_memory_unpin(mem_id)
 
 
 def test_list_warns_when_pins_exceed_the_block_cap(
@@ -103,9 +104,7 @@ def test_list_warns_when_pins_exceed_the_block_cap(
     assert "exceed the memory block cap" in capsys.readouterr().out
 
 
-def test_list_of_one_scope_reports_an_unreadable_other_scope(
-    env: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_list_of_one_scope_reports_an_unreadable_other_scope(env: Path) -> None:
     """The over-cap warning re-reads EVERY scope, and that read sat outside the
     error guard: `memory list --scope facts` died with a raw traceback when an
     unrelated scope's file was unreadable, where it used to print the listing."""
@@ -115,5 +114,19 @@ def test_list_of_one_scope_reports_an_unreadable_other_scope(
     bad = _state_dir(Path.cwd()) / "memories" / "decisions.md"
     bad.write_bytes(b"id: x\nscope: decisions\n\xff\xfe body\n")
 
-    assert _cmd_memory_list("facts", include_invalidated=False) == 2
-    assert "MEMORY ERROR" in capsys.readouterr().err
+    with pytest.raises(MemoryStoreError, match="decisions"):
+        _cmd_memory_list("facts", include_invalidated=False)
+
+
+def test_a_memory_refusal_reaches_the_shared_boundary(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The memory commands kept their own `MEMORY ERROR:` voice after the
+    one-error-boundary commit unified the refusal surface: a store refusal is an
+    operator error, so cli_main presents it as `ERROR:` at exit 2."""
+    from agent6.ui.cli import cli_main
+
+    assert cli_main(["memory", "invalidate", "01JUNKJUNKJUNKJUNKJUNKJUNK", "stale"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: ")
+    assert "MEMORY ERROR" not in err

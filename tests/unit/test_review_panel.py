@@ -499,3 +499,53 @@ def test_panel_is_inconclusive_owner() -> None:
         n_abstain=0,
     )
     assert panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
+
+
+def test_review_degrades_on_an_unreadable_agents_md(
+    monkeypatch: Any, tmp_path: Any, capsys: Any
+) -> None:
+    """AGENTS.md is optional review context (the run path reads it tolerantly);
+    an unreadable one crashed `agent6 review` through the bug reporter instead
+    of reviewing without it."""
+    from types import SimpleNamespace
+
+    from agent6.config import Config
+    from agent6.ui.cli import review_cmds
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("# rules\n", encoding="utf-8")
+    agents.chmod(0o000)
+
+    seen: dict[str, str] = {}
+
+    def _fake_panel(_cfg: Config, **kwargs: Any) -> int:
+        seen["agents_md"] = kwargs["agents_md"]
+        return 0
+
+    def _fake_effective(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(config=Config())
+
+    def _runnable(_self: Config, _role: str) -> None:
+        return None
+
+    def _no_key_error(_cfg: Config) -> None:
+        return None
+
+    def _fake_diff(*_a: object, **_k: object) -> SimpleNamespace:
+        return SimpleNamespace(returncode=0, stdout="diff --git a/x\n+1\n", stderr="")
+
+    monkeypatch.setattr(review_cmds, "load_effective", _fake_effective)
+    monkeypatch.setattr(Config, "require_runnable", _runnable)
+    monkeypatch.setattr(review_cmds, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(review_cmds, "_collect_review_diff", _fake_diff)
+    monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
+    try:
+        rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+            None, base="", head="", paths=(), reviewers=1
+        )
+    finally:
+        agents.chmod(0o600)
+    assert rc == 0
+    assert seen["agents_md"] == ""  # reviewed without the unreadable context

@@ -37,6 +37,7 @@ from agent6.config.model import (
     Deployment,
     OpenAIProviderEntry,
 )
+from agent6.errors import read_operator_file
 from agent6.paths import chown_to_real_user, global_config_path, mkdir_for_real_user
 from agent6.portable import atomic_write, locked_file
 
@@ -267,12 +268,12 @@ def set_config_value(
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target) as held:
-        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        prior = read_operator_file(target) if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         parsed = parse_cli_value(raw_value)
         try:
             upsert_toml_leaf(target, dotted_key, parsed)
-        except ValueError as exc:
+        except ConfigError as exc:
             return str(exc)
         return _revalidate(
             repo_root, target, prior, was_valid=was_valid, held=held, written=[(dotted_key, parsed)]
@@ -292,11 +293,11 @@ def set_config_table(
     on invalid config, else None. ``None`` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target) as held:
-        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        prior = read_operator_file(target) if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         try:
             upsert_toml_table(target, table, fields)
-        except ValueError as exc:
+        except ConfigError as exc:
             return str(exc)
         return _revalidate(
             repo_root,
@@ -351,13 +352,13 @@ def set_config_leaves(
     config restores the prior file whole. ``None`` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target) as held:
-        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        prior = read_operator_file(target) if target.is_file() else None
         was_valid = config_is_valid(repo_root)
         try:
             for key, val in fields.items():
                 if val is not None:
                     upsert_toml_leaf(target, f"{table}.{key}", val)
-        except ValueError as exc:
+        except ConfigError as exc:
             # A leaf whose ancestor is a header-less table: the surgery refuses
             # (its sibling writers catch this too). Restore the prior file so a
             # partial multi-leaf write doesn't land, and return the message --
@@ -385,11 +386,11 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
     if not target.is_file():
         return None
     with _writing_config(target) as held:
-        prior = target.read_text(encoding="utf-8")
+        prior = read_operator_file(target)
         was_valid = config_is_valid(repo_root)
         try:
             removed = remove_toml_leaf(target, dotted_key)
-        except ValueError as exc:
+        except ConfigError as exc:
             return str(exc)
         if not removed:
             return None

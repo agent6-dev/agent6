@@ -133,3 +133,22 @@ def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("os.getppid", lambda: 50)
     monkeypatch.setenv("SHELL", "/bin/bash")
     assert detect_shell() == "fish"
+
+
+def test_bash_install_refuses_an_unreadable_rc(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The installer reads the rc to decide whether the source block is already
+    there; an unreadable rc is the operator's file, so it refuses through the
+    boundary instead of crash-reporting (and never appends blind)."""
+    from agent6.errors import OperatorError
+
+    rc = home / ".bashrc"
+    rc.write_text("# mine\n", encoding="utf-8")
+    rc.chmod(0o000)
+    try:
+        with pytest.raises(OperatorError, match="could not read"):
+            cmd_completions("bash", print_only=False)
+    finally:
+        rc.chmod(0o600)
+    assert rc.read_text(encoding="utf-8") == "# mine\n"

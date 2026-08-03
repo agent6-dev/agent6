@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config import ConfigError
 from agent6.config.io import (
     format_toml_value,
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
@@ -140,7 +141,7 @@ def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: Path
     with the friendly owner message, not the parser's cryptic 'declare twice'."""
     p = tmp_path / "c.toml"
     p.write_text('[svc]\nname = "s"\n[[svc.items]]\nk = 1\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="array-of-tables"):
+    with pytest.raises(ConfigError, match="array-of-tables"):
         upsert_toml_leaf(p, "svc.items.enabled", True)
 
 
@@ -208,9 +209,9 @@ def test_upsert_table_leaf_skips_a_key_name_inside_an_earlier_multiline_value(
 def test_leaf_surgery_still_rejects_empty_key_segments(tmp_path: Path) -> None:
     path = tmp_path / "c.toml"
     for bad in ("", "a..b", ".x", "x."):
-        with pytest.raises(ValueError, match="config key"):
+        with pytest.raises(ConfigError, match="config key"):
             upsert_toml_leaf(path, bad, "v")
-        with pytest.raises(ValueError, match="config key"):
+        with pytest.raises(ConfigError, match="config key"):
             remove_toml_leaf(path, bad)
 
 
@@ -392,7 +393,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
     body = 'sandbox = { protect_git = false, run_commands = "yes", memory_limit_mb = 8000 }\n'
     p.write_text(body, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="not a plain \\[table\\]"):
+    with pytest.raises(ConfigError, match="not a plain \\[table\\]"):
         upsert_toml_leaf(p, "sandbox.allow_urls", ["https://example.com"])
     assert p.read_text(encoding="utf-8") == body, "the operator's settings were deleted"
 
@@ -411,10 +412,10 @@ def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: Path) -
     TUI uses, skills state) reports it instead of claiming success."""
     p = tmp_path / "c.toml"
     p.write_text('sandbox = { protect_git = false, run_commands = "yes" }\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="cannot be unset on its own"):
+    with pytest.raises(ConfigError, match="cannot be unset on its own"):
         remove_toml_leaf(p, "sandbox.protect_git")
     p.write_text("sandbox.protect_git = false\n", encoding="utf-8")  # the dotted-key shape
-    with pytest.raises(ValueError, match="cannot be unset on its own"):
+    with pytest.raises(ConfigError, match="cannot be unset on its own"):
         remove_toml_leaf(p, "sandbox.protect_git")
     # A genuinely absent leaf under a DECLARED header keeps the quiet False.
     p.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")

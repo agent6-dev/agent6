@@ -42,6 +42,7 @@ from agent6.config.layer import (
     load_effective_with_overlay,
     repo_config_path_for,
 )
+from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
     DryRunReport,
     EngineError,
@@ -181,14 +182,10 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
         return _fail(path, script_problems, "scripts")
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
-        if not blackboard.is_file():
-            print(f"ERROR: blackboard fixture not found: {blackboard}", file=sys.stderr)
-            return 2
         try:
-            fixture = tomllib.loads(blackboard.read_text(encoding="utf-8"))
+            fixture = tomllib.loads(read_operator_file(blackboard))
         except tomllib.TOMLDecodeError as exc:
-            print(f"ERROR: blackboard fixture is not valid TOML: {exc}", file=sys.stderr)
-            return 2
+            raise OperatorError(f"blackboard fixture is not valid TOML: {exc}") from exc
     report = dry_run(spec, fixture)
     _print_dry_run_report(spec, report)
     if report.ok:

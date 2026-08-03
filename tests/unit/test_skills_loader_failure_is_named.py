@@ -26,24 +26,24 @@ def _break_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("verb", ["enable", "disable"])
 def test_it_says_the_skills_could_not_be_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], verb: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verb: str
 ) -> None:
+    from agent6.errors import OperatorError
+
     monkeypatch.chdir(tmp_path)
     _break_discovery(monkeypatch)
 
-    if verb == "enable":
-        rc = skills_cmds._cmd_skills_enable(  # pyright: ignore[reportPrivateUsage]
-            "thinking-hard", always=False, repo=False
-        )
-    else:
-        rc = skills_cmds._cmd_skills_disable(  # pyright: ignore[reportPrivateUsage]
-            "thinking-hard", repo=False
-        )
-
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "Permission denied" in err, err
-    assert "installed: (none)" not in err, err
+    with pytest.raises(OperatorError, match="could not read the installed skills") as exc:
+        if verb == "enable":
+            skills_cmds._cmd_skills_enable(  # pyright: ignore[reportPrivateUsage]
+                "thinking-hard", always=False, repo=False
+            )
+        else:
+            skills_cmds._cmd_skills_disable(  # pyright: ignore[reportPrivateUsage]
+                "thinking-hard", repo=False
+            )
+    assert "Permission denied" in str(exc.value)
+    assert "installed: (none)" not in str(exc.value)
 
 
 def test_completion_still_degrades_to_nothing(

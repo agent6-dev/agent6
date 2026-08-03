@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.errors import OperatorError
 from agent6.ui.cli.skills_cmds import (
     _cmd_skills_disable,  # pyright: ignore[reportPrivateUsage]
     _cmd_skills_enable,  # pyright: ignore[reportPrivateUsage]
@@ -71,7 +72,8 @@ class TestInstall:
             "---\nname: ../../precious\ndescription: evil traversal skill.\n---\nbody\n",
             encoding="utf-8",
         )
-        assert _cmd_skills_install(str(src), force=True) == 2
+        with pytest.raises(OperatorError, match="invalid skill name"):
+            _cmd_skills_install(str(src), force=True)
         assert (outside / "keep.txt").read_text() == "do not delete"  # untouched
 
     def test_local_repo_with_skills_dir(self, env: Path) -> None:
@@ -130,13 +132,34 @@ class TestInstall:
     def test_conflict_refused_then_forced(self, env: Path) -> None:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert _cmd_skills_install(str(src), force=False) == 0
-        assert _cmd_skills_install(str(src), force=False) == 2
+        with pytest.raises(OperatorError, match="already installed"):
+            _cmd_skills_install(str(src), force=False)
         assert _cmd_skills_install(str(src), force=True) == 0
 
     def test_missing_frontmatter_rejected(self, env: Path) -> None:
         bad = env / "bad.md"
         bad.write_text("no frontmatter\n", encoding="utf-8")
-        assert _cmd_skills_install(str(bad), force=False) == 2
+        with pytest.raises(OperatorError, match="frontmatter"):
+            _cmd_skills_install(str(bad), force=False)
+
+    def test_unreadable_source_refuses_in_the_shared_voice(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`skills install` kept its own except arm and `SKILLS ERROR:` voice
+        after the one-error-boundary commit deleted that shape everywhere else.
+        An unreadable operator source refuses through the boundary: `ERROR:` at
+        exit 2, one voice, no crash report."""
+        from agent6.ui.cli import cli_main
+
+        src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
+        src.chmod(0o000)
+        try:
+            assert cli_main(["skills", "install", str(src)]) == 2
+        finally:
+            src.chmod(0o600)
+        err = capsys.readouterr().err
+        assert err.startswith("ERROR: could not read")
+        assert "SKILLS ERROR" not in err
 
 
 class TestUpdate:
@@ -154,7 +177,8 @@ class TestUpdate:
         assert "More." in (_installed(env, "tidy") / "SKILL.md").read_text()
 
     def test_update_unknown_name(self, env: Path) -> None:
-        assert _cmd_skills_update("ghost") == 2
+        with pytest.raises(OperatorError, match="not installed"):
+            _cmd_skills_update("ghost")
 
     def test_update_skips_when_local_source_gone(
         self, env: Path, capsys: pytest.CaptureFixture[str]
@@ -213,23 +237,23 @@ class TestStateCommands:
         assert "tidy" not in (env / "config" / "config.toml").read_text()
 
     def test_unknown_skill_refused(self, env: Path) -> None:
-        assert _cmd_skills_disable("ghost", repo=False) == 2
-        assert _cmd_skills_enable("ghost", always=False, repo=False) == 2
+        with pytest.raises(OperatorError, match="unknown skill"):
+            _cmd_skills_disable("ghost", repo=False)
+        with pytest.raises(OperatorError, match="unknown skill"):
+            _cmd_skills_enable("ghost", always=False, repo=False)
 
-    def test_disable_over_a_headerless_state_table_errors_not_crashes(
-        self, env: Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_disable_over_a_headerless_state_table_errors_not_crashes(self, env: Path) -> None:
         """A hand-written inline `state` table under [skills] can't take a single
-        leaf; the surgery refuses, which must print an ERROR and exit 2, not crash
-        the CLI with a 'please report this' traceback."""
+        leaf; the surgery refuses with an operator error the boundary presents,
+        not a 'please report this' traceback."""
         self._install_tidy(env)
         cfg = env / "config" / "config.toml"
         cfg.parent.mkdir(parents=True, exist_ok=True)
         before = '[skills]\nstate = { tidy = "always" }\n'
         cfg.write_text(before, encoding="utf-8")
 
-        assert _cmd_skills_disable("tidy", repo=False) == 2
-        assert "ERROR" in capsys.readouterr().err
+        with pytest.raises(OperatorError, match="cannot be set on its own"):
+            _cmd_skills_disable("tidy", repo=False)
         assert cfg.read_text(encoding="utf-8") == before  # untouched
 
 
@@ -239,7 +263,8 @@ class TestRemoveListComplete:
         assert _cmd_skills_install(str(src), force=False) == 0
         assert _cmd_skills_remove("tidy") == 0
         assert not _installed(env, "tidy").exists()
-        assert _cmd_skills_remove("tidy") == 2
+        with pytest.raises(OperatorError, match="not installed"):
+            _cmd_skills_remove("tidy")
 
     def test_list_shows_state_and_origin(
         self, env: Path, capsys: pytest.CaptureFixture[str]
@@ -289,8 +314,8 @@ class TestAtomicMultiInstall:
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
         _write_skill_file(repo / "skills" / "zz" / "SKILL.md", "zz")
-        assert _cmd_skills_install(str(repo), force=False) == 2
-        assert "nothing was installed" in capsys.readouterr().err
+        with pytest.raises(OperatorError, match="nothing was installed"):
+            _cmd_skills_install(str(repo), force=False)
         assert not _installed(env, "aa").exists()  # the pre-conflict skill too
         # --force replaces and installs both
         assert _cmd_skills_install(str(repo), force=True) == 0

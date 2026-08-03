@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config.model import ConfigError
+from agent6.errors import read_operator_file
 from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 
@@ -91,7 +92,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]
     block = "\n".join(block_lines)
 
     with locked_file(path):
-        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        text = read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
         start = _header_line(lines, table)
         if start is None:
@@ -132,7 +133,10 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
             return "{}"
         items = ", ".join(f"{_toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
-    raise ValueError(f"cannot serialize {value!r} to TOML")
+    # ConfigError (an OperatorError): a CLI value can land here as-parsed
+    # (`config set key 2024-01-01` reads as a TOML date), so the refusal
+    # carries to the boundary rather than the crash reporter.
+    raise ConfigError(f"cannot serialize {value!r} to TOML")
 
 
 def _toml_key(key: object) -> str:
@@ -165,7 +169,7 @@ def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
     """
     parts = dotted_key.split(".")
     if any(not p for p in parts):
-        raise ValueError(
+        raise ConfigError(
             f"config key must be a dotted leaf path like 'sandbox.network', got {dotted_key!r}"
         )
     return ".".join(parts[:-1]), parts[-1]
@@ -186,7 +190,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     table, leaf = _split_dotted_key(dotted_key)
     new_line = f"{leaf} = {format_toml_value(value)}"
     with locked_file(path):
-        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        text = read_operator_file(path) if path.is_file() else ""
         lines = text.splitlines()
         if table:
             # Refuse a leaf whose ancestor is a headerless table (inline table
@@ -196,7 +200,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             # sibling inside it. Raised here, not in one command, so every
             # writer hits it (see `undeclared_table_ancestor`).
             if owner := undeclared_table_ancestor(path, dotted_key):
-                raise ValueError(
+                raise ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                     " (an inline table, a dotted key, or an array-of-tables), so it"
                     f" cannot be set on its own. Set {owner} as a whole, or edit {path}"
@@ -427,13 +431,13 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         # shows
         # the leaf set.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
-            raise ValueError(
+            raise ConfigError(
                 f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                 " (an inline table, a dotted key, or an array-of-tables), so it"
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
                 " by hand."
             )
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = read_operator_file(path).splitlines()
         if table:
             start = _header_line(lines, table)
             if start is None:
@@ -466,7 +470,7 @@ def remove_toml_table(path: Path, table: str) -> bool:
     with locked_file(path):
         if not path.is_file():
             return False
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = read_operator_file(path).splitlines()
         kept, removed = _drop_table_lines(lines, table)
         if not removed:
             return False
@@ -502,7 +506,7 @@ def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     """
     if not path.is_file():
         return None
-    text = path.read_text(encoding="utf-8")
+    text = read_operator_file(path)
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:

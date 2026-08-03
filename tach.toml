@@ -311,7 +311,7 @@ depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.io"
-depends_on = ["agent6.config.model", "agent6.portable"]
+depends_on = ["agent6.config.model", "agent6.errors", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.layer"
@@ -319,7 +319,7 @@ depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths", "agent6
 
 [[modules]]
 path = "agent6.config.write"
-depends_on = ["agent6.config.model", "agent6.config.io", "agent6.config.layer", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.config.model", "agent6.config.io", "agent6.config.layer", "agent6.errors", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.models.cache"
@@ -375,8 +375,10 @@ path = "agent6.notes"
 depends_on = ["agent6.portable"]
 
 [[modules]]
+# MemoryStoreError subclasses OperatorError, so a store refusal presents as the
+# operator's at the CLI boundary while the run loop keeps its degrade catches.
 path = "agent6.memory"
-depends_on = ["agent6.graph.ulid", "agent6.portable"]
+depends_on = ["agent6.errors", "agent6.graph.ulid", "agent6.portable"]
 
 [[modules]]
 path = "agent6.skills"

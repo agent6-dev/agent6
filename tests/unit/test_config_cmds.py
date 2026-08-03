@@ -152,7 +152,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     knows [table] headers, so setting one emitted a header that collides with
     the inline parent. The write is refused either way; say WHICH value owns the
     leaf instead of leaking `Cannot declare (...) twice`."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import cli_main
 
     gdir = tmp_path / "g"
     gdir.mkdir()
@@ -169,7 +169,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
+    rc = cli_main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "providers.openrouter.extra_body" in err
@@ -185,7 +185,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     and left the file still unparseable -- then reported success, because the
     "config was already invalid, so blame another layer" branch swallows a parse
     error in the very file just written. Repeating it kept appending."""
-    from agent6.ui.cli import main
+    from agent6.ui.cli import cli_main
 
     cfg = tmp_path / "config.toml"
     cfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
@@ -195,7 +195,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
 
     monkeypatch.setattr(cc, "global_config_path", _global_path)
 
-    rc = main(["config", "set", "sandbox.run_commands", "yes"])
+    rc = cli_main(["config", "set", "sandbox.run_commands", "yes"])
     out = capsys.readouterr()
     assert rc == 2, "a target that does not parse must not report success"
     assert "Set sandbox.run_commands" not in out.out
