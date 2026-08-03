@@ -119,7 +119,7 @@ def test_add_memory_input_bounds() -> None:
     with pytest.raises(ValueError):
         AddMemoryInput(scope="notes", body="x")  # pyright: ignore[reportArgumentType]
     with pytest.raises(ValueError):
-        InvalidateMemoryInput(memory_id="short", reason="r")
+        InvalidateMemoryInput(id="short", reason="r")
 
 
 # --- dispatcher ----------------------------------------------------------
@@ -144,7 +144,7 @@ def test_dispatch_invalidate_memory_roundtrip(tmp_path: Path) -> None:
     e = add(state, "decisions", "use tabs")
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=state)
     out = d.dispatch(
-        "invalidate_memory", {"memory_id": e.id, "reason": "operator uses spaces"}
+        "invalidate_memory", {"id": e.id, "reason": "operator uses spaces"}
     ).to_wire()
     assert out["id"] == e.id
     assert out["invalidated_at"]
@@ -157,14 +157,14 @@ def test_dispatch_memory_tools_unwired_raise(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match="no memory store"):
         d.dispatch("add_memory", {"scope": "facts", "body": "x"})
     with pytest.raises(ToolError, match="no memory store"):
-        d.dispatch("invalidate_memory", {"memory_id": "0" * 26, "reason": "r"})
+        d.dispatch("invalidate_memory", {"id": "0" * 26, "reason": "r"})
 
 
 def test_dispatch_invalidate_memory_unknown_id(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=tmp_path / "state")
     with pytest.raises(ToolError, match="no memory with id"):
-        d.dispatch("invalidate_memory", {"memory_id": "0" * 26, "reason": "r"})
+        d.dispatch("invalidate_memory", {"id": "0" * 26, "reason": "r"})
 
 
 def test_dispatch_memory_tools_blocked_outside_run_mode(tmp_path: Path) -> None:
@@ -174,7 +174,7 @@ def test_dispatch_memory_tools_blocked_outside_run_mode(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="not available"):
             d.dispatch("add_memory", {"scope": "facts", "body": "x"})
         with pytest.raises(ToolError, match="not available"):
-            d.dispatch("invalidate_memory", {"memory_id": "0" * 26, "reason": "r"})
+            d.dispatch("invalidate_memory", {"id": "0" * 26, "reason": "r"})
 
 
 # --- <memories> block ------------------------------------------------------

@@ -80,11 +80,11 @@
   {
     "name": "invalidate_memory",
     "required": [
-      "memory_id",
+      "id",
       "reason"
     ],
     "properties": {
-      "memory_id": "string",
+      "id": "string",
       "reason": "string"
     }
   },

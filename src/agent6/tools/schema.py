@@ -398,11 +398,11 @@ class InvalidateMemoryInput(_ToolInput):
         " runs stop seeing it. Non-destructive: the entry stays on disk for"
         " the operator's audit trail (`agent6 memory list --all`). Use when"
         " the repository or the operator contradicts a recorded memory."
-        " `memory_id` is the 26-char id shown in the block; `reason` says"
+        " `id` is the 26-char id shown in the block; `reason` says"
         " what changed."
     )
 
-    memory_id: str = Field(min_length=26, max_length=26)
+    id: str = Field(min_length=26, max_length=26)
     reason: str = Field(min_length=1, max_length=500)
 
 

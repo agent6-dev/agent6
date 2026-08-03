@@ -42,7 +42,7 @@ def invalidate_memory(state_dir: Path | None, raw: dict[str, Any]) -> Invalidate
         raise ToolError("invalidate_memory: no memory store wired for this run")
     args = InvalidateMemoryInput.model_validate(raw)
     try:
-        entry = memory_invalidate(state_dir, args.memory_id, args.reason)
+        entry = memory_invalidate(state_dir, args.id, args.reason)
     except MemoryStoreError as exc:
         raise ToolError(f"invalidate_memory: {exc}") from exc
     return InvalidateMemoryResult(id=entry.id, invalidated_at=entry.invalidated_at)
