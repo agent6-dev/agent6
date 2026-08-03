@@ -166,6 +166,7 @@ def _seed_source_run(
     turns: tuple[int, ...],
     mode: str = "run",
     workflow_profile: str = "",
+    profile_from_flag: bool | None = None,
 ) -> RunLayout:
     """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
@@ -184,8 +185,11 @@ def _seed_source_run(
                     "critic": "off",
                     "revise_prompt": "off",
                     "profile": workflow_profile,
-                    # A seeded profile is one the fork must replay, i.e. flag-selected.
-                    "profile_from_flag": bool(workflow_profile),
+                    # Default: a seeded profile is one the fork replays (flag-selected);
+                    # pass profile_from_flag=False for a config-selected source.
+                    "profile_from_flag": (
+                        bool(workflow_profile) if profile_from_flag is None else profile_from_flag
+                    ),
                 },
             }
         ),
@@ -286,6 +290,42 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["profile"] == "fast"
     assert manifest["models"]["worker"]["model"] == "claude-fast"  # not claude-base
+
+
+def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CONFIG-selected profile (from_flag False) re-resolves from the CURRENT
+    config on fork, so the child stamps the current config's profile name, not the
+    source manifest's possibly-stale one -- the fork sibling of the parked-resume
+    stamp fix. Only a FLAG-selected profile is pinned by name."""
+    import os
+
+    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
+        'profile = "quick"\n', encoding="utf-8"
+    )
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    # A config-selected source whose stamped name is now STALE (config says quick).
+    _seed_source_run(
+        state_dir,
+        "src-CFG11",
+        head_sha=head,
+        turns=(1,),
+        workflow_profile="stale-old-name",
+        profile_from_flag=False,
+    )
+
+    assert _cmd_fork(None, "src-CFG11", new_run_id="child-CFG22", no_run=True) == 0
+    manifest = json.loads(
+        RunLayout(state_dir=state_dir, run_id="child-CFG22").manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["workflow"]["profile"] == "quick"  # re-derived, not "stale-old-name"
+    assert manifest["workflow"]["profile_from_flag"] is False
 
 
 def test_fork_snapshots_the_dag_under_the_source_curator_lock(

@@ -220,7 +220,6 @@ def create_fork(  # noqa: PLR0911
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch
     src_user_task = sm.user_task
-    src_profile = sm.workflow.profile  # the NAME: the child stamps + displays it
     src_profile_from_flag = sm.workflow.profile_from_flag
 
     forked_from_sha = checkpoint.head_sha
@@ -241,6 +240,13 @@ def create_fork(  # noqa: PLR0911
         reporter.err(f"CONFIG ERROR:\n{exc}")
         return "", 2
 
+    # Stamp the child's profile like the run/resume paths (`profile or cfg.profile`):
+    # a FLAG-selected source replays its flag name (replay_profile), a CONFIG-
+    # selected one re-derives from the CURRENT config (cfg.profile) rather than the
+    # source manifest's possibly-stale name -- the fork sibling of the parked-resume
+    # stamp fix. (bool(replay_profile) == profile_from_flag, so the flag bit stands.)
+    forked_profile = sm.workflow.replay_profile or cfg.profile
+
     if new_run_id:
         try:
             validate_explicit_run_id(new_run_id)
@@ -259,7 +265,7 @@ def create_fork(  # noqa: PLR0911
         base_branch=src_base_branch,
         user_task=src_user_task,
         mode=src_mode,
-        profile=src_profile,
+        profile=forked_profile,
         profile_from_flag=src_profile_from_flag,
         cfg=cfg,
         reporter=reporter,
