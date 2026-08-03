@@ -128,6 +128,7 @@ _DELIBERATE_END_REASONS = frozenset(
         "answered",
         "finish_planning",
         "finish_run",
+        "gate_red_at_base",
     }
 )
 

@@ -1249,6 +1249,45 @@ class Workflow:
             )
         return None
 
+    # A jailed command that hit its timeout, per sandbox.jail's contract.
+    _EXIT_TIMEOUT = 124
+
+    def _judged_the_base_commit(self, state: _LoopState, result: ExecResult) -> bool:
+        """Did this verify judge the commit the RUN started from?
+
+        Not "has the model edited yet": every reason an operator resumes -- a
+        budget stop, an iteration cap, a provider error -- commits the leg's
+        work first, so leg two opens on a clean tree whose HEAD already carries
+        leg one's breakage. Reading that as the base told the worker its own
+        failures were inherited. `/parallel` does the same by merging lane
+        commits into the workspace.
+
+        So: HEAD must still BE the base commit, the tree must be clean, and the
+        gate must have actually produced a verdict -- a runner that was absent
+        (instant exit) or timed out (124) never judged anything, and recording
+        either would excuse every real failure for the rest of the run.
+
+        A run that has already made the gate GREEN is answerable for a later
+        red: it demonstrably could pass.
+
+        Fails CLOSED. Every other user of `_worktree_dirty` treats an
+        unreadable git as "assume clean"; here that would be a false
+        exoneration, so an unreadable git records nothing.
+        """
+        if (
+            state.verify_ever_passed
+            or result.exec_failed
+            or result.returncode == self._EXIT_TIMEOUT
+            or verify_did_not_run(result.stdout, result.stderr, result.duration_s)
+            or not self.base_sha
+        ):
+            return False
+        try:
+            status = git_status(self.root)
+        except (GitError, OSError):
+            return False
+        return status.is_clean and status.head_sha == self.base_sha
+
     def _note_verify_result(self, state: _LoopState, turn: _TurnState, result: ExecResult) -> None:
         """Verify bookkeeping: pass/fail flags, the grounding tail, and the
         no-progress streak (consecutive fails sharing one signature)."""
@@ -1274,18 +1313,9 @@ class Workflow:
                 turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
         state.last_verify_ok = rc == 0
-        if (
-            state.baseline_ok is None
-            and not state.ever_edited
-            and not result.exec_failed
-            # A gate that exited instantly without running anything is a BROKEN
-            # gate, not a red one. Recording it as the baseline would excuse
-            # every real failure for the rest of the run.
-            and not verify_did_not_run(result.stdout, result.stderr, result.duration_s)
-            and not self._worktree_dirty()
-        ):
-            # Nothing has changed yet, so this verify judged the base commit.
-            # A free baseline: the same answer a second gate run used to cost.
+        if state.baseline_ok is None and self._judged_the_base_commit(state, result):
+            # This verify judged the run's BASE commit, so it is the baseline:
+            # the same answer a second gate run in the teardown used to cost.
             state.baseline_ok = rc == 0
             self._emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
             if rc != 0:
@@ -2942,7 +2972,7 @@ class Workflow:
         this run's failure. Only ever from an observation, never a guess -- a
         run where nothing ever verified a clean tree says nothing.
         """
-        if self._tree_is_verify_green(state) is False:
+        if turn.finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
             if turn.finish_stale_gate:
                 return "gate_stale"
             if state.baseline_ok is False:

@@ -115,7 +115,13 @@ def _print_unknown_baseline(result: RunResult, *, layout: RunLayout) -> None:
     if not (gate and base):
         return
     print(f"\nthe gate is red, and nothing checked it before this run started ({base[:12]}).")
-    print(f"  to see whether this run caused it:  git stash && {shlex.join(gate)}")
+    # A worktree at the base sha, NOT `git stash`: the run's work is COMMITTED
+    # on its branch, so a stash saves nothing, exits 0, and runs the gate
+    # against the very commits it was meant to exclude -- reading back as "red
+    # without my changes too".
+    print("  to see whether this run caused it, check out the base commit somewhere else:")
+    print(f"    git worktree add /tmp/agent6-base {base[:12]} \\")
+    print(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
 def _print_stale_gate(result: RunResult) -> None:

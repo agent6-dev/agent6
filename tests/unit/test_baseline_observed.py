@@ -21,14 +21,14 @@ from agent6.workflows.loop import (
     _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
+_BASE = "b" * 40
 
-def _wf(*, dirty: bool) -> Workflow:
+
+def _wf(*, head: str = _BASE, clean: bool = True) -> Workflow:
     wf = Workflow.__new__(Workflow)
-    object.__setattr__(wf, "_worktree_dirty", lambda: dirty)
-
-    def _quiet(*_a: object, **_k: object) -> None:
-        return None
-
+    wf.base_sha = _BASE
+    wf.root = Path("/nonexistent")
+    object.__setattr__(wf, "_git_status", lambda: SimpleNamespace(is_clean=clean, head_sha=head))
     object.__setattr__(wf, "_emit", _quiet)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest",))
@@ -36,45 +36,136 @@ def _wf(*, dirty: bool) -> Workflow:
     return wf
 
 
-def _verify(rc: int) -> ExecResult:
-    return ExecResult(returncode=rc, stdout="", stderr="", duration_s=0.1, exec_failed=False)
+def _quiet(*_a: object, **_k: object) -> None:
+    return None
+
+
+def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Workflow) -> None:
+    def _status(_root: object) -> object:
+        return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
+
+    monkeypatch.setattr("agent6.workflows.loop.git_status", _status)
+
+
+def _state() -> _LoopState:
+    return _LoopState(original_task="t", tool_calls=0)
+
+
+def _verify(rc: int, *, duration_s: float = 5.0) -> ExecResult:
+    return ExecResult(returncode=rc, stdout="", stderr="", duration_s=duration_s, exec_failed=False)
+
+
+def _turn() -> _TurnState:
+    return _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
-def test_a_verify_on_an_untouched_tree_is_the_baseline(rc: int) -> None:
-    state = _LoopState(original_task="t", tool_calls=0)
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    _wf(dirty=False)._note_verify_result(state, turn, _verify(rc))  # pyright: ignore[reportPrivateUsage]
+def test_a_verify_at_the_base_commit_is_the_baseline(
+    rc: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, turn = _state(), _turn()
+    wf = _wf()
+    _patch_git(monkeypatch, wf)
+    wf._note_verify_result(state, turn, _verify(rc))  # pyright: ignore[reportPrivateUsage]
     assert state.baseline_ok is (rc == 0)
 
 
-def test_the_worker_is_told_when_it_inherited_a_red_gate() -> None:
+def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """So it stops chasing failures it did not cause, DURING the run -- which
     is worth more than the same fact explained afterwards."""
-    state = _LoopState(original_task="t", tool_calls=0)
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    _wf(dirty=False)._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    state, turn = _state(), _turn()
+    wf = _wf()
+    _patch_git(monkeypatch, wf)
+    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
     assert any("ALREADY failing" in str(n) for n in turn.tool_results)
 
 
-@pytest.mark.parametrize(("dirty", "edited"), [(True, False), (False, True)])
-def test_a_verify_over_changed_work_says_nothing_about_the_base(dirty: bool, edited: bool) -> None:
-    """ "I do not know" is the honest answer, and the end-of-run block says so."""
-    state = _LoopState(original_task="t", tool_calls=0)
-    state.ever_edited = edited
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    _wf(dirty=dirty)._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+def test_a_leg_that_moved_past_the_base_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """THE resume bug: every reason an operator resumes -- a budget stop, an
+    iteration cap, a provider error -- commits the leg's work first. Leg two
+    then opens on a CLEAN tree whose HEAD already carries leg one's breakage,
+    and "has the model edited yet" read that as the base. `/parallel` does the
+    same by merging lane commits into the workspace."""
+    state, turn = _state(), _turn()
+    wf = _wf(head="c" * 40)
+    _patch_git(monkeypatch, wf)
+    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
     assert state.baseline_ok is None
 
 
-def test_the_first_observation_wins() -> None:
-    """The base commit is judged once; a later verify judges the run's work."""
-    state = _LoopState(original_task="t", tool_calls=0)
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    wf = _wf(dirty=False)
+def test_a_dirty_tree_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    state, turn = _state(), _turn()
+    wf = _wf(clean=False)
+    _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    wf._note_verify_result(state, turn, _verify(0))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is False
+    assert state.baseline_ok is None
+
+
+def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every other caller treats an unreadable git as "assume clean". Here that
+    would exonerate the run for its own breakage, so it fails closed."""
+    from agent6.git_ops import GitError
+
+    def _boom(_root: object) -> object:
+        raise GitError("index.lock held")
+
+    state, turn = _state(), _turn()
+    monkeypatch.setattr("agent6.workflows.loop.git_status", _boom)
+    _wf()._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    assert state.baseline_ok is None
+
+
+def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It demonstrably could pass, so a later red is its own -- even if the
+    gate was red at the base."""
+    state, turn = _state(), _turn()
+    state.verify_ever_passed = True
+    wf = _wf()
+    _patch_git(monkeypatch, wf)
+    wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
+    assert state.baseline_ok is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        ExecResult(
+            returncode=127,
+            stdout="",
+            stderr="pytest: command not found",
+            duration_s=0.01,
+            exec_failed=False,
+        ),
+        ExecResult(returncode=124, stdout="", stderr="", duration_s=600.0, exec_failed=False),
+        ExecResult(returncode=1, stdout="", stderr="", duration_s=1.0, exec_failed=True),
+    ],
+    ids=["runner-absent", "timed-out", "could-not-exec"],
+)
+def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
+    result: ExecResult, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recording one would excuse every real failure for the rest of the run."""
+    state, turn = _state(), _turn()
+    wf = _wf()
+    _patch_git(monkeypatch, wf)
+    wf._note_verify_result(state, turn, result)  # pyright: ignore[reportPrivateUsage]
+    assert state.baseline_ok is None
+
+
+def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
+    """Plan mode can run the gate but never edits, so a red one is always
+    "already red" -- and `finish_planning` would have been relabelled, turning
+    a clean plan into "gate was already red"."""
+    wf = Workflow.__new__(Workflow)
+    wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
+        workflow=SimpleNamespace(verify_command=("pytest",))
+    )
+    state = _state()
+    state.baseline_ok = False
+    state.last_verify_ok = False
+    turn = _turn()
+    turn.finish_kind = "finish_planning"
+    assert wf._finish_reason(turn, state) == "finish_planning"  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
@@ -107,7 +198,7 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     """`require_verify_to_finish` bounces a finish until the gate goes green.
     Over a gate that was already red, that is demanding the worker repair
     whatever it inherited before it may stop."""
-    wf = _wf(dirty=False)
+    wf = _wf()
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest",), require_verify_to_finish=True)
@@ -122,20 +213,3 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     wf._gate_verify_green(state, turn)  # pyright: ignore[reportPrivateUsage]
 
     assert turn.finish_signal is not None, "the finish was bounced over an inherited failure"
-
-
-def test_a_broken_gate_is_not_a_red_baseline() -> None:
-    """A verify that exits instantly without running anything (runner absent)
-    is a BROKEN gate, not a red one. Recorded as the baseline it would excuse
-    every real failure for the rest of the run."""
-    state = _LoopState(original_task="t", tool_calls=0)
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    broken = ExecResult(
-        returncode=127,
-        stdout="",
-        stderr="pytest: command not found",
-        duration_s=0.01,
-        exec_failed=False,
-    )
-    _wf(dirty=False)._note_verify_result(state, turn, broken)  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
