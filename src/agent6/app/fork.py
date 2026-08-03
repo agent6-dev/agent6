@@ -118,7 +118,7 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
                     continue
                 dst_path = dst.session_dir / name
                 if src_path.is_dir():
-                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True, symlinks=True)
                 else:
                     shutil.copy2(src_path, dst_path)
             return

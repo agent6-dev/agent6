@@ -108,7 +108,7 @@ def lint_and_typecheck(scripts_dir: Path) -> list[str]:
     work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
     try:
         dst = work / "scripts"
-        shutil.copytree(scripts_dir, dst)
+        shutil.copytree(scripts_dir, dst, symlinks=True)
         if ruff := _resolve_tool("ruff"):
             problem = _run_static(
                 [*ruff, "check", "--isolated", "--output-format", "concise", str(dst)],
