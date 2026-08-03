@@ -79,3 +79,41 @@ def test_a_resumed_ask_is_still_clamped() -> None:
 def test_an_ask_records_a_mode_that_survives_a_round_trip(tmp_path: Path) -> None:
     m = RunManifest(mode="ask", run_id="x")
     assert m.session_mode() == "ask"
+
+
+def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The direction the operator asked for: work something out in an ask, then run it.
+    The ask is untouched -- seeding starts a NEW session, unlike fork."""
+    import json
+
+    from agent6.config import Config
+    from agent6.config.layer import resolved_state_dir
+    from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    ask = resolved_state_dir(tmp_path) / "asks" / "quiet-fox-AAAAAA"
+    ask.mkdir(parents=True)
+    (ask / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
+        encoding="utf-8",
+    )
+    (ask / "logs.jsonl").write_text(
+        json.dumps({"type": "run.end", "reason": "answered", "iterations": 1}) + "\n",
+        encoding="utf-8",
+    )
+    task, err = _compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")
+    assert err == ""
+    assert "how do I convert h264" in task  # the ask's context came across
+    assert task.endswith("do it")  # the operator's new task is what it ends on
+    assert (ask / "manifest.json").exists()  # the source is untouched
+
+
+def test_seeding_from_an_unknown_session_fails_loudly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.config import Config
+    from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    _task, err = _compose_task("do it", Config(), skills=(), seed_from="nope")
+    assert "could not seed" in err

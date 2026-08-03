@@ -38,6 +38,7 @@ from agent6.models.validate import (
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._ask import (
+    build_ask_run_digest,
     run_ask_repl,
     save_ask_transcript,
 )
@@ -186,6 +187,29 @@ def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
     return True
 
 
+def _compose_task(
+    task: str, cfg: Config, *, skills: tuple[str, ...], seed_from: str
+) -> tuple[str, str]:
+    """The prompt the session actually starts from. Returns (task, error).
+
+    One place assembles it: the skills prefix, then another session's context
+    when `--from` seeds this one. `--from` starts a NEW session and leaves the
+    source untouched -- keeping a session's mode is `fork`; this picks the mode
+    by being the command the operator typed.
+    """
+    if skills:
+        prefix, skills_err = _skills_task_prefix(cfg, skills)
+        if skills_err:
+            return task, skills_err
+        task = prefix + task
+    if seed_from:
+        digest = build_ask_run_digest(Path.cwd(), seed_from, latest=False)
+        if digest is None:
+            return task, f"could not seed from {seed_from!r}"
+        task = f"{digest}\n\n{task}" if task else digest
+    return task, ""
+
+
 def _cmd_run(  # noqa: PLR0911
     config_path: Path | None,
     task: str,
@@ -195,6 +219,7 @@ def _cmd_run(  # noqa: PLR0911
     tui: bool = False,
     decompose: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
+    seed_from: str = "",
     skills: tuple[str, ...] = (),
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
@@ -219,12 +244,10 @@ def _cmd_run(  # noqa: PLR0911
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    if skills:
-        prefix, skills_err = _skills_task_prefix(cfg, skills)
-        if skills_err:
-            print(f"ERROR: {skills_err}", file=sys.stderr)
-            return 2
-        task = prefix + task
+    task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
+    if compose_err:
+        print(f"ERROR: {compose_err}", file=sys.stderr)
+        return 2
     # Surface the not-a-git-repo wall up front. run/plan need git; ask is
     # read-only and may run outside a repo. Without this, a user in a scratch
     # non-git dir clears the provider, model, and key walls serially only to

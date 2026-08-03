@@ -237,6 +237,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
+        seed_from=getattr(args, "seed_from", ""),
         skills=tuple(args.skill),
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),

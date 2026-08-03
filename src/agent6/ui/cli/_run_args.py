@@ -14,6 +14,7 @@ from agent6.ui.cli.completers import (
     _complete_plan_run_ids,
     _complete_presets,
     _complete_run_ids,
+    _complete_session_ids,
     _complete_skills,
 )
 
@@ -27,6 +28,18 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help="Task description (in quotes). Omit to execute the most recent plan.",
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    run_from = run_p.add_argument(
+        "--from",
+        dest="seed_from",
+        default="",
+        metavar="SESSION_ID",
+        help=(
+            "Seed from another session -- a run, a plan or an ask: its task,"
+            " outcome, diff and key events. Starts a NEW run; the source is"
+            " untouched (that is `fork`, which keeps a session's mode)."
+        ),
+    )
+    run_from.completer = _complete_session_ids  # type: ignore[attr-defined]
     run_p.add_argument(
         "--pin",
         dest="pins",
