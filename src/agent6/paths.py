@@ -204,33 +204,43 @@ def state_base(user: RealUser | None = None) -> Path:
 
 
 # A state dir names its workspace so `ls` sorts by location and a stale one is
-# recognisable. The hash is what actually keeps two workspaces apart: `/a/b/c`
-# and `/a/b-c` flatten to the same string, and sharing state between them would
-# be far worse than an unreadable name.
-# The filesystem limit is 255 BYTES per component, and a path of CJK or emoji
-# runs 3-4 bytes per character -- capping characters produced 271-byte names
-# that failed to create with ENAMETOOLONG. Budget bytes, leaving room for the
-# hash and its separator.
+# recognisable. The filesystem limit is 255 BYTES per component, and a path of
+# CJK or emoji runs 3-4 bytes per character -- capping characters produced
+# 271-byte names that failed to create with ENAMETOOLONG.
 _ID_BYTES_MAX = 100
-_ID_HASH_LEN = 6
+# Only the elided form needs a hash, and there it is the only thing separating
+# two paths that elide alike; 24 bits of it was brute-forceable in seconds.
+_ID_HASH_LEN = 12
 
 
 def repo_id(repo_root: Path) -> str:
-    """Stable per-repo id: ``<abs-path-with-dashes>-<6 hex of sha256(path)>``.
+    """A directory name that identifies *repo_root*, and only it.
 
-    Keyed on the resolved path, so two checkouts never collide. Moving or
-    renaming a checkout changes its id: its prior runs are simply not found from
-    the new path. An over-long path keeps its head and tail with the middle
-    elided -- the hash still separates two that elide alike.
+    ``/`` becomes ``-``, and a trailing tag records which dashes were slashes:
+    one bit per dash, most significant first, in hex. ``/a/b/c`` -> ``a-b-c-3``,
+    ``/a/b-c`` -> ``a-b-c-2``, ``/a-b-c`` -> ``a-b-c-0``. The mapping is
+    reversible, so two different paths cannot produce the same id -- there is no
+    hash in the common case and nothing to collide.
+
+    Leading zeros need no sentinel: the name fixes how many dashes there are,
+    so the tag's bit LENGTH is known and ``01`` cannot be read as ``1``.
+
+    Keyed on the RESOLVED path, so two checkouts never share state. Moving or
+    renaming a checkout changes its id: its prior runs are simply not found
+    from the new path.
+
+    A path too long for one filesystem component is the exception: its middle
+    is elided, the name stops being reversible, and a hash of the full path is
+    what separates two that elide alike.
     """
-    real = repo_root.resolve()
-    digest = hashlib.sha256(str(real).encode("utf-8")).hexdigest()[:_ID_HASH_LEN]
-    flat = str(real).strip("/").replace("/", "-").lstrip(".")
+    real = str(repo_root.resolve()).strip("/")
+    flat = real.replace("/", "-")
     if len(flat.encode()) > _ID_BYTES_MAX:
+        digest = hashlib.sha256(real.encode("utf-8")).hexdigest()[:_ID_HASH_LEN]
         head, tail = _ID_BYTES_MAX // 3, _ID_BYTES_MAX - _ID_BYTES_MAX // 3 - 2
-        flat = f"{_head_bytes(flat, head)}--{_tail_bytes(flat, tail)}"
-    # A leading dot would hide the state dir from a plain `ls`.
-    return f"{flat or 'root'}-{digest}"
+        return f"{_head_bytes(flat, head)}--{_tail_bytes(flat, tail)}-{digest}"
+    marks = "".join("1" if ch == "/" else "0" for ch in real if ch in "/-")
+    return f"{flat or 'root'}-{int(marks or '0', 2):x}"
 
 
 def _head_bytes(s: str, limit: int) -> str:
@@ -257,9 +267,19 @@ def project_root(start: Path) -> Path:
     Walks for ``.git`` rather than asking git: this is on the path of every
     command, read-only ones included, and a subprocess per invocation is not.
     A worktree's ``.git`` is a file, hence ``exists`` and not ``is_dir``.
+
+    The walk never adopts ``$HOME`` or ``/`` as an ancestor: a repo there is
+    dotfiles or a pathology, not the project you are standing in. With
+    ``git init $HOME``, every unrelated directory under it keyed to ONE state
+    dir -- cross-project run listings, one client's transcripts handed to a
+    session in another, and a repo lock refusing a run while naming a stranger.
+    Standing IN such a repo still resolves to it: only inheritance is refused.
     """
     start = start.resolve()
+    never_inherited = {Path.home().resolve(), Path(start.anchor)}
     for candidate in (start, *start.parents):
+        if candidate != start and candidate in never_inherited:
+            break
         if (candidate / ".git").exists():
             return candidate
     return start

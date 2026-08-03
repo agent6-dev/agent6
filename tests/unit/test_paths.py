@@ -37,10 +37,10 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     repo.mkdir()
     rid = paths.repo_id(repo)
     # The id names the workspace's whole path, so a state dir says where it came
-    # from; the trailing hash is what keeps two workspaces apart.
+    # from; the trailing tag is what keeps two workspaces apart.
     assert "myrepo" in rid
-    assert rid.endswith("-" + rid.rsplit("-", 1)[1]) and len(rid.rsplit("-", 1)[1]) == 6
-    assert "/" not in rid and not rid.startswith(".")
+    assert rid.rsplit("-", 1)[1].strip("0123456789abcdef") == ""
+    assert "/" not in rid
     assert paths.repo_id(repo) == rid  # deterministic
     assert paths.state_dir(repo) == base / rid
     assert paths.repo_config_path(repo) == base / rid / "config.toml"
@@ -269,3 +269,35 @@ def test_outside_a_repo_the_directory_is_the_project(tmp_path: Path) -> None:
     plain = tmp_path / "notarepo"
     plain.mkdir()
     assert paths.project_root(plain) == plain.resolve()
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/a/b/c", "/a/b-c", "/a-b/c", "/a-b-c", "/x/y", "/x-y", "/tmp", "/home/u/my-repo/sub"],
+)
+def test_the_id_decodes_back_to_the_path_it_names(path: str) -> None:
+    """Two paths can never share a state dir, by CONSTRUCTION rather than by
+    luck: the id is reversible. It used to be a flattened path plus a short
+    hash, so paths that flatten alike were separated by 24 bits -- brute-forced
+    in 11 seconds, after which one project read another's config, runs and
+    transcripts."""
+    rid = paths.repo_id(Path(path))
+    flat, tag = rid.rsplit("-", 1)
+    # The name fixes the bit LENGTH, which is what makes leading zeros safe.
+    marks = bin(int(tag, 16))[2:].zfill(flat.count("-"))
+    out, seen = [], 0
+    for ch in flat:
+        if ch == "-":
+            out.append("/" if marks[seen] == "1" else "-")
+            seen += 1
+        else:
+            out.append(ch)
+    assert "/" + "".join(out) == path
+    assert seen == flat.count("-"), "the tag describes exactly the dashes in the name"
+
+
+def test_the_common_case_carries_no_hash_at_all(tmp_path: Path) -> None:
+    """A hash is unreadable and, here, unnecessary: the tag is 1-4 characters
+    and means something."""
+    assert paths.repo_id(Path("/home/u/agent6")) == "home-u-agent6-3"
+    assert paths.repo_id(Path("/tmp")) == "tmp-0"
