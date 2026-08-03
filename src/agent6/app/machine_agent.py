@@ -473,7 +473,11 @@ def build_machine_agent_runner(
                 proc.wait(timeout=request.timeout_s)
             except subprocess.TimeoutExpired:
                 with contextlib.suppress(ProcessLookupError):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    # By pid: start_new_session made it the group leader, and an
+                    # unreaped child's pgid cannot have been recycled. Looking
+                    # it up first left a window where, under sudo, an unrelated
+                    # group could be killed as root.
+                    os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
                 return salvaged("timeout")
             if proc.returncode != 0 or not out_file.is_file():

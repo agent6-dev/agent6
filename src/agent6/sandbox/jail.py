@@ -314,6 +314,22 @@ def _own_children() -> dict[int, int]:
     return found
 
 
+def _kill_group_of(pid: int) -> None:
+    """SIGKILL *pid*'s process group, or *pid* alone when it does not lead one.
+
+    A pgid is a leader's pid, and it is only reusable once that leader is
+    reaped. We hold every one of these as an unreaped child, so a pgid equal to
+    the pid we looked up cannot have been recycled underneath us. A pgid that
+    is NOT the pid belongs to a leader we do not hold, and under sudo signalling
+    a recycled one would kill an unrelated group as root.
+    """
+    with contextlib.suppress(OSError):
+        if os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGKILL)
+        else:
+            os.kill(pid, signal.SIGKILL)
+
+
 def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
     """Kill what the command left behind. Returns whatever is still alive."""
     our_session = os.getsid(0)
@@ -328,8 +344,7 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             if not escapees:
                 return frozenset()
             for pid in escapees:
-                with contextlib.suppress(OSError):
-                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                _kill_group_of(pid)
                 with contextlib.suppress(OSError):
                     # WNOHANG: a child wedged in uninterruptible sleep must not
                     # hang every later command behind the sweep lock.
@@ -386,8 +401,10 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         if launcher.poll() is None:
             # Abandoned mid-command (an interrupt raised through communicate()):
             # take the launcher's group down so the jailed tree goes with it.
+            # start_new_session made it its own group leader, and Popen holds
+            # it unreaped, so its pgid is its pid and cannot have been recycled.
             try:
-                os.killpg(os.getpgid(launcher.pid), signal.SIGKILL)
+                os.killpg(launcher.pid, signal.SIGKILL)
             except OSError:
                 launcher.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
@@ -417,7 +434,7 @@ def _launcher_result(
         # _run_unsandboxed: surface a timeout as the documented rc=124 result, not
         # a raised exception the caller would have to special-case.
         try:
-            os.killpg(os.getpgid(launcher.pid), signal.SIGKILL)
+            os.killpg(launcher.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             launcher.kill()
         try:
@@ -544,7 +561,7 @@ class BackgroundJob:
         """
         if self._proc.poll() is None:
             with contextlib.suppress(OSError):
-                os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
+                os.killpg(self._proc.pid, signal.SIGKILL)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 self._proc.wait(timeout=5.0)
         self._unregister()

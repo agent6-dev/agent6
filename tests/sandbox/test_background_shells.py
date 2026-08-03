@@ -9,6 +9,7 @@ reporting a shell that is already gone.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import signal
@@ -301,3 +302,42 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     assert after.returncode == 42  # not the 0 it wrote
     assert after.command == shlex.join(argv)  # not the name it wrote
     assert any("exited 42" in line for line in roster_from_dir(tmp_path / "shells"))
+
+
+def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
+    """A pgid is a leader's pid and is reusable once that leader is reaped. The
+    sweep looked one up and then signalled it, so under sudo an escapee exiting
+    in that window had root SIGKILL whatever group inherited the number."""
+    import os
+    import signal
+    import subprocess
+
+    from agent6.sandbox.jail import _kill_group_of  # pyright: ignore[reportPrivateUsage]
+
+    # A group leader we hold: killing it by group is safe and takes the child.
+    # New GROUP, same session, so a sibling can join it (setpgid is
+    # session-scoped).
+    leader = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, 0))  # noqa: PLW1509
+    child = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, leader.pid))  # noqa: PLW1509
+    try:
+        assert os.getpgid(child.pid) == leader.pid
+        _kill_group_of(leader.pid)
+        assert leader.wait(timeout=5) != 0
+        assert child.wait(timeout=5) != 0
+    finally:
+        for p in (leader, child):
+            with contextlib.suppress(OSError):
+                p.kill()
+
+    # A non-leader: only it dies, never the group it happens to sit in.
+    bystander = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, 0))  # noqa: PLW1509
+    joiner = subprocess.Popen(["sleep", "30"], preexec_fn=lambda: os.setpgid(0, bystander.pid))  # noqa: PLW1509
+    try:
+        _kill_group_of(joiner.pid)
+        assert joiner.wait(timeout=5) != 0
+        assert bystander.poll() is None, "the sweep killed a group it did not lead"
+    finally:
+        for p in (bystander, joiner):
+            with contextlib.suppress(OSError):
+                os.kill(p.pid, signal.SIGKILL)
+            p.wait(timeout=5)
