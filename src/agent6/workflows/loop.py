@@ -723,10 +723,8 @@ class Workflow:
         self.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
-        # The run dir name is the authoritative run id; stamp it into run.start so
-        # every fold (watch --json, the web snapshot + SSE, the TUI) reports it,
-        # rather than each snapshot layer re-deriving it from the path (they used
-        # to leave run_id="" because no event carried one).
+        # The run dir name is the authoritative run id; stamped into run.start so
+        # every fold reports it without re-deriving it from the path.
         run_id = self.events.path.parent.name if self.events is not None else ""
         self._emit("run.start", run_id=run_id, user_task=user_task[:200], mode=self.mode)
         self._log("LOOP: LOAD_CONTEXT")
@@ -837,8 +835,12 @@ class Workflow:
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
             ) from exc
 
+        # The leg's log opens with this event: stamp run_id + mode like
+        # run.start so the log identifies itself (the manifest owns the task).
         self._emit(
             "loop.resume.start",
+            run_id=self.events.path.parent.name if self.events is not None else "",
+            mode=self.mode,
             iteration=snapshot.next_iteration,
             messages=len(snapshot.messages),
         )

@@ -329,8 +329,9 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
 
 
 class _EventCapture:
-    def __init__(self) -> None:
+    def __init__(self, path: Path = Path("logs.jsonl")) -> None:
         self.events: list[dict[str, Any]] = []
+        self.path = path  # EventSink.path: the log file the emits land in
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
         self.events.append({"type": event_type, **fields})
@@ -394,6 +395,66 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
     assert restored and restored[0]["pins"] == ["keep A", "ship X"]
     assert restored[0]["count"] == 2
+
+
+def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
+    """loop.resume.start opens a resumed/forked leg's log; it stamps run_id and
+    mode like run.start so the leg's log identifies itself (the manifest owns
+    the task). An identity-less leg log left every fold empty and each consumer
+    patching its own copy."""
+    from agent6.workflows._run_state import RunSnapshot as _Snap
+
+    run_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    run_dir.mkdir(parents=True)
+    snap_path = run_dir / "loop_state.json"
+    snap_path.write_text(
+        _Snap(
+            system="s",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=(),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "done"}}
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    ev = _EventCapture(path=run_dir / "logs.jsonl")
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        resume_state_path=snap_path,
+    )
+    wf.resume()
+    (start,) = [e for e in ev.events if e["type"] == "loop.resume.start"]
+    assert start["run_id"] == "tidy-otter-AB12CD"
+    assert start["mode"] == "run"
 
 
 def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
