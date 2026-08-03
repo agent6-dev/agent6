@@ -53,6 +53,28 @@ def test_a_write_at_the_cap_is_allowed(tmp_path: Path) -> None:
     assert len(read_notes(tmp_path)) == NOTES_MAX_CHARS
 
 
+def test_a_hand_written_notes_file_cannot_swamp_the_prompt(tmp_path: Path) -> None:
+    """The cap has to hold on the way IN as well as on the way out.
+
+    `write_notes` refuses past it, and the block trusted that -- but the file is
+    the operator's to read and edit, so an over-cap one arrives from disk having
+    passed no check. Probed: a 400,000-char notes.md hand-written into the state
+    dir produced a 410,307-char system prompt, verbatim, on every turn, while
+    the AGENTS.md beside it clipped at 16,000 and the memories block at 12,000.
+
+    Clipped with a pointer rather than refused: refusing here would take the
+    session down over a file the agent did not write.
+    """
+    from agent6.workflows._prompt_blocks import notes_block
+
+    notes_path(tmp_path).write_text("# by hand\n" + "x" * 400_000, encoding="utf-8")
+    block = notes_block(read_notes(tmp_path))
+
+    assert len(block) < NOTES_MAX_CHARS + 2000, f"the block is {len(block)} chars"
+    assert "# by hand" in block, "the head of the operator's file must survive"
+    assert "read_notes" in block, "the model must be told the rest exists"
+
+
 def test_unreadable_notes_do_not_take_the_run_down(tmp_path: Path) -> None:
     """A hand-mangled file is the operator's business; the session continues."""
     notes_path(tmp_path).write_bytes(b"\xff\xfe not utf-8")

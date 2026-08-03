@@ -18,6 +18,7 @@ from typing import Literal
 
 from agent6.config import Config
 from agent6.memory import MemoryEntry
+from agent6.notes import NOTES_MAX_CHARS
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
@@ -46,15 +47,21 @@ MEMORIES_MAX_CHARS = 12000
 
 
 def notes_block(notes: str) -> str:
-    """The <notes> block: the agent's own scratchpad, verbatim.
+    """The <notes> block: the agent's own scratchpad, verbatim up to the cap.
 
-    Verbatim because the agent curates it -- clipping would silently drop the
-    end of its own document, and the store already refuses anything over the
-    cap so the size is bounded before it reaches here. Empty renders nothing.
+    Verbatim because the agent curates it: clipping its own document would drop
+    exactly the newest thinking, which is why ``write_notes`` REFUSES past
+    ``NOTES_MAX_CHARS`` instead. But the file is the operator's to read and
+    edit, so an over-cap one reaches here having passed no check -- a 400,000
+    char notes.md written by hand went into every turn's prompt whole. Clipped
+    with a pointer, like AGENTS.md; refusing would take a session down over a
+    file the agent did not write. Empty renders nothing.
     """
     body = notes.strip()
     if not body:
         return ""
+    if len(body) > NOTES_MAX_CHARS:
+        body = body[:NOTES_MAX_CHARS] + "\n... (notes clipped here; read_notes has the full text)"
     return (
         "<notes>\n"
         "Your durable scratchpad for this repository, which you wrote. Rewrite it"
