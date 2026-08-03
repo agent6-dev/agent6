@@ -392,7 +392,10 @@ depends_on = []
 
 [[modules]]
 path = "agent6.sessions.id"
-depends_on = ["agent6._data", "agent6.graph.ulid"]
+# The bucket layout: minting an id means checking the directory it would name,
+# so the generator and the guard sit together rather than each caller spelling
+# the path out.
+depends_on = ["agent6._data", "agent6.graph.ulid", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6._data"

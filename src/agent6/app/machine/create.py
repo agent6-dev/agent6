@@ -41,7 +41,7 @@ from agent6.machine import (
     load_machine,
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
-from agent6.sessions.id import new_friendly_id
+from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import write_worker_pid
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.types import session_bucket
@@ -146,8 +146,12 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
 
-    scratch = bucket_dir(resolved_state_dir(cwd), session_bucket("machine")) / new_friendly_id()
-    scratch.mkdir(parents=True, exist_ok=True)
+    state_dir = resolved_state_dir(cwd)
+    bucket = session_bucket("machine")
+    # Through the owner: `mkdir(exist_ok=True)` on a collision reused a live
+    # draft's directory, overwriting its prompt and appending to its journal.
+    scratch = bucket_dir(state_dir, bucket) / unused_session_id(state_dir, bucket)
+    scratch.mkdir(parents=True)
     # Persist the natural-language task that drove this draft, so the draft dir is
     # self-describing (the agent_transcripts/ embed it inside the authoring prompt,
     # but a plain prompt.txt is what a human looks for).

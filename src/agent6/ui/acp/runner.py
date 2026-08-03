@@ -31,8 +31,9 @@ from typing import Any, BinaryIO
 from agent6.app.reporter import Reporter
 from agent6.app.run import FrontendCapabilities, run_task
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.sessions.id import new_friendly_id
+from agent6.sessions.id import unused_session_id
 from agent6.sessions.layout import SessionLayout
+from agent6.types import session_bucket
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import Session, Sessions, StopReason
@@ -225,7 +226,12 @@ class RunBridge:
         # the id inside left that whole window with no run to address: the
         # cancel wrote no marker, the turn ran to completion spending budget
         # and making commits, and the editor was told "cancelled".
-        session.session_id = new_friendly_id()
+        # Through the owner: this id reaches run_task as an EXPLICIT one, which
+        # skips the lifecycle's own minting, so a collision refused the turn
+        # with "use agent6 resume <id>" over an id the editor never chose.
+        session.session_id = unused_session_id(
+            resolved_state_dir(session.cwd), session_bucket("run")
+        )
         with self._runs:
             if session.cancelled:
                 # Cancelled while queued. The marker is for a run in flight;

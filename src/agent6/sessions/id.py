@@ -24,6 +24,7 @@ from pathlib import Path
 
 from agent6._data.words import ADJECTIVES, NOUNS
 from agent6.graph.ulid import new_ulid
+from agent6.sessions.layout import bucket_dir
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -65,6 +66,21 @@ def new_friendly_id() -> str:
     ts_part = new_ulid()[6:10]
     rnd_part = _CROCKFORD[rand[4] % 32] + _CROCKFORD[rand[5] % 32]
     return f"{adj}-{noun}-{ts_part}{rnd_part}"
+
+
+def unused_session_id(state_dir: Path, bucket: str) -> str:
+    """A freshly minted id whose directory does not already exist.
+
+    An id carries 4 timestamp chars plus 2 random ones, so two minted in the
+    same millisecond collide about once in 30 million. Every site that names a
+    session directory mints through here: one that called `new_friendly_id`
+    directly wrote into whatever was already there.
+    """
+    for _ in range(8):
+        candidate = new_friendly_id()
+        if not (bucket_dir(state_dir, bucket) / candidate).exists():
+            return candidate
+    raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
 
 
 def list_session_ids(runs_dir: Path) -> list[str]:

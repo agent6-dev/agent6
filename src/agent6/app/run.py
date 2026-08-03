@@ -74,7 +74,7 @@ from agent6.git_ops import (
 )
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
-from agent6.sessions.id import SessionIdError, new_friendly_id, validate_explicit_session_id
+from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
 from agent6.sessions.ipc import (
     away_mode,
     clear_away_mode,
@@ -91,7 +91,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir
+from agent6.sessions.layout import LOGS_NAME, SessionLayout
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -242,22 +242,6 @@ def discard_husk_dir(session_dir: Path) -> None:
         shutil.rmtree(session_dir)
 
 
-def _unused_session_id(state_dir: Path, bucket: str) -> str:
-    """A freshly minted id whose directory does not already exist.
-
-    An id carries 4 timestamp chars plus 2 random ones, so two minted in the
-    same millisecond collide about once in 30 million. The explicit-id path
-    below refuses to reuse a directory; a GENERATED collision reached none of
-    that and wrote a new manifest and loop_state beside a live session's graph,
-    checkpoints and transcripts. A generated id is ours to mint again.
-    """
-    for _ in range(8):
-        candidate = new_friendly_id()
-        if not (bucket_dir(state_dir, bucket) / candidate).exists():
-            return candidate
-    raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
-
-
 def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     cfg: Config,
     task: str,
@@ -386,7 +370,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
     state_dir = resolved_state_dir(cwd)
     bucket = session_bucket(mode)
-    effective_session_id = session_id or _unused_session_id(state_dir, bucket)
+    effective_session_id = session_id or unused_session_id(state_dir, bucket)
     layout = SessionLayout(
         state_dir=state_dir,
         session_id=effective_session_id,
