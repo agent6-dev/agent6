@@ -273,7 +273,7 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         if word in ("/h", "/?"):
             word = "/help"
         if args:
-            # Only /compact and skill commands take arguments; any other line
+            # /compact, /btw and skill commands take arguments; any other line
             # with spaces stays a verbatim steer (the loop itself parses the
             # /pin and /parallel directives out of steer text).
             builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
@@ -286,6 +286,11 @@ def pause_menu(  # noqa: PLR0911, PLR0912
                     )
                 else:
                     print("[agent6] could not write the compaction request; nothing was requested")
+                continue
+            if builtin == ["/btw"] and not smatches:
+                # A btw is a question asked BESIDE the run; letting it fall
+                # through would send it to the loop as steer text instead.
+                print(_start_btw(stripped, run_dir, btw_runner))
                 continue
             if len(smatches) == 1 and not builtin:
                 return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())

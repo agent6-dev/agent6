@@ -86,3 +86,29 @@ def test_a_bare_btw_asks_for_a_question(tmp_path: Path, capsys: pytest.CaptureFi
     """Opening an empty session would be worse than saying nothing was asked."""
     _run_info_command("/btw", tmp_path, None)
     assert "ask something" in capsys.readouterr().out
+
+
+def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(tmp_path: Path) -> None:
+    """The bug that made /btw dead: the menu special-cased only /compact and
+    skills for lines WITH arguments, so `/btw why...` fell through and was
+    returned as STEER TEXT -- sent to the loop, which is exactly what a btw
+    must never be."""
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    asked: list[str] = []
+
+    def runner(question: str, run_dir: Path) -> str:
+        asked.append(question)
+        return "[agent6] btw opened"
+
+    lines = iter(["/btw why is the broker slow?", "/continue"])
+    action = pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
+    assert asked == ["why is the broker slow?"]
+    assert action == "", "a btw must not become a steer instruction"
+
+
+def test_ordinary_text_is_still_a_steer(tmp_path: Path) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    lines = iter(["make it faster"])
+    assert pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"

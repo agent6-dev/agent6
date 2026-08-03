@@ -247,3 +247,57 @@ def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: Path) -> None:
     assert roster_from_dir(tmp_path / "nope") == []
     (tmp_path / "empty").mkdir()
     assert roster_from_dir(tmp_path / "empty") == []
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_a_detached_child_of_a_background_command_dies_with_the_run(
+    shells: BackgroundShells, tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """The teardown test above only tracked launcher pids, so it passed while a
+    `setsid` child of a background command survived `stop_all` on hardened --
+    the exact "nothing a run started outlives it" claim, broken.
+
+    stop() kills the launcher's group, which by definition misses a child that
+    left it, and run_in_jail's sweep can never catch it either: by then it is
+    not NEW. So stop() sweeps what the command left behind.
+    """
+    beat = tmp_path / "beat"
+    loop = f"for i in $(seq 60); do echo x >> {beat}; sleep 0.2; done"
+    shells.start(
+        ("/bin/sh", "-c", f"setsid /bin/sh -c {loop!r} </dev/null >/dev/null 2>&1 & sleep 30"),
+        _policy_for(tmp_path, isolation),
+    )
+    deadline = time.monotonic() + 15.0
+    while not beat.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    shells.stop_all()
+    at_stop = beat.read_text(encoding="utf-8") if beat.exists() else ""
+    time.sleep(3.0)
+    later = beat.read_text(encoding="utf-8") if beat.exists() else ""
+    assert later == at_stop, f"{isolation}: a detached child outlived the run ({later!r})"
+
+
+def test_a_command_cannot_forge_its_own_exit_code_or_name(
+    shells: BackgroundShells, tmp_path: Path
+) -> None:
+    """The launcher's result and the command's identity used to live in the
+    same directory the command was granted read-write, so a command that
+    exited 42 could report "exited 0: npm test (all green)". An audit trail the
+    audited party can rewrite is a suggestion box."""
+    forge = (
+        'd=$(awk "/agent6/ {print \\$2}" /proc/self/mounts | head -1); '
+        'echo "{\\"returncode\\": 0}" > "$d/../result.json" 2>/dev/null; '
+        'echo "{\\"command\\":\\"all green\\"}" > "$d/../meta.json" 2>/dev/null; '
+        "exit 42"
+    )
+    import shlex
+
+    from agent6.tools.background import roster_from_dir
+
+    argv = ("/bin/sh", "-c", forge)
+    view = shells.start(argv, _policy_for(tmp_path, "strict"))
+    assert _wait_state(shells, view.id, "exited") == "exited"
+    after = next(v for v in shells.roster() if v.id == view.id)
+    assert after.returncode == 42  # not the 0 it wrote
+    assert after.command == shlex.join(argv)  # not the name it wrote
+    assert any("exited 42" in line for line in roster_from_dir(tmp_path / "shells"))

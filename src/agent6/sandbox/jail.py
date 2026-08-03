@@ -501,6 +501,9 @@ class BackgroundJob:
     def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path | None) -> None:
         self._proc = proc
         self._outcome_dir = outcome_dir
+        # Everything that was already ours when this command started: its own
+        # escapees are whatever appears beyond this set.
+        self._descendants = frozenset(_own_children())
 
     @property
     def pid(self) -> int:
@@ -531,13 +534,21 @@ class BackgroundJob:
         )
 
     def stop(self) -> None:
-        """Kill the command and everything it started. Idempotent."""
+        """Kill the command and everything it started. Idempotent.
+
+        killpg only reaches the launcher's group, so a child that called
+        setsid() is missed exactly as it is for a foreground command -- and
+        `run_in_jail`'s sweep can never catch it either, because by then it is
+        not NEW. Unregistering first, then sweeping, makes this the moment its
+        escapees stop being spared.
+        """
         if self._proc.poll() is None:
             with contextlib.suppress(OSError):
                 os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 self._proc.wait(timeout=5.0)
         self._unregister()
+        _kill_escapees(self._descendants)
 
     def _unregister(self) -> None:
         with _sweep_lock:

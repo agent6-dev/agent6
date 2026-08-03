@@ -22,8 +22,15 @@ from agent6.sandbox.jail import BackgroundJob, JailUnavailableError, start_in_ja
 from agent6.types import JailPolicy
 
 # The command's own output goes to a file both sides can read: the jail gets
-# the directory read-write, and `exec` applies the redirect to the whole
+# the LOG directory read-write, and `exec` applies the redirect to the whole
 # command. argv values ride as positional parameters, never as shell text.
+#
+# The log dir is a CHILD of the shell dir, and the only thing granted. The
+# launcher's result and the command's identity live in the shell dir itself,
+# out of the command's reach: a command that can rewrite its own exit code and
+# its own name is not an audit trail, it is a suggestion box. (Proven: a
+# command that exited 42 reported "exited 0: npm test (all green)".)
+_LOG_DIR = "log"
 _LOG_NAME = "out.log"
 # What a surface needs that the run's own memory holds: the command, and when.
 # Written at start so `/shells` and any dashboard widget read the roster off
@@ -78,14 +85,15 @@ class BackgroundShells:
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
-        shell_dir.mkdir(parents=True, exist_ok=True)
-        (shell_dir / _LOG_NAME).touch()
+        log_dir = shell_dir / _LOG_DIR
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / _LOG_NAME).touch()
         (shell_dir / _META_NAME).write_text(
             json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
         )
-        wrapped = ("/bin/sh", "-c", _REDIRECT, str(shell_dir), *argv)
+        wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
         try:
-            job = start_in_jail(policy_for(wrapped, (shell_dir,)), outcome_dir=shell_dir)
+            job = start_in_jail(policy_for(wrapped, (log_dir,)), outcome_dir=shell_dir)
         except (JailUnavailableError, OSError) as exc:
             raise BackgroundError(f"could not start a background command: {exc}") from exc
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job)
@@ -100,7 +108,7 @@ class BackgroundShells:
         shell = self._get(shell_id)
         text = ""
         try:
-            text = (shell.dir / _LOG_NAME).read_text(errors="replace")
+            text = (shell.dir / _LOG_DIR / _LOG_NAME).read_text(errors="replace")
         except OSError as exc:
             return self._view(shell), f"(output unreadable: {exc})"
         lines = text.splitlines()
@@ -115,11 +123,17 @@ class BackgroundShells:
         return self._view(shell)
 
     def stop_all(self) -> list[ShellView]:
-        """Kill everything still running. Idempotent; safe at teardown."""
+        """Kill everything this run started. Idempotent; safe at teardown.
+
+        Every shell is stopped, not just the live ones: a command that already
+        exited can still have left a detached child behind, and stop() is what
+        sweeps those. Only the ones that WERE running are reported as stopped.
+        """
         stopped: list[ShellView] = []
         for shell in self._shells.values():
-            if shell.job.status().running:
-                shell.job.stop()
+            was_running = shell.job.status().running
+            shell.job.stop()
+            if was_running:
                 shell.stopped = True
                 stopped.append(self._view(shell))
         return stopped
