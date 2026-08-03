@@ -22,16 +22,13 @@ def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
     """Duplicate coverage of the refusal, from the CLI's angle: the same helper
     both lifecycles call before starting anything."""
     ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    assert headless_approval_refusal(ask, tui_enabled=False, away="") is not None
-    # Answerable: a TUI, a tty, an away-mode, or nothing to approve.
-    assert headless_approval_refusal(ask, tui_enabled=True, away="") is None
-    assert headless_approval_refusal(ask, tui_enabled=False, away="deny") is None
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    assert headless_approval_refusal(ask, tui_enabled=False, away="") is None
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=False) is not None
+    # Answerable: a TUI, a front-end that can ask, an away-mode, or nothing to approve.
+    assert headless_approval_refusal(ask, tui_enabled=True, away="", can_ask=False) is None
+    assert headless_approval_refusal(ask, tui_enabled=False, away="deny", can_ask=False) is None
+    assert headless_approval_refusal(ask, tui_enabled=False, away="", can_ask=True) is None
     yes = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="yes")))
-    assert headless_approval_refusal(yes, tui_enabled=False, away="") is None
+    assert headless_approval_refusal(yes, tui_enabled=False, away="", can_ask=False) is None
 
 
 def test_run_surfaces_git_wall_before_provider_wall(

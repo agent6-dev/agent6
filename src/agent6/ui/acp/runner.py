@@ -139,7 +139,17 @@ class RunBridge:
         return chosen if isinstance(chosen, str) and chosen in options else None
 
     def run(self, session: Session, text: str) -> StopReason:
+        # BEFORE the queue, not after. `_runs` is held for a whole run, so a
+        # second session's turn can wait here for many minutes -- and minting
+        # the id inside left that whole window with no run to address: the
+        # cancel wrote no marker, the turn ran to completion spending budget
+        # and making commits, and the editor was told "cancelled".
+        session.run_id = new_friendly_id()
         with self._runs:
+            if session.cancelled:
+                # Cancelled while queued. The marker is for a run in flight;
+                # one that has not started is stopped by not starting it.
+                return "cancelled"
             try:
                 return self._run(session, text)
             except Exception as exc:
@@ -154,7 +164,6 @@ class RunBridge:
 
     def _run(self, session: Session, text: str) -> StopReason:
         effective = load_effective(session.cwd)
-        session.run_id = new_friendly_id()
         layout = RunLayout(state_dir=resolved_state_dir(session.cwd), run_id=session.run_id)
         os.chdir(session.cwd)
 

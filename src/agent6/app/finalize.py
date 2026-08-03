@@ -9,10 +9,10 @@ import contextlib
 import json
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
 from agent6.app.merge import execute_merge
+from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
 from agent6.config import Config, NotifyConfig
@@ -82,7 +82,7 @@ def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
     return out
 
 
-def _print_next_session(layout: RunLayout) -> None:
+def _print_next_session(layout: RunLayout, *, reporter: Reporter) -> None:
     """After a session that produced something to act on, name the next step.
 
     Seeding already exists; what was missing was the affordance -- an operator
@@ -92,10 +92,10 @@ def _print_next_session(layout: RunLayout) -> None:
     with contextlib.suppress(ManifestError):
         mode = read_manifest(layout.run_dir).mode
         if mode in ("plan", "ask"):
-            print(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
+            reporter.out(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
 
 
-def _print_unknown_baseline(result: RunResult, *, layout: RunLayout) -> None:
+def _print_unknown_baseline(result: RunResult, *, layout: RunLayout, reporter: Reporter) -> None:
     """On a red gate nothing observed at the base, say so and name the check.
 
     A run whose FIRST verify ran against an unmodified tree already answered
@@ -114,17 +114,19 @@ def _print_unknown_baseline(result: RunResult, *, layout: RunLayout) -> None:
         gate, base = m.workflow.verify_command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
         return
-    print(f"\nthe gate is red, and nothing checked it before this run started ({base[:12]}).")
+    reporter.out(
+        f"\nthe gate is red, and nothing checked it before this run started ({base[:12]})."
+    )
     # A worktree at the base sha, NOT `git stash`: the run's work is COMMITTED
     # on its branch, so a stash saves nothing, exits 0, and runs the gate
     # against the very commits it was meant to exclude -- reading back as "red
     # without my changes too".
-    print("  to see whether this run caused it, check out the base commit somewhere else:")
-    print(f"    git worktree add /tmp/agent6-base {base[:12]} \\")
-    print(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
+    reporter.out("  to see whether this run caused it, check out the base commit somewhere else:")
+    reporter.out(f"    git worktree add /tmp/agent6-base {base[:12]} \\")
+    reporter.out(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
-def _print_stale_gate(result: RunResult) -> None:
+def _print_stale_gate(result: RunResult, *, reporter: Reporter) -> None:
     """Surface a proposed gate replacement, and say plainly that nothing moved.
 
     The worker may declare the configured gate stale instead of reverting
@@ -136,10 +138,10 @@ def _print_stale_gate(result: RunResult) -> None:
     """
     if not result.stale_gate or result.verified != "failed":
         return
-    print("\nthe worker says this run's verify gate no longer matches the task:")
-    print(f"  it proposes: {result.stale_gate}")
-    print("  nothing changed. To adopt it:")
-    print(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
+    reporter.out("\nthe worker says this run's verify gate no longer matches the task:")
+    reporter.out(f"  it proposes: {result.stale_gate}")
+    reporter.out("  nothing changed. To adopt it:")
+    reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
 
 
 def print_run_end(
@@ -148,6 +150,7 @@ def print_run_end(
     layout: RunLayout,
     budget: BudgetTracker,
     console_stream: bool,
+    reporter: Reporter,
 ) -> None:
     """One composed end-of-run block: outcome, summary, cost, and the next step.
 
@@ -166,29 +169,29 @@ def print_run_end(
     if not console_stream:
         # Headless: no ConsoleView ran, so this block is the only end output.
         headline = word if not reason else f"{word} · {reason.replace('_', ' ')}"
-        print(f"\n{headline}")
+        reporter.out(f"\n{headline}")
         if result.summary:
-            print(f"  {result.summary}")
-    print()
+            reporter.out(f"  {result.summary}")
+    reporter.out("")
     for binary in _sandbox_unreachable_tools(layout):
-        print(
+        reporter.out(
             f"WARNING: `{binary}` is installed on this machine but did not work"
             " inside agent6's sandbox."
         )
-        print(
+        reporter.out(
             "  Likely a per-user / version-manager install (rustup, pyenv, nvm, ...)"
             " whose config or toolchain the sandbox does not expose -- not an agent6"
             " bug. Fix options:"
         )
-        print(f"    - make `{binary}` run from a clean shell (a system-wide install)")
-        print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
-        print("    - grant its real directory via [sandbox].extra_read_paths")
-        print("    - run with --dangerously-disable-sandbox")
-    _print_next_session(layout)
-    _print_unknown_baseline(result, layout=layout)
-    _print_stale_gate(result)
-    print(budget.format_summary())
-    _print_run_total_across_legs(layout)
+        reporter.out(f"    - make `{binary}` run from a clean shell (a system-wide install)")
+        reporter.out("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
+        reporter.out("    - grant its real directory via [sandbox].extra_read_paths")
+        reporter.out("    - run with --dangerously-disable-sandbox")
+    _print_next_session(layout, reporter=reporter)
+    _print_unknown_baseline(result, layout=layout, reporter=reporter)
+    _print_stale_gate(result, reporter=reporter)
+    reporter.out(budget.format_summary())
+    _print_run_total_across_legs(layout, reporter=reporter)
     run_branch = ""
     base_branch = ""
     merged_into = ""
@@ -201,12 +204,12 @@ def print_run_end(
     if result.completed and run_branch and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may
         # have deleted it); don't tell the operator to merge it again.
-        print(f"\nchanges merged into {merged_into}")
-        print(f"  inspect:     agent6 runs diff {layout.run_id}")
+        reporter.out(f"\nchanges merged into {merged_into}")
+        reporter.out(f"  inspect:     agent6 runs diff {layout.run_id}")
     elif result.completed and run_branch:
-        print(f"\nchanges are on {run_branch}")
-        print(f"  merge with:  agent6 runs merge {layout.run_id}")
-        print(f"  inspect:     agent6 runs diff {layout.run_id}")
+        reporter.out(f"\nchanges are on {run_branch}")
+        reporter.out(f"  merge with:  agent6 runs merge {layout.run_id}")
+        reporter.out(f"  inspect:     agent6 runs diff {layout.run_id}")
         # The run left the checkout ON its branch (branch_per_run cuts it and
         # never switches back). Say so + how to leave, or the next run stacks on
         # it (see git.branch_from) and merge/prune defaults quietly shift.
@@ -214,31 +217,31 @@ def print_run_end(
         with contextlib.suppress(GitError):
             current = git_status(Path.cwd()).branch
         if current == run_branch and base_branch and base_branch != run_branch:
-            print(f"  you are on {run_branch}; return with: git switch {base_branch}")
+            reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif not result.completed:
-        print(f"\nresume with:  agent6 resume {layout.run_id}")
+        reporter.out(f"\nresume with:  agent6 resume {layout.run_id}")
 
 
-def _print_run_total_across_legs(layout: RunLayout) -> None:
+def _print_run_total_across_legs(layout: RunLayout, *, reporter: Reporter) -> None:
     """After the leg's token+cost banner: the run's true cumulative spend when
     resume legs precede this one. The tracker is per-leg (each resume starts a
     fresh budget), so its "TOTAL" line undersells a resumed run without this."""
     scan = scan_run_log(layout.run_dir / LOGS_NAME)
     if scan.legs > 1 and scan.cost_usd is not None:
         cost = format_cost(scan.cost_usd, partial=scan.usd_partial)
-        print(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
+        reporter.out(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
 
 
-def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker) -> None:
+def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker, reporter: Reporter) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
     branch-return hint. The interrupt cuts the run before ``print_run_end``, so
     without this the user saw only "run interrupted" -- no spend, no way to pick
     the (auto-committed, resumable) work back up, and no note they were left on
     the run branch. Mirrors the not-completed footer of ``print_run_end``."""
-    print()
-    print(budget.format_summary())
-    _print_run_total_across_legs(layout)
-    print(f"\nresume with:  agent6 resume {layout.run_id}")
+    reporter.out("")
+    reporter.out(budget.format_summary())
+    _print_run_total_across_legs(layout, reporter=reporter)
+    reporter.out(f"\nresume with:  agent6 resume {layout.run_id}")
     run_branch = ""
     base_branch = ""
     with contextlib.suppress(ManifestError):
@@ -250,10 +253,10 @@ def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker) -> None:
         with contextlib.suppress(GitError):
             current = git_status(Path.cwd()).branch
         if current == run_branch and base_branch and base_branch != run_branch:
-            print(f"  you are on {run_branch}; return with: git switch {base_branch}")
+            reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
 
-def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
+def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config, reporter: Reporter) -> None:
     """After a successful run, merge the run branch into its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
     run + resume share it. Ends on the base branch (the pre-run branch) with a clean
@@ -273,10 +276,9 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
     except GitError:
         return
     if not st.is_clean:
-        print(
+        reporter.err(
             f"[agent6] auto_merge skipped (worktree not clean); merge by hand:\n"
-            f"    git checkout {base_branch} && git merge {run_branch}",
-            file=sys.stderr,
+            f"    git checkout {base_branch} && git merge {run_branch}"
         )
         return
     identity = CommitIdentity(
@@ -285,7 +287,9 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
     try:
         verify_git_identity(cwd, identity)
     except GitError as exc:
-        print(f"[agent6] auto_merge skipped: {exc}", file=sys.stderr)
+        reporter.err(
+            f"[agent6] auto_merge skipped: {exc}",
+        )
         return
     outcome = execute_merge(
         cwd,
@@ -301,29 +305,30 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
         original="",  # stay on the base branch, where the work now lives
     )
     if outcome.status == "merged":
-        print(
+        reporter.err(
             f"[agent6] auto_merged {run_branch} into {base_branch} "
-            f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}",
-            file=sys.stderr,
+            f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
         if cfg.git.auto_prune:
             if delete_branch_if_merged(cwd, run_branch):
-                print(f"[agent6] auto_pruned {run_branch}", file=sys.stderr)
+                reporter.err(
+                    f"[agent6] auto_pruned {run_branch}",
+                )
             else:
-                print(
+                reporter.err(
                     f"[agent6] auto_prune kept {run_branch} (squash-merged, unreachable; "
-                    f"remove with: git branch -D {run_branch})",
-                    file=sys.stderr,
+                    f"remove with: git branch -D {run_branch})"
                 )
     elif outcome.status == "conflict":
-        print(
+        reporter.err(
             f"[agent6] auto_merge into {base_branch} hit conflicts "
             f"({', '.join(outcome.conflicts)}); left a clean tree on {base_branch} with the run "
-            f"branch {run_branch} intact. Merge by hand:\n    git merge {run_branch}",
-            file=sys.stderr,
+            f"branch {run_branch} intact. Merge by hand:\n    git merge {run_branch}"
         )
     else:
-        print(f"[agent6] auto_merge failed: {outcome.error}", file=sys.stderr)
+        reporter.err(
+            f"[agent6] auto_merge failed: {outcome.error}",
+        )
 
 
 def _stash_apply_cmd(sha: str, base_branch: str, *, needs_checkout: bool) -> str:
@@ -348,7 +353,13 @@ def stash_recovery_hint(cwd: Path, *, run_id: str, base_branch: str) -> str | No
 
 
 def finalize_auto_stash(
-    cwd: Path, *, base_branch: str, run_branch: str | None, auto_pop: bool, run_id: str
+    cwd: Path,
+    *,
+    base_branch: str,
+    run_branch: str | None,
+    auto_pop: bool,
+    run_id: str,
+    reporter: Reporter,
 ) -> None:
     """Restore or report the pre-run auto-stash so the user's work is never left in a
     hidden stash. With auto_pop off, print how to pop it. With auto_pop on, pop it
@@ -365,44 +376,36 @@ def finalize_auto_stash(
     message = auto_stash_message(run_id)
     entry = find_stash(cwd, message)
     if entry is None:
-        print(
-            "[agent6] pre-run auto-stash not found (already restored?); nothing to pop",
-            file=sys.stderr,
-        )
+        reporter.err("[agent6] pre-run auto-stash not found (already restored?); nothing to pop")
         return
     # apply-by-sha is identity-stable; drop it yourself once you've confirmed.
     apply = f"git stash apply {entry.sha}"
     recover = _stash_apply_cmd(entry.sha, base_branch, needs_checkout=bool(run_branch))
     if not auto_pop:
-        print(
-            f"[agent6] pre-run changes are stashed; restore them with: {recover}", file=sys.stderr
-        )
+        reporter.err(f"[agent6] pre-run changes are stashed; restore them with: {recover}")
         return
     try:
         st = git_status(cwd)
     except GitError:
         st = None
     if st is None or not st.is_clean:
-        print(
-            f"[agent6] pre-run changes left stashed (worktree not clean); restore with: {recover}",
-            file=sys.stderr,
+        reporter.err(
+            f"[agent6] pre-run changes left stashed (worktree not clean); restore with: {recover}"
         )
         return
     if run_branch and st.branch == run_branch:
         if not branch_exists(cwd, base_branch):
-            print(
+            reporter.err(
                 f"[agent6] base branch {base_branch} no longer exists; pre-run changes left "
-                f"stashed (recover with: {apply})",
-                file=sys.stderr,
+                f"stashed (recover with: {apply})"
             )
             return
         try:
             create_branch(cwd, base_branch)  # checks out the existing base branch
         except GitError as exc:
-            print(
+            reporter.err(
                 f"[agent6] could not switch to {base_branch} to restore the stash ({exc}); "
-                f"restore with: {recover}",
-                file=sys.stderr,
+                f"restore with: {recover}"
             )
             return
     try:
@@ -410,18 +413,16 @@ def finalize_auto_stash(
     except GitError as exc:
         # The apply itself landed; what failed is putting back a concurrent
         # stash the raced drop displaced. Say both -- finalization continues.
-        print(
-            f"[agent6] restored your pre-run changes onto {base_branch}, but {exc}",
-            file=sys.stderr,
-        )
+        reporter.err(f"[agent6] restored your pre-run changes onto {base_branch}, but {exc}")
         return
     if restored:
-        print(f"[agent6] restored your pre-run changes onto {base_branch}", file=sys.stderr)
+        reporter.err(
+            f"[agent6] restored your pre-run changes onto {base_branch}",
+        )
     else:
-        print(
+        reporter.err(
             "[agent6] restoring your pre-run changes hit a conflict; resolve the markers"
-            f" (your stash is preserved; re-apply with: git stash apply {entry.sha})",
-            file=sys.stderr,
+            f" (your stash is preserved; re-apply with: git stash apply {entry.sha})"
         )
 
 
@@ -441,6 +442,7 @@ def fire_notify_hook(
     ok: bool,
     reason: str,
     verified: str,
+    reporter: Reporter,
 ) -> None:
     """Run the operator-configured post-completion hook.
 
@@ -468,4 +470,6 @@ def fire_notify_hook(
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"[agent6] notify.on_complete failed: {exc}", file=sys.stderr)
+        reporter.err(
+            f"[agent6] notify.on_complete failed: {exc}",
+        )

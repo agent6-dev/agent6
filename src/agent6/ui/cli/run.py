@@ -120,7 +120,8 @@ def run_frontend() -> RunFrontend:
         # The CLI is the surface with a terminal: it can do everything. What it
         # cannot do -- ask a human with no tty and no away-mode -- is the
         # lifecycle's own preflight refusal, not a missing capability.
-        capabilities=FrontendCapabilities(),
+        # The CLI asks on the terminal, so a pipe for stdin means it cannot.
+        capabilities=FrontendCapabilities(can_ask=sys.stdin.isatty()),
         should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),

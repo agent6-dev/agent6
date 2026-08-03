@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app.manifest import pin_gate, write_run_manifest
-from agent6.app.reporter import Reporter
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.runs.layout import RunLayout
@@ -165,6 +165,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         layout=RunLayout(state_dir=tmp_path, run_id="r1"),
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
+        reporter=STDIO_REPORTER,
     )
     out = capsys.readouterr().out
     assert "nothing checked it before this run started" in out

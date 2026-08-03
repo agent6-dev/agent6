@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.tools.results import FinishRunResult
 from agent6.viewmodel.listing import status_word
 from agent6.workflows._run_state import RunResult
@@ -59,7 +60,8 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
                 verified="failed",
-            )
+            ),
+            reporter=STDIO_REPORTER,
         )
     text = out.getvalue()
     assert "nothing changed" in text
@@ -81,7 +83,8 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
                 verified="passed",
-            )
+            ),
+            reporter=STDIO_REPORTER,
         )
     assert out.getvalue() == ""
 
@@ -92,7 +95,8 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     out = io.StringIO()
     with redirect_stdout(out):
         _print_stale_gate(
-            RunResult(completed=True, reason="finish_run", summary="s", iterations=1, tool_calls=1)
+            RunResult(completed=True, reason="finish_run", summary="s", iterations=1, tool_calls=1),
+            reporter=STDIO_REPORTER,
         )
     assert out.getvalue() == ""
 

@@ -258,3 +258,65 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
     assert stop_reason(1) == "refusal"
     assert stop_reason(2) == "refusal"
     assert stop_reason(130) == "cancelled"
+
+
+def test_an_editor_driven_run_is_not_refused_for_lack_of_a_terminal() -> None:
+    """`agent6 acp`'s stdin is the protocol pipe, never a tty.
+
+    The refusal used to test the tty rather than the surface's own declaration,
+    so with the stock `run_commands = "ask"` EVERY editor-driven run was
+    refused before it started -- and the whole `session/request_permission`
+    path it refused on behalf of was unreachable.
+    """
+    from agent6.app.preflight import headless_approval_refusal
+    from agent6.config import Config
+    from agent6.ui.acp.server import capabilities_from
+
+    cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    caps = capabilities_from({})  # a client that declared nothing
+    assert caps.can_ask is True, "every ACP client must answer session/request_permission"
+    assert headless_approval_refusal(cfg, tui_enabled=False, away="", can_ask=caps.can_ask) is None
+
+
+def test_a_turn_cancelled_while_queued_never_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs are serialised, so a second turn can wait minutes for the lock.
+
+    Minting the run id inside the lock left that whole window addressing
+    nothing: the cancel wrote no stop marker, the queued turn then ran to
+    completion spending budget and making commits, and the editor was told
+    "cancelled" the entire time.
+    """
+    monkeypatch.setattr(session_mod, "request_stop", _ignore)
+    monkeypatch.chdir(tmp_path)
+    ran: list[str] = []
+    first_started, release = threading.Event(), threading.Event()
+
+    def _blocking_run(*_a: object, **kw: object) -> int:
+        ran.append(str(kw["run_id"]))
+        first_started.set()
+        release.wait(timeout=5.0)
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _blocking_run)
+    wire = _Wire()
+    try:
+        first = wire.new_session(tmp_path)
+        wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
+        second = str(wire.recv()["result"]["sessionId"])
+        wire.prompt(first, "the long one", req_id=3)
+        assert first_started.wait(timeout=5.0)
+        wire.prompt(second, "the queued one", req_id=4)
+        wire.send(method="session/cancel", params={"sessionId": second})
+        release.set()
+        answers = {}
+        for _ in range(2):
+            reply = wire.until("")
+            answers[reply["id"]] = reply["result"]["stopReason"]
+        assert len(ran) == 1, f"the cancelled turn started anyway: {ran}"
+        assert answers[4] == "cancelled", answers
+        assert answers[3] == "end_turn", answers
+    finally:
+        release.set()
+        wire.close()

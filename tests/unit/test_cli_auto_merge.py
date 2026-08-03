@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app import finalize as finmod
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.runs.layout import RunLayout
 
@@ -74,7 +75,10 @@ def test_auto_merge_squashes_and_lands_on_base(
     )
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM1111"), cfg=cfg
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM1111"),
+        cfg=cfg,
+        reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # ends on base
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"  # one squash commit
@@ -99,7 +103,10 @@ def test_auto_merge_noop_without_run_branch(
     # On main (no run branch); the helper must no-op without crashing.
     _git(tmp_path, "checkout", "-q", "main")
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM2222"), cfg=cfg
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM2222"),
+        cfg=cfg,
+        reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing merged
 
@@ -122,7 +129,10 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     _git(tmp_path, "checkout", "-q", "agent6/run-AM3333")
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM3333"), cfg=cfg
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM3333"),
+        cfg=cfg,
+        reporter=STDIO_REPORTER,
     )
     err = capsys.readouterr().err
     assert "conflict" in err.lower()
@@ -147,7 +157,10 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     _git(tmp_path, "branch", "-D", "main")
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-GONE11"), cfg=cfg
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-GONE11"),
+        cfg=cfg,
+        reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "branch", "--list", "main") == ""  # base NOT fabricated
     manifest = json.loads(
@@ -173,7 +186,10 @@ def test_auto_prune_deletes_reachable_merge_branch(
     )
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP1111"), cfg=cfg2
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-AP1111"),
+        cfg=cfg2,
+        reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "branch", "--list", "agent6/run-AP1111") == ""  # pruned (reachable)
 
@@ -194,7 +210,10 @@ def test_auto_prune_keeps_squash_branch(
     )
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
-        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP2222"), cfg=cfg2
+        tmp_path,
+        layout=RunLayout(resolved_state_dir(tmp_path), "run-AP2222"),
+        cfg=cfg2,
+        reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "branch", "--list", "agent6/run-AP2222")  # kept (squash unreachable)
     assert "git branch -D" in capsys.readouterr().err

@@ -119,22 +119,29 @@ def require_git_repo(cwd: Path) -> bool:
     return False
 
 
-def headless_approval_refusal(cfg: Config, *, tui_enabled: bool, away: str) -> str | None:
+def headless_approval_refusal(
+    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool
+) -> str | None:
     """Refuse a run that would block forever waiting to be approved.
 
-    `run_commands = "ask"` needs someone to answer. With no TUI, no controlling
-    tty, and no away-mode telling us what an absent operator meant, the first
-    command PAUSES indefinitely -- and the verify gate is a command too, so that
-    is essentially every run, every `/parallel` lane included. Refuse with the
-    fix rather than hang: a run that cannot ask should not start.
+    `run_commands = "ask"` needs someone to answer. With no TUI, no way for the
+    front-end to ask, and no away-mode telling us what an absent operator meant,
+    the first command PAUSES indefinitely -- and the verify gate is a command
+    too, so that is essentially every run, every `/parallel` lane included.
+    Refuse with the fix rather than hang: a run that cannot ask should not start.
+
+    *can_ask* is the front-end's own declaration. Testing the tty here instead
+    made this the CLI's question rather than the surface's, so `agent6 acp` --
+    whose stdin is the protocol pipe and which asks over
+    `session/request_permission` -- had every run refused before it started.
 
     Returns the message, or None when approval is answerable.
     """
-    if cfg.sandbox.run_commands != "ask" or tui_enabled or sys.stdin.isatty() or away:
+    if cfg.sandbox.run_commands != "ask" or tui_enabled or can_ask or away:
         return None
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
-        " terminal, no TUI and no away-mode. Every command -- the verify gate"
+        " way to ask, no TUI and no away-mode. Every command -- the verify gate"
         " included -- would wait forever.\n"
         "  - unattended: sandbox.run_commands = 'yes' (or --auto-approve), or 'no'"
         " to withhold commands entirely\n"

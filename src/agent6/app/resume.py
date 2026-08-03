@@ -510,7 +510,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         refusal = headless_approval_refusal(
-            cfg, tui_enabled=tui_enabled, away=os.environ.get("AGENT6_DETACHED_AWAY", "")
+            cfg,
+            tui_enabled=tui_enabled,
+            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+            can_ask=frontend.capabilities.can_ask,
         )
         if refusal is not None:
             reporter.err(f"REFUSING: {refusal}")
@@ -713,14 +716,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 and result.verified != "failed"
                 and cfg.git.auto_merge
             ):
-                finalize_auto_merge(cwd, layout=layout, cfg=cfg)
+                finalize_auto_merge(cwd, layout=layout, cfg=cfg, reporter=reporter)
             # Never leave root-owned run state in the user's repo (sudo case).
             chown_to_real_user(state_dir)
 
         if interrupted:
             # Same close the run path prints: the leg's spend, the cross-leg
             # run total, the resume hint, the on-the-run-branch note.
-            print_interrupt_end(layout=layout, budget=budget)
+            print_interrupt_end(layout=layout, budget=budget, reporter=reporter)
             return 130
         if result is None:
             return 1
@@ -751,6 +754,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             layout=layout,
             budget=budget,
             console_stream=console_stream,
+            reporter=reporter,
         )
         fire_notify_hook(
             cfg.notify,
@@ -759,6 +763,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             ok=result.completed,
             reason=result.reason,
             verified=result.verified,
+            reporter=reporter,
         )
         return run_exit_code(result)
     finally:
