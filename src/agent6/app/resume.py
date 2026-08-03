@@ -208,7 +208,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    profile: str = "",
+    preset: str = "",
     steer: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
@@ -280,8 +280,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     repo_lock_fd: int | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
-        # read-only with the plan tools, never as a write run), `profile` (resume
-        # has no --profile flag), `base_sha` (the review-panel diff base), and
+        # read-only with the plan tools, never as a write run), `preset` (resume
+        # has no --preset flag), `base_sha` (the review-panel diff base), and
         # `run_branch` (the head guard + the checkout below). Read FIRST: a
         # PARKED run (manifest carries parked_task, no snapshot exists) is
         # started fresh below instead of hitting the no-snapshot refusal.
@@ -305,12 +305,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # (and re-parks with a fresh message if the checkout is STILL busy),
             # so release ours first. Its manifest rewrite clears parked_task.
             try:
-                # replay_profile, not the raw stamped name: a config-selected
-                # profile re-resolves from the same files, and handing its name
-                # back would make _select_profile rank it as a flag (the same
+                # replay_preset, not the raw stamped name: a config-selected
+                # preset re-resolves from the same files, and handing its name
+                # back would make _select_preset rank it as a flag (the same
                 # rule as the snapshot-resume path below).
                 cfg = load_effective(
-                    cwd, config_path, profile=profile or manifest.workflow.replay_profile
+                    cwd, config_path, preset=preset or manifest.workflow.replay_preset
                 ).config
                 set_repo_hook_policy(cfg.git.run_repo_hooks)
                 if budget_overrides is not None:
@@ -337,18 +337,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 mode=mode,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
-                profile=profile,
-                # Pin the ORIGINAL stamp ONLY for a FLAG-selected profile whose
-                # veto must survive, and only when this resume sets no --profile
-                # of its own. A CONFIG-selected profile (from_flag False) re-
+                preset=preset,
+                # Pin the ORIGINAL stamp ONLY for a FLAG-selected preset whose
+                # veto must survive, and only when this resume sets no --preset
+                # of its own. A CONFIG-selected preset (from_flag False) re-
                 # resolves from the CURRENT config below, so pinning the manifest's
-                # old NAME would show a stale profile if the config changed since;
+                # old NAME would show a stale preset if the config changed since;
                 # pass None and let run_task derive it from the re-resolved cfg,
-                # like a fresh run. A resume that DOES set --profile is a fresh
+                # like a fresh run. A resume that DOES set --preset is a fresh
                 # flag choice, so run_task's own derivation stamps it.
-                profile_stamp=(
-                    (manifest.workflow.profile, True)
-                    if (not profile and manifest.workflow.profile_from_flag)
+                preset_stamp=(
+                    (manifest.workflow.preset, True)
+                    if (not preset and manifest.workflow.preset_from_flag)
                     else None
                 ),
                 # Hand --steer through: the bridge files seeded above are
@@ -392,7 +392,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
-        manifest_profile = manifest.workflow.replay_profile
+        manifest_preset = manifest.workflow.replay_preset
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
 
@@ -417,9 +417,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 return 1
 
         try:
-            cfg = load_effective(
-                Path.cwd(), config_path, profile=profile or manifest_profile
-            ).config
+            cfg = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset).config
             set_repo_hook_policy(cfg.git.run_repo_hooks)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)

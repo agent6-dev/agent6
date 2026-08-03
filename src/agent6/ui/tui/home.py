@@ -66,16 +66,16 @@ _RUN_SUBDIRS = ("runs", "asks")
 # screen that never refreshed, so a run that died while you watched kept its
 # last word -- bold-cyan "running" -- until a keypress.
 _HUB_POLL_S = 4.0
-# The new-work profile dropdown's first entry: "" => no --profile, so the run
-# uses [workflow].profile from config (or the plain defaults).
+# The new-work preset dropdown's first entry: "" => no --preset, so the run
+# uses [workflow].preset from config (or the plain defaults).
 _DEFAULT_PROFILE_LABEL = "(config default)"
 
 
-def _available_profiles(repo_cwd: Path) -> list[str]:
-    """Profile names the new-work chooser offers (the built-ins plus the user's
-    custom ``[profiles.<name>]`` tables). Delegates to ``config_layer`` -- the
+def _available_presets(repo_cwd: Path) -> list[str]:
+    """Preset names the new-work chooser offers (the built-ins plus the user's
+    custom ``[presets.<name>]`` tables). Delegates to ``config_layer`` -- the
     TUI's config entry point (see config_page.py) -- so the dropdown and the
-    ``--profile`` CLI flag resolve against the same source."""
+    ``--preset`` CLI flag resolve against the same source."""
     from agent6.config.layer import available_profile_names  # noqa: PLC0415
 
     return available_profile_names(repo_cwd, None)
@@ -154,12 +154,12 @@ def _list_runs(agent6_dir: Path) -> list[Path]:
 
 
 class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
-    """Type a task, pick an optional config profile, then start it as a run /
+    """Type a task, pick an optional config preset, then start it as a run /
     plan / ask. The mode IS the button you pick (flat actions, like the config
-    dialogs); Enter in the box runs. The profile dropdown maps to the
-    ``--profile`` CLI flag; "(config default)" => no flag (so [workflow].profile
-    applies). Result: (mode, task, profile) or None, where profile="" means the
-    config default (no --profile)."""
+    dialogs); Enter in the box runs. The preset dropdown maps to the
+    ``--preset`` CLI flag; "(config default)" => no flag (so [workflow].preset
+    applies). Result: (mode, task, preset) or None, where preset="" means the
+    config default (no --preset)."""
 
     CSS = (
         FORM_CSS
@@ -175,9 +175,9 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
         border: round $primary; background: $surface;
     }
     #new-task:focus { border: round $accent; }
-    #new-profile-row { height: auto; padding-top: 1; }
-    #new-profile-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
-    #new-profile { width: 1fr; }
+    #new-preset-row { height: auto; padding-top: 1; }
+    #new-preset-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
+    #new-preset { width: 1fr; }
     #new-actions { padding-top: 1; height: auto; }
     #new-suggest { height: auto; color: $accent; }
     """
@@ -185,15 +185,15 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
 
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=True)]
 
-    def __init__(self, profiles: list[str] | None = None, models: list[str] | None = None) -> None:
-        # Profile names for the dropdown (built-ins + user [profiles.*]); the
-        # caller passes the repo-resolved list (built-ins + user [profiles.*]).
+    def __init__(self, presets: list[str] | None = None, models: list[str] | None = None) -> None:
+        # Preset names for the dropdown (built-ins + user [presets.*]); the
+        # caller passes the repo-resolved list (built-ins + user [presets.*]).
         # None (e.g. a bare test) => only the "(config default)" entry, so the
         # modal stands alone as a pure widget without loading config. `models` are
         # the known model ids offered as `/parallel` spec autocomplete (empty = the
         # affordance is inert, e.g. a bare test or a fresh machine with no cache).
         super().__init__()
-        self._profiles = profiles if profiles is not None else []
+        self._profiles = presets if presets is not None else []
         self._models = models if models is not None else []
 
     def compose(self) -> ComposeResult:
@@ -203,15 +203,15 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
             # can span lines; it brings undo/redo/select-all for free. Tab (and ↓
             # past the last line) move to the run/plan/ask buttons.
             yield TextArea(id="new-task", placeholder="task / question…")
-            with Horizontal(id="new-profile-row"):
-                yield Static("profile:", id="new-profile-label")
-                # value="" is the "(config default)" sentinel: NO --profile, so
-                # the config's [workflow].profile (or plain defaults) applies.
+            with Horizontal(id="new-preset-row"):
+                yield Static("preset:", id="new-preset-label")
+                # value="" is the "(config default)" sentinel: NO --preset, so
+                # the config's [workflow].preset (or plain defaults) applies.
                 yield Select(
                     [(_DEFAULT_PROFILE_LABEL, ""), *((p, p) for p in self._profiles)],
                     value="",
                     allow_blank=False,
-                    id="new-profile",
+                    id="new-preset",
                 )
             with Horizontal(id="new-actions"):
                 yield ActionItem("run", "run")
@@ -285,10 +285,10 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
         task = self.query_one("#new-task", TextArea).text.strip()
         if task:
             # Select.value is the option's value: "" for "(config default)"
-            # (no --profile), else the chosen profile name. allow_blank=False
+            # (no --preset), else the chosen preset name. allow_blank=False
             # plus the leading "" option means it's never Select.BLANK.
-            profile = str(self.query_one("#new-profile", Select).value)
-            self.dismiss((mode, task, profile))
+            preset = str(self.query_one("#new-preset", Select).value)
+            self.dismiss((mode, task, preset))
         else:
             self.notify("Enter a task first.", severity="warning")
 
@@ -505,7 +505,7 @@ class HomeScreen(Screen[None]):
 
     def action_new_work(self) -> None:
         self.app.push_screen(
-            _NewWorkModal(_available_profiles(self.repo_cwd), _available_models(self.repo_cwd)),
+            _NewWorkModal(_available_presets(self.repo_cwd), _available_models(self.repo_cwd)),
             self._on_new_work,
         )
 
@@ -581,9 +581,9 @@ class HomeScreen(Screen[None]):
     def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
         if result is None:
             return
-        mode, task, profile = result
+        mode, task, preset = result
         run_dir, error = _spawn_and_locate(
-            self.agent6_dir, self.repo_cwd, mode, task, profile=profile
+            self.agent6_dir, self.repo_cwd, mode, task, preset=preset
         )
         if run_dir is not None:
             self.app.exit(run_dir)
@@ -639,12 +639,12 @@ class Agent6HomeApp(MuxPointerShapes, App[Path | None]):
 
 
 def _spawn_and_locate(
-    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str = ""
+    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str = ""
 ) -> tuple[Path | None, str]:
-    """Spawn `agent6 <mode> [--profile <name>] <task>` detached and return the new
+    """Spawn `agent6 <mode> [--preset <name>] <task>` detached and return the new
     run dir (to be watched by the dashboard), or (None, diagnostic) on failure. A
-    non-empty *profile* maps to the per-subcommand --profile flag (after the mode,
-    before the task); "" => no flag, so the config's [workflow].profile applies.
+    non-empty *preset* maps to the per-subcommand --preset flag (after the mode,
+    before the task); "" => no flag, so the config's [workflow].preset applies.
 
     A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
     `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane);
@@ -659,7 +659,7 @@ def _spawn_and_locate(
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        return _spawn_run(agent6_dir, repo_cwd, mode, task, profile=profile, spec="")
+        return _spawn_run(agent6_dir, repo_cwd, mode, task, preset=preset, spec="")
     refusal = _model_refusal(repo_cwd, segments)
     if refusal is not None:
         return None, refusal
@@ -667,7 +667,7 @@ def _spawn_and_locate(
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
         run_dir, err = _spawn_run(
-            agent6_dir, repo_cwd, "run", seg.task, profile=profile, spec=seg.spec or "1"
+            agent6_dir, repo_cwd, "run", seg.task, preset=preset, spec=seg.spec or "1"
         )
         if run_dir is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
@@ -700,15 +700,15 @@ def _model_refusal(repo_cwd: Path, segments: list[Segment]) -> str | None:
 
 
 def _spawn_run(
-    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
 ) -> tuple[Path | None, str]:
     """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
     return its located run dir, or (None, diagnostic)."""
-    # --profile is a per-subcommand flag, so it goes after <mode> and before the
-    # positional <task> -> `agent6 <mode> --profile <name> <task>`.
+    # --preset is a per-subcommand flag, so it goes after <mode> and before the
+    # positional <task> -> `agent6 <mode> --preset <name> <task>`.
     argv = [agent6_exe(), mode]
-    if profile:
-        argv += ["--profile", profile]
+    if preset:
+        argv += ["--preset", preset]
     if spec:
         argv += ["--parallel", spec]
     # `--` before the task so a task that looks like a flag is never parsed as

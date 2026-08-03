@@ -1027,12 +1027,12 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None
 
 
 def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
-    """A [profiles.<name>] leaf renders modified with source "profile", and no
-    config-file unset can revert it; Reset must say the profile owns it, not
+    """A [presets.<name>] leaf renders modified with source "preset", and no
+    config-file unset can revert it; Reset must say the preset owns it, not
     lie "already at its default"."""
     gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
     (gdir / "config.toml").write_text(
-        'profile = "fast"\n' + _GLOBAL + '\n[profiles.fast.review]\ntrigger = "off"\n',
+        'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\ntrigger = "off"\n',
         encoding="utf-8",
     )
 
@@ -1047,14 +1047,14 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
                 for s in build_config_view(load_effective(repo, None)).settings
                 if s.key == "review.trigger"
             )
-            assert setting.source == "profile" and setting.modified
+            assert setting.source == "preset" and setting.modified
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
             screen.action_reset()
             await pilot.pause()
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
             assert notes, "no notification fired"
             assert "already at its default" not in notes[-1]
-            assert "profile" in notes[-1]
+            assert "preset" in notes[-1]
 
     asyncio.run(scenario())
 

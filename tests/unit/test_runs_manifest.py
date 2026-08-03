@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import MANIFEST_VERSION, ManifestError, read_manifest
 
 _DATA = Path(__file__).parent / "data"
 
@@ -35,7 +35,7 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: Path) -> None:
     # An almost-empty manifest still parses: every field defaults.
     _write(tmp_path, {})
     m = read_manifest(tmp_path)
-    assert m.version == 2
+    assert m.version == MANIFEST_VERSION
     assert m.mode == "run"
     assert m.run_branch is None
     assert m.models.worker is None
@@ -43,7 +43,7 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: Path) -> None:
 
 
 def test_legacy_version_1_and_missing_profile(tmp_path: Path) -> None:
-    # A real pre-reshape dir: version 1, workflow without `profile`.
+    # A real pre-reshape dir: version 1, workflow without `preset`.
     _write(
         tmp_path,
         {
@@ -56,7 +56,7 @@ def test_legacy_version_1_and_missing_profile(tmp_path: Path) -> None:
     m = read_manifest(tmp_path)
     assert m.version == 1
     assert m.user_task == "do a thing"
-    assert m.workflow.profile == ""
+    assert m.workflow.preset == ""
 
 
 def test_legacy_flat_merge_keys_fold_into_merged(tmp_path: Path) -> None:
@@ -155,7 +155,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
             worker=ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=ModelBrief(provider="anthropic", model="claude-y"),
         ),
-        workflow=WorkflowStamp(critic="off", revise_prompt="on", profile="strict"),
+        workflow=WorkflowStamp(critic="off", revise_prompt="on", preset="strict"),
     )
     path = tmp_path / "manifest.json"
     write_manifest(path, m)
@@ -188,7 +188,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         base_branch="master",
         run_branch="agent6/r-lane02",
         models=ModelsBrief(worker=ModelBrief(provider="openai", model="gpt-z")),
-        workflow=WorkflowStamp(critic="on", revise_prompt="off", profile=""),
+        workflow=WorkflowStamp(critic="on", revise_prompt="off", preset=""),
         parent_run_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,
@@ -225,14 +225,14 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
     downgrade the record it was only supposed to annotate."""
     from agent6.app.manifest import write_manifest
 
-    _write(tmp_path, {"version": 3, "run_id": "r-1", "future_key": {"x": 1}})
+    _write(tmp_path, {"version": 4, "run_id": "r-1", "future_key": {"x": 1}})
     m = read_manifest(tmp_path)  # reading it is fine
     assert m.run_id == "r-1"
-    with pytest.raises(ManifestError, match="version 3"):
+    with pytest.raises(ManifestError, match="version 4"):
         write_manifest(tmp_path / "manifest.json", m)
     # Untouched on disk: the newer record keeps its version AND its keys.
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    assert on_disk["version"] == 3
+    assert on_disk["version"] == 4
     assert on_disk["future_key"] == {"x": 1}
 
 
@@ -259,7 +259,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
 
     run_dir = tmp_path / "runs" / "r-newer"
     run_dir.mkdir(parents=True)
-    payload = {"version": 3, "run_id": "r-newer", "future_key": 1}
+    payload = {"version": 4, "run_id": "r-newer", "future_key": 1}
     _write(run_dir, payload)
 
     layout = RunLayout(state_dir=tmp_path, run_id="r-newer")
@@ -267,5 +267,5 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
     assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
     err = _stamp(run_dir, lane=2)
-    assert err is not None and "version 3" in err
+    assert err is not None and "version 4" in err
     assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload

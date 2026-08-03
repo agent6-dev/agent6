@@ -12,7 +12,7 @@ from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
     _complete_plan_run_ids,
-    _complete_profiles,
+    _complete_presets,
     _complete_run_ids,
     _complete_skills,
 )
@@ -38,13 +38,13 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         " A /parallel lane inherits the coordinator's pins through this.",
     )
     run_profile = run_p.add_argument(
-        "--profile",
+        "--preset",
         default="",
-        help="Config profile preset (quick/standard/ultra/paranoid or a custom"
-        " [profiles.<name>]). Overrides the top-level `profile` key and your config"
+        help="Config preset preset (quick/standard/ultra/paranoid or a custom"
+        " [presets.<name>]). Overrides the top-level `preset` key and your config"
         " files; an explicit --config FILE or individual flags still win.",
     )
-    run_profile.completer = _complete_profiles  # type: ignore[attr-defined]
+    run_profile.completer = _complete_presets  # type: ignore[attr-defined]
     run_p.add_argument(
         "--config",
         type=Path,

@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
-from agent6.ui.cli.completers import _complete_plan_run_ids, _complete_profiles, _complete_run_ids
+from agent6.ui.cli.completers import _complete_plan_run_ids, _complete_presets, _complete_run_ids
 
 
 def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -37,9 +37,9 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     plan_run.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     plan_profile = plan_run.add_argument(
-        "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
+        "--preset", default="", help="Config preset preset (see `agent6 run --preset`)."
     )
-    plan_profile.completer = _complete_profiles  # type: ignore[attr-defined]
+    plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
     plan_run.add_argument(
         "--config",
         type=Path,
@@ -89,9 +89,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
     ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
     ask_profile = ask_query.add_argument(
-        "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
+        "--preset", default="", help="Config preset preset (see `agent6 run --preset`)."
     )
-    ask_profile.completer = _complete_profiles  # type: ignore[attr-defined]
+    ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
     ask_query.add_argument(
         "task",
         nargs="?",

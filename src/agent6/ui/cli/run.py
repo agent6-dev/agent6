@@ -193,7 +193,7 @@ def _cmd_run(  # noqa: PLR0911
     skills: tuple[str, ...] = (),
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    profile: str = "",
+    preset: str = "",
     parallel_spec: str = "",
     pins: tuple[str, ...] = (),
 ) -> int:
@@ -201,7 +201,7 @@ def _cmd_run(  # noqa: PLR0911
     the flag overrides, resolve skills and @file refs, route ``--parallel``,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
     try:
-        cfg = load_effective(Path.cwd(), config_path, profile=profile).config
+        cfg = load_effective(Path.cwd(), config_path, preset=preset).config
         set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
@@ -285,6 +285,6 @@ def _cmd_run(  # noqa: PLR0911
         mode=mode,
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,
-        profile=profile,
+        preset=preset,
         pins=pins,
     )

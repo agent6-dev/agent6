@@ -87,17 +87,17 @@ def _cmd_config_path() -> int:
 
 
 def _cmd_config_profiles() -> int:
-    """List every known profile with the overrides it applies; mark the selection."""
+    """List every known preset with the overrides it applies; mark the selection."""
     try:
         cat = profile_catalog(Path.cwd(), None)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
     if cat.selected:
-        print(f"profile = {cat.selected}  [{cat.source}]")
+        print(f"preset = {cat.selected}  [{cat.source}]")
     else:
-        print("no profile selected (plain defaults)")
-    for info in cat.profiles:
+        print("no preset selected (plain defaults)")
+    for info in cat.presets:
         tag = "built-in" if info.origin == "built-in" else f"user, {info.origin} config"
         if info.replaces_builtin:
             tag += ", replaces the built-in"
@@ -109,8 +109,8 @@ def _cmd_config_profiles() -> int:
         for key, val in leaves.items():
             print(f"  {key} = {format_value(val)}")
     print(
-        "\nSelect per run with --profile <name>;"
-        " persist with `agent6 config set profile <name>` (--repo for this repo)."
+        "\nSelect per run with --preset <name>;"
+        " persist with `agent6 config set preset <name>` (--repo for this repo)."
     )
     return 0
 
@@ -172,7 +172,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
 
     Reads the same PROTECTED_OVERLAY_* sets the MachineSpec validator enforces,
     so this refuses exactly what the loader would: keeping a second, shorter
-    copy here meant `config set --machine-file` wrote profiles.*,
+    copy here meant `config set --machine-file` wrote presets.*,
     machine.notify.*, and git.run_repo_hooks into overlays that can never load.
     """
     if machine is None:
@@ -181,7 +181,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
         if key == table or key.startswith(f"{table}."):
             return (
                 f"machine [config] overlays must not set {table}.*:"
-                " connections/secrets, sandbox policy, and profile presets are"
+                " connections/secrets, sandbox policy, and preset presets are"
                 " operator-only (global/repo config)"
             )
     for dotted, why in PROTECTED_OVERLAY_LEAVES.items():

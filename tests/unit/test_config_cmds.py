@@ -41,8 +41,8 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
 def test_profile_value_completer_offers_profile_names(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # TAB after `config set profile` offers the selectable names: built-ins
-    # plus user [profiles.*] tables.
+    # TAB after `config set preset` offers the selectable names: built-ins
+    # plus user [presets.*] tables.
     import argparse
 
     from agent6.ui.cli.completers import (
@@ -51,10 +51,10 @@ def test_profile_value_completer_offers_profile_names(
 
     gdir = tmp_path / "g"
     gdir.mkdir()
-    (gdir / "config.toml").write_text("[profiles.myteam.review]\npanel_size = 2\n")
+    (gdir / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
-    args = argparse.Namespace(key="profile")
+    args = argparse.Namespace(key="preset")
     out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
     assert "ultra" in out and "myteam" in out
     assert _complete_config_values("ul", args) == ["ultra"]  # pyright: ignore[reportPrivateUsage]
@@ -63,9 +63,9 @@ def test_profile_value_completer_offers_profile_names(
 def test_config_key_completer_offers_user_profile_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # `config set profiles.<TAB>` completes leaf paths for USER-defined profiles
+    # `config set presets.<TAB>` completes leaf paths for USER-defined presets
     # only. Built-in names never complete in the KEY position: writing
-    # profiles.ultra.* creates a user table that REPLACES the built-in
+    # presets.ultra.* creates a user table that REPLACES the built-in
     # wholesale, a footgun TAB should not put one keystroke away (the same
     # rule keeps `none` out of sandbox.profile completion).
     from agent6.ui.cli.completers import (
@@ -74,17 +74,17 @@ def test_config_key_completer_offers_user_profile_paths(
 
     gdir = tmp_path / "g"
     gdir.mkdir()
-    (gdir / "config.toml").write_text("[profiles.myteam.review]\npanel_size = 2\n")
+    (gdir / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
-    out = _complete_config_keys("profiles.")  # pyright: ignore[reportPrivateUsage]
-    assert any(k.startswith("profiles.myteam.review.") for k in out)
-    assert not any(k.startswith("profiles.ultra") for k in out)
-    # the top-level `profile` leaf itself is offered alongside profiles.*
-    assert "profile" in _complete_config_keys("profile")  # pyright: ignore[reportPrivateUsage]
+    out = _complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
+    assert any(k.startswith("presets.myteam.review.") for k in out)
+    assert not any(k.startswith("presets.ultra") for k in out)
+    # the top-level `preset` leaf itself is offered alongside presets.*
+    assert "preset" in _complete_config_keys("preset")  # pyright: ignore[reportPrivateUsage]
     # a bare TAB (empty prefix) is not flooded with the generated paths
     assert not any(
-        k.startswith("profiles.")
+        k.startswith("presets.")
         for k in _complete_config_keys("")  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -206,7 +206,7 @@ def test_config_set_refuses_a_target_that_does_not_parse(
 def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path) -> None:
     """The CLI guard documents itself as mirroring the MachineSpec validator but
     checked only providers/sandbox, so `config set --machine-file` wrote
-    profiles.*, machine.notify.*, and git.run_repo_hooks into an overlay the
+    presets.*, machine.notify.*, and git.run_repo_hooks into an overlay the
     loader then always rejects -- and the compensating load re-check is skipped
     while the file is not yet a valid machine (a `machine create` draft), so the
     operator got a success and a file that can never load."""
@@ -214,7 +214,7 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path
     for key in (
         "providers.openai.base_url",
         "sandbox.run_commands",
-        "profiles.ultra.sandbox.run_commands",
+        "presets.ultra.sandbox.run_commands",
         "machine.notify.on_event",
         "mcp.servers",
         "notify.on_complete",
@@ -485,17 +485,17 @@ def test_config_set_unknown_section_gets_the_same_friendly_path(
 def test_config_set_accepts_a_profiles_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # [profiles.*] is meta-config stripped before validation (_apply_profile),
+    # [presets.*] is meta-config stripped before validation (_apply_preset),
     # so the schema forbids it by design; the unknown-key reroute must not
-    # reject a legitimate, documented profile write (it did: rc 2 + revert).
+    # reject a legitimate, documented preset write (it did: rc 2 + revert).
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "profiles.mine.review.trigger", "before_finish"])
+    rc = main(["config", "set", "presets.mine.review.trigger", "before_finish"])
     assert rc == 0
     text = global_config_path().read_text(encoding="utf-8")
-    assert "[profiles.mine.review]" in text
+    assert "[presets.mine.review]" in text
     assert "unknown config key" not in capsys.readouterr().err
 
 

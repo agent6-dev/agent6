@@ -159,11 +159,11 @@ def written_value_error(key: str, value: object) -> str | None:
     the schema's extra_forbidden (an unknown key or section), so a partial
     dynamic entry (a provider filled in over several sets) is not falsely
     reverted."""
-    if key == "profiles" or key.startswith("profiles."):
-        # [profiles.*] is meta-config the loader strips BEFORE validation
-        # (_apply_profile), so the Config schema forbids it by design; the
-        # standalone check would falsely reject every legitimate profile write.
-        # The merged re-validation still catches a profile body that breaks.
+    if key == "presets" or key.startswith("presets."):
+        # [presets.*] is meta-config the loader strips BEFORE validation
+        # (_apply_preset), so the Config schema forbids it by design; the
+        # standalone check would falsely reject every legitimate preset write.
+        # The merged re-validation still catches a preset body that breaks.
         return None
     parts = key.split(".")
     if parts[0] == "providers" and len(parts) == 3:
@@ -308,7 +308,7 @@ def set_config_table(
 def provider_choices() -> dict[str, list[str]]:
     """Fixed-choice fields for the add-provider form, read from the schema so
     they never drift: the api_format discriminator (per provider subclass) and
-    the deployment profiles."""
+    the deployment presets."""
     formats: list[str] = []
     for model in (AnthropicProviderEntry, OpenAIProviderEntry):
         formats.extend(get_args(model.model_fields["api_format"].annotation))

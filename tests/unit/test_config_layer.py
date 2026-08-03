@@ -395,20 +395,20 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
 
 
 def test_profile_key_is_rejected_in_flag_and_machine_layers(repo: Path, tmp_path: Path) -> None:
-    """Only global/repo config (and --profile) can SELECT a profile; the key
+    """Only global/repo config (and --preset) can SELECT a preset; the key
     still merged from a --config FILE or machine overlay, so config show
-    displayed profile=<name> as effective while the preset silently never
+    displayed preset=<name> as effective while the preset silently never
     applied -- and resume then replayed the stamped name as a real selection,
     making the resumed run behave differently from the original. Reject the
     key loudly in the layers that cannot select it."""
     from agent6.config.layer import load_effective_with_overlay
 
     explicit = tmp_path / "ci.toml"
-    explicit.write_text('profile = "ultra"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="profile"):
+    explicit.write_text('preset = "ultra"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="preset"):
         load_effective(repo, explicit)
-    with pytest.raises(ConfigError, match="profile"):
-        load_effective_with_overlay(repo, {"profile": "ultra"})
+    with pytest.raises(ConfigError, match="preset"):
+        load_effective_with_overlay(repo, {"preset": "ultra"})
 
 
 def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:

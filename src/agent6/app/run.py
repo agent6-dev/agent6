@@ -220,10 +220,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    profile: str = "",
+    preset: str = "",
     initial_steer: str = "",
     pins: Sequence[str] = (),
-    profile_stamp: tuple[str, bool] | None = None,
+    preset_stamp: tuple[str, bool] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -242,12 +242,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     *sandbox_overrides* are passed through for the flags the lifecycle re-reads
     (`--max-usd` enforcement, lane dispatch).
 
-    *profile_stamp* ``(name, from_flag)`` overrides the manifest's stamped
-    profile instead of deriving it from *profile*. A parked resume has no
-    ``--profile`` flag but must record the ORIGINAL submission's stamp so a
+    *preset_stamp* ``(name, from_flag)`` overrides the manifest's stamped
+    preset instead of deriving it from *preset*. A parked resume has no
+    ``--preset`` flag but must record the ORIGINAL submission's stamp so a
     later resume/fork replays the same precedence (fork carries it likewise);
-    deriving from the empty *profile* dropped it, and the veto a flag-selected
-    profile carried vanished on the next leg.
+    deriving from the empty *preset* dropped it, and the veto a flag-selected
+    preset carried vanished on the next leg.
 
     When ``mode="plan"`` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
@@ -393,11 +393,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 run_branch=None,
                 cfg=cfg,
                 mode=mode,
-                # The CONFIG profile, not the sandbox one: resume feeds this
+                # The CONFIG preset, not the sandbox one: resume feeds this
                 # back to load_effective, and a sandbox word ("strict") there
-                # made every parked resume die with "unknown profile".
-                effective_profile=(profile_stamp[0] if profile_stamp else (profile or cfg.profile)),
-                profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
+                # made every parked resume die with "unknown preset".
+                effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
+                preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
                 parked_task=task,
             )
             reporter.err(
@@ -514,8 +514,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             run_branch=run_branch,
             cfg=cfg,
             mode=mode,
-            effective_profile=(profile_stamp[0] if profile_stamp else (profile or cfg.profile)),
-            profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
+            effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
+            preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
         )
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)

@@ -168,7 +168,7 @@ def test_subcommand_label_names_the_full_subcommand() -> None:
     assert spawn.subcommand_label(["a6", "config", "set", "--", "k", "v"]) == "config set"
     # One-word subcommands never swallow the value that follows them.
     assert spawn.subcommand_label(["a6", "run", "--", "fix the bug"]) == "run"
-    assert spawn.subcommand_label(["a6", "plan", "--profile", "p", "--", "t"]) == "plan"
+    assert spawn.subcommand_label(["a6", "plan", "--preset", "p", "--", "t"]) == "plan"
 
 
 def test_run_cli_capture_strips_console_prefixes(

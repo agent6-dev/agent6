@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "agent6_version": "0.1.0",
   "run_id": "r-fresh01",
   "mode": "run",
@@ -21,8 +21,8 @@
   "workflow": {
     "critic": "off",
     "revise_prompt": "on",
-    "profile": "strict",
-    "profile_from_flag": false
+    "preset": "strict",
+    "preset_from_flag": false
   },
   "parked_task": "",
   "parent_run_id": null,

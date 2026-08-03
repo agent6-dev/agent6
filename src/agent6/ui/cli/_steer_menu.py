@@ -15,7 +15,7 @@ a unique prefix like ``/sta`` works, an ambiguous one re-asks). Any line with
 a space -- or not starting with ``/`` -- is sent to the run verbatim as the
 steering instruction, so no quoting is ever needed:
 
-    /status   run status: tasks, tools, cost, ctx, profile
+    /status   run status: tasks, tools, cost, ctx, preset
     /tasks    the task graph with statuses
     /compact  compact the context now (`/compact <focus>` steers the summary)
     /continue resume unchanged (same as Enter)
@@ -50,7 +50,7 @@ PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
 # Command -> one-line help. The Tab preview menu and /help both read this table.
 MENU_COMMANDS: dict[str, str] = {
-    "/status": "run status: tasks, tools, cost, context, profile",
+    "/status": "run status: tasks, tools, cost, context, preset",
     "/tasks": "the task graph with statuses",
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
@@ -123,9 +123,9 @@ def _fold(run_dir: Path) -> RunState:
 
 
 def _read_profile(run_dir: Path) -> str:
-    """The effective profile the run started with (manifest.json), or ""."""
+    """The effective preset the run started with (manifest.json), or ""."""
     try:
-        return read_manifest(run_dir).workflow.profile
+        return read_manifest(run_dir).workflow.preset
     except ManifestError:
         return ""
 
@@ -149,8 +149,8 @@ def _print_status(run_dir: Path) -> None:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:
         ctx += f" · pins {len(s.pins)}"
-    profile = _read_profile(run_dir)
-    prof = f" · profile {profile}" if profile else ""
+    preset = _read_profile(run_dir)
+    prof = f" · preset {preset}" if preset else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {s.user_task[:80]}")
 

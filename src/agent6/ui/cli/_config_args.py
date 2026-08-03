@@ -69,9 +69,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _sub(
         config_sub,
-        "profiles",
+        "presets",
         help=(
-            "List config profiles (built-in + user [profiles.*]) with the overrides"
+            "List config presets (built-in + user [presets.*]) with the overrides"
             " each applies, marking the selected one and its source."
         ),
     )

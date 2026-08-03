@@ -115,7 +115,7 @@ def _print_next_steps() -> None:
     print('  agent6 run "<task>"            # verify is inferred if you skipped it above')
 
 
-def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
+def _cmd_init(*, ecosystem: str, assume_yes: bool = False) -> int:
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
     if not assume_yes and not sys.stdin.isatty():
@@ -130,7 +130,7 @@ def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
     try:
         rc = init_workspace(
             cwd,
-            profile=profile,
+            ecosystem=ecosystem,
             repo_config_target=target,
             interactive=interactive,
         )

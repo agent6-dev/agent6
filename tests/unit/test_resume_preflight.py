@@ -61,11 +61,11 @@ def test_v1_snapshot_resume_refuses_before_starting_egress(
 def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The parked branch is the SECOND profile replay site: it handed the raw
-    stamped name to load_effective, where _select_profile treats it as a flag
+    """The parked branch is the SECOND preset replay site: it handed the raw
+    stamped name to load_effective, where _select_preset treats it as a flag
     that outranks every config layer -- so a parked submission under a
-    config-selected profile started under a config its original submission
-    never had. The snapshot-resume path already replays via replay_profile."""
+    config-selected preset started under a config its original submission
+    never had. The snapshot-resume path already replays via replay_preset."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
@@ -80,24 +80,24 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
-                "workflow": {"profile": "t", "profile_from_flag": False},
+                "workflow": {"preset": "t", "preset_from_flag": False},
             }
         ),
         encoding="utf-8",
     )
     seen: list[str] = []
 
-    def _capture_load_effective(*_a: object, profile: str = "", **_k: object) -> object:
+    def _capture_load_effective(*_a: object, preset: str = "", **_k: object) -> object:
         from agent6.config import ConfigError
 
-        seen.append(profile)
+        seen.append(preset)
         raise ConfigError("stop before run_task")  # short-circuit the branch
 
     monkeypatch.setattr(resume_mod, "load_effective", _capture_load_effective)
     rc = _cmd_resume(None, "parked-AAAA11", force=False)
     assert rc == 2
-    # A config-selected profile re-resolves from the config files; only a
-    # --profile flag is replayed (WorkflowStamp.replay_profile's contract).
+    # A config-selected preset re-resolves from the config files; only a
+    # --preset flag is replayed (WorkflowStamp.replay_preset's contract).
     assert seen == [""]
 
 
@@ -116,7 +116,7 @@ class _StubLoaded:
     config = _StubCfg()
 
 
-def _park_manifest(run_dir: Path, *, profile: str, from_flag: bool) -> None:
+def _park_manifest(run_dir: Path, *, preset: str, from_flag: bool) -> None:
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(
@@ -126,7 +126,7 @@ def _park_manifest(run_dir: Path, *, profile: str, from_flag: bool) -> None:
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
-                "workflow": {"profile": profile, "profile_from_flag": from_flag},
+                "workflow": {"preset": preset, "preset_from_flag": from_flag},
             }
         ),
         encoding="utf-8",
@@ -157,56 +157,56 @@ def _stub_start_of_run(resume: object, monkeypatch: pytest.MonkeyPatch) -> dict[
 def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A parked leg never ran, but its manifest recorded a FLAG-selected profile.
+    """A parked leg never ran, but its manifest recorded a FLAG-selected preset.
     Restarting it must re-stamp the SAME (name, from_flag) so a later resume/fork
     replays the flag precedence; deriving the stamp from the (empty) resume
-    `profile` dropped the from_flag bit and silently downgraded a flag-selected
-    profile's blocking veto on the next leg."""
+    `preset` dropped the from_flag bit and silently downgraded a flag-selected
+    preset's blocking veto on the next leg."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-BBBB22", profile="strict", from_flag=True)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-BBBB22", preset="strict", from_flag=True)
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
     assert _cmd_resume(None, "parked-BBBB22", force=False) == 0
-    assert captured["profile_stamp"] == ("strict", True)
+    assert captured["preset_stamp"] == ("strict", True)
 
 
 def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume that DOES pass --profile is a fresh flag choice for this leg, so
-    it must NOT pin the manifest's old stamp -- run_task derives from `profile`."""
+    """A resume that DOES pass --preset is a fresh flag choice for this leg, so
+    it must NOT pin the manifest's old stamp -- run_task derives from `preset`."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-CCCC33", profile="strict", from_flag=True)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-CCCC33", preset="strict", from_flag=True)
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
-    assert _cmd_resume(None, "parked-CCCC33", force=False, profile="none") == 0
-    assert captured["profile_stamp"] is None
-    assert captured["profile"] == "none"
+    assert _cmd_resume(None, "parked-CCCC33", force=False, preset="none") == 0
+    assert captured["preset_stamp"] is None
+    assert captured["preset"] == "none"
 
 
 def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A CONFIG-selected profile (from_flag False) re-resolves from the CURRENT
+    """A CONFIG-selected preset (from_flag False) re-resolves from the CURRENT
     config on restart, so pinning the manifest's OLD name would show a stale
-    profile if the config changed since. Pass profile_stamp=None so run_task
+    preset if the config changed since. Pass preset_stamp=None so run_task
     derives from the re-resolved cfg, like a fresh run -- only a FLAG-selected
-    profile (whose blocking veto must survive) is pinned."""
+    preset (whose blocking veto must survive) is pinned."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-DDDD44", profile="hardened", from_flag=False)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-DDDD44", preset="hardened", from_flag=False)
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
     assert _cmd_resume(None, "parked-DDDD44", force=False) == 0
-    assert captured["profile_stamp"] is None  # re-derives, not the stale manifest name
+    assert captured["preset_stamp"] is None  # re-derives, not the stale manifest name
 
 
 class _Stop(Exception):

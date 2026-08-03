@@ -92,7 +92,7 @@ _GITIGNORE_ENTRIES = (".env", ".env.*", ".envrc", "secrets/", "*.pem", "*.key")
 
 # Per-ecosystem build artifacts to ignore so a verify run's bytecode/output is
 # not swept into agent6's per-step commits.
-_PROFILE_GITIGNORE: dict[str, tuple[str, ...]] = {
+_ECOSYSTEM_GITIGNORE: dict[str, tuple[str, ...]] = {
     "py": ("__pycache__/", "*.pyc", ".pytest_cache/"),
     "rust": ("target/",),
     "node": ("node_modules/",),
@@ -101,7 +101,7 @@ _PROFILE_GITIGNORE: dict[str, tuple[str, ...]] = {
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*verify\b", re.IGNORECASE | re.MULTILINE)
 
 
-def _detect_profile(root: Path) -> str:
+def _detect_ecosystem(root: Path) -> str:
     """Best-effort ecosystem guess for the .gitignore artifacts ("" if unknown)."""
     if any((root / f).is_file() for f in ("pyproject.toml", "setup.py", "setup.cfg")):
         return "py"
@@ -141,12 +141,12 @@ def _read_agents_md(root: Path) -> str:
         return ""
 
 
-def _update_gitignore(root: Path, *, profile: str) -> str:
+def _update_gitignore(root: Path, *, ecosystem: str) -> str:
     """Append any missing secret + build-artifact entries to `.gitignore`.
 
     Idempotent: a line-equal match (after strip) is never re-added; existing
     content is never reordered or removed."""
-    entries = (*_GITIGNORE_ENTRIES, *_PROFILE_GITIGNORE.get(profile, ()))
+    entries = (*_GITIGNORE_ENTRIES, *_ECOSYSTEM_GITIGNORE.get(ecosystem, ()))
     gi = root / ".gitignore"
     existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
     existing_lines = {line.strip() for line in existing_text.splitlines()}
@@ -163,7 +163,7 @@ def _update_gitignore(root: Path, *, profile: str) -> str:
     return f".gitignore: {verb} {len(missing)} entries ({', '.join(missing)})"
 
 
-def _setup_verify_command(root: Path, *, profile: str, ask: _Ask) -> None:
+def _setup_verify_command(root: Path, *, ecosystem: str, ask: _Ask) -> None:
     """Set workflow.verify_command if unset, inferring it from the repo. Warns
     (and asks) before overriding a command already set in any layer."""
     leaf = effective_leaf(load_effective(root), "workflow.verify_command")
@@ -195,7 +195,7 @@ def _setup_verify_command(root: Path, *, profile: str, ask: _Ask) -> None:
         print(f"  set workflow.verify_command = {list(inferred.argv)}")
 
 
-def _setup_agents_md(root: Path, *, profile: str, ask: _Ask) -> None:
+def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
     """Create a starter AGENTS.md, or append a Verify-command section if the
     existing one lacks it. Never overwrites existing content."""
     agents = root / "AGENTS.md"
@@ -223,19 +223,19 @@ def _setup_agents_md(root: Path, *, profile: str, ask: _Ask) -> None:
 def init_workspace(
     root: Path,
     *,
-    profile: str = "",
+    ecosystem: str = "",
     repo_config_target: Path | None = None,
     interactive: bool = False,
 ) -> int:
     """Run the granular setup wizard. Returns a CLI exit code.
 
     ``interactive`` prompts each step; otherwise every step takes its default.
-    Either way nothing existing is overwritten. ``profile`` overrides ecosystem
+    Either way nothing existing is overwritten. ``ecosystem`` overrides ecosystem
     auto-detection.
     """
     root = root.resolve()
     cfg_path = repo_config_target or repo_config_path_for(root)
-    detected = profile or _detect_profile(root)
+    detected = ecosystem or _detect_ecosystem(root)
     # Non-interactive: take every step's default answer.
     ask: _Ask = _ask if interactive else _accept_default
 
@@ -254,16 +254,16 @@ def init_workspace(
         print("  skipped; using the global config + built-in defaults.")
 
     # 2. verify_command (optional; inferred).
-    _setup_verify_command(root, profile=detected, ask=ask)
+    _setup_verify_command(root, ecosystem=detected, ask=ask)
 
     # 3. .gitignore (idempotent).
     if ask("Add secret + build-artifact entries to .gitignore?", True):
-        print("  " + _update_gitignore(root, profile=detected or "py"))
+        print("  " + _update_gitignore(root, ecosystem=detected or "py"))
     else:
         print("  skipped .gitignore")
 
     # 4. AGENTS.md.
-    _setup_agents_md(root, profile=detected, ask=ask)
+    _setup_agents_md(root, ecosystem=detected, ask=ask)
     # The CLI wrapper (`cli.init_cmds`) prints the "Next:" pointers after its
     # git-setup offer, so the advertised commands come last and actually work.
     return 0

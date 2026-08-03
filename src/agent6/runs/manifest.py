@@ -59,24 +59,24 @@ class WorkflowStamp(BaseModel):
 
     critic: str = ""
     revise_prompt: str = ""
-    profile: str = ""
-    # Whether `profile` was chosen by --profile rather than by a config file.
+    preset: str = ""
+    # Whether `preset` was chosen by --preset rather than by a config file.
     # The name alone is half the fact: replaying a config-selected one as a flag
-    # splices it ABOVE the repo config it originally lost to (see replay_profile).
-    profile_from_flag: bool = False
+    # splices it ABOVE the repo config it originally lost to (see replay_preset).
+    preset_from_flag: bool = False
 
     @property
-    def replay_profile(self) -> str:
-        """The ``--profile`` override a resumed or forked leg must re-apply.
+    def replay_preset(self) -> str:
+        """The ``--preset`` override a resumed or forked leg must re-apply.
 
-        Only a FLAG-selected profile: a config-selected one re-resolves
+        Only a FLAG-selected preset: a config-selected one re-resolves
         identically from the same config files, whereas handing its name back as
-        an override makes `_select_profile` call it a flag, which outranks every
-        config layer. A run whose repo config beat a global profile therefore
-        came back from resume with the profile winning instead -- gaining, for
+        an override makes `_select_preset` call it a flag, which outranks every
+        config layer. A run whose repo config beat a global preset therefore
+        came back from resume with the preset winning instead -- gaining, for
         example, a blocking review veto the original never had.
         """
-        return self.profile if self.profile_from_flag else ""
+        return self.preset if self.preset_from_flag else ""
 
 
 class MergeStamp(BaseModel):
@@ -116,7 +116,7 @@ class CompareStamp(BaseModel):
 
 # The shape this binary writes. Stamp-rewrites re-stamp it (see write_manifest)
 # so a manifest's version claim always matches the shape actually on disk.
-MANIFEST_VERSION = 2
+MANIFEST_VERSION = 3
 
 
 class RunManifest(BaseModel):

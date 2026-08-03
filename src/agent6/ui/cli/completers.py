@@ -28,8 +28,8 @@ def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     return sorted(n for n in names if n.startswith(prefix))
 
 
-def _complete_profiles(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: built-in profile presets + configured [profiles.*] names."""
+def _complete_presets(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: built-in preset presets + configured [presets.*] names."""
     return [n for n in available_profile_names(Path.cwd()) if n.startswith(prefix)]
 
 
@@ -76,7 +76,7 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
 # valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     # `sandbox.profile` also accepts "none" (the unsandboxed opt-out, see
-    # config.SandboxConfig.profile), deliberately omitted here: TAB should not put
+    # config.SandboxConfig.preset), deliberately omitted here: TAB should not put
     # "disable the sandbox" one keystroke away. Type it explicitly to set it.
     "sandbox.profile": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
@@ -92,28 +92,28 @@ _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
 
 
 def _user_profile_names() -> list[str]:
-    """USER-defined [profiles.*] names only, for key completion. Built-in names
-    are deliberately absent: writing profiles.ultra.* creates a user table that
+    """USER-defined [presets.*] names only, for key completion. Built-in names
+    are deliberately absent: writing presets.ultra.* creates a user table that
     REPLACES the built-in wholesale, a footgun TAB should not put one keystroke
     away (the same rule keeps `none` out of sandbox.profile completion)."""
     try:
-        return [p.name for p in profile_catalog(Path.cwd()).profiles if p.origin != "built-in"]
+        return [p.name for p in profile_catalog(Path.cwd()).presets if p.origin != "built-in"]
     except ConfigError:
         return []
 
 
 def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: known dotted config leaf paths (effective + enum keys).
-    From `profile` onward, also the user's profiles.<name>.<leaf> paths (kept
+    From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already)."""
     try:
         keys = set(leaf_keys(load_effective(Path.cwd(), None)))
     except ConfigError:
         keys = set()
     keys |= set(_CONFIG_ENUM_CHOICES)
-    if prefix.startswith("profile"):
-        pool = {k for k in keys if k != "profile"}
-        keys |= {f"profiles.{name}.{k}" for name in _user_profile_names() for k in pool}
+    if prefix.startswith("preset"):
+        pool = {k for k in keys if k != "preset"}
+        keys |= {f"presets.{name}.{k}" for name in _user_profile_names() for k in pool}
     return sorted(k for k in keys if k.startswith(prefix))
 
 
@@ -132,8 +132,8 @@ def _complete_config_values(
 ) -> list[str]:
     """argcomplete: the Literal choices for the config key already typed."""
     key = getattr(parsed_args, "key", "") or ""
-    if key == "profile":
-        return _complete_profiles(prefix)
+    if key == "preset":
+        return _complete_presets(prefix)
     choices = list(_CONFIG_ENUM_CHOICES.get(key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_PRESETS)

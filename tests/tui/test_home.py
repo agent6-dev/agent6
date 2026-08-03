@@ -200,15 +200,15 @@ def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> N
             await pilot.press("right")
             await pilot.press("enter")
             await pilot.pause()
-            # mode + multiline task + profile ("" = config default, no --profile).
+            # mode + multiline task + preset ("" = config default, no --preset).
             assert result == [("plan", "a\nb", "")]
 
     asyncio.run(scenario())
 
 
 def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
-    """The new-work modal carries the picked config profile in its result tuple:
-    (mode, task, profile). Selecting a built-in (e.g. 'ultra') yields that name;
+    """The new-work modal carries the picked config preset in its result tuple:
+    (mode, task, preset). Selecting a built-in (e.g. 'ultra') yields that name;
     the default '(config default)' would yield '' (covered above)."""
     import asyncio
 
@@ -224,19 +224,19 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             result: list[object] = []
-            # An explicit profile list so the dropdown offers a known value.
+            # An explicit preset list so the dropdown offers a known value.
             app.push_screen(_NewWorkModal(["ultra"]), result.append)
             await pilot.pause()
             app.screen.query_one(TextArea).insert("do it")
             # Pick 'ultra' directly on the Select (no overlay navigation needed).
-            app.screen.query_one("#new-profile", Select).value = "ultra"
+            app.screen.query_one("#new-preset", Select).value = "ultra"
             await pilot.pause()
             # Run via a button activation (Esc-free path), like the user clicking.
             from agent6.ui.tui.widgets import ActionItem
 
             next(iter(app.screen.query(ActionItem))).post_message(ActionItem.Activated("run"))
             await pilot.pause()
-            assert result == [("run", "do it", "ultra")]  # profile threaded through
+            assert result == [("run", "do it", "ultra")]  # preset threaded through
 
     asyncio.run(scenario())
 
@@ -244,9 +244,9 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
 def test_spawn_argv_includes_profile_flag_only_when_chosen(
     tmp_path: Path, monkeypatch: object
 ) -> None:
-    """The launch helper builds `agent6 <mode> --profile <name> <task>` when a
-    profile is picked, and `agent6 <mode> <task>` (no --profile) for the
-    "(config default)" choice (profile=""). Captures argv by stubbing Popen, so
+    """The launch helper builds `agent6 <mode> --preset <name> <task>` when a
+    preset is picked, and `agent6 <mode> <task>` (no --preset) for the
+    "(config default)" choice (preset=""). Captures argv by stubbing Popen, so
     no real agent6 is spawned; the helper times out fast on the stubbed proc."""
     import subprocess
 
@@ -271,14 +271,14 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     a6 = tmp_path / ".agent6"
     a6.mkdir()
 
-    # Chosen profile -> --profile is present, after <mode>, before the `--` task.
-    home._spawn_and_locate(a6, tmp_path, "plan", "do it", profile="ultra")
-    assert captured[-1] == ["agent6", "plan", "--profile", "ultra", "--", "do it"]
+    # Chosen preset -> --preset is present, after <mode>, before the `--` task.
+    home._spawn_and_locate(a6, tmp_path, "plan", "do it", preset="ultra")
+    assert captured[-1] == ["agent6", "plan", "--preset", "ultra", "--", "do it"]
 
-    # "(config default)" (profile="") -> NO --profile flag at all.
-    home._spawn_and_locate(a6, tmp_path, "run", "do it", profile="")
+    # "(config default)" (preset="") -> NO --preset flag at all.
+    home._spawn_and_locate(a6, tmp_path, "run", "do it", preset="")
     assert captured[-1] == ["agent6", "run", "--", "do it"]
-    assert "--profile" not in captured[-1]
+    assert "--preset" not in captured[-1]
 
 
 def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> None:
@@ -306,14 +306,14 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
     a6 = tmp_path / ".agent6"
     a6.mkdir()
 
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 add a greeting", profile="")
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 add a greeting", preset="")
     assert captured[-1] == ["agent6", "run", "--parallel", "2", "--", "add a greeting"]
 
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel gpt-5,opus refactor", profile="ultra")
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel gpt-5,opus refactor", preset="ultra")
     assert captured[-1] == [
         "agent6",
         "run",
-        "--profile",
+        "--preset",
         "ultra",
         "--parallel",
         "gpt-5,opus",
@@ -322,12 +322,12 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
     ]
 
     # Omitted spec -> one isolated lane (--parallel 1).
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel refactor the parser", profile="")
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel refactor the parser", preset="")
     assert captured[-1] == ["agent6", "run", "--parallel", "1", "--", "refactor the parser"]
 
     # Multi-segment: one detached fan-out spawned per segment.
     start = len(captured)
-    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile="")
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset="")
     assert captured[start:] == [
         ["agent6", "run", "--parallel", "2", "--", "task A"],
         ["agent6", "run", "--parallel", "3", "--", "task B"],
@@ -335,14 +335,14 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
 
     # Malformed: refused before any Popen (nothing new captured).
     before = len(captured)
-    run_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", profile="")
+    run_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", preset="")
     assert run_dir is None and "/parallel" in err
     assert len(captured) == before
 
     # All-or-nothing: a later empty segment refuses the whole message.
     before = len(captured)
     run_dir, err = home._spawn_and_locate(
-        a6, tmp_path, "run", "/parallel 2 ok /parallel", profile=""
+        a6, tmp_path, "run", "/parallel 2 ok /parallel", preset=""
     )
     assert run_dir is None and "/parallel" in err
     assert len(captured) == before
@@ -356,7 +356,7 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
     from agent6.ui.tui import home
 
     def fake_spawn(
-        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
     ) -> tuple[Path | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -365,14 +365,14 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
     monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
     monkeypatch.setattr(home, "_model_refusal", lambda repo_cwd, segments: None)  # type: ignore[attr-defined]
     run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile=""
+        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
     )
     assert run_dir is None
     assert "boom" in err and "task B" in err
 
     # reversed: first lane fails, second succeeds -- lane 1's diagnostic survives
     def fake_spawn_rev(
-        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
     ) -> tuple[Path | None, str]:
         if "task A" in task:
             return None, "boom"
@@ -380,7 +380,7 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
 
     monkeypatch.setattr(home, "_spawn_run", fake_spawn_rev)  # type: ignore[attr-defined]
     run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile=""
+        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
     )
     assert run_dir is None
     assert "boom" in err and "task A" in err
@@ -435,7 +435,7 @@ def test_spawn_parallel_refuses_unknown_model_before_spawn(
     a6.mkdir()
 
     run_dir, err = home._spawn_and_locate(
-        a6, tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it", profile=""
+        a6, tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it", preset=""
     )
     assert run_dir is None
     assert "unknown model 'moonshotai/kimi-k2.7'" in err
@@ -470,7 +470,7 @@ def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> No
     monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
     a6 = tmp_path / ".agent6"
     a6.mkdir()
-    home._spawn_and_locate(a6, tmp_path, "ask", "why?", profile="")
+    home._spawn_and_locate(a6, tmp_path, "ask", "why?", preset="")
     assert captured_env.get("AGENT6_STREAM_TO_LOG") == "1"
     # Still inherits the rest of the environment (PATH etc.), not a bare env.
     assert "PATH" in captured_env

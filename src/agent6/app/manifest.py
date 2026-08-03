@@ -64,8 +64,8 @@ def write_run_manifest(
     run_branch: str | None,
     cfg: Config,
     mode: str = "run",
-    effective_profile: str = "",
-    profile_from_flag: bool = False,
+    effective_preset: str = "",
+    preset_from_flag: bool = False,
     parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -101,11 +101,11 @@ def write_run_manifest(
         workflow=WorkflowStamp(
             critic=cfg.review.trigger,
             revise_prompt=cfg.prompt.revise_prompt,
-            # The profile the run actually used (--profile flag or top-level
-            # `profile`), with how it was chosen: only a flag-selected one is
-            # replayed as an override on resume (see WorkflowStamp.replay_profile).
-            profile=effective_profile,
-            profile_from_flag=profile_from_flag,
+            # The preset the run actually used (--preset flag or top-level
+            # `preset`), with how it was chosen: only a flag-selected one is
+            # replayed as an override on resume (see WorkflowStamp.replay_preset).
+            preset=effective_preset,
+            preset_from_flag=preset_from_flag,
         ),
         parked_task=parked_task,
         parent_run_id=parent_run_id,

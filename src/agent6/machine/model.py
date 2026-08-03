@@ -360,7 +360,7 @@ StateSpec = Annotated[
 # carry. The loader enforces it and `config set --machine-file` refuses the same
 # keys, both off this one set. `mcp`, `notify.on_complete`, `machine.notify`, and
 # `git.run_repo_hooks` all spawn an operator/repo argv on the host outside the jail.
-PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "profiles", "mcp")
+PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "presets", "mcp")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
     "notify.on_complete": "the completion hook runs an operator argv on the host outside the jail",
@@ -395,13 +395,13 @@ class MachineSpec(BaseModel):
         # An overlay is the highest config layer at run time but may be untrusted
         # (LLM-drafted, shared), so it must not carry operator-only security
         # policy: the jail, connections/secrets, MCP servers, host-argv hooks, or
-        # the profile presets that define them (a `[profiles.<selected>]` splices
+        # the strategy presets that define them (a `[presets.<selected>]` splices
         # straight into the effective config). Refused off PROTECTED_OVERLAY_*.
         for table in PROTECTED_OVERLAY_TABLES:
             if table in self.config:
                 raise ValueError(
                     f"machine `[config]` overlay must not declare `[{table}.*]`:"
-                    " connections/secrets, sandbox policy, profile presets, and MCP"
+                    " connections/secrets, sandbox policy, strategy presets, and MCP"
                     " servers are operator decisions set in the global/repo config,"
                     " never in a .asm.toml file"
                 )

@@ -53,8 +53,8 @@ def test_spawn_new_work_argv_ends_options_before_task(
         return None, "not started"
 
     monkeypatch.setattr(actions, "spawn_and_locate", _fake_locate)
-    actions.spawn_new_work(tmp_path, "run", "--allow-root pwn", profile="quick")
-    assert captured[-1][1:] == ["run", "--profile", "quick", "--", "--allow-root pwn"]
+    actions.spawn_new_work(tmp_path, "run", "--allow-root pwn", preset="quick")
+    assert captured[-1][1:] == ["run", "--preset", "quick", "--", "--allow-root pwn"]
 
 
 # --- the `/parallel` new-work directive: fan out lanes ------------------------
@@ -83,9 +83,9 @@ def test_spawn_new_work_parallel_model_list_with_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_locate(monkeypatch)
-    actions.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", profile="quick")
+    actions.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", preset="quick")
     assert captured[-1][1:] == [
-        "run", "--profile", "quick", "--parallel", "gpt-5,opus", "--", "refactor",
+        "run", "--preset", "quick", "--parallel", "gpt-5,opus", "--", "refactor",
     ]  # fmt: skip
 
 
@@ -202,7 +202,7 @@ def test_parallel_partial_spawn_failure_surfaces(
     (navigate XOR toast) must not navigate away from a swallowed failure."""
 
     def fake_spawn(
-        cwd: Path, mode: str, task: str, profile: str, spec: str
+        cwd: Path, mode: str, task: str, preset: str, spec: str
     ) -> tuple[str | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -262,9 +262,9 @@ def test_merge_and_config_argv_end_options_before_values(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["run", "--profile", "quick", "--", "-dashy task"],
+        ["run", "--preset", "quick", "--", "-dashy task"],
         ["run", "--parallel", "2", "--", "-dashy task"],
-        ["run", "--profile", "quick", "--parallel", "gpt-5,opus", "--", "-dashy task"],
+        ["run", "--preset", "quick", "--parallel", "gpt-5,opus", "--", "-dashy task"],
         ["plan", "--", "-dashy task"],
         ["ask", "--", "-dashy question"],
         ["machine", "create", "--", "-dashy task"],

@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "agent6_version": "0.1.0",
   "run_id": "r-lane02",
   "mode": "run",
@@ -18,8 +18,8 @@
   "workflow": {
     "critic": "on",
     "revise_prompt": "off",
-    "profile": "",
-    "profile_from_flag": false
+    "preset": "",
+    "preset_from_flag": false
   },
   "parked_task": "",
   "parent_run_id": "r-parent",

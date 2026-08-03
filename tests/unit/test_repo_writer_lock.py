@@ -269,10 +269,10 @@ def test_runs_show_reports_a_parked_run_as_parked(
 
 
 def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Path) -> None:
-    """The parked manifest's workflow.profile is what resume feeds back to
-    load_effective; the park path stamped the SANDBOX profile there
+    """The parked manifest's workflow.preset is what resume feeds back to
+    load_effective; the park path stamped the SANDBOX preset there
     ('strict'/'hardened'/'none'), so `agent6 resume <parked-id>` died with
-    "CONFIG ERROR: unknown profile 'strict'" on every sandboxed host."""
+    "CONFIG ERROR: unknown preset 'strict'" on every sandboxed host."""
     from agent6.app.run import run_task
     from agent6.config.layer import load_effective
 
@@ -290,9 +290,9 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
         release_single_writer(holder_fd)
     assert rc == 2
     m = read_manifest(RunLayout(state_dir=state, run_id="run-PROF").run_dir)
-    assert m.workflow.profile == _load_cfg().profile  # the CONFIG profile ("")
+    assert m.workflow.preset == _load_cfg().preset  # the CONFIG preset ("")
     # The exact call resume makes with it must not blow up on a sandbox word.
-    load_effective(repo, None, profile=m.workflow.profile)
+    load_effective(repo, None, preset=m.workflow.preset)
 
 
 def test_parked_resume_passes_the_steer_through_to_run_task(

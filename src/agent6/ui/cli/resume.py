@@ -24,7 +24,7 @@ def _cmd_resume(
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
-    profile: str = "",
+    preset: str = "",
     steer: str = "",
 ) -> int:
     """Resume a paused/crashed run from its snapshot (see `app.resume`)."""
@@ -36,6 +36,6 @@ def _cmd_resume(
         tui=tui,
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,
-        profile=profile,
+        preset=preset,
         steer=steer,
     )

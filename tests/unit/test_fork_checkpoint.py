@@ -185,7 +185,7 @@ def _seed_source_run(
     turns: tuple[int, ...],
     mode: str = "run",
     workflow_profile: str = "",
-    profile_from_flag: bool | None = None,
+    preset_from_flag: bool | None = None,
 ) -> RunLayout:
     """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
@@ -203,11 +203,11 @@ def _seed_source_run(
                 "workflow": {
                     "critic": "off",
                     "revise_prompt": "off",
-                    "profile": workflow_profile,
-                    # Default: a seeded profile is one the fork replays (flag-selected);
-                    # pass profile_from_flag=False for a config-selected source.
-                    "profile_from_flag": (
-                        bool(workflow_profile) if profile_from_flag is None else profile_from_flag
+                    "preset": workflow_profile,
+                    # Default: a seeded preset is one the fork replays (flag-selected);
+                    # pass preset_from_flag=False for a config-selected source.
+                    "preset_from_flag": (
+                        bool(workflow_profile) if preset_from_flag is None else preset_from_flag
                     ),
                 },
             }
@@ -257,8 +257,8 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # A fork carries the source run's effective profile forward so `resume`
-    # re-applies the same strategy; dropping it (writing profile="") would
+    # A fork carries the source run's effective preset forward so `resume`
+    # re-applies the same strategy; dropping it (writing preset="") would
     # silently change how the forked run behaves.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -273,13 +273,13 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
 
     dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["workflow"]["profile"] == "paranoid"
+    assert manifest["workflow"]["preset"] == "paranoid"
 
 
 def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The fork's child runs under the SOURCE's profile (resume replays it), so
+    """The fork's child runs under the SOURCE's preset (resume replays it), so
     the child manifest's models stamp must come from that profiled config --
     not the base config, which permanently recorded a worker model the forked
     run never used."""
@@ -292,7 +292,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
         "[models.worker]\n"
         'provider = "anthropic"\n'
         'model = "claude-base"\n'
-        "[profiles.fast.models.worker]\n"
+        "[presets.fast.models.worker]\n"
         'provider = "anthropic"\n'
         'model = "claude-fast"\n',
         encoding="utf-8",
@@ -307,21 +307,21 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     assert rc == 0
     dst = RunLayout(state_dir=state_dir, run_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["workflow"]["profile"] == "fast"
+    assert manifest["workflow"]["preset"] == "fast"
     assert manifest["models"]["worker"]["model"] == "claude-fast"  # not claude-base
 
 
 def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A CONFIG-selected profile (from_flag False) re-resolves from the CURRENT
-    config on fork, so the child stamps the current config's profile name, not the
+    """A CONFIG-selected preset (from_flag False) re-resolves from the CURRENT
+    config on fork, so the child stamps the current config's preset name, not the
     source manifest's possibly-stale one -- the fork sibling of the parked-resume
-    stamp fix. Only a FLAG-selected profile is pinned by name."""
+    stamp fix. Only a FLAG-selected preset is pinned by name."""
     import os
 
     Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
-        'profile = "quick"\n', encoding="utf-8"
+        'preset = "quick"\n', encoding="utf-8"
     )
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -334,7 +334,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
         head_sha=head,
         turns=(1,),
         workflow_profile="stale-old-name",
-        profile_from_flag=False,
+        preset_from_flag=False,
     )
 
     assert _cmd_fork(None, "src-CFG11", new_run_id="child-CFG22", no_run=True) == 0
@@ -343,8 +343,8 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
             encoding="utf-8"
         )
     )
-    assert manifest["workflow"]["profile"] == "quick"  # re-derived, not "stale-old-name"
-    assert manifest["workflow"]["profile_from_flag"] is False
+    assert manifest["workflow"]["preset"] == "quick"  # re-derived, not "stale-old-name"
+    assert manifest["workflow"]["preset_from_flag"] is False
 
 
 def test_fork_snapshots_the_dag_under_the_source_curator_lock(

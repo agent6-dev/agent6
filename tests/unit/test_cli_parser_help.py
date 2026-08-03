@@ -10,7 +10,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6.ui.cli.completers import _complete_profiles  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.completers import _complete_presets  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.parser import build_parser
 
 
@@ -116,8 +116,8 @@ def test_profile_flags_have_the_profiles_completer() -> None:
         _find(parser, "query"),  # `query` is ask's default verb
     )
     for sub in carriers:
-        action = _option(sub, "--profile")
-        assert getattr(action, "completer", None) is _complete_profiles
+        action = _option(sub, "--preset")
+        assert getattr(action, "completer", None) is _complete_presets
 
 
 def test_option_metavars() -> None:

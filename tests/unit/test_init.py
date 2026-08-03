@@ -65,7 +65,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
     cfgp.write_text('[models.worker]\nprovider = "typoprovider"\nmodel = "x/y"\n', encoding="utf-8")
 
     monkeypatch.chdir(repo)
-    rc = _cmd_init(profile="", assume_yes=True)
+    rc = _cmd_init(ecosystem="", assume_yes=True)
     assert rc == 2
     err = capsys.readouterr().err
     assert "CONFIG ERROR" in err

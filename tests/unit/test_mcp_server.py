@@ -18,6 +18,7 @@ from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
 from agent6.runs.ipc import register_frontend
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import MANIFEST_VERSION
 from agent6.tools.dispatch import ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.tools.results import ExecResult, PatchResult, ToolResult
@@ -227,7 +228,7 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     # Shipped as the typed RunManifest dump (full shape, defaults filled), not the
     # raw dict: the recorded user_task survives, the version stamp is present.
     assert runs_out[1]["manifest"]["user_task"] == "alpha"
-    assert runs_out[1]["manifest"]["version"] == 2
+    assert runs_out[1]["manifest"]["version"] == MANIFEST_VERSION
     assert "manifest" not in runs_out[0]
 
 

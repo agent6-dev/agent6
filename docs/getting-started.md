@@ -89,9 +89,9 @@ agent6 ask "how does the task-graph curator work?"
 reviewers whose findings are checked against the diff, so only real problems gate.
 `ask` edits nothing and works in any directory, git repository or not; `run` and
 `plan` require one (agent6 builds on git for run branches, diffs, and merges).
-`agent6 run --profile ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
-`paranoid`); `agent6 config profiles` lists them with their contents, and
-`agent6 config set profile ultra` makes one the default. `agent6 run "task" --parallel 3` fans out 3 isolated lanes and prints a
+`agent6 run --preset ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
+`paranoid`); `agent6 config presets` lists them with their contents, and
+`agent6 config set preset ultra` makes one the default. `agent6 run "task" --parallel 3` fans out 3 isolated lanes and prints a
 ranked comparison; in the web hub or TUI home composer, start a new run with
 `/parallel [N|model-a,model-b] <task>` to spawn the same fan-out (no spec = one
 isolated lane). A first word with a comma or slash reads as the model spec

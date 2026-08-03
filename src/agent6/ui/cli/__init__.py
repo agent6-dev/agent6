@@ -238,7 +238,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         skills=tuple(args.skill),
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
-        profile=getattr(args, "profile", ""),
+        preset=getattr(args, "preset", ""),
         parallel_spec=getattr(args, "parallel", ""),
         pins=tuple(args.pins),
     )
@@ -262,7 +262,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         mode="plan",
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
-        profile=getattr(args, "profile", ""),
+        preset=getattr(args, "preset", ""),
     )
 
 
@@ -297,7 +297,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         interactive=repl,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
-        profile=getattr(args, "profile", ""),
+        preset=getattr(args, "preset", ""),
     )
 
 
@@ -398,7 +398,7 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
     if args.config_command == "path":
         return _cmd_config_path()
-    if args.config_command == "profiles":
+    if args.config_command == "presets":
         return _cmd_config_profiles()
     if args.config_command == "get":
         return _cmd_config_get(args.key, machine=args.machine_file)
@@ -471,7 +471,7 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
 
 def _dispatch_init(args: argparse.Namespace) -> int:
-    return _cmd_init(profile=args.profile, assume_yes=args.yes)
+    return _cmd_init(ecosystem=args.ecosystem, assume_yes=args.yes)
 
 
 def _dispatch_review(args: argparse.Namespace) -> int:

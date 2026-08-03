@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.runs.manifest import MANIFEST_VERSION
 
 
 def _userns_available() -> bool:
@@ -147,7 +148,7 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     assert runs[0]["run_id"] == "demo"
     # The manifest ships as the typed RunManifest dump (defaults filled in).
     assert runs[0]["manifest"]["user_task"] == "demo-task"
-    assert runs[0]["manifest"]["version"] == 2
+    assert runs[0]["manifest"]["version"] == MANIFEST_VERSION
 
 
 def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: Path) -> None:

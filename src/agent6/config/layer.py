@@ -16,12 +16,12 @@ remembers which layer last set it, which powers ``agent6 config show``,
 the audit surface that makes the effective config and its provenance
 obvious at a glance.
 
-A selected ``profile`` preset is injected just ABOVE the config layer that
-SELECTED it (``--profile`` flag / repo / global top-level ``profile``), so the
-profile OVERRIDES that config while a more-specific config layer (or an explicit
-``--config FILE`` / machine overlay) still overrides the profile. Only the
-most-specific source's profile is injected -- global and repo presets never
-stack. See :func:`_apply_profile`.
+A selected ``preset`` preset is injected just ABOVE the config layer that
+SELECTED it (``--preset`` flag / repo / global top-level ``preset``), so the
+preset OVERRIDES that config while a more-specific config layer (or an explicit
+``--config FILE`` / machine overlay) still overrides the preset. Only the
+most-specific source's preset is injected -- global and repo presets never
+stack. See :func:`_apply_preset`.
 """
 
 from __future__ import annotations
@@ -52,11 +52,11 @@ from agent6.paths import (
 )
 from agent6.portable import toml_basic_string
 
-LayerName = Literal["default", "profile", "global", "repo", "flag", "machine"]
+LayerName = Literal["default", "preset", "global", "repo", "flag", "machine"]
 
 # Display order for `config show` / `config fill`, derived FROM the Config model's
 # field declaration order so a new section can never be silently omitted. Scalar
-# top-level fields (e.g. `profile`) carry no `[section]` table and are rendered
+# top-level fields (e.g. `preset`) carry no `[section]` table and are rendered
 # inline by their parent, so the section ordering only needs the table names; we
 # keep every field name here and the lookups below tolerate non-section entries.
 SECTION_ORDER = tuple(Config.model_fields)
@@ -109,20 +109,20 @@ def _global_state_dir() -> str | None:
     return None
 
 
-def _forbid_layer_profile(layer_name: str, data: dict[str, Any]) -> None:
-    """Reject a top-level ``profile`` key in a layer that cannot SELECT one.
+def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
+    """Reject a top-level ``preset`` key in a layer that cannot SELECT one.
 
-    Only the global/repo configs and the --profile flag select one
-    (_select_profile), so the key deep-merging in from a --config FILE or a
+    Only the global/repo configs and the --preset flag select one
+    (_select_preset), so the key deep-merging in from a --config FILE or a
     machine [config] overlay would show as effective while never applying.
     Honoring it instead is not an option: a machine overlay selecting an
-    operator [profiles.*] could pick one that loosens the sandbox.
+    operator [presets.*] could pick one that loosens the sandbox.
     """
-    if "profile" in data:
+    if "preset" in data:
         raise ConfigError(
-            f"top-level `profile` selects a config profile only from the global/repo"
-            f" config or the --profile flag, not the {layer_name} config; use"
-            f" --profile <name> or set it in your repo/global config."
+            f"top-level `preset` selects a config preset only from the global/repo"
+            f" config or the --preset flag, not the {layer_name} config; use"
+            f" --preset <name> or set it in your repo/global config."
         )
 
 
@@ -168,18 +168,18 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
             raise ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
         _forbid_repo_state_dir("--config", data)
-        _forbid_layer_profile("--config", data)
+        _forbid_layer_preset("--config", data)
         layers.append(Layer("flag", explicit_path, data))
     return layers
 
 
-# Built-in config profiles: named presets that fill in many settings at once, so
-# a task can pick a strategy with one knob (`--profile ultra`) instead of tuning
+# Built-in config presets: named presets that fill in many settings at once, so
+# a task can pick a strategy with one knob (`--preset ultra`) instead of tuning
 # the [review] / budget knobs by hand. Each value is a nested config dict spliced
-# ABOVE the layer that SELECTED the profile (so the profile's settings OVERRIDE
-# that layer's; see _apply_profile). Users add their own via [profiles.<name>]
+# ABOVE the layer that SELECTED the preset (so the preset's settings OVERRIDE
+# that layer's; see _apply_preset). Users add their own via [presets.<name>]
 # tables in config.toml.
-BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
+BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     # The pre-feature baseline: plain defaults, no review panel.
     "standard": {},
     # Fast/cheap: no review.
@@ -216,38 +216,38 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 
-def resolve_profile(name: str, user_profiles: dict[str, Any]) -> dict[str, Any]:
-    """The config-override dict for profile *name* (user profiles win over
+def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
+    """The config-override dict for preset *name* (user presets win over
     built-ins of the same name). "" -> {} (nothing selected). Raises
-    ConfigError for an unknown name so a typo'd profile fails loudly.
+    ConfigError for an unknown name so a typo'd preset fails loudly.
 
     "standard" is not special-cased: it is a built-in like any other (an empty
     override), so a user table of that name replaces it exactly as the docs
     promise. Short-circuiting it here dropped those overrides silently while
-    `config profiles` reported them applied."""
+    `config presets` reported them applied."""
     if not name:
         return {}
-    if name in user_profiles:
-        prof = user_profiles[name]
+    if name in user_presets:
+        prof = user_presets[name]
         if not isinstance(prof, dict):
-            raise ConfigError(f"[profiles.{name}] must be a table, got {type(prof).__name__}")
+            raise ConfigError(f"[presets.{name}] must be a table, got {type(prof).__name__}")
         return prof
-    if name in BUILTIN_PROFILES:
-        return BUILTIN_PROFILES[name]
-    known = ", ".join(sorted({*BUILTIN_PROFILES, *user_profiles}))
-    raise ConfigError(f"unknown profile {name!r}. Known profiles: {known}.")
+    if name in BUILTIN_PRESETS:
+        return BUILTIN_PRESETS[name]
+    known = ", ".join(sorted({*BUILTIN_PRESETS, *user_presets}))
+    raise ConfigError(f"unknown preset {name!r}. Known presets: {known}.")
 
 
 def available_profile_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
-    """Profile names a chooser can offer: the built-ins plus the user's custom
-    ``[profiles.<name>]`` tables (read from the config layers, the same source
-    ``--profile`` resolves against), sorted + de-duplicated. A config-read failure
+    """Preset names a chooser can offer: the built-ins plus the user's custom
+    ``[presets.<name>]`` tables (read from the config layers, the same source
+    ``--preset`` resolves against), sorted + de-duplicated. A config-read failure
     degrades to the built-ins alone, so a caller (e.g. the TUI's new-work chooser)
     never blocks on a bad config."""
-    names: set[str] = set(BUILTIN_PROFILES)
+    names: set[str] = set(BUILTIN_PRESETS)
     with contextlib.suppress(Exception):
         for layer in discover_layers(repo_root, explicit_path):
-            prof = layer.data.get("profiles")
+            prof = layer.data.get("presets")
             if isinstance(prof, dict):
                 names.update(prof.keys())
     return sorted(names)
@@ -255,23 +255,23 @@ def available_profile_names(repo_root: Path, explicit_path: Path | None = None) 
 
 @dataclass(frozen=True, slots=True)
 class ProfileInfo:
-    """One profile as `config profiles` shows it."""
+    """One preset as `config presets` shows it."""
 
     name: str
     overrides: dict[str, Any]  # the nested config dict it applies ({} = plain defaults)
     origin: str  # "built-in", "global", "repo", or "global+repo"
-    replaces_builtin: bool  # a user profile with a built-in's name (wholesale replace)
+    replaces_builtin: bool  # a user preset with a built-in's name (wholesale replace)
 
 
 @dataclass(frozen=True, slots=True)
 class ProfileCatalog:
-    profiles: tuple[ProfileInfo, ...]  # built-ins in definition order, then user's sorted
-    selected: str  # "" when no profile is selected anywhere
+    presets: tuple[ProfileInfo, ...]  # built-ins in definition order, then user's sorted
+    selected: str  # "" when no preset is selected anywhere
     source: str  # "repo" / "global" / "none"
 
 
 def profile_catalog(repo_root: Path, explicit_path: Path | None = None) -> ProfileCatalog:
-    """Everything ``config profiles`` lists: each known profile with the
+    """Everything ``config presets`` lists: each known preset with the
     overrides it would apply (a user table REPLACES a same-named built-in, so
     only the effective body is reported), plus the selected name and its
     source. Unlike :func:`available_profile_names` this fails loudly on a
@@ -280,25 +280,25 @@ def profile_catalog(repo_root: Path, explicit_path: Path | None = None) -> Profi
     user: dict[str, dict[str, Any]] = {}
     origins: dict[str, str] = {}
     for layer in layers:
-        prof = layer.data.get("profiles")
+        prof = layer.data.get("presets")
         if not isinstance(prof, dict):
             continue
         for name, body in prof.items():
             if not isinstance(body, dict):
-                raise ConfigError(f"[profiles.{name}] must be a table, got {type(body).__name__}")
+                raise ConfigError(f"[presets.{name}] must be a table, got {type(body).__name__}")
             user[name] = _deep_merge(user.get(name, {}), body)
             origins[name] = f"{origins[name]}+{layer.name}" if name in origins else layer.name
-    selected, source = _select_profile(layers, "")
+    selected, source = _select_preset(layers, "")
     builtins = tuple(
         ProfileInfo(name, user[name], origins[name], replaces_builtin=True)
         if name in user
         else ProfileInfo(name, body, "built-in", replaces_builtin=False)
-        for name, body in BUILTIN_PROFILES.items()
+        for name, body in BUILTIN_PRESETS.items()
     )
     customs = tuple(
         ProfileInfo(name, user[name], origins[name], replaces_builtin=False)
         for name in sorted(user)
-        if name not in BUILTIN_PROFILES
+        if name not in BUILTIN_PRESETS
     )
     return ProfileCatalog((*builtins, *customs), selected, source)
 
@@ -419,28 +419,28 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
 
 
 def _own_profile(layer: Layer) -> str:
-    """A layer's OWN raw top-level ``profile`` (not the merged value), or "".
+    """A layer's OWN raw top-level ``preset`` (not the merged value), or "".
 
-    A non-string (a ``[profile]`` table from a typo'd ``config set
-    profile.<name>``) fails here with its own message; str()-coercing it
-    produced ``unknown profile "{'porifle': 'ultra'}"``.
+    A non-string (a ``[preset]`` table from a typo'd ``config set
+    preset.<name>``) fails here with its own message; str()-coercing it
+    produced ``unknown preset "{'porifle': 'ultra'}"``.
     """
-    raw = layer.data.get("profile")
+    raw = layer.data.get("preset")
     if raw is None:
         return ""
     if not isinstance(raw, str):
-        shape = "a [profile] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
+        shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
         raise ConfigError(
-            f"top-level `profile` in the {layer.name} config must be a profile name"
-            f' string (e.g. profile = "ultra"), got {shape};'
-            f" set it with `agent6 config set profile <name>`."
+            f"top-level `preset` in the {layer.name} config must be a preset name"
+            f' string (e.g. preset = "ultra"), got {shape};'
+            f" set it with `agent6 config set preset <name>`."
         )
     return raw
 
 
-def _select_profile(cleaned: list[Layer], profile_override: str) -> tuple[str, str]:
-    """Pick the (profile name, source) most-specific first from each layer's OWN
-    raw top-level ``profile`` (never stacking global+repo): the ``--profile``
+def _select_preset(cleaned: list[Layer], profile_override: str) -> tuple[str, str]:
+    """Pick the (preset name, source) most-specific first from each layer's OWN
+    raw top-level ``preset`` (never stacking global+repo): the ``--preset``
     flag, else the ``repo`` layer's field, else the ``global`` layer's field,
     else ("", "none")."""
     if profile_override:
@@ -453,12 +453,12 @@ def _select_profile(cleaned: list[Layer], profile_override: str) -> tuple[str, s
     return "", "none"
 
 
-def _insert_profile(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
+def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
     """Splice *preset* into *cleaned* at the position for its *source*.
 
-    ``global``/``repo`` -> right AFTER that config layer (so the profile
+    ``global``/``repo`` -> right AFTER that config layer (so the preset
     overrides it but the more-specific config layer / flag still wins). ``flag``
-    (``--profile``) -> just BELOW an explicit ``--config FILE`` / machine overlay
+    (``--preset``) -> just BELOW an explicit ``--config FILE`` / machine overlay
     if present (those still win), else appended last (overrides all config).
     """
     out: list[Layer] = []
@@ -476,47 +476,47 @@ def _insert_profile(cleaned: list[Layer], preset: Layer, source: str) -> list[La
     return out
 
 
-def _apply_profile(layers: list[Layer], profile_override: str) -> list[Layer]:
-    """Strip ``[profiles]`` tables out of the user layers (they are meta-config,
-    not part of the validated Config) and inject the selected profile preset
-    just ABOVE the config layer that SELECTED it, so the profile OVERRIDES that
+def _apply_preset(layers: list[Layer], profile_override: str) -> list[Layer]:
+    """Strip ``[presets]`` tables out of the user layers (they are meta-config,
+    not part of the validated Config) and inject the selected preset preset
+    just ABOVE the config layer that SELECTED it, so the preset OVERRIDES that
     config while a more-specific config layer (or an explicit ``--config FILE`` /
-    machine overlay) still overrides the profile. Only the most-specific source's
-    profile is injected -- global and repo presets never stack.
+    machine overlay) still overrides the preset. Only the most-specific source's
+    preset is injected -- global and repo presets never stack.
 
-    Source is chosen by :func:`_select_profile` (``--profile`` flag > repo's own
-    top-level ``profile`` > global's own), and the preset is spliced in by
-    :func:`_insert_profile`. Resulting precedence (low->high): default <
-    global-config < [profile if global-selected] < repo-config <
-    [profile if repo-selected] < [profile if --flag] < flag(``--config FILE``) <
+    Source is chosen by :func:`_select_preset` (``--preset`` flag > repo's own
+    top-level ``preset`` > global's own), and the preset is spliced in by
+    :func:`_insert_preset`. Resulting precedence (low->high): default <
+    global-config < [preset if global-selected] < repo-config <
+    [preset if repo-selected] < [preset if --flag] < flag(``--config FILE``) <
     machine-overlay.
     """
     cleaned: list[Layer] = []
-    user_profiles: dict[str, Any] = {}
+    user_presets: dict[str, Any] = {}
     for layer in layers:
         data = dict(layer.data)
-        prof = data.pop("profiles", None)
+        prof = data.pop("presets", None)
         if isinstance(prof, dict):
-            user_profiles = _deep_merge(user_profiles, prof)
+            user_presets = _deep_merge(user_presets, prof)
         cleaned.append(Layer(layer.name, layer.path, data))
 
-    name, source = _select_profile(cleaned, profile_override)
-    overrides = resolve_profile(name, user_profiles)
+    name, source = _select_preset(cleaned, profile_override)
+    overrides = resolve_preset(name, user_presets)
     if not overrides:
         return cleaned
-    return _insert_profile(cleaned, Layer("profile", None, overrides), source)
+    return _insert_preset(cleaned, Layer("preset", None, overrides), source)
 
 
 def load_effective(
-    repo_root: Path, explicit_path: Path | None = None, *, profile: str = ""
+    repo_root: Path, explicit_path: Path | None = None, *, preset: str = ""
 ) -> EffectiveConfig:
     """Merge + validate all layers and record per-leaf provenance. A named
-    ``profile`` (CLI flag or top-level ``profile``) is injected just above the
+    ``preset`` (CLI flag or top-level ``preset``) is injected just above the
     config layer that selected it, so it OVERRIDES that config (a more-specific
-    config layer / flag still wins); ``[profiles.<name>]`` tables in config
-    define custom ones. See :func:`_apply_profile`."""
+    config layer / flag still wins); ``[presets.<name>]`` tables in config
+    define custom ones. See :func:`_apply_preset`."""
     layers = discover_layers(repo_root, explicit_path)
-    layers = _apply_profile(layers, profile)
+    layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)")
 
 
@@ -531,12 +531,12 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     layers = discover_layers(repo_root, None)
     if overlay:
         _forbid_repo_state_dir("machine overlay", overlay)
-        _forbid_layer_profile("machine overlay", overlay)
+        _forbid_layer_preset("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
-    # Apply the selected profile (and strip [profiles] tables) just like
-    # load_effective, so a user's [profiles.<name>] + [workflow].profile work
+    # Apply the selected preset (and strip [presets] tables) just like
+    # load_effective, so a user's [presets.<name>] + [workflow].preset work
     # under `machine run` / `config --machine` instead of failing validation.
-    layers = _apply_profile(layers, "")
+    layers = _apply_preset(layers, "")
     return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
 
 
@@ -565,17 +565,17 @@ class ConfigDiagnosis:
 
 def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
     """The layers `config fix` repairs: global + repo, or a machine's [config]
-    overlay on top of them when *machine* is given. Profiles are applied (and
-    [profiles] tables stripped) exactly as load_effective does, so validation and
+    overlay on top of them when *machine* is given. Presets are applied (and
+    [presets] tables stripped) exactly as load_effective does, so validation and
     provenance match a real load."""
     layers = discover_layers(repo_root, None)
     if machine is not None:
         overlay = read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
             _forbid_repo_state_dir("machine overlay", overlay)
-            _forbid_layer_profile("machine overlay", overlay)
+            _forbid_layer_preset("machine overlay", overlay)
             layers = [*layers, Layer("machine", machine, overlay)]
-    return _apply_profile(layers, "")
+    return _apply_preset(layers, "")
 
 
 def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, Layer]]:
@@ -610,7 +610,7 @@ def _diagnose_errors(
     exc: ValidationError, origin: dict[str, Layer], *, only_layer: str | None
 ) -> ConfigDiagnosis:
     """Turn per-leaf validation errors into droppable entries + a blocked note for
-    anything fix cannot drop (an error from a default/profile, or -- when scoped to
+    anything fix cannot drop (an error from a default/preset, or -- when scoped to
     a machine overlay -- an error that lives in the global/repo config instead)."""
     removable: list[InvalidEntry] = []
     blocked: list[str] = []
@@ -650,7 +650,7 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
     Returns the invalid leaves that can be dropped from a config FILE (each with its
     provenance), plus a ``blocked`` message when the config is invalid in a way fix
     cannot repair by dropping a leaf (a non-absolute ``state_dir``, a value only a
-    built-in default/profile carries, unreadable TOML). Empty + None == valid.
+    built-in default/preset carries, unreadable TOML). Empty + None == valid.
 
     With *machine* set, only the machine file's ``[config]`` overlay entries are
     droppable; a global/repo problem surfaced by the merge is reported, not touched.
@@ -772,7 +772,7 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
     ]
     ordered = [s for s in SECTION_ORDER if s in data]
     ordered += [s for s in data if s not in SECTION_ORDER]
-    # Top-level scalar fields (e.g. `profile`) carry no table header and must
+    # Top-level scalar fields (e.g. `preset`) carry no table header and must
     # precede every `[section]` in TOML, so emit them first as bare key=value.
     for section in ordered:
         value = data[section]

@@ -183,7 +183,7 @@ provider may serve any role (cross-vendor mixes are fine).
 ## `[sandbox]`
 
 The security boundary. Profiles and the network model are specified in
-[security.md](security.md) (§3 profiles, §1b/§8 network); this is a summary.
+[security.md](security.md) (§3 isolation, §1b/§8 network); this is a summary.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -217,11 +217,11 @@ The security boundary. Profiles and the network model are specified in
 | `name` / `email` | none | Override the commit identity (else use the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
 | `coauthor` | none | Append a `Co-authored-by:` trailer, e.g. `"Alice <alice@example.com>"`. |
 
-## `profile` (top-level)
+## `preset` (top-level)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides every section. Set with `agent6 config set profile <name>` (`--repo` for this repo); the `--profile` CLI flag overrides it per run. |
+| `preset` | `""` | Named **strategy preset** (see [Presets](#presets)). A bare top-level key (not inside any section) because it overrides every section. Set with `agent6 config set preset <name>` (`--repo` for this repo); the `--preset` CLI flag overrides it per run. |
 
 ## `[workflow]`
 
@@ -328,42 +328,42 @@ combined moved kimi to 1/12 total; glm-5.2 reached 4/9 only with both levers
 (neither alone: 0/9). No lever made invocation reliable, so none shipped; the
 delivery paths above remain the answer when a skill must apply.
 
-### Config profiles
+### Presets
 
-A profile presets many settings at once so a task picks a strategy with one knob.
-`agent6 config profiles` lists them all (built-in + user-defined) with the
-overrides each applies and which one is selected. Select with `--profile <name>`
-(on `run`/`plan`/`ask`), persistently with `agent6 config set profile <name>`
+A preset fills in many settings at once so a task picks a strategy with one knob.
+`agent6 config presets` lists them all (built-in + user-defined) with the
+overrides each applies and which one is selected. Select with `--preset <name>`
+(on `run`/`plan`/`ask`), persistently with `agent6 config set preset <name>`
 (`--repo` for this repo; the key lives top-level in the **global or repo** config,
 a `--config FILE` or a machine `[config]` overlay cannot select one and rejects
-the key loudly), or the TUI new-work chooser. A profile **overrides** config rather than
+the key loudly), or the TUI new-work chooser. A preset **overrides** config rather than
 being a baseline: its preset is injected just above the config layer that selected
 it, so precedence (low → high) is
 
-    defaults < global config < [profile via global profile field]
-            < repo config < [profile via repo profile field]
-            < [profile via --profile flag] < --config FILE
+    defaults < global config < [preset via global preset field]
+            < repo config < [preset via repo preset field]
+            < [preset via --preset flag] < --config FILE
 
-The most-specific source wins (`--profile` flag, else repo's `profile`,
-else global's; the presets never stack), and the profile beats the config at its
+The most-specific source wins (`--preset` flag, else repo's `preset`,
+else global's; the presets never stack), and the preset beats the config at its
 scope. But a more-specific config layer, an explicit `--config FILE`, or an
-individual flag still beats the profile.
+individual flag still beats the preset.
 
-| Profile | Bundles |
+| Preset | Bundles |
 |---|---|
 | `quick` | review off; fast/cheap. |
 | `standard` | the plain defaults (no review). The default. |
 | `ultra` | a 3-seat grounded `before_finish` veto panel; thorough review. |
 | `paranoid` | 5 explore-tier seats, `before_finish` veto. |
 
-Define your own with a `[profiles.<name>]` table (a partial config; edit leaves
-with `agent6 config set profiles.<name>.<leaf> <value>`); a built-in's name
+Define your own with a `[presets.<name>]` table (a partial config; edit leaves
+with `agent6 config set presets.<name>.<leaf> <value>`); a built-in's name
 **replaces** that built-in wholesale, not merges into it. Example:
 
 ```toml
-profile = "myteam"
+preset = "myteam"
 
-[profiles.myteam.review]
+[presets.myteam.review]
 trigger = "before_finish"
 decision = "veto"
 seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]

@@ -49,9 +49,9 @@ NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
 
 
 def spawn_new_work(  # noqa: PLR0911
-    cwd: Path, mode: str, task: str, profile: str = ""
+    cwd: Path, mode: str, task: str, preset: str = ""
 ) -> tuple[str | None, str]:
-    """Spawn `agent6 <mode> [--profile P] <task>` detached and return the new run
+    """Spawn `agent6 <mode> [--preset P] <task>` detached and return the new run
     id (its dir name) to open, or (None, diagnostic). Mirrors the TUI hub: the
     detached run is told to stream reasoning to its log so the dashboard is live.
 
@@ -85,14 +85,14 @@ def spawn_new_work(  # noqa: PLR0911
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        return _spawn_run(cwd, mode, task, profile, spec="")
+        return _spawn_run(cwd, mode, task, preset, spec="")
     refusal = _model_refusal(cwd, segments)
     if refusal is not None:
         return None, refusal
     first: str | None = None
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
-        run_id, err = _spawn_run(cwd, "run", seg.task, profile, spec=seg.spec or "1")
+        run_id, err = _spawn_run(cwd, "run", seg.task, preset, spec=seg.spec or "1")
         if run_id is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
         elif first is None:
@@ -124,13 +124,13 @@ def _model_refusal(cwd: Path, segments: list[Segment]) -> str | None:
 
 
 def _spawn_run(
-    cwd: Path, mode: str, task: str, profile: str, *, spec: str
+    cwd: Path, mode: str, task: str, preset: str, *, spec: str
 ) -> tuple[str | None, str]:
     """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
     return its located run dir name, or (None, diagnostic)."""
     argv = [agent6_exe(), mode]
-    if profile:
-        argv += ["--profile", profile]
+    if preset:
+        argv += ["--preset", preset]
     if spec:
         argv += ["--parallel", spec]
     # `--` ends option parsing: the body-derived task can start with `-` without

@@ -262,7 +262,7 @@ def create_fork(  # noqa: PLR0911
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch
     src_user_task = sm.user_task
-    src_profile_from_flag = sm.workflow.profile_from_flag
+    src_profile_from_flag = sm.workflow.preset_from_flag
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
@@ -273,21 +273,21 @@ def create_fork(  # noqa: PLR0911
         return "", 1
 
     try:
-        # The source's profile: resume replays it (profile or manifest_profile),
+        # The source's preset: resume replays it (preset or manifest_preset),
         # so the child manifest's models/workflow stamp must be derived from
         # the SAME profiled config or `runs show` reports a model the forked
         # run never uses.
-        cfg = load_effective(cwd, config_path, profile=sm.workflow.replay_profile).config
+        cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
     except ConfigError as exc:
         reporter.err(f"CONFIG ERROR:\n{exc}")
         return "", 2
 
-    # Stamp the child's profile like the run/resume paths (`profile or cfg.profile`):
-    # a FLAG-selected source replays its flag name (replay_profile), a CONFIG-
-    # selected one re-derives from the CURRENT config (cfg.profile) rather than the
+    # Stamp the child's preset like the run/resume paths (`preset or cfg.preset`):
+    # a FLAG-selected source replays its flag name (replay_preset), a CONFIG-
+    # selected one re-derives from the CURRENT config (cfg.preset) rather than the
     # source manifest's possibly-stale name -- the fork sibling of the parked-resume
-    # stamp fix. (bool(replay_profile) == profile_from_flag, so the flag bit stands.)
-    forked_profile = sm.workflow.replay_profile or cfg.profile
+    # stamp fix. (bool(replay_preset) == preset_from_flag, so the flag bit stands.)
+    forked_preset = sm.workflow.replay_preset or cfg.preset
 
     if new_run_id:
         try:
@@ -308,8 +308,8 @@ def create_fork(  # noqa: PLR0911
         base_branch=src_base_branch,
         user_task=src_user_task,
         mode=src_mode,
-        profile=forked_profile,
-        profile_from_flag=src_profile_from_flag,
+        preset=forked_preset,
+        preset_from_flag=src_profile_from_flag,
         cfg=cfg,
         reporter=reporter,
     )
@@ -331,8 +331,8 @@ def _materialize_fork(
     base_branch: str,
     user_task: str,
     mode: str,
-    profile: str,
-    profile_from_flag: bool,
+    preset: str,
+    preset_from_flag: bool,
     cfg: Config,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
@@ -361,8 +361,8 @@ def _materialize_fork(
         run_branch=run_branch,
         cfg=cfg,
         mode=mode,
-        effective_profile=profile,
-        profile_from_flag=profile_from_flag,
+        effective_preset=preset,
+        preset_from_flag=preset_from_flag,
         parent_run_id=src.run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,

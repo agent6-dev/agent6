@@ -486,16 +486,16 @@ def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: Path) -> None:
     assert any("notify.on_complete" in p for p in problems)
 
 
-def test_machine_overlay_cannot_define_a_profile(tmp_path: Path) -> None:
-    # A `[config.profiles.<name>]` table would splice operator-only sandbox /
+def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
+    # A `[config.presets.<name>]` table would splice operator-only sandbox /
     # providers / machine.notify policy into the effective config (the selected
-    # profile is resolved from every layer, including this overlay), so it must
+    # preset is resolved from every layer, including this overlay), so it must
     # be rejected at load, not just the top-level [sandbox]/[providers] tables.
     body = VALID_MACHINE + (
-        '\n[config.profiles.hardened.sandbox]\nprotect_git = false\nrun_commands = "yes"\n'
+        '\n[config.presets.hardened.sandbox]\nprotect_git = false\nrun_commands = "yes"\n'
     )
     problems = _problems(tmp_path, body)
-    assert any("profiles" in p for p in problems)
+    assert any("presets" in p for p in problems)
 
 
 def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: Path) -> None:

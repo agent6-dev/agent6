@@ -1100,10 +1100,10 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     parallel: ParallelConfig = Field(default_factory=ParallelConfig)
-    # Named config PROFILE: a preset filling in many settings at once
-    # (BUILTIN_PROFILES + user `[profiles.<name>]`). "" / "standard" = plain
-    # defaults; injection order and stacking rules: `config.layer._apply_profile`.
-    profile: str = ""
+    # Named strategy PRESET: fills in many settings at once (BUILTIN_PRESETS +
+    # user `[presets.<name>]`). "" / "standard" = plain defaults; injection
+    # order and stacking rules: `config.layer._apply_preset`.
+    preset: str = ""
 
     @model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
