@@ -203,15 +203,30 @@ def state_base(user: RealUser | None = None) -> Path:
     return user.home / ".local" / "state" / "agent6"
 
 
-def repo_id(repo_root: Path) -> str:
-    """Stable per-repo id: ``<folder>-<12 hex of sha256(canonical path)>``.
+# A state dir names its workspace so `ls` sorts by location and a stale one is
+# recognisable. The hash is what actually keeps two workspaces apart: `/a/b/c`
+# and `/a/b-c` flatten to the same string, and sharing state between them would
+# be far worse than an unreadable name.
+_ID_PATH_MAX = 100
+_ID_HASH_LEN = 6
 
-    Keyed on the resolved path, so two checkouts at different paths get
-    separate state and never collide. Moving or renaming a checkout changes
-    its id: its prior runs are simply not found from the new path.
+
+def repo_id(repo_root: Path) -> str:
+    """Stable per-repo id: ``<abs-path-with-dashes>-<6 hex of sha256(path)>``.
+
+    Keyed on the resolved path, so two checkouts never collide. Moving or
+    renaming a checkout changes its id: its prior runs are simply not found from
+    the new path. An over-long path keeps its head and tail with the middle
+    elided -- the hash still separates two that elide alike.
     """
     real = repo_root.resolve()
-    return f"{real.name}-{hashlib.sha256(str(real).encode('utf-8')).hexdigest()[:12]}"
+    digest = hashlib.sha256(str(real).encode("utf-8")).hexdigest()[:_ID_HASH_LEN]
+    flat = str(real).strip("/").replace("/", "-")
+    if len(flat) > _ID_PATH_MAX:
+        head, tail = _ID_PATH_MAX // 3, _ID_PATH_MAX - _ID_PATH_MAX // 3 - 2
+        flat = f"{flat[:head]}--{flat[-tail:]}"
+    # A leading dot would hide the state dir from a plain `ls`.
+    return f"{flat.lstrip('.') or 'root'}-{digest}"
 
 
 def state_dir(repo_root: Path, base_override: str | None = None) -> Path:

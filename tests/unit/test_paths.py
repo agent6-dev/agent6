@@ -35,7 +35,11 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     repo = tmp_path / "myrepo"
     repo.mkdir()
     rid = paths.repo_id(repo)
-    assert rid.startswith("myrepo-")
+    # The id names the workspace's whole path, so a state dir says where it came
+    # from; the trailing hash is what keeps two workspaces apart.
+    assert "myrepo" in rid
+    assert rid.endswith("-" + rid.rsplit("-", 1)[1]) and len(rid.rsplit("-", 1)[1]) == 6
+    assert "/" not in rid and not rid.startswith(".")
     assert paths.repo_id(repo) == rid  # deterministic
     assert paths.state_dir(repo) == base / rid
     assert paths.repo_config_path(repo) == base / rid / "config.toml"
@@ -49,6 +53,27 @@ def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
     a.mkdir()
     b.mkdir()
     assert paths.repo_id(a) != paths.repo_id(b)
+
+
+def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
+    """`/a/b/c` and `/a/b-c` both flatten to `a-b-c`. Sharing one state dir
+    between two real workspaces is worse than an unreadable name, so the hash
+    has to separate them."""
+    nested = tmp_path / "b" / "c"
+    nested.mkdir(parents=True)
+    dashed = tmp_path / "b-c"
+    dashed.mkdir()
+    assert paths.repo_id(nested) != paths.repo_id(dashed)
+
+
+def test_repo_id_stays_a_usable_directory_name(tmp_path: Path) -> None:
+    """A deep workspace must not produce a name the filesystem refuses (255
+    bytes per component) or one `ls` hides."""
+    deep = tmp_path.joinpath(*[f"segment{i}" for i in range(30)])
+    deep.mkdir(parents=True)
+    rid = paths.repo_id(deep)
+    assert len(rid.encode()) < 255
+    (tmp_path / rid).mkdir()  # the real filesystem accepts it
 
 
 def test_state_base_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
