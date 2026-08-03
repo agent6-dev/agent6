@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from agent6.config import Config, ConfigError, load_config
 
@@ -590,6 +591,24 @@ def test_with_budget_overrides(tmp_path: Path) -> None:
 def test_with_budget_overrides_noop_returns_self(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.with_budget_overrides() is cfg
+
+
+def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+    # TOML nan/inf parse as floats, and a non-finite cap never binds (nan
+    # fails every comparison; inf exceeds any spend), silently disabling the
+    # hard budget -- refused at the boundary like any other bad value.
+    for literal in ("nan", "-nan", "inf", "-inf"):
+        body = _VALID_TOML.replace("[budget]", "[budget]\nmax_usd = " + literal)
+        with pytest.raises(ConfigError, match="finite"):
+            load_config(_write(tmp_path, body))
+
+
+def test_budget_flag_override_rejects_non_finite(tmp_path: Path) -> None:
+    # --max-usd routes through the same validator (with_budget_overrides
+    # re-validates), so `--max-usd inf` cannot disable the meter either.
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    with pytest.raises(ValidationError, match="finite"):
+        cfg.with_budget_overrides(max_usd=float("inf"))
 
 
 def test_with_machine_agent_overrides(tmp_path: Path) -> None:

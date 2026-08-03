@@ -654,6 +654,20 @@ def test_budget_max_usd_is_optional(tmp_path: Path) -> None:
     assert spec.budget.max_usd is None
 
 
+def test_budget_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+    # TOML inf passes gt=0.0 and then can never bind, silently disabling the
+    # machine's spend cap; refuse it at load (nan already fails the gt).
+    body = VALID_MACHINE.replace("max_usd         = 25.0", "max_usd         = inf")
+    problems = _problems(tmp_path, body)
+    assert any("finite" in p for p in problems)
+
+
+def test_agent_state_max_usd_rejects_non_finite(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace('kind  = "agent"', 'kind  = "agent"\nmax_usd = inf')
+    problems = _problems(tmp_path, body)
+    assert any("finite" in p for p in problems)
+
+
 def test_budget_best_effort_usd_limit_is_gone(tmp_path: Path) -> None:
     # The hard/soft pair collapsed to one metered cap; the old soft field must
     # fail the grammar loudly, never load as an ignored knob.

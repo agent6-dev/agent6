@@ -14,11 +14,12 @@ Every violation is a *load-time* error, aggregated into
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 __all__ = [
     "AgentState",
@@ -190,6 +191,16 @@ class VarsSection(BaseModel):
     agent: dict[str, MutableVar] = Field(default_factory=dict)
 
 
+def _finite_usd(v: float) -> float:
+    # inf passes gt=0.0 and then can never bind, silently disabling the cap.
+    if not math.isfinite(v):
+        raise ValueError("max_usd must be a finite cap")
+    return v
+
+
+_FiniteUsd = Annotated[float, AfterValidator(_finite_usd)]
+
+
 class BudgetSpec(BaseModel):
     """Whole-machine spend bounds. `max_transitions` always binds.
 
@@ -201,7 +212,7 @@ class BudgetSpec(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    max_usd: float | None = Field(default=None, gt=0.0)
+    max_usd: _FiniteUsd | None = Field(default=None, gt=0.0)
     max_transitions: int = Field(gt=0)
 
 
@@ -280,7 +291,7 @@ class AgentState(BaseModel):
     # Per-state overrides of the effective config's [budget] ledgers: metered
     # spend (max_usd) and the unmetered input+output token bound
     # (max_tokens_fallback, -1 unlimited / 0 refuse). Unset inherits.
-    max_usd: float | None = Field(default=None, gt=0.0)
+    max_usd: _FiniteUsd | None = Field(default=None, gt=0.0)
     max_tokens_fallback: int | None = Field(default=None, ge=-1)
 
 

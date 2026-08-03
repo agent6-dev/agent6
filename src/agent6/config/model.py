@@ -25,6 +25,7 @@ is unset (see :mod:`agent6.verify_infer`), else run gateless.
 
 from __future__ import annotations
 
+import math
 import tomllib
 from collections.abc import Callable
 from ipaddress import ip_address
@@ -848,8 +849,10 @@ class BudgetConfig(BaseModel):
     @field_validator("max_usd")
     @classmethod
     def _usd_unlimited_is_exactly_minus_one(cls, v: float) -> float:
-        if v < 0 and v != -1:
-            raise ValueError("max_usd is a cap >= 0, or exactly -1 for unlimited")
+        # Non-finite never binds (nan fails every comparison; inf exceeds any
+        # spend), which would silently disable the hard budget.
+        if not math.isfinite(v) or (v < 0 and v != -1):
+            raise ValueError("max_usd is a finite cap >= 0, or exactly -1 for unlimited")
         return v
 
 
