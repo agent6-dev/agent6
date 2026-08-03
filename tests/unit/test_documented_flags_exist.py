@@ -47,10 +47,28 @@ def _cli_flags() -> set[str]:
     return found
 
 
+def _named_flags(text: str) -> set[str]:
+    """Every flag a doc attributes to agent6.
+
+    Two rules, because the docs name flags two ways. BACKTICKED anywhere: prose
+    writes them as code, and scanning the file rather than the line is what
+    catches one on a continuation line. And every flag on an agent6-invoking
+    LINE inside a fenced block: that is where a quickstart lives, and a broken
+    flag there is the first thing a new user hits.
+
+    Line-scoped inside blocks on purpose. A shell block often mixes tools --
+    `tailscale serve --bg` sits under `agent6 web` in docs/web.md -- and
+    block-scoping would attribute that to us.
+    """
+    named = {m.rstrip(".,;:)") for m in re.findall(r"`(--[a-z0-9][a-z0-9-]+)", text)}
+    for block in re.finditer(r"```[a-z]*\n(.*?)```", text, re.S):
+        for line in block.group(1).splitlines():
+            if re.search(r"(^|\s)agent6\s", line):
+                named |= {m.rstrip(".,;:)`") for m in re.findall(r"--[a-z0-9][a-z0-9-]+", line)}
+    return named
+
+
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
 def test_documented_flags_exist(doc: Path) -> None:
-    named = {
-        m.rstrip(".,;:)") for m in re.findall(r"`(--[a-z0-9][a-z0-9-]+)", doc.read_text("utf-8"))
-    }
-    missing = named - _cli_flags() - _NOT_OURS
+    missing = _named_flags(doc.read_text("utf-8")) - _cli_flags() - _NOT_OURS
     assert not missing, f"{doc.name} names flags the CLI does not have: {sorted(missing)}"
