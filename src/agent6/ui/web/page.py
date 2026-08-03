@@ -45,7 +45,7 @@ PAGE_HTML = (
 <aside class="rail">
   <div class="rail-brand" onclick="location.hash='#/'"><img src="/icon.svg" width="24" height="24" alt=""><b>agent6</b></div>
   <nav class="rail-nav">
-    <a href="#/" data-tab="hub" title="Runs"><span class="ic">▤</span><span>Runs</span></a>
+    <a href="#/" data-tab="hub" title="Sessions"><span class="ic">▤</span><span>Sessions</span></a>
     <a href="#/machines" data-tab="machines" title="Machines"><span class="ic">◈</span><span>Machines</span></a>
     <a href="#/config" data-tab="config" title="Config"><span class="ic">⚙</span><span>Config</span></a>
   </nav>
@@ -65,7 +65,7 @@ PAGE_HTML = (
 </div>
 
 <nav class="tabs">
-  <a href="#/" data-tab="hub"><span class="ic">▤</span>Runs</a>
+  <a href="#/" data-tab="hub"><span class="ic">▤</span>Sessions</a>
   <a href="#/machines" data-tab="machines"><span class="ic">◈</span>Machines</a>
   <a href="#/config" data-tab="config"><span class="ic">⚙</span>Config</a>
 </nav>

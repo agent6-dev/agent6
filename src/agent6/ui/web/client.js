@@ -213,7 +213,7 @@ function attachParallelSuggest(task, root) {
   } };
 }
 
-// The new-work composer, docked at the bottom of the Runs page: task text +
+// The new-work composer, docked at the bottom of the Sessions page: task text +
 // mode + Start (Enter starts, Shift+Enter newline).
 function newWorkDock() {
   const root = el('div', 'composer dock dock-fixed');
@@ -347,7 +347,7 @@ async function renderHub(focus, gen) {
   view.innerHTML = '';
   const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
-  // viewport (new work on Runs, create-machine on Machines).
+  // viewport (new work on Sessions, create-machine on Machines).
   const build = (d) => {
     const lists = el('div', 'grid');
     if (machinesTab) {
