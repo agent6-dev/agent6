@@ -6,9 +6,10 @@ Powers the ``find_definition_lsp`` / ``find_references_lsp`` tools.
 Trust posture: the subprocess runs in the agent process, **not** in
 the jail. Argv is constant (``ty server`` or ``uvx ty server``); no
 LLM-controlled arguments reach the spawn. The JSON-RPC stream is
-constructed entirely from validated tool input (a path that's already
-been ``resolve_in_root``-checked and a symbol name we look up
-verbatim). Same trust boundary as ``tools/index.py``.
+constructed entirely from validated tool input (a symbol name we look
+up verbatim, plus a path and its text the caller already contained --
+this client opens no file of its own). Same trust boundary as
+``tools/index.py``.
 
 The client is intentionally small: synchronous request/response,
 single in-flight request at a time. The dispatcher serialises all
@@ -228,12 +229,13 @@ class LspClient:
     # ------------------------------------------------------------------
     # Public queries
 
-    def find_definition(self, path: Path, symbol: str) -> list[LspLocation]:
-        return self._query(path, symbol, "textDocument/definition", extra_params={})
+    def find_definition(self, path: Path, text: str, symbol: str) -> list[LspLocation]:
+        return self._query(path, text, symbol, "textDocument/definition", extra_params={})
 
-    def find_references(self, path: Path, symbol: str) -> list[LspLocation]:
+    def find_references(self, path: Path, text: str, symbol: str) -> list[LspLocation]:
         return self._query(
             path,
+            text,
             symbol,
             "textDocument/references",
             extra_params={"context": {"includeDeclaration": True}},
@@ -245,6 +247,7 @@ class LspClient:
     def _query(
         self,
         path: Path,
+        text: str,
         symbol: str,
         method: str,
         *,
@@ -253,20 +256,11 @@ class LspClient:
         with self._lock:
             self.start()
             assert self._proc is not None  # for type-checker
-            abs_path = path.resolve()
-            try:
-                text = abs_path.read_text(encoding="utf-8")
-            except UnicodeDecodeError as exc:
-                # A ValueError, not OSError: without its own arm it escaped as
-                # an opaque codec error instead of the standard wording.
-                raise LspError(f"File is not UTF-8 text: {path}") from exc
-            except OSError as exc:
-                raise LspError(f"cannot read {path}: {exc}") from exc
             pos = _symbol_position(text, symbol)
             if pos is None:
                 raise LspError(f"symbol {symbol!r} not found in {path}")
             line, char = pos
-            uri = _path_to_uri(abs_path)
+            uri = _path_to_uri(path)
             self._ensure_open(uri, text)
             params: dict[str, Any] = {
                 "textDocument": {"uri": uri},

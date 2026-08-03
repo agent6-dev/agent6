@@ -10,9 +10,7 @@ is not available so the suite stays portable. Pure-logic tests
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
-from typing import cast
 
 import pytest
 
@@ -151,23 +149,19 @@ def test_find_ty_argv_prefers_ty_over_uvx(monkeypatch: pytest.MonkeyPatch) -> No
     assert argv[1] == "server"
 
 
-def test_query_non_utf8_file_raises_clean_lsp_error(
+def test_non_utf8_file_raises_the_standard_not_utf8_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A non-UTF-8 source raises UnicodeDecodeError -- a ValueError the
     OSError-only read guard missed, leaking an opaque codec error through the
-    generic dispatch handler. It must become the subsystem LspError with the
-    same "not UTF-8 text" wording read_file uses for the identical file."""
-    bad = tmp_path / "latin.py"
-    bad.write_bytes(b"x = 'caf\xe9'\n")
-    client = LspClient(tmp_path)
-
-    def fake_start(self: LspClient) -> None:
-        self._proc = cast("subprocess.Popen[bytes]", object())  # pyright: ignore[reportPrivateUsage]
-
-    monkeypatch.setattr(LspClient, "start", fake_start)
-    with pytest.raises(LspError, match="not UTF-8"):
-        client.find_definition(bad, "x")
+    generic dispatch handler. It must carry the same "not UTF-8 text" wording
+    read_file uses for the identical file, and (with no `ty` on PATH, whose own
+    error is "LSP unavailable") land before the server spawn."""
+    monkeypatch.setattr("agent6.tools.lsp.shutil.which", lambda _name: None)  # type: ignore[misc]
+    (tmp_path / "latin.py").write_bytes(b"x = 'caf\xe9'\n")
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(ToolError, match="not UTF-8"):
+        d.dispatch("find_definition_lsp", {"path": "latin.py", "symbol": "x"})
 
 
 def test_dispatch_find_definition_lsp_no_server_raises(
@@ -242,17 +236,18 @@ def test_lsp_respawns_after_server_dies(tmp_path: Path) -> None:
     start() before every request; pre-fix start() returned early because _proc was
     still a (dead) object, so the LSP tools stayed broken for the rest of the run."""
     src = tmp_path / "mod.py"
-    src.write_text("def helper():\n    return 1\n\nx = helper()\n", encoding="utf-8")
+    text = "def helper():\n    return 1\n\nx = helper()\n"
+    src.write_text(text, encoding="utf-8")
     client = LspClient(tmp_path)
     try:
-        first = client.find_definition(src, "helper")
+        first = client.find_definition(src, text, "helper")
         assert len(first) >= 1
         # Simulate a crash: kill the server out from under the client.
         assert client._proc is not None  # pyright: ignore[reportPrivateUsage]
         client._proc.kill()  # pyright: ignore[reportPrivateUsage]
         client._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
         # The next query must transparently respawn and still work.
-        again = client.find_definition(src, "helper")
+        again = client.find_definition(src, text, "helper")
         assert len(again) >= 1
         assert again[0].line == 1
     finally:

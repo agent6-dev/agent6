@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent6.tools._path_safety import resolve_in_root
+from agent6.tools._path_safety import read_contained, resolve_in_root
 from agent6.tools.errors import ToolError
 from agent6.tools.index import SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
@@ -78,15 +78,26 @@ def find_references(
     return ReferencesResult(references=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
+def _lsp_document(root: Path, path: str) -> tuple[Path, str]:
+    """The contained absolute path of *path* and its text, read through the
+    root-anchored descriptor walk so the bytes the query anchors on come from
+    the file the containment check passed, not from a second lookup by name."""
+    sp = resolve_in_root(root, path)
+    if not sp.abs_path.is_file():
+        raise ToolError(f"Not a file: {path}")
+    try:
+        return sp.abs_path, read_contained(root, sp.rel_path)
+    except UnicodeDecodeError as exc:
+        raise ToolError(f"File is not UTF-8 text: {path}") from exc
+
+
 def find_definition_lsp(
     root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
 ) -> DefinitionsResult:
     args = FindDefinitionLspInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
-    if not sp.abs_path.is_file():
-        raise ToolError(f"Not a file: {args.path}")
+    abs_path, text = _lsp_document(root, args.path)
     try:
-        locs = ensure_lsp().find_definition(sp.abs_path, args.symbol)
+        locs = ensure_lsp().find_definition(abs_path, text, args.symbol)
     except LspError as exc:
         raise ToolError(str(exc)) from exc
     out: list[dict[str, Any]] = []
@@ -104,11 +115,9 @@ def find_references_lsp(
     root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
 ) -> ReferencesResult:
     args = FindReferencesLspInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
-    if not sp.abs_path.is_file():
-        raise ToolError(f"Not a file: {args.path}")
+    abs_path, text = _lsp_document(root, args.path)
     try:
-        locs = ensure_lsp().find_references(sp.abs_path, args.symbol)
+        locs = ensure_lsp().find_references(abs_path, text, args.symbol)
     except LspError as exc:
         raise ToolError(str(exc)) from exc
     out: list[dict[str, Any]] = []
