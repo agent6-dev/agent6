@@ -349,3 +349,20 @@ def test_a_provider_leaf_error_names_every_valid_value(
     err = capsys.readouterr().err
     assert "anthropic" in err
     assert "openai" in err
+
+
+def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
+    """A root-owned config after a sudo run is the operator's file, not a defect.
+
+    The reader wrapped a TOML parse error but not an OSError, so a permission
+    problem escaped as "unexpected PermissionError" with a saved traceback,
+    "please report this", and exit 1."""
+    gdir = iso / "g"
+    gdir.mkdir(parents=True, exist_ok=True)
+    cfg = gdir / "config.toml"
+    cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
+    cfg.chmod(0o000)
+    try:
+        assert _run(["config", "show"]) == 2
+    finally:
+        cfg.chmod(0o600)

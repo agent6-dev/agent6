@@ -489,6 +489,8 @@ def read_toml_file(path: Path) -> dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
+    except OSError as exc:
+        raise ConfigError(f"{path}: cannot be read: {exc}") from exc
 
 
 def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
