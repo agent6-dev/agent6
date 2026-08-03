@@ -518,3 +518,32 @@ def test_a_fully_populated_policy_holds_every_invariant(
     assert "GAPS []" in out, f"a mount in a fully-populated policy lacks the floor: {out}"
     assert "LEAK []" in out, f"the agent's environment reached the jail: {out}"
     assert "PROTECT refused" in out, f"a protect path was writable: {out}"
+
+
+def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> None:
+    """A shared /tmp/agent6-jail-root is a cross-user denial of service: any
+    local user can create it (or plant a symlink) and every other user's jail
+    then fails. The path carries the uid, and an unusable one names itself."""
+    import os
+    import re
+
+    crate_main = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
+    src = crate_main.read_text(encoding="utf-8")
+    assert '"/tmp/agent6-jail-root"' not in src, "the jail root must not be a shared path"
+    assert re.search(r"agent6-jail-root-\{", src), "the jail root must carry the uid"
+
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("sh", "-c", "pwd; ls /tmp | head -5"),
+            isolation="strict",
+            timeout_s=20.0,
+        )
+    )
+    assert "/workspace" in res.stdout, res.stdout + res.stderr
+    # The root the run actually created carries the CALLER's uid, not the 0 the
+    # user namespace maps it to -- otherwise every user collides on -0 again.
+    assert Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()

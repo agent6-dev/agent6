@@ -122,6 +122,9 @@ fn main() {
 }
 
 fn run_strict(policy: &Policy) -> ! {
+    // Before the user namespace maps this process to 0: the jail root is
+    // named for the REAL uid, and inside the namespace getuid() is always 0.
+    let real_uid = getuid().as_raw();
     if let Err(e) = setup_namespaces(policy.allow_network) {
         die(format!("namespace setup failed: {e}"));
     }
@@ -137,7 +140,7 @@ fn run_strict(policy: &Policy) -> ! {
             Err(e) => die(format!("waitpid failed: {e}")),
         },
         Ok(ForkResult::Child) => {
-            if let Err(e) = setup_rootfs(policy) {
+            if let Err(e) = setup_rootfs(policy, real_uid) {
                 die(format!("rootfs setup failed: {e}"));
             }
             if let Err(e) = apply_landlock_strict(policy) {
@@ -357,11 +360,20 @@ const RO_FLOOR: MsFlags = MsFlags::MS_RDONLY
 /// The floor alone, for the binds that are writable by design.
 const RW_FLOOR: MsFlags = MsFlags::MS_NOSUID.union(MsFlags::MS_NODEV);
 
-fn setup_rootfs(policy: &Policy) -> io::Result<()> {
-    let new_root = PathBuf::from("/tmp/agent6-jail-root");
+fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
+    // Per-uid: a shared path in a sticky /tmp is a cross-user denial of
+    // service, since whoever creates it first owns it and every other user's
+    // jail then fails closed forever. *real_uid* is the caller's, captured
+    // before the user namespace mapped this process to 0.
+    let new_root = PathBuf::from(format!("/tmp/agent6-jail-root-{real_uid}"));
     // Make sure parent dir is on tmpfs we can write to (it's in our own NS now).
     let _ = fs::remove_dir_all(&new_root);
-    fs::create_dir_all(&new_root)?;
+    fs::create_dir_all(&new_root).map_err(|e| {
+        io::Error::other(format!(
+            "jail root {} is unusable: {e} (remove it, or point TMPDIR elsewhere)",
+            new_root.display()
+        ))
+    })?;
     // Make new_root a mount point (pivot_root requirement).
     // The floor here too. The /dev nodes bound underneath keep their own flags
     // (a bind's options are its own), so they stay usable.
