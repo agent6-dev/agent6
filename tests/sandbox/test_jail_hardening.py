@@ -117,3 +117,35 @@ def test_the_legacy_umount_syscall_is_blocked_too(tmp_path: Path) -> None:
     if "blocked" not in (res.stdout or "") and "ALLOWED" not in (res.stdout or ""):
         pytest.skip(f"probe did not run: {res.stderr[:200]}")
     assert "ALLOWED" not in (res.stdout or ""), "the legacy umount syscall reached the jail"
+
+
+def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A jailed command must not be able to read the operator's provider key.
+
+    The launcher becomes PID 1 of the jail's own PID namespace, and strict
+    mounts a fresh /proc -- so /proc/1/environ IS the launcher's environment.
+    Spawned without an explicit env it inherited the agent's, and a jailed
+    command could read `OPENROUTER_API_KEY=...` straight out of it. Probed and
+    reproduced before the fix.
+
+    docs/security.md says secrets never reach the jail; they were not mounted,
+    they were inherited. The launcher reads nothing from its environment (the
+    policy arrives on stdin), so it gets none.
+    """
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-CANARY-must-not-leak")
+    probe = (
+        "import glob\n"
+        "for p in sorted(glob.glob('/proc/[0-9]*/environ')):\n"
+        "    try: d = open(p, 'rb').read()\n"
+        "    except Exception: continue\n"
+        "    if b'CANARY' in d: print('LEAK ' + p)\n"
+    )
+    res = run_in_jail(
+        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
+    )
+    assert "LEAK" not in (res.stdout or ""), f"the agent's env reached the jail: {res.stdout}"

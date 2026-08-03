@@ -69,6 +69,14 @@ def _is_agent6_private(p: Path) -> bool:
     return any(p == d or p.is_relative_to(d) for d in private)
 
 
+# The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
+# and strict mounts a fresh /proc, so /proc/1/environ is readable by the jailed
+# command -- inheriting the agent's env put the operator's provider key there.
+# The launcher reads nothing from the environment (its policy arrives on stdin
+# and the child's env is passed explicitly in it), so it gets none.
+_LAUNCHER_ENV: dict[str, str] = {}
+
+
 def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     """Return (PATH string, real-location mount dirs) so operator-installed tools
     resolve in the jail. Recomputed per call so a tool the operator (or model)
@@ -431,6 +439,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            env=_LAUNCHER_ENV,
         )
         _live_launchers.add(launcher.pid)
     survivors: frozenset[int] = frozenset()
@@ -650,6 +659,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
                 stdout=result,
                 stderr=errors,
                 start_new_session=True,
+                env=_LAUNCHER_ENV,
             )
             _live_launchers.add(launcher.pid)
     finally:

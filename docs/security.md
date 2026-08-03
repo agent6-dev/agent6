@@ -133,6 +133,11 @@ Under `strict` it:
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
   host's, which would leak process info).
+    - The launcher is PID 1 of that namespace, so `/proc/1/environ` is readable
+      by the jailed command. It is spawned with an EMPTY environment for that
+      reason: inheriting agent6's put a provider key supplied via `api_key_env`
+      one file read away from the model. The launcher needs none -- its policy
+      arrives on stdin and the child's env is set explicitly in it.
 - Applies Landlock FS rules (net confinement is the namespace); best-effort:
   a kernel without Landlock skips this layer, warned loudly at run entry.
 - Installs a seccomp deny-list: dangerous syscalls (ptrace, mount, setns,
