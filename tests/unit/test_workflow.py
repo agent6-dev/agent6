@@ -27,6 +27,26 @@ from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows.loop import Workflow
 
 
+class _StubDispatcher:
+    """The dispatcher surface the loop reads besides `dispatch`.
+
+    The loop rebuilds its tool list every turn (a gate adopted mid-run, or a
+    policy denied mid-run, changes what the worker has), so a stub that answers
+    only `dispatch` no longer models the real thing. The defaults here keep the
+    behaviour these tests were written against: no filtered tools -- the
+    provider stubs ignore the list -- and a policy that withholds nothing.
+    """
+
+    def available_tool_names(self) -> tuple[str, ...]:
+        return ()
+
+    def skills_available(self) -> bool:
+        return False
+
+    def command_policy(self) -> str:
+        return "ask"
+
+
 def _silent(_msg: str) -> None:
     return None
 
@@ -619,7 +639,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
             )
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
 
@@ -666,7 +686,6 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -697,7 +716,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
                 return _tool_resp("run_verify_command")
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 return ExecResult(
@@ -730,7 +749,6 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=7,  # a resumed run picks up mid-way
             root_task_id=None,
@@ -775,7 +793,6 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -843,7 +860,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
                 return _tool_resp("run_command", {"command": "add median"}, tool_id="m1")
             return _tool_resp("finish_run", {"summary": "added median()"}, tool_id="m2")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
@@ -876,7 +893,6 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system=snapshot.system,
             conversation=Conversation.from_wire(snapshot.messages),
-            tools=[],
             tool_calls=snapshot.tool_calls,
             start_iteration=snapshot.next_iteration,
             root_task_id=snapshot.root_task_id,
@@ -927,7 +943,6 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system=snapshot.system,
         conversation=Conversation.from_wire(snapshot.messages),
-        tools=[],
         tool_calls=snapshot.tool_calls,
         start_iteration=snapshot.next_iteration,
         root_task_id=snapshot.root_task_id,
@@ -953,7 +968,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
             del kwargs
             return _tool_resp("run_verify_command")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
 
@@ -988,7 +1003,6 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1032,7 +1046,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
                 return _multi("run_verify_command", "apply_edit")
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 return ExecResult(
@@ -1075,7 +1089,6 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1157,7 +1170,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
             # Tightened cap: the model is forced to act.
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
@@ -1186,7 +1199,6 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -1208,7 +1220,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
             self.calls += 1
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
             # Improves to 50, then ties it. The plateau detector fires once
@@ -1263,7 +1275,6 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1295,7 +1306,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
                 return _tool_resp("finish_run", {"summary": "pivoted"}, tool_id="fin")
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0])
@@ -1347,7 +1358,6 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1387,7 +1397,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
                 "run_verify_command", {"n": self.calls}, tool_id=f"verify-{self.calls}"
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
             self.metric_count = 0
@@ -1448,7 +1458,6 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1485,7 +1494,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
             # never finish on our own -> the loop must force the issue
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             assert name == "read_file"
             return RawResult({"content": "..."})
@@ -1502,7 +1511,6 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -1537,7 +1545,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
                 self.nudged_on.append(self.calls)
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return RawResult({"content": "..."})
 
@@ -1553,7 +1561,6 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -1588,7 +1595,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
                 self.nudged_on.append(self.calls)
             return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return RawResult({"content": "..."})
 
@@ -1604,7 +1611,6 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -1635,7 +1641,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
             # then spin on read-only commands forever (no edit, no commit)
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -1664,7 +1670,6 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1697,7 +1702,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
                 )
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -1732,7 +1737,6 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1763,7 +1767,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
                 return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
@@ -1786,7 +1790,6 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -1810,7 +1813,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
             self.calls += 1
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")  # always re-verify
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -1839,7 +1842,6 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1863,7 +1865,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
                 return _tool_resp("run_verify_command", tool_id="v1")  # verify passes
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_metric_command":
                 return MetricResult(
@@ -1902,7 +1904,6 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -1963,7 +1964,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
                 self.plateau_nudges_seen += 1
             return _tool_resp("run_verify_command", tool_id=f"verify-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls: list[str] = []
             # Plateaus at the 5th sample and stays flat thereafter.
@@ -2021,7 +2022,6 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -2056,7 +2056,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
                 tool_id=f"finish-{self.calls}",
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
             return RawResult({"ok": True})
@@ -2087,7 +2087,6 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -2116,7 +2115,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
                 self.finish_nudges_seen += 1
             return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"finish-{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
             return RawResult({"ok": True})
@@ -2145,7 +2144,6 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -2219,7 +2217,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
                 tool_id=f"finish-{self.calls}",
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             if name == "run_verify_command":
@@ -2268,7 +2266,6 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -3193,7 +3190,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
                 },
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
             return RawResult({"ok": True})
@@ -3226,7 +3223,6 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -3281,7 +3277,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             del kwargs
             return _resp("SUMMARY of progress so far")  # no checkoff block
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
                 return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
@@ -3323,7 +3319,6 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id="root",
@@ -3926,7 +3921,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
             self.calls += 1
             return _resp("SUMMARY of progress so far")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
                 return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
@@ -3963,7 +3958,6 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4036,7 +4030,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
             # then spin on read-only commands (no edit, no commit)
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -4065,7 +4059,6 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4227,7 +4220,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
                 return _resp("Which theme should I add?")  # prose question, no tool
             return _resp("Anything else you want?")  # would-be second question
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "ask_user":
                 return RawResult({"answers": ["dracula"]})
@@ -4254,7 +4247,6 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -4308,7 +4300,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
                 )
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.verifies = 0
 
@@ -4349,7 +4341,6 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4378,7 +4369,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
                 return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.verifies = 0
 
@@ -4417,7 +4408,6 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4459,7 +4449,7 @@ def _spec_recheck_wf(tmp_path: Path, provider: Any, dispatcher: Any, *, on: bool
     )
 
 
-class _GreenDispatcher:
+class _GreenDispatcher(_StubDispatcher):
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         if name == "run_verify_command":
             return ExecResult(
@@ -4495,7 +4485,6 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4529,7 +4518,6 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4562,7 +4550,6 @@ def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> 
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4590,7 +4577,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
                 )
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 return ExecResult(
@@ -4627,7 +4614,6 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4679,7 +4665,6 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4712,7 +4697,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
                 )
             return _resp("Done: applied the fix.")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return RawResult({"applied": True, "path": "f.py"})
 
@@ -4739,7 +4724,6 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4775,7 +4759,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
                 )
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 return ExecResult(
@@ -4813,7 +4797,6 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4842,7 +4825,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
 
     big = "X" * 4000
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "read_file":
                 return RawResult({"content": big, "size": len(big)})
@@ -4872,7 +4855,6 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=conversation,
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4923,7 +4905,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
 
     from agent6.tools.errors import ToolError as _TE
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("grep: the arguments were not valid JSON. Resend the call.")
 
@@ -4950,7 +4932,6 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -4997,7 +4978,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
                 tool_id=f"c{self.calls}",
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.calls = 0
 
@@ -5031,7 +5012,6 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5062,7 +5042,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
                 return _tool_resp("finish_run", {"summary": "ok"}, tool_id="f")
             return _tool_resp("grep", {"pattern": "p", "path": "."}, tool_id=f"g{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.n = 0
 
@@ -5095,7 +5075,6 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5195,7 +5174,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
 
     from agent6.tools.errors import ToolError as _TE
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("python3: boom in the sandbox")
 
@@ -5222,7 +5201,6 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5253,7 +5231,7 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
 
     from agent6.tools.errors import ToolError as _TE
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("totally-not-a-real-binary-xyz: not found")
 
@@ -5280,7 +5258,6 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5310,7 +5287,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
             # Then the worker goes idle: read-only calls, no edits, no finish.
             return _tool_resp("read_file", {"path": "a.py"}, tool_id=f"r{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -5346,7 +5323,6 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5373,7 +5349,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
                 tool_id="e1",
             )
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
@@ -5412,7 +5388,6 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5455,7 +5430,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
                 )
             return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.adopted: tuple[str, ...] | None = None
 
@@ -5483,7 +5458,6 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5527,7 +5501,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
                 )
             return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
             return False  # the jail cannot execute the inferred runner
 
@@ -5550,7 +5524,6 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -5589,7 +5562,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
     the same host-present binary emit loop.sandbox_tool_unreachable ONCE and
     tell the model once; finalize's operator warning reads that event."""
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_command":
                 return ExecResult(
@@ -5632,7 +5605,6 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -5651,7 +5623,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
 
     from agent6.tools.errors import ToolError as _TE
 
-    class DispatcherStub:
+    class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_command":
                 raise _TE("1 validation error for RunCommandInput: env extra_forbidden")
@@ -5688,7 +5660,6 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -5790,7 +5761,6 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,

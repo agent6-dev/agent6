@@ -310,7 +310,6 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         conversation=Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
-        tools=[],
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
@@ -382,7 +381,6 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
         conversation=Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
-        tools=[],
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
@@ -502,7 +500,6 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
         conversation=Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
-        tools=[],
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
@@ -627,7 +624,6 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         conversation=Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -825,7 +821,6 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=restored,
-        tools=[],
         tool_calls=0,
         start_iteration=3,
         root_task_id=None,
@@ -891,7 +886,6 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=conversation,
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         original_task="go",
@@ -952,7 +946,6 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=conversation,
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         original_task="go",

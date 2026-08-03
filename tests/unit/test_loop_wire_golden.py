@@ -41,6 +41,26 @@ _GOLDEN = Path(__file__).parent / "data" / "golden_loop_wire.json"
 _TASK = "Fix the parser bug in a.md"
 
 
+class _StubDispatcher:
+    """The dispatcher surface the loop reads besides `dispatch`.
+
+    The loop rebuilds its tool list every turn (a gate adopted mid-run, or a
+    policy denied mid-run, changes what the worker has), so a stub that answers
+    only `dispatch` no longer models the real thing. The defaults here keep the
+    behaviour these tests were written against: no filtered tools -- the
+    provider stubs ignore the list -- and a policy that withholds nothing.
+    """
+
+    def available_tool_names(self) -> tuple[str, ...]:
+        return ()
+
+    def skills_available(self) -> bool:
+        return False
+
+    def command_policy(self) -> str:
+        return "ask"
+
+
 def _resp(
     *,
     text: str = "",
@@ -108,18 +128,12 @@ class _SummariserScript:
         return _resp(text="PROGRESS: read a.md and b.md, verify runner is broken, grep found it.")
 
 
-class _Dispatcher:
+class _Dispatcher(_StubDispatcher):
     """Scripted tool results. Serving the grep (iteration 4) arms the manual
     compact request so the next pre-call forces the tier-2 restart."""
 
     def __init__(self, compact_flag: list[bool]) -> None:
         self._compact_flag = compact_flag
-
-    def available_tool_names(self) -> list[str]:
-        return []
-
-    def skills_available(self) -> bool:
-        return False
 
     def set_run_root_node_id(self, node_id: str) -> None:  # pragma: no cover - resume leg
         return None
@@ -239,7 +253,6 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="SYSTEM",
         conversation=Conversation.from_wire([initial]),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,

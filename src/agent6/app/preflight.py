@@ -199,9 +199,10 @@ def infer_verify_if_unset(
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 
     ``run_commands = "no"`` withholds every command tool, the gate included, so
-    a gate is dropped rather than inferred: a run that cannot run its gate can
-    never go green, so it commits nothing, finishes red and is told to call a
-    tool it does not have.
+    nothing is inferred and the operator is told. The rule itself lives in the
+    loop (``Workflow._gate_argv``), which reads the EFFECTIVE policy every
+    turn: this function only runs for a fresh run/plan, and a resumed leg or a
+    mid-run deny has to reach the same answer.
     """
     if mode not in ("run", "plan"):
         return cfg

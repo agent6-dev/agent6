@@ -63,7 +63,6 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
@@ -103,7 +102,6 @@ def test_periodic_critic_injects_text_into_next_user_msg() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=(conversation := Conversation.from_wire(messages)),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -151,7 +149,6 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=(conversation := Conversation.from_wire(messages)),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -195,7 +192,6 @@ def test_on_verify_fail_critic_skipped_when_no_verify_call() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,

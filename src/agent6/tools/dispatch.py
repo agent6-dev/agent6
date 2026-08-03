@@ -427,6 +427,7 @@ class ToolDispatcher:
 
     def available_tool_names(self) -> tuple[str, ...]:
         names = list(self._available)
+        # `no` withholds every command tool, run_verify_command included.
         if self.command_policy() == "no":
             names = [n for n in names if n not in _COMMAND_TOOLS]
         # No verify_command (and none inferred) -> a gateless run: hide
@@ -694,6 +695,10 @@ class ToolDispatcher:
         jail PATH: adopting a gate the sandbox cannot execute would turn a
         would-be honest settle into an unexecutable-verify abort. Path-form
         commands are accepted as-is (they resolve against the mounted cwd)."""
+        if self.command_policy() == "no":
+            # Every command tool is withheld, the gate included. Adopting one
+            # would gate the run on something it can never run.
+            return False
         exe = argv[0]
         if "/" not in exe and shutil.which(exe, path=jail_search_path()) is None:
             return False

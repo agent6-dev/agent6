@@ -206,7 +206,6 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=(conversation := Conversation.from_wire(messages)),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -253,7 +252,6 @@ def test_before_finish_critic_satisfied_accepts_finish() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -298,7 +296,6 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=(conversation := Conversation.from_wire(messages)),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -346,7 +343,6 @@ def test_before_finish_satisfied_resets_rejection_counter() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -377,7 +373,6 @@ def test_critic_mode_off_never_calls_critic() -> None:
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -421,7 +416,6 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=(conversation := Conversation.from_wire(messages)),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -467,7 +461,6 @@ def test_silent_finish_critic_cap_lets_finish_through() -> None:
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=Conversation.from_wire(messages),
-        tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
@@ -503,7 +496,6 @@ def test_silent_finish_critic_off_bypasses() -> None:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(messages),
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,

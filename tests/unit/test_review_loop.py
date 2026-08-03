@@ -60,7 +60,6 @@ def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
-            tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
