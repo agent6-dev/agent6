@@ -178,9 +178,9 @@ RUN_MENU = Menu(
         MenuItem("Compact context now", "compact"),
         MenuItem("Stop after this step", "stop_step"),
         MenuItem("Stop now", "stop_now"),
-        MenuItem("Resume the run", "resume"),
-        MenuItem("Fork the run", "fork"),
-        MenuItem("Delete this run…", "delete_session"),
+        MenuItem("Resume this session", "resume"),
+        MenuItem("Fork this session", "fork"),
+        MenuItem("Delete this session…", "delete_session"),
     ),
 )
 
@@ -690,7 +690,7 @@ class ConversationScreen(Screen[None]):
             )  # discard any stale answer -> the run waits for this one
             request_steer(session_dir)
             write_steer_answer(session_dir, message.text)
-            self.notify("steering the run…")
+            self.notify("steering this session…")
 
     # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:

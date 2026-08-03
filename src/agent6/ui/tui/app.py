@@ -113,7 +113,7 @@ _TOOL_TABLE_ROWS = 20
 
 # Answer submitted after the worker died mid-modal: the file bridge has no
 # reader, and the next resume re-asks the prompt itself.
-_ANSWER_LOST = "run is not live; the answer reached nothing (a resume re-asks the prompt)"
+_ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
 
 # A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
 # an answered ask, a gateless settle, a finish over red) is not a failure;
@@ -1011,7 +1011,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                     self.notify("could not write the compaction request", severity="warning")
                 return
             self._seed_steer(text)
-            self.notify("steering the run…")
+            self.notify("steering this session…")
         else:
             self.resume_with_instruction(text)
 
@@ -1046,7 +1046,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         marker (the same file-bridge pattern as steer); the loop honors it at
         its next safe boundary by forcing a summarise-and-restart."""
         if not self.session_controllable():
-            self.notify("run is not live -- nothing to compact", severity="warning")
+            self.notify("the session is not live -- nothing to compact", severity="warning")
             return
         if request_compact(self.session_dir):
             self.notify("compaction requested; applies at the next safe boundary")
@@ -1058,7 +1058,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         the file bridge -- the stream watchdog interrupts the in-flight turn and
         the run ends (resumable)."""
         if not self.session_controllable():
-            self.notify("run is not live -- nothing to stop", severity="warning")
+            self.notify("the session is not live -- nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1067,7 +1067,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
         self.push_screen(
             ConfirmModal(
-                "Stop the run now?",
+                "Stop this session now?",
                 "Interrupts the current step; the run ends at once and can be resumed "
                 "later with `agent6 resume`.",
                 confirm_label="Stop now",
@@ -1080,7 +1080,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         the loop honors at its next completed-iteration boundary, so the step's
         tool results and auto-commit land before the run ends (resumable)."""
         if not self.session_controllable():
-            self.notify("run is not live -- nothing to stop", severity="warning")
+            self.notify("the session is not live -- nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1102,7 +1102,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Delete this run's history and return to the hub. History only: the run
         branch and its commits are git's (`sessions prune` is the branch verb)."""
         if self.session_controllable():
-            self.notify("run is still live -- stop it first", severity="warning")
+            self.notify("the session is still live -- stop it first", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1119,7 +1119,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
         self.push_screen(
             ConfirmModal(
-                "Delete this run's history?",
+                "Delete this session's history?",
                 "Removes its transcripts, events and manifest from the state dir. "
                 "The run branch and its commits are kept.",
                 confirm_label="Delete",
@@ -1131,7 +1131,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Resume a finished/stopped run: it continues in the background (appending
         to the same log) and this dashboard follows straight through."""
         if self.session_controllable():
-            self.notify("run is still going -- nothing to resume", severity="warning")
+            self.notify("the session is still going -- nothing to resume", severity="warning")
             return
         err = spawn_detached_resume(Path.cwd(), self.session_dir.name)
         self.notify(

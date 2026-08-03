@@ -521,7 +521,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _route_session(self, session_id: str, sub: str) -> None:
         session_dir = model.session_dir_for(self.cwd, session_id)
         if session_dir is None:
-            self._send_json({"error": f"no run {session_id!r}"}, status=404)
+            self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
             self._send_json(model.session_snapshot(session_dir))
@@ -530,7 +530,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif sub == "events":
             self._sse_session(session_dir)
         else:
-            self._send_json({"error": f"not found: run/{session_id}/{sub}"}, status=404)
+            self._send_json({"error": f"not found: /api/session/{session_id}/{sub}"}, status=404)
 
     def _route_machine(self, name: str, sub: str) -> None:
         machine_dir = model.machine_dir_for(self.cwd, name)

@@ -195,13 +195,13 @@ def approve(
     (the "allow session" button) also auto-approves every later run_command."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
         # The prompt box outlives the worker (it clears on the answer event,
         # which a dead run will never emit), so refuse like every sibling
         # action: nothing would consume the answer, and the next resume drops
         # it. A session grant would be just as stranded.
-        return False, "run is not live"
+        return False, "the session is not live"
     if session:
         set_session_allow(session_dir)
     write_answer(session_dir, prompt_id, approved=approved)
@@ -214,9 +214,9 @@ def answer_question(
     """Answer a pending `ask_user` prompt (one answer per question, by index)."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
-        return False, "run is not live"  # see approve()
+        return False, "the session is not live"  # see approve()
     write_question_answers(session_dir, question_id, answers)
     return True, "answered"
 
@@ -227,12 +227,12 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     continue, "abort" stops the run (the same contract the TUI steer modal uses)."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
         # A crashed run folds as unfinished, so the composer still offers
         # steer; nothing would ever read the marker (and the next resume
         # deletes it), so refuse like the stop/compact siblings.
-        return False, "run is not live"
+        return False, "the session is not live"
     focus = parse_compact(text)
     if focus is not None:
         # `/compact [focus]` is an out-of-band request, not steer text the
@@ -251,9 +251,9 @@ def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:
     while the run's worker is alive: a live run is steered, not resumed."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if session_is_live(session_dir):
-        return False, "run is still live; steer it instead"
+        return False, "the session is still live; steer it instead"
     err = spawn_detached_resume(cwd, session_dir.name, steer=text)
     return (err == ""), (err or "resuming")
 
@@ -264,9 +264,9 @@ def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:
     stop stays the steer "abort" answer."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
-        return False, "run is not live"
+        return False, "the session is not live"
     request_stop(session_dir)
     return True, "stopping after the current step"
 
@@ -275,9 +275,9 @@ def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to compact its context at the next safe boundary."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
-        return False, f"no run {session_id!r}"
+        return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
-        return False, "run is not live"
+        return False, "the session is not live"
     if not request_compact(session_dir):
         return False, "could not write the compaction request"
     return True, "compaction requested"

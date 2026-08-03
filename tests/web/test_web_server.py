@@ -203,7 +203,7 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body, _ = _get(port, "/api/session/nope")
     assert status == 404
-    assert "no run" in json.loads(body)["error"]
+    assert "no session" in json.loads(body)["error"]
 
 
 def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
