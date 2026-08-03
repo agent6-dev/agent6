@@ -147,7 +147,13 @@ def _run_review_panel(
     except BudgetExceeded as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
-    if result.blocked:
+    inconclusive = result.per_seat and result.n_abstain == len(result.per_seat)
+    if inconclusive:
+        # Every seat failed to produce a review: "0 blocking" is not a pass,
+        # nothing was reviewed. The gate already refuses to count abstains;
+        # the printed verdict must not launder them into a clean bill.
+        verdict = f"INCONCLUSIVE (all {result.n_abstain} seats abstained; nothing was reviewed)"
+    elif result.blocked:
         verdict = "BLOCK"
     elif result.merged_findings:
         verdict = "PASS (with findings)"
@@ -165,7 +171,7 @@ def _run_review_panel(
         status = f"abstain: {v.error}" if v.error else f"{v.verdict} ({len(v.findings)} findings)"
         print(f"  - {v.seat} [{v.model}]: {status}", file=sys.stderr)
     print(budget.format_summary(), file=sys.stderr)
-    return 0
+    return 1 if inconclusive else 0
 
 
 def _cmd_review(  # noqa: PLR0911

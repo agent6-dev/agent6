@@ -326,3 +326,57 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
     res = _agg([_seat("m1", _block("security", "foo.py:8-12"))], decision="veto")
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
+
+
+def test_all_abstain_panel_prints_inconclusive_not_pass(
+    monkeypatch: Any, capsys: Any
+) -> None:
+    """3 seats, 3 abstains, real dollars spent, ZERO review produced -- and the
+    command printed "VERDICT: PASS". Nothing was reviewed; "0 blocking" is not
+    a verdict. (The gate itself is fine: run_panel short-circuits on an
+    all-abstain panel. The PRINTED verdict was the lie, so this pins the CLI.)"""
+    from typing import cast
+
+    from agent6.budget import BudgetTracker
+    from agent6.config import Config
+    from agent6.ui.cli import review_cmds
+
+    class _Seat:
+        persona = "security"
+        tier = "diff"
+
+    abstain = ReviewVerdict(
+        seat="security",
+        model="moonshotai/kimi-k3",
+        verdict="pass",
+        error="unparseable reviewer output",
+    )
+    res = PanelResult(
+        panel_id="cli",
+        decision="advisory",
+        blocked=False,
+        merged_findings=(),
+        per_seat=(abstain, abstain, abstain),
+        n_block=0,
+        n_abstain=3,
+    )
+    monkeypatch.setattr(
+        review_cmds, "build_review_seats", lambda *_a, **_k: [_Seat(), _Seat(), _Seat()]
+    )
+    monkeypatch.setattr(review_cmds, "run_panel", lambda *_a, **_k: res)
+    rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
+        Config(),
+        base="",
+        diff="d",
+        agents_md="",
+        reviewers=3,
+        personas="security,correctness,tests",
+        model_override="",
+        transcript_sink=cast(Any, object()),  # only handed to the mocked seat builder
+        budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
+    )
+    out, err = capsys.readouterr()
+    assert "VERDICT: PASS" not in out
+    assert "INCONCLUSIVE" in out
+    assert "abstained" in out  # the why is on the verdict line, not buried in stderr
+    assert rc == 1  # a panel that reviewed nothing is not a success
