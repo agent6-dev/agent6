@@ -879,3 +879,27 @@ def test_config_fix_skips_an_entry_another_writer_already_fixed(
     assert 'run_commands = "ask"' in cfg.read_text(encoding="utf-8"), (
         "the concurrent writer's value was deleted by a stale diagnosis"
     )
+
+
+def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """TOML `nan` never compares equal to itself, so the under-lock staleness
+    re-check read a still-present nan as "replaced by a concurrent writer",
+    skipped it, and the no-progress break printed "Config is valid; nothing
+    to fix." rc=0 over a config every next command still refuses."""
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text("[sandbox]\nbogus_entry = nan\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert "nothing to fix" not in out  # the config was NOT valid
+    assert rc == 0
+    assert "bogus_entry" in out  # removed and named
+    assert "bogus_entry" not in gpath.read_text(encoding="utf-8")
+    assert main(["config", "show"]) == 0

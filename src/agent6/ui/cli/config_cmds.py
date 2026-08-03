@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import difflib
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -639,7 +640,13 @@ def _entry_is_stale(entry: InvalidEntry) -> bool:
         data = read_toml_file(entry.path)
     except ConfigError:
         return True  # unreadable now: leave it to the loud paths
-    return read_toml_leaf(data, entry.file_key) != entry.value
+    current = read_toml_leaf(data, entry.file_key)
+    if isinstance(current, float) and isinstance(entry.value, float):
+        # nan != nan: a still-present nan entry otherwise reads "replaced by
+        # a concurrent writer" on every pass and can never be removed.
+        if math.isnan(current) and math.isnan(entry.value):
+            return False
+    return current != entry.value
 
 
 def _cmd_config_fix(*, machine: Path | None) -> int:
@@ -712,6 +719,17 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
         print(
             "ERROR: config still invalid (flagged entries could not be auto-removed);"
             f" fix by hand:\n{names}",
+            file=sys.stderr,
+        )
+        return 2
+    # Measure before claiming: a no-progress break lands here with entries in
+    # NO bucket (each read stale under the lock), and "valid"/"fixed" printed
+    # unmeasured over a config every next command still refuses.
+    final = find_invalid_entries(repo_root, machine=machine)
+    if final.removable or final.blocked:
+        print(
+            "ERROR: config still invalid (flagged entries changed under the lock"
+            " this pass); re-run `agent6 config fix` or fix by hand.",
             file=sys.stderr,
         )
         return 2
