@@ -114,7 +114,7 @@ Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `R
 
 - **Written by:** viewmodel/{events}
 - **Read by:** viewmodel/{__init__, listing, state, transcript}
-- **Guarded by:** [golden_run_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_logs.jsonl) (2 test files exercise it)
+- **Guarded by:** [golden_run_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_logs.jsonl) (3 test files exercise it)
 
 ## MachineSpec
 

@@ -15,7 +15,8 @@ ui  ──▶  app  ──▶  workflows  ──▶  tools  ──▶  sandbox
 ```
 
 `ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
-`ui/web` (the three front-ends) and the write helpers `ui/spawn` + `ui/notify`, over the
+`ui/web`, `ui/acp` (the four front-ends) and the write helpers `ui/spawn` +
+`ui/notify`, over the
 shared headless read-model fold (`viewmodel`). `app/` sits between: the
 application pipelines that compose the engine but are not a front-end, taking
 the presentation, process-spawn, and run-dir bridge callables the front-end
@@ -436,12 +437,14 @@ picks it back up by re-reading the real on-disk files. Modelling a fork as a
 commit plus the conversation up to that turn is the design choice: predictable
 and cheap, versus snapshotting uncommitted bytes into every checkpoint.
 
-One headless core, three thin front-ends: the CLI, the Textual TUI
+One headless core, four thin front-ends: the CLI, the Textual TUI
 ([src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui)),
-and the browser web UI
+the browser web UI
 ([src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web),
-`agent6 web`) all fold the same event stream and render their own way. Two shared
-layers sit under all three: the read side
+`agent6 web`), and the ACP agent an editor drives
+([src/agent6/ui/acp/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/acp),
+`agent6 acp`, see [editor integration](acp.md)) all fold the same event stream
+and render their own way. Two shared layers sit under all four: the read side
 [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
 (the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
 `agent6 attach --json` and the web JSON/SSE endpoints emit) and the textual-free

@@ -12,7 +12,6 @@ protocol, different methods.
 from __future__ import annotations
 
 import json
-import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
@@ -26,6 +25,7 @@ from agent6.ui.acp.rpc import (
     RpcError,
 )
 from agent6.ui.acp.session import Sessions, prompt_text
+from agent6.ui.acp.updates import message_update
 
 # The ACP version this front-end speaks. Negotiation is bilateral: the client
 # sends the newest it supports, we answer with this, and the client disconnects
@@ -98,6 +98,8 @@ class ACPServer:
     _pending: dict[object, _Pending] = field(default_factory=dict)
     _pending_lock: threading.Lock = field(default_factory=threading.Lock)
     _next_id: int = 0
+    # The client's end of the pipe is closed; further writes have no reader.
+    _gone: bool = False
 
     def __post_init__(self) -> None:
         self._handlers = {
@@ -243,19 +245,7 @@ class ACPServer:
         try:
             sessions.cancel(sessions.get(params))
         except RpcError as exc:
-            self.notify_raw(
-                {
-                    "jsonrpc": "2.0",
-                    "method": "session/update",
-                    "params": {
-                        "sessionId": params.get("sessionId"),
-                        "update": {
-                            "sessionUpdate": "agent_message_chunk",
-                            "content": {"type": "text", "text": f"[agent6] cancel: {exc.message}"},
-                        },
-                    },
-                }
-            )
+            self.notify_raw(message_update(str(params.get("sessionId")), f"cancel: {exc.message}"))
         return {}
 
     def _sessions(self) -> Sessions:
@@ -302,11 +292,13 @@ class ACPServer:
         the stream, which is worse than a replacement character."""
         line = json.dumps(body, ensure_ascii=False, default=str) + "\n"
         with self._write_lock:
-            self.stdout.write(line.encode("utf-8", "replace"))
-            self.stdout.flush()
-
-
-def serve_acp() -> int:
-    """Entry point: speak ACP on this process's stdio until EOF."""
-    ACPServer(stdin=sys.stdin.buffer, stdout=sys.stdout.buffer).serve()
-    return 0
+            if self._gone:
+                return
+            try:
+                self.stdout.write(line.encode("utf-8", "replace"))
+                self.stdout.flush()
+            except BrokenPipeError:
+                # The editor closed the connection. There is nobody left to
+                # tell, and a live run's tail would otherwise raise once per
+                # event; the run itself keeps going to its next boundary.
+                self._gone = True

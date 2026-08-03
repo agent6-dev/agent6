@@ -21,6 +21,7 @@ from agent6.app._setup import (
 )
 from agent6.config import ConfigError
 from agent6.events import EventWriteError
+from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
     build_ask_run_digest,
     cmd_ask_list,
@@ -565,6 +566,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "review": _dispatch_review,
     "machine": _dispatch_machine,
     "mcp": _dispatch_mcp,
+    "acp": lambda _args: serve_acp(),
     "system": _dispatch_system,
 }
 

@@ -130,6 +130,7 @@ nav:
   - Getting started: getting-started.md
   - Tour: tour.md
   - Web UI: web.md
+  - Editor integration: acp.md
   - Configuration: config.md
   - Security: security.md
   - Architecture: architecture.md

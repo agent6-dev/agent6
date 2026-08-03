@@ -20,9 +20,9 @@ open-ended agent loop.
   vLLM, llama.cpp, LM Studio)
 - Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, a hard
   metered USD budget with a token fallback for calls the meter cannot price
-- Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
-  browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
-  run history
+- Plan, run, review, and ask modes; a live terminal dashboard, a zero-dependency
+  browser UI (`agent6 web`, phone-friendly), and an editor-driven ACP agent
+  (`agent6 acp`); persistent transcripts and a searchable run history
 - Sessions build on each other: `--from <session-id>` seeds a new run or ask with
   another session's context (the source is untouched -- keeping a session's mode is
   `fork`), a session can read this project's other sessions, and `/btw <question>`
@@ -84,10 +84,11 @@ agent6 model worker anthropic claude-sonnet-4-6
 cd your-repo
 agent6 run "add a --json output mode to the CLI"
 
-# Watch and drive runs from a terminal, a full-screen TUI, or a browser.
+# Watch and drive runs from a terminal, a full-screen TUI, a browser, or an editor.
 agent6 attach <run-id>        # follow + answer a run live (default: conversation view; --raw for the event stream)
 agent6 tui                    # full-screen dashboard hub
 agent6 web                    # browser UI on http://127.0.0.1:7658 (phone-friendly)
+agent6 acp                    # speak ACP on stdio; an editor spawns this
 
 # Audit the effective config, pre-flight the sandbox, resume or fork a run.
 agent6 config show

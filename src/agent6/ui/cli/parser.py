@@ -292,6 +292,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
 
+    _sub(
+        sub,
+        "acp",
+        help=(
+            "Run agent6 as an ACP (Agent Client Protocol) agent, driven by an"
+            " editor. Speaks line-delimited JSON-RPC on stdin/stdout; the"
+            " editor spawns this, so nothing else may write to stdout. Config"
+            " comes from each session's own directory."
+        ),
+    )
+
     _add_machine_parser(sub)
 
     return parser

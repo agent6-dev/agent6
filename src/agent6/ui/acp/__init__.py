@@ -26,6 +26,7 @@ the capability as absent rather than half-answering it.
 
 from __future__ import annotations
 
-from agent6.ui.acp.server import ACPServer, serve_acp
+from agent6.ui.acp.runner import serve_acp
+from agent6.ui.acp.server import ACPServer
 
 __all__ = ["ACPServer", "serve_acp"]

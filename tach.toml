@@ -86,6 +86,7 @@ depends_on = [
   "agent6.portable",
   "agent6.ui.tui",
   "agent6.ui.web",
+  "agent6.ui.acp",
   "agent6.ui.spawn",
   "agent6.ui.notify",
   "agent6.viewmodel",
@@ -158,6 +159,7 @@ depends_on = [
   "agent6.app",
   "agent6.budget",
   "agent6.config",
+  "agent6.config.layer",
   "agent6.events",
   "agent6.runs.id",
   # session/cancel drops the same stop marker the TUI and web do: a marker,
@@ -166,6 +168,9 @@ depends_on = [
   "agent6.runs.layout",
   "agent6.tools.schema",
   "agent6.types",
+  # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
+  # affordance, not a CLI one.
+  "agent6.ui.spawn",
   # session/update is the shared transcript fold, projected. Reading the
   # journal again with ACP's own rules is how a fourth surface starts
   # disagreeing with the other three about what happened.

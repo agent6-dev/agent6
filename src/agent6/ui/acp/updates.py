@@ -107,6 +107,20 @@ def updates_for_events(events: list[dict[str, Any]], *, session_id: str) -> list
     return out
 
 
+def message_update(session_id: str, text: str) -> dict[str, Any]:
+    """One line of agent6's own prose, as a `session/update`.
+
+    What the harness says when there is no run to say it: a cancel for a
+    session that does not exist, a run that died before it had a journal. Both
+    otherwise wrote zero bytes, and an editor cannot render silence. Marked as
+    agent6's own, because the model did not say it.
+    """
+    return _update(
+        session_id,
+        {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}")},
+    )
+
+
 def _update(session_id: str, update: dict[str, Any]) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
