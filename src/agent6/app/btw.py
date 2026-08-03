@@ -104,8 +104,13 @@ def btw_answer(session: BtwSession) -> str | None:
     finish_run), so the last assistant message is the answer. A session that
     ended without one says so rather than rendering blank.
     """
+    # "created" is the window between the child making its dir -- which is what
+    # `start_btw` waits for -- and writing its worker pid. Reading it as an
+    # ending declared a btw dead on the watcher's FIRST poll, and the watcher
+    # then stopped looking: the session ran to completion and its answer was
+    # never collected.
     status = summarize_run_dir(session.dir).status
-    if status in {"running", "starting", "waiting"}:
+    if status in {"created", "running", "starting", "waiting"}:
         return None
     return _final_prose(session.dir) or f"(the btw ended without an answer: {status})"
 

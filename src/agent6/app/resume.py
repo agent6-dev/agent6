@@ -722,7 +722,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # that printed only a run banner left the operator with nothing to
             # read and a transcript.md still holding the first leg's answer.
             reporter.out(result.summary)
-            frontend.save_ask_transcript(layout, manifest.user_task, result.summary)
+            # The follow-up this leg answered, not the run's original task: a
+            # `--steer` question that never appeared made the second answer
+            # read as more of the answer to the first.
+            frontend.save_ask_transcript(
+                layout, steer.strip() or manifest.user_task, result.summary
+            )
             reporter.err(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}")
             reporter.err(budget.format_summary())
             return 0 if result.completed else 1

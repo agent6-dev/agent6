@@ -244,13 +244,15 @@ def seed_files(cwd: Path, files: list[str]) -> str:
 def save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> None:
     """Write the human-readable `ask` transcript (question + markdown answer).
 
-    A resumed ask appends: the file exists only because an earlier leg wrote
-    it, and overwriting would drop the answer the operator already has.
+    A resumed ask appends its own Q&A: the file exists only because an earlier
+    leg wrote it, and overwriting would drop the answer the operator already
+    has. Both halves are appended -- a bare second answer under the FIRST
+    question read as a continuation of an answer to something else.
     """
     out = layout.run_dir / "transcript.md"
     if out.is_file():
         with out.open("a", encoding="utf-8") as fh:
-            fh.write(f"\n## Answer (continued)\n\n{answer}\n")
+            fh.write(f"\n## Question (continued)\n\n{question}\n\n## Answer\n\n{answer}\n")
         return
     out.write_text(
         f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n{answer}\n",

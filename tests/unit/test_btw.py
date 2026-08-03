@@ -131,3 +131,20 @@ def test_the_block_is_fenced_and_names_how_to_go_deeper() -> None:
     assert block.startswith("\n--- btw: why\n")
     assert "because" in block
     assert "agent6 resume quiet-fox-AAAAAA" in block
+
+
+def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> None:
+    """`start_btw` returns as soon as the session DIR appears, which is a few
+    ms before the child writes its worker pid. Reading that window as an ending
+    made the watcher emit "(ended without an answer: created)" on its first
+    poll and stop looking, while the btw ran on and answered."""
+    from agent6.app.btw import BtwSession, btw_answer
+
+    d = tmp_path / "asks" / "quiet-fox-AAAAAA"
+    d.mkdir(parents=True)
+    session = BtwSession(id=d.name, dir=d, question="why h265")
+
+    assert btw_answer(session) is None, "a dir with no worker yet is not an ending"
+
+    (d / "worker.pid").write_text("1\n", encoding="utf-8")
+    assert btw_answer(session) is None
