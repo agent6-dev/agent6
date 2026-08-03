@@ -478,7 +478,7 @@ def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Lay
 
 def _apply_preset(layers: list[Layer], profile_override: str) -> list[Layer]:
     """Strip ``[presets]`` tables out of the user layers (they are meta-config,
-    not part of the validated Config) and inject the selected preset preset
+    not part of the validated Config) and inject the selected preset
     just ABOVE the config layer that SELECTED it, so the preset OVERRIDES that
     config while a more-specific config layer (or an explicit ``--config FILE`` /
     machine overlay) still overrides the preset. Only the most-specific source's

@@ -29,7 +29,7 @@ def _complete_providers(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_presets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: built-in preset presets + configured [presets.*] names."""
+    """argcomplete: built-in presets + configured [presets.*] names."""
     return [n for n in available_profile_names(Path.cwd()) if n.startswith(prefix)]
 
 

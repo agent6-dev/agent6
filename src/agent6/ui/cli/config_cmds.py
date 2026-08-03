@@ -181,7 +181,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
         if key == table or key.startswith(f"{table}."):
             return (
                 f"machine [config] overlays must not set {table}.*:"
-                " connections/secrets, sandbox policy, and preset presets are"
+                " connections/secrets, sandbox policy, and strategy presets are"
                 " operator-only (global/repo config)"
             )
     for dotted, why in PROTECTED_OVERLAY_LEAVES.items():

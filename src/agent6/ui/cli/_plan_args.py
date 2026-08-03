@@ -37,7 +37,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     plan_run.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     plan_profile = plan_run.add_argument(
-        "--preset", default="", help="Config preset preset (see `agent6 run --preset`)."
+        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
     plan_profile.completer = _complete_presets  # type: ignore[attr-defined]
     plan_run.add_argument(
@@ -89,7 +89,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
     ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
     ask_profile = ask_query.add_argument(
-        "--preset", default="", help="Config preset preset (see `agent6 run --preset`)."
+        "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
     ask_profile.completer = _complete_presets  # type: ignore[attr-defined]
     ask_query.add_argument(

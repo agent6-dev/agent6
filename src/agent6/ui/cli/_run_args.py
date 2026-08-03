@@ -40,7 +40,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     run_profile = run_p.add_argument(
         "--preset",
         default="",
-        help="Config preset preset (quick/standard/ultra/paranoid or a custom"
+        help="Strategy preset (quick/standard/ultra/paranoid or a custom"
         " [presets.<name>]). Overrides the top-level `preset` key and your config"
         " files; an explicit --config FILE or individual flags still win.",
     )
