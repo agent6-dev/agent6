@@ -146,6 +146,14 @@ path = "agent6.ui.notify"
 depends_on = []
 
 [[modules]]
+# The ACP front-end: JSON-RPC 2.0 over stdio, driven by an editor. Renders the
+# same viewmodel folds every other surface does and drives the same app
+# lifecycle, so `initialize`'s capability exchange maps onto
+# FrontendCapabilities rather than needing plumbing of its own.
+path = "agent6.ui.acp"
+depends_on = ["agent6", "agent6.app"]
+
+[[modules]]
 # The web UI: a stdlib HTTP server + one embedded page. Renders the shared
 # view-model folds (viewmodel), the effective config (config_layer), and the
 # conversation (the viewmodel transcript folds), reading run/machine dirs it
