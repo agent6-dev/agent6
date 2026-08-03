@@ -47,6 +47,7 @@ from agent6.app.manifest import (
 )
 from agent6.app.preflight import (
     BranchChoice,
+    drop_gate_if_unrunnable,
     headless_approval_refusal,
     infer_verify_if_unset,
 )
@@ -99,7 +100,7 @@ from agent6.runs.lock import (
     repo_writer_holder,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
@@ -202,7 +203,7 @@ class RunFrontend:
     loop_logger: Callable[[str], Callable[[str], None]]
     tui_session: Callable[[Path, bool], AbstractContextManager[None]]
     # operator interaction
-    build_approver: Callable[[Path, EventSink], Callable[[str], bool]]
+    build_approver: Callable[[Path, EventSink], Approver]
     build_questioner: Callable[
         [Path, EventSink], Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
     ]
@@ -589,6 +590,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
         # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
         configured_gate = bool(cfg.workflow.verify_command)
+        cfg = drop_gate_if_unrunnable(cfg, run_dir=layout.run_dir, reporter=reporter)
         cfg = infer_verify_if_unset(
             cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
         )

@@ -796,7 +796,11 @@ def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
     from agent6.tools.errors import ToolDenied
 
     cfg = _config_with_run_commands(tmp_path, "ask")
-    d = ToolDispatcher(root=tmp_path, config=cfg, approver=lambda _prompt: False)
+
+    def _no(_prompt: str, /, *, standing: bool = True) -> bool:
+        return False
+
+    d = ToolDispatcher(root=tmp_path, config=cfg, approver=_no)
     with pytest.raises(ToolDenied, match=r"not approved \(sandbox.run_commands='ask'\)"):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
 
@@ -1624,7 +1628,7 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
 
     asked: list[str] = []
 
-    def refuse(prompt: str) -> bool:
+    def refuse(prompt: str, /, *, standing: bool = True) -> bool:
         asked.append(prompt)
         return False
 

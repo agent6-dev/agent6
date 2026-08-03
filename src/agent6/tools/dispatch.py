@@ -166,11 +166,11 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, str]:
     }
 
 
-class _Approver(Protocol):
-    def __call__(self, prompt: str, /) -> bool: ...
+class Approver(Protocol):
+    def __call__(self, prompt: str, /, *, standing: bool = True) -> bool: ...
 
 
-def _default_approver(prompt: str) -> bool:  # pragma: no cover — interactive
+def _default_approver(prompt: str, /, *, standing: bool = True) -> bool:  # pragma: no cover
     try:
         ans = input(f"{prompt} [y/N] ").strip().lower()
     except EOFError:
@@ -295,7 +295,7 @@ class ToolDispatcher:
         root: Path,
         config: Config,
         isolation: IsolationLevel = "strict",
-        approver: _Approver | None = None,
+        approver: Approver | None = None,
         questioner: _Questioner | None = None,
         events: EventSink | None = None,
         curator: GraphCurator | None = None,
@@ -321,7 +321,7 @@ class ToolDispatcher:
         # .asm.toml + scripts bundle, so an agent state can't rewrite them
         # mid-run).
         self._extra_protect_paths = extra_protect_paths
-        self._approver: _Approver = approver or _default_approver
+        self._approver: Approver = approver or _default_approver
         self._questioner: _Questioner = questioner or _default_questioner
         self._events = events
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
@@ -538,6 +538,8 @@ class ToolDispatcher:
             raise ToolError(f"Unknown tool: {name}")
         if name in _COMMAND_TOOLS and self.command_policy() == "no":
             raise ToolError(f"{name} is not available (run_commands = 'no')")
+        if name == FetchInput.TOOL_NAME and self._config.sandbox.tool_network == "allow":
+            raise ToolError(f"{name} is not available (a jailed command has the network)")
         if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1" and name in {
             OutlineInput.TOOL_NAME,
             FindDefinitionInput.TOOL_NAME,
@@ -772,7 +774,7 @@ class ToolDispatcher:
     def _fetch(self, raw: dict[str, Any]) -> FetchResult:
         args = FetchInput.model_validate(raw)
         try:
-            host = check_url(args.url)
+            target = check_url(args.url)
         except FetchRefused as exc:
             raise ToolError(str(exc)) from exc
         # On the list: read it. Off the list: ask. The list IS the standing
@@ -780,14 +782,14 @@ class ToolDispatcher:
         # but a GET can carry data out in its path, so a host the operator
         # never named is their call, and an absent one is a no (the away-mode
         # approver refuses without waiting).
-        if not host_allowed(host, self._config.sandbox.fetch_hosts) and not self._approver(
-            f"Allow fetch: {args.url}"
+        if not host_allowed(target.host, self._config.sandbox.fetch_hosts) and not self._approver(
+            f"Allow fetch: {target.prompt()}", standing=False
         ):
             raise ToolDenied(
-                f"fetch not approved for {host} (add it to sandbox.fetch_hosts to allow it)"
+                f"fetch not approved for {target.host} (add it to sandbox.fetch_hosts to allow it)"
             )
         try:
-            got = fetch(args.url)
+            got = fetch(target)
         except FetchRefused as exc:
             raise ToolError(str(exc)) from exc
         return FetchResult(
@@ -795,6 +797,7 @@ class ToolDispatcher:
             status=got.status,
             content_type=got.content_type,
             body=got.body,
+            location=got.location,
         )
 
     def _read_session(self, raw: dict[str, Any]) -> SessionsResult:

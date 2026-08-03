@@ -69,7 +69,7 @@ from agent6.runs.ipc import (
     session_allow_set,
     steer_request_pending,
 )
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
 from agent6.workflows.loop import Workflow
@@ -150,7 +150,7 @@ class _MachineBridges:
     already tails, so its RunState fold surfaces them like a run's.
     """
 
-    approve: Callable[[str], bool]
+    approve: Approver
     ask: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
     steer_requested: Callable[[], bool]
     steer_clear: Callable[[], None]
@@ -172,7 +172,7 @@ def _build_machine_bridges(
     clear_pending_answers(state_dir)
     counters = {"approval": 0, "question": 0}
 
-    def approve(prompt: str) -> bool:
+    def approve(prompt: str, /, *, standing: bool = True) -> bool:
         counters["approval"] += 1
         prompt_id = f"approval-{counters['approval']}"
         # A prior "allow session" for this agent state auto-passes every later prompt.

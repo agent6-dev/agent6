@@ -111,7 +111,11 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> N
     d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=tmp_path)
 
     answers = iter(["no", "no", "yes"])
-    d._approver = lambda _p: next(answers) == "yes"  # pyright: ignore[reportPrivateUsage]
+
+    def _answer(_p: str, /, *, standing: bool = True) -> bool:
+        return next(answers) == "yes"
+
+    d._approver = _answer  # pyright: ignore[reportPrivateUsage]
     for _ in range(2):
         with pytest.raises(Exception, match="not approved"):
             d.dispatch("run_command", {"argv": ["true"]})

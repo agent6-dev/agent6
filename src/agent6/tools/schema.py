@@ -728,13 +728,15 @@ def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeT
         # the deliverable is the finish_run payload, and command tools only
         # tempt a weak model into spelunking.
         # `ask` keeps run_command for read-only, approval-gated investigation.
-        # read_session goes with them: a machine state answers about ITS input,
-        # and this project's run history is neither its business nor, in a
-        # machine run against another repo, even about the same work.
+        # read_session and fetch go with them: a machine state answers about
+        # ITS input, so this project's run history is not its business, and
+        # neither is the network -- a deliverable assembled from a page the
+        # state fetched is not the deliverable the operator asked for.
         blocked |= {
             RunVerifyInput.TOOL_NAME,
             RunCommandInput.TOOL_NAME,
             ReadSessionInput.TOOL_NAME,
+            FetchInput.TOOL_NAME,
         }
     if mode != "run":
         # Only a run can own a background command's lifetime: every other mode

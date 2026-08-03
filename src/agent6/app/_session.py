@@ -37,7 +37,7 @@ from agent6.graph.curator import GraphCurator
 from agent6.providers import Provider, TranscriptSink
 from agent6.runs.layout import RunLayout
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
-from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
@@ -184,7 +184,7 @@ def build_session_tools(
     isolation: IsolationLevel,
     mode: Literal["run", "plan", "ask"],
     events: EventSink,
-    approver: Callable[[str], bool],
+    approver: Approver,
     questioner: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]],
     loop_log: Callable[[str], None],
     mcp_manager: MCPManager | None,

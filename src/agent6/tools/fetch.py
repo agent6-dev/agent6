@@ -8,7 +8,7 @@ move is to ask the operator and wait. This runs in the AGENT process, which
 already has egress, and hands the bytes back as a tool result.
 
 Not a crawler and not a client: one URL, GET only, no redirects followed, no
-headers or body from the model, and no credential ever sent. Every refusal is
+header or body the model chose, and no credential ever sent. Every refusal is
 a default-deny -- a scheme that is not https, an address that is not global, a
 body that is not text -- rather than a list of bad things.
 
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -50,6 +51,9 @@ class Fetched:
     status: int
     content_type: str
     body: str
+    # A 30x's target, handed back for the model to decide on rather than
+    # followed.
+    location: str = ""
 
 
 def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
@@ -72,17 +76,45 @@ def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
     return False
 
 
-def check_url(url: str) -> str:
-    """Return *url*'s host, or raise ``FetchRefused``.
+@dataclass(frozen=True, slots=True)
+class Target:
+    """A vetted URL: the address to dial, and the name to prove."""
 
-    Everything a URL must be before anyone is asked about it: https, a real
-    host, and a host that resolves only to addresses on the public internet.
-    The last one is what keeps a fetch away from the cloud metadata endpoint
+    url: str
+    host: str
+    address: str
+
+    def prompt(self) -> str:
+        """What the operator is asked. The RESOLVED host, never the raw URL:
+        `https://docs.python.org@evil.example/x` reads as the first and
+        connects to the second."""
+        path = urlsplit(self.url).path or "/"
+        return f"{self.host} ({self.address}) {path[:200]}"
+
+
+def check_url(url: str) -> Target:
+    """Vet *url* and pin the address it may be fetched from, or raise.
+
+    Everything it must be before anyone is asked about it: https, no
+    credentials, a real host, and a host resolving only to public addresses.
+    That last one is what keeps a fetch away from the cloud metadata endpoint
     (169.254.169.254), a loopback admin port, or the operator's LAN.
+
+    The chosen ADDRESS comes back with it, and `fetch` dials exactly that.
+    Handing the name onward instead let two resolvers disagree: CPython's
+    `getaddrinfo` encodes an international name with IDNA2003 and httpx with
+    UTS-46, so `ßeta.example.com` was vetted as `sseta.example.com` and
+    connected to `xn--eta-4ka.example.com` -- a different host entirely, and a
+    complete bypass needing no race at all. Re-resolving also reopened the
+    plain rebinding window.
     """
     parts = urlsplit(url)
     if parts.scheme != "https":
         raise FetchRefused(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")
+    if parts.username or parts.password:
+        # httpx turns userinfo into an Authorization header, so this is the
+        # model choosing a credential as well as disguising the real host.
+        raise FetchRefused("a URL with credentials in it is not fetched")
     host = parts.hostname
     if not host:
         raise FetchRefused("no host in the URL")
@@ -90,30 +122,44 @@ def check_url(url: str) -> str:
         infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
     except OSError as exc:
         raise FetchRefused(f"{host} does not resolve: {exc}") from exc
+    chosen = ""
     for info in infos:
         addr = ipaddress.ip_address(str(info[4][0]))
         if not addr.is_global:
             raise FetchRefused(f"{host} resolves to {addr}, which is not a public address")
-    return host
+        chosen = chosen or str(addr)
+    if not chosen:
+        raise FetchRefused(f"{host} resolves to nothing")
+    return Target(url=url, host=host, address=chosen)
 
 
-def fetch(url: str) -> Fetched:
-    """GET *url*, refusing anything that is not a bounded text response.
+def fetch(target: Target) -> Fetched:
+    """GET *target*, refusing anything that is not a bounded text response.
+
+    Dials the vetted ADDRESS with the original name in SNI and Host, so the
+    certificate is still proved against the name while no second DNS answer
+    can move it.
 
     Redirects are returned, not followed: a 30x hands its Location back for the
     model to decide on, which re-runs every check. Following them silently is
     how one allowed host becomes an open proxy to every other.
-
-    ``check_url`` must have passed first. Between its DNS answer and this
-    connection a hostile resolver could still move the name to a private
-    address; closing that needs pinning the checked address and carrying the
-    name through TLS, which is worth doing if this tool grows past reading
-    docs.
     """
+    parts = urlsplit(target.url)
+    literal = f"[{target.address}]" if ":" in target.address else target.address
+    dialled = parts._replace(netloc=f"{literal}:{parts.port or 443}").geturl()
+    deadline = time.monotonic() + TIMEOUT_S
     try:
         with (
-            httpx2.Client(follow_redirects=False, timeout=TIMEOUT_S) as client,
-            client.stream("GET", url) as response,
+            httpx2.Client(follow_redirects=False, timeout=TIMEOUT_S, verify=True) as client,
+            client.stream(
+                "GET",
+                dialled,
+                # No compression: `iter_bytes` yields DECODED bytes, so the cap
+                # below ran only after zstd had already expanded 256 KB into
+                # 8 GiB and taken the agent process with it.
+                headers={"Host": target.host, "Accept-Encoding": "identity"},
+                extensions={"sni_hostname": target.host},
+            ) as response,
         ):
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(_TEXTUAL):
@@ -123,11 +169,17 @@ def fetch(url: str) -> Fetched:
                 body += chunk
                 if len(body) > MAX_BYTES:
                     raise FetchRefused(f"response is larger than {MAX_BYTES} bytes")
+                if time.monotonic() > deadline:
+                    # A total deadline, not httpx's per-read one: a server
+                    # dribbling a byte every 15s never trips a read timeout and
+                    # held the run for as long as it liked.
+                    raise FetchRefused(f"response was still arriving after {TIMEOUT_S:g}s")
             return Fetched(
-                url=url,
+                url=target.url,
                 status=response.status_code,
                 content_type=content_type,
                 body=bytes(body).decode(response.encoding or "utf-8", errors="replace"),
+                location=response.headers.get("location", ""),
             )
     except httpx2.HTTPError as exc:
-        raise FetchRefused(f"could not fetch {url}: {exc}") from exc
+        raise FetchRefused(f"could not fetch {target.url}: {exc}") from exc

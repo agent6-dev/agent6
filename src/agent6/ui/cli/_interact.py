@@ -35,7 +35,8 @@ from agent6.ui.cli._steer import (
 )
 
 if TYPE_CHECKING:
-    from agent6.ui.cli._console_view import ConsoleView
+    from agent6.tools.dispatch import Approver
+from agent6.ui.cli._console_view import ConsoleView
 
 
 def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
@@ -128,8 +129,8 @@ def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> ob
 
 def build_approver(
     run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
-) -> Callable[[str], bool]:
-    """Build the `run_command` approver, bridged to a live TUI when present.
+) -> Approver:
+    """Build the command approver, bridged to a live TUI when present.
 
     Emits an `approval.prompt` event; if a TUI is live (it wrote `front-end claim`) the
     answer comes from its Allow/Deny modal via the file bridge
@@ -138,11 +139,15 @@ def build_approver(
     This is what wires the watch/auto-spawn TUI to run_command approval."""
     counter = {"n": 0}
 
-    def approve(prompt: str) -> bool:
+    def approve(prompt: str, *, standing: bool = True) -> bool:
         counter["n"] += 1
         prompt_id = f"approval-{counter['n']}"
         # Already granted for the session (this run + its resumes) -> auto-pass.
-        if session_allow_set(run_dir):
+        # `standing=False` opts out: the operator granted "allow every command",
+        # and both the prompt they answered and the modal they clicked say
+        # exactly that. Reading it as consent for the network too turned one
+        # keystroke into unlimited egress for the rest of the run.
+        if standing and session_allow_set(run_dir):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
         # Clear any premature answer for this id, then emit the prompt so ANY live
