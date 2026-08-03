@@ -54,8 +54,8 @@ from agent6.paths import cache_dir, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
-from agent6.viewmodel import died_without_end, summarize_session_dir
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel import produced_result, summarize_session_dir
+from agent6.viewmodel.format import format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -343,7 +343,9 @@ def run_lane_to_completion(
     stamp `<group>` lineage. Returns a LaneResult whose `session_dir` is the imported
     dir on success; `ok=False` (nothing imported, *origin* untouched for this
     lane) when the lane failed to start, was still running at teardown, or its
-    import was refused. The coordinator runs a group of these on a thread pool, so
+    import was refused -- and also for an imported lane that produced no result
+    (`produced_result`): its branch is safe in the origin but never joins as a
+    success. The coordinator runs a group of these on a thread pool, so
     each is self-contained per lane; *import_lock*, when given, serializes the
     git-mutating import step across that group (concurrent fetches into one repo
     race on refs/objects). *host_lane_launch* (set when the coordinator is inside
@@ -413,17 +415,17 @@ def run_lane_to_completion(
     # safe: each lane removes only its own dirs, and the group-dir rmdir inside
     # _cleanup succeeds only for whichever lane empties it last.
     _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
-    status = summarize_session_dir(dest).status
-    if died_without_end(status):
-        # The branch is imported (nothing lost), but the lane never finished:
-        # joining it into the coordinator as a success told the model "joined
-        # at <sha>" for half-done work.
+    summary = summarize_session_dir(dest)
+    if not produced_result(summary.status):
+        # The branch is imported (nothing lost), but only a deliberate end may
+        # join the coordinator as a success.
         return LaneResult(
             spec=spec,
             session_dir=dest,
             branch=res.branch,
             ok=False,
-            error=f"crashed before finishing ({status}); branch imported as {res.branch}",
+            error=f"no result ({status_label(summary.status, summary.reason)});"
+            f" branch imported as {res.branch}",
         )
     return LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")
 
@@ -786,7 +788,9 @@ def _import_lanes(
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[list[CandidateBrief], list[tuple[LaneResult, str]], list[LaneSpec]]:
     """Import each finished lane's branch + run dir into the origin, stamp its
-    lineage, and build a candidate brief from it. Returns (candidates, failed,
+    lineage, and build a candidate brief from it -- for lanes that produced a
+    result; an imported lane without one (`produced_result`) is recorded as
+    failed instead, its work safe in the origin. Returns (candidates, failed,
     imported specs); only imported lanes are safe to clean up. A failed-to-start,
     still-running, or import-refused lane is recorded and never blocks the
     others; its clone, state, and live symlink stay in place (they may hold the
@@ -829,31 +833,14 @@ def _import_lanes(
                 f" lineage stamp failed: {stamp_err}"
             )
         summary = summarize_session_dir(dest)
-        if summary.status == "failed":
-            # Imported, but not a candidate. "failed" is reserved for a run that
-            # did not finish deliberately (provider_error, went_quiet); a
-            # deliberate finish over a red gate is "finished" and still ranks,
-            # below the green ones. Ranking a failure stamped it `winner` in its
-            # manifest, put a star on it in every listing, and printed a merge
-            # command for a branch with nothing on it.
+        if not produced_result(summary.status):
+            # Imported (its branch is safe in the origin) but not a candidate:
+            # only a deliberate end is rankable work.
             failed.append(
                 (
                     res,
-                    f"failed ({summary.reason or 'no reason recorded'}); branch imported as"
-                    f" {res.branch}, not ranked",
-                )
-            )
-            continue
-        if died_without_end(summary.status):
-            # Imported (its branch is safe in the origin) but NOT a candidate:
-            # verify_ok reads a crash as the same tri-state as a clean unverified
-            # finish, so ranking by cost floated the earliest-crashing lane to
-            # first place and stamped it the winner.
-            failed.append(
-                (
-                    res,
-                    f"crashed before finishing ({summary.status}); branch imported as"
-                    f" {res.branch}, not ranked",
+                    f"no result ({status_label(summary.status, summary.reason)});"
+                    f" branch imported as {res.branch}, not ranked",
                 )
             )
             continue

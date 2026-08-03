@@ -257,17 +257,31 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
 
 # Status words for a run that reached terminal WITHOUT its own session.end: the
 # worker died (stale) or never started (created/parked/?). The fan-out's
-# awaiting gate deliberately accepts them so an await cannot hang, but they are
-# not results: such a run must never rank as a candidate, win a compare, or join
-# a coordinator's branch as a successful lane. Its verify reads the same
-# tri-state None as a clean unverified finish and its spend is truncated to the
-# lowest, so ranking floats it to first place unless this gate stops it.
+# awaiting gate deliberately accepts them so an await cannot hang; the web live
+# view closes their stream, and `sessions compare` screens them out (no verdict
+# to compare, spend truncated at the death).
 _DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
 
 
 def died_without_end(status: str) -> bool:
     """Whether *status* is a session that never reached its own ``session.end``."""
     return status in _DIED_WITHOUT_END
+
+
+# Status words for a session that ended deliberately: its own clean session.end
+# (passed/finished/planned/answered) or the operator's stop. Only these are
+# results a fan-out may rank, crown, or join; "failed" (an abnormal end:
+# provider_error, went_quiet, ...), a died-without-end word, or a live word is
+# work with no verdict. A positive set: an unknown new status word is not a
+# result until it earns membership.
+_RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"})
+
+
+def produced_result(status: str) -> bool:
+    """Whether the session ended deliberately and left mergeable work: THE
+    lane-candidacy question -- only such a lane ranks, wins a compare, or
+    joins a coordinator's branch."""
+    return status in _RESULT_WORDS
 
 
 # Status words for a run that can still receive operator input over the file

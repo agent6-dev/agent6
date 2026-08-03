@@ -1171,6 +1171,77 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     assert not branch_exists(origin, "agent6/co-p1-l1")
 
 
+def test_a_failed_lane_never_joins_the_coordinator(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """`/parallel` dispatch gated only on died-without-end, so a lane that ended
+    `provider_error` (folded "failed") came back ok=True: join_lane_result
+    merged its half-done branch into the coordinator's checkout and told the
+    model "joined at <sha>". Candidacy is ONE question (`produced_result`),
+    the same one the fan-out asks."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    spawner = _FakeSpawner(
+        origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "failed"}
+    )
+    spec = LaneSpec(
+        lane=1, session_id="co-pf-l1", workdir=tmp_path / "work" / "co-pf-l1", model=None
+    )
+
+    res = parallel.run_lane_to_completion(
+        spec,
+        "do it",
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        group="pf",
+        runtime=runtime,
+        spawner=spawner,
+        poll_interval_s=0.01,
+    )
+
+    assert res.ok is False
+    assert "failed" in res.error and "provider error" in res.error
+    # The work is not lost: the branch was imported before the verdict.
+    assert "agent6/co-pf-l1" in res.error
+    assert branch_exists(origin, "agent6/co-pf-l1")
+
+
+def test_a_crashed_lane_never_joins_the_coordinator(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """The died-without-end half of the same gate (a lane with no session.end
+    folds "stale"): imported, named in the error, never joined."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    spawner = _FakeSpawner(
+        origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "stale"}
+    )
+    spec = LaneSpec(
+        lane=1, session_id="co-ps-l1", workdir=tmp_path / "work" / "co-ps-l1", model=None
+    )
+
+    res = parallel.run_lane_to_completion(
+        spec,
+        "do it",
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        group="ps",
+        runtime=runtime,
+        spawner=spawner,
+        poll_interval_s=0.01,
+    )
+
+    assert res.ok is False
+    assert "stale" in res.error and "agent6/co-ps-l1" in res.error
+    assert branch_exists(origin, "agent6/co-ps-l1")
+
+
 def test_build_lane_spawner_over_cap_refused(
     origin: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
@@ -1440,7 +1511,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     )
     assert rc == 0
     out = "".join(capsys.readouterr())
-    # The crashed lane never wins, and the surface says it crashed.
+    # The crashed lane never wins, and the surface names the missing result.
     crashed = json.loads(
         (origin_state / "sessions" / "runs" / "crsh-l1" / "manifest.json").read_text(
             encoding="utf-8"
@@ -1453,7 +1524,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
         )
     )
     assert survivor["compare"]["winner"] is True
-    assert "crsh-l1" in out and "crashed" in out
+    assert "crsh-l1" in out and "no result (stale)" in out
 
 
 def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
