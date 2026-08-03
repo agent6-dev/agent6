@@ -164,7 +164,10 @@ class RunManifest(BaseModel):
     version: int = MANIFEST_VERSION
     agent6_version: str = ""
     run_id: str = ""
-    mode: str = "run"  # run | plan; privilege-gated strictly via strict_mode()
+    # No default mode: the field is the privilege gate's only input, and a
+    # manifest that lost the key (truncated, hand-edited, foreign writer) must
+    # not read as the more-privileged "run". Display consumers show "?" for it.
+    mode: str = ""
     start_ts: str = ""
     user_task: str = ""
     base_sha: str = ""

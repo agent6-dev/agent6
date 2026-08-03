@@ -36,7 +36,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `version` | `int` | `MANIFEST_VERSION` |
 | `agent6_version` | `str` | `''` |
 | `run_id` | `str` | `''` |
-| `mode` | `str` | `'run'` |
+| `mode` | `str` | `''` |
 | `start_ts` | `str` | `''` |
 | `user_task` | `str` | `''` |
 | `base_sha` | `str` | `''` |

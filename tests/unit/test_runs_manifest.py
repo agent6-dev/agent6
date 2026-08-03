@@ -36,7 +36,9 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: Path) -> None:
     _write(tmp_path, {})
     m = read_manifest(tmp_path)
     assert m.version == MANIFEST_VERSION
-    assert m.mode == "run"
+    # mode has NO default: it is the privilege gate's input (see the
+    # fall-open test below), so an absent key stays absent.
+    assert m.mode == ""
     assert m.run_branch is None
     assert m.models.driver is None
     assert m.merged is None and m.compare is None
@@ -333,3 +335,20 @@ def test_legacy_worker_brief_reads_as_the_driver(tmp_path: Path) -> None:
     _write(tmp_path, {"version": 2, "models": {"worker": {"provider": "p", "model": "m"}}})
     driver = read_manifest(tmp_path).models.driver
     assert driver is not None and driver.model == "m"
+
+
+def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -> None:
+    """The privilege gate refused an unknown mode VALUE but not a missing KEY:
+    the field defaulted to "run", so a manifest that lost its mode (truncated,
+    hand-edited, written by something else) resumed or forked with the
+    write-tool surface -- the exact escalation strict_mode exists to stop."""
+    _write(tmp_path, {"version": 3, "run_id": "r", "user_task": "t"})
+    m = read_manifest(tmp_path)
+    with pytest.raises(ManifestError, match="unknown run mode"):
+        m.strict_mode()
+
+
+def test_a_plan_manifest_still_gates_as_plan(tmp_path: Path) -> None:
+    for mode in ("run", "plan"):
+        _write(tmp_path, {"version": 3, "mode": mode})
+        assert read_manifest(tmp_path).strict_mode() == mode

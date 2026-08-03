@@ -86,7 +86,10 @@ def write_run_manifest(
     m = RunManifest(
         agent6_version=__version__,
         run_id=run_id,
-        mode=mode,  # run | plan (ask runs live under asks/, not here)
+        # run | plan | ask. Only run/plan pass strict_mode (the fork/resume
+        # privilege gate); an ask writes its manifest under asks/, which
+        # neither command looks in.
+        mode=mode,
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         # Display stamp only; RunSnapshot.original_task carries the verbatim
         # engine copy. Truncation here must never feed the engine.

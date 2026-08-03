@@ -600,7 +600,15 @@ def test_fork_pre_checkpoint_run_degrades_gracefully(
     layout = RunLayout(state_dir=state_dir, run_id="old-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
-        json.dumps({"version": 1, "run_id": "old-run-EEEE55", "base_sha": "x", "base_branch": "m"}),
+        json.dumps(
+            {
+                "version": 1,
+                "run_id": "old-run-EEEE55",
+                "mode": "run",  # v1 manifests carried it; absent = refused, not "run"
+                "base_sha": "x",
+                "base_branch": "m",
+            }
+        ),
         encoding="utf-8",
     )
     # Old run: loop_state.json exists but no checkpoints dir content. We DO carry
