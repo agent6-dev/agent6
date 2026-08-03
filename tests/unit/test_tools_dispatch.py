@@ -1187,6 +1187,41 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
     assert out["score"] == 42.0
 
 
+def test_run_metric_command_honors_verify_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """verify_timeout_s bounds the metric command like the verify command
+    (its documented scope); the metric path silently ran on the jail's fixed
+    600s default, so a bench config's fast-failure timeout never applied."""
+    body = _VALID_TOML + (
+        "\n[workflow.metric]\n"
+        'command = ["/usr/bin/true"]\n'
+        'pattern = "(\\\\d+)"\n'
+        'goal = "minimize"\n'
+    )
+    body = body.replace("[workflow]\n", "[workflow]\nverify_timeout_s = 7.0\n")
+    p = tmp_path / "agent6.toml"
+    p.write_text(body, encoding="utf-8")
+    from agent6.config import load_config
+    from agent6.sandbox.jail import CommandResult
+
+    cfg = load_config(p)
+    assert cfg.workflow.verify_timeout_s == 7.0  # the override reached the config
+
+    captured: dict[str, object] = {}
+
+    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+        captured["timeout_s"] = policy.timeout_s
+        return CommandResult(
+            argv=tuple(policy.argv), returncode=0, stdout="1", stderr="", duration_s=0.01
+        )
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch("run_metric_command", {})
+    assert captured["timeout_s"] == 7.0
+
+
 def test_run_metric_command_score_null_on_no_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

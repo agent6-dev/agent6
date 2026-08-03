@@ -714,7 +714,9 @@ class ToolDispatcher:
             raise ToolError("run_metric_command: no [workflow.metric] configured")
         argv = tuple(metric_cfg.command)
         self._emit("metric.start", cmd=list(argv))
-        res = self._run_argv_in_jail(argv, label="metric_command")
+        res = self._run_argv_in_jail(
+            argv, label="metric_command", timeout_s=self._config.workflow.verify_timeout_s
+        )
         if res.exec_failed:
             raise OperatorCommandUnexecutable(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
