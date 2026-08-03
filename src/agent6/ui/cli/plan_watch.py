@@ -586,12 +586,19 @@ def _watch_transcript(target: Path) -> int:
     A detach emits no run.end, so watching a detached run follows it to its end."""
     events_path = target / "logs.jsonl"
     if not events_path.is_file():
-        # Not an error: a parked submission or a `fork --no-run` has no log yet.
-        # Answer with the same word the listings and `runs show` use, plus how
-        # to start it, instead of a raw filesystem message.
+        # Not an error: a parked submission, a `fork --no-run`, or a run still
+        # launching (egress + the ~80s verify inference run before the first log
+        # line) has no log yet. Answer with the same word the listings and
+        # `runs show` use, plus what to do, instead of a raw filesystem message.
         word, reason = status_for_run_dir(target, StatusFacts())
         print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
-        print(f"start it with: agent6 resume {target.name}")
+        if word == "starting":
+            # A live worker is mid-preflight: it IS running, not resumable.
+            # Telling the operator to `resume` would refuse (or fork a second
+            # worker); it just has no log to follow yet.
+            print("it is starting; run this again in a moment to follow it.")
+        else:
+            print(f"start it with: agent6 resume {target.name}")
         return 0
 
     def worker_dead() -> bool:

@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.runs.ipc import write_worker_pid
 from agent6.ui.cli import main
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
@@ -176,3 +178,25 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     snap = json.loads(capsys.readouterr().out)
     assert snap["status_label"].startswith("parked")
     assert snap["run_id"] == "parked-run-77"
+
+
+def test_attach_to_a_launching_run_says_starting_not_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run still in preflight (egress + the ~80s verify inference before the
+    first log line) has a LIVE worker but no log yet -> status "starting". It IS
+    running, not resumable: telling the operator to `resume` would refuse or fork
+    a second worker, so attach says it is starting instead."""
+    monkeypatch.chdir(tmp_path)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "launching-run-88"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "run_id": "launching-run-88", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    write_worker_pid(run_dir, os.getpid())  # a live worker, mid-preflight
+
+    assert main(["attach", "launching-run-88"]) == 0
+    out = capsys.readouterr().out
+    assert "starting" in out
+    assert "resume" not in out  # not resumable; it is already running
