@@ -33,7 +33,9 @@ almost always a sign of the wrong design.
   [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py). Per-repo state (config and run
   state together) lives out of the workspace under
   `$XDG_STATE_HOME/agent6/<repo-id>/`; the base is settable via the
-  global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var.
+  global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var. The
+  id is keyed on the PROJECT (the nearest enclosing `.git`), so running from
+  a subdirectory reaches the same runs, memories and config.
   Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
