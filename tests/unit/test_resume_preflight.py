@@ -15,6 +15,7 @@ import pytest
 
 import agent6.app._session as session_mod
 import agent6.app.resume as resume_mod
+from agent6.runs.layout import RunLayout
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 
@@ -332,3 +333,83 @@ def test_plan_resume_builds_the_planner_provider(
     with pytest.raises(_Stop):
         _cmd_resume(None, "plan-BBBB22", force=False)
     assert captured == ["planner"]
+
+
+def _session_dir(state: Path, bucket: str, sid: str, mode: str) -> Path:
+    d = state / bucket / sid
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "run_id": sid, "mode": mode, "user_task": "t"}),
+        encoding="utf-8",
+    )
+    return d
+
+
+def test_an_id_matching_two_buckets_is_refused_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fallback re-resolved inside runs/ only, so a prefix matching BOTH a
+    run and an ask silently resumed the run."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = _state_dir(repo)
+    _session_dir(state, "runs", "quiet-fox-AAAAAA", "run")
+    _session_dir(state, "asks", "quiet-fox-BBBBBB", "ask")
+
+    rc = _cmd_resume(None, "quiet-fox-", force=False)
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "more than one session" in err
+    assert "quiet-fox-AAAAAA" in err and "quiet-fox-BBBBBB" in err
+
+
+def test_a_session_resume_cannot_continue_is_left_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """resume reaches every bucket, and it locked + cleared the target's state
+    on the way to discovering it could not continue it -- killing a live machine
+    draft's worker.pid."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = _state_dir(repo)
+    draft = _session_dir(state, "machine-drafts", "brave-elk-CCCCCC", "machine")
+    (draft / "worker.pid").write_text("4242\n", encoding="utf-8")
+    (draft / "answer_1.json").write_text("{}", encoding="utf-8")
+
+    rc = _cmd_resume(None, "brave-elk-CCCCCC", force=False)
+
+    assert rc == 2
+    assert (draft / "worker.pid").read_text(encoding="utf-8") == "4242\n"
+    assert (draft / "answer_1.json").is_file()
+
+
+def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fresh ask is read-only and may run outside a git repo; resuming one
+    refused with talk of branches an ask never cuts, and a leg that DID run
+    printed no answer and left transcript.md holding the first leg's."""
+    from agent6.ui.cli._ask import save_ask_transcript
+
+    outside = tmp_path / "notarepo"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    state = _state_dir(outside)
+    ask = _session_dir(state, "asks", "quiet-fox-AAAAAA", "ask")
+
+    # No snapshot: the refusal that follows proves the git preflight was skipped
+    # (it ran BEFORE the snapshot check and would have refused first).
+    rc = _cmd_resume(None, "quiet-fox-AAAAAA", force=False)
+    assert rc == 2
+    assert "no resume snapshot" in capsys.readouterr().err
+
+    layout = RunLayout(state_dir=state, run_id="quiet-fox-AAAAAA", subdir="asks")
+    save_ask_transcript(layout, question="q", answer="first")
+    save_ask_transcript(layout, question="q", answer="second")
+    text = (ask / "transcript.md").read_text(encoding="utf-8")
+    assert "first" in text and "second" in text, "a later leg overwrote the answer"

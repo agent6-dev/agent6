@@ -117,35 +117,37 @@ class RunLayout:
 RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
 
 
-def session_layout(state_dir: Path, session_id: str) -> RunLayout | None:
-    """The layout for *session_id* in whichever bucket holds it, or None.
+def session_matches(state_dir: Path, session_id: str) -> list[RunLayout]:
+    """Every session *session_id* names or prefixes, across all buckets.
 
-    One id-to-layout resolution, so a command that accepts a session id reaches
-    an ask the same way it reaches a run. Exact ids win over prefixes; an
-    ambiguous prefix resolves to nothing rather than a guess.
+    Exact ids win outright: a full id that also prefixes a longer one is not
+    ambiguous. A caller reports the list; only a single match is actionable.
     """
     if not session_id:
-        return None
-    exact: list[str] = []
-    prefix: list[str] = []
+        return []
+    exact: list[RunLayout] = []
+    prefix: list[RunLayout] = []
     for subdir in RUN_BUCKETS:
         bucket = state_dir / subdir
         if not bucket.is_dir():
             continue
-        for entry in bucket.iterdir():
+        for entry in sorted(bucket.iterdir()):
             if not entry.is_dir():
                 continue
+            layout = RunLayout(state_dir=state_dir, run_id=entry.name, subdir=subdir)
             if entry.name == session_id:
-                exact.append(subdir)
+                exact.append(layout)
             elif entry.name.startswith(session_id):
-                prefix.append(subdir)
-    hits = exact or prefix
-    if len(hits) != 1:
-        return None
-    if exact:
-        return RunLayout(state_dir=state_dir, run_id=session_id, subdir=hits[0])
-    bucket = state_dir / hits[0]
-    matches = [e.name for e in bucket.iterdir() if e.is_dir() and e.name.startswith(session_id)]
-    if len(matches) != 1:
-        return None
-    return RunLayout(state_dir=state_dir, run_id=matches[0], subdir=hits[0])
+                prefix.append(layout)
+    return exact or prefix
+
+
+def session_layout(state_dir: Path, session_id: str) -> RunLayout | None:
+    """The layout for *session_id* in whichever bucket holds it, or None.
+
+    One id-to-layout resolution, so a command that accepts a session id reaches
+    an ask the same way it reaches a run. An ambiguous prefix resolves to
+    nothing rather than a guess.
+    """
+    matches = session_matches(state_dir, session_id)
+    return matches[0] if len(matches) == 1 else None

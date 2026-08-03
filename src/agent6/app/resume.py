@@ -73,7 +73,6 @@ from agent6.paths import (
 from agent6.providers import (
     TranscriptSink,
 )
-from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import (
     clear_away_mode,
     clear_compact_request,
@@ -87,7 +86,7 @@ from agent6.runs.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.runs.layout import RunLayout, session_layout
+from agent6.runs.layout import RunLayout, session_layout, session_matches
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -248,18 +247,27 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(f"[agent6] resuming most recent run: {run_id}")
     # Across buckets: an ask is a session like any other, so `agent6 resume`
     # continues one by id instead of only finding what lives under runs/.
-    found = session_layout(state_dir, run_id)
-    if found is None:
-        try:
-            run_id = resolve_run_id(runs_dir, run_id)
-        except RunIdError as exc:
-            reporter.err(f"ERROR: {exc}")
-            return 2
-        found = RunLayout(state_dir=state_dir, run_id=run_id)
-    layout = found
+    # One resolver, no per-bucket fallback: falling back to a runs/-only lookup
+    # made an id that prefixed BOTH a run and an ask silently pick the run.
+    layout = session_layout(state_dir, run_id)
+    if layout is None:
+        candidates = session_matches(state_dir, run_id)
+        if candidates:
+            named = ", ".join(c.run_id for c in candidates)
+            reporter.err(f"ERROR: {run_id!r} matches more than one session: {named}")
+        else:
+            reporter.err(f"ERROR: no session {run_id!r} under {state_dir}")
+        return 2
     run_id = layout.run_id
-    if not layout.run_dir.is_dir():
-        reporter.err(f"ERROR: no such run dir: {layout.run_dir}")
+    # Read the manifest BEFORE taking the lock or clearing any state: resume
+    # reaches every bucket, and a machine draft (or anything else it cannot
+    # continue) had its worker pid and pending answers clobbered on the way to
+    # discovering that.
+    try:
+        manifest = read_manifest(layout.run_dir)
+        mode = manifest.session_mode()
+    except ManifestError as exc:
+        reporter.err(f"ERROR: cannot resume {run_id}: {exc}")
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
     # second resume of a still-live run before touching any shared state.
@@ -306,12 +314,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # (write) mode. read_manifest / session_mode fail loud on any of those --
         # the underlying cause carries in the ManifestError detail -- rather than
         # silently escalating a plan run to a write run.
-        try:
-            manifest = read_manifest(layout.run_dir)
-            mode = manifest.session_mode()
-        except ManifestError as exc:
-            reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
-            return 2
         role = role_for_mode(mode)
 
         if manifest.parked_task:
@@ -393,9 +395,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.")
             return 2
 
+        # ask is read-only and may run outside a git repo (agent6 self-help),
+        # so a resumed ask skips the commit-oriented git preflight the same way
+        # a fresh one does: the repo guard, the divergence guard (nothing it
+        # would resume onto is code it wrote), the identity check and the run
+        # branch. Otherwise `resume <ask-id>` refused with branch talk about
+        # branches an ask never cuts.
+        writes_code = mode != "ask"
         # Friendly no-repo guard BEFORE any git-touching check (which would
         # otherwise print zeroed-out heads first, then the real error).
-        if not require_git_repo(cwd):
+        if writes_code and not require_git_repo(cwd):
             return 2
 
         # Snapshot version guard, BEFORE maybe_start_egress spawns a broker +
@@ -420,7 +429,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # commits -- resumes cleanly. The snapshot records head_sha best-effort
         # ("" when git was unreadable at write time); skip the check then, and
         # let the loud snapshot load below handle a corrupt file.
-        mismatch = snapshot_head_mismatch(snapshot_path, cwd, run_branch=run_branch)
+        mismatch = (
+            snapshot_head_mismatch(snapshot_path, cwd, run_branch=run_branch)
+            if writes_code
+            else None
+        )
         if mismatch is not None:
             snap_head, onto_head = mismatch
             reporter.err(
@@ -465,11 +478,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             coauthor=cfg.git.commit.coauthor,
         )
         # (no-repo guard already ran above, before the resume head guard)
-        try:
-            verify_git_identity(cwd, identity)
-        except GitError as exc:
-            reporter.err(f"ERROR: {exc}")
-            return 2
+        if writes_code:
+            try:
+                verify_git_identity(cwd, identity)
+            except GitError as exc:
+                reporter.err(f"ERROR: {exc}")
+                return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
@@ -486,7 +500,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # exits with the operator's checkout untouched. From here on a failure
         # is a failed RUN, parked on the run branch like any crashed run (the
         # end-of-run banner says how to switch back).
-        branch_err = ensure_on_run_branch(cwd, layout)
+        branch_err = ensure_on_run_branch(cwd, layout) if writes_code else None
         if branch_err is not None:
             reporter.err(branch_err)
             return 2
@@ -716,6 +730,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 130
         if result is None:
             return 1
+
+        if mode == "ask":
+            # The answer IS result.summary, same as a fresh ask: a resumed one
+            # that printed only a run banner left the operator with nothing to
+            # read and a transcript.md still holding the first leg's answer.
+            reporter.out(result.summary)
+            frontend.save_ask_transcript(layout, manifest.user_task, result.summary)
+            reporter.err(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}")
+            reporter.err(budget.format_summary())
+            return 0 if result.completed else 1
 
         if result.reason == "detached":
             detach_requested = True
