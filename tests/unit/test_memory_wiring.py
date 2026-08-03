@@ -373,6 +373,41 @@ def test_memories_block_pinned_survives_the_trim() -> None:
     assert "note 1 " not in block  # oldest unpinned still elides
 
 
+def test_memories_block_a_small_pin_outlives_a_larger_one_that_does_not_fit() -> None:
+    """Pins are costed first but are not a contiguous newest window: stopping the
+    pinned pass at the first pin that does not fit skipped every smaller pin
+    behind it, and the unpinned pass then spent the same leftover budget on a
+    LARGER unpinned entry. A pin lost its slot to a non-pin. The note must also
+    say a pinned entry was among the elided, since pins are promised to survive
+    the newest-win trim."""
+    big = tuple(
+        _entry(
+            "facts",
+            f"bigpin {i} " + "y" * 1200,
+            id=f"01{i:024d}",
+            created_at=f"2026-03-{i + 2:02d}T00:00:00Z",
+            pinned=True,
+        )
+        for i in range(10)
+    )
+    tiny = _entry(
+        "facts",
+        "TINYPIN keep me",
+        id="01" + "9" * 24,
+        created_at="2026-01-01T00:00:00Z",
+        pinned=True,
+    )
+    unpinned = _entry(
+        "facts",
+        "UNPINNED and bigger than the tiny pin " + "z" * 100,
+        id="01" + "8" * 24,
+        created_at="2026-01-02T00:00:00Z",
+    )
+    block = memories_block((*big, tiny, unpinned), mode="run")
+    assert "TINYPIN keep me" in block
+    assert "of them pinned" in block
+
+
 def test_memories_block_pins_over_cap_elide_oldest_pins() -> None:
     """Pins never break the block byte bound: when pins alone exceed the cap,
     the oldest pinned elide (counted in the note) and the newest pinned render."""

@@ -45,7 +45,7 @@ MEMORY_ENTRY_MAX_CHARS = 1200
 MEMORIES_MAX_CHARS = 12000
 
 
-def memories_block(
+def memories_block(  # noqa: PLR0912 (one cap-then-render pass; splitting it hides the budget)
     entries: tuple[MemoryEntry, ...],
     *,
     mode: Literal["run", "plan", "ask", "machine", "agent"],
@@ -75,13 +75,25 @@ def memories_block(
                 continue
             cost = min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
             if kept and used + cost > MEMORIES_MAX_CHARS:
+                if pass_pinned:
+                    # Pins are costed first but are not a contiguous window:
+                    # stopping here skipped every smaller pin behind this one,
+                    # and the unpinned pass then spent the same leftover budget
+                    # on a larger non-pin. Keep looking for a pin that fits.
+                    continue
                 break
             kept.add(e.id)
             used += cost
     lines: list[str] = [MEMORIES_HEADER_RUN if mode == "run" else MEMORIES_HEADER_READONLY, ""]
     elided = len(entries) - len(kept)
     if elided:
-        lines.append(f"({elided} older memories elided)")
+        # Name the pinned casualties: a pin is promised to survive the
+        # newest-win trim, so "older memories elided" alone read as though only
+        # ordinary entries went.
+        pinned_elided = sum(1 for e in entries if e.pinned and e.id not in kept)
+        note = f"({elided} older memories elided"
+        note += f", {pinned_elided} of them pinned: the byte cap binds)" if pinned_elided else ")"
+        lines.append(note)
         lines.append("")
     rendered_any = False
     for scope in ("facts", "decisions", "preferences"):
