@@ -505,8 +505,9 @@ front-end does not wire a dispatcher (headless, plan/ask), `/parallel` answers
 
 ## `[mcp]` + `[mcp.servers.<name>]` (optional)
 
-Spawn Model Context Protocol servers at run start; their tools appear to the LLM
-as `mcp__<name>__<tool>`. Each server runs as your user, outside the jail
+Reach Model Context Protocol servers at run start -- spawned (`command`) or
+connected to (`url`) -- with their tools appearing to the LLM as
+`mcp__<name>__<tool>`. Each server runs as your user, outside the jail
 (the `command` is operator-controlled, never LLM-influenced); the LLM *can*
 influence the arguments it passes, so audit each server like a `run_command`
 allow-list. It gets the same curated environment a `[notify]` hook gets, plus
@@ -520,7 +521,9 @@ overlay can flip one server without restating the rest.
 | Field | Default | Meaning |
 |---|---|---|
 | `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |
-| `servers.<name>.command` | *(required)* | argv for the stdio JSON-RPC server. |
+| `servers.<name>.command` | `[]` | argv for a stdio JSON-RPC server agent6 SPAWNS. Exactly one of this or `url`. |
+| `servers.<name>.url` | `""` | An http(s) endpoint of a server the OPERATOR runs -- their container, their sandbox, their credentials -- which agent6 only connects to. Exactly one of this or `command`. Connecting means agent6 owns none of that server's environment, lifetime or confinement, which is how anyone actually runs a server that wants a browser or a device. |
+| `servers.<name>.token_env` | `""` | For a `url` server: the env var holding the bearer token. Named, never inlined -- a secret in a config file is a secret in a backup. Never logged, never in an error. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
 | `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |

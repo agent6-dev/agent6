@@ -19,6 +19,7 @@ from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from agent6.tools.mcp_http import HttpTransport
 
 
 def detect_env() -> Environment:
@@ -145,6 +146,9 @@ def start_mcp_manager_if_enabled(
             startup_timeout_s=srv.startup_timeout_s,
             call_timeout_s=srv.call_timeout_s,
             pass_env=srv.pass_env,
+            http=(
+                HttpTransport(name=name, url=srv.url, token_env=srv.token_env) if srv.url else None
+            ),
         )
         for name, srv in cfg.mcp.servers.items()
         if srv.enabled

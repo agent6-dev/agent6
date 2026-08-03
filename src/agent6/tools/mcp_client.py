@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent6.child_env import curated_env
+from agent6.tools.mcp_http import HttpTransport, MCPHttpError
 
 # MCP protocol version we speak. The spec is versioned by date string;
 # we negotiate this in `initialize` and accept whatever the server says
@@ -102,6 +103,15 @@ class MCPToolDescriptor:
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
+def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
+    """The `result` of a JSON-RPC response, or raise its `error`."""
+    if "error" in response:
+        err = response["error"]
+        msg = err.get("message", "(no message)") if isinstance(err, dict) else str(err)
+        raise MCPError(f"server {name!r} {method} returned error: {msg}")
+    return response.get("result")
+
+
 @dataclass(frozen=True, slots=True)
 class MCPServerSpec:
     """What starting one MCP server needs. The config's shape, at the boundary:
@@ -114,6 +124,8 @@ class MCPServerSpec:
     # Environment variables this server needs BY NAME. Everything else comes
     # from the curated base; naming each one is what keeps a provider key out.
     pass_env: tuple[str, ...] = ()
+    # Set instead of `command` for a server the operator runs.
+    http: HttpTransport | None = None
 
 
 @dataclass
@@ -127,6 +139,10 @@ class _MCPServer:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
+    # Set instead of `command` for a server the OPERATOR runs: agent6 connects
+    # rather than spawning, so it owns none of that server's environment,
+    # lifetime or confinement.
+    http: HttpTransport | None = None
     _proc: subprocess.Popen[bytes] | None = None
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -151,6 +167,9 @@ class _MCPServer:
         fails, leaving the subprocess terminated."""
         if self._proc is not None:
             raise MCPError(f"server {self.name!r} already started")
+        if self.http is not None:
+            self._handshake()
+            return
         try:
             self._proc = subprocess.Popen(
                 self.command,
@@ -178,6 +197,10 @@ class _MCPServer:
             daemon=True,
         )
         self._reader.start()
+        self._handshake()
+
+    def _handshake(self) -> None:
+        """`initialize` + `tools/list`, the same either way the bytes move."""
         try:
             init_result = self._request(
                 "initialize",
@@ -242,7 +265,7 @@ class _MCPServer:
         return self._tools
 
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if self._proc is None:
+        if self._proc is None and self.http is None:
             raise MCPError(f"server {self.name!r} is not running")
         result = self._request(
             "tools/call",
@@ -269,7 +292,12 @@ class _MCPServer:
         return result
 
     def close(self) -> None:
-        """Best-effort shutdown. Idempotent. Never raises."""
+        """Best-effort shutdown. Idempotent. Never raises.
+
+        An HTTP server is the operator's: agent6 did not start it and must not
+        stop it. There is nothing to tear down but the connection, which each
+        request already closes.
+        """
         self._reader_stop.set()
         proc = self._proc
         self._proc = None
@@ -316,6 +344,16 @@ class _MCPServer:
             "method": method,
             "params": params,
         }
+        if self.http is not None:
+            # HTTP pairs request and response itself: no pending slot, no
+            # reader thread, no id collision with a server-initiated request.
+            try:
+                response = self.http.send(payload, timeout_s=timeout_s)
+            except MCPHttpError as exc:
+                raise MCPError(str(exc)) from exc
+            if response is None:
+                raise MCPError(f"server {self.name!r} sent no response to {method}")
+            return _result_of(response, name=self.name, method=method)
         with self._pending_cv:
             self._pending[req_id] = None
         try:
@@ -336,18 +374,21 @@ class _MCPServer:
         finally:
             with self._pending_cv:
                 self._pending.pop(req_id, None)
-        if "error" in response:
-            err = response["error"]
-            msg = err.get("message", "(no message)") if isinstance(err, dict) else str(err)
-            raise MCPError(f"server {self.name!r} {method} returned error: {msg}")
-        return response.get("result")
+        return _result_of(response, name=self.name, method=method)
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:
         # JSON-RPC notifications have no id and expect no response.
-        self._write_line({"jsonrpc": "2.0", "method": method, "params": params})
+        payload = {"jsonrpc": "2.0", "method": method, "params": params}
+        if self.http is not None:
+            with contextlib.suppress(MCPHttpError):
+                self.http.send(payload, timeout_s=self.startup_timeout_s)
+            return
+        self._write_line(payload)
 
     def _write_line(self, obj: dict[str, Any]) -> None:
         proc = self._proc
+        if self.http is not None:
+            raise MCPError(f"server {self.name!r} is HTTP; _write_line is the stdio path")
         if proc is None or proc.stdin is None:
             raise MCPError(f"server {self.name!r} is not writable (process gone)")
         line = json.dumps(obj, separators=(",", ":")).encode("utf-8") + b"\n"
@@ -432,6 +473,7 @@ class MCPManager:
                 startup_timeout_s=spec.startup_timeout_s,
                 call_timeout_s=spec.call_timeout_s,
                 pass_env=spec.pass_env,
+                http=spec.http,
             )
             try:
                 srv.start()

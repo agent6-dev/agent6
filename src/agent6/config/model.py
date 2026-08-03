@@ -956,7 +956,15 @@ class MCPServerEntry(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    command: tuple[str, ...] = Field(min_length=1)
+    # Exactly one of these. `command` spawns the server (agent6 owns its env,
+    # lifetime and confinement); `url` connects to one the OPERATOR runs, in
+    # whatever container or sandbox they chose -- which is how anyone actually
+    # runs a server that wants a browser or a device.
+    command: tuple[str, ...] = ()
+    url: str = ""
+    # The env var holding the bearer token for `url`. Named, never inlined: a
+    # secret in a config file is a secret in a backup.
+    token_env: str = ""
     enabled: bool = True
     # Environment variables this server needs, BY NAME (e.g. ["GITHUB_TOKEN"]).
     # Everything else comes from the curated base agent6 gives any child it
@@ -969,6 +977,16 @@ class MCPServerEntry(BaseModel):
     # Per-call timeout for ``tools/call`` requests. Surfaces as a tool
     # failure (ToolError) if exceeded.
     call_timeout_s: float = Field(gt=0.0, default=60.0)
+
+    @model_validator(mode="after")
+    def _one_transport(self) -> MCPServerEntry:
+        if bool(self.command) == bool(self.url):
+            raise ValueError("set exactly one of `command` (spawn) or `url` (connect)")
+        if self.url and not self.url.startswith(("http://", "https://")):
+            raise ValueError(f"url must be http(s), got {self.url!r}")
+        if self.token_env and not self.url:
+            raise ValueError("token_env is for `url` servers; a spawned one uses pass_env")
+        return self
 
 
 class MCPConfig(BaseModel):
