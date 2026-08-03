@@ -149,7 +149,7 @@ fn run_strict(policy: &Policy) -> ! {
             if let Err(e) = apply_seccomp() {
                 die(format!("seccomp failed: {e}"));
             }
-            if let Err(e) = run_child(policy, Path::new("/workspace")) {
+            if let Err(e) = run_child(&policy.child_spec(), Path::new("/workspace")) {
                 die(format!("child execution failed: {e}"));
             }
             std::process::exit(0);
@@ -170,7 +170,7 @@ fn run_hardened(policy: &Policy) -> ! {
     if let Err(e) = apply_seccomp() {
         die(format!("seccomp failed: {e}"));
     }
-    if let Err(e) = run_child(policy, &policy.cwd) {
+    if let Err(e) = run_child(&policy.child_spec(), &policy.cwd) {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
@@ -1259,28 +1259,50 @@ fn apply_seccomp() -> io::Result<()> {
     Ok(())
 }
 
-fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
-    if policy.argv.is_empty() {
+/// What executing ONE command needs, apart from the rootfs/confinement setup.
+///
+/// Separate from `Policy` because the setup happens once per launcher while a
+/// command is a single request against it.
+struct ChildSpec<'a> {
+    argv: &'a [String],
+    env: &'a [(String, String)],
+    memory_limit_mb: u64,
+    timeout_s: f64,
+}
+
+impl Policy {
+    fn child_spec(&self) -> ChildSpec<'_> {
+        ChildSpec {
+            argv: &self.argv,
+            env: &self.env,
+            memory_limit_mb: self.memory_limit_mb,
+            timeout_s: self.timeout_s,
+        }
+    }
+}
+
+fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+    if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
-    let _ = CString::new(policy.argv[0].as_bytes());
+    let _ = CString::new(spec.argv[0].as_bytes());
     let _ = OsStr::new(""); // silence unused import on some targets
 
-    let mut cmd = Command::new(&policy.argv[0]);
-    cmd.args(&policy.argv[1..]);
+    let mut cmd = Command::new(&spec.argv[0]);
+    cmd.args(&spec.argv[1..]);
     cmd.env_clear();
-    for (k, v) in &policy.env {
+    for (k, v) in spec.env {
         cmd.env(k, v);
     }
     // Minimal PATH so basic tools work inside the jail; the policy may extend it so
     // operator-installed tools outside /usr/bin (e.g. /usr/local/bin, ~/.local/bin)
     // resolve. Policy env is operator-side input.
-    if !policy.env.iter().any(|(k, _)| k == "PATH") {
+    if !spec.env.iter().any(|(k, _)| k == "PATH") {
         cmd.env("PATH", "/usr/bin:/bin");
     }
     // HOME default; the policy may override it (e.g. a writable /tmp path so
     // toolchain caches like go-build work). Policy env is operator-side input.
-    if !policy.env.iter().any(|(k, _)| k == "HOME") {
+    if !spec.env.iter().any(|(k, _)| k == "HOME") {
         cmd.env("HOME", "/home");
     }
     cmd.stdin(Stdio::null());
@@ -1303,9 +1325,9 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     // a cgroup, which an unprivileged launcher cannot assume). Raising the
     // hard limit back needs CAP_SYS_RESOURCE in the INITIAL user namespace,
     // which a jailed child (even userns root under `strict`) never has.
-    if policy.memory_limit_mb > 0 {
+    if spec.memory_limit_mb > 0 {
         let bytes: libc::rlim_t =
-            (policy.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024);
+            (spec.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024);
         unsafe {
             cmd.pre_exec(move || {
                 // Clamp to the inherited hard limit: lowering is always
@@ -1333,7 +1355,7 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
 
     let mut child = cmd.spawn()?;
     let child_pid = child.id() as i32; // == pgid, since process_group(0)
-    let timeout = Duration::from_secs_f64(policy.timeout_s);
+    let timeout = Duration::from_secs_f64(spec.timeout_s);
     let start = std::time::Instant::now();
 
     // Drain stdout/stderr on background threads so a child that writes more
