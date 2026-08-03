@@ -198,6 +198,9 @@ def build_config_view(
                     effective_value=eff_val,
                     default=default,
                     source=source,
+                    # Provenance, NOT "differs from the default": a preset or a
+                    # config file may pin a leaf to the default's own value, and
+                    # the TUI's Reset needs to know a layer owns it.
                     modified=source != "default",
                     is_adaptive=leaf in resolved and eff_val != value,
                     py_type=py_type,
@@ -352,5 +355,5 @@ def render_show(
         f"{lyr.name}={lyr.path}" for lyr in view.layers if lyr.path is not None
     )
     lines.append("source: default | " + (legend_layers or "(no config files; all defaults)"))
-    lines.append("* = overrides the built-in default")
+    lines.append("* = set by a config layer (see the source column)")
     return "\n".join(lines).rstrip("\n") + "\n"

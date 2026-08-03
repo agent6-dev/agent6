@@ -82,7 +82,7 @@ def test_render_show_marks_overrides(repo: Path) -> None:
     eff = load_effective(repo)
     text = render_show(eff)
     assert "global" in text and "repo" in text
-    assert "* = overrides the built-in default" in text
+    assert "* = set by a config layer (see the source column)" in text
     # A defaulted field is unmarked; an overridden one is marked.
     assert "* models.worker.model" in text
 
