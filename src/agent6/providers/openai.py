@@ -94,11 +94,14 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     # model name. Each entry below was added after observing
     # finish_reason="length" with empty content + empty tool_calls and a
     # populated reasoning_content field in the raw response:
-    #   - kimi-k2:    Moonshot's K2.x family (k2.5, k2.6, k2.6-thinking,
-    #                 k2-0905, etc.). K2.6 starves at the 16k loop default
-    #                 (~16k reasoning tokens for a single perf-takehome
-    #                 turn), then the loop sees no tool_use and emits
-    #                 went_quiet.
+    #   - kimi-k:     Moonshot's K families (k2.5, k2.6, k2.6-thinking,
+    #                 k2-0905, k3, ...). K2.6 starves at the 16k loop
+    #                 default (~16k reasoning tokens for a single
+    #                 perf-takehome turn), then the loop sees no tool_use
+    #                 and emits went_quiet. K3 starved a 3-seat review
+    #                 panel at 4.5k (finish=length, 0 content chars, ~5.8k
+    #                 reasoning chars, every seat abstained) -- match the
+    #                 family, not one generation.
     #   - minimax-m2: minimax-m2 / minimax-m2.7 (and presumably future
     #                 m2.x). Same pattern observed on click-short-help
     #                 and werkzeug-safe-join (19k reasoning tokens).
@@ -113,7 +116,7 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     #                 ~all 40 tokens charged as reasoning_tokens. The "v"
     #                 vision variants (glm-4.5v etc.) match too, which is fine:
     #                 they reason as well, and the floor only raises a ceiling.
-    "kimi-k2",
+    "kimi-k",
     "minimax-m2",
     "nemotron",
     "glm",

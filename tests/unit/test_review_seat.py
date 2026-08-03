@@ -36,8 +36,12 @@ _BLOCK_JSON = (
 
 
 class _Resp:
-    def __init__(self, text: str) -> None:
+    def __init__(
+        self, text: str, *, stop_reason: str = "end_turn", output_tokens: int = 10
+    ) -> None:
         self.text = text
+        self.stop_reason = stop_reason
+        self.output_tokens = output_tokens
 
 
 class _FakeProvider:
@@ -83,6 +87,29 @@ def test_structured_review_junk_output_abstains() -> None:
 def test_structured_review_provider_error_abstains() -> None:
     v = structured_review(cast(Provider, _ErrProvider()), _ctx(), seat="s", model="m1")
     assert v.error is not None and "provider" in v.error
+
+
+def test_structured_review_starved_output_names_the_cap() -> None:
+    """A reasoning model can spend the whole output cap before emitting any
+    content (kimi-k3: finish_reason=length, 0 content chars, ~5.8k reasoning
+    chars, every seat abstained). "unparseable reviewer output" blamed the
+    parser for the provider's truncation and hid the one actionable fact."""
+    starved = _FakeProvider("")
+    starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
+    starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
+    v = structured_review(cast(Provider, starved), _ctx(), seat="s", model="kimi-k3")
+    assert v.error is not None and v.verdict == "pass"
+    assert "unparseable" not in v.error
+    assert "hit the cap" in v.error and "stop_reason=length" in v.error
+    assert "4500" in v.error
+
+    # Truncated mid-answer (partial JSON) names the truncation, not the parser.
+    cut = _FakeProvider("")
+    cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
+    cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
+    v2 = structured_review(cast(Provider, cut), _ctx(), seat="s", model="m1")
+    assert v2.error is not None
+    assert "before the verdict JSON completed" in v2.error
 
 
 def test_coerce_findings_normalizes_bad_category_and_severity() -> None:

@@ -328,9 +328,7 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
     assert res.merged_findings[0].severity == "block"
 
 
-def test_all_abstain_panel_prints_inconclusive_not_pass(
-    monkeypatch: Any, capsys: Any
-) -> None:
+def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys: Any) -> None:
     """3 seats, 3 abstains, real dollars spent, ZERO review produced -- and the
     command printed "VERDICT: PASS". Nothing was reviewed; "0 blocking" is not
     a verdict. (The gate itself is fine: run_panel short-circuits on an
@@ -360,10 +358,15 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         n_block=0,
         n_abstain=3,
     )
-    monkeypatch.setattr(
-        review_cmds, "build_review_seats", lambda *_a, **_k: [_Seat(), _Seat(), _Seat()]
-    )
-    monkeypatch.setattr(review_cmds, "run_panel", lambda *_a, **_k: res)
+
+    def _fake_seats(*_a: object, **_k: object) -> list[_Seat]:
+        return [_Seat(), _Seat(), _Seat()]
+
+    def _fake_panel(*_a: object, **_k: object) -> PanelResult:
+        return res
+
+    monkeypatch.setattr(review_cmds, "build_review_seats", _fake_seats)
+    monkeypatch.setattr(review_cmds, "run_panel", _fake_panel)
     rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
         Config(),
         base="",
@@ -375,7 +378,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         transcript_sink=cast(Any, object()),  # only handed to the mocked seat builder
         budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
     )
-    out, err = capsys.readouterr()
+    out, _err = capsys.readouterr()
     assert "VERDICT: PASS" not in out
     assert "INCONCLUSIVE" in out
     assert "abstained" in out  # the why is on the verdict line, not buried in stderr

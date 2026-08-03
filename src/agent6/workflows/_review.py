@@ -23,7 +23,7 @@ from typing import Any
 
 from agent6.config import ReviewTier
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
-from agent6.providers import Provider, ProviderError, ToolDefinition
+from agent6.providers import Provider, ProviderError, ProviderResponse, ToolDefinition
 from agent6.tools.results import ToolResult
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
@@ -159,6 +159,26 @@ def _coerce_findings(raw: object) -> tuple[Finding, ...]:
     return tuple(out)
 
 
+def _no_verdict_error(resp: ProviderResponse) -> str:
+    """Why a seat produced no verdict JSON. Output-cap starvation is named: a
+    reasoning model can spend the entire cap before emitting any content
+    (finish_reason=length, empty text, everything in the reasoning channel),
+    and the generic "unparseable reviewer output" blamed the parser for the
+    provider's truncation -- hiding the one actionable fact."""
+    if resp.stop_reason in ("length", "max_tokens"):
+        detail = (
+            "before emitting any content (likely all reasoning)"
+            if not resp.text.strip()
+            else "mid-answer, before the verdict JSON completed"
+        )
+        return (
+            f"output hit the cap {detail}"
+            f" (stop_reason={resp.stop_reason}, {resp.output_tokens} output tokens);"
+            " raise max_tokens or use a model with more output headroom"
+        )
+    return "unparseable reviewer output"
+
+
 def structured_review(
     provider: Provider, ctx: ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
 ) -> ReviewVerdict:
@@ -175,9 +195,7 @@ def structured_review(
         return ReviewVerdict(seat=seat, model=model, verdict="pass", error=f"provider: {exc}")
     obj = _extract_json(resp.text)
     if obj is None:
-        return ReviewVerdict(
-            seat=seat, model=model, verdict="pass", error="unparseable reviewer output"
-        )
+        return ReviewVerdict(seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp))
     return _verdict_from_obj(obj, seat, model)
 
 
@@ -228,7 +246,7 @@ def explore_review(
             obj = _extract_json(resp.text)
             if obj is None:
                 return ReviewVerdict(
-                    seat=seat, model=model, verdict="pass", error="unparseable reviewer output"
+                    seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
                 )
             return _verdict_from_obj(obj, seat, model)
         # On the last allowed iteration, a verdict emitted ALONGSIDE tool calls

@@ -291,6 +291,10 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
     # bare-name reasoning emitters (no "thinking" suffix advertised).
     assert _is_reasoning_model("moonshotai/kimi-k2.6")
     assert _is_reasoning_model("moonshotai/kimi-k2.5")
+    # The whole Moonshot K family reasons, not one generation: kimi-k3 missed
+    # the old "kimi-k2" hint and starved a 3-seat review panel at 4.5k
+    # (finish=length, 0 content chars, ~5.8k reasoning chars, all abstained).
+    assert _is_reasoning_model("moonshotai/kimi-k3")
     assert _is_reasoning_model("minimax/minimax-m2.7")
     assert _is_reasoning_model("minimax/minimax-m2")
     assert _is_reasoning_model("nvidia/nemotron-3-nano-30b-a3b")
