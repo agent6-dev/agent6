@@ -80,6 +80,19 @@ def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
     return out
 
 
+def _print_next_session(layout: RunLayout) -> None:
+    """After a session that produced something to act on, name the next step.
+
+    Seeding already exists; what was missing was the affordance -- an operator
+    had to know `--from` was there. A plan and an ask are the two that end
+    holding work someone else does, so they get the line.
+    """
+    with contextlib.suppress(ManifestError):
+        mode = read_manifest(layout.run_dir).mode
+        if mode in ("plan", "ask"):
+            print(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
+
+
 def _print_baseline(
     result: RunResult, *, layout: RunLayout, cfg: Config, isolation: IsolationLevel
 ) -> None:
@@ -164,6 +177,7 @@ def print_run_end(
         print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
         print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
+    _print_next_session(layout)
     _print_baseline(result, layout=layout, cfg=cfg, isolation=isolation)
     _print_stale_gate(result)
     print(budget.format_summary())

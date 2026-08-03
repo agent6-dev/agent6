@@ -143,6 +143,10 @@ class ConsoleView:
                 self._active = True
             elif etype in ("run.end", "run.steer_requested"):
                 self._active = False
+                # A btw that lands after the last turn would otherwise sit in
+                # the queue forever: the run ending IS a clean break.
+                self._end_block()
+                self._drain_btw()
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._stream(str(event.get("text", "")), thinking=etype == "role.thinking_delta")
                 return

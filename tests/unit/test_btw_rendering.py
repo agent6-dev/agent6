@@ -55,3 +55,21 @@ def test_nothing_queued_prints_nothing() -> None:
     view, out = _view()
     view.feed({"type": "role.result"})
     assert out.getvalue() == ""
+
+
+def test_an_answer_that_lands_after_the_last_turn_is_not_lost() -> None:
+    """The queue drains at turn boundaries, and a run ending is the last one.
+    Without this a btw answered just as the run finished vanished silently."""
+    view, out = _view()
+    view.queue_btw("\n--- btw: late\nthe answer\n--- end btw\n")
+    view.feed({"type": "run.end", "reason": "finish_run", "all_passed": True})
+    assert "--- btw: late" in out.getvalue()
+    assert "the answer" in out.getvalue()
+
+
+def test_a_pause_does_not_swallow_a_queued_answer() -> None:
+    """run.steer_requested shares the branch; it must drain, not drop."""
+    view, out = _view()
+    view.queue_btw("\n--- btw: q\nanswer\n--- end btw\n")
+    view.feed({"type": "run.steer_requested"})
+    assert "answer" in out.getvalue()

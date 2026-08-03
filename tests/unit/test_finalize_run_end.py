@@ -399,3 +399,28 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
 
     # No stash for that run: the caller gets None and says so its own way.
     assert stash_recovery_hint(repo, run_id="nope", base_branch="main") is None
+
+
+@pytest.mark.parametrize(
+    ("mode", "suggested"),
+    [("plan", True), ("ask", True), ("run", False)],
+)
+def test_a_session_that_ends_holding_work_names_the_next_step(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, suggested: bool
+) -> None:
+    """Seeding existed but nothing suggested it, so an operator had to know
+    `--from` was there. A plan and an ask end holding work someone else does;
+    a run has already done its work and needs no handoff."""
+    import json
+
+    from agent6.app.finalize import _print_next_session  # pyright: ignore[reportPrivateUsage]
+    from agent6.runs.layout import RunLayout
+
+    layout = RunLayout(state_dir=tmp_path, run_id="quiet-fox-AAAAAA")
+    layout.run_dir.mkdir(parents=True)
+    (layout.run_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": mode}), encoding="utf-8"
+    )
+    _print_next_session(layout)
+    out = capsys.readouterr().out
+    assert ("agent6 run --from quiet-fox-AAAAAA" in out) is suggested
