@@ -341,3 +341,23 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
     assert wf.verify_origin == "inferred"
     # Re-stamping is what adoption does; it must not disturb the rest.
     assert read_manifest(tmp_path).mode == "run"
+
+
+@pytest.mark.parametrize(
+    ("configured", "has_gate", "pinned", "expected"),
+    [
+        (True, True, "inferred", "configured"),  # config outranks the pin
+        (False, True, "adopted", "adopted"),  # an adopted gate stays adopted
+        (False, True, "", "inferred"),  # the leg had to re-infer
+        (False, False, "inferred", ""),  # gateless leg claims nothing
+    ],
+)
+def test_a_resumed_leg_reports_whose_gate_it_used(
+    configured: bool, has_gate: bool, pinned: str, expected: str
+) -> None:
+    """Precedence across legs: an operator's config outranks whatever the run
+    pinned, the pin outranks re-inference, and the manifest names which one
+    this leg actually ran under."""
+    from agent6.app.resume import _leg_gate_origin
+
+    assert _leg_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected

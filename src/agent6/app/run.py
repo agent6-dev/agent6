@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from agent6.app._session import (
     SessionRefused,
@@ -572,6 +572,14 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Pin it: from here the run is judged by THIS gate, whatever the file it
         # was inferred from says later.
         stamp_verify_gate(layout.run_dir, cfg.workflow.verify_command, gate_origin)
+
+        def _repin_adopted_gate(event: dict[str, Any]) -> None:
+            """A gateless run that adopts a gate mid-run re-pins it, so the
+            manifest never reads gateless while a gate is live."""
+            if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
+                stamp_verify_gate(layout.run_dir, tuple(event.get("command", ())), "adopted")
+
+        events.subscribe(_repin_adopted_gate)
 
         # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
         # console view's heartbeat spinner is suspended for the prompt so its

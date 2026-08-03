@@ -38,6 +38,7 @@ from agent6.app.finalize import (
     print_run_end,
     run_exit_code,
 )
+from agent6.app.manifest import stamp_verify_gate
 from agent6.app.preflight import (
     infer_verify_if_unset,
     require_git_repo,
@@ -197,6 +198,17 @@ def snapshot_head_mismatch(
         # own commits): not divergence.
         return None
     return (snap_head, current_head)
+
+
+def _leg_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
+    """Where THIS leg's gate came from: config outranks the run's pin, the pin
+    stands when the leg reused it (an adopted gate stays adopted), and a leg
+    that had to re-infer says so."""
+    if configured:
+        return "configured"
+    if not has_gate:
+        return ""
+    return pinned or "inferred"
 
 
 def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
@@ -489,6 +501,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # diverge). Re-infer only when the snapshot can't be read (missing/corrupt/an
         # old format resume refuses loudly right after), and only when the operator
         # hasn't since pinned a command in config.
+        leg_configured = bool(cfg.workflow.verify_command)
         if not cfg.workflow.verify_command:
             snap_verify: tuple[str, ...] | None = None
             if snapshot_path.is_file():
@@ -508,6 +521,19 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             elif snap_verify:  # () means the original run was gateless: stay gateless
                 cfg = cfg.with_inferred_verify(snap_verify)
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
+        # Re-pin for this leg: config outranks the pin, the pin outranks a
+        # re-inference, and the manifest has to say which one this leg used.
+        with contextlib.suppress(ManifestError, OSError):
+            pinned = read_manifest(layout.run_dir).workflow
+            stamp_verify_gate(
+                layout.run_dir,
+                cfg.workflow.verify_command,
+                _leg_gate_origin(
+                    configured=leg_configured,
+                    has_gate=bool(cfg.workflow.verify_command),
+                    pinned=pinned.verify_origin,
+                ),
+            )
 
         # Bound now, not read in the handler: these never change for the leg.
         facts_model, facts_commands = session.rm_role.model, cfg.sandbox.run_commands
