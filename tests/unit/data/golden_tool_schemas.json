@@ -122,6 +122,15 @@
     }
   },
   {
+    "name": "read_session",
+    "required": [],
+    "properties": {
+      "id": "string",
+      "max_chars": "integer",
+      "query": "string"
+    }
+  },
+  {
     "name": "run_background",
     "required": [
       "argv"

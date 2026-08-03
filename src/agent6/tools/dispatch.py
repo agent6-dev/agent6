@@ -26,6 +26,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
+from agent6.runs.layout import session_layout
 from agent6.sandbox.jail import (
     JailUnavailableError,
     jail_search_path,
@@ -64,6 +65,7 @@ from agent6.tools.results import (
     ExecResult,
     MetricResult,
     RawResult,
+    SessionsResult,
     ToolResult,
 )
 from agent6.tools.schema import (
@@ -90,6 +92,7 @@ from agent6.tools.schema import (
     OutlineInput,
     ReadBackgroundInput,
     ReadFileInput,
+    ReadSessionInput,
     RunBackgroundInput,
     RunCommandInput,
     RunMetricInput,
@@ -99,6 +102,7 @@ from agent6.tools.schema import (
     UseSkillInput,
     mode_tools,
 )
+from agent6.tools.sessions import conversation, matching_sessions, session_briefs
 from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
 
@@ -285,6 +289,7 @@ class ToolDispatcher:
             ApplyPatchInput.TOOL_NAME: self._apply_patch,
             RunVerifyInput.TOOL_NAME: self._run_verify,
             RunCommandInput.TOOL_NAME: self._run_command,
+            ReadSessionInput.TOOL_NAME: self._read_session,
             RunBackgroundInput.TOOL_NAME: self._run_background,
             ReadBackgroundInput.TOOL_NAME: self._read_background,
             StopBackgroundInput.TOOL_NAME: self._stop_background,
@@ -665,6 +670,25 @@ class ToolDispatcher:
         if self._shells is None:
             raise ToolError("background commands need a run directory; none was wired")
         return self._shells
+
+    def _read_session(self, raw: dict[str, Any]) -> SessionsResult:
+        args = ReadSessionInput.model_validate(raw)
+        if self._state_dir is None:
+            raise ToolError("read_session needs the project state dir; none was wired")
+        briefs = (
+            matching_sessions(self._state_dir, args.query)
+            if args.query
+            else session_briefs(self._state_dir)
+        )
+        roster = tuple(b.line() for b in briefs)
+        if not args.id:
+            return SessionsResult(sessions=roster)
+        layout = session_layout(self._state_dir, args.id)
+        if layout is None:
+            raise ToolError(f"no session {args.id!r} in this project")
+        return SessionsResult(
+            sessions=roster, conversation=conversation(layout, max_chars=args.max_chars)
+        )
 
     def _run_background(self, raw: dict[str, Any]) -> BackgroundResult:
         args = RunBackgroundInput.model_validate(raw)

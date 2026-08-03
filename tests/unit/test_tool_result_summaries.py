@@ -48,6 +48,7 @@ from agent6.tools.results import (
     RawResult,
     ReadFileResult,
     ReferencesResult,
+    SessionsResult,
     SetCursorResult,
     SkillResult,
     ToolResult,
@@ -118,6 +119,17 @@ CASES: list[tuple[str, ToolResult, str]] = [
             would_apply=("replace",),
         ),
         "ok",
+    ),
+    # other sessions
+    (
+        "sessions_roster",
+        SessionsResult(sessions=("[a-b-AAAAAA] ask · 2026-07-31T01:00: q",)),
+        "1 session",
+    ),
+    (
+        "sessions_read",
+        SessionsResult(sessions=("[a] run: x", "[b] ask: y"), conversation="user: hi"),
+        "2 sessions",
     ),
     # background commands
     (

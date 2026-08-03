@@ -477,3 +477,23 @@ class BackgroundResult(ToolResult):
 
     def summary(self) -> str:
         return self.shells[0] if len(self.shells) == 1 else f"{len(self.shells)} background"
+
+
+# --- other sessions ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SessionsResult(ToolResult):
+    """The project's sessions, and one session's conversation when asked for."""
+
+    sessions: tuple[str, ...]
+    conversation: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"sessions": list(self.sessions)}
+        if self.conversation is not None:
+            wire["conversation"] = self.conversation
+        return wire
+
+    def summary(self) -> str:
+        return f"{len(self.sessions)} session{'' if len(self.sessions) == 1 else 's'}"

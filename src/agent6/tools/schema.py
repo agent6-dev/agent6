@@ -201,6 +201,22 @@ class RunCommandInput(_ToolInput):
     argv: tuple[str, ...] = Field(min_length=1)
 
 
+class ReadSessionInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "read_session"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Read another session in this project. A run, a plan and an ask are all sessions."
+        " Always returns the roster of this project's sessions, newest first, with each"
+        " one's id, mode and task. Pass `id` to also get that session's conversation, or"
+        " `query` to narrow the roster to sessions whose task or transcript contains that"
+        " text. Read-only, and limited to this project. Use it to pick up what an earlier"
+        " session worked out instead of redoing it."
+    )
+
+    id: str = ""
+    query: str = ""
+    max_chars: int = Field(default=20_000, ge=500, le=200_000)
+
+
 class RunBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -608,6 +624,7 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     ApplyPatchInput,
     RunVerifyInput,
     RunCommandInput,
+    ReadSessionInput,
     RunBackgroundInput,
     ReadBackgroundInput,
     StopBackgroundInput,

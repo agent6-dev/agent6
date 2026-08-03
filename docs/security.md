@@ -136,6 +136,15 @@ process irrevocably, inherited by every child:
     - A run is REFUSED when the chosen dir would still be reachable -- inside the
       workspace, or inside an `extra_read_paths` grant -- rather than started
       with a tunnel a `run_command` could dial.
+- **`read_session` exposes this project's other sessions, and nothing else.**
+    - A run, a plan and an ask all keep their journal under the project's state
+      dir; the tool lists them and reads one, so a session can pick up what an
+      earlier one worked out instead of the operator copying it by hand.
+    - The model names a session by ID, never a path: resolution matches real
+      directory names in this project's buckets, so traversal cannot resolve
+      and no path from the model reaches the filesystem.
+    - Read-only, same-project only. Journals carry conversations, not
+      credentials -- secrets are never written to a transcript (§5b).
 - **MCP servers get no outbound network under `providers`** (a deliberate limit;
   local `AF_UNIX` helpers are unaffected).
 

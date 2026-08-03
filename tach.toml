@@ -217,7 +217,10 @@ path = "agent6.tools"
 # graph.models intent types, for the DAG-as-tool handlers (add_task /
 # update_task / set_cursor / list_tasks), and the memory store for the
 # cross-run memory handlers (add_memory / invalidate_memory).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths"]
+# runs.layout + runs.manifest: read_session reads this project's other sessions
+# off disk, which needs the bucket layout and the typed manifest. Both are
+# leaf modules over the filesystem, so the dependency runs downward.
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.runs.layout", "agent6.runs.manifest"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
