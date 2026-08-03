@@ -165,3 +165,22 @@ def test_run_from_plan_and_task_mutually_exclusive(
     rc = main(["run", "do thing", "--from-plan", "happy-tree-abcd"])
     assert rc == 2
     assert "mutually exclusive" in capsys.readouterr().err
+
+
+def test_an_unreadable_plan_refuses_rather_than_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file-permission problem is the operator's, not an agent6 defect.
+
+    `--from-plan` read the plan with a bare `read_text`, so a PermissionError
+    escaped to the crash reporter -- "unexpected PermissionError", a traceback
+    saved to /tmp, "please report this", exit 1 -- while the most-recent-plan
+    fallback five lines below already refuses cleanly at exit 2."""
+    monkeypatch.chdir(tmp_path)
+    plan = _seed_plan(tmp_path, "quiet-fox-abcd", "# Plan: do it\n")
+    plan.chmod(0o000)
+    try:
+        assert main(["run", "--from-plan", "quiet-fox-abcd"]) == 2
+        assert "could not read" in capsys.readouterr().err
+    finally:
+        plan.chmod(0o600)

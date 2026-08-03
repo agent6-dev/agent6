@@ -169,7 +169,7 @@ def cli_main() -> int:
         return 1
 
 
-def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
+def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     if getattr(args, "parallel", "") and (args.interactive or args.tui):
         print(
             "ERROR: --parallel cannot combine with -i or --tui"
@@ -193,7 +193,12 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         resolved = _resolve_plan_session_id(args.from_plan)
         if resolved is None:
             return 2
-        plan_md = (_plans_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
+        plan_path = _plans_dir(Path.cwd()) / resolved / "plan.md"
+        try:
+            plan_md = plan_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"ERROR: could not read {plan_path}: {exc}", file=sys.stderr)
+            return 2
         task = _from_plan_task(plan_md, resolved)
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
