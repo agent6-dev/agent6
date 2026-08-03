@@ -72,14 +72,20 @@ and the principles the Zen doesn't cover:
   default to the global config, `--repo` (and `--machine-file FILE`) to
   redirect. The same target selection everywhere; set-valued config merges
   last-overlay-wins.
-- **Consistency.** New subcommands mirror existing ones: positional core args,
-  `--repo`/`--machine-file` target flags, argcomplete on fixed-choice values.
+- **Consistency.** One mental model covers both how agent6 works and how it is
+  used: learning one command teaches its siblings, and nothing behaves
+  differently for reasons the user cannot see. New subcommands mirror existing
+  ones: positional core args, `--repo`/`--machine-file` target flags,
+  completion offering every valid input rather than only fixed-choice values.
 - **Simplicity.** Less is more: less code beats more, and no speculative
   abstraction or indirection for a future that hasn't arrived. A reviewer
   should read a module top to bottom in one sitting; inline a one-caller
-  helper, make a stateless class a function, and if it's hard to explain it's
-  a bad idea. No boilerplate: delete pass-through wrappers, shims, and
-  ceremony kept for symmetry.
+  helper, make a stateless class a function. No boilerplate: delete
+  pass-through wrappers, shims, and ceremony kept for symmetry.
+- **The explanation is the test.** If the implementation is hard to explain,
+  it's a bad idea; if it's easy to explain, it may be a good idea. Explain it
+  in a sentence or two before writing it. Needing a paragraph of conditions
+  means the shape is wrong.
 - **Fix the root cause, never the symptom.** No hacks, workarounds, blind
   retries, or special cases that hide the real defect. Prefer rethinking and
   deleting over adding: removing a wrong shape beats guarding against it. A
@@ -178,11 +184,12 @@ version that still carries the point wins.
   "retries twice, then fails the run", not "robustly handles failures".
 - One idea per sentence, one topic per paragraph. Prefer short bullets to
   prose when listing facts.
-- Comments state what the code cannot: a constraint, an invariant, a measured
-  number, a link to a decision. Never narrate the next line, never keep the
-  incident a change fixed (commit messages own that), and never explain
-  expected behavior; over-explaining reads as a warning about nothing. Test
-  docstrings are the exception: the regression they pin is their spec.
+- Comments and docs reflect the current state only. A comment states what the
+  code cannot: a constraint, an invariant, a measured number, a link to a
+  decision. Never narrate the next line, never keep the incident a change fixed
+  (commit messages own that), and never explain expected behavior;
+  over-explaining reads as a warning about nothing. Test docstrings are the
+  exception: the regression they pin is their spec.
 - Commit messages: imperative subject; a body only for a non-obvious why, in
   point form.
 - Keep documents flat: a heading plus short paragraphs or bullets. Bold is for
