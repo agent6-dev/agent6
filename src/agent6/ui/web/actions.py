@@ -229,7 +229,8 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     if focus is not None:
         # `/compact [focus]` is an out-of-band request, not steer text the
         # loop should read; /pin and /parallel stay steers the loop parses.
-        request_compact(run_dir, focus=focus)
+        if not request_compact(run_dir, focus=focus):
+            return False, "could not write the compaction request"
         return True, "compaction requested"
     write_steer_answer(run_dir, text)  # ready before the run reads it
     request_steer(run_dir)
@@ -269,7 +270,8 @@ def compact_run(cwd: Path, run_id: str) -> tuple[bool, str]:
         return False, f"no run {run_id!r}"
     if not worker_is_alive(run_dir):
         return False, "run is not live"
-    request_compact(run_dir)
+    if not request_compact(run_dir):
+        return False, "could not write the compaction request"
     return True, "compaction requested"
 
 

@@ -978,8 +978,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             if focus is not None:
                 # `/compact [focus]` is an out-of-band request, not steer text;
                 # /pin and /parallel stay steers the loop parses itself.
-                request_compact(self.run_dir, focus=focus)
-                self.notify("compaction requested; applies before the next model call")
+                if request_compact(self.run_dir, focus=focus):
+                    self.notify("compaction requested; applies before the next model call")
+                else:
+                    self.notify("could not write the compaction request", severity="warning")
                 return
             self._seed_steer(text)
             self.notify("steering the run…")
@@ -1019,8 +1021,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         if not self.run_controllable():
             self.notify("run is not live -- nothing to compact", severity="warning")
             return
-        request_compact(self.run_dir)
-        self.notify("compaction requested; applies at the next safe boundary")
+        if request_compact(self.run_dir):
+            self.notify("compaction requested; applies at the next safe boundary")
+        else:
+            self.notify("could not write the compaction request", severity="warning")
 
     def action_stop_now(self) -> None:
         """Stop the run immediately: confirm, then write the abort answer over

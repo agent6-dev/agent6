@@ -512,15 +512,23 @@ def clear_stop_request(run_dir: Path) -> None:
 COMPACT_REQUEST_FILE = "compact.request"
 
 
-def request_compact(run_dir: Path, focus: str = "") -> None:
+def request_compact(run_dir: Path, focus: str = "") -> bool:
     """Front-end-initiated manual compaction: drop a marker the run polls at its
     next safe boundary and honors by forcing a context compaction (mirrors
     steer). The marker body is the operator's optional summary *focus*
     (`/compact <focus>`); "" is a plain compact. Published atomically: the run
     polls `read_compact_request` every boundary, so a plain write exposed an
-    empty/partial focus it consumed (and then cleared) as the real one."""
-    with contextlib.suppress(OSError):
+    empty/partial focus it consumed (and then cleared) as the real one.
+
+    Returns whether the marker landed. A failed write must not raise into a TUI
+    action or a web handler, but every front-end reported "compaction requested"
+    unconditionally, so a read-only or full state dir looked like success and
+    nothing ever compacted."""
+    try:
         atomic_write(run_dir / COMPACT_REQUEST_FILE, focus)
+    except OSError:
+        return False
+    return True
 
 
 def read_compact_request(run_dir: Path) -> str | None:

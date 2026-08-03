@@ -283,6 +283,21 @@ def test_compact_request_carries_focus(tmp_path: Path) -> None:
     assert read_compact_request(tmp_path) is None
 
 
+def test_compact_request_reports_a_failed_write(tmp_path: Path) -> None:
+    """A marker that could not be written must read as a failure. The write was
+    wrapped in suppress(OSError) while every front-end reported "compaction
+    requested" unconditionally, so a read-only or full state dir looked like
+    success and nothing ever compacted."""
+    from agent6.runs.ipc import read_compact_request, request_compact
+
+    assert request_compact(tmp_path) is True
+    # A run dir that is really a file: the publish cannot succeed.
+    blocked = tmp_path / "not-a-dir"
+    blocked.write_text("x", encoding="utf-8")
+    assert request_compact(blocked) is False
+    assert read_compact_request(blocked) is None
+
+
 def test_compact_request_publishes_atomically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

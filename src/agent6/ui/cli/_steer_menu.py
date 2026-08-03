@@ -201,8 +201,10 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
     elif cmd == "/pin":
         _print_pins(run_dir)
     elif cmd == "/compact":
-        request_compact(run_dir)
-        print("[agent6] compaction requested; applies before the next model call")
+        if request_compact(run_dir):
+            print("[agent6] compaction requested; applies before the next model call")
+        else:
+            print("[agent6] could not write the compaction request; nothing was requested")
 
 
 def pause_menu(  # noqa: PLR0911, PLR0912
@@ -240,11 +242,13 @@ def pause_menu(  # noqa: PLR0911, PLR0912
             builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
             smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
             if builtin == ["/compact"] and not smatches:
-                request_compact(run_dir, focus=args.strip())
-                print(
-                    "[agent6] compaction requested (focus noted);"
-                    " applies before the next model call"
-                )
+                if request_compact(run_dir, focus=args.strip()):
+                    print(
+                        "[agent6] compaction requested (focus noted);"
+                        " applies before the next model call"
+                    )
+                else:
+                    print("[agent6] could not write the compaction request; nothing was requested")
                 continue
             if len(smatches) == 1 and not builtin:
                 return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
