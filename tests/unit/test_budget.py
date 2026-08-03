@@ -117,9 +117,12 @@ def test_per_model_tracking() -> None:
 
 
 def test_format_summary_renders_known_and_unknown_prices() -> None:
+    # claude-sonnet-4-5 IS priced by the fixture ($3/$15 per Mtok): the known
+    # half must render a real dollar figure, not fall through to "$?" with the
+    # priced path unexercised. 1000 in + 100 out = $0.003 + $0.0015 = $0.0045.
     t = _t(fallback=10000)
     t.record(
-        model="claude-opus-4-5-20250929",
+        model="claude-sonnet-4-5",
         input_tokens=1000,
         output_tokens=100,
         cache_read_tokens=0,
@@ -133,7 +136,8 @@ def test_format_summary_renders_known_and_unknown_prices() -> None:
         cache_creation_tokens=0,
     )
     summary = t.format_summary()
-    assert "claude-opus-4-5-20250929" in summary
+    assert "claude-sonnet-4-5" in summary
+    assert "$0.0045" in summary  # the PRICED path rendered a real figure
     assert "totally-fake-model" in summary
     assert "$? (unknown price)" in summary
     assert "TOTAL:" in summary

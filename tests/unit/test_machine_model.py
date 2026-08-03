@@ -608,15 +608,15 @@ def test_machine_config_overlay_parses(tmp_path: Path) -> None:
     body = (
         VALID_MACHINE
         + """
-[config.workflow]
-critic = "on_verify_fail"
+[config.review]
+trigger = "on_verify_fail"
 
 [config.budget]
 max_tokens_fallback = 50000
 """
     )
     spec = load_machine(_write(tmp_path, body))
-    assert spec.config["workflow"]["critic"] == "on_verify_fail"
+    assert spec.config["review"]["trigger"] == "on_verify_fail"
     assert spec.config["budget"]["max_tokens_fallback"] == 50000
 
 

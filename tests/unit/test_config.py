@@ -292,8 +292,12 @@ def test_role_temperature_override(tmp_path: Path) -> None:
     assert cfg.models.reviewer.temperature == 0.0  # unchanged
 
 
-def test_role_temperature_null_passes_through(tmp_path: Path) -> None:
-    # Operators who specifically want the provider's default can set None.
+def test_role_temperature_nan_rejected(tmp_path: Path) -> None:
+    # None (the provider's default) is reachable via the Python API; nan and
+    # out-of-range floats fail loud.
+    from agent6.config import RoleModel
+
+    assert RoleModel(provider="p", model="m", temperature=None).temperature is None
     body = _VALID_TOML.replace(
         '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
         '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = nan',
@@ -473,12 +477,9 @@ def test_metric_goal_invalid(tmp_path: Path) -> None:
 
 
 def test_operational_fields_have_defaults(tmp_path: Path) -> None:
-    """Operational fields with safe defaults can be omitted from the TOML.
-
-    Security fields (allow_*, providers.*, sandbox.*, models.*,
-    budget.max_*_tokens, workflow.verify_command) still hard-fail when
-    missing; the test_missing_required_key family covers those.
-    """
+    """Every field has a default (security fields default to the SAFE value),
+    so a minimal TOML loads. Completeness is enforced per command by
+    require_runnable, never at load time."""
     body = """
 [providers.anthropic]
 api_format = "anthropic"
