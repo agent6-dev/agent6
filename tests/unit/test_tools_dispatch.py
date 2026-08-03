@@ -1569,3 +1569,33 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
         "ask_user", {"question": "Which theme?", "options": ["dark", "light"]}
     ).to_wire()
     assert out == {"answers": ["dark"]}
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_git_is_protected_at_every_isolation_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: str
+) -> None:
+    """`.git` reaches the jail as a protect path on hardened too.
+
+    Hardened used to leave it writable, on the grounds that the write was
+    recoverable and nothing sensitive was exposed. It was neither: a jailed
+    command could plant a `filter.<n>.clean` in .git/config with a matching
+    .gitattributes, and agent6's own host-side auto-commit (`git add -A`, run
+    OUTSIDE the jail in the agent's Landlock domain) then executed it, which a
+    probe used to read $HOME and open an outbound connection."""
+    (tmp_path / ".git").mkdir()
+    captured: list[object] = []
+
+    from agent6.types import CommandResult
+
+    def _capture(policy: object) -> CommandResult:
+        captured.append(policy)
+        return CommandResult(argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", _capture)
+    cfg = _config_with_run_commands(tmp_path, "yes")
+    d = ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
+    d.dispatch("run_command", {"argv": ["true"]})
+
+    protected = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
+    assert (tmp_path / ".git").resolve() in protected

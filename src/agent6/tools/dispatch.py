@@ -737,13 +737,16 @@ class ToolDispatcher:
         # Resolve symlinks so the launcher's strip_prefix(cwd) check sees
         # canonical paths; the Rust side canonicalizes too as a backstop.
         protect_paths: list[Path] = []
-        # protect_paths are read-only bind-remounts, which only the strict
-        # isolation (mount namespace) can apply. On hardened the cwd is blanket
-        # read-write -- there is no way to carve .git read-only without also
-        # denying new top-level entries (breaking toolchains), so .git is
-        # writable there. It is recoverable, gated by run_commands, and run
-        # state lives out of the workspace, so nothing sensitive is exposed.
-        if self._isolation == "strict" and self._config.sandbox.protect_git:
+        # `.git` is protected at BOTH isolation levels: strict re-binds it
+        # read-only, hardened carves it out of the Landlock RW grant. Hardened
+        # used to leave it writable (the carve also denies creating NEW
+        # top-level entries, which the system prompt already tells the model to
+        # work around), but a writable `.git` is not merely "recoverable": a
+        # jailed command can plant a `filter.<n>.clean` in `.git/config` plus a
+        # `.gitattributes`, and agent6's own auto-commit then executes it on the
+        # HOST, outside the jail, where the agent can read $HOME and reach the
+        # network.
+        if self._config.sandbox.protect_git:
             protect_paths.append((self._root / ".git").resolve())
         protect_paths.extend(self._extra_protect_paths)
         # caller-provided timeout overrides the JailPolicy default

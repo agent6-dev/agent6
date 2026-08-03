@@ -43,8 +43,8 @@ Under that adversary, agent6 aims to hold:
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
    --hard`s** (§5).
     - This does NOT bind a `git` the model runs via `run_command`; that path is
-      bounded by the sandbox (`protect_git` read-only-binds `.git` on `strict`;
-      push needs egress).
+      bounded by the sandbox (`protect_git` keeps `.git` unwritable at both
+      isolation levels; push needs egress).
 5. **No persistence after the run:** no daemon, cron, or `.bashrc` write.
     - Children can only write inside the jail's mount namespace.
 
@@ -314,9 +314,9 @@ syscall for hardened), never guessed from the kernel version.
       on a destructive verb.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
-    - On `strict`, `protect_git` read-only-binds `.git`, so a rewrite fails and
-      `push` has no egress. On `hardened`, `.git` is writable, so the container is
-      the boundary.
+    - `protect_git` (default on) keeps `.git` unwritable at BOTH isolation
+      levels: strict re-binds it read-only, hardened carves it out of the
+      Landlock RW grant. A rewrite fails and `push` has no egress.
     - agent6 used to refuse mutating git subcommands (plus the `-c alias.*`
       injection that dodged them) in `run_command` argv. Removed: a blocklist
       enumerates badness, and a model that writes a shell script and runs it
@@ -326,11 +326,18 @@ syscall for hardened), never guessed from the kernel version.
     - `core.fsmonitor` and `diff.external` are always off; `.git/hooks/*` run only
       under `git.run_repo_hooks = true` (default false; `core.hooksPath` points
       away so a hook can't fire on agent6's auto-commit).
-    - On `strict` this complements `protect_git`'s RO `.git`. On `hardened` the cwd is
-      blanket RW (an RO `.git` would break cargo/pytest creating
-      `target/`/`.pytest_cache/`), so `.git` is writable there; acceptable, gated
-      by `run_commands`, recoverable (branch-per-run, commits via git_ops),
-      container is the blast radius.
+    - Defense in depth on top of `protect_git`: those settings bound what a
+      poisoned `.git/config` could do, and `protect_git` stops the model
+      writing one in the first place.
+    - Hardened used to leave `.git` writable (no mount namespace to re-bind
+      with), documented as recoverable. It was not: a jailed command could
+      plant a `filter.<n>.clean` plus a `.gitattributes`, and agent6's own
+      auto-commit -- `git add -A` on the HOST, outside the jail, in the agent's
+      Landlock domain -- then ran it, reaching `$HOME` and the network. The
+      Landlock carve closes that; its cost is that hardened denies CREATING new
+      top-level entries in the workspace root (existing ones stay writable, and
+      the system prompt tells the model to create the entry with `apply_edit`
+      first).
 - **The edit tools refuse writes into an in-repo venv or `site-packages`.**
     - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
       editable-install `.pth` would silently corrupt the venv, invisible in `runs

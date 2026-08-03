@@ -683,3 +683,33 @@ def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
     assert "DENIED LINK" in res.stdout, f"protected file writable via symlink: {res.stdout!r}"
     assert "WROTE SIBLING" in res.stdout, f"the carve-out over-denied: {res.stdout!r}"
     assert step.read_text(encoding="utf-8").startswith("print('original')")
+
+
+def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: Path) -> None:
+    """`.git` must be unwritable under HARDENED too, not just strict.
+
+    It used to be writable there ("recoverable, and nothing sensitive is
+    exposed"), but a jailed command could plant a `filter.<n>.clean` in
+    .git/config plus a .gitattributes, and agent6's own auto-commit then ran
+    that command on the HOST -- outside the jail, in the agent's Landlock
+    domain, where it read $HOME and reached the network. Hardened is the common
+    downgrade (userns-blocked Ubuntu, default-seccomp Docker), so this is the
+    default posture for most Linux hosts."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text("[core]\n\trepositoryformatversion = 0\n", encoding="utf-8")
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=(
+                "/bin/sh",
+                "-c",
+                "printf '[filter]\\n\\tclean = sh evil.sh\\n' >> .git/config; cat .git/config",
+            ),
+            isolation="hardened",
+            extra_protect_paths=(git_dir,),
+            timeout_s=10.0,
+        )
+    )
+    assert "filter" not in res.stdout
+    assert "filter" not in (git_dir / "config").read_text(encoding="utf-8")
