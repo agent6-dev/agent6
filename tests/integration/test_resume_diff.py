@@ -146,21 +146,40 @@ def test_run_branch_tip_is_checked_without_checkout(tmp_path: Path) -> None:
 
 
 def test_run_branch_aligned_tip_passes_from_another_branch(tmp_path: Path) -> None:
-    # The run branch tip matches the snapshot: no refusal, even though HEAD (on
-    # main) has moved somewhere else entirely.
+    """The run branch tip matches the snapshot: no refusal, even though HEAD is
+    on a DIVERGED line (not merely ahead) -- an implementation that compared
+    HEAD instead of the branch tip would refuse here."""
     repo = _init_repo(tmp_path)
     base = _git(repo, "rev-parse", "HEAD")
     _git(repo, "branch", "agent6/r2", base)
     (repo / "a.txt").write_text("moved on\n")
     _git(repo, "commit", "-aqm", "advance main")
+    (repo / "a.txt").write_text("rewritten\n")
+    _git(repo, "commit", "-aqm", "rewrite main", "--amend")  # HEAD now diverged
     snap = _write_snapshot(tmp_path, {"head_sha": base})
     assert snapshot_head_mismatch(snap, repo, run_branch="agent6/r2") is None
 
 
 def test_missing_run_branch_falls_back_to_head(tmp_path: Path) -> None:
-    # A recorded branch that no longer exists: the checkout step re-cuts it at
-    # HEAD, so the guard compares the snapshot against HEAD.
+    """A recorded branch that no longer exists: the checkout step re-cuts it at
+    HEAD, so the guard compares the snapshot against HEAD -- and must REFUSE
+    when HEAD diverged. With snapshot == HEAD both the real fallback and a stub
+    that returns None on any unresolvable branch answer None, so the aligned
+    case alone proved nothing."""
     repo = _init_repo(tmp_path)
-    head = _git(repo, "rev-parse", "HEAD")
-    snap = _write_snapshot(tmp_path, {"head_sha": head})
-    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/gone") is None
+    aligned = _git(repo, "rev-parse", "HEAD")
+    assert (
+        snapshot_head_mismatch(
+            _write_snapshot(tmp_path, {"head_sha": aligned}), repo, run_branch="agent6/gone"
+        )
+        is None
+    )
+
+    # Rewrite history so HEAD is no longer a descendant of the snapshot head.
+    (repo / "a.txt").write_text("diverged\n")
+    _git(repo, "commit", "-aqm", "amended line", "--amend")
+    diverged = _git(repo, "rev-parse", "HEAD")
+    assert diverged != aligned
+    assert snapshot_head_mismatch(
+        _write_snapshot(tmp_path, {"head_sha": aligned}), repo, run_branch="agent6/gone"
+    ) == (aligned, diverged)
