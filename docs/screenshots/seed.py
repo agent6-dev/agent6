@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Install the committed seed fixtures into an isolated agent6 home for screenshots.
 
-Reads docs/screenshots/seed/runs/* and copies each run under
-``$AGENT6_STATE_HOME/<repo-id>/runs/`` where ``<repo-id>`` is computed for the
+Reads docs/screenshots/seed/runs/* and copies each session into agent6's own
+runs bucket under ``$AGENT6_STATE_HOME/<repo-id>/``, where ``<repo-id>`` is computed for the
 demo repo (``$AGENT6_DEMO_REPO`` or cwd). Also writes a demo ``config.toml`` and
 ``ui.toml`` (theme = agent6-dark) into ``$AGENT6_CONFIG_HOME`` so the config and
 theme are deterministic. No secrets are written; this never touches the real
@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from agent6.paths import repo_id
+from agent6.sessions.layout import bucket_dir
 
 SEED = Path(__file__).resolve().parent / "seed" / "runs"
 
@@ -84,7 +85,9 @@ def main() -> None:
         sys.exit("set AGENT6_STATE_HOME and AGENT6_CONFIG_HOME (generate.sh does this)")
 
     demo = Path(os.environ.get("AGENT6_DEMO_REPO") or Path.cwd()).resolve()
-    runs_dir = Path(state_base) / repo_id(demo) / "runs"
+    # Through agent6's own layout: a second spelling here silently seeds a
+    # directory the hub does not read, and every screenshot renders empty.
+    runs_dir = bucket_dir(Path(state_base) / repo_id(demo), "runs")
     if runs_dir.exists():
         shutil.rmtree(runs_dir)
     runs_dir.mkdir(parents=True)
