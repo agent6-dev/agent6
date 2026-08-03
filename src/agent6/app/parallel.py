@@ -653,9 +653,10 @@ def _await_lanes(
     def poll_once() -> None:
         for rid, res in list(pending.items()):
             summary = summarize_run_dir(res.run_dir)
-            # A "running" lane may actually be blocked on an approval/question no
-            # detached lane can answer; surface it so the operator opens the hub.
-            waiting = _pending_prompt(res.run_dir) if summary.status == "running" else ""
+            # A "waiting" lane is blocked on an approval/question no detached
+            # lane can answer; point the operator at the hub. _pending_prompt
+            # supplies only the approval-vs-question wording.
+            waiting = _pending_prompt(res.run_dir) if summary.status == "waiting" else ""
             key = (summary.status, waiting, round(summary.cost_usd, 4))
             if seen.get(rid) != key:
                 seen[rid] = key

@@ -614,9 +614,11 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """A lane the fold still calls "running" but which is blocked on an
-    unanswered question shows the "waiting on ... (answer via the web or TUI
-    hub)" note, so the operator knows to open a front-end."""
+    """Since the status unification a lane blocked on an unanswered prompt
+    reads "waiting", not "running" -- the word the hint was keyed on, so the
+    fan-out sat on a bare "waiting" forever with no pointer at the hub. The
+    hint must fire on the real word, with _pending_prompt supplying only the
+    approval-vs-question wording."""
     from agent6.viewmodel import RunSummary
 
     lane = tmp_path / "lane"
@@ -628,7 +630,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "wd", model=None)
     res = LaneResult(spec=spec, run_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
-    statuses = iter(["running", "failed"])  # waiting first poll, terminal next
+    statuses = iter(["waiting", "failed"])  # blocked first poll, terminal next
 
     def fake_summary(rd: Path) -> RunSummary:
         return RunSummary(
