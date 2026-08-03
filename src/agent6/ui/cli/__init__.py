@@ -369,7 +369,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
     return _cmd_resume(
         args.config,
         args.run_id,
-        force=args.force_resume,
+        force=args.force,
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),

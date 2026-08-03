@@ -147,7 +147,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Explicit config file (layered over global + repo configs).",
     )
     resume_p.add_argument(
-        "--force-resume",
+        "--force",
         action="store_true",
         help="Resume even if the workspace HEAD diverged from the run's last snapshot "
         "(a rebase, reset, or a commit on another line; plain forward movement resumes "

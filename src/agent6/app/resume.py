@@ -231,7 +231,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     instead of ``wf.run(task)``. A safety check refuses when the
     workspace HEAD DIVERGED from the snapshot (a rebase/reset/commit on
     another line); plain forward movement on the same line resumes
-    cleanly. ``--force-resume`` overrides the refusal.
+    cleanly. ``--force`` overrides the refusal.
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
     of the prior run's accounting. Each ``agent6 resume`` invocation
@@ -424,7 +424,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"  snapshot head: {snap_head}")
             reporter.err(f"  resume onto:   {onto_head}")
             if not force:
-                reporter.err("REFUSING to resume. Re-run with --force-resume to override.")
+                reporter.err("REFUSING to resume. Re-run with --force to override.")
                 return 1
 
         try:
