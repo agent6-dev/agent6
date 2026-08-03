@@ -601,3 +601,33 @@ def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
 
     final = json.dumps(resumed.call.call_args_list[-1].kwargs["messages"])
     assert final.count("which store?") == 2  # the finish_planning arg, plus ONE injection
+
+
+def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
+    """Continuing on the planner's own copy burns budget on direction the
+    operator may have superseded; the leg ends with the remedy instead."""
+    from agent6.workflows.loop import SessionResult
+
+    plan = tmp_path / "plan.md"
+    plan.write_text("# Plan\n", encoding="utf-8")
+    plan.chmod(0o000)
+    try:
+        wf = loopmod.Workflow(
+            root=tmp_path,
+            config=MagicMock(),
+            provider=MagicMock(),
+            dispatcher=MagicMock(),
+            mode="plan",
+            plan_output_path=plan,
+            logger=lambda _m: None,
+        )
+        got = wf._maybe_inject_plan(  # pyright: ignore[reportPrivateUsage]
+            MagicMock(), cast("Any", SimpleNamespace(plan_injected="", tool_calls=4)), iteration=3
+        )
+    finally:
+        plan.chmod(0o600)
+    assert isinstance(got, SessionResult)
+    assert got.reason == "plan_unreadable" and got.completed is False
+    assert "plan.md unreadable" in got.summary
+    assert "agent6 resume" in got.summary  # the remedy is in hand
+    assert got.iterations == 3 and got.tool_calls == 4

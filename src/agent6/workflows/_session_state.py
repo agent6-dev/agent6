@@ -40,6 +40,7 @@ SessionEndReason = Literal[
     "steer_abort",
     "detached",
     "prompt_revision_failed",
+    "plan_unreadable",
     "max_iterations",
     "ask_repl_empty",
     "gate_stale",
@@ -86,6 +87,8 @@ class SessionResult:
       detached          - operator chose "detach"; the CLI respawns a detached
                           `resume` to continue the run in the background.
       prompt_revision_failed - revise_prompt failed before the worker loop.
+      plan_unreadable   - plan mode could not re-read plan.md; parked with
+                          the remedy in the summary (resumable).
       max_iterations    - hit max_iterations cap without finish.
       ask_repl_empty    - interactive ask session ended with no question asked.
       gate_stale        - the worker finished over a red gate it says no longer

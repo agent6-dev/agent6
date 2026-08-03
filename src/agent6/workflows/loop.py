@@ -968,6 +968,8 @@ class Workflow:
                 start_iteration=start_iteration,
                 root_task_id=root_task_id,
             )
+            if isinstance(wire, SessionResult):
+                return wire
             # Rebuilt per turn, not per leg: a gate adopted mid-run, or a
             # policy the operator denies mid-run, changes what the worker has.
             # A frozen list told it to run a tool that was not there (commits
@@ -1077,12 +1079,13 @@ class Workflow:
         iteration: int,
         start_iteration: int,
         root_task_id: str | None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, Any]] | SessionResult:
         """Prepare the context for this turn's provider call: budget heartbeat,
         tiered compaction, the plan re-read, pre-call nudges, rolling cache
         breakpoints, then the pre-call resume snapshot. Returns the serialized
         wire, so the snapshot on disk and the provider call carry the same list
-        by construction.
+        by construction -- or the parked SessionResult when the plan file
+        cannot be read.
 
         The cache breakpoints advance AFTER compaction + nudges (the tail must
         be final) and BEFORE the snapshot (markers persist across resume).
@@ -1094,7 +1097,9 @@ class Workflow:
             # block; let the passes below put both back into the fresh context.
             state.surfaced_task_id = None
             state.plan_injected = ""
-        self._maybe_inject_plan(conversation, state)
+        parked = self._maybe_inject_plan(conversation, state, iteration=iteration)
+        if parked is not None:
+            return parked
         self._maybe_pre_call_nudges(
             conversation, state, iteration=iteration, start_iteration=start_iteration
         )
@@ -2372,7 +2377,9 @@ class Workflow:
             )
         return None
 
-    def _maybe_inject_plan(self, conversation: Conversation, state: _LoopState) -> None:
+    def _maybe_inject_plan(
+        self, conversation: Conversation, state: _LoopState, *, iteration: int
+    ) -> SessionResult | None:
         """Put the CURRENT plan.md in front of the planner, every turn.
 
         plan.md on disk is the plan; the conversation only ever holds a copy, and
@@ -2380,19 +2387,35 @@ class Workflow:
         So the file is re-read here rather than resynced at one chosen moment, and
         injected only when it differs from what the planner was last shown -- an
         untouched plan costs nothing. finish_planning stays the only writer.
+
+        An UNREADABLE plan parks the leg (the returned SessionResult): the file
+        may carry operator answers the planner's own copy supersedes, and
+        continuing without them spends budget on stale direction. A missing
+        file is normal (the first finish_planning creates it).
         """
         if self.mode != "plan" or self.plan_output_path is None:
-            return
+            return None
         try:
             text = self.plan_output_path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            return  # no plan yet; the first finish_planning creates it
+            return None  # no plan yet; the first finish_planning creates it
         except (OSError, UnicodeDecodeError) as exc:
-            self._log(f"  plan re-read failed: {exc}")
+            session_id = self.events.path.parent.name if self.events is not None else "<session-id>"
+            remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
+            self._log(f"LOOP: {remedy}")
             self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
-            return
+            self._emit(
+                "session.end", reason="plan_unreadable", iterations=iteration, all_passed=False
+            )
+            return SessionResult(
+                completed=False,
+                reason="plan_unreadable",
+                summary=remedy,
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
         if text == state.plan_injected:
-            return
+            return None
         state.plan_injected = text
         conversation.notice(f"{PLAN_ON_DISK_HEADER}\n\n{text}")
         self._log(f"  plan re-read from disk: {len(text)} chars")
