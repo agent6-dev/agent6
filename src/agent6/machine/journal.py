@@ -470,7 +470,15 @@ class MachineJournal:
         try:
             return PendingWait.model_validate_json(self.wait_path.read_text(encoding="utf-8"))
         except ValidationError as exc:
-            raise JournalError(f"corrupt pending wait {self.wait_path}: {exc}") from exc
+            # The engine cannot guess a wake instant from this: firing early or
+            # skipping the wait are both worse than refusing. Name the remedy,
+            # like every other refusal -- deleting the file re-arms the wait
+            # from the state itself on the next run.
+            raise JournalError(
+                f"corrupt pending wait {self.wait_path}: {exc}\n"
+                f"  delete it to re-arm the wait from the machine's own state:"
+                f" rm {self.wait_path}"
+            ) from exc
 
     def write_pending_wait(self, pending: PendingWait) -> None:
         """Persist the armed next-wake instant atomically (temp file + rename)."""
