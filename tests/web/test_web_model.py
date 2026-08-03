@@ -190,6 +190,33 @@ def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
     assert model.machine_snapshot(md)["status"] == "waiting"  # parked
 
 
+def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: Path) -> None:
+    """A failed machine's hub entry carries the reason label (failed · why), like
+    run and draft rows, not a bare 'failed' word."""
+    md = model.machines_root(tmp_path) / "m-fail"
+    md.mkdir(parents=True)
+    (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
+    (md / "journal.jsonl").write_text(
+        json.dumps({"type": "machine.begin", "ts": "t", "machine": "tiny", "version": 1})
+        + "\n"
+        + json.dumps(
+            {
+                "type": "machine.end",
+                "ts": "t",
+                "status": "failed",
+                "reason": "boom",
+                "state": "route",
+                "transitions": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (m,) = model.hub_payload(tmp_path)["machines"]
+    assert m["status"] == "failed"
+    assert m["label"] == "failed · boom"
+
+
 def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
     # A machine dir with no states/ subtree has no agent reasoning to fold.
     md = model.machines_root(tmp_path) / "m1"

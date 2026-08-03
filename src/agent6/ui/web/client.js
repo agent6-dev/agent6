@@ -300,7 +300,7 @@ function machinesCard(machines) {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));
-    it.appendChild(pill(m.status));
+    it.appendChild(pill(m.status, m.label || m.status)); // keep the reason (failed · why)
   });
 }
 
@@ -841,11 +841,13 @@ function paintRun(cards, s) {
   const isDead = notLive(s);
   if (!cards._readOnly) paintPrompts(cards, isDead ? {} : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
-  // Merge needs a run branch: an ask (or a branch_per_run=false run) has none,
-  // and a merged branch is gone, so clicking could only produce a git error.
+  // Merge needs a finished run with an unmerged branch: a live run (the server
+  // refuses one), an ask / branch_per_run=false run (no branch), or an already-
+  // merged branch can't be merged.
   if (cards._merge_btn) {
-    cards._merge_btn.disabled = !s.run_branch || !!s.merged_into;
-    cards._merge_btn.title = s.merged_into ? 'already merged into ' + s.merged_into
+    cards._merge_btn.disabled = !notLive(s) || !s.run_branch || !!s.merged_into;
+    cards._merge_btn.title = !notLive(s) ? 'the run is still live; stop or let it finish first'
+      : s.merged_into ? 'already merged into ' + s.merged_into
       : s.run_branch ? 'merge ' + s.run_branch + (s.base_branch ? ' into ' + s.base_branch : '')
       : 'this run has no branch to merge';
   }
@@ -868,14 +870,14 @@ function paintRun(cards, s) {
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
   if (s.compare && typeof s.compare.rank === 'number') {
     const c = s.compare;
-    const bits = [];
-    if (c.winner) bits.push('winner');
+    // Mirror format_compare (runs show / TUI): `rank 1/2 · winner · judge ($0.01)`.
+    const parts = ['rank ' + c.rank + '/' + c.of];
+    if (c.winner) parts.push('winner');
     if (c.ranked_by) {
-      // Same spelling as the CLI/TUI headline: judge ($0.0102), ~ = lower bound.
       const judged = c.judge_cost_usd > 0 || c.judge_cost_partial;
-      bits.push(c.ranked_by + (judged ? ' (' + fmtUsd(c.judge_cost_usd, c.judge_cost_partial) + ')' : ''));
+      parts.push(c.ranked_by + (judged ? ' (' + fmtUsd(c.judge_cost_usd, c.judge_cost_partial) + ')' : ''));
     }
-    add('compare', 'rank ' + c.rank + '/' + c.of + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
+    add('compare', parts.join(' · '));
   }
   cards.head.appendChild(kv);
   if (s.compare && s.compare.rationale) {

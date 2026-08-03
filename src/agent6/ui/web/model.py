@@ -180,9 +180,10 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
         else:
             entry["machine"] = ms.machine
             entry["current"] = ms.current
-            # Distinguish waiting (a parked --exit-on-wait instance, no live
-            # worker) from running, so a paused machine never renders as busy.
             entry["status"] = machine_word_for_dir(ms, d)
+            # Keep the failure reason on the pill, like run/draft rows.
+            if ms.ended is not None and ms.ended.status == "failed":
+                entry["label"] = f"failed · {ms.ended.reason}"
         out.append(entry)
     out.sort(key=lambda e: e["mtime"], reverse=True)
     return out
