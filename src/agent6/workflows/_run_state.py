@@ -33,6 +33,7 @@ RunReason = Literal[
     "verify_command_unexecutable",
     "loop_guard_killed",
     "interactive_stop",
+    "interrupted",  # KeyboardInterrupt; emitted by the app layer, not the loop
     "steer_abort",
     "detached",
     "prompt_revision_failed",

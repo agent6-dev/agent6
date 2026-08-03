@@ -207,6 +207,19 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
     assert done.kind == "done" and done.ok is False and done.name == "stopped"
 
 
+def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
+    """The app layer emits run.end reason="interrupted" on KeyboardInterrupt;
+    the value must live in RunReason (the wire vocabulary of run.end.reason)
+    and carry a friendly done-line label, not fall through as a raw token."""
+    from typing import get_args
+
+    from agent6.workflows._run_state import RunReason
+
+    assert "interrupted" in get_args(RunReason)
+    (done,) = fold_transcript([{"type": "run.end", "reason": "interrupted", "all_passed": False}])
+    assert done.kind == "done" and done.ok is False and done.name == "interrupted"
+
+
 def test_operator_steer_text_becomes_an_operator_item() -> None:
     """The loop's steer injection (a typed steer, or the follow-up a resume was
     started with) shows in the conversation as an operator turn; old logs that

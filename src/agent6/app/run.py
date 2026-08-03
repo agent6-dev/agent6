@@ -119,6 +119,7 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
+from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
 
@@ -780,9 +781,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # The loop was cut mid-step, so it never emitted run.end; do it
                 # here so an attached watcher/TUI stops instead of hanging. Carry
                 # the iteration the loop reached so run.end keeps one shape.
+                reason: RunReason = "interrupted"
                 events.emit(
                     "run.end",
-                    reason="interrupted",
+                    reason=reason,
                     iterations=wf.iterations_reached,
                     all_passed=False,
                 )

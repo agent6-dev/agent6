@@ -114,7 +114,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.viewmodel import newest_run_dir
-from agent6.workflows._run_state import load_run_snapshot
+from agent6.workflows._run_state import RunReason, load_run_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 
 
@@ -698,9 +698,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except KeyboardInterrupt:
                 interrupted = True
                 reporter.err("\n[agent6] resume interrupted")
+                reason: RunReason = "interrupted"
                 events.emit(
                     "run.end",
-                    reason="interrupted",
+                    reason=reason,
                     iterations=wf.iterations_reached,
                     all_passed=False,
                 )
