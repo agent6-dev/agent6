@@ -12,6 +12,7 @@ which all take an untrusted ``path`` argument.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 from dataclasses import dataclass
@@ -41,52 +42,67 @@ def resolve_in_root(root: Path, candidate: str) -> SafePath:
     return SafePath(abs_path=abs_path, rel_path=rel)
 
 
-def open_contained(root: Path, abs_path: Path, flags: int, rel: str) -> int:
-    """Open the checked path and PROVE the descriptor is the file that was
-    checked. Returns an fd the caller owns.
+def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
+    """A descriptor for subdirectory *name* of *dir_fd*, created when it is
+    missing and *create*."""
+    flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        return os.open(name, flags, dir_fd=dir_fd)
+    except FileNotFoundError:
+        if not create:
+            raise
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(name, dir_fd=dir_fd)
+    return os.open(name, flags, dir_fd=dir_fd)
 
-    :func:`resolve_in_root` resolves and contains a path; every caller then
-    re-opened it BY PATH, which is a second lookup with a window in between. A
-    jailed ``run_background`` loop can swap the leaf for a symlink inside that
-    window -- the workspace is writable and a symlink needs no access to its
-    target -- and these tools run IN-PROCESS, outside the jail, as the
-    operator. Probed against the unguarded write: content landed outside the
-    workspace on the 7th attempt.
 
-    ``O_NOFOLLOW`` refuses a leaf that BECAME a symlink (a resolved path has
-    none, so an honest call is unaffected -- including one through an in-repo
-    symlink, which resolved to its real target already). The ``/proc/self/fd``
-    readback then re-checks containment against what the kernel actually
-    opened, which also covers a parent directory swapped in the same window.
+def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bool = False) -> int:
+    """Open *rel_path* one component at a time from a descriptor on *root*,
+    each hop relative to the one before it. Returns an fd the caller owns.
+
+    :func:`resolve_in_root` resolves and contains a path; opening it again by
+    its full path is a second lookup, and a jailed ``run_background`` loop can
+    swap a component for a symlink out of the workspace in between (the
+    workspace is writable, a symlink needs no access to its target, and these
+    tools run IN-PROCESS, outside the jail, as the operator). For a write
+    (``O_CREAT|O_TRUNC``) the host file is already truncated by the time any
+    after-the-fact check can reject it.
+
+    ``O_NOFOLLOW`` on every component, including the parents this creates,
+    contains the walk by construction: no hop can traverse a symlink, and
+    :func:`resolve_in_root` already refused ``..``. Honest callers are
+    unaffected, including one working through an in-repo symlink, whose
+    resolved path names the real target.
     """
+    dir_fd = os.open(root, os.O_PATH | os.O_DIRECTORY)
     try:
-        fd = os.open(abs_path, flags | os.O_NOFOLLOW, 0o644)
+        for name in rel_path.parts[:-1]:
+            child = _open_dir(dir_fd, name, create=create_parents)
+            os.close(dir_fd)
+            dir_fd = child
+        return os.open(rel_path.name, flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+    except NotADirectoryError as exc:
+        raise ToolError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
-        if exc.errno in (errno.ELOOP, errno.EMLINK):
-            raise ToolError(f"Path became a symlink while it was being used: {rel!r}") from exc
+        if exc.errno == errno.ELOOP:
+            raise ToolError(f"Path became a symlink while it was being used: {rel_path}") from exc
         raise
-    try:
-        opened = Path(f"/proc/self/fd/{fd}").readlink()
-        root_real = root.resolve()
-        if opened != root_real and root_real not in opened.parents:
-            raise ToolError(f"Path escapes repo root: {rel!r}")
-    except Exception:
-        os.close(fd)
-        raise
-    return fd
+    finally:
+        os.close(dir_fd)
 
 
-def read_contained(root: Path, abs_path: Path, rel: str, *, errors: str = "strict") -> str:
-    """The file's text, read through a descriptor proven to be the checked
-    file. ``UnicodeDecodeError`` still reaches the caller, which reports it."""
-    fd = open_contained(root, abs_path, os.O_RDONLY, rel)
+def read_contained(root: Path, rel_path: Path, *, errors: str = "strict") -> str:
+    """The file's text, read through a descriptor walked from *root*.
+    ``UnicodeDecodeError`` still reaches the caller, which reports it."""
+    fd = open_contained(root, rel_path, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         return handle.read()
 
 
-def write_contained(root: Path, abs_path: Path, rel: str, content: str) -> None:
-    """Replace the file's text through a descriptor proven to be the checked
-    file."""
+def write_contained(root: Path, rel_path: Path, content: str) -> None:
+    """Replace the file's text through a descriptor walked from *root*, adding
+    any missing parent directories along the same walk."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    with os.fdopen(open_contained(root, abs_path, flags, rel), "w", encoding="utf-8") as handle:
+    fd = open_contained(root, rel_path, flags, create_parents=True)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(content)

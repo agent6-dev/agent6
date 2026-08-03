@@ -499,6 +499,29 @@ def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 2\n"
 
 
+def test_apply_edit_creates_missing_parent_dirs(tmp_path: Path) -> None:
+    """Both edit tools create a file whose directories do not exist yet; the
+    containment walk creates them, so an ordinary new package still lands."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {
+            "path": "pkg/sub/mod.py",
+            "edits": [{"kind": "create", "old_string": "", "new_string": "x = 1\n"}],
+        },
+    )
+    assert (tmp_path / "pkg" / "sub" / "mod.py").read_text(encoding="utf-8") == "x = 1\n"
+    d.dispatch(
+        "apply_patch",
+        {
+            "path": "pkg/other/new.py",
+            "patch": "--- /dev/null\n+++ b/pkg/other/new.py\n@@ -0,0 +1 @@\n+y = 2\n",
+        },
+    )
+    assert (tmp_path / "pkg" / "other" / "new.py").read_text(encoding="utf-8") == "y = 2\n"
+
+
 def test_apply_edit_non_unique_rejected(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "f.py").write_text("a\na\n", encoding="utf-8")

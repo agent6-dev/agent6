@@ -158,18 +158,110 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
     outside = tmp_path.parent / "agent6_race_target.txt"
     outside.write_text("HOST-CONTENT", encoding="utf-8")
     try:
-        swapped = tmp_path / "x.txt"
-        swapped.symlink_to(outside)
+        (tmp_path / "x.txt").symlink_to(outside)
 
         with pytest.raises(ToolError, match="became a symlink"):
-            write_contained(tmp_path, swapped, "x.txt", "PWNED")
+            write_contained(tmp_path, Path("x.txt"), "PWNED")
         assert outside.read_text(encoding="utf-8") == "HOST-CONTENT"
 
         # The read side is the same window, and leaks rather than writes.
         with pytest.raises(ToolError, match="became a symlink"):
-            read_contained(tmp_path, swapped, "x.txt")
+            read_contained(tmp_path, Path("x.txt"))
     finally:
         outside.unlink(missing_ok=True)
+
+
+def _swap_parent_for_a_link_out(root: Path, outside: Path) -> None:
+    """What a jailed `run_background` can do to the workspace: rename a
+    directory away and plant a symlink out of the workspace at its name."""
+    if not (root / "sub").is_symlink():
+        (root / "sub").rename(root / "sub-moved")
+        (root / "sub").symlink_to(outside, target_is_directory=True)
+
+
+def test_a_parent_swapped_after_the_check_creates_nothing_outside(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`O_NOFOLLOW` covers the LEAF only, so a swapped PARENT directory passed
+    it: `mkdir(parents=True)` built host directories and `O_CREAT` put a
+    model-named file among them, all before the containment check ran.
+
+    The swap is injected into the window it needs: between the containment
+    check and the write.
+    """
+    from agent6.tools import _fs_tools
+    from agent6.tools._path_safety import SafePath
+
+    root = tmp_path / "ws"
+    (root / "sub").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    real_guard = _fs_tools.refuse_protected_writes
+
+    def swap_after_the_check(
+        path: str,
+        config: Config,
+        extra_protect_paths: tuple[Path, ...],
+        resolved: SafePath | None = None,
+    ) -> None:
+        real_guard(path, config, extra_protect_paths, resolved)
+        if resolved is not None:
+            _swap_parent_for_a_link_out(root, outside)
+
+    monkeypatch.setattr(_fs_tools, "refuse_protected_writes", swap_after_the_check)
+    d = _dispatcher(root)
+    with pytest.raises(ToolError):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "sub/deep/new.txt",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "PWNED"}],
+            },
+        )
+    assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
+    assert not (outside / "deep").exists(), "mkdir(parents=True) escaped the workspace"
+    assert not (outside / "deep" / "new.txt").exists()
+
+
+def test_a_parent_swapped_before_the_write_truncates_no_host_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The write opens `O_WRONLY|O_CREAT|O_TRUNC`, so a swapped parent means the
+    host file is already at 0 bytes by the time a check can reject it. The tool
+    then reports the escape, which reads like the write never happened.
+
+    The swap is injected into the window it needs: after the edit tools read the
+    current text, before they write it back.
+    """
+    from agent6.tools import _fs_tools
+
+    root = tmp_path / "ws"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "keep.txt").write_text("in-repo", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("HOST-CONTENT", encoding="utf-8")
+
+    real_read = _fs_tools.read_contained
+
+    def swap_after_the_read(*args: object, **kwargs: object) -> str:
+        text = real_read(*args, **kwargs)  # pyright: ignore[reportCallIssue,reportArgumentType]
+        _swap_parent_for_a_link_out(root, outside)
+        return text
+
+    monkeypatch.setattr(_fs_tools, "read_contained", swap_after_the_read)
+    d = _dispatcher(root)
+    with pytest.raises(ToolError):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "sub/keep.txt",
+                "edits": [{"kind": "replace", "old_string": "in-repo", "new_string": "PWNED"}],
+            },
+        )
+    assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
+    assert (outside / "keep.txt").read_text(encoding="utf-8") == "HOST-CONTENT"
 
 
 def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None:
@@ -183,8 +275,8 @@ def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None
     (tmp_path / "link.txt").symlink_to(real)
 
     sp = resolve_in_root(tmp_path, "link.txt")
-    write_contained(tmp_path, sp.abs_path, "link.txt", "after")
-    assert read_contained(tmp_path, sp.abs_path, "link.txt") == "after"
+    write_contained(tmp_path, sp.rel_path, "after")
+    assert read_contained(tmp_path, sp.rel_path) == "after"
     assert real.read_text(encoding="utf-8") == "after", "the in-repo symlink stopped working"
 
 
