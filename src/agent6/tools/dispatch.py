@@ -27,14 +27,14 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
-from agent6.runs.ipc import effective_run_commands
-from agent6.runs.layout import session_layout
 from agent6.sandbox.jail import (
     JailUnavailableError,
     jail_search_path,
     operator_tool_paths,
     run_in_jail,
 )
+from agent6.sessions.ipc import effective_run_commands
+from agent6.sessions.layout import session_layout
 from agent6.skills import (
     ResolvedSkills,
     discover_skills,
@@ -312,7 +312,7 @@ class ToolDispatcher:
         extra_protect_paths: tuple[Path, ...] = (),
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: Path | None = None,
-        run_dir: Path | None = None,
+        session_dir: Path | None = None,
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -350,10 +350,10 @@ class ToolDispatcher:
         # Background commands live under the run dir so they die with the run
         # and `runs rm` clears them. None (tests, review dispatchers) leaves
         # them unwired: the tools raise ToolError, like the DAG tools.
-        self._shells = BackgroundShells(run_dir / "shells") if run_dir is not None else None
+        self._shells = BackgroundShells(session_dir / "shells") if session_dir is not None else None
         # The run's dir, for the effective command policy: the operator's
         # session choice and away-mode live there and can change mid-run.
-        self._run_dir = run_dir
+        self._session_dir = session_dir
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
@@ -433,9 +433,9 @@ class ToolDispatcher:
         the session stops being prompted from the next call.
         """
         configured = self._config.sandbox.run_commands
-        if self._run_dir is None:
+        if self._session_dir is None:
             return configured
-        return effective_run_commands(configured, self._run_dir)
+        return effective_run_commands(configured, self._session_dir)
 
     def available_tool_names(self) -> tuple[str, ...]:
         names = list(self._available)

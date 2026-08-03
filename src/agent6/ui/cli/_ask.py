@@ -14,13 +14,13 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
-from agent6.runs.layout import RunLayout, session_layout
-from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
+from agent6.sessions.layout import SessionLayout, session_layout
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _state_dir,
 )
 from agent6.ui.cli._steer import repl_prompt_sigint
-from agent6.viewmodel import first_task_line, newest_run_dir, run_mtime
+from agent6.viewmodel import first_task_line, newest_session_dir, session_mtime
 from agent6.workflows.loop import (
     RunResult,
     Workflow,
@@ -47,7 +47,7 @@ def cmd_ask_list() -> int:
         return 0
     dirs = sorted(
         (d for d in asks_dir.iterdir() if d.is_dir()),
-        key=run_mtime,
+        key=session_mtime,
         reverse=True,
     )
     if not dirs:
@@ -64,7 +64,7 @@ def cmd_ask_list() -> int:
     return 0
 
 
-def summarize_run_log(logs_path: Path) -> str:
+def summarize_session_log(logs_path: Path) -> str:
     """Compact prose summary of a run's logs.jsonl: outcome + event counts +
     recent notable events. Used to seed `agent6 ask --run`."""
     if not logs_path.is_file():
@@ -83,12 +83,18 @@ def summarize_run_log(logs_path: Path) -> str:
     for e in events:
         counts[str(e.get("type", ""))] = counts.get(str(e.get("type", "")), 0) + 1
     out: list[str] = []
-    end = next((e for e in reversed(events) if e.get("type") == "run.end"), None)
+    end = next((e for e in reversed(events) if e.get("type") == "session.end"), None)
     if end is not None:
         out.append(f"Ended: reason={end.get('reason')!r} iterations={end.get('iterations')}")
     top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
     out.append("Event counts: " + ", ".join(f"{t}={n}" for t, n in top))
-    notable_types = {"tool.call", "verify.end", "run.end", "loop.auto_commit", "loop.metric.sample"}
+    notable_types = {
+        "tool.call",
+        "verify.end",
+        "session.end",
+        "loop.auto_commit",
+        "loop.metric.sample",
+    }
     notable = [e for e in events if e.get("type") in notable_types][-15:]
     if notable:
         out.append("Recent notable events:")
@@ -103,8 +109,8 @@ def fmt_run_event(e: dict[str, Any]) -> str:
         return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
     if t == "verify.end":
         return f"verify.end exit={e.get('exit_code')}"
-    if t == "run.end":
-        return f"run.end reason={e.get('reason')}"
+    if t == "session.end":
+        return f"session.end reason={e.get('reason')}"
     if t == "loop.metric.sample":
         return f"loop.metric.sample score={e.get('score')}"
     return t
@@ -114,7 +120,7 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
     """Hardened ``git diff <range>``, bytes-captured and lossy-decoded: the old
     ``text=True`` strict decode raised UnicodeDecodeError out of communicate()
     on a valid non-UTF-8 diff (a latin-1 file), crashing ``ask --run``."""
-    # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
+    # operator-controlled argv, no LLM input (same as `agent6 sessions diff`).
     # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
     # would otherwise run on the host when the operator asks about a prior run.
     proc = subprocess.run(
@@ -131,7 +137,7 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
 
 
 def _diff_via_merge_stamp(
-    cwd: Path, manifest: RunManifest, base_sha: str, run_branch: str | None
+    cwd: Path, manifest: SessionManifest, base_sha: str, run_branch: str | None
 ) -> tuple[str, int, str, str] | None:
     """(label, rc, diff, err) via the manifest's merge stamp, for a primary
     range that is unreachable -- usually a run branch pruned after its merge,
@@ -158,7 +164,7 @@ def _diff_via_merge_stamp(
     return label, *_git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
 
 
-def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
+def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str | None:
     """Markdown digest of a prior SESSION to seed a new one, or None (after
     printing an error) when it can't be resolved.
 
@@ -171,22 +177,22 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         # runs/ and asks/ only: a machine draft is an authoring log, not a
         # session with a task and an outcome, and picking the newest one made
         # `--from-latest` fail on a project that had just written a machine.
-        newest = newest_run_dir([state_dir / "runs", state_dir / "asks"])
+        newest = newest_session_dir([state_dir / "runs", state_dir / "asks"])
         if newest is None:
             print(f"ERROR: --from-latest: no run or ask under {state_dir}", file=sys.stderr)
             return None
         found = session_layout(state_dir, newest.name)
     else:
-        found = session_layout(state_dir, run_id)
+        found = session_layout(state_dir, session_id)
     if found is None:
-        print(f"ERROR: no session {run_id!r} in this project", file=sys.stderr)
+        print(f"ERROR: no session {session_id!r} in this project", file=sys.stderr)
         return None
-    layout, target = found, found.run_id
+    layout, target = found, found.session_id
     if not layout.manifest_path.is_file():
         print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
         return None
     try:
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
     except ManifestError as exc:
         print(f"ERROR: could not read manifest for {target}: {exc}", file=sys.stderr)
         return None
@@ -219,7 +225,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         " workspace and is not reachable with read_file, so everything you have"
         " about it is in this digest.\n\n"
         f"## Run task\n{manifest.user_task}\n\n"
-        f"## Outcome / key events\n{summarize_run_log(layout.logs_path)}\n\n"
+        f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
         f"## Diff {diff_label}\n{diff_body}\n"
         f"</prior-run>"
     )
@@ -241,7 +247,7 @@ def seed_files(cwd: Path, files: list[str]) -> str:
     return "\n".join(parts)
 
 
-def save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> None:
+def save_ask_transcript(layout: SessionLayout, *, question: str, answer: str) -> None:
     """Write the human-readable `ask` transcript (question + markdown answer).
 
     A resumed ask appends its own Q&A: the file exists only because an earlier
@@ -249,7 +255,7 @@ def save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> Non
     has. Both halves are appended -- a bare second answer under the FIRST
     question read as a continuation of an answer to something else.
     """
-    out = layout.run_dir / "transcript.md"
+    out = layout.session_dir / "transcript.md"
     if out.is_file():
         with out.open("a", encoding="utf-8") as fh:
             fh.write(f"\n## Question (continued)\n\n{question}\n\n## Answer\n\n{answer}\n")
@@ -260,16 +266,16 @@ def save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> Non
     )
 
 
-def save_ask_repl_transcript(layout: RunLayout, conversation: list[tuple[str, str]]) -> None:
+def save_ask_repl_transcript(layout: SessionLayout, conversation: list[tuple[str, str]]) -> None:
     """Write the cumulative transcript for an interactive ask session."""
     parts = ["# agent6 ask (interactive)\n"]
     for i, (q, a) in enumerate(conversation, 1):
         parts.append(f"## Q{i}\n\n{q}\n\n## A{i}\n\n{a}\n")
-    (layout.run_dir / "transcript.md").write_text("\n".join(parts), encoding="utf-8")
+    (layout.session_dir / "transcript.md").write_text("\n".join(parts), encoding="utf-8")
 
 
 def run_ask_repl(
-    wf: Workflow, budget: BudgetTracker, layout: RunLayout, *, first_question: str
+    wf: Workflow, budget: BudgetTracker, layout: SessionLayout, *, first_question: str
 ) -> RunResult:
     """Interactive multi-turn ask. Each follow-up re-enters the loop with the
     prior Q&A carried as context, reusing the one provider/jail/budget setup.

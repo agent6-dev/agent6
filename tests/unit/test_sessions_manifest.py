@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""runs.manifest: the typed RunManifest reader. Every failure shape (missing,
+"""runs.manifest: the typed SessionManifest reader. Every failure shape (missing,
 unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the typed
 ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2
 flat merged_* keys, the legacy ``compare.group``) still parses for rendering;
@@ -14,19 +14,19 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.manifest import MANIFEST_VERSION, ManifestError, read_manifest
+from agent6.sessions.manifest import MANIFEST_VERSION, ManifestError, read_manifest
 
 _DATA = Path(__file__).parent / "data"
 
 
-def _write(run_dir: Path, payload: object) -> None:
-    (run_dir / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+def _write(session_dir: Path, payload: object) -> None:
+    (session_dir / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_reads_a_valid_manifest(tmp_path: Path) -> None:
-    _write(tmp_path, {"run_id": "r-1", "mode": "plan", "base_sha": "abc"})
+    _write(tmp_path, {"session_id": "r-1", "mode": "plan", "base_sha": "abc"})
     m = read_manifest(tmp_path)
-    assert m.run_id == "r-1"
+    assert m.session_id == "r-1"
     assert m.mode == "plan"
     assert m.base_sha == "abc"
 
@@ -125,7 +125,7 @@ def test_corrupt_json_raises(tmp_path: Path) -> None:
 def test_torn_utf8_raises(tmp_path: Path) -> None:
     # A torn multibyte write is a UnicodeDecodeError (a ValueError), which the
     # reader folds into the same typed error instead of leaking it.
-    (tmp_path / "manifest.json").write_bytes(b'{"run_id": "\x80')
+    (tmp_path / "manifest.json").write_bytes(b'{"session_id": "\x80')
     with pytest.raises(ManifestError):
         read_manifest(tmp_path)
 
@@ -142,11 +142,11 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
     # pins the EXACT bytes write_manifest lands on disk: key set, key order,
     # indent, null shape, trailing newline). A fresh run: no fork/merge/compare.
     from agent6.app.manifest import write_manifest
-    from agent6.runs.manifest import ModelBrief, ModelsBrief, RunManifest, WorkflowStamp
+    from agent6.sessions.manifest import ModelBrief, ModelsBrief, SessionManifest, WorkflowStamp
 
-    m = RunManifest(
+    m = SessionManifest(
         agent6_version="0.1.0",
-        run_id="r-fresh01",
+        session_id="r-fresh01",
         mode="run",
         start_ts="2026-07-16T00:00:00.000000+00:00",
         user_task="add a feature",
@@ -171,18 +171,18 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
     # parallel_id/lane + compare, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
     from agent6.app.manifest import write_manifest
-    from agent6.runs.manifest import (
+    from agent6.sessions.manifest import (
         CompareStamp,
         MergeStamp,
         ModelBrief,
         ModelsBrief,
-        RunManifest,
+        SessionManifest,
         WorkflowStamp,
     )
 
-    m = RunManifest(
+    m = SessionManifest(
         agent6_version="0.1.0",
-        run_id="r-lane02",
+        session_id="r-lane02",
         mode="run",
         start_ts="2026-07-16T00:00:00.000000+00:00",
         user_task="fan-out lane",
@@ -191,7 +191,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         run_branch="agent6/r-lane02",
         models=ModelsBrief(driver=ModelBrief(provider="openai", model="gpt-z")),
         workflow=WorkflowStamp(critic="on", revise_prompt="off", preset=""),
-        parent_run_id="r-parent",
+        parent_session_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,
         merged=MergeStamp(
@@ -227,9 +227,9 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
     downgrade the record it was only supposed to annotate."""
     from agent6.app.manifest import write_manifest
 
-    _write(tmp_path, {"version": 4, "run_id": "r-1", "future_key": {"x": 1}})
+    _write(tmp_path, {"version": 4, "session_id": "r-1", "future_key": {"x": 1}})
     m = read_manifest(tmp_path)  # reading it is fine
-    assert m.run_id == "r-1"
+    assert m.session_id == "r-1"
     with pytest.raises(ManifestError, match="version 4"):
         write_manifest(tmp_path / "manifest.json", m)
     # Untouched on disk: the newer record keeps its version AND its keys.
@@ -242,13 +242,13 @@ def test_rewriting_an_older_manifest_upgrades_it(tmp_path: Path) -> None:
     """An OLDER manifest has no keys this binary can lose, so a stamp rewrite
     upgrades the version claim to the shape it actually wrote."""
     from agent6.app.manifest import write_manifest
-    from agent6.runs.manifest import MANIFEST_VERSION
+    from agent6.sessions.manifest import MANIFEST_VERSION
 
-    _write(tmp_path, {"version": 1, "run_id": "r-old"})
+    _write(tmp_path, {"version": 1, "session_id": "r-old"})
     write_manifest(tmp_path / "manifest.json", read_manifest(tmp_path))
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["version"] == MANIFEST_VERSION
-    assert on_disk["run_id"] == "r-old"
+    assert on_disk["session_id"] == "r-old"
 
 
 def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
@@ -257,20 +257,20 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
     each leaves the newer record untouched and (for the lane) reports it."""
     from agent6.app.merge import record_merge_in_manifest
     from agent6.app.parallel import _stamp  # pyright: ignore[reportPrivateUsage]
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
 
-    run_dir = tmp_path / "runs" / "r-newer"
-    run_dir.mkdir(parents=True)
-    payload = {"version": 4, "run_id": "r-newer", "future_key": 1}
-    _write(run_dir, payload)
+    session_dir = tmp_path / "runs" / "r-newer"
+    session_dir.mkdir(parents=True)
+    payload = {"version": 4, "session_id": "r-newer", "future_key": 1}
+    _write(session_dir, payload)
 
-    layout = RunLayout(state_dir=tmp_path, run_id="r-newer")
+    layout = SessionLayout(state_dir=tmp_path, session_id="r-newer")
     record_merge_in_manifest(layout, merged_into="main", merged_sha="abc123")
-    assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload
+    assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
-    err = _stamp(run_dir, lane=2)
+    err = _stamp(session_dir, lane=2)
     assert err is not None and "version 4" in err
-    assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload
+    assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
 
 def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
@@ -278,9 +278,9 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
     to be the worker unconditionally, so a plan run -- driven by the planner --
     displayed a model that never ran, and disagreed with both the web (which
     reads the role events) and its own cost block."""
-    from agent6.app.manifest import write_run_manifest
+    from agent6.app.manifest import write_session_manifest
     from agent6.config import Config
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
 
     cfg = Config.model_validate(
         {
@@ -292,11 +292,11 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
         }
     )
     for mode, expected in (("plan", "planner-model"), ("run", "worker-model")):
-        layout = RunLayout(state_dir=tmp_path / mode, run_id="r")
+        layout = SessionLayout(state_dir=tmp_path / mode, session_id="r")
         layout.ensure()
-        write_run_manifest(
+        write_session_manifest(
             layout,
-            run_id="r",
+            session_id="r",
             user_task="t",
             base_sha="",
             base_branch="main",
@@ -304,7 +304,7 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
             cfg=cfg,
             mode=mode,
         )
-        driver = read_manifest(layout.run_dir).models.driver
+        driver = read_manifest(layout.session_dir).models.driver
         assert driver is not None and driver.model == expected
 
 
@@ -313,7 +313,7 @@ def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -
     the field defaulted to "run", so a manifest that lost its mode (truncated,
     hand-edited, written by something else) resumed or forked with the
     write-tool surface -- the exact escalation session_mode exists to stop."""
-    _write(tmp_path, {"version": 3, "run_id": "r", "user_task": "t"})
+    _write(tmp_path, {"version": 3, "session_id": "r", "user_task": "t"})
     m = read_manifest(tmp_path)
     with pytest.raises(ManifestError, match="unknown session mode"):
         m.session_mode()
@@ -332,7 +332,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
     from agent6.app.manifest import stamp_verify_gate
 
     (tmp_path / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": "run", "run_id": "r"}), encoding="utf-8"
+        json.dumps({"version": 3, "mode": "run", "session_id": "r"}), encoding="utf-8"
     )
     assert read_manifest(tmp_path).workflow.verify_origin == ""  # gateless until pinned
     stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
@@ -377,10 +377,10 @@ def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: Path) -> Non
     from agent6.types import SESSION_KINDS
 
     for name, kind in SESSION_KINDS.items():
-        run_dir = tmp_path / name
-        run_dir.mkdir()
-        _write(run_dir, {"mode": name})
-        manifest = read_manifest(run_dir)
+        session_dir = tmp_path / name
+        session_dir.mkdir()
+        _write(session_dir, {"mode": name})
+        manifest = read_manifest(session_dir)
         if kind.resumable:
             assert manifest.session_mode() == name
             continue

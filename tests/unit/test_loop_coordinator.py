@@ -179,13 +179,19 @@ class _FakeGroupSpawner:
         self.calls.append((list(lanes), group))
         results: list[LaneResult] = []
         for i, lane in enumerate(lanes, start=1):
-            run_id = f"{self.coord_id}-{group}-l{i}"
-            branch = f"agent6/{run_id}"
-            spec = LaneSpec(lane=i, run_id=run_id, workdir=self.wt_root / run_id, model=lane.model)
+            session_id = f"{self.coord_id}-{group}-l{i}"
+            branch = f"agent6/{session_id}"
+            spec = LaneSpec(
+                lane=i, session_id=session_id, workdir=self.wt_root / session_id, model=lane.model
+            )
             if i in self.fail:
                 results.append(
                     LaneResult(
-                        spec=spec, run_dir=spec.workdir, branch=branch, ok=False, error="lane boom"
+                        spec=spec,
+                        session_dir=spec.workdir,
+                        branch=branch,
+                        ok=False,
+                        error="lane boom",
                     )
                 )
                 continue
@@ -199,7 +205,7 @@ class _FakeGroupSpawner:
                     self.repo, branch, base, f"lane{i}.txt", f"lane {i}\n", self.wt_root / f"wt{i}"
                 )
             results.append(
-                LaneResult(spec=spec, run_dir=spec.workdir, branch=branch, ok=True, error="")
+                LaneResult(spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error="")
             )
         return results
 
@@ -351,7 +357,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     joined = events.of("loop.parallel.joined")
     assert dispatched and dispatched[0] == {"group": "p1", "tasks": ["task one", "task two"]}
     assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
-    assert [ln["run_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
+    assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
     assert not events.of("loop.parallel.failed")
     # One summary message names both joined lanes.
     summary = [
@@ -400,7 +406,10 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
     assert f"{coord_id}-p1-l1" in note and f"{coord_id}-p1-l2" in note
     # Both lanes still surface per-lane in the joined event.
     joined = events.of("loop.parallel.joined")[0]
-    assert [ln["run_id"] for ln in joined["lanes"]] == [f"{coord_id}-p1-l1", f"{coord_id}-p1-l2"]
+    assert [ln["session_id"] for ln in joined["lanes"]] == [
+        f"{coord_id}-p1-l1",
+        f"{coord_id}-p1-l2",
+    ]
 
 
 def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: Path) -> None:
@@ -470,7 +479,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
     joined = events.of("loop.parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "conflict"]
     failed = events.of("loop.parallel.failed")
-    assert failed and [ln["run_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l2"]
+    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l2"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
     assert sorted(n["status"] for n in steering) == ["failed", "passed"]
@@ -672,9 +681,9 @@ def test_coordinator_spawner_gate_under_subrun(
     cfg = Config()
     monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
     # A write run outside a lane gets a real dispatcher.
-    assert callable(build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", run_id="r"))
+    assert callable(build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", session_id="r"))
     # plan/ask make no commits to clone -> no dispatcher.
-    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="plan", run_id="r") is None
+    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="plan", session_id="r") is None
     # Inside a subordinate lane -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
-    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", run_id="r") is None
+    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", session_id="r") is None

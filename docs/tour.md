@@ -16,7 +16,7 @@ cost. Enter opens a run; `c` opens the config page; `?` lists the keys.
 
 ## Conversation
 
-Opening a run lands on its conversation (also `agent6 runs transcript`): the task, the
+Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the
 model's reasoning, and every tool call with its complete input and output, following
 live. A live run keeps a steer bar at the bottom.
 

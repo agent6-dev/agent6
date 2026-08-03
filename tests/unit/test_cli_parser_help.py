@@ -57,7 +57,7 @@ def test_bare_parent_command_error_names_subcommand_not_dest(
 ) -> None:
     # A parent whose subcommand is required must name "<subcommand>", not leak
     # the argparse dest ("plan_command"). (`runs` no longer errors here: bare
-    # `agent6 runs` lists runs.)
+    # `agent6 sessions` lists runs.)
     with pytest.raises(SystemExit):
         build_parser().parse_args(["plan"])
     err = capsys.readouterr().err
@@ -123,7 +123,7 @@ def test_profile_flags_have_the_profiles_completer() -> None:
 def test_option_metavars() -> None:
     parser = build_parser()
     assert _option(_find(parser, "create"), "--max-attempts").metavar == "N"
-    assert _option(_find(parser, "search"), "--run").metavar == "RUN_ID"
+    assert _option(_find(parser, "search"), "--session").metavar == "SESSION_ID"
 
 
 def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]) -> None:

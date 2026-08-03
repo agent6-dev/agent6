@@ -190,7 +190,7 @@ def test_an_undecodable_store_file_raises_a_memory_store_error(tmp_path: Path) -
     """One non-UTF-8 byte in a memories file raised a bare UnicodeDecodeError.
     Every run builds the memory block at startup and both call sites degrade on
     MemoryStoreError/OSError only, so the ValueError went straight through and
-    killed the run after run.start, naming no file."""
+    killed the run after session.start, naming no file."""
     add(tmp_path, "facts", "readable")
     bad = tmp_path / "memories" / "decisions.md"
     bad.write_bytes(b"id: x\nscope: decisions\n\xff\xfe body\n")

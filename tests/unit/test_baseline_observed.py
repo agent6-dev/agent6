@@ -171,7 +171,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
 def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
     """Attribution belongs in the word, not the exit code: a script reading 0
     would take it as a passing gate, and the tree is not green either way."""
-    from agent6.app.finalize import run_exit_code
+    from agent6.app.finalize import session_exit_code
     from agent6.workflows._run_state import RunResult
 
     inherited = RunResult(
@@ -182,7 +182,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
         tool_calls=1,
         verified="failed",
     )
-    assert run_exit_code(inherited) == 4
+    assert session_exit_code(inherited) == 4
 
 
 def test_the_listing_and_the_header_agree_on_the_word() -> None:

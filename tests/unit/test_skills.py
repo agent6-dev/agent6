@@ -167,8 +167,8 @@ class TestResolveStates:
 def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
     """A SKILL.md with one non-UTF-8 byte (or an unreadable file) crashed
     discovery, and discovery runs at startup: every `agent6 run` then died with
-    a bare UnicodeDecodeError naming no file, after run.start and before any
-    run.end. A bad skill must degrade to a warning like every other malformed
+    a bare UnicodeDecodeError naming no file, after session.start and before any
+    session.end. A bad skill must degrade to a warning like every other malformed
     one, leaving the healthy skills usable."""
     bad = tmp_path / "broken"
     bad.mkdir()

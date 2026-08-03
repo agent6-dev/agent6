@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The TUI run views read run status from THE dir decision (status_for_run_dir).
+"""The TUI run views read run status from THE dir decision (status_for_session_dir).
 
 Before this, the TUI derived status three separate ways (a pure event fold for
 the label, a one-way run_ended latch for liveness, the conversation's own
@@ -33,7 +33,7 @@ def _mk_parked(d: Path) -> None:
         json.dumps(
             {
                 "version": 2,
-                "run_id": d.name,
+                "session_id": d.name,
                 "mode": "run",
                 "user_task": "fix the flaky test",
                 "parked_task": "fix the flaky test",
@@ -46,7 +46,7 @@ def _mk_parked(d: Path) -> None:
 def _mk_crashed(d: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     evs = [
-        {"type": "run.start", "run_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
@@ -89,7 +89,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
         app = Agent6TUI(tmp_path / "parked1")
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            assert app.run_controllable() is False  # resume is the one action
+            assert app.session_controllable() is False  # resume is the one action
             top = str(app._dash.query_one("#top", Static).render())
             assert "parked · resume to start" in top
             assert "task: fix the flaky test" in top  # manifest fallback, not a blank line
@@ -150,7 +150,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await _wait_for(pilot, lambda: not app.worker_lost, "liveness to recover after resume")
-            assert app.run_controllable() is True
+            assert app.session_controllable() is True
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -165,7 +165,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
 
 def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) -> None:
     """The PRIMARY conversation view keys its composer on the host's liveness,
-    not its own event tracking: a worker killed without a run.end relabels the
+    not its own event tracking: a worker killed without a session.end relabels the
     bar to resume (its old event-only _live stayed True forever, and typed
     steers went to a corpse with a success toast)."""
     d = tmp_path / "convdead1"
@@ -198,7 +198,7 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) ->
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "run.start", "run_id": d.name, "mode": "run", "user_task": "t"},
+                {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
                 {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
             )
         ),
@@ -230,7 +230,7 @@ def _mk_blocked(d: Path, *, alive: bool) -> None:
     """A run blocked on an unanswered approval, with a live or dead worker."""
     d.mkdir(parents=True, exist_ok=True)
     evs = [
-        {"type": "run.start", "run_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
         {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: pytest"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")

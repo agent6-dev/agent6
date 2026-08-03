@@ -16,9 +16,9 @@ from agent6.config import Config, load_config
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
-from agent6.runs.ipc import register_frontend
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import MANIFEST_VERSION
+from agent6.sessions.ipc import register_frontend
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import MANIFEST_VERSION
 from agent6.tools.dispatch import ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.tools.results import ExecResult, PatchResult, ToolResult
@@ -115,7 +115,7 @@ def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
         "run_in_sandbox",
         "apply_patch_in_sandbox",
         "query_dag",
-        "list_runs",
+        "list_sessions",
     }
     # Every tool advertises a JSON-schema object.
     for t in tools:
@@ -186,12 +186,12 @@ def test_list_runs_empty(tmp_path: Path) -> None:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "list_runs", "arguments": {}},
+                "params": {"name": "list_sessions", "arguments": {}},
             }
         ],
     )
     payload = resps[0]["result"]["structuredContent"]
-    assert payload == {"runs": []}
+    assert payload == {"sessions": []}
 
 
 def test_list_runs_reads_manifests(tmp_path: Path) -> None:
@@ -218,17 +218,17 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "list_runs", "arguments": {}},
+                "params": {"name": "list_sessions", "arguments": {}},
             }
         ],
     )
-    runs_out = resps[0]["result"]["structuredContent"]["runs"]
-    assert [r["run_id"] for r in runs_out] == ["run-b", "run-a"]
-    # Shipped as the typed RunManifest dump (full shape, defaults filled), not the
+    sessions_out = resps[0]["result"]["structuredContent"]["sessions"]
+    assert [r["session_id"] for r in sessions_out] == ["run-b", "run-a"]
+    # Shipped as the typed SessionManifest dump (full shape, defaults filled), not the
     # raw dict: the recorded user_task survives, the version stamp is present.
-    assert runs_out[1]["manifest"]["user_task"] == "alpha"
-    assert runs_out[1]["manifest"]["version"] == MANIFEST_VERSION
-    assert "manifest" not in runs_out[0]
+    assert sessions_out[1]["manifest"]["user_task"] == "alpha"
+    assert sessions_out[1]["manifest"]["version"] == MANIFEST_VERSION
+    assert "manifest" not in sessions_out[0]
 
 
 def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
@@ -245,12 +245,12 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
         ],
     )
     assert resps[0]["result"]["isError"] is True
-    assert "no runs" in resps[0]["result"]["content"][0]["text"]
+    assert "no sessions" in resps[0]["result"]["content"][0]["text"]
 
 
 @pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
 def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
-    """A client-supplied run_id builds `state_dir/runs/<run_id>`; a `..` or
+    """A client-supplied session_id builds `state_dir/runs/<session_id>`; a `..` or
     absolute id would read another repo's state (or anywhere). It must be
     rejected as a single-component id, like the web surface's guard."""
     server = _server(tmp_path)
@@ -261,16 +261,16 @@ def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "query_dag", "arguments": {"run_id": bad}},
+                "params": {"name": "query_dag", "arguments": {"session_id": bad}},
             }
         ],
     )
     assert resps[0]["result"]["isError"] is True
-    assert "invalid run_id" in resps[0]["result"]["content"][0]["text"]
+    assert "invalid session_id" in resps[0]["result"]["content"][0]["text"]
 
 
 def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="r1")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="r1")
     layout.ensure()
     node = TaskNode(
         id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -295,13 +295,13 @@ def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
                 "method": "tools/call",
                 "params": {
                     "name": "query_dag",
-                    "arguments": {"run_id": "r1"},
+                    "arguments": {"session_id": "r1"},
                 },
             }
         ],
     )
     payload = resps[0]["result"]["structuredContent"]
-    assert payload["run_id"] == "r1"
+    assert payload["session_id"] == "r1"
     assert payload["nodes"]["01ARZ3NDEKTSV4RRFFQ69G5FAV"]["title"] == "root task"
 
 
@@ -488,7 +488,7 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     # directory mtime is not chronological either. The newest log activity wins.
     import os
 
-    from agent6.ui.mcp_server import _most_recent_run_id  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.mcp_server import _most_recent_session_id  # pyright: ignore[reportPrivateUsage]
 
     runs = tmp_path / "runs"
     runs.mkdir()
@@ -496,12 +496,12 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     newer = runs / "aaa-newer-BBB222"  # alphabetically first
     older.mkdir()
     newer.mkdir()
-    (older / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
-    (newer / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    (older / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
+    (newer / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(older / "logs.jsonl", (1000, 1000))
     os.utime(newer / "logs.jsonl", (2000, 2000))
     register_frontend(older, 12345)
-    assert _most_recent_run_id(tmp_path) == "aaa-newer-BBB222"
+    assert _most_recent_session_id(tmp_path) == "aaa-newer-BBB222"
 
 
 # ---------------------------------------------------------------------------

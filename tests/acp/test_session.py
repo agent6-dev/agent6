@@ -55,7 +55,7 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
         return "end_turn"
 
     sessions = _sessions(_run)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
     replies = _drive(payload + b"\n", sessions)
@@ -80,7 +80,7 @@ def test_the_read_loop_stays_free_while_a_turn_runs() -> None:
         return "end_turn"
 
     sessions = _sessions(_run)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
 
     out = io.BytesIO()
@@ -121,7 +121,7 @@ def test_a_turn_cancelled_while_it_runs_reports_itself_as_cancelled() -> None:
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     assert started.wait(timeout=5)
@@ -136,7 +136,7 @@ def test_a_stale_cancel_does_not_kill_the_next_turn() -> None:
     """The flag belongs to the turn it cancelled. Carrying it forward would
     make the following prompt end before it began."""
     sessions = _sessions(_ends)
-    session = Session(id="s1", cwd=Path("/repo"), cancelled=True)
+    session = Session(acp_id="s1", cwd=Path("/repo"), cancelled=True)
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     if session.thread is not None:
@@ -151,7 +151,7 @@ def test_a_run_that_dies_still_ends_the_turn() -> None:
         raise RuntimeError("the provider fell over")
 
     sessions = _sessions(_boom)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     seen: list[str] = []
     sessions.start_turn(session, "go", finish=seen.append)
     if session.thread is not None:
@@ -168,7 +168,7 @@ def test_a_second_turn_on_a_busy_session_is_refused() -> None:
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     try:
         sessions.start_turn(session, "one", finish=lambda _r: None)
         with pytest.raises(Exception, match="already has a turn"):
@@ -209,7 +209,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
     the reply -- so a conforming editor that writes its next prompt the instant
     it reads the answer was refused at random."""
     sessions = _sessions(_ends)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     seen: list[bool] = []
 
     def _finish(_reason: str) -> None:
@@ -234,7 +234,7 @@ def test_eof_lets_a_live_turn_reach_a_boundary() -> None:
         return "end_turn"
 
     sessions = _sessions(_slow)
-    session = Session(id="s1", cwd=Path("/repo"))
+    session = Session(acp_id="s1", cwd=Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
 
     out = io.BytesIO()
@@ -256,7 +256,7 @@ def test_a_prompt_sent_as_a_notification_is_refused() -> None:
     """A turn's whole point is the stopReason it answers with; replying with a
     null id is not valid JSON-RPC."""
     sessions = _sessions(_ends)
-    sessions._by_id["s1"] = Session(id="s1", cwd=Path("/repo"))  # pyright: ignore[reportPrivateUsage]
+    sessions._by_id["s1"] = Session(acp_id="s1", cwd=Path("/repo"))  # pyright: ignore[reportPrivateUsage]
     payload = json.dumps(
         {
             "jsonrpc": "2.0",

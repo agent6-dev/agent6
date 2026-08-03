@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.events import EventSink
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     request_steer,
     steer_request_pending,
     write_steer_answer,
@@ -41,7 +41,7 @@ def test_prompt_without_answer_clears_request(
 ) -> None:
     # A dead/abandoned front-end yields None; the request marker must go with
     # it or the next loop boundary re-triggers another blocking read forever.
-    def no_answer(run_dir: Path) -> str | None:
+    def no_answer(session_dir: Path) -> str | None:
         return None
 
     monkeypatch.setattr("agent6.ui.cli._steer.read_steer_answer", no_answer)
@@ -72,7 +72,7 @@ def test_make_steer_state_without_tty_uses_bridge(
 def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     """The non-blocking stop peek: True only for abort/stop, and it never consumes
     the answer (the between-step boundary still handles it)."""
-    from agent6.runs.ipc import steer_answer_is_abort
+    from agent6.sessions.ipc import steer_answer_is_abort
 
     assert not steer_answer_is_abort(tmp_path)  # no answer file yet
     write_steer_answer(tmp_path, "focus on the parser")
@@ -163,7 +163,7 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
-    def fake_menu(run_dir: Path, **_kw: object) -> str | None:
+    def fake_menu(session_dir: Path, **_kw: object) -> str | None:
         calls.append("prompt")
         return "steer text"
 
@@ -217,7 +217,7 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> Non
     seeds the next leg through them."""
     import signal
 
-    from agent6.runs.ipc import request_steer, steer_request_pending, write_steer_answer
+    from agent6.sessions.ipc import request_steer, steer_request_pending, write_steer_answer
     from agent6.ui.cli._steer import install_steer_sigint
 
     events = MagicMock()
@@ -272,7 +272,7 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
 def test_compact_request_carries_focus(tmp_path: Path) -> None:
     """The compact marker body is the operator's optional summary focus:
     "" = plain compact, None = no request pending."""
-    from agent6.runs.ipc import clear_compact_request, read_compact_request, request_compact
+    from agent6.sessions.ipc import clear_compact_request, read_compact_request, request_compact
 
     assert read_compact_request(tmp_path) is None
     request_compact(tmp_path)
@@ -288,7 +288,7 @@ def test_compact_request_reports_a_failed_write(tmp_path: Path) -> None:
     wrapped in suppress(OSError) while every front-end reported "compaction
     requested" unconditionally, so a read-only or full state dir looked like
     success and nothing ever compacted."""
-    from agent6.runs.ipc import read_compact_request, request_compact
+    from agent6.sessions.ipc import read_compact_request, request_compact
 
     assert request_compact(tmp_path) is True
     # A run dir that is really a file: the publish cannot succeed.
@@ -305,7 +305,7 @@ def test_compact_request_publishes_atomically(
     polls read_compact_request every boundary, so a plain write_text exposed an
     empty/partial focus the run then consumed -- and clear_compact_request
     deleted the real one before it was ever read."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     calls: list[tuple[Path, str]] = []
     real = ipc.atomic_write

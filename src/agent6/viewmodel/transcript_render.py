@@ -9,7 +9,7 @@ self-contained record (no join with ``logs.jsonl`` needed). This module folds
 that sequence -- across BOTH the OpenAI and Anthropic wire shapes -- into an
 ordered list of conversation turns and renders them as Markdown.
 
-``agent6 runs transcript`` is the CLI front end (``--json`` returns the raw
+``agent6 sessions transcript`` is the CLI front end (``--json`` returns the raw
 transcript array instead). The fold walks transcripts in seq order, emitting
 only newly-introduced messages per call, so the cumulative-snapshot growth is
 not double-printed and a mid-run context-compaction reset shows as a marker.
@@ -334,13 +334,13 @@ def _clip(s: str, n: int) -> str:
 def render_markdown(
     turns: list[Turn],
     *,
-    run_id: str,
+    session_id: str,
     show_thinking: bool = True,
     tools: str = "both",
     result_cap: int = 4000,
 ) -> str:
     """Render folded turns as a Markdown conversation. `tools` in both|calls|none."""
-    out: list[str] = [f"# Transcript: {run_id}", ""]
+    out: list[str] = [f"# Transcript: {session_id}", ""]
     for tn in turns:
         if tn.role == "marker":
             out.append(f"\n--- {tn.text} ---\n")

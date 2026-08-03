@@ -236,7 +236,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             # (names/args), the stream pane and the diff pane, all of which carry
             # model output that would otherwise be parsed as Rich markup.
             for ev in (
-                _ev(type="run.start", user_task="do [a] thing", mode="run"),
+                _ev(type="session.start", user_task="do [a] thing", mode="run"),
                 _ev(
                     type="graph.update",
                     cursor="t1",
@@ -287,7 +287,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             # popup): the bar takes focus, typing + Enter answers over the bridge.
             from agent6.ui.tui.conversation import SteerInput
 
-            app._handle_event(_ev(type="run.steer_requested", source="sigint"))
+            app._handle_event(_ev(type="session.steer_requested", source="sigint"))
             app._tick()
             bar = app._dash.query_one("#dash-input", SteerInput)
             await _settle_focus(pilot, bar)
@@ -494,7 +494,7 @@ def test_dashboard_claims_are_per_process(tmp_path: Path) -> None:
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     peer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
-        from agent6.runs.ipc import frontend_is_live, register_frontend
+        from agent6.sessions.ipc import frontend_is_live, register_frontend
 
         register_frontend(tmp_path, peer.pid)  # a live web viewer's claim
 
@@ -521,7 +521,7 @@ def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: Path) -> Non
     import os
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    from agent6.runs.ipc import frontend_is_live, register_frontend
+    from agent6.sessions.ipc import frontend_is_live, register_frontend
 
     register_frontend(tmp_path, 999999999)  # dead
 
@@ -545,7 +545,7 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
-            app._handle_event(_ev(type="run.start", user_task="session one", mode="run"))
+            app._handle_event(_ev(type="session.start", user_task="session one", mode="run"))
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="first?"))
             app._tick()
             await pilot.pause()
@@ -554,9 +554,9 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
             await pilot.pause()
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # The resume: a real resumed leg emits ONLY loop.resume.start (never
-            # a second run.start -- workflows/loop.py run() vs resume()), then
-            # the new session's approval-1. Feeding run.start here masked the
-            # bug where the seen-set was cleared only on run.start and every
+            # a second session.start -- workflows/loop.py run() vs resume()), then
+            # the new session's approval-1. Feeding session.start here masked the
+            # bug where the seen-set was cleared only on session.start and every
             # resumed leg's modals were swallowed forever.
             app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
@@ -572,7 +572,7 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
 
 
 def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
-    from agent6.runs.ipc import clear_steer_request, request_steer, steer_request_pending
+    from agent6.sessions.ipc import clear_steer_request, request_steer, steer_request_pending
 
     assert not steer_request_pending(tmp_path)
     request_steer(tmp_path)
@@ -589,7 +589,7 @@ def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
     composer to resume instead, because a steer file there is never read."""
     import os
 
-    from agent6.runs.ipc import steer_request_pending, write_worker_pid
+    from agent6.sessions.ipc import steer_request_pending, write_worker_pid
     from agent6.ui.tui.conversation import SteerInput
 
     async def scenario() -> None:
@@ -630,8 +630,8 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                _ev(type="run.start", user_task="x", mode="run"),
-                _ev(type="run.end", reason="completed", all_passed=True),
+                _ev(type="session.start", user_task="x", mode="run"),
+                _ev(type="session.end", reason="completed", all_passed=True),
             )
         ),
         encoding="utf-8",
@@ -646,7 +646,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
                     break
             await pilot.pause()
             bar = app._conv.query_one("#conv-input", SteerInput)
-            assert bar.display  # the primary view keeps the bar after run.end
+            assert bar.display  # the primary view keeps the bar after session.end
             assert bar.border_title == "continue the run"  # relabelled for resume
             bar.post_message(SteerInput.Submitted("also add tests"))
             await pilot.pause()
@@ -662,7 +662,7 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
     file bridge -- the stream watchdog interrupts the in-flight turn."""
     import os
 
-    from agent6.runs.ipc import steer_request_pending, write_worker_pid
+    from agent6.sessions.ipc import steer_request_pending, write_worker_pid
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
@@ -688,7 +688,7 @@ def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
     boundary."""
     import os
 
-    from agent6.runs.ipc import stop_request_pending, write_worker_pid
+    from agent6.sessions.ipc import stop_request_pending, write_worker_pid
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
@@ -725,7 +725,7 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: An
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
-            app._handle_event(_ev(type="run.start", user_task="x", mode="run"))
+            app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model="m", provider="p"))
             app._handle_event(
                 _ev(
@@ -754,7 +754,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     compact)."""
     import os
 
-    from agent6.runs.ipc import read_compact_request, write_worker_pid
+    from agent6.sessions.ipc import read_compact_request, write_worker_pid
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -768,7 +768,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
             assert read_compact_request(tmp_path) is not None  # marker dropped for the run
             # A finished run: the action refuses instead of dropping a marker.
             (tmp_path / "compact.request").unlink()
-            app._handle_event(_ev(type="run.end", reason="completed", all_passed=True))
+            app._handle_event(_ev(type="session.end", reason="completed", all_passed=True))
             app.action_compact()
             await pilot.pause()
             assert read_compact_request(tmp_path) is None
@@ -787,11 +787,11 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                _ev(type="run.start", user_task="x"),
+                _ev(type="session.start", user_task="x"),
                 _ev(
                     type="tool.call",
                     name="run_command",
-                    args={"argv": ["rg", "run.steer_requested", "src/"]},
+                    args={"argv": ["rg", "session.steer_requested", "src/"]},
                 ),
                 _ev(type="role.call", role="worker", model="kimi"),
             )
@@ -809,7 +809,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
                 await pilot.pause()
             assert app._seen_steer == 0  # pyright: ignore[reportPrivateUsage]
             assert app.state.steer_requests == 0
-            app._handle_event(_ev(type="run.steer_requested", source="sigint"))  # pyright: ignore[reportPrivateUsage]
+            app._handle_event(_ev(type="session.steer_requested", source="sigint"))  # pyright: ignore[reportPrivateUsage]
             app._tick()  # pyright: ignore[reportPrivateUsage]
             bar = app._dash.query_one(SteerInput)
             await _settle_focus(pilot, bar)
@@ -819,7 +819,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
 
 
 def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) -> None:
-    # A CLI Ctrl-C that DETACHED leaves run.steer_requested in the log. Opening the
+    # A CLI Ctrl-C that DETACHED leaves session.steer_requested in the log. Opening the
     # TUI must not treat that stale (already-handled) request as live -- only one
     # that arrives AFTER the TUI is watching should route to the composer bar.
     from agent6.ui.tui.conversation import SteerInput
@@ -828,8 +828,8 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                _ev(type="run.start", user_task="fix it"),
-                _ev(type="run.steer_requested", source="sigint"),
+                _ev(type="session.start", user_task="fix it"),
+                _ev(type="session.steer_requested", source="sigint"),
                 _ev(type="role.call", role="worker", model="kimi"),
             )
         ),
@@ -852,7 +852,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
             bar = app._dash.query_one("#dash-input", SteerInput)
             assert app.focused is not bar  # but it did NOT grab the composer
             # a NEW steer request (a live Ctrl-C while watching) still routes here
-            app._handle_event(_ev(type="run.steer_requested", source="sigint"))
+            app._handle_event(_ev(type="session.steer_requested", source="sigint"))
             app._tick()
             await _settle_focus(pilot, bar)
             assert app.focused is bar
@@ -868,7 +868,7 @@ def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
     from agent6.ui.tui.logview import LogScreen
 
     (tmp_path / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "x"}) + "\n", encoding="utf-8"
+        json.dumps({"type": "session.start", "user_task": "x"}) + "\n", encoding="utf-8"
     )
 
     async def scenario() -> None:
@@ -911,7 +911,7 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
         }
 
     events = [
-        {"type": "run.start", "user_task": "x"},
+        {"type": "session.start", "user_task": "x"},
         {
             "type": "graph.update",
             "nodes": _nodes({"t1": "in_progress", "t2": "pending"}),
@@ -999,7 +999,7 @@ def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
     from agent6.ui.tui.conversation import ConversationScreen
 
     (tmp_path / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "x"}) + "\n", encoding="utf-8"
+        json.dumps({"type": "session.start", "user_task": "x"}) + "\n", encoding="utf-8"
     )
 
     async def scenario() -> None:
@@ -1050,7 +1050,7 @@ def test_pushed_conversation_viewer_still_dismisses(tmp_path: Path) -> None:
 def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """A worker killed without a run.end (kill -9 / OOM) must not render as a
+    """A worker killed without a session.end (kill -9 / OOM) must not render as a
     live spinner forever. Every other surface probes worker.pid (the hub says
     "stale", the web refuses steer); the dashboard was the one surface with no
     liveness check: it spun "working…", accepted steer with a success toast
@@ -1062,7 +1062,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     from agent6.ui.tui import app as app_mod
 
     events = [
-        {"type": "run.start", "run_id": "dead-01", "mode": "run", "user_task": "t"},
+        {"type": "session.start", "session_id": "dead-01", "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
@@ -1086,7 +1086,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
             app._tick()
             await pilot.pause()
             assert app.worker_lost is True
-            assert app.run_controllable() is False
+            assert app.session_controllable() is False
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "worker exited" in body
             assert "working…" not in body
@@ -1107,7 +1107,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     import json
 
     events = [
-        {"type": "run.start", "run_id": "live-01", "mode": "run", "user_task": "t"},
+        {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
@@ -1179,7 +1179,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
     logs.write_text("", encoding="utf-8")
     append(
         [
-            {"type": "run.start", "run_id": "live-02", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "session_id": "live-02", "mode": "run", "user_task": "t"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         ]
@@ -1218,7 +1218,7 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) ->
     import os
 
     events = [
-        {"type": "run.start", "run_id": "live-01", "mode": "run", "user_task": "t"},
+        {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(

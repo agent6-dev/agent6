@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The run-branch merge engine shared by `runs merge` and `git.auto_merge`.
 
-`cli.runs_cmds` validates + resolves a run, then calls `execute_merge`; the run
+`cli.sessions_cmds` validates + resolves a run, then calls `execute_merge`; the run
 finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
 context it already holds. One place to mutate means both honor the same strategy
 dispatch, clean tree on failure, checkout restore, and manifest record."""
@@ -31,8 +31,8 @@ from agent6.git_ops import (
     set_repo_hook_policy,
     squash_merge,
 )
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, MergeStamp, RunManifest, read_manifest
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +47,7 @@ class MergeOutcome:
 
 
 def record_merge_in_manifest(
-    layout: RunLayout, *, merged_into: str, merged_sha: str, merged_tip: str = ""
+    layout: SessionLayout, *, merged_into: str, merged_sha: str, merged_tip: str = ""
 ) -> None:
     """Record a successful merge in the run manifest so later tooling can tell a
     merged run branch from an unmerged one. *merged_tip* is the run-branch tip
@@ -55,7 +55,7 @@ def record_merge_in_manifest(
     still pointing there. Best-effort: a missing/corrupt manifest must not fail a
     merge that already happened."""
     try:
-        m = read_manifest(layout.run_dir)
+        m = read_manifest(layout.session_dir)
     except ManifestError:
         return
     stamped = m.model_copy(
@@ -88,7 +88,7 @@ def dispatch_merge(
     strategy: str,
     run_branch: str,
     base_sha: str,
-    manifest: RunManifest,
+    manifest: SessionManifest,
     message: str | None,
     cfg: Config,
     identity: CommitIdentity,
@@ -119,8 +119,8 @@ def dispatch_merge(
 def execute_merge(
     cwd: Path,
     *,
-    layout: RunLayout,
-    manifest: RunManifest,
+    layout: SessionLayout,
+    manifest: SessionManifest,
     run_branch: str,
     target: str,
     base_sha: str,

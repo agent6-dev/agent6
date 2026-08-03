@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     effective_run_commands,
     set_away_mode,
     set_session_allow,
@@ -63,7 +63,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: Path) -> None:
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert set(d.available_tool_names()) >= _COMMAND_TOOLS
     set_session_deny(tmp_path)
     assert _COMMAND_TOOLS.isdisjoint(d.available_tool_names())
@@ -73,7 +73,7 @@ def test_the_policy_is_re_read_not_cached(tmp_path: Path) -> None:
     """An operator who allows for the session stops being prompted from the
     next call, without restarting anything."""
     cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
-    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert d.command_policy() == "ask"
     set_session_allow(tmp_path)
     assert d.command_policy() == "yes"
@@ -103,12 +103,12 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> N
     """The asymmetry that matters: "no" to THIS command is not "no commands".
     Only deny-for-session, `run_commands = "no"` and `--no-commands` withdraw
     the tools; a single answer -- either way -- decides a single call."""
-    from agent6.runs.ipc import session_deny_set
+    from agent6.sessions.ipc import session_deny_set
 
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
 
     answers = iter(["no", "no", "yes"])
 

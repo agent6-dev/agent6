@@ -17,7 +17,7 @@ import pytest
 
 from agent6.app.reporter import Reporter
 from agent6.config.model import ConfigError
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp import runner
 from agent6.ui.acp import session as session_mod
 from agent6.ui.acp.runner import STDERR_REPORTER, RunBridge, option_kind, stop_reason
@@ -95,7 +95,7 @@ def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str])
 
 def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The run id is minted BEFORE the run starts, so the session has a handle
-    to address. Letting the lifecycle mint its own left `run_id` empty: the
+    to address. Letting the lifecycle mint its own left `session_id` empty: the
     cancel reported success while the run continued to completion, spending
     budget and making commits."""
     stopped: list[Path] = []
@@ -165,13 +165,13 @@ def test_the_runs_journal_streams_out_as_session_update(
     surface tests green while rendering nothing.
     """
     monkeypatch.chdir(tmp_path)
-    recorded = Path(__file__).parent.parent / "unit" / "data" / "golden_run_logs.jsonl"
+    recorded = Path(__file__).parent.parent / "unit" / "data" / "golden_session_logs.jsonl"
 
     def _writing_run(*_a: object, **kw: object) -> int:
-        run_id = kw["run_id"]
-        assert isinstance(run_id, str)
-        layout = RunLayout(state_dir=runner.resolved_state_dir(tmp_path), run_id=run_id)
-        layout.run_dir.mkdir(parents=True, exist_ok=True)
+        session_id = kw["session_id"]
+        assert isinstance(session_id, str)
+        layout = SessionLayout(state_dir=runner.resolved_state_dir(tmp_path), session_id=session_id)
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
         layout.logs_path.write_bytes(recorded.read_bytes())
         return 0
 
@@ -250,7 +250,7 @@ def _bridge(answer: dict[str, Any]) -> RunBridge:
 
 def test_an_approval_round_trips_through_the_editor() -> None:
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
-    session = session_mod.Session(id="s", cwd=Path("/x"))
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
 
 
@@ -268,7 +268,7 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     an unknown string as one would let it become an allow by prefix, and the
     seam reads a None as the cautious answer."""
     bridge = _bridge(answer)
-    session = session_mod.Session(id="s", cwd=Path("/x"))
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert bridge.ask(session, "Allow run_command: rm -rf /", ("allow", "deny"), True) is None
 
 
@@ -325,7 +325,7 @@ def test_a_turn_cancelled_while_queued_never_starts(
     first_started, release = threading.Event(), threading.Event()
 
     def _blocking_run(*_a: object, **kw: object) -> int:
-        ran.append(str(kw["run_id"]))
+        ran.append(str(kw["session_id"]))
         first_started.set()
         release.wait(timeout=5.0)
         return 0
@@ -389,7 +389,7 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """About a dozen lifecycle paths `return 2` after writing their reason to
-    the reporter and nowhere else. With no `run.end` the fold produces no
+    the reporter and nowhere else. With no `session.end` the fold produces no
     ending, so the editor saw a turn stop with a stop reason and no words."""
     monkeypatch.chdir(tmp_path)
 
@@ -447,7 +447,7 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
         return {}
 
     bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
-    session = session_mod.Session(id="s", cwd=Path("/x"))
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert bridge.ask(session, "What should the theme be?", (), None) is None
     assert sent == [], "an unanswerable prompt was still shown"
     assert bridge.ask(session, "Theme?", ("dark", "light"), None) is None
@@ -461,7 +461,7 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     sent: list[dict[str, Any]] = []
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
-    session = session_mod.Session(id="s", cwd=Path("/x"))
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
     closes = [m for m in sent if m["params"]["update"]["sessionUpdate"] == "tool_call_update"]
     assert len(closes) == 1 and closes[0]["params"]["update"]["status"] == "completed"
@@ -503,7 +503,7 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
         return {}
 
     bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
-    session = session_mod.Session(id="s", cwd=Path("/x"))
+    session = session_mod.Session(acp_id="s", cwd=Path("/x"))
     bridge.ask(session, "Allow run_command: \x1b]0;PWNED\x07ls", ("allow\x1b[2J", "deny"), True)
     wire = json.dumps(sent[0])
     assert "\\u001b" not in wire and "\\u0007" not in wire, wire

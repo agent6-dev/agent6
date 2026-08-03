@@ -255,7 +255,7 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             last_budget = e
         elif t == "graph.update":
             last_graph = e
-        elif t == "run.end":
+        elif t == "session.end":
             m["end_reason"] = e.get("reason")
             m["iterations"] = e.get("iterations")
             m["all_passed"] = e.get("all_passed")
@@ -327,8 +327,8 @@ def one_run(
     *, task: str, model: str, provider: str, condition: str, rep: int, budget: float, label: str
 ) -> dict[str, Any]:
     module = TASKS[task]
-    run_id = f"{task}-{condition}-r{rep}-{uuid.uuid4().hex[:6]}"
-    workdir = RUNS_ROOT / label / run_id
+    session_id = f"{task}-{condition}-r{rep}-{uuid.uuid4().hex[:6]}"
+    workdir = RUNS_ROOT / label / session_id
     state_home = workdir / ".state"
     if workdir.exists():
         shutil.rmtree(workdir)
@@ -373,8 +373,8 @@ def one_run(
         task_prompt(task, module) + USER_SUFFIX.get(condition, ""),
         "--config",
         str(cfg),
-        "--run-id",
-        run_id,
+        "--session-id",
+        session_id,
         *budget_flags,
     ]
     t0 = time.time()
@@ -406,7 +406,7 @@ def one_run(
         "provider": provider,
         "condition": condition,
         "rep": rep,
-        "run_id": run_id,
+        "session_id": session_id,
         "score": grade.get("score", 0.0),
         "cases_passed": grade.get("cases_passed"),
         "cases_total": grade.get("cases_total"),

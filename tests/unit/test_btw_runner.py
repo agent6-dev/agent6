@@ -27,9 +27,9 @@ def _answered_ask(root: Path, name: str, answer: str) -> Path:
     (d / "logs.jsonl").write_text(
         "\n".join(
             [
-                json.dumps({"type": "run.start", "user_task": "q"}),
+                json.dumps({"type": "session.start", "user_task": "q"}),
                 json.dumps({"type": "role.result", "text": answer}),
-                json.dumps({"type": "run.end", "reason": "answered", "all_passed": True}),
+                json.dumps({"type": "session.end", "reason": "answered", "all_passed": True}),
             ]
         )
         + "\n",
@@ -134,7 +134,7 @@ def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(tmp_path: P
 
     asked: list[str] = []
 
-    def runner(question: str, run_dir: Path) -> str:
+    def runner(question: str, session_dir: Path) -> str:
         asked.append(question)
         return "[agent6] btw opened"
 

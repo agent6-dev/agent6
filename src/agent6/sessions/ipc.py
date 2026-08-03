@@ -7,12 +7,12 @@ server) run as separate OS processes; the front-end just tails JSONL and
 answers prompts by writing files. When an approval is needed:
 
 1. The workflow process writes an `approval.prompt` event to logs.jsonl
-   and then polls `<run_dir>/approvals/<id>.answer` for a result.
-2. If a `<run_dir>/frontends/` claim points at a live process, the
+   and then polls `<session_dir>/approvals/<id>.answer` for a result.
+2. If a `<session_dir>/frontends/` claim points at a live process, the
    workflow process waits for the front-end to write the answer file.
    Otherwise it falls back to a plain stdin prompt.
 3. The front-end (when present) presents a modal / control, then writes
-   `<run_dir>/approvals/<id>.answer` containing exactly `yes` or `no`.
+   `<session_dir>/approvals/<id>.answer` containing exactly `yes` or `no`.
 
 We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
@@ -35,7 +35,7 @@ from agent6.portable import atomic_write
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 FRONTENDS_DIR = "frontends"
-WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 runs show` liveness
+WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 sessions show` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
 # How long the answer polls keep waiting after the front-end liveness gate goes
@@ -47,8 +47,8 @@ STEER_ANSWER_FILE = "steer.answer"
 FRONTEND_DEAD_GRACE_S = 30.0
 
 
-def approvals_dir(run_dir: Path) -> Path:
-    p = run_dir / APPROVAL_DIR_NAME
+def approvals_dir(session_dir: Path) -> Path:
+    p = session_dir / APPROVAL_DIR_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -64,7 +64,7 @@ def _answer_path(directory: Path, answer_id: str) -> Path:
     return target
 
 
-def clear_pending_answers(run_dir: Path) -> None:
+def clear_pending_answers(session_dir: Path) -> None:
     """Drop stale bridge state at run/resume START: leftover `*.answer` files
     from a prior session (the id counters reset, so an old answer would be read
     instead of prompting) and a leftover `steer.request` marker (which would
@@ -73,33 +73,33 @@ def clear_pending_answers(run_dir: Path) -> None:
     prunes dead claims on every probe, and live watchers' claims must survive
     so their modals stay wired up."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
-        d = run_dir / sub
+        d = session_dir / sub
         if d.is_dir():
             for f in d.glob("*.answer"):
                 with contextlib.suppress(OSError):
                     f.unlink()
-    clear_steer_answer(run_dir)
-    clear_steer_request(run_dir)
+    clear_steer_answer(session_dir)
+    clear_steer_request(session_dir)
     # A leftover stop/compact marker from the prior session would instantly
     # re-stop (or re-compact) the fresh one.
-    clear_stop_request(run_dir)
-    clear_compact_request(run_dir)
+    clear_stop_request(session_dir)
+    clear_compact_request(session_dir)
 
 
-def register_frontend(run_dir: Path, pid: int) -> None:
+def register_frontend(session_dir: Path, pid: int) -> None:
     """Register *pid* as a live answering front-end: one claim file per
     front-end (``frontends/<pid>``), so any number can watch concurrently
     (web + TUI + attach, or several of one kind) and none can deregister
     another. The name is the claim; the file is empty."""
-    d = run_dir / FRONTENDS_DIR
+    d = session_dir / FRONTENDS_DIR
     d.mkdir(parents=True, exist_ok=True)
     (d / str(pid)).touch()
 
 
-def unregister_frontend(run_dir: Path, pid: int) -> None:
+def unregister_frontend(session_dir: Path, pid: int) -> None:
     """Drop *pid*'s own claim; other front-ends' claims are untouched."""
     with contextlib.suppress(OSError):
-        (run_dir / FRONTENDS_DIR / str(pid)).unlink()
+        (session_dir / FRONTENDS_DIR / str(pid)).unlink()
 
 
 def _pid_alive(pid: int) -> bool:
@@ -155,8 +155,8 @@ def _proc_start_time(pid: int) -> str:
     return rest[19] if len(rest) > 19 else ""
 
 
-def write_worker_pid(run_dir: Path, pid: int) -> None:
-    """Record the run's worker pid so `agent6 runs show` can probe liveness even
+def write_worker_pid(session_dir: Path, pid: int) -> None:
+    """Record the run's worker pid so `agent6 sessions show` can probe liveness even
     while the worker is blocked in a long provider call (no events emitted).
     The start-time identity rides along after the pid (/proc ticks on Linux,
     `ps` lstart text elsewhere) so a recycled pid -- same number, different
@@ -168,34 +168,34 @@ def write_worker_pid(run_dir: Path, pid: int) -> None:
     # -- and a prefix naming a live process you own reads alive with nothing
     # left to refute it, the exact recycled-pid lie this record exists to kill.
     record = f"{pid} {_proc_start_time(pid)}".rstrip()
-    atomic_write(run_dir / WORKER_PID_FILE, record)
+    atomic_write(session_dir / WORKER_PID_FILE, record)
 
 
-def clear_worker_pid(run_dir: Path) -> None:
+def clear_worker_pid(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
-        (run_dir / WORKER_PID_FILE).unlink()
+        (session_dir / WORKER_PID_FILE).unlink()
 
 
-def _read_pid_record(run_dir: Path) -> tuple[int, str] | None:
+def _read_pid_record(session_dir: Path) -> tuple[int, str] | None:
     """The recorded ``(pid, start_time)``; start_time is "" when none was
     recorded. Split once only: the `ps` lstart identity contains spaces."""
     try:
-        tokens = (run_dir / WORKER_PID_FILE).read_text(encoding="utf-8").split(maxsplit=1)
+        tokens = (session_dir / WORKER_PID_FILE).read_text(encoding="utf-8").split(maxsplit=1)
         return int(tokens[0]), tokens[1].strip() if len(tokens) > 1 else ""
     except (OSError, ValueError, IndexError):
         return None
 
 
-def read_worker_pid(run_dir: Path) -> int | None:
-    rec = _read_pid_record(run_dir)
+def read_worker_pid(session_dir: Path) -> int | None:
+    rec = _read_pid_record(session_dir)
     return None if rec is None else rec[0]
 
 
-def worker_is_alive(run_dir: Path) -> bool:
+def worker_is_alive(session_dir: Path) -> bool:
     """True iff worker.pid points at a live process that IS the recorded worker:
     the pid is alive AND, when a start time was recorded, today's start time
     matches. A recycled pid fails the match and reads dead."""
-    rec = _read_pid_record(run_dir)
+    rec = _read_pid_record(session_dir)
     if rec is None:
         return False
     pid, recorded_start = rec
@@ -209,12 +209,12 @@ def worker_is_alive(run_dir: Path) -> bool:
     return _proc_start_time(pid) == recorded_start
 
 
-def frontend_is_live(run_dir: Path) -> bool:
+def frontend_is_live(session_dir: Path) -> bool:
     """True when ANY registered front-end is a live process we own. Prunes
     dead claims (hard-killed front-ends) in passing so a stale claim can
     never block the answer poll and the dir stays tidy."""
     try:
-        entries = list((run_dir / FRONTENDS_DIR).iterdir())
+        entries = list((session_dir / FRONTENDS_DIR).iterdir())
     except OSError:
         return False
     live = False
@@ -284,13 +284,13 @@ def _await_answer(
     return _consume_answer(target)
 
 
-def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
+def write_answer(session_dir: Path, prompt_id: str, *, approved: bool) -> None:
     """Called by a front-end (TUI or web)."""
-    target = _answer_path(approvals_dir(run_dir), prompt_id)
+    target = _answer_path(approvals_dir(session_dir), prompt_id)
     _write_answer_atomic(target, "yes" if approved else "no")
 
 
-def clear_answer(run_dir: Path, prompt_id: str) -> None:
+def clear_answer(session_dir: Path, prompt_id: str) -> None:
     """Drop any pre-existing answer for *prompt_id* so an answer written BEFORE
     the prompt was emitted is never consumed. Prompt ids are deterministic
     sequential counters (approval-1, ...), so a front-end (or a hostile POST)
@@ -301,14 +301,14 @@ def clear_answer(run_dir: Path, prompt_id: str) -> None:
     answer is only ever written after the front-end renders the prompt, so
     none is lost. Mirrors clear_steer_answer for the steer bridge."""
     with contextlib.suppress(OSError):
-        _answer_path(approvals_dir(run_dir), prompt_id).unlink(missing_ok=True)
+        _answer_path(approvals_dir(session_dir), prompt_id).unlink(missing_ok=True)
 
 
-def clear_question_answers(run_dir: Path, question_id: str) -> None:
+def clear_question_answers(session_dir: Path, question_id: str) -> None:
     """The ask_user analogue of :func:`clear_answer`: drop a pre-written answer
     for *question_id* before its prompt is emitted."""
     with contextlib.suppress(OSError):
-        _answer_path(questions_dir(run_dir), question_id).unlink(missing_ok=True)
+        _answer_path(questions_dir(session_dir), question_id).unlink(missing_ok=True)
 
 
 # "Allow for the rest of the session": one marker file, checked before every
@@ -320,18 +320,18 @@ SESSION_ALLOW_FILE = "session.allow"
 SESSION_DENY_FILE = "session.deny"
 
 
-def set_session_allow(run_dir: Path) -> None:
+def set_session_allow(session_dir: Path) -> None:
     """Record the operator's 'allow every command for the session' choice."""
-    d = approvals_dir(run_dir)
+    d = approvals_dir(session_dir)
     d.mkdir(parents=True, exist_ok=True)
     _write_answer_atomic(d / SESSION_ALLOW_FILE, "1")
 
 
-def session_allow_set(run_dir: Path) -> bool:
-    return (approvals_dir(run_dir) / SESSION_ALLOW_FILE).exists()
+def session_allow_set(session_dir: Path) -> bool:
+    return (approvals_dir(session_dir) / SESSION_ALLOW_FILE).exists()
 
 
-def set_session_deny(run_dir: Path) -> None:
+def set_session_deny(session_dir: Path) -> None:
     """Record the mirror choice: 'no commands for the rest of the session'.
 
     A single "no" answers one call, exactly as a single "yes" approves one; only
@@ -339,16 +339,16 @@ def set_session_deny(run_dir: Path) -> None:
     rather than refusing each call, so the model stops spending turns on a door
     that will not open.
     """
-    d = approvals_dir(run_dir)
+    d = approvals_dir(session_dir)
     d.mkdir(parents=True, exist_ok=True)
     _write_answer_atomic(d / SESSION_DENY_FILE, "1")
 
 
-def session_deny_set(run_dir: Path) -> bool:
-    return (approvals_dir(run_dir) / SESSION_DENY_FILE).exists()
+def session_deny_set(session_dir: Path) -> bool:
+    return (approvals_dir(session_dir) / SESSION_DENY_FILE).exists()
 
 
-def effective_run_commands(configured: str, run_dir: Path) -> str:
+def effective_run_commands(configured: str, session_dir: Path) -> str:
     """What the command policy IS right now: "no" | "ask" | "yes".
 
     One answer from three inputs, so every consumer agrees: the configured
@@ -362,9 +362,9 @@ def effective_run_commands(configured: str, run_dir: Path) -> str:
     """
     if configured != "ask":
         return configured
-    if session_allow_set(run_dir):
+    if session_allow_set(session_dir):
         return "yes"
-    if session_deny_set(run_dir) or away_mode(run_dir) == "deny":
+    if session_deny_set(session_dir) or away_mode(session_dir) == "deny":
         return "no"
     return "ask"
 
@@ -376,35 +376,35 @@ def effective_run_commands(configured: str, run_dir: Path) -> str:
 AWAY_MODE_FILE = "away.mode"
 
 
-def set_away_mode(run_dir: Path, mode: str) -> None:
+def set_away_mode(session_dir: Path, mode: str) -> None:
     """Record the detach 'while away' choice ("deny" | "wait")."""
     if mode not in ("deny", "wait"):
         raise ValueError(
             f"away.mode is 'deny' or 'wait', got {mode!r} (approve-all reuses session.allow)"
         )
-    d = approvals_dir(run_dir)
+    d = approvals_dir(session_dir)
     d.mkdir(parents=True, exist_ok=True)
     _write_answer_atomic(d / AWAY_MODE_FILE, mode)
 
 
-def away_mode(run_dir: Path) -> str:
+def away_mode(session_dir: Path) -> str:
     """ "deny", "wait", or "" (unset -- interactive/foreground default flow)."""
     try:
-        return (approvals_dir(run_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
+        return (approvals_dir(session_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
 
-def clear_away_mode(run_dir: Path) -> None:
+def clear_away_mode(session_dir: Path) -> None:
     """Drop the detach 'while away' choice. Called when an INTERACTIVE (tty) run or
     resume starts: the operator is back at the terminal, so a stale away-mode from a
     prior detach must not keep auto-denying/waiting."""
     with contextlib.suppress(FileNotFoundError):
-        (approvals_dir(run_dir) / AWAY_MODE_FILE).unlink()
+        (approvals_dir(session_dir) / AWAY_MODE_FILE).unlink()
 
 
 def read_answer(
-    run_dir: Path,
+    session_dir: Path,
     prompt_id: str,
     *,
     timeout_s: float = 600.0,
@@ -416,12 +416,16 @@ def read_answer(
     front-end has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
 
     ``live_dir`` overrides which dir the liveness gate probes for front-end claims
-    (defaults to ``run_dir``). A machine agent state reads answers from its
+    (defaults to ``session_dir``). A machine agent state reads answers from its
     per-state dir but the front-end registers on the instance dir, so it passes
     the instance dir here."""
-    target = approvals_dir(run_dir) / f"{prompt_id}.answer"
+    target = approvals_dir(session_dir) / f"{prompt_id}.answer"
     txt = _await_answer(
-        target, live_dir or run_dir, timeout_s=timeout_s, poll_s=poll_s, dead_grace_s=dead_grace_s
+        target,
+        live_dir or session_dir,
+        timeout_s=timeout_s,
+        poll_s=poll_s,
+        dead_grace_s=dead_grace_s,
     )
     if txt is None:
         return None
@@ -435,22 +439,22 @@ def read_answer(
 # no TUI is live, so headless runs never hang.
 
 
-def questions_dir(run_dir: Path) -> Path:
-    p = run_dir / QUESTION_DIR_NAME
+def questions_dir(session_dir: Path) -> Path:
+    p = session_dir / QUESTION_DIR_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
-def write_question_answers(run_dir: Path, question_id: str, answers: Sequence[str]) -> None:
+def write_question_answers(session_dir: Path, question_id: str, answers: Sequence[str]) -> None:
     """Called by a front-end when the user answers the question(s). Answers align to
     the prompt's `questions` by index and are stored as a JSON list."""
     _write_answer_atomic(
-        _answer_path(questions_dir(run_dir), question_id), json.dumps(list(answers))
+        _answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers))
     )
 
 
 def read_question_answers(
-    run_dir: Path,
+    session_dir: Path,
     question_id: str,
     *,
     timeout_s: float = 600.0,
@@ -462,9 +466,13 @@ def read_question_answers(
     questions), or None on timeout or once the front-end has stayed dead past
     ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir (see
     :func:`read_answer`)."""
-    target = questions_dir(run_dir) / f"{question_id}.answer"
+    target = questions_dir(session_dir) / f"{question_id}.answer"
     raw = _await_answer(
-        target, live_dir or run_dir, timeout_s=timeout_s, poll_s=poll_s, dead_grace_s=dead_grace_s
+        target,
+        live_dir or session_dir,
+        timeout_s=timeout_s,
+        poll_s=poll_s,
+        dead_grace_s=dead_grace_s,
     )
     if raw is None:
         return None
@@ -478,28 +486,28 @@ def read_question_answers(
 # --- mid-run steering bridge (Ctrl-C while the TUI owns the terminal) --------
 # Single-slot: only one steer prompt is ever outstanding (the SIGINT handler
 # sets a flag the loop drains at its next boundary). The run process triggers a
-# steer by emitting `run.steer_requested`; the TUI shows a modal and writes the
+# steer by emitting `session.steer_requested`; the TUI shows a modal and writes the
 # answer here; the run process reads it. The answer is a free string:
 # "" = continue, "abort" = stop, anything else = a steering instruction.
 
 
-def write_steer_answer(run_dir: Path, answer: str) -> None:
+def write_steer_answer(session_dir: Path, answer: str) -> None:
     """Called by a front-end when the user answers the steer prompt."""
-    _write_answer_atomic(run_dir / STEER_ANSWER_FILE, answer)
+    _write_answer_atomic(session_dir / STEER_ANSWER_FILE, answer)
 
 
-def clear_steer_answer(run_dir: Path) -> None:
+def clear_steer_answer(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
-        (run_dir / STEER_ANSWER_FILE).unlink()
+        (session_dir / STEER_ANSWER_FILE).unlink()
 
 
-def steer_answer_is_abort(run_dir: Path) -> bool:
+def steer_answer_is_abort(session_dir: Path) -> bool:
     """Non-blocking peek: True if a pending steer answer is a stop. Lets a long
     streaming model turn bail immediately instead of only at the between-step
     boundary. Does NOT consume the answer -- the boundary still handles it if the
     stream ends first."""
     try:
-        answer = (run_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip().lower()
+        answer = (session_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip().lower()
     except (OSError, ValueError):  # missing/unreadable, or non-UTF-8: not an abort
         return False
     # Exactly the Stop contract: every front-end's Stop writes "abort", and the
@@ -516,46 +524,46 @@ def steer_answer_is_abort(run_dir: Path) -> bool:
 STEER_REQUEST_FILE = "steer.request"
 
 
-def request_steer(run_dir: Path) -> None:
+def request_steer(session_dir: Path) -> None:
     """TUI-initiated steer: drop a marker the run polls at its next boundary."""
     with contextlib.suppress(OSError):
-        (run_dir / STEER_REQUEST_FILE).write_text("", encoding="utf-8")
+        (session_dir / STEER_REQUEST_FILE).write_text("", encoding="utf-8")
 
 
-def steer_request_pending(run_dir: Path) -> bool:
-    return (run_dir / STEER_REQUEST_FILE).exists()
+def steer_request_pending(session_dir: Path) -> bool:
+    return (session_dir / STEER_REQUEST_FILE).exists()
 
 
-def clear_steer_request(run_dir: Path) -> None:
+def clear_steer_request(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
-        (run_dir / STEER_REQUEST_FILE).unlink()
+        (session_dir / STEER_REQUEST_FILE).unlink()
 
 
 STOP_REQUEST_FILE = "stop.request"
 
 
-def request_stop(run_dir: Path) -> None:
+def request_stop(session_dir: Path) -> None:
     """Front-end "stop after this step": drop a marker the run polls at each
     completed-iteration boundary and honors by ending the run cleanly there
     (the finished step's tool results and auto-commit land first). The
     immediate stop stays the steer "abort" answer, which interrupts mid-turn."""
     with contextlib.suppress(OSError):
-        (run_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
+        (session_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
 
 
-def stop_request_pending(run_dir: Path) -> bool:
-    return (run_dir / STOP_REQUEST_FILE).exists()
+def stop_request_pending(session_dir: Path) -> bool:
+    return (session_dir / STOP_REQUEST_FILE).exists()
 
 
-def clear_stop_request(run_dir: Path) -> None:
+def clear_stop_request(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
-        (run_dir / STOP_REQUEST_FILE).unlink()
+        (session_dir / STOP_REQUEST_FILE).unlink()
 
 
 COMPACT_REQUEST_FILE = "compact.request"
 
 
-def request_compact(run_dir: Path, focus: str = "") -> bool:
+def request_compact(session_dir: Path, focus: str = "") -> bool:
     """Front-end-initiated manual compaction: drop a marker the run polls at its
     next safe boundary and honors by forcing a context compaction (mirrors
     steer). The marker body is the operator's optional summary *focus*
@@ -568,28 +576,28 @@ def request_compact(run_dir: Path, focus: str = "") -> bool:
     unconditionally, so a read-only or full state dir looked like success and
     nothing ever compacted."""
     try:
-        atomic_write(run_dir / COMPACT_REQUEST_FILE, focus)
+        atomic_write(session_dir / COMPACT_REQUEST_FILE, focus)
     except OSError:
         return False
     return True
 
 
-def read_compact_request(run_dir: Path) -> str | None:
+def read_compact_request(session_dir: Path) -> str | None:
     """The pending compact request's focus text, or None when no request is
     pending ("" = a plain compact with no focus)."""
     try:
-        return (run_dir / COMPACT_REQUEST_FILE).read_text(encoding="utf-8")
+        return (session_dir / COMPACT_REQUEST_FILE).read_text(encoding="utf-8")
     except OSError:
         return None
 
 
-def clear_compact_request(run_dir: Path) -> None:
+def clear_compact_request(session_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
-        (run_dir / COMPACT_REQUEST_FILE).unlink()
+        (session_dir / COMPACT_REQUEST_FILE).unlink()
 
 
 def read_steer_answer(
-    run_dir: Path,
+    session_dir: Path,
     *,
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
@@ -601,8 +609,8 @@ def read_steer_answer(
     dead past ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir
     (see :func:`read_answer`)."""
     return _await_answer(
-        run_dir / STEER_ANSWER_FILE,
-        live_dir or run_dir,
+        session_dir / STEER_ANSWER_FILE,
+        live_dir or session_dir,
         timeout_s=timeout_s,
         poll_s=poll_s,
         dead_grace_s=dead_grace_s,

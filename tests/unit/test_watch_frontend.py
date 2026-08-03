@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.runs.ipc import approvals_dir, questions_dir
+from agent6.sessions.ipc import approvals_dir, questions_dir
 from agent6.ui.cli import plan_watch
 
 
@@ -40,7 +40,7 @@ def test_open_prompt_at_attach_is_answered_and_written(tmp_path: Path, monkeypat
     _write_log(
         log,
         [
-            {"type": "run.start"},
+            {"type": "session.start"},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"},
         ],
     )
@@ -84,7 +84,7 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
 
     monkeypatch.setattr(plan_watch, "default_stdin_questioner", _beta)
     log = tmp_path / "logs.jsonl"
-    history: list[dict[str, Any]] = [{"type": "run.start"}]
+    history: list[dict[str, Any]] = [{"type": "session.start"}]
     _write_log(log, history)
     fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
     fe.open_prompts_at_attach(log)
@@ -101,7 +101,7 @@ def test_react_answers_a_new_live_question(tmp_path: Path, monkeypatch: Any) -> 
 
 def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeypatch: Any) -> None:
     """The follow loop replays the WHOLE log through react() after the pre-scan,
-    and every real log opens with run.start. Clearing the answered ids at that
+    and every real log opens with session.start. Clearing the answered ids at that
     boundary threw away the pre-scan's knowledge, so attaching to any run that
     had ever answered a prompt re-asked it and blocked on stdin."""
     asked: list[str] = []
@@ -113,7 +113,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(tmp_path: Path, monkeyp
     monkeypatch.setattr(plan_watch, "default_stdin_approver", _yes)
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
-        {"type": "run.start", "user_task": "t"},
+        {"type": "session.start", "user_task": "t"},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "ANSWERED LONG AGO"},
         {"type": "approval.answer", "id": "approval-1", "approved": True},
         {"type": "role.call", "role": "worker", "model": "m"},
@@ -149,12 +149,12 @@ def test_resumed_leg_reuses_prompt_ids_and_is_still_answered(
     monkeypatch.setattr(plan_watch, "default_stdin_questioner", _answer)
     log = tmp_path / "logs.jsonl"
     leg1: list[dict[str, Any]] = [
-        {"type": "run.start"},
+        {"type": "session.start"},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "leg 1 ok?"},
         {"type": "approval.answer", "id": "approval-1", "approved": True},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q?"}]},
         {"type": "question.answer", "id": "question-1", "answers": ["x"]},
-        {"type": "run.end", "reason": "steer_abort"},
+        {"type": "session.end", "reason": "steer_abort"},
     ]
     _write_log(log, leg1)
     fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]

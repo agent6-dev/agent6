@@ -36,8 +36,8 @@ from agent6.config import Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers import Provider, TranscriptSink
-from agent6.runs.layout import RunLayout
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
@@ -190,7 +190,7 @@ def build_session_tools(
     *,
     cwd: Path,
     state_dir: Path,
-    layout: RunLayout,
+    layout: SessionLayout,
     isolation: IsolationLevel,
     mode: Literal["run", "plan", "ask"],
     events: EventSink,
@@ -215,7 +215,7 @@ def build_session_tools(
         mcp_manager=mcp_manager,
         mode=mode,
         state_dir=state_dir,
-        run_dir=layout.run_dir,
+        session_dir=layout.session_dir,
     )
     compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm_role, log=loop_log)
     cfg = resolve_decompose(cfg, rm_role, log=loop_log)

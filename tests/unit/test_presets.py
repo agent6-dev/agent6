@@ -72,7 +72,7 @@ def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: Path) -> None:
     global preset came back from resume with the preset winning -- gaining a
     blocking review veto the original never had. Only the name was stamped, so
     the two cases were indistinguishable."""
-    from agent6.runs.manifest import WorkflowStamp
+    from agent6.sessions.manifest import WorkflowStamp
 
     assert WorkflowStamp(preset="t", preset_from_flag=True).replay_preset == "t"
     assert WorkflowStamp(preset="t").replay_preset == ""  # config-selected: re-resolves

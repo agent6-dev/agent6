@@ -26,7 +26,7 @@ import pytest
 from agent6.config import Config, load_config
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 
 _VALID_TOML = """
@@ -237,7 +237,7 @@ def test_wire_ask_user(tmp_path: Path) -> None:
 
 
 def test_wire_add_task_order(tmp_path: Path) -> None:
-    cur = GraphCurator(RunLayout(state_dir=tmp_path / ".agent6", run_id="r"))
+    cur = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="r"))
     root = cur.add_subtask(
         AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
     )

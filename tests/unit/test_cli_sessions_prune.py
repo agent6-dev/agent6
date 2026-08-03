@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 runs prune`."""
+"""Tests for `agent6 sessions prune`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
@@ -26,27 +26,29 @@ def _branch_exists(repo: Path, name: str) -> bool:
     return bool(_git(repo, "branch", "--list", name))
 
 
-def _make_branch(repo: Path, run_id: str, fname: str) -> None:
-    _git(repo, "checkout", "-q", "-b", f"agent6/{run_id}", "main")
+def _make_branch(repo: Path, session_id: str, fname: str) -> None:
+    _git(repo, "checkout", "-q", "-b", f"agent6/{session_id}", "main")
     (repo / fname).write_text("x\n", encoding="utf-8")
     _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", f"work {run_id}")
+    _git(repo, "commit", "-q", "-m", f"work {session_id}")
     _git(repo, "checkout", "-q", "main")
 
 
-def _manifest(repo: Path, run_id: str, base: str, *, merged: bool, merged_tip: str = "") -> None:
-    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id=run_id)
+def _manifest(
+    repo: Path, session_id: str, base: str, *, merged: bool, merged_tip: str = ""
+) -> None:
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
         "version": 2,
-        "run_id": run_id,
+        "session_id": session_id,
         "base_sha": base,
         "base_branch": "main",
-        "run_branch": f"agent6/{run_id}",
+        "run_branch": f"agent6/{session_id}",
         "user_task": "t",
     }
     if merged:
-        tip = merged_tip or _git(repo, "rev-parse", f"agent6/{run_id}", check=False)
+        tip = merged_tip or _git(repo, "rev-parse", f"agent6/{session_id}", check=False)
         data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
@@ -76,7 +78,7 @@ def test_runs_prune_classifies_branches(
     _make_branch(tmp_path, "unmrg11", "u.txt")
     _manifest(tmp_path, "unmrg11", base, merged=False)
 
-    rc = main(["runs", "prune"])
+    rc = main(["sessions", "prune"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -106,11 +108,11 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
     # itself is gone (never created here = pruned).
     _manifest(tmp_path, "gone11", base, merged=True)
 
-    assert main(["runs", "commits", "gone11"]) == 0
+    assert main(["sessions", "commits", "gone11"]) == 0
     out = capsys.readouterr().out
     assert "was pruned" in out and "squash-merged into main" in out
 
-    assert main(["runs", "diff", "gone11"]) == 0
+    assert main(["sessions", "diff", "gone11"]) == 0
     assert "was pruned" in capsys.readouterr().out
 
 
@@ -137,7 +139,7 @@ def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
     _make_branch(tmp_path, "unmrg22", "u.txt")
     _manifest(tmp_path, "unmrg22", base, merged=False)
 
-    rc = main(["runs", "prune", "--delete-squashed"])
+    rc = main(["sessions", "prune", "--delete-squashed"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -166,7 +168,7 @@ def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(
     # switch to a branch cut from the ORIGINAL base, so reach22 is unreachable here
     _git(tmp_path, "checkout", "-q", "-b", "feature", base)
 
-    rc = main(["runs", "prune"])
+    rc = main(["sessions", "prune"])
     cap = capsys.readouterr()
     text = cap.out + cap.err
     assert rc == 0
@@ -185,7 +187,7 @@ def test_runs_prune_no_branches(
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    rc = main(["runs", "prune"])
+    rc = main(["sessions", "prune"])
     assert rc == 0
     assert "no agent6/* run branches" in capsys.readouterr().out
 
@@ -219,7 +221,7 @@ def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge
     after = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "checkout", "-q", "main")
 
-    rc = main(["runs", "prune", "--delete-squashed"])
+    rc = main(["sessions", "prune", "--delete-squashed"])
     text = "".join(capsys.readouterr())
     assert rc == 0
     assert _branch_exists(tmp_path, "agent6/resmd33")  # the post-merge commit survives
@@ -247,13 +249,13 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     _git(tmp_path, "merge", "--squash", "agent6/pretip1")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip1")
     # A manifest written before MergeStamp.tip existed: merged, but no tip.
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="pretip1")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="pretip1")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": "pretip1",
+                "session_id": "pretip1",
                 "base_sha": base,
                 "base_branch": "main",
                 "run_branch": "agent6/pretip1",
@@ -265,7 +267,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
         encoding="utf-8",
     )
 
-    assert main(["runs", "prune", "--delete-squashed"]) == 0
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
     text = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip1")  # unconfirmed: kept
     assert "no recorded merge tip" in text
@@ -294,13 +296,13 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     _make_branch(tmp_path, "pretip2", "s.txt")
     _git(tmp_path, "merge", "--squash", "agent6/pretip2")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip2")
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="pretip2")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="pretip2")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": "pretip2",
+                "session_id": "pretip2",
                 "base_sha": base,
                 "base_branch": "main",
                 "run_branch": "agent6/pretip2",
@@ -312,7 +314,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
         encoding="utf-8",
     )
 
-    assert main(["runs", "prune"]) == 0
+    assert main(["sessions", "prune"]) == 0
     plain = "".join(capsys.readouterr())
     assert "no recorded merge tip" in plain
     assert "git branch -D agent6/pretip2" in plain
@@ -323,7 +325,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     _manifest(tmp_path, "pretip2", base, merged=True)
     _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
     _git(tmp_path, "branch", "-q", "-m", "main", "renamed")
-    assert main(["runs", "prune", "--delete-squashed"]) == 0
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
     no_base = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip2")
     assert "remove with: runs prune --delete-squashed" not in no_base
@@ -332,11 +334,11 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
 def test_runs_dir_prints_the_state_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """One bare line so it composes: `ls "$(agent6 runs dir)"`."""
+    """One bare line so it composes: `ls "$(agent6 sessions dir)"`."""
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    assert main(["runs", "dir"]) == 0
+    assert main(["sessions", "dir"]) == 0
     printed = capsys.readouterr().out.strip()
     assert printed == str(_state_dir(repo))
     assert "\n" not in printed
@@ -350,7 +352,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     directory the operator believes is gone."""
     import os
 
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -359,16 +361,18 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
     for d in (live, dead):
         d.mkdir(parents=True)
-        (d / "logs.jsonl").write_text('{"type": "run.start", "mode": "run"}\n', encoding="utf-8")
+        (d / "logs.jsonl").write_text(
+            '{"type": "session.start", "mode": "run"}\n', encoding="utf-8"
+        )
     write_worker_pid(live, os.getpid())  # this test process is genuinely alive
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "run.end", "reason": "finish_run", "all_passed": true}\n')
+        fh.write('{"type": "session.end", "reason": "finish_run", "all_passed": true}\n')
 
-    assert main(["runs", "rm", "live-run"]) == 2
+    assert main(["sessions", "rm", "live-run"]) == 2
     assert "still live" in capsys.readouterr().err
     assert live.is_dir()
 
-    assert main(["runs", "rm", "dead-run"]) == 0
+    assert main(["sessions", "rm", "dead-run"]) == 0
     assert "removed dead-run-BBBB22" in capsys.readouterr().out
     assert not dead.exists()
 
@@ -384,7 +388,7 @@ def test_runs_rm_asks_clears_the_bucket(
     asks = _state_dir(repo) / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
-    assert main(["runs", "rm", "some-id", "--asks"]) == 2
-    assert main(["runs", "rm", "--asks"]) == 0
+    assert main(["sessions", "rm", "some-id", "--asks"]) == 2
+    assert main(["sessions", "rm", "--asks"]) == 0
     assert "removed 2 asks" in capsys.readouterr().out
     assert not asks.exists()

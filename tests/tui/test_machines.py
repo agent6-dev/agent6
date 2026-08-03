@@ -684,7 +684,7 @@ def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, MachineSpec]
         str(os.getpid()) if alive else "999999999", encoding="utf-8"
     )
     (state / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
         + json.dumps({"type": "approval.prompt", "id": "ap1", "prompt": "Allow rm -rf"})
         + "\n",

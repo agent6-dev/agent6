@@ -24,7 +24,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.graph.storage import list_checkpoint_turns
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
@@ -75,9 +75,9 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     checkpoints/<NNNN>.json carrying head_sha + graph_version."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    snap = run_dir / "loop_state.json"
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    snap = session_dir / "loop_state.json"
 
     curator = MagicMock()
     curator.graph_version = 7
@@ -94,7 +94,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     )
 
     # checkpoints live next to loop_state.json (the run dir).
-    cp = run_dir / "checkpoints" / "0003.json"
+    cp = session_dir / "checkpoints" / "0003.json"
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
 
@@ -110,9 +110,9 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     """Each turn writes a distinct checkpoint; older ones are never overwritten."""
     repo = tmp_path / "repo"
     _git_repo(repo)
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    snap = run_dir / "loop_state.json"
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
@@ -129,7 +129,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
             root_task_id=None,
             state=state,
         )
-    cp_dir = run_dir / "checkpoints"
+    cp_dir = session_dir / "checkpoints"
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
     # Turn 1's payload was not clobbered by later turns.
     assert load_run_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
@@ -137,7 +137,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
 
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
     """A run dir with no checkpoints/ dir lists no turns (old-run detection)."""
-    layout = RunLayout(state_dir=tmp_path, run_id="old")
+    layout = SessionLayout(state_dir=tmp_path, session_id="old")
     (tmp_path / "runs" / "old").mkdir(parents=True)
     assert list_checkpoint_turns(layout) == []
 
@@ -158,7 +158,7 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
 # --- fork command -----------------------------------------------------------
 
 
-def _seed_graph(layout: RunLayout) -> tuple[str, str]:
+def _seed_graph(layout: SessionLayout) -> tuple[str, str]:
     """A two-node DAG through the real curator: root (graph_version 1), child
     (2), child passed (3). Returns (root_id, child_id)."""
     from agent6.graph.curator import GraphCurator
@@ -179,27 +179,27 @@ def _seed_graph(layout: RunLayout) -> tuple[str, str]:
 
 def _seed_source_run(
     state_dir: Path,
-    run_id: str,
+    session_id: str,
     *,
     head_sha: str,
     turns: tuple[int, ...],
     mode: str = "run",
     workflow_profile: str = "",
     preset_from_flag: bool | None = None,
-) -> RunLayout:
+) -> SessionLayout:
     """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
-    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": run_id,
+                "session_id": session_id,
                 "mode": mode,
                 "user_task": "do the thing",
                 "base_sha": "basesha000",
                 "base_branch": "main",
-                "run_branch": f"agent6/{run_id}",
+                "run_branch": f"agent6/{session_id}",
                 "workflow": {
                     "critic": "off",
                     "revise_prompt": "off",
@@ -233,7 +233,7 @@ def _seed_source_run(
         }
         layout.checkpoint_path(turn).write_text(json.dumps(payload), encoding="utf-8")
     # loop_state.json mirrors the latest checkpoint.
-    layout.run_dir.joinpath("loop_state.json").write_text(
+    layout.session_dir.joinpath("loop_state.json").write_text(
         layout.checkpoint_path(turns[-1]).read_text(encoding="utf-8"), encoding="utf-8"
     )
     return layout
@@ -249,10 +249,10 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     state_dir = _state_dir(repo)
     _seed_source_run(state_dir, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
 
-    rc = _cmd_fork(None, "plan-src", new_run_id="plan-fork-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = RunLayout(state_dir=state_dir, run_id="plan-fork-BBBB22")
+    dst = SessionLayout(state_dir=state_dir, session_id="plan-fork-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
 
 
@@ -268,10 +268,10 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
         state_dir, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid"
     )
 
-    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["preset"] == "paranoid"
 
@@ -303,9 +303,9 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     state_dir = _state_dir(repo)
     _seed_source_run(state_dir, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
 
-    rc = _cmd_fork(None, "src-PROF11", new_run_id="child-PROF22", no_run=True)
+    rc = _cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="child-PROF22")
+    dst = SessionLayout(state_dir=state_dir, session_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["preset"] == "fast"
     assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
@@ -337,9 +337,9 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
         preset_from_flag=False,
     )
 
-    assert _cmd_fork(None, "src-CFG11", new_run_id="child-CFG22", no_run=True) == 0
+    assert _cmd_fork(None, "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
     manifest = json.loads(
-        RunLayout(state_dir=state_dir, run_id="child-CFG22").manifest_path.read_text(
+        SessionLayout(state_dir=state_dir, session_id="child-CFG22").manifest_path.read_text(
             encoding="utf-8"
         )
     )
@@ -372,7 +372,7 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
             yield
 
     monkeypatch.setattr(fork_mod, "flock", recording_flock)
-    rc = _cmd_fork(None, "src-LOCK11", new_run_id="child-LOCK22", no_run=True)
+    rc = _cmd_fork(None, "src-LOCK11", new_session_id="child-LOCK22", no_run=True)
     assert rc == 0
     assert locked == [src.lock_path]  # the copy held the source curator lock
 
@@ -395,9 +395,11 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
             src.manifest_path.unlink()
         else:
             src.manifest_path.write_text(bad, encoding="utf-8")
-        rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+        rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
         assert rc == 2, f"manifest shape {bad!r} must refuse the fork"
-        assert not RunLayout(state_dir=state_dir, run_id="child-BBBB22").run_dir.exists()
+        assert not SessionLayout(
+            state_dir=state_dir, session_id="child-BBBB22"
+        ).session_dir.exists()
         branches = sp.run(
             ["git", "branch", "--list", "agent6/child-BBBB22"],
             cwd=repo,
@@ -428,9 +430,9 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     ).stdout.strip()
     sp.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
 
-    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 1
-    assert not RunLayout(state_dir=state_dir, run_id="child-BBBB22").run_dir.exists()
+    assert not SessionLayout(state_dir=state_dir, session_id="child-BBBB22").session_dir.exists()
 
 
 def test_fork_clones_state_writes_lineage_and_branch(
@@ -445,15 +447,15 @@ def test_fork_clones_state_writes_lineage_and_branch(
     state_dir = _state_dir(repo)
     src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", new_run_id="brave-yak-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = RunLayout(state_dir=state_dir, run_id="brave-yak-BBBB22")
-    assert dst.run_dir.is_dir()
+    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    assert dst.session_dir.is_dir()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
     seed = load_run_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
-    assert (dst.run_dir / "loop_state.json").is_file()
+    assert (dst.session_dir / "loop_state.json").is_file()
     # DAG rebuilt at the latest checkpoint's graph_version (3): both nodes, the
     # child still passed, and the journal prefix that produced that version.
     from agent6.graph.storage import load_graph
@@ -465,7 +467,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
 
     # Lineage manifest fields.
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["parent_run_id"] == "sunny-otter-AAAA11"
+    assert manifest["parent_session_id"] == "sunny-otter-AAAA11"
     assert manifest["forked_from_turn"] == 3
     assert manifest["forked_from_sha"] == head
     assert manifest["base_sha"] == "basesha000"
@@ -526,12 +528,14 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
         "head_sha": head,
         "graph_version": 3,
     }
-    src.run_dir.joinpath("loop_state.json").write_text(json.dumps(latest_payload), encoding="utf-8")
+    src.session_dir.joinpath("loop_state.json").write_text(
+        json.dumps(latest_payload), encoding="utf-8"
+    )
 
-    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
     assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
         "turn 3 from loop_state"
     )
@@ -547,14 +551,14 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     monkeypatch.chdir(repo)
     state_dir = _state_dir(repo)
     src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
-    src.run_dir.joinpath("loop_state.json").write_text(
+    src.session_dir.joinpath("loop_state.json").write_text(
         src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
     )
 
-    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
     assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
 
 
@@ -568,9 +572,9 @@ def test_fork_at_turn_selects_that_checkpoint(
     state_dir = _state_dir(repo)
     _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_run_id="kid-CCCC33", no_run=True)
+    rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="kid-CCCC33")
+    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
     assert load_run_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
@@ -583,7 +587,7 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     state_dir = _state_dir(repo)
     _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
-    rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_run_id="kid-DDDD44", no_run=True)
+    rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
     assert rc == 2
     assert not (state_dir / "runs" / "kid-DDDD44").exists()
 
@@ -597,13 +601,13 @@ def test_fork_pre_checkpoint_run_degrades_gracefully(
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state_dir = _state_dir(repo)
-    layout = RunLayout(state_dir=state_dir, run_id="old-run-EEEE55")
+    layout = SessionLayout(state_dir=state_dir, session_id="old-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 1,
-                "run_id": "old-run-EEEE55",
+                "session_id": "old-run-EEEE55",
                 "mode": "run",  # v1 manifests carried it; absent = refused, not "run"
                 "base_sha": "x",
                 "base_branch": "m",
@@ -613,7 +617,7 @@ def test_fork_pre_checkpoint_run_degrades_gracefully(
     )
     # Old run: loop_state.json exists but no checkpoints dir content. We DO carry
     # head_sha now (older snapshots without it cannot cut a branch).
-    layout.run_dir.joinpath("loop_state.json").write_text(
+    layout.session_dir.joinpath("loop_state.json").write_text(
         json.dumps(
             {
                 "version": 2,
@@ -634,14 +638,14 @@ def test_fork_pre_checkpoint_run_degrades_gracefully(
         p.unlink()
     layout.checkpoints_dir.rmdir()
 
-    rc = _cmd_fork(None, "old-run", new_run_id="fresh-FFFF66", no_run=True)
+    rc = _cmd_fork(None, "old-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="fresh-FFFF66")
+    dst = SessionLayout(state_dir=state_dir, session_id="fresh-FFFF66")
     seed = load_run_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "legacy"
     assert seed.next_iteration == 4
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["parent_run_id"] == "old-run-EEEE55"
+    assert manifest["parent_session_id"] == "old-run-EEEE55"
     assert manifest["forked_from_turn"] == 4
 
 
@@ -658,10 +662,12 @@ def _current_branch(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _layout_with_run_branch(state_dir: Path, run_id: str, run_branch: str | None) -> RunLayout:
-    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+def _layout_with_run_branch(
+    state_dir: Path, session_id: str, run_branch: str | None
+) -> SessionLayout:
+    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
     layout.ensure()
-    body: dict[str, Any] = {"version": 2, "run_id": run_id, "mode": "run"}
+    body: dict[str, Any] = {"version": 2, "session_id": session_id, "mode": "run"}
     if run_branch is not None:
         body["run_branch"] = run_branch
     layout.manifest_path.write_text(json.dumps(body), encoding="utf-8")
@@ -724,11 +730,11 @@ def test_fork_without_id_forks_most_recent_run(
     monkeypatch.chdir(repo)
     state_dir = _state_dir(repo)
     _seed_source_run(state_dir, "only-run-AAAA11", head_sha=head, turns=(1,))
-    rc = _cmd_fork(None, "", new_run_id="child-BBBB22", no_run=True)
+    rc = _cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
-    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["parent_run_id"] == "only-run-AAAA11"  # the only/most-recent run
+    assert manifest["parent_session_id"] == "only-run-AAAA11"  # the only/most-recent run
 
 
 def test_fork_continue_resumes_without_force(
@@ -745,16 +751,16 @@ def test_fork_continue_resumes_without_force(
     _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
     captured: dict[str, Any] = {}
 
-    def _fake_resume(config_path: object, run_id: str, *, force: bool, **_kw: object) -> int:
+    def _fake_resume(config_path: object, session_id: str, *, force: bool, **_kw: object) -> int:
         captured["force"] = force
-        captured["run_id"] = run_id
+        captured["session_id"] = session_id
         return 0
 
     monkeypatch.setattr("agent6.ui.cli.fork._cmd_resume", _fake_resume)
-    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22")  # default: continue
+    rc = _cmd_fork(None, "src", new_session_id="child-BBBB22")  # default: continue
     assert rc == 0
     assert captured["force"] is False
-    assert captured["run_id"] == "child-BBBB22"
+    assert captured["session_id"] == "child-BBBB22"
 
 
 def test_fork_without_id_and_no_runs_errors_cleanly(
@@ -901,9 +907,9 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     assert {n.title for n in load_graph(src).values()} == {"root task", "late subtask"}
 
-    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_run_id="kid-CCCC33", no_run=True) == 0
+    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
 
-    dst = RunLayout(state_dir=state_dir, run_id="kid-CCCC33")
+    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
     nodes = load_graph(dst)
     # The turn-3 subtask did not exist at turn 1, and the root had not passed.
     assert [n.title for n in nodes.values()] == ["root task"]
@@ -938,9 +944,9 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     payload["graph_version"] = 0
     src.checkpoint_path(1).write_text(json.dumps(payload), encoding="utf-8")
 
-    assert _cmd_fork(None, "old-run", at_turn=1, new_run_id="kid-DDDD44", no_run=True) == 0
+    assert _cmd_fork(None, "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
 
-    dst = RunLayout(state_dir=state_dir, run_id="kid-DDDD44")
+    dst = SessionLayout(state_dir=state_dir, session_id="kid-DDDD44")
     assert {n.title for n in load_graph(dst).values()} == {"root task", "late subtask"}
 
 

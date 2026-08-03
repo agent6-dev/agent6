@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """One status decision for any run with a dir.
 
-``status_for_run_dir`` is the single place a run's status word is decided from
-its dir; listings (``summarize_run_dir``) and every header feed it facts from
+``status_for_session_dir`` is the single place a run's status word is decided from
+its dir; listings (``summarize_session_dir``) and every header feed it facts from
 either producer -- the tolerant scanner (``LogScan``) or the typed fold
-(``RunState``). The matrix pins the word per dir state for BOTH producers and
-for the listing, so no two surfaces can disagree about any non-``run.end``
+(``SessionState``). The matrix pins the word per dir state for BOTH producers and
+for the listing, so no two surfaces can disagree about any non-``session.end``
 state (parked/created/starting/stale/waiting each shipped a real
 surface-disagreement bug before this existed).
 """
@@ -21,11 +21,11 @@ import pytest
 
 from agent6.viewmodel.listing import (
     LogScan,
-    scan_run_log,
-    status_for_run_dir,
-    summarize_run_dir,
+    scan_session_log,
+    status_for_session_dir,
+    summarize_session_dir,
 )
-from agent6.viewmodel.state import fold_run, status_facts
+from agent6.viewmodel.state import fold_session, status_facts
 
 LIVE = os.getpid()
 DEAD = 999999999
@@ -41,7 +41,7 @@ def _mk(
 ) -> Path:
     d = tmp_path / name
     d.mkdir()
-    manifest: dict[str, object] = {"mode": "run", "run_id": name, "user_task": "t"}
+    manifest: dict[str, object] = {"mode": "run", "session_id": name, "user_task": "t"}
     if parked:
         manifest["parked_task"] = parked
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -54,7 +54,7 @@ def _mk(
     return d
 
 
-_START: dict[str, object] = {"type": "run.start", "mode": "run", "user_task": "t"}
+_START: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
 _TOOL: dict[str, object] = {"type": "tool.call", "name": "grep", "args": {}}
 _APPROVAL: dict[str, object] = {"type": "approval.prompt", "id": "approval-1", "prompt": "ok?"}
 _QUESTION: dict[str, object] = {
@@ -69,14 +69,14 @@ _RESUME: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
 
 
 def _end(reason: str, all_passed: bool = False) -> dict[str, object]:
-    return {"type": "run.end", "reason": reason, "all_passed": all_passed}
+    return {"type": "session.end", "reason": reason, "all_passed": all_passed}
 
 
 # (name, events (None = no logs.jsonl), parked_task, pid, expected word, expected reason)
 MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, str]] = [
     ("created", None, "", None, "created", ""),
     ("parked", None, "fix it", None, "parked", "resume to start"),
-    # A parked run being resumed: a live worker in its pre-run.start preflight
+    # A parked run being resumed: a live worker in its pre-session.start preflight
     # window reads "starting" even while the manifest still carries parked_task
     # (resume clears it only once under way).
     ("parked-resuming", None, "fix it", LIVE, "starting", ""),
@@ -103,18 +103,18 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "",
     ),
     # A prompt is still pending when a LATER event lands: Ctrl-C in the
-    # launching terminal emits run.steer_requested from the signal handler
+    # launching terminal emits session.steer_requested from the signal handler
     # while the approval waits. "Blocked" is about the unanswered prompt, not
     # about which event happened to be last.
     (
         "waiting-with-a-later-event",
-        [_START, _APPROVAL, {"type": "run.steer_requested", "source": "sigint"}],
+        [_START, _APPROVAL, {"type": "session.steer_requested", "source": "sigint"}],
         "",
         LIVE,
         "waiting",
         "needs answer",
     ),
-    # A FORK is driven by resume(), so its fresh log never carries a run.start:
+    # A FORK is driven by resume(), so its fresh log never carries a session.start:
     # keying "started" on that alone left every forked run "starting" while alive
     # and "created" (the never-started word) once it died.
     ("forked-live", [_RESUME, _TOOL], "", LIVE, "running", ""),
@@ -144,11 +144,11 @@ def test_both_fact_producers_and_the_listing_agree(
 ) -> None:
     d = _mk(tmp_path, name, events, parked=parked, pid=pid)
     logs = d / "logs.jsonl"
-    scan = scan_run_log(logs) if logs.is_file() else LogScan()
-    fold = fold_run([] if events is None else events)
-    assert status_for_run_dir(d, scan.status_facts()) == (word, reason)
-    assert status_for_run_dir(d, status_facts(fold)) == (word, reason)
-    summary = summarize_run_dir(d)
+    scan = scan_session_log(logs) if logs.is_file() else LogScan()
+    fold = fold_session([] if events is None else events)
+    assert status_for_session_dir(d, scan.status_facts()) == (word, reason)
+    assert status_for_session_dir(d, status_facts(fold)) == (word, reason)
+    summary = summarize_session_dir(d)
     assert (summary.status, summary.reason) == (word, reason)
 
 
@@ -163,6 +163,6 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
         {"type": "loop.resume.start", "iteration": 2},
         _APPROVAL,
     ]
-    state = fold_run(events)
+    state = fold_session(events)
     assert len(state.pending_approvals) == 1  # the new leg's, not the orphan + a dup
     assert state.pending_questions == ()

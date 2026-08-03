@@ -23,8 +23,8 @@ def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
     # Should return without raising, without doing anything.
     fire_notify_hook(
         notify,
-        run_id="abcdef0123456789",
-        run_dir=tmp_path,
+        session_id="abcdef0123456789",
+        session_dir=tmp_path,
         ok=True,
         reason="finish_run",
         verified="passed",
@@ -50,8 +50,8 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
     notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
     fire_notify_hook(
         notify,
-        run_id="run-xyz",
-        run_dir=tmp_path,
+        session_id="run-xyz",
+        session_dir=tmp_path,
         ok=True,
         reason="finish_run",
         verified="passed",
@@ -71,8 +71,8 @@ def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFix
     notify = NotifyConfig(on_complete=("/nonexistent/agent6-notify-binary",), timeout_s=5.0)
     fire_notify_hook(
         notify,
-        run_id="run-xyz",
-        run_dir=tmp_path,
+        session_id="run-xyz",
+        session_dir=tmp_path,
         ok=False,
         reason="budget_exhausted",
         verified="passed",
@@ -93,8 +93,8 @@ def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
     notify = NotifyConfig(on_complete=argv, timeout_s=5.0)
     fire_notify_hook(
         notify,
-        run_id="r",
-        run_dir=tmp_path,
+        session_id="r",
+        session_dir=tmp_path,
         ok=False,
         reason="provider_error",
         verified="passed",
@@ -237,8 +237,8 @@ def test_notify_hook_env_carries_no_secrets(
     notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
     fire_notify_hook(
         notify,
-        run_id="r1",
-        run_dir=tmp_path,
+        session_id="r1",
+        session_dir=tmp_path,
         ok=True,
         reason="finish_run",
         verified="passed",
@@ -285,8 +285,8 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
     script.chmod(0o755)
     fire_notify_hook(
         NotifyConfig(on_complete=(str(script),)),
-        run_id="r1",
-        run_dir=tmp_path,
+        session_id="r1",
+        session_dir=tmp_path,
         ok=True,
         reason="finish_run",
         verified="failed",

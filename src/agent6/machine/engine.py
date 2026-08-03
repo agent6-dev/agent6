@@ -70,8 +70,8 @@ from agent6.machine.template import (
     render_value,
 )
 from agent6.portable import atomic_write
-from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
+from agent6.sessions.layout import LOGS_NAME
 from agent6.types import IsolationLevel, JailPolicy
 
 __all__ = [

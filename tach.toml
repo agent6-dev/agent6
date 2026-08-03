@@ -19,7 +19,7 @@ depends_on = []
 # importing agent6.ui: the run/resume lifecycle and the parallel fan-out /
 # coordinator dispatch + candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and run-dir bridge callables it needs
-# (see app/__init__.py: RunFrontend, LaneRuntime).
+# (see app/__init__.py: SessionFrontend, LaneRuntime).
 path = "agent6.app"
 depends_on = [
   "agent6.child_env",
@@ -41,11 +41,11 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
-  "agent6.runs.ipc",
-  "agent6.runs.id",
-  "agent6.runs.layout",
-  "agent6.runs.lock",
-  "agent6.runs.manifest",
+  "agent6.sessions.ipc",
+  "agent6.sessions.id",
+  "agent6.sessions.layout",
+  "agent6.sessions.lock",
+  "agent6.sessions.manifest",
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.secrets",
@@ -92,10 +92,10 @@ depends_on = [
   "agent6.viewmodel",
   "agent6.graph.models",
   "agent6.graph.storage",
-  "agent6.runs.id",
-  "agent6.runs.layout",
-  "agent6.runs.ipc",
-  "agent6.runs.manifest",
+  "agent6.sessions.id",
+  "agent6.sessions.layout",
+  "agent6.sessions.ipc",
+  "agent6.sessions.manifest",
   "agent6.ui.mcp_server",
   "agent6.machine",
 ]
@@ -130,7 +130,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui.tui"
-depends_on = ["agent6.runs.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.ui.spawn", "agent6.ui.notify", "agent6.runs.ipc", "agent6.runs.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.viewmodel"]
+depends_on = ["agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.viewmodel"]
 
 [[modules]]
 # Find the agent6 exe and spawn it detached (new work / machines / background
@@ -138,7 +138,7 @@ depends_on = ["agent6.runs.layout", "agent6.config", "agent6.config.io", "agent6
 path = "agent6.ui.spawn"
 # The escapee sweep must not mistake a deliberately detached child (a `/btw`
 # ask, a `/parallel` lane) for a jailed command's escapee and kill it.
-depends_on = ["agent6.runs.layout", "agent6.sandbox"]
+depends_on = ["agent6.sessions.layout", "agent6.sandbox"]
 
 [[modules]]
 # Best-effort desktop notification via notify-send (fixed argv). Consumed by the
@@ -152,7 +152,7 @@ depends_on = []
 # lifecycle, so `initialize`'s capability exchange maps onto
 # FrontendCapabilities rather than needing plumbing of its own.
 path = "agent6.ui.acp"
-# The types RunFrontend's own signatures name: implementing the seam means
+# The types SessionFrontend's own signatures name: implementing the seam means
 # naming what it passes. The same set ui.cli has, minus everything that draws.
 depends_on = [
   "agent6",
@@ -161,11 +161,11 @@ depends_on = [
   "agent6.config",
   "agent6.config.layer",
   "agent6.events",
-  "agent6.runs.id",
+  "agent6.sessions.id",
   # session/cancel drops the same stop marker the TUI and web do: a marker,
   # not a kill, so the finished step lands first.
-  "agent6.runs.ipc",
-  "agent6.runs.layout",
+  "agent6.sessions.ipc",
+  "agent6.sessions.layout",
   "agent6.tools.schema",
   "agent6.types",
   # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
@@ -186,16 +186,16 @@ depends_on = [
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
 path = "agent6.ui.web"
 depends_on = [
-  "agent6.runs.layout",
+  "agent6.sessions.layout",
   "agent6",
   "agent6.directive",
   "agent6.viewmodel",
   "agent6.ui.spawn",
-  "agent6.runs.ipc",
+  "agent6.sessions.ipc",
   # new-work preflight: refuse a run submission while a live worker holds the
   # checkout, instead of spawning a doomed detached run
-  "agent6.runs.lock",
-  "agent6.runs.manifest",
+  "agent6.sessions.lock",
+  "agent6.sessions.manifest",
   "agent6.config",
   "agent6.config.layer",
   "agent6.machine",
@@ -208,18 +208,18 @@ depends_on = [
 ]
 
 [[modules]]
-# The shared view-model: a run's logs.jsonl folded into RunState, a machine's
+# The shared view-model: a run's logs.jsonl folded into SessionState, a machine's
 # journal folded into MachineState. Consumed by the TUI, the CLI watchers, and
 # (later) the web UI. The machine fold reads the journal event types + the spec,
 # so it depends on those two leaf machine modules; nothing UI-toolkit-shaped.
 path = "agent6.viewmodel"
 depends_on = [
-  "agent6.runs.layout",
+  "agent6.sessions.layout",
   "agent6.config.layer",
   "agent6.machine.journal",
   "agent6.machine.model",
-  "agent6.runs.ipc",
-  "agent6.runs.manifest",
+  "agent6.sessions.ipc",
+  "agent6.sessions.manifest",
 ]
 
 [[modules]]
@@ -260,7 +260,7 @@ path = "agent6.tools"
 # effective command policy (config + the operator's session choice + away-mode)
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.runs.layout", "agent6.runs.manifest", "agent6.runs.ipc"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
@@ -388,7 +388,7 @@ path = "agent6.graph.ulid"
 depends_on = []
 
 [[modules]]
-path = "agent6.runs.id"
+path = "agent6.sessions.id"
 depends_on = ["agent6._data", "agent6.graph.ulid"]
 
 [[modules]]
@@ -403,19 +403,19 @@ depends_on = [
   "agent6.config.layer",
   "agent6.tools",
   "agent6.graph.storage",
-  "agent6.runs.layout",
-  "agent6.runs.manifest",
+  "agent6.sessions.layout",
+  "agent6.sessions.manifest",
   "agent6.viewmodel",
 ]
 
 [[modules]]
-path = "agent6.runs.layout"
+path = "agent6.sessions.layout"
 depends_on = []
 
 [[modules]]
 # The single manifest.json reader (the writer is app.manifest). A pure leaf:
 # app, the viewmodel, and the CLI parse a run's manifest through this one owner.
-path = "agent6.runs.manifest"
+path = "agent6.sessions.manifest"
 # The session-mode vocabulary. Keeping a second list here let the two
 # disagree: this module refused a mode the tool surface happily built.
 depends_on = ["agent6.types"]
@@ -423,7 +423,7 @@ depends_on = ["agent6.types"]
 [[modules]]
 # One authoritative writer per run dir: the worker.lock flock run/resume/fork
 # take before touching a run's shared state.
-path = "agent6.runs.lock"
+path = "agent6.sessions.lock"
 depends_on = ["agent6.portable"]
 
 [[modules]]
@@ -432,14 +432,14 @@ depends_on = ["agent6.portable"]
 # pid liveness, detach away-mode). Pure stdlib filesystem primitives; a leaf so
 # app, the viewmodel, and the three front-ends all read/write run state without
 # a ui edge.
-path = "agent6.runs.ipc"
+path = "agent6.sessions.ipc"
 # atomic_write: the answer files need a unique-temp durable write (two live
 # front-ends answering one prompt raced on a shared .tmp).
 depends_on = ["agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.storage"
-depends_on = ["agent6.graph.models", "agent6.portable", "agent6.runs.layout"]
+depends_on = ["agent6.graph.models", "agent6.portable", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.graph.curator"
@@ -482,7 +482,7 @@ depends_on = ["agent6.machine.model", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.runs.layout", "agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types", "agent6.portable"]
+depends_on = ["agent6.sessions.layout", "agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.dryrun"

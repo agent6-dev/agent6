@@ -13,17 +13,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.graph.storage import load_graph
-from agent6.runs.id import RunIdError
-from agent6.runs.layout import LOGS_NAME, RunLayout
+from agent6.sessions.id import SessionIdError
+from agent6.sessions.layout import LOGS_NAME, SessionLayout
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
-    all_run_dirs,
-    resolve_run_layout,
+    all_session_dirs,
+    resolve_session_layout,
     sgr,
 )
 from agent6.ui.cli._task_tree import task_tree_lines
-from agent6.viewmodel import run_mtime
+from agent6.viewmodel import session_mtime
 from agent6.viewmodel.transcript_render import (
     conversation_transcripts,
     fold_conversation,
@@ -32,7 +32,7 @@ from agent6.viewmodel.transcript_render import (
 )
 
 
-def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
+def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     rg = shutil.which("rg")
     if rg is None:
         print(
@@ -42,19 +42,19 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
         )
         return 2
     cwd = Path.cwd()
-    if run_id:
+    if session_id:
         # Resolve across every bucket so an ask's logs/transcript are searchable.
         try:
-            targets = [resolve_run_layout(cwd, run_id).run_dir]
-        except RunIdError as exc:
+            targets = [resolve_session_layout(cwd, session_id).session_dir]
+        except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
         # No id: search every run across runs/ + asks/ + machine-drafts/, so a
-        # search right after an `ask` finds it (matching what `agent6 runs` lists).
-        targets = all_run_dirs(cwd)
+        # search right after an `ask` finds it (matching what `agent6 sessions` lists).
+        targets = all_session_dirs(cwd)
         if not targets:
-            print("[agent6] no runs to search yet.")
+            print("[agent6] no sessions to search yet.")
             return 1
     argv: list[str] = [rg, "--json"]
     if fixed:
@@ -73,7 +73,7 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
 # windowed around the match -- never the whole (possibly 400KB) JSON event line.
 @dataclass(frozen=True, slots=True)
 class _SearchHit:
-    run_id: str
+    session_id: str
     when: str  # short clock time, or "" if the line is not a timestamped event
     kind: str  # event type, or the file's basename for non-event files
     snippet: str
@@ -98,7 +98,7 @@ def _normalize(text: str) -> str:
 def _match_core(text: str, start: int, end: int) -> str:
     """A hit's content identity: the matched text plus a little FOLLOWING
     context, decoded and reduced to lowercase alphanumerics. One task string is
-    stored in many encodings (the run.start event, manifest.json, the graph's
+    stored in many encodings (the session.start event, manifest.json, the graph's
     dot labels, per-call transcripts); they differ in the syntax BEFORE the
     match ('"user_task": "' vs 'label="'), while the text after it is the same
     content everywhere, so a suffix-only key sees through the encodings.
@@ -171,12 +171,12 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
         encoded = raw.encode("utf-8")
         start = len(encoded[:b_start].decode("utf-8", "ignore"))
         end = len(encoded[:b_end].decode("utf-8", "ignore"))
-        run_id = _run_id_from_path(path)
+        session_id = _session_id_from_path(path)
         when, kind = _event_when_kind(path, raw)
         snippet = _field_snippet(raw, start, end) or _window(raw, start)
         hits.append(
             _SearchHit(
-                run_id=run_id,
+                session_id=session_id,
                 when=when,
                 kind=kind,
                 snippet=snippet,
@@ -207,7 +207,7 @@ def _rg_text(field: object) -> str:
     return str(field or "")
 
 
-def _run_id_from_path(path: Path) -> str:
+def _session_id_from_path(path: Path) -> str:
     """The run/ask id owning a match file: the child of the DEEPEST
     runs/asks/machine-drafts segment (a state-base ancestor may reuse a
     bucket name, e.g. XDG_STATE_HOME=/mnt/runs/state)."""
@@ -321,13 +321,13 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
         return
     grouped: dict[str, list[_SearchHit]] = {}
     for hit in hits:
-        grouped.setdefault(hit.run_id, []).append(hit)
+        grouped.setdefault(hit.session_id, []).append(hit)
     total = 0
-    for i, (run_id, run_hits) in enumerate(grouped.items()):
+    for i, (session_id, run_hits) in enumerate(grouped.items()):
         print("" if i == 0 else "\n", end="")
-        print(sgr(run_id, "1"))
+        print(sgr(session_id, "1"))
         # Dedup by content identity, not by file kind: one task string lives in
-        # many storage encodings (run.start event, manifest, graph labels,
+        # many storage encodings (session.start event, manifest, graph labels,
         # per-call transcripts) and cumulative transcript snapshots repeat the
         # same text; each collapses to ONE line, the most readable encoding
         # (see _kind_rank), with an (xN) count.
@@ -349,15 +349,15 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     print(sgr(f"\n{total} match{'es' if total != 1 else ''} in {len(grouped)} run(s)", "2"))
 
 
-def _cmd_history_graph(run_id: str) -> int:
+def _cmd_history_graph(session_id: str) -> int:
     """Render the persisted TaskNode tree for a run as a DFS-ordered listing."""
 
     cwd = Path.cwd()
-    if run_id:
+    if session_id:
         # Resolve across runs/ + asks/ so an ask's graph is findable too.
         try:
-            layout = resolve_run_layout(cwd, run_id)
-        except RunIdError as exc:
+            layout = resolve_session_layout(cwd, session_id)
+        except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
@@ -367,16 +367,16 @@ def _cmd_history_graph(run_id: str) -> int:
             return 2
         candidates = sorted(
             (p for p in runs_dir.iterdir() if p.is_dir() and (p / "graph").is_dir()),
-            key=run_mtime,
+            key=session_mtime,
             reverse=True,
         )
         if not candidates:
             print(f"ERROR: no runs with a graph under {runs_dir}", file=sys.stderr)
             return 2
-        layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
-        print(f"[agent6] showing graph for most recent run: {layout.run_id}", file=sys.stderr)
+        layout = SessionLayout(state_dir=_state_dir(cwd), session_id=candidates[0].name)
+        print(f"[agent6] showing graph for most recent run: {layout.session_id}", file=sys.stderr)
 
-    target_id = layout.run_id
+    target_id = layout.session_id
     nodes = load_graph(layout)
     if not nodes:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
@@ -401,20 +401,20 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
     return n, n
 
 
-def _transcript_layout(cwd: Path, run_id: str) -> RunLayout | int:
+def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
     """Resolve the run whose transcripts to render: by id, else the most recent
     run that has a transcripts/ dir. An int is the exit code of a printed error."""
-    if run_id:
+    if session_id:
         try:
-            return resolve_run_layout(cwd, run_id)
-        except RunIdError as exc:
+            return resolve_session_layout(cwd, session_id)
+        except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     runs_dir = _runs_dir(cwd)
     candidates = (
         sorted(
             (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
-            key=run_mtime,
+            key=session_mtime,
             reverse=True,
         )
         if runs_dir.is_dir()
@@ -423,13 +423,13 @@ def _transcript_layout(cwd: Path, run_id: str) -> RunLayout | int:
     if not candidates:
         print(f"ERROR: no runs with transcripts under {runs_dir}", file=sys.stderr)
         return 2
-    layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
-    print(f"[agent6] transcript for most recent run: {layout.run_id}", file=sys.stderr)
+    layout = SessionLayout(state_dir=_state_dir(cwd), session_id=candidates[0].name)
+    print(f"[agent6] transcript for most recent run: {layout.session_id}", file=sys.stderr)
     return layout
 
 
 def _cmd_history_transcript(
-    run_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
+    session_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
 ) -> int:
     """Render a run's full LLM conversation from its lossless per-call transcripts.
 
@@ -438,7 +438,7 @@ def _cmd_history_transcript(
     view (assistant text/thinking + every tool call with full I/O); for the terse
     EVENT timeline use `agent6 attach` / `agent6 history search`.
     """
-    layout = _transcript_layout(Path.cwd(), run_id)
+    layout = _transcript_layout(Path.cwd(), session_id)
     if isinstance(layout, int):
         return layout
 
@@ -450,7 +450,7 @@ def _cmd_history_transcript(
 
     transcripts = load_transcripts(layout.transcripts_dir)
     if not transcripts:
-        print(f"ERROR: run {layout.run_id} has no transcripts", file=sys.stderr)
+        print(f"ERROR: run {layout.session_id} has no transcripts", file=sys.stderr)
         return 2
 
     if as_json:
@@ -464,7 +464,7 @@ def _cmd_history_transcript(
         # e.g. a review-only dir: every round-trip is a side-call seat, so the
         # conversation fold would print nothing at all.
         print(
-            f"run {layout.run_id} has only side-call transcripts (review seats /"
+            f"run {layout.session_id} has only side-call transcripts (review seats /"
             " compaction); --json dumps them raw.",
             file=sys.stderr,
         )
@@ -476,7 +476,9 @@ def _cmd_history_transcript(
         lo, hi = window
         turns = [t for t in turns if lo <= t.seq <= hi]
     print(
-        render_markdown(turns, run_id=layout.run_id, show_thinking=not no_thinking, tools=tools),
+        render_markdown(
+            turns, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
+        ),
         end="",
     )
     return 0

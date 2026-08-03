@@ -21,7 +21,7 @@ Tool surface:
     run_in_sandbox          - run arbitrary argv in jail (gated).
     apply_patch_in_sandbox  - apply a unified diff + re-run verify.
     query_dag               - load <run-dir>/graph/*.md as nodes.
-    list_runs               - enumerate runs (per-repo run-state dir) with manifest summary.
+    list_sessions               - enumerate sessions (per-repo state dir) with manifest summary.
 """
 
 from __future__ import annotations
@@ -38,11 +38,11 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
-from agent6.runs.layout import RunLayout, is_safe_run_id
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.layout import SessionLayout, is_safe_session_id
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
-from agent6.viewmodel import run_mtime
+from agent6.viewmodel import session_mtime
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -102,7 +102,7 @@ def _runs_root(agent6_dir: Path) -> Path:
     return agent6_dir / "runs"
 
 
-def _run_dirs_newest_first(runs: Path) -> list[Path]:
+def _session_dirs_newest_first(runs: Path) -> list[Path]:
     """Run dirs sorted newest-first by run activity.
 
     Run ids are NOT chronologically sortable -- they start with a random
@@ -113,16 +113,16 @@ def _run_dirs_newest_first(runs: Path) -> list[Path]:
     """
     return sorted(
         (d for d in runs.iterdir() if d.is_dir()),
-        key=run_mtime,
+        key=session_mtime,
         reverse=True,
     )
 
 
-def _most_recent_run_id(agent6_dir: Path) -> str | None:
+def _most_recent_session_id(agent6_dir: Path) -> str | None:
     runs = _runs_root(agent6_dir)
     if not runs.is_dir():
         return None
-    candidates = _run_dirs_newest_first(runs)
+    candidates = _session_dirs_newest_first(runs)
     return candidates[0].name if candidates else None
 
 
@@ -244,19 +244,19 @@ class MCPServer:
                 name="query_dag",
                 description=(
                     "Load the task graph for a given run id (default: most recent)."
-                    " Returns {run_id, nodes: {id: {title, status, parent_id, ...}}}."
+                    " Returns {session_id, nodes: {id: {title, status, parent_id, ...}}}."
                 ),
                 input_schema={
                     "type": "object",
-                    "properties": {"run_id": {"type": "string"}},
+                    "properties": {"session_id": {"type": "string"}},
                     "additionalProperties": False,
                 },
                 handler=self._h_query_dag,
             ),
             _ToolSpec(
-                name="list_runs",
+                name="list_sessions",
                 description=(
-                    "Enumerate runs under the per-repo run-state dir (most-recent first) with"
+                    "Enumerate sessions under the per-repo state dir (most-recent first) with"
                     " their manifest summary (task, base_sha, models, ...)."
                 ),
                 input_schema={
@@ -264,7 +264,7 @@ class MCPServer:
                     "properties": {},
                     "additionalProperties": False,
                 },
-                handler=self._h_list_runs,
+                handler=self._h_list_sessions,
             ),
         ]
 
@@ -367,39 +367,39 @@ class MCPServer:
         return {"apply": apply_result.to_wire(), "verify": verify_result.to_wire()}
 
     def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
-        run_id_arg = args.get("run_id")
-        if isinstance(run_id_arg, str) and run_id_arg:
+        session_id_arg = args.get("session_id")
+        if isinstance(session_id_arg, str) and session_id_arg:
             # Client-supplied: reject a traversing/absolute id before it builds a
             # run dir, so a query cannot read another repo's state (or anywhere).
-            if not is_safe_run_id(run_id_arg):
-                raise ToolError(f"invalid run_id: {run_id_arg!r}")
-            run_id = run_id_arg
+            if not is_safe_session_id(session_id_arg):
+                raise ToolError(f"invalid session_id: {session_id_arg!r}")
+            session_id = session_id_arg
         else:
-            resolved = _most_recent_run_id(self._agent6_dir)
+            resolved = _most_recent_session_id(self._agent6_dir)
             if resolved is None:
-                raise ToolError("no runs found under the agent6 runs dir")
-            run_id = resolved
-        layout = RunLayout(state_dir=self._agent6_dir, run_id=run_id)
-        if not layout.run_dir.is_dir():
-            raise ToolError(f"run not found: {run_id}")
+                raise ToolError("no sessions found under the agent6 state dir")
+            session_id = resolved
+        layout = SessionLayout(state_dir=self._agent6_dir, session_id=session_id)
+        if not layout.session_dir.is_dir():
+            raise ToolError(f"run not found: {session_id}")
         nodes = load_graph(layout)
         return {
-            "run_id": run_id,
+            "session_id": session_id,
             "nodes": {nid: node.model_dump(mode="json") for nid, node in nodes.items()},
         }
 
-    def _h_list_runs(self, _args: dict[str, Any]) -> dict[str, Any]:
+    def _h_list_sessions(self, _args: dict[str, Any]) -> dict[str, Any]:
         runs = _runs_root(self._agent6_dir)
         if not runs.is_dir():
-            return {"runs": []}
+            return {"sessions": []}
         entries: list[dict[str, Any]] = []
-        for d in _run_dirs_newest_first(runs):
-            summary: dict[str, Any] = {"run_id": d.name}
+        for d in _session_dirs_newest_first(runs):
+            summary: dict[str, Any] = {"session_id": d.name}
             # A missing/corrupt manifest lists the run without one.
             with contextlib.suppress(ManifestError):
                 summary["manifest"] = read_manifest(d).model_dump(mode="json")
             entries.append(summary)
-        return {"runs": entries}
+        return {"sessions": entries}
 
 
 # ---------------------------------------------------------------------------

@@ -166,18 +166,18 @@ def test_allowing_every_command_does_not_allow_the_network(
     for the rest of the run. The operator was answering about commands: both
     the prompt and the modal say so."""
     from agent6.events import EventSink
-    from agent6.runs.ipc import set_away_mode, set_session_allow
+    from agent6.sessions.ipc import set_away_mode, set_session_allow
     from agent6.ui.cli._interact import build_approver
 
-    run_dir = tmp_path / "run"
-    (run_dir / "approvals").mkdir(parents=True)
-    set_session_allow(run_dir)
-    approve = build_approver(run_dir, EventSink(run_dir / "logs.jsonl"))
+    session_dir = tmp_path / "run"
+    (session_dir / "approvals").mkdir(parents=True)
+    set_session_allow(session_dir)
+    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
 
     assert approve("Allow run_command: ls") is True
     # away-mode deny, so the opted-out call refuses instead of polling for a
     # front-end that will never attach.
-    set_away_mode(run_dir, "deny")
+    set_away_mode(session_dir, "deny")
     assert approve("Allow fetch: evil.example (1.2.3.4) /x", standing=False) is False
 
 

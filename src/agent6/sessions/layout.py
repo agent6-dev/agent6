@@ -13,14 +13,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def is_safe_run_id(run_id: str) -> bool:
-    """True iff *run_id* is a single path component (no separator, not `.`/`..`).
+def is_safe_session_id(session_id: str) -> bool:
+    """True iff *session_id* is a single path component (no separator, not `.`/`..`).
 
-    ``RunLayout.run_dir`` is ``state_dir / subdir / run_id``: an unchecked id
+    ``SessionLayout.session_dir`` is ``state_dir / subdir / session_id``: an unchecked id
     with ``/`` or ``..`` traverses out of the runs dir, and pathlib treats an
     absolute right operand as a replacement, so an externally supplied id must
     be validated at every trust boundary before it reaches a layout."""
-    return bool(run_id) and "/" not in run_id and "\\" not in run_id and run_id not in {".", ".."}
+    return (
+        bool(session_id)
+        and "/" not in session_id
+        and "\\" not in session_id
+        and session_id not in {".", ".."}
+    )
 
 
 # The event journal's filename. Named once, and used everywhere: a reader that
@@ -30,7 +35,7 @@ LOGS_NAME = "logs.jsonl"
 
 
 @dataclass(frozen=True, slots=True)
-class RunLayout:
+class SessionLayout:
     """Filesystem layout for one `agent6 run`.
 
     ``state_dir`` is the resolved run-state base
@@ -39,38 +44,38 @@ class RunLayout:
     """
 
     state_dir: Path
-    run_id: str
+    session_id: str
     # Top-level bucket under state_dir. "runs" for `agent6 run`/`plan`; "asks"
     # for `agent6 ask` so read-only Q&A sessions stay separate from real runs.
     subdir: str = "runs"
 
     @property
-    def run_dir(self) -> Path:
-        return self.state_dir / self.subdir / self.run_id
+    def session_dir(self) -> Path:
+        return self.state_dir / self.subdir / self.session_id
 
     @property
     def manifest_path(self) -> Path:
-        return self.run_dir / "manifest.json"
+        return self.session_dir / "manifest.json"
 
     @property
     def graph_dir(self) -> Path:
-        return self.run_dir / "graph"
+        return self.session_dir / "graph"
 
     @property
     def journal_path(self) -> Path:
-        return self.run_dir / "graph.jsonl"
+        return self.session_dir / "graph.jsonl"
 
     @property
     def dot_path(self) -> Path:
-        return self.run_dir / "graph.dot"
+        return self.session_dir / "graph.dot"
 
     @property
     def cursor_path(self) -> Path:
-        return self.run_dir / "cursor.json"
+        return self.session_dir / "cursor.json"
 
     @property
     def lock_path(self) -> Path:
-        return self.run_dir / ".lock"
+        return self.session_dir / ".lock"
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -81,15 +86,15 @@ class RunLayout:
         ``agent6 fork`` can roll a run back to turn N. ``loop_state.json`` stays
         the "latest" pointer for plain ``resume``.
         """
-        return self.run_dir / "checkpoints"
+        return self.session_dir / "checkpoints"
 
     @property
     def transcripts_dir(self) -> Path:
-        return self.run_dir / "transcripts"
+        return self.session_dir / "transcripts"
 
     @property
     def logs_path(self) -> Path:
-        return self.run_dir / LOGS_NAME
+        return self.session_dir / LOGS_NAME
 
     @property
     def user_inputs_path(self) -> Path:
@@ -98,10 +103,10 @@ class RunLayout:
         Separate from logs.jsonl so the human-decision trail stays readable
         without grepping through machine telemetry.
         """
-        return self.run_dir / "user_inputs.jsonl"
+        return self.session_dir / "user_inputs.jsonl"
 
     def ensure(self) -> None:
-        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.session_dir.mkdir(parents=True, exist_ok=True)
         self.graph_dir.mkdir(exist_ok=True)
         self.transcripts_dir.mkdir(exist_ok=True)
         self.checkpoints_dir.mkdir(exist_ok=True)
@@ -113,12 +118,12 @@ class RunLayout:
 
 # The buckets a session dir can live in. `run`/`plan` write to runs/, `ask` to
 # asks/, and `machine create` authoring logs to machine-drafts/. Defined beside
-# RunLayout.subdir because it is a fact about the on-disk layout, not about any
+# SessionLayout.subdir because it is a fact about the on-disk layout, not about any
 # one front-end: both the CLI's id resolution and the resume lifecycle need it.
-RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
+SESSION_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
 
 
-def session_matches(state_dir: Path, session_id: str) -> list[RunLayout]:
+def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
     """Every session *session_id* names or prefixes, across all buckets.
 
     Exact ids win outright: a full id that also prefixes a longer one is not
@@ -126,16 +131,16 @@ def session_matches(state_dir: Path, session_id: str) -> list[RunLayout]:
     """
     if not session_id:
         return []
-    exact: list[RunLayout] = []
-    prefix: list[RunLayout] = []
-    for subdir in RUN_BUCKETS:
+    exact: list[SessionLayout] = []
+    prefix: list[SessionLayout] = []
+    for subdir in SESSION_BUCKETS:
         bucket = state_dir / subdir
         if not bucket.is_dir():
             continue
         for entry in sorted(bucket.iterdir()):
             if not entry.is_dir():
                 continue
-            layout = RunLayout(state_dir=state_dir, run_id=entry.name, subdir=subdir)
+            layout = SessionLayout(state_dir=state_dir, session_id=entry.name, subdir=subdir)
             if entry.name == session_id:
                 exact.append(layout)
             elif entry.name.startswith(session_id):
@@ -143,7 +148,7 @@ def session_matches(state_dir: Path, session_id: str) -> list[RunLayout]:
     return exact or prefix
 
 
-def session_layout(state_dir: Path, session_id: str) -> RunLayout | None:
+def session_layout(state_dir: Path, session_id: str) -> SessionLayout | None:
     """The layout for *session_id* in whichever bucket holds it, or None.
 
     One id-to-layout resolution, so a command that accepts a session id reaches

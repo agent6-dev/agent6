@@ -1,5 +1,5 @@
 {
-  "run_id": "golden-run-GLDN01",
+  "session_id": "golden-run-GLDN01",
   "user_task": "# Fix the bug\n\nRestore the thing.",
   "tasks": [
     {
@@ -111,7 +111,7 @@
     }
   ],
   "log_tail": [
-    "10:00:00.000  run.start          # Fix the bug\n\nRestore the thing.",
+    "10:00:00.000  session.start      # Fix the bug\n\nRestore the thing.",
     "10:00:00.100  graph.update       2 tasks",
     "10:00:01.000  role.call          worker/kimi-k2",
     "10:00:02.000  budget.update      in=5850 out=82 $0.0048",
@@ -132,7 +132,7 @@
     "10:00:09.500  approval.answer    id=approval-1 approved=True",
     "10:00:10.000  question.prompt    [2] Which greeting?",
     "10:00:10.500  question.answer    id=question-1 answers=2",
-    "10:00:11.000  run.steer_requested",
+    "10:00:11.000  session.steer_requested",
     "10:00:11.500  loop.steer.injected",
     "10:00:12.000  loop.parallel.dispatched",
     "10:00:13.000  loop.parallel.joined",
@@ -146,7 +146,7 @@
     "10:00:17.000  role.result        worker error: boom upstream",
     "10:00:18.000  tool.call          finish_run(summary=all green)",
     "10:00:18.200  tool.result        finish_run ok=True finish_run",
-    "10:00:18.500  run.end            finish_run all_passed=True"
+    "10:00:18.500  session.end        finish_run all_passed=True"
   ],
   "log_count": 36,
   "recent_diffs": [

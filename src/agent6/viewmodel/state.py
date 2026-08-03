@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pure event-fold: list[event_dict] -> RunState.
+"""Pure event-fold: list[event_dict] -> SessionState.
 
-The wire form `run_state_as_dict` builds from a RunState IS the data
+The wire form `session_state_as_dict` builds from a SessionState IS the data
 contract for any external viewer (`attach --json`, the web page, a future
-TS mirror): RunState's fields plus `status`/`status_label`/`live`/
+TS mirror): SessionState's fields plus `status`/`status_label`/`live`/
 `operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.
 
 The fold itself does no I/O (dataclasses + an `apply_event` that returns a
-new frozen `RunState`, so "if state is state_prev, nothing changed");
-`run_state_as_dict` with a run_dir also reads the dir's status probes and
+new frozen `SessionState`, so "if state is state_prev, nothing changed");
+`session_state_as_dict` with a session_dir also reads the dir's status probes and
 manifest to fill the dir-backed fields.
 """
 
@@ -22,16 +22,16 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     StatusFacts,
-    status_for_run_dir,
+    status_for_session_dir,
     status_word,
 )
-from agent6.viewmodel.policy import run_policy
+from agent6.viewmodel.policy import session_policy
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -92,7 +92,7 @@ class BudgetView:
     # Token counters are the CURRENT leg's (they pair with the per-leg
     # enforcement caps); usd_total is CUMULATIVE across resume legs -- "cost"
     # on any surface means what the run cost, and the hub scanner
-    # (listing.scan_run_log) sums legs the same way, so the surfaces agree.
+    # (listing.scan_session_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
     usd_total: float = 0.0
@@ -153,8 +153,8 @@ class QuestionPrompt:
 
 
 @dataclass(frozen=True, slots=True)
-class RunState:
-    run_id: str = ""
+class SessionState:
+    session_id: str = ""
     user_task: str = ""
     tasks: tuple[TaskNodeView, ...] = ()  # live task DAG, DFS pre-order
     cursor_task_id: str | None = None
@@ -167,10 +167,10 @@ class RunState:
     log_tail: tuple[LogLine, ...] = ()  # most-recent-last, bounded
     log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
     recent_diffs: tuple[DiffView, ...] = ()  # auto-commit diffs, bounded, for task filtering
-    started: bool = False  # a run.start was folded (a parked/created run has none)
+    started: bool = False  # a session.start was folded (a parked/created run has none)
     finished: bool = False
     all_passed: bool | None = None
-    end_reason: str = ""  # run.end reason: finish_run | steer_abort | provider_error | ...
+    end_reason: str = ""  # session.end reason: finish_run | steer_abort | provider_error | ...
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
@@ -185,8 +185,8 @@ class RunState:
     pins: tuple[str, ...] = ()
 
 
-def initial_state() -> RunState:
-    return RunState()
+def initial_state() -> SessionState:
+    return SessionState()
 
 
 _MAX_TOOL_HISTORY = 50
@@ -202,13 +202,13 @@ _STREAM_TAIL = 6000
 # log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
 # log with thousands of contentless "role.thinking_delta" lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
-# A run SESSION begins: a fresh run() emits run.start; a resumed leg emits only
-# loop.resume.start (never a second run.start). Per-process state that restarts
+# A run SESSION begins: a fresh run() emits session.start; a resumed leg emits only
+# loop.resume.start (never a second session.start). Per-process state that restarts
 # at a session boundary -- the prompt-id counters (approval-1/question-1 again),
-# a screen's live/finished tracking -- must key on BOTH; keying on run.start
+# a screen's live/finished tracking -- must key on BOTH; keying on session.start
 # alone made every resumed leg invisible to that state (swallowed modals, a
 # steer bar that mislabeled a live leg). One definition so the folds can't drift.
-SESSION_START_EVENTS = frozenset({"run.start", "loop.resume.start"})
+SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
 # Loop-side mirrors of events already rendered (tool.call carries the args,
 # budget.update the totals); they doubled every tool call and budget tick in
 # the log view without adding a field worth reading.
@@ -220,21 +220,21 @@ def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
 ) -> tuple[PromptT, ...]:
     """Drop unanswered prompts at a leg boundary: they belong to the leg that
     died holding them, and the new leg re-asks with restarted ids (see the
-    RunStart/ResumeStart arms)."""
+    SessionStart/ResumeStart arms)."""
     return tuple(p for p in prompts if p.answered)
 
 
-def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
+def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function.
 
     The event is parsed once (`events.parse_event`) into a typed family; each arm
-    reads typed fields instead of sniffing the dict. The log line and the run_id
+    reads typed fields instead of sniffing the dict. The log line and the session_id
     peek still read the raw dict (they render arbitrary events, including the
     RawEvent long tail). An unknown/telemetry type folds to RawEvent -> no state
     change."""
     etype = event.get("type", "")
-    if not state.run_id and event.get("run_id"):
-        state = replace(state, run_id=str(event["run_id"]))
+    if not state.session_id and event.get("session_id"):
+        state = replace(state, session_id=str(event["session_id"]))
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
         # Deltas are live-stream only; noise mirrors add no readable field.
         # cursor_task_id is the focus task (graph.update lands before a turn's calls).
@@ -246,10 +246,10 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match events.parse_event(event):
-        case events.RunStart(user_task=task):
-            # A run.start begins a leg: by definition it is running. The ask REPL
+        case events.SessionStart(user_task=task):
+            # A session.start begins a leg: by definition it is running. The ask REPL
             # re-enters wf.run() per follow-up on the same log, so a second
-            # run.start must clear the prior leg's terminal state. Unlike
+            # session.start must clear the prior leg's terminal state. Unlike
             # ResumeStart, do NOT bank usd: the REPL reuses one BudgetTracker,
             # so usd_total is already cumulative across legs.
             return replace(
@@ -268,13 +268,13 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             # leg's budget counters start fresh, so bank the cumulative spend now
             # (usd_total keeps its value until the leg's first budget.update) and
             # zero the token counters/caps: BudgetView documents them as the
-            # CURRENT leg's, and scan_run_log resets for the same reason.
+            # CURRENT leg's, and scan_session_log resets for the same reason.
             # Unanswered prompts are the DEAD leg's: the resumed leg re-asks
             # with restarted ids, so a held-over orphan would read "waiting"
             # forever and duplicate when the same id is re-prompted.
             return replace(
                 state,
-                # `started` = a leg has begun, NOT "a run.start was seen": a
+                # `started` = a leg has begun, NOT "a session.start was seen": a
                 # fork is driven by resume(), so its fresh log never carries one.
                 started=True,
                 finished=False,
@@ -491,7 +491,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case events.SteerRequested():
             return replace(state, steer_requests=state.steer_requests + 1)
 
-        case events.RunEnd(all_passed=all_passed, reason=reason):
+        case events.SessionEnd(all_passed=all_passed, reason=reason):
             return replace(state, finished=True, all_passed=all_passed, end_reason=reason)
 
         case events.RawEvent():
@@ -671,7 +671,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             # ($0.015091189999999999) is noise, not truth.
             usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"
             salient = f"in={event.get('input_total')} out={event.get('output_total')} {usd_s}"
-        case "run.start":
+        case "session.start":
             salient = str(event.get("user_task", ""))[:80]
         case "verify.end":
             salient = f"exit={event.get('exit_code')} dur={event.get('duration_s')}s"
@@ -686,7 +686,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "question.answer":
             ans = _as_list(event.get("answers"))
             salient = f"id={event.get('id')} answers={len(ans)}"
-        case "run.end":
+        case "session.end":
             salient = f"{event.get('reason', '')} all_passed={event.get('all_passed')}"
         case _:
             salient = ""
@@ -694,8 +694,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     return f"{line} {salient}" if salient else line
 
 
-def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
-    """Reduce a run's whole event stream to one RunState (apply_event from the
+def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
+    """Reduce a run's whole event stream to one SessionState (apply_event from the
     initial state). The snapshot a one-shot viewer or the JSON wire form builds
     on; the TUI folds incrementally and a CLI tail renders line-by-line instead."""
     state = initial_state()
@@ -704,13 +704,13 @@ def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
     return state
 
 
-def run_status_label(state: RunState) -> str:
+def session_status_label(state: SessionState) -> str:
     """The status label for a stream with genuinely NO run dir (the
     ``attach --json`` wire form). It distinguishes a stop from a finish from an
     error (all three set finished=True; the reason tells them apart) via the
     shared ``listing.status_word``, but it folds events alone, so it reads
     every unfinished state as "running". A surface that HAS a run dir must call
-    ``listing.status_for_run_dir`` with ``status_facts`` instead -- the dir
+    ``listing.status_for_session_dir`` with ``status_facts`` instead -- the dir
     knows parked/starting/created/stale/waiting, this cannot."""
     word, reason = status_word(
         finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
@@ -718,9 +718,9 @@ def run_status_label(state: RunState) -> str:
     return status_label(word, reason)
 
 
-def status_facts(state: RunState) -> StatusFacts:
+def status_facts(state: SessionState) -> StatusFacts:
     """The fold's answers to the status questions -- the typed twin of
-    ``LogScan.status_facts()``, for surfaces that hold a ``RunState``. The two
+    ``LogScan.status_facts()``, for surfaces that hold a ``SessionState``. The two
     producers must agree on the same log (pinned by the status matrix test)."""
     return StatusFacts(
         started=state.started,
@@ -732,33 +732,33 @@ def status_facts(state: RunState) -> StatusFacts:
     )
 
 
-def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str, Any]:
-    """The JSON-able wire form of a RunState, stable field names: what
+def session_state_as_dict(state: SessionState, session_dir: Path | None = None) -> dict[str, Any]:
+    """The JSON-able wire form of a SessionState, stable field names: what
     `agent6 attach --json` and a web client serialize. Tuples become lists, nested
     view dataclasses become dicts. `status_label` is a computed convenience the
     web/CLI render verbatim so the label logic lives in one place.
 
-    Pass *run_dir* whenever the caller has one: the label is then THE dir-aware
+    Pass *session_dir* whenever the caller has one: the label is then THE dir-aware
     status (parked/starting/stale/waiting, not the fold's blanket "running"),
     ``live`` says whether steer/stop/compact would reach anything, and the
-    dir-backed identity (run_id, the manifest's user_task) fills what the fold
+    dir-backed identity (session_id, the manifest's user_task) fills what the fold
     left empty. Without it the payload keeps the fold-only label and
     ``live: None`` -- correct only for a genuinely dir-less stream (the machine
     reasoning snapshot)."""
     d = asdict(state)
-    if run_dir is not None:
-        word, reason = status_for_run_dir(run_dir, status_facts(state))
+    if session_dir is not None:
+        word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS
         # The dir is authoritative for identity: a resumed/forked leg's log can
-        # start at loop.resume.start, folding run_id/user_task empty. Fill them
+        # start at loop.resume.start, folding session_id/user_task empty. Fill them
         # HERE so every consumer (web, watch, SSE) carries the same identity.
         # The same fold the CLI banner and the TUI composer read, so a web
         # client cannot show a different answer.
-        d["policy"] = run_policy(run_dir).line()
-        d["run_id"] = d["run_id"] or run_dir.name
+        d["policy"] = session_policy(session_dir).line()
+        d["session_id"] = d["session_id"] or session_dir.name
         if not d["user_task"]:
             with contextlib.suppress(ManifestError):
-                d["user_task"] = read_manifest(run_dir).user_task
+                d["user_task"] = read_manifest(session_dir).user_task
     else:
         # A genuinely dir-less stream (the machine reasoning snapshot): the fold
         # reads every unfinished state as "running"; only a run dir knows
@@ -773,12 +773,12 @@ def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str,
     d["status"] = word
     d["status_label"] = status_label(word, reason)
     # Whether an operator prompt is unanswered, straight from the fold: a DIR-LESS
-    # consumer (the machine watch folds an agent-state log with no run_dir, so it
+    # consumer (the machine watch folds an agent-state log with no session_dir, so it
     # has no dir status) still needs the "blocked, not working" signal to quiet
     # its heartbeat.
     d["operator_blocked"] = status_facts(state).operator_blocked
     # log_tail is LogLine objects now; the wire form stays a flat list of strings
     # (web + `watch --json` consumers render lines verbatim). task_id filtering is
-    # a TUI-local concern that reads the RunState directly.
+    # a TUI-local concern that reads the SessionState directly.
     d["log_tail"] = [line.text for line in state.log_tail]
     return d

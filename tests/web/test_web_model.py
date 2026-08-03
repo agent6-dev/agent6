@@ -13,8 +13,8 @@ import pytest
 from agent6.ui.web import model
 
 
-def _run(cwd: Path, run_id: str, events: list[dict[str, object]]) -> Path:
-    d = model.runs_root(cwd) / run_id
+def _run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> Path:
+    d = model.runs_root(cwd) / session_id
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return d
@@ -25,12 +25,12 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
         tmp_path,
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "the task"},
+            {"type": "session.start", "mode": "run", "user_task": "the task"},
             {"type": "budget.update", "usd_total": 0.0123},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.end", "all_passed": True},
         ],
     )
-    (s,) = model.hub_payload(tmp_path)["runs"]
+    (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["mode"] == "run"
     assert s["task"] == "the task"
     assert s["status"] == "passed"
@@ -45,12 +45,12 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
         tmp_path,
         "r1p",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.end", "all_passed": True},
         ],
     )
-    (s,) = model.hub_payload(tmp_path)["runs"]
+    (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["usd_partial"] is True
 
 
@@ -61,9 +61,9 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
     d.mkdir(parents=True)
     full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
     cut = full.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é
-    head = json.dumps({"type": "run.start", "mode": "run", "user_task": "torn tail"}).encode()
+    head = json.dumps({"type": "session.start", "mode": "run", "user_task": "torn tail"}).encode()
     (d / "logs.jsonl").write_bytes(head + b"\n" + full[:cut])
-    (s,) = model.hub_payload(tmp_path)["runs"]
+    (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["task"] == "torn tail"
 
 
@@ -76,13 +76,13 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
         tmp_path,
         "r2",
         [
-            {"type": "run.start", "user_task": "x"},
+            {"type": "session.start", "user_task": "x"},
             {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": dump},
         ],
     )
     payload = model.conversation_payload(d)
-    assert payload["run_id"] == "r2"
+    assert payload["session_id"] == "r2"
     (item,) = payload["items"]
     assert item["kind"] == "tool"
     flat = "".join(text for line in item["lines"] for text, _style in line)
@@ -95,7 +95,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
 def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
     # A fan-out lane's manifest carries the compare block; the run snapshot
     # embeds it so the page header can render rank/winner/rationale.
-    d = _run(tmp_path, "lane1", [{"type": "run.start", "user_task": "x"}])
+    d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
             {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True,
@@ -103,17 +103,17 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )  # fmt: skip
-    snap = model.run_snapshot(d)
+    snap = model.session_snapshot(d)
     assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
     assert snap["compare"]["rationale"] == "cleanest diff"
     # A run with no compare block carries no `compare` key (non-lane runs).
-    plain = _run(tmp_path, "plain", [{"type": "run.start", "user_task": "y"}])
-    assert "compare" not in model.run_snapshot(plain)
+    plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
+    assert "compare" not in model.session_snapshot(plain)
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> None:
-    """The fold sets user_task only from run.start, so a parked/created/forked
-    run folds it empty. The wire owner (run_state_as_dict) fills it from the
+    """The fold sets user_task only from session.start, so a parked/created/forked
+    run folds it empty. The wire owner (session_state_as_dict) fills it from the
     manifest -- ONE task field; a second fallback_task the client had to
     coalesce is gone."""
     d = model.runs_root(tmp_path) / "parked1"
@@ -122,24 +122,24 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
         json.dumps({"mode": "run", "user_task": "queued work", "parked_task": "queued work"}),
         encoding="utf-8",
     )
-    snap = model.run_snapshot(d)
+    snap = model.session_snapshot(d)
     assert snap["user_task"] == "queued work"
     assert "fallback_task" not in snap
 
 
 def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
-    d = _run(tmp_path, "lane-win", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
     )
-    (s,) = model.hub_payload(tmp_path)["runs"]
+    (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["winner"] is True
 
 
 def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
     d = model.runs_root(tmp_path) / "r2b"
     d.mkdir(parents=True)
-    assert model.conversation_payload(d) == {"run_id": "r2b", "items": []}
+    assert model.conversation_payload(d) == {"session_id": "r2b", "items": []}
 
 
 def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:
@@ -225,10 +225,10 @@ def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
 
 
 def test_run_dir_for_rejects_traversal(tmp_path: Path) -> None:
-    _run(tmp_path, "good-run", [{"type": "run.start"}])
-    assert model.run_dir_for(tmp_path, "good-run") is not None
+    _run(tmp_path, "good-run", [{"type": "session.start"}])
+    assert model.session_dir_for(tmp_path, "good-run") is not None
     for bad in ("..", ".", "", "../good-run", "a/b", "..\\x"):
-        assert model.run_dir_for(tmp_path, bad) is None
+        assert model.session_dir_for(tmp_path, bad) is None
 
 
 def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
@@ -239,9 +239,9 @@ def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
 
 
 def test_hub_payload_shape(tmp_path: Path) -> None:
-    _run(tmp_path, "r3", [{"type": "run.start", "mode": "plan"}])
+    _run(tmp_path, "r3", [{"type": "session.start", "mode": "plan"}])
     hub = model.hub_payload(tmp_path)
-    assert [r["id"] for r in hub["runs"]] == ["r3"]
+    assert [r["id"] for r in hub["sessions"]] == ["r3"]
     assert hub["machines"] == []
 
 
@@ -249,7 +249,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
     draft = model.state_dir_for(tmp_path) / "machine-drafts" / "breezy-fern-AB12CD"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "author a triage machine"})
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "author a triage machine"})
         + "\n",
         encoding="utf-8",
     )
@@ -261,17 +261,17 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
 
 def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     # A husk (neither manifest nor logs) is not listed, and must not shadow a
-    # real ask of the same id when resolving #/run/<id>.
+    # real ask of the same id when resolving #/session/<id>.
     (model.runs_root(tmp_path) / "echo-fern-AA11BB").mkdir(parents=True)
     ask = model.asks_root(tmp_path) / "echo-fern-AA11BB"
     ask.mkdir(parents=True)
     (ask / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "ask", "user_task": "q"}) + "\n",
+        json.dumps({"type": "session.start", "mode": "ask", "user_task": "q"}) + "\n",
         encoding="utf-8",
     )
     hub = model.hub_payload(tmp_path)
-    assert [r["mode"] for r in hub["runs"]] == ["ask"]
-    assert model.run_dir_for(tmp_path, "echo-fern-AA11BB") == ask
+    assert [r["mode"] for r in hub["sessions"]] == ["ask"]
+    assert model.session_dir_for(tmp_path, "echo-fern-AA11BB") == ask
 
 
 def test_config_suggestions_providers_and_models(
@@ -352,50 +352,50 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
     d = model.runs_root(tmp_path) / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"run_id": "parked1", "parked_task": "do the thing"}), encoding="utf-8"
+        json.dumps({"session_id": "parked1", "parked_task": "do the thing"}), encoding="utf-8"
     )
-    assert model.run_snapshot(d)["status_label"] == "parked · resume to start"
-    (hub_row,) = model.hub_payload(tmp_path)["runs"]
+    assert model.session_snapshot(d)["status_label"] == "parked · resume to start"
+    (hub_row,) = model.hub_payload(tmp_path)["sessions"]
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 
 
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
-    """A run whose recorded worker is gone and that never logged run.end folds to
+    """A run whose recorded worker is gone and that never logged session.end folds to
     "running". The hub calls it stale off the same pid probe; the one-shot payload
     the page first paints from has to say so too, not only the SSE frame."""
-    d = _run(tmp_path, "crashed1", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    d = _run(tmp_path, "crashed1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
-    assert model.run_snapshot(d)["status_label"] == "stale"
+    assert model.session_snapshot(d)["status_label"] == "stale"
 
 
 def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
     """The run page speaks EVERY listing word, not just parked/stale: blocked
     on an operator answer reads "waiting · needs answer" (it read "running"
     and sent the operator off to wait on the model while the run waited on
-    THEM), a live pre-run.start worker "starting", a never-started dir
+    THEM), a live pre-session.start worker "starting", a never-started dir
     "created"."""
     import os
 
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
 
     d = _run(
         tmp_path,
         "blocked1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
     write_worker_pid(d, os.getpid())
-    assert model.run_snapshot(d)["status_label"] == "waiting · needs answer"
+    assert model.session_snapshot(d)["status_label"] == "waiting · needs answer"
 
     e = model.runs_root(tmp_path) / "fresh1"
     e.mkdir(parents=True)
-    (e / "manifest.json").write_text(json.dumps({"run_id": "fresh1"}), encoding="utf-8")
+    (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
     write_worker_pid(e, os.getpid())
-    assert model.run_snapshot(e)["status_label"] == "starting"
+    assert model.session_snapshot(e)["status_label"] == "starting"
     (e / "worker.pid").unlink()
-    assert model.run_snapshot(e)["status_label"] == "created"
+    assert model.session_snapshot(e)["status_label"] == "created"
 
 
 def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
@@ -404,12 +404,12 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
         tmp_path,
         "done1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
         ],
     )
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
-    assert model.run_snapshot(d)["status_label"] == "passed"
+    assert model.session_snapshot(d)["status_label"] == "passed"
 
 
 def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
@@ -419,32 +419,34 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
     action that works -- was unreachable. `live` is the dir-aware answer."""
     import os
 
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
 
     parked = model.runs_root(tmp_path) / "parked2"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
-        json.dumps({"run_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
+        json.dumps({"session_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
     )
-    assert model.run_snapshot(parked)["live"] is False
+    assert model.session_snapshot(parked)["live"] is False
 
-    crashed = _run(tmp_path, "crashed2", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    crashed = _run(
+        tmp_path, "crashed2", [{"type": "session.start", "mode": "run", "user_task": "t"}]
+    )
     (crashed / "worker.pid").write_text("999999999", encoding="utf-8")
-    assert model.run_snapshot(crashed)["live"] is False
+    assert model.session_snapshot(crashed)["live"] is False
 
-    alive = _run(tmp_path, "alive2", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    alive = _run(tmp_path, "alive2", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     write_worker_pid(alive, os.getpid())
-    assert model.run_snapshot(alive)["live"] is True
+    assert model.session_snapshot(alive)["live"] is True
 
     done = _run(
         tmp_path,
         "done2",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
         ],
     )
-    assert model.run_snapshot(done)["live"] is False
+    assert model.session_snapshot(done)["live"] is False
 
 
 def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
@@ -457,12 +459,14 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
     parked = model.runs_root(tmp_path) / "parked-live"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
-        json.dumps({"run_id": "parked-live", "parked_task": "t"}), encoding="utf-8"
+        json.dumps({"session_id": "parked-live", "parked_task": "t"}), encoding="utf-8"
     )
-    stale = _run(tmp_path, "stale-live", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    stale = _run(
+        tmp_path, "stale-live", [{"type": "session.start", "mode": "run", "user_task": "t"}]
+    )
     (stale / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
 
     for d in (parked, stale):
-        snap = model.run_snapshot(d)
+        snap = model.session_snapshot(d)
         assert snap["finished"] is False, d.name  # why the old poll fired at once
         assert snap["live"] is False, d.name  # ...and what actually distinguishes them

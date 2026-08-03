@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `RunFrontend` an ACP client provides.
+"""The `SessionFrontend` an ACP client provides.
 
 Every prompt the lifecycle raises becomes a `session/request_permission` to
 the editor; everything a terminal front-end would draw becomes nothing, because
@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app.preflight import BranchChoice
-from agent6.app.run import FrontendCapabilities, RunFacts, RunFrontend, SteerHooks
+from agent6.app.run import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
 from agent6.workflows.loop import RunResult, Workflow
@@ -70,7 +70,7 @@ def acp_frontend(
     capabilities: FrontendCapabilities,
     agent6_exe: Callable[[], str],
     spawn_detached_resume: Callable[[Path, str], str],
-) -> RunFrontend:
+) -> SessionFrontend:
     """Wire the lifecycle to one ACP client."""
 
     def _approve(prompt: str, /, *, standing: bool = True) -> bool:
@@ -122,11 +122,13 @@ def acp_frontend(
         """
         return BranchChoice(start_point=None if cfg.git.branch_from == "current" else base)
 
-    def _steer(_events: EventSink, _run_dir: Path, _facts: Callable[[], RunFacts]) -> SteerHooks:
+    def _steer(
+        _events: EventSink, _session_dir: Path, _facts: Callable[[], SessionFacts]
+    ) -> SteerHooks:
         return _NoSteer()
 
     def _no_repl(
-        _run_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object
+        _session_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object
     ) -> Callable[[int, str], Literal["continue", "stop"]]:
         # ACP has its own turn loop; an interactive REPL inside it would be a
         # second one, with two things reading the same stdin. The hook exists
@@ -134,11 +136,11 @@ def acp_frontend(
         return lambda _iteration, _summary: "continue"
 
     def _no_ask_repl(
-        _wf: Workflow, _budget: BudgetTracker, _layout: RunLayout, _task: str
+        _wf: Workflow, _budget: BudgetTracker, _layout: SessionLayout, _task: str
     ) -> RunResult:
         raise RuntimeError("an ACP session drives its own turns; the ask REPL is not used")
 
-    return RunFrontend(
+    return SessionFrontend(
         capabilities=capabilities,
         should_spawn_tui=lambda _tui, _interactive, _mode: False,
         # Stream the deltas as events (session/update reads them) without
@@ -147,16 +149,16 @@ def acp_frontend(
         attach_console_view=lambda _events: None,
         close_console_view=lambda: None,
         loop_logger=lambda _mode: lambda _line: None,
-        tui_session=lambda _run_dir, _enabled: _nullcontext(),
-        build_approver=lambda _run_dir, _events: _approve,
-        build_questioner=lambda _run_dir, _events: _questioner,
+        tui_session=lambda _session_dir, _enabled: _nullcontext(),
+        build_approver=lambda _session_dir, _events: _approve,
+        build_questioner=lambda _session_dir, _events: _questioner,
         make_steer_state=_steer,
         confirm_unconfined_autorun=_confirm_unconfined,
         confirm_run_on_run_branch=lambda branch: _approve(
             f"Continue this run on {branch!r}, which is already a run branch?"
         ),
         choose_branch_start_point=_branch_choice,
-        prompt_detach_away_mode=lambda _run_dir: None,
+        prompt_detach_away_mode=lambda _session_dir: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,
         build_repl_hook=_no_repl,
         run_ask_repl=_no_ask_repl,
@@ -172,7 +174,7 @@ def _no_coordinator(
     _cwd: Path,
     _state_dir: Path,
     _mode: str,
-    _run_id: str,
+    _session_id: str,
     _max_usd: float | None,
     _auto_approve: bool,
 ) -> None:

@@ -20,7 +20,7 @@ _ASSETS = resources.files(__package__)
 CLIENT_JS = _ASSETS.joinpath("client.js").read_text(encoding="utf-8")
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
 
-# The page is a hash-routed SPA: #/ hub, #/run/<id>, #/machine/<name>,
+# The page is a hash-routed SPA: #/ hub, #/session/<id>, #/machine/<name>,
 # #/conversation/<id>, #/config. Live views open an EventSource against the
 # matching /events endpoint; static views fetch a snapshot. Writes are small JSON
 # POSTs (new work / steer / approve / answer / merge / prune / config set /

@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Pure fold of a machine's journal into a render-ready watch view.
 
-The machine analogue of state.py: where RunState folds a run's logs.jsonl, this
+The machine analogue of state.py: where SessionState folds a run's logs.jsonl, this
 folds a machine instance's journal (the StepEvent / MachineEnd stream) plus its
 spec into a MachineState that the CLI `agent6 attach`, the TUI
 MachineWatchScreen, and a future web client all render. The agent reasoning
-inside an `agent` state is itself a run log, so it folds through RunState
+inside an `agent` state is itself a run log, so it folds through SessionState
 (state.py); this module models only the machine level: which states exist, where
 we are, the path taken, and how it ended.
 
@@ -30,8 +30,8 @@ from agent6.machine.journal import (
     StepEvent,
 )
 from agent6.machine.model import MachineSpec
-from agent6.runs.ipc import worker_is_alive
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.ipc import worker_is_alive
+from agent6.sessions.layout import LOGS_NAME
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.

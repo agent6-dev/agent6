@@ -162,7 +162,7 @@ def _cfg_with_verify() -> Any:
 
 def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
     """A run-mode silent finish (prose, no tool_use) over a RED or stale verify
-    must emit run.end all_passed=False — the same honest-finish rule as the
+    must emit session.end all_passed=False — the same honest-finish rule as the
     explicit finish_run path, so no surface renders the failed run as 'passed'."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
@@ -173,7 +173,7 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
         iteration=5,
     )
     assert result is not None and result.reason == "silent_finish"
-    ends = [e for e in ev.events if e["type"] == "run.end"]
+    ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is False
 
 
@@ -192,7 +192,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
         ),
         iteration=5,
     )
-    ends = [e for e in ev.events if e["type"] == "run.end"]
+    ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is True
 
 
@@ -700,8 +700,8 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
 
 def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     """The loop records the absolute iteration it is driving on the Workflow, so
-    the app-level KeyboardInterrupt fallbacks in run/resume can emit a run.end
-    carrying a truthful iteration count (matching the loop's own run.end shape).
+    the app-level KeyboardInterrupt fallbacks in run/resume can emit a session.end
+    carrying a truthful iteration count (matching the loop's own session.end shape).
     Uses a resumed start_iteration to prove it is the absolute number, not a
     zero-based counter."""
 
@@ -1744,7 +1744,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         )
     assert result.reason == "settled"
     assert "never re-verified" in result.summary
-    ends = [e for e in events if e["type"] == "run.end"]
+    ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is False
 
 
@@ -2840,9 +2840,9 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
         TaskNodeDraft,
         UpdateStatusIntent,
     )
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
 
-    cur = GraphCurator(RunLayout(state_dir=tmp_path / ".agent6", run_id="run1"))
+    cur = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
     root = cur.add_subtask(
         AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
     )
@@ -5332,13 +5332,13 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
     assert result.reason == "settled"
     assert "no verify" in result.summary
     assert "verify passed" not in result.summary
-    ends = [e for e in events if e["type"] == "run.end"]
+    ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "settled" and ends[-1]["all_passed"] is False
 
 
 def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
     """The REPL hook's "stop" ends the run deliberately, not as verified
-    success: reason='interactive_stop' with all_passed=False on the run.end
+    success: reason='interactive_stop' with all_passed=False on the session.end
     event (it used to route through the passed emitter with zero verifies)."""
 
     class ProviderStub:
@@ -5395,7 +5395,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         )
     assert result.completed is True
     assert result.reason == "interactive_stop"
-    ends = [e for e in events if e["type"] == "run.end"]
+    ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "interactive_stop"
     assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
 
@@ -5671,8 +5671,8 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
 
 def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
     """A non-UTF-8 (Windows-1252 curly quote) or unreadable AGENTS.md degrades
-    to a replaced/empty read; unguarded, it raised AFTER run.start with no
-    run.end -- a dead run listed "running" then "stale". The tolerant pattern
+    to a replaced/empty read; unguarded, it raised AFTER session.start with no
+    session.end -- a dead run listed "running" then "stale". The tolerant pattern
     already existed for the loop's own reads; the startup summary was the
     outlier."""
     from agent6.workflows._context import load_repo_summary
@@ -5801,7 +5801,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     with patch.object(wf, "_worktree_dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
-    ends = [e for e in ev.events if e["type"] == "run.end"]
+    ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is False
 
 
@@ -5831,7 +5831,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     with patch.object(wf, "_worktree_dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
-    ends = [e for e in ev.events if e["type"] == "run.end"]
+    ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is True
 
 
@@ -5872,7 +5872,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
 
     wf._emit_run_end_grounded(reason="finish_run", iteration=3, state=state)  # pyright: ignore[reportPrivateUsage]
 
-    (end,) = [e for e in events if e["type"] == "run.end"]
+    (end,) = [e for e in events if e["type"] == "session.end"]
     assert end["all_passed"] is False  # the verify truth is unchanged...
     assert fake.passed == ["root1"]  # ...and the work item is no longer pending
 
@@ -5925,9 +5925,9 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Pat
         return [
             LaneResult(
                 spec=LaneSpec(
-                    lane=i, run_id=f"run-{group}-l{i}", workdir=tmp_path, model=lane.model
+                    lane=i, session_id=f"run-{group}-l{i}", workdir=tmp_path, model=lane.model
                 ),
-                run_dir=tmp_path,
+                session_dir=tmp_path,
                 branch="b",
                 ok=False,
                 error="lane failed",

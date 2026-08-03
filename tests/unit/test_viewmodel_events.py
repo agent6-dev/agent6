@@ -4,7 +4,7 @@
 
 Pins the parse boundary itself (the fold's end-to-end behaviour is pinned by
 test_viewmodel_state and the golden compat test). The contract: every family the
-RunState fold consumes parses to its typed shape with the fold's historical
+SessionState fold consumes parses to its typed shape with the fold's historical
 coercion, and everything else -- telemetry, unknown/future types, a typeless line
 -- degrades to RawEvent so the fold drops it instead of crashing.
 """
@@ -15,12 +15,14 @@ from agent6.viewmodel import events as ev
 
 
 def test_known_families_parse_to_their_typed_shape() -> None:
-    assert ev.parse_event({"type": "run.start", "user_task": "t"}) == ev.RunStart(user_task="t")
-    assert ev.parse_event({"type": "run.end", "reason": "finish_run", "all_passed": True}) == (
-        ev.RunEnd(all_passed=True, reason="finish_run")
+    assert ev.parse_event({"type": "session.start", "user_task": "t"}) == ev.SessionStart(
+        user_task="t"
+    )
+    assert ev.parse_event({"type": "session.end", "reason": "finish_run", "all_passed": True}) == (
+        ev.SessionEnd(all_passed=True, reason="finish_run")
     )
     assert ev.parse_event({"type": "loop.resume.start"}) == ev.ResumeStart()
-    assert ev.parse_event({"type": "run.steer_requested"}) == ev.SteerRequested()
+    assert ev.parse_event({"type": "session.steer_requested"}) == ev.SteerRequested()
 
 
 def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
@@ -40,7 +42,7 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
     # ok tolerates the legacy stringified booleans: "True" folds ok, "False"
     # folds FAILED. bool()-coercion read any non-empty string -- "False"
     # included -- as success, so a historical failed tool rendered green in the
-    # RunState surfaces while the conversation fold showed it red.
+    # SessionState surfaces while the conversation fold showed it red.
     assert ev.parse_event({"type": "tool.result", "name": "t", "ok": "True"}).ok is True  # type: ignore[union-attr]
     assert ev.parse_event({"type": "tool.result", "name": "t", "ok": "False"}).ok is False  # type: ignore[union-attr]
     # A non-string cursor drops to None; nodes stays raw for the tree walker.

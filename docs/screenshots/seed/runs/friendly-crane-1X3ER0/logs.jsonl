@@ -1,4 +1,4 @@
-{"ts": "2026-06-23T08:55:21.399172+00:00", "type": "run.start", "user_task": "# Implement `parse_csv_row` per RFC 4180\n\n`mylib/csv_parse.py` contains a stub implementation of `parse_csv_row(line: str) -> list[str]`\nthat currently only handles the simplest comma-split case. Make", "mode": "run"}
+{"ts": "2026-06-23T08:55:21.399172+00:00", "type": "session.start", "user_task": "# Implement `parse_csv_row` per RFC 4180\n\n`mylib/csv_parse.py` contains a stub implementation of `parse_csv_row(line: str) -> list[str]`\nthat currently only handles the simplest comma-split case. Make", "mode": "run"}
 {"ts": "2026-06-23T08:55:21.797145+00:00", "type": "graph.update", "nodes": {"01KVSV1XXSN38YW77WPQ571PF1": {"title": "# Implement `parse_csv_row` per RFC 4180", "status": "pending", "parent_id": null, "children": []}}, "cursor": null}
 {"ts": "2026-06-23T08:55:21.816860+00:00", "type": "role.call", "role": "worker", "model": "moonshotai/kimi-k2.7-code-20260612", "provider": "openrouter"}
 {"ts": "2026-06-23T08:55:22.974371+00:00", "type": "role.thinking_delta", "role": "worker", "text": " start"}
@@ -1313,4 +1313,4 @@
 {"ts": "2026-06-23T09:29:58.262622+00:00", "type": "loop.tool.call", "name": "run_command", "iteration": 200}
 {"ts": "2026-06-23T09:29:58.265802+00:00", "type": "tool.call", "name": "run_command", "args": {"argv": ["ls", "-la", "/usr/bin/echo"]}}
 {"ts": "2026-06-23T09:29:58.276270+00:00", "type": "tool.result", "name": "run_command", "ok": true, "summary": "exit=127 in 0.0s", "stdout_tail": "", "stderr_tail": "ls: command not found or not executable (agent6-jail: child execution failed: No such file or directory (os error 2))"}
-{"ts": "2026-06-23T09:29:58.279003+00:00", "type": "run.end", "reason": "max_iterations", "iterations": 200, "all_passed": false}
+{"ts": "2026-06-23T09:29:58.279003+00:00", "type": "session.end", "reason": "max_iterations", "iterations": 200, "all_passed": false}

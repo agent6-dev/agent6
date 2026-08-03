@@ -22,9 +22,9 @@ from agent6.events import EventSink
 from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
-from agent6.runs.ipc import effective_run_commands
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.ipc import effective_run_commands
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 
@@ -184,11 +184,11 @@ class BranchChoice:
     abort: bool = False
 
 
-def _manifest_base_branch(state_dir: Path, run_id: str) -> str | None:
+def _manifest_base_branch(state_dir: Path, session_id: str) -> str | None:
     """The base branch a run recorded it was cut from (manifest.base_branch)."""
-    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
     try:
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
     except ManifestError:
         return None
     return manifest.base_branch or None
@@ -211,7 +211,7 @@ def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
     return branch
 
 
-def drop_gate_if_unrunnable(cfg: Config, *, run_dir: Path, reporter: Reporter) -> Config:
+def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
     """Empty the verify command when this LEG cannot run one.
 
     Every command tool is withheld when the effective policy is ``no`` -- the
@@ -224,7 +224,7 @@ def drop_gate_if_unrunnable(cfg: Config, *, run_dir: Path, reporter: Reporter) -
     the tools (the dispatcher's own filter) but must not retroactively make a
     gate that already ran red look like a run that never had one.
     """
-    if effective_run_commands(cfg.sandbox.run_commands, run_dir) != "no":
+    if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
     if cfg.workflow.verify_command:
         reporter.err(

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 runs merge` and `agent6 runs commits`."""
+"""Tests for `agent6 sessions merge` and `agent6 sessions commits`."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
 
@@ -24,12 +24,12 @@ def _git(repo: Path, *args: str) -> str:
 
 def _setup_run(
     tmp_path: Path,
-    run_id: str,
+    session_id: str,
     *,
     commits: list[tuple[str, str, str]],
     run_branch: str | None = "<auto>",
 ) -> str:
-    """Init a repo, cut agent6/<run_id> off main with *commits* (name, content,
+    """Init a repo, cut agent6/<session_id> off main with *commits* (name, content,
     message), return to main, and write the run manifest. Returns the base sha."""
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -38,21 +38,21 @@ def _setup_run(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
-    branch = f"agent6/{run_id}"
+    branch = f"agent6/{session_id}"
     _git(tmp_path, "checkout", "-q", "-b", branch)
     for name, content, msg in commits:
         (tmp_path / name).write_text(content, encoding="utf-8")
         _git(tmp_path, "add", "-A")
         _git(tmp_path, "commit", "-q", "-m", msg)
     _git(tmp_path, "checkout", "-q", "main")
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id=run_id)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     recorded_branch = branch if run_branch == "<auto>" else run_branch
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": run_id,
+                "session_id": session_id,
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": recorded_branch,
@@ -77,12 +77,12 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
             ("b.txt", "b\n", "agent6 iter 2: add b"),
         ],
     )
-    rc = main(["runs", "merge", "run-AAAA11", "--strategy", "squash"])
+    rc = main(["sessions", "merge", "run-AAAA11", "--strategy", "squash"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
     # exactly one new commit on main (the squash), not the two per-step commits
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="run-AAAA11")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-AAAA11")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     assert m["merged"]["into"] == "main"
     assert m["merged"]["sha"]
@@ -97,20 +97,20 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
     duration of every provider call, so every other _plan_merge guard passes
     mid-run; the liveness gate is the one that must refuse (matching
     stop/resume/compact). Killing the worker (stale pid) restores the merge."""
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
 
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="run-LIVE11")
-    write_worker_pid(layout.run_dir, os.getpid())  # this test process = a live worker
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-LIVE11")
+    write_worker_pid(layout.session_dir, os.getpid())  # this test process = a live worker
 
-    rc = main(["runs", "merge", "run-LIVE11"])
+    rc = main(["sessions", "merge", "run-LIVE11"])
     assert rc == 2
     assert "still live" in capsys.readouterr().err
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing landed
 
-    write_worker_pid(layout.run_dir, 999_999_999)  # dead pid -> a finished/crashed run merges
-    rc = main(["runs", "merge", "run-LIVE11"])
+    write_worker_pid(layout.session_dir, 999_999_999)  # dead pid -> a finished/crashed run merges
+    rc = main(["sessions", "merge", "run-LIVE11"])
     assert rc == 0
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
 
@@ -120,7 +120,7 @@ def test_runs_merge_strategy_merge_keeps_history(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "merge", "run-MERG11", "--strategy", "merge"])
+    rc = main(["sessions", "merge", "run-MERG11", "--strategy", "merge"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
     log = _git(tmp_path, "log", "--oneline")
@@ -132,7 +132,7 @@ def test_runs_merge_squash_honors_message(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-MSG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "merge", "run-MSG111", "--strategy", "squash", "-m", "custom subject"])
+    rc = main(["sessions", "merge", "run-MSG111", "--strategy", "squash", "-m", "custom subject"])
     assert rc == 0
     assert _git(tmp_path, "log", "-1", "--format=%s", "main") == "custom subject"
 
@@ -142,7 +142,7 @@ def test_runs_merge_refuses_when_no_branch_recorded(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-NOBR11", commits=[], run_branch=None)
-    rc = main(["runs", "merge", "run-NOBR11"])
+    rc = main(["sessions", "merge", "run-NOBR11"])
     assert rc == 2
     assert "no branch to merge" in capsys.readouterr().err
 
@@ -153,7 +153,7 @@ def test_runs_merge_refuses_dirty_tree(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-DIRT11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     (tmp_path / "wip.txt").write_text("uncommitted\n", encoding="utf-8")
-    rc = main(["runs", "merge", "run-DIRT11"])
+    rc = main(["sessions", "merge", "run-DIRT11"])
     assert rc == 2
     assert "not clean" in capsys.readouterr().err
 
@@ -163,7 +163,7 @@ def test_runs_merge_refuses_unknown_into_without_creating_it(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-INTO11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "merge", "run-INTO11", "--into", "nonexistent-branch"])
+    rc = main(["sessions", "merge", "run-INTO11", "--into", "nonexistent-branch"])
     assert rc == 2
     assert "does not exist" in capsys.readouterr().err
     branches = _git(tmp_path, "branch", "--format=%(refname:short)")
@@ -175,7 +175,7 @@ def test_runs_merge_refuses_self_merge(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-SELF11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "merge", "run-SELF11", "--into", "agent6/run-SELF11"])
+    rc = main(["sessions", "merge", "run-SELF11", "--into", "agent6/run-SELF11"])
     assert rc == 2
     assert "run branch itself" in capsys.readouterr().err
 
@@ -186,7 +186,7 @@ def test_runs_merge_restores_original_checkout(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-REST11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "checkout", "-q", "-b", "feature")  # user is on a third branch
-    rc = main(["runs", "merge", "run-REST11", "--into", "main"])
+    rc = main(["sessions", "merge", "run-REST11", "--into", "main"])
     assert rc == 0
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "feature"  # restored
     assert "a.txt" in _git(tmp_path, "show", "--stat", "main")  # merge still landed on main
@@ -202,7 +202,7 @@ def test_runs_merge_from_the_run_branch_lands_on_the_target(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-STRAND1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "checkout", "-q", "agent6/run-STRAND1")  # stranded on the run branch
-    rc = main(["runs", "merge", "run-STRAND1", "--into", "main"])
+    rc = main(["sessions", "merge", "run-STRAND1", "--into", "main"])
     assert rc == 0
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # landed on target
     assert "a.txt" in _git(tmp_path, "show", "--stat", "main")
@@ -219,7 +219,7 @@ def test_runs_merge_without_identity_refuses_with_clean_tree(
     _setup_run(tmp_path, "run-NOID11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     _git(tmp_path, "config", "--unset", "user.name")
     _git(tmp_path, "config", "--unset", "user.email")
-    rc = main(["runs", "merge", "run-NOID11", "--strategy", "squash"])
+    rc = main(["sessions", "merge", "run-NOID11", "--strategy", "squash"])
     assert rc == 2
     assert "identity not configured" in capsys.readouterr().err.lower()
     assert _git(tmp_path, "status", "--porcelain") == ""  # nothing staged
@@ -238,7 +238,7 @@ def test_runs_commits_lists_per_step(
             ("b.txt", "b\n", "agent6 iter 2: add b"),
         ],
     )
-    rc = main(["runs", "commits", "run-COMM11"])
+    rc = main(["sessions", "commits", "run-COMM11"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "agent6 iter 1: add a" in out
@@ -253,7 +253,7 @@ def test_runs_merge_zero_commit_branch_is_a_stated_noop(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-EMPTY1", commits=[])
     head_before = _git(tmp_path, "rev-parse", "main")
-    rc = main(["runs", "merge", "run-EMPTY1"])
+    rc = main(["sessions", "merge", "run-EMPTY1"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "nothing to merge" in out
@@ -266,7 +266,7 @@ def test_runs_diff_zero_commit_branch_prints_no_changes(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-EMPTY2", commits=[])
-    rc = main(["runs", "diff", "run-EMPTY2"])
+    rc = main(["sessions", "diff", "run-EMPTY2"])
     assert rc == 0
     assert "(no changes)" in capfd.readouterr().out
 
@@ -282,7 +282,7 @@ def test_runs_diff_notes_uncommitted_work_on_the_live_run_branch(
     _setup_run(tmp_path, "run-LIVE01", commits=[])
     _git(tmp_path, "checkout", "-q", "agent6/run-LIVE01")  # the run's own checkout
     (tmp_path / "work.py").write_text("in progress\n", encoding="utf-8")  # uncommitted
-    rc = main(["runs", "diff", "run-LIVE01"])
+    rc = main(["sessions", "diff", "run-LIVE01"])
     assert rc == 0
     out = capfd.readouterr().out
     assert "no committed changes yet" in out
@@ -297,7 +297,7 @@ def test_runs_diff_stays_silent_when_dirty_tree_is_a_different_branch(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-OTHER1", commits=[])
     (tmp_path / "unrelated.py").write_text("x\n", encoding="utf-8")  # dirty, but on main
-    rc = main(["runs", "diff", "run-OTHER1"])
+    rc = main(["sessions", "diff", "run-OTHER1"])
     assert rc == 0
     assert "(no changes)" in capfd.readouterr().out
 
@@ -307,7 +307,7 @@ def test_runs_diff_with_commits_prints_the_patch(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-DIFF01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "diff", "run-DIFF01"])
+    rc = main(["sessions", "diff", "run-DIFF01"])
     assert rc == 0
     out = capfd.readouterr().out
     assert "(no changes)" not in out
@@ -318,7 +318,7 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # A checkout with `[diff] external = CMD` in .git/config must not execute
-    # CMD on the host when the operator runs `agent6 runs diff`; the -c
+    # CMD on the host when the operator runs `agent6 sessions diff`; the -c
     # hardening overrides force the builtin diff.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-EVIL01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -327,7 +327,7 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
     script.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
     script.chmod(0o755)
     _git(tmp_path, "config", "diff.external", str(script))
-    rc = main(["runs", "diff", "run-EVIL01"])
+    rc = main(["sessions", "diff", "run-EVIL01"])
     assert rc == 0
     assert not marker.exists()  # the payload never ran
     assert "+a" in capfd.readouterr().out  # builtin diff still printed the patch
@@ -345,7 +345,7 @@ def test_ff_merge_of_a_diverged_base_refuses_with_a_reason(
     (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "main moves on")
-    rc = main(["runs", "merge", "run-FFDIV1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFDIV1", "--strategy", "ff"])
     assert rc == 1
     err = capsys.readouterr().err
     assert "fast-forward is impossible" in err
@@ -360,7 +360,7 @@ def test_ff_merge_lands_when_the_base_has_not_moved(
     # ancestor of the run branch, so the ff must not be falsely refused.
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    rc = main(["runs", "merge", "run-FFOK1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFOK1", "--strategy", "ff"])
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
     # main now points at the run branch tip: a true fast-forward.
@@ -380,7 +380,7 @@ def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "main moves on")
     before = _git(tmp_path, "rev-parse", "main")
-    rc = main(["runs", "merge", "run-FFIN1", "--strategy", "ff"])
+    rc = main(["sessions", "merge", "run-FFIN1", "--strategy", "ff"])
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
     assert _git(tmp_path, "rev-parse", "main") == before  # no-op, nothing rewound

@@ -23,7 +23,7 @@ from agent6.config import ConfigError
 from agent6.events import EventWriteError
 from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
-    build_ask_run_digest,
+    build_ask_session_digest,
     cmd_ask_list,
     seed_files,
 )
@@ -79,22 +79,22 @@ from agent6.ui.cli.plan_watch import (
     _cmd_plan_show,
     _cmd_status,
     _cmd_tui,
-    _most_recent_plan_run_id,
-    _resolve_plan_run_id,
+    _most_recent_plan_session_id,
+    _resolve_plan_session_id,
 )
 from agent6.ui.cli.prompt_cmds import _cmd_prompt_show
 from agent6.ui.cli.resume import _cmd_resume
 from agent6.ui.cli.review_cmds import _cmd_review
 from agent6.ui.cli.run import _cmd_run
-from agent6.ui.cli.runs_cmds import (
+from agent6.ui.cli.sessions_cmds import (
     _cmd_commits,
     _cmd_compare,
     _cmd_diff,
     _cmd_list,
     _cmd_merge,
     _cmd_prune,
-    _cmd_runs_dir,
-    _cmd_runs_rm,
+    _cmd_sessions_dir,
+    _cmd_sessions_rm,
     _cmd_stop,
 )
 from agent6.ui.cli.skills_cmds import (
@@ -119,14 +119,14 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
     return "(untitled plan)"
 
 
-def _from_plan_task(plan_md: str, run_id: str) -> str:
+def _from_plan_task(plan_md: str, session_id: str) -> str:
     """The execution prompt for `run --from-plan`, LEADING with the plan title so
     a listing (the runs table, the DAG root, attach --json) shows the plan, not
     the 'The following plan was prepared...' boilerplate as the run's task."""
     title = _first_markdown_line(plan_md)
     if title.lower().startswith("plan:"):  # the '# Plan: <title>' convention
         title = title[len("plan:") :].strip() or title
-    return f"Execute the prepared plan: {title}\n\n(from planning pass {run_id})\n\n{plan_md}"
+    return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
 
 
 def cli_main() -> int:
@@ -177,9 +177,9 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
-    if getattr(args, "parallel", "") and args.run_id:
+    if getattr(args, "parallel", "") and args.session_id:
         print(
-            "ERROR: --parallel cannot combine with --run-id (each lane mints its own run id).",
+            "ERROR: --parallel cannot combine with --session-id (each lane mints its own id).",
             file=sys.stderr,
         )
         return 2
@@ -190,7 +190,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
                 file=sys.stderr,
             )
             return 2
-        resolved = _resolve_plan_run_id(args.from_plan)
+        resolved = _resolve_plan_session_id(args.from_plan)
         if resolved is None:
             return 2
         plan_md = (_runs_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
@@ -200,7 +200,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
         # confirm before editing; non-interactively, refuse (a bare
         # `run` in a script should not silently start mutating).
-        last_plan = _most_recent_plan_run_id(_runs_dir(Path.cwd()))
+        last_plan = _most_recent_plan_session_id(_runs_dir(Path.cwd()))
         if last_plan is None:
             print(
                 "ERROR: 'run' needs a task (or --from-plan <id>); no prior plan found to execute.",
@@ -235,7 +235,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
     return _cmd_run(
         args.config,
         task,
-        run_id=args.run_id,
+        session_id=args.session_id,
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
@@ -251,9 +251,9 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
     if args.plan_command == "show":
-        return _cmd_plan_show(args.run_id)
+        return _cmd_plan_show(args.session_id)
     if args.plan_command == "edit":
-        return _cmd_plan_edit(args.run_id)
+        return _cmd_plan_edit(args.session_id)
     if not args.task:
         print(
             "ERROR: 'plan' needs a task argument (or `plan show/edit <id>`).",
@@ -263,7 +263,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
     return _cmd_run(
         args.config,
         args.task,
-        run_id=args.run_id,
+        session_id=args.session_id,
         mode="plan",
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
@@ -284,8 +284,10 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         return 2
     question = args.task
     prefix: list[str] = []
-    if args.ask_run_latest or args.ask_run:
-        digest = build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_run_latest)
+    if args.ask_session_latest or args.ask_session:
+        digest = build_ask_session_digest(
+            Path.cwd(), args.ask_session, latest=args.ask_session_latest
+        )
         if digest is None:
             return 2
         prefix.append(digest)
@@ -312,42 +314,42 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
     )
 
 
-def _dispatch_runs(args: argparse.Namespace) -> int:  # noqa: PLR0911
-    if args.runs_command in (None, "list"):
+def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    if args.sessions_command in (None, "list"):
         return _cmd_list()
-    if args.runs_command == "show":
-        return _cmd_status(args.run_id, as_json=args.json)
-    if args.runs_command == "diff":
-        return _cmd_diff(run_id=args.run_id, stat=args.stat, paths=tuple(args.paths))
-    if args.runs_command == "merge":
+    if args.sessions_command == "show":
+        return _cmd_status(args.session_id, as_json=args.json)
+    if args.sessions_command == "diff":
+        return _cmd_diff(session_id=args.session_id, stat=args.stat, paths=tuple(args.paths))
+    if args.sessions_command == "merge":
         return _cmd_merge(
-            run_id=args.run_id,
+            session_id=args.session_id,
             strategy=args.strategy,
             into=args.into,
             message=args.message,
         )
-    if args.runs_command == "compare":
-        return _cmd_compare(run_ids=tuple(args.run_ids))
-    if args.runs_command == "commits":
-        return _cmd_commits(run_id=args.run_id)
-    if args.runs_command == "stop":
-        return _cmd_stop(run_id=args.run_id)
-    if args.runs_command == "prune":
+    if args.sessions_command == "compare":
+        return _cmd_compare(session_ids=tuple(args.session_ids))
+    if args.sessions_command == "commits":
+        return _cmd_commits(session_id=args.session_id)
+    if args.sessions_command == "stop":
+        return _cmd_stop(session_id=args.session_id)
+    if args.sessions_command == "prune":
         return _cmd_prune(delete_squashed=args.delete_squashed)
-    if args.runs_command == "dir":
-        return _cmd_runs_dir()
-    if args.runs_command == "rm":
-        return _cmd_runs_rm(run_id=args.run_id, asks=args.asks)
-    if args.runs_command == "transcript":
+    if args.sessions_command == "dir":
+        return _cmd_sessions_dir()
+    if args.sessions_command == "rm":
+        return _cmd_sessions_rm(session_id=args.session_id, asks=args.asks)
+    if args.sessions_command == "transcript":
         return _cmd_history_transcript(
-            args.run_id,
+            args.session_id,
             as_json=args.as_json,
             no_thinking=args.no_thinking,
             tools=args.tools,
             seq=args.seq,
         )
-    if args.runs_command == "graph":
-        return _cmd_history_graph(args.run_id)
+    if args.sessions_command == "graph":
+        return _cmd_history_graph(args.session_id)
     raise AssertionError("unreachable")  # pragma: no cover -- runs subparser is required
 
 
@@ -378,7 +380,7 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 def _dispatch_resume(args: argparse.Namespace) -> int:
     return _cmd_resume(
         args.config,
-        args.run_id,
+        args.session_id,
         force=args.force,
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
@@ -390,9 +392,9 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
 def _dispatch_fork(args: argparse.Namespace) -> int:
     return _cmd_fork(
         args.config,
-        args.run_id,
+        args.session_id,
         at_turn=args.at_turn,
-        new_run_id=args.new_run_id,
+        new_session_id=args.new_session_id,
         no_run=args.no_run,
         tui=args.tui,
         budget_overrides=BudgetOverrides.from_args(args),
@@ -475,7 +477,7 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
 
 def _dispatch_history(args: argparse.Namespace) -> int:
     if args.history_command == "search":
-        return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
+        return _cmd_history_search(args.query, fixed=not args.regex, session_id=args.session)
     raise AssertionError("unreachable")  # pragma: no cover -- history subparser is required
 
 
@@ -548,7 +550,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "plan": _dispatch_plan,
     "ask": _dispatch_ask,
     "attach": _dispatch_attach,
-    "runs": _dispatch_runs,
+    "sessions": _dispatch_sessions,
     "tui": _dispatch_tui,
     "completions": _dispatch_completions,
     "web": _dispatch_web,

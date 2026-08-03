@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-of-run console headline must agree with `agent6 runs`.
+"""The end-of-run console headline must agree with `agent6 sessions`.
 
-A finish_run over a red/stale verify emits run.end all_passed=false, so the
+A finish_run over a red/stale verify emits session.end all_passed=false, so the
 listing reads "finished". The console block used to read result.completed
 (true for any finish_run) and print "passed" — the exact disagreement
-status_word exists to prevent. print_run_end now folds the same run.end.
+status_word exists to prevent. print_session_end now folds the same session.end.
 """
 
 from __future__ import annotations
@@ -16,19 +16,19 @@ from pathlib import Path
 import pytest
 
 from agent6.app import finalize as _finalize
-from agent6.app.finalize import print_interrupt_end, print_run_end
+from agent6.app.finalize import print_interrupt_end, print_session_end
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.workflows._run_state import RunResult
 
 
-def _layout(tmp_path: Path, run_id: str, events: list[dict[str, object]]) -> RunLayout:
-    rd = tmp_path / "runs" / run_id
+def _layout(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> SessionLayout:
+    rd = tmp_path / "runs" / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    return RunLayout(state_dir=tmp_path, run_id=run_id)
+    return SessionLayout(state_dir=tmp_path, session_id=session_id)
 
 
 def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, capsys: object) -> None:
@@ -36,14 +36,14 @@ def test_finish_run_over_red_verify_is_not_headlined_passed(tmp_path: Path, caps
         tmp_path,
         "r1",
         [
-            {"type": "run.start", "run_id": "r1", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "all_passed": False},
+            {"type": "session.start", "session_id": "r1", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "all_passed": False},
         ],
     )
     result = RunResult(
         completed=True, reason="finish_run", summary="all tests pass", iterations=3, tool_calls=5
     )
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -60,14 +60,14 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
         tmp_path,
         "r2",
         [
-            {"type": "run.start", "run_id": "r2", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.start", "session_id": "r2", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     result = RunResult(
         completed=True, reason="finish_run", summary="done", iterations=2, tool_calls=3
     )
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -83,13 +83,13 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
 ) -> None:
     """auto_merge already merged (and auto_prune may have deleted) the run
     branch, so the footer must say it merged, not tell the operator to run
-    `agent6 runs merge` on a branch that is gone."""
+    `agent6 sessions merge` on a branch that is gone."""
     layout = _layout(
         tmp_path,
         "r-merged",
         [
-            {"type": "run.start", "run_id": "r-merged", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.start", "session_id": "r-merged", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     layout.manifest_path.write_text(
@@ -105,7 +105,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     result = RunResult(
         completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
     )
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -124,8 +124,8 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
         tmp_path,
         "r3",
         [
-            {"type": "run.start", "run_id": "r3", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.start", "session_id": "r3", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     layout.manifest_path.write_text(
@@ -142,7 +142,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     result = RunResult(
         completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
     )
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -159,7 +159,9 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
 ) -> None:
     # A Ctrl-C interrupt used to print only "run interrupted": no spend, no resume
     # hint, and no note the user was left on the run branch.
-    layout = _layout(tmp_path, "r4", [{"type": "run.start", "run_id": "r4", "user_task": "t"}])
+    layout = _layout(
+        tmp_path, "r4", [{"type": "session.start", "session_id": "r4", "user_task": "t"}]
+    )
     layout.manifest_path.write_text(
         json.dumps({"run_branch": "agent6/r4", "base_branch": "main"}), encoding="utf-8"
     )
@@ -186,14 +188,14 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
         tmp_path,
         "r3",
         [
-            {"type": "run.start", "run_id": "r3", "user_task": "t"},
-            {"type": "run.end", "reason": "provider_error", "all_passed": False},
+            {"type": "session.start", "session_id": "r3", "user_task": "t"},
+            {"type": "session.end", "reason": "provider_error", "all_passed": False},
         ],
     )
     result = RunResult(
         completed=False, reason="provider_error", summary="", iterations=1, tool_calls=0
     )
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -213,16 +215,16 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
         tmp_path,
         "r7",
         [
-            {"type": "run.start", "run_id": "r7", "user_task": "t"},
+            {"type": "session.start", "session_id": "r7", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
             {"type": "loop.resume.start", "iteration": 4},
             {"type": "budget.update", "usd_total": 0.0126},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     result = RunResult(completed=True, reason="finish_run", summary="", iterations=5, tool_calls=2)
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -240,13 +242,13 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
         tmp_path,
         "r8",
         [
-            {"type": "run.start", "run_id": "r8", "user_task": "t"},
+            {"type": "session.start", "session_id": "r8", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     result = RunResult(completed=True, reason="finish_run", summary="", iterations=2, tool_calls=1)
-    print_run_end(
+    print_session_end(
         result,
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
@@ -290,7 +292,12 @@ def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
         text=True,
     ).stdout.strip()
     finalize_auto_stash(
-        repo, base_branch=base, run_branch=None, auto_pop=True, run_id="r1", reporter=STDIO_REPORTER
+        repo,
+        base_branch=base,
+        run_branch=None,
+        auto_pop=True,
+        session_id="r1",
+        reporter=STDIO_REPORTER,
     )
     assert "restored your pre-run changes" in capsys.readouterr().err
     assert (repo / "pre.txt").is_file()
@@ -314,7 +321,7 @@ def test_finalize_auto_stash_reports_a_vanished_stash(
         base_branch="master",
         run_branch=None,
         auto_pop=True,
-        run_id="r1",
+        session_id="r1",
         reporter=STDIO_REPORTER,
     )
     assert "auto-stash not found" in capsys.readouterr().err
@@ -359,7 +366,7 @@ def test_finalize_auto_stash_prints_a_failed_bystander_putback(
         base_branch="main",
         run_branch=None,
         auto_pop=True,
-        run_id="r1",
+        session_id="r1",
         reporter=STDIO_REPORTER,
     )
     err = capsys.readouterr().err
@@ -391,7 +398,7 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     (repo / "f.txt").write_text("someone else\n", encoding="utf-8")
     stash_all(repo, "an unrelated stash")
 
-    hint = stash_recovery_hint(repo, run_id="r9", base_branch="main")
+    hint = stash_recovery_hint(repo, session_id="r9", base_branch="main")
     assert hint is not None
     assert "git stash pop" not in hint  # positional restores the wrong stash
     assert "git stash apply " in hint and "git checkout main" in hint
@@ -408,7 +415,7 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     assert "r9" in subject
 
     # No stash for that run: the caller gets None and says so its own way.
-    assert stash_recovery_hint(repo, run_id="nope", base_branch="main") is None
+    assert stash_recovery_hint(repo, session_id="nope", base_branch="main") is None
 
 
 @pytest.mark.parametrize(
@@ -424,11 +431,11 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
     import json
 
     from agent6.app.finalize import _print_next_session  # pyright: ignore[reportPrivateUsage]
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
 
-    layout = RunLayout(state_dir=tmp_path, run_id="quiet-fox-AAAAAA")
-    layout.run_dir.mkdir(parents=True)
-    (layout.run_dir / "manifest.json").write_text(
+    layout = SessionLayout(state_dir=tmp_path, session_id="quiet-fox-AAAAAA")
+    layout.session_dir.mkdir(parents=True)
+    (layout.session_dir / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": mode}), encoding="utf-8"
     )
     _print_next_session(layout, reporter=STDIO_REPORTER)
@@ -453,13 +460,13 @@ def test_the_end_of_run_block_goes_through_the_reporter(
         tmp_path,
         "r9",
         [
-            {"type": "run.start", "run_id": "r9", "user_task": "t"},
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.start", "session_id": "r9", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     forged = 'done\n{"jsonrpc":"2.0","id":1,"method":"fs/write_text_file","params":{}}'
     said: list[str] = []
-    print_run_end(
+    print_session_end(
         RunResult(completed=True, reason="finish_run", summary=forged, iterations=1, tool_calls=1),
         layout=layout,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),

@@ -173,7 +173,7 @@ def test_spawn_detached_resume_reports_oserror(monkeypatch: pytest.MonkeyPatch) 
 
 def test_subcommand_label_names_the_full_subcommand() -> None:
     assert spawn.subcommand_label(["a6", "machine", "run", "m.asm.toml"]) == "machine run"
-    assert spawn.subcommand_label(["a6", "runs", "prune"]) == "runs prune"
+    assert spawn.subcommand_label(["a6", "sessions", "prune"]) == "sessions prune"
     assert spawn.subcommand_label(["a6", "config", "set", "--", "k", "v"]) == "config set"
     # One-word subcommands never swallow the value that follows them.
     assert spawn.subcommand_label(["a6", "run", "--", "fix the bug"]) == "run"
@@ -194,6 +194,6 @@ def test_run_cli_capture_strips_console_prefixes(
         return _Done()
 
     monkeypatch.setattr(spawn.subprocess, "run", _fake_run)
-    ok, msg = spawn.run_cli_capture(["a6", "runs", "prune"], tmp_path)
+    ok, msg = spawn.run_cli_capture(["a6", "sessions", "prune"], tmp_path)
     assert ok
     assert msg == "merged a into b\ndeleted branch a\nskipped c (checked out)"

@@ -1,7 +1,7 @@
 {
   "version": 3,
   "agent6_version": "0.1.0",
-  "run_id": "r-lane02",
+  "session_id": "r-lane02",
   "mode": "run",
   "start_ts": "2026-07-16T00:00:00.000000+00:00",
   "user_task": "fan-out lane",
@@ -28,7 +28,7 @@
     "isolation": ""
   },
   "parked_task": "",
-  "parent_run_id": "r-parent",
+  "parent_session_id": "r-parent",
   "forked_from_turn": 7,
   "forked_from_sha": "2222222222222222222222222222222222222222",
   "merged": {

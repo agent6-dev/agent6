@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read a run's manifest.json into the typed :class:`RunManifest`. The single
+"""Read a run's manifest.json into the typed :class:`SessionManifest`. The single
 reader + the on-disk shape; the writer is ``app.manifest``.
 
 A leaf beside ``layout.py``: pydantic + path arithmetic, no agent6 imports, so
@@ -141,7 +141,7 @@ class CompareStamp(BaseModel):
 MANIFEST_VERSION = 3
 
 
-class RunManifest(BaseModel):
+class SessionManifest(BaseModel):
     """The typed manifest.json a run starts with (and later stamps).
 
     Every field defaults so ANY historical run dir on disk still parses (old
@@ -157,7 +157,7 @@ class RunManifest(BaseModel):
 
     version: int = MANIFEST_VERSION
     agent6_version: str = ""
-    run_id: str = ""
+    session_id: str = ""
     # No default mode: the field is the privilege gate's only input, and a
     # manifest that lost the key (truncated, hand-edited, foreign writer) must
     # not read as the more-privileged "run". Display consumers show "?" for it.
@@ -176,7 +176,7 @@ class RunManifest(BaseModel):
     # `agent6 resume <id>` starts it fresh, whose manifest rewrite clears it.
     parked_task: str = ""
     # fork lineage (a non-forked run leaves these null)
-    parent_run_id: str | None = None
+    parent_session_id: str | None = None
     forked_from_turn: int | None = None
     forked_from_sha: str | None = None
     # merge stamp (null until the run branch is merged)
@@ -225,8 +225,8 @@ class RunManifest(BaseModel):
         return cast(ResumableMode, kind.name)
 
 
-def read_manifest(run_dir: Path) -> RunManifest:
-    """Parse ``<run_dir>/manifest.json`` into a :class:`RunManifest`, or raise
+def read_manifest(session_dir: Path) -> SessionManifest:
+    """Parse ``<session_dir>/manifest.json`` into a :class:`SessionManifest`, or raise
     ``ManifestError``.
 
     Lenient by design: every field defaults, so any parseable historical manifest
@@ -236,7 +236,7 @@ def read_manifest(run_dir: Path) -> RunManifest:
     object, or fails validation degrades through the one typed error the render
     consumers already catch; the fork/resume gate turns it into a loud refusal.
     """
-    path = run_dir / "manifest.json"
+    path = session_dir / "manifest.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -244,6 +244,6 @@ def read_manifest(run_dir: Path) -> RunManifest:
     if not isinstance(data, dict):
         raise ManifestError("manifest is not a JSON object")
     try:
-        return RunManifest.model_validate(data)
+        return SessionManifest.model_validate(data)
     except ValidationError as exc:
         raise ManifestError(str(exc)) from exc

@@ -92,7 +92,7 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     agents_md_path = root / "AGENTS.md"
     # Tolerant read (mirrors the loop's own AGENTS.md reads): a Windows-1252
     # byte or a permission-denied file must degrade, not crash the run AFTER
-    # run.start with no run.end -- a dead run that listed as "running"/"stale".
+    # session.start with no session.end -- a dead run that listed as "running"/"stale".
     agents_md = ""
     if agents_md_path.is_file():
         try:

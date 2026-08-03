@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from agent6.git_ops import git_hardening_flags
-from agent6.ui.cli.runs_cmds import _dirty_worktree_note  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.sessions_cmds import _dirty_worktree_note  # pyright: ignore[reportPrivateUsage]
 
 
 def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPatch) -> None:

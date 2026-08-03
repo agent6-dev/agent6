@@ -7,7 +7,7 @@
 `<run>/logs.jsonl` and machine journals every other front-end reads (via
 `agent6.viewmodel`) and driven by the same contracts the CLI and TUI use: the
 detached spawn (`agent6.ui.spawn`) and the approval / steer answer files
-(`agent6.runs.ipc`). It is a thin renderer of shared state.
+(`agent6.sessions.ipc`). It is a thin renderer of shared state.
 
 Layout:
     model.py   pure JSON payload builders (hub / run / machine / conversation / config).

@@ -7,7 +7,7 @@ best first, with a rationale. Mirrors `workflows/_review.structured_review`'s
 request/parse shape (strict JSON, tolerant of fences/prose), but unlike a
 review seat's silent abstain, a compare needs one authoritative order: it
 retries once on a malformed reply (unparseable JSON, a provider error, or a
-ranking that doesn't name exactly the candidate run_ids) and raises
+ranking that doesn't name exactly the candidate session_ids) and raises
 `JudgeError` on the second failure. `mechanical_ranking` is the
 network-free fallback callers use when no reviewer model is configured or the
 judge call raises.
@@ -34,7 +34,7 @@ class CandidateBrief(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    run_id: str
+    session_id: str
     task: str
     diff: str
     verify_ok: bool | None
@@ -64,7 +64,7 @@ def _build_user_message(candidates: list[CandidateBrief]) -> str:
         if len(c.diff) > _DIFF_CAP:
             diff += "\n[diff truncated]"
         parts.append(
-            f"--- CANDIDATE {c.run_id} ---\n"
+            f"--- CANDIDATE {c.session_id} ---\n"
             f"TASK:\n{c.task.strip()[:4000]}\n"
             f"VERIFY: {verify}\n"
             f"COST: ${c.cost_usd:.4f}\n"
@@ -121,13 +121,13 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     return objs[-1] if objs else None
 
 
-def _parse_verdict(obj: dict[str, Any], run_ids: set[str]) -> CompareVerdict | None:
-    """None if ``ranking`` isn't a list of strings naming exactly `run_ids`."""
+def _parse_verdict(obj: dict[str, Any], session_ids: set[str]) -> CompareVerdict | None:
+    """None if ``ranking`` isn't a list of strings naming exactly `session_ids`."""
     ranking_raw = obj.get("ranking")
     if not isinstance(ranking_raw, list) or not all(isinstance(r, str) for r in ranking_raw):
         return None
     ranking = tuple(ranking_raw)
-    if len(ranking) != len(run_ids) or set(ranking) != run_ids:
+    if len(ranking) != len(session_ids) or set(ranking) != session_ids:
         return None
     rationale = str(obj.get("rationale", "")).strip()[:2000]
     return CompareVerdict(ranking=ranking, rationale=rationale)
@@ -140,12 +140,12 @@ def compare(
     first with a rationale.
 
     Retries once on a failed attempt (provider error, unparseable JSON, or a
-    ranking that doesn't name exactly the candidate run_ids); raises
+    ranking that doesn't name exactly the candidate session_ids); raises
     `JudgeError` on the second failure -- never a guessed order.
     """
     if not candidates:
         raise JudgeError("compare called with no candidates")
-    run_ids = {c.run_id for c in candidates}
+    session_ids = {c.session_id for c in candidates}
     user = _build_user_message(candidates)
     last_err = ""
     for _attempt in range(2):
@@ -172,9 +172,9 @@ def compare(
         if obj is None:
             last_err = f"unparseable judge output ({model})"
             continue
-        verdict = _parse_verdict(obj, run_ids)
+        verdict = _parse_verdict(obj, session_ids)
         if verdict is None:
-            last_err = f"judge ranking did not name exactly the candidate run_ids ({model})"
+            last_err = f"judge ranking did not name exactly the candidate session_ids ({model})"
             continue
         return verdict
     raise JudgeError(last_err)
@@ -185,7 +185,7 @@ def mechanical_ranking(candidates: list[CandidateBrief]) -> tuple[str, ...]:
     Stable within ties (Python's sort is stable, so equal candidates keep
     their input order)."""
     ranked = sorted(candidates, key=lambda c: (c.verify_ok is not True, c.cost_usd))
-    return tuple(c.run_id for c in ranked)
+    return tuple(c.session_id for c in ranked)
 
 
 __all__ = [

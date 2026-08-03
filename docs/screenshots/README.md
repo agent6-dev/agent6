@@ -31,7 +31,7 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
   log / transcript) of any run dir to an SVG (or PNG, if a chromium /
   `rsvg-convert` is found) via Textual's headless Pilot -- to "see" the TUI while
   iterating on it, without a terminal. `uv run python docs/screenshots/tui_snapshot.py
-  <run_dir> <out.(svg|png)> [screen]`.
+  <session_dir> <out.(svg|png)> [screen]`.
 - `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
   `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
   headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)

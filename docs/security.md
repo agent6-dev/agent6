@@ -208,7 +208,7 @@ fixed argv depending only on operator input, never LLM output.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv from config.
-- `runs/ipc.py`: `ps -p <pid> -o lstart=` on hosts without /proc (macOS) for
+- `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without /proc (macOS) for
   the worker.pid start-time identity; fixed argv over a pid agent6 itself
   recorded.
 - `ui/cli/_btw.py`: spawns `agent6 ask` detached for `/btw`, so the side
@@ -396,16 +396,16 @@ syscall for hardened), never guessed from the kernel version.
 
 - **An in-process `GraphCurator` owns the task graph.**
     - It validates every mutation against a pydantic schema before writing, and
-      holds a per-mutation flock on the run dir. A write-path fault after the
+      holds a per-mutation flock on the session dir. A write-path fault after the
       in-memory update reloads from disk before surfacing, so a later read never
       observes a node that was never persisted.
-- **The run directory is safe because of its location, not any single writer.**
+- **The session directory is safe because of its location, not any single writer.**
     - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with
       `[agent6].state_dir`), outside the cwd jailed commands run on.
 
 ### 6b. Parallel lanes (fan-out / coordinator dispatch)
 
-`agent6 run --parallel`, `agent6 runs compare`, and a live run's `/parallel`
+`agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel`
 steer directive (§ [architecture.md](architecture.md#parallel-runs-fan-out-and-coordinator-dispatch))
 each spawn subordinate work. Nothing here loosens the sandbox:
 
@@ -447,7 +447,7 @@ each spawn subordinate work. Nothing here loosens the sandbox:
   nothing.**
     - New-work spawns fixed argv with the task behind `--`; machine-run is
       allow-listed to authored files; answers write only the addressed run's
-      answer files (run id, answer id, machine target state dir each validated to
+      answer files (session id, answer id, machine target state dir each validated to
       one path component); merge/prune/config-set are fixed agent6 subcommands.
 - **State-changing POSTs carry a CSRF guard.**
     - Body must be `Content-Type: application/json` (a cross-site `fetch` with it

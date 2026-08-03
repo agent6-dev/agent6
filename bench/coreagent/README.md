@@ -72,6 +72,6 @@ condition's config, not the prompt.
 ## Reproducibility
 
 Results are append-only JSONL under `results/`. Each record carries the model,
-condition, task, rep, run_id, and every metric, so a run is fully reproducible
+condition, task, rep, session_id, and every metric, so a run is fully reproducible
 from `(model, condition, task)`. `COMPACTION_RESEARCH.md` is the literature
 survey behind Thrust 1. Findings + adopt/scrap calls: see `FINDINGS.md`.

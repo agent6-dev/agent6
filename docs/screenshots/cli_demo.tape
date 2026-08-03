@@ -45,7 +45,7 @@ Enter
 Sleep 10s
 
 # 2. The fix it made: base -> run branch, one minimal diff.
-Type@55ms "agent6 runs diff"
+Type@55ms "agent6 sessions diff"
 Enter
 Sleep 5s
 
@@ -57,6 +57,6 @@ Ctrl+C
 Sleep 1.5s
 
 # 4. Final liveness + cost.
-Type@55ms "agent6 runs show"
+Type@55ms "agent6 sessions show"
 Enter
 Sleep 4.5s

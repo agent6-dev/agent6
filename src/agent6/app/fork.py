@@ -30,7 +30,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from agent6.app.manifest import write_run_manifest
+from agent6.app.manifest import write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
@@ -47,10 +47,15 @@ from agent6.graph.storage import (
     write_node,
 )
 from agent6.portable import atomic_write
-from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.viewmodel import newest_run_dir
+from agent6.sessions.id import (
+    SessionIdError,
+    new_friendly_id,
+    resolve_session_id,
+    validate_explicit_session_id,
+)
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.viewmodel import newest_session_dir
 from agent6.workflows._run_state import load_run_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
@@ -63,7 +68,7 @@ def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> 
     return {"child": child, "parent": parent, "turn": turn, "sha": sha, "ts": ts}
 
 
-def _copy_dag(src: RunLayout, dst: RunLayout, *, graph_version: int) -> None:
+def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> None:
     """Write *dst*'s DAG as the source's stood at *graph_version*.
 
     Reads under the SOURCE curator's per-mutation flock: a live source run's
@@ -81,10 +86,10 @@ def _copy_dag(src: RunLayout, dst: RunLayout, *, graph_version: int) -> None:
     with flock(src.lock_path):
         if graph_version <= 0:
             for name in _DAG_ARTIFACTS:
-                src_path = src.run_dir / name
+                src_path = src.session_dir / name
                 if not src_path.exists():
                     continue
-                dst_path = dst.run_dir / name
+                dst_path = dst.session_dir / name
                 if src_path.is_dir():
                     shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                 else:
@@ -104,7 +109,7 @@ def _copy_dag(src: RunLayout, dst: RunLayout, *, graph_version: int) -> None:
     atomic_write(dst.journal_path, "".join(json.dumps(e, sort_keys=True) + "\n" for e in kept))
 
 
-def _read_journal(src: RunLayout) -> list[dict[str, Any]]:
+def _read_journal(src: SessionLayout) -> list[dict[str, Any]]:
     """The source's graph.jsonl as dicts; a torn or non-object line is skipped
     (the same tolerance `load_graph` gives a malformed node file)."""
     out: list[dict[str, Any]] = []
@@ -125,15 +130,15 @@ def _read_journal(src: RunLayout) -> list[dict[str, Any]]:
 
 
 def _select_checkpoint_path(
-    src: RunLayout, at_turn: int | None, *, reporter: Reporter = STDIO_REPORTER
+    src: SessionLayout, at_turn: int | None, *, reporter: Reporter = STDIO_REPORTER
 ) -> Path | None:
     """Resolve which checkpoint of *src* to fork from, or None on error (printed).
 
     Returns the latest checkpoint by default, the ``--at-turn N`` one when given,
     or degrades to ``loop_state.json`` for a pre-checkpoint (old) run.
     """
-    legacy = src.run_dir / "loop_state.json"
-    source_id = src.run_id
+    legacy = src.session_dir / "loop_state.json"
+    source_id = src.session_id
     turns = list_checkpoint_turns(src)
     if at_turn is None:
         return _select_latest_checkpoint_path(src, turns, legacy, reporter=reporter)
@@ -143,18 +148,20 @@ def _select_checkpoint_path(
 
 
 def _select_latest_checkpoint_path(
-    src: RunLayout, turns: list[int], legacy: Path, *, reporter: Reporter = STDIO_REPORTER
+    src: SessionLayout, turns: list[int], legacy: Path, *, reporter: Reporter = STDIO_REPORTER
 ) -> Path | None:
     if legacy.is_file():
         return legacy
     if turns:
         return src.checkpoint_path(turns[-1])
-    reporter.err(f"ERROR: {src.run_id} has no checkpoints and no loop_state.json; nothing to fork.")
+    reporter.err(
+        f"ERROR: {src.session_id} has no checkpoints and no loop_state.json; nothing to fork."
+    )
     return None
 
 
 def _select_explicit_checkpoint_path(
-    src: RunLayout,
+    src: SessionLayout,
     turns: list[int],
     legacy: Path,
     at_turn: int,
@@ -201,14 +208,14 @@ def _snapshot_turn(path: Path) -> int | None:
 
 def create_fork(  # noqa: PLR0911
     config_path: Path | None,
-    source_run_id: str,
+    source_session_id: str,
     *,
     at_turn: int | None = None,
-    new_run_id: str = "",
+    new_session_id: str = "",
     cwd: Path,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
-    """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
+    """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
 
     Materializes the fork on disk (clone the checkpoint + DAG, write the
     manifest, cut ``agent6/<child>`` at the checkpoint's committed HEAD, record
@@ -218,23 +225,23 @@ def create_fork(  # noqa: PLR0911
     """
     state_dir = resolved_state_dir(cwd)
     runs_dir = state_dir / "runs"
-    if not source_run_id:
+    if not source_session_id:
         # "fork my last run" -- omitting the id forks the most recent run.
-        latest = newest_run_dir([runs_dir])
+        latest = newest_session_dir([runs_dir])
         if latest is None:
             reporter.err(f"ERROR: no runs under {runs_dir}; nothing to fork.")
             return "", 2
-        source_run_id = latest.name
-        reporter.err(f"[agent6] forking most recent run: {source_run_id}")
+        source_session_id = latest.name
+        reporter.err(f"[agent6] forking most recent run: {source_session_id}")
     try:
-        source_id = resolve_run_id(runs_dir, source_run_id)
-    except RunIdError as exc:
+        source_id = resolve_session_id(runs_dir, source_session_id)
+    except SessionIdError as exc:
         reporter.err(f"ERROR: {exc}")
         return "", 2
 
-    src = RunLayout(state_dir=state_dir, run_id=source_id)
-    if not src.run_dir.is_dir():
-        reporter.err(f"ERROR: no such run dir: {src.run_dir}")
+    src = SessionLayout(state_dir=state_dir, session_id=source_id)
+    if not src.session_dir.is_dir():
+        reporter.err(f"ERROR: no such run dir: {src.session_dir}")
         return "", 2
 
     checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
@@ -255,7 +262,7 @@ def create_fork(  # noqa: PLR0911
     # value) fails loud via read_manifest / session_mode rather than silently
     # escalating (same contract as resume).
     try:
-        sm = read_manifest(src.run_dir)
+        sm = read_manifest(src.session_dir)
         src_mode = sm.session_mode()
     except ManifestError as exc:
         reporter.err(f"ERROR: cannot read source run manifest {src.manifest_path}: {exc}")
@@ -290,17 +297,17 @@ def create_fork(  # noqa: PLR0911
     # stamp fix. (bool(replay_preset) == preset_from_flag, so the flag bit stands.)
     forked_preset = sm.workflow.replay_preset or cfg.preset
 
-    if new_run_id:
+    if new_session_id:
         try:
-            validate_explicit_run_id(new_run_id)
-        except RunIdError as exc:
+            validate_explicit_session_id(new_session_id)
+        except SessionIdError as exc:
             reporter.err(f"ERROR: {exc}")
             return "", 2
-    child_id = new_run_id or new_friendly_id()
+    child_id = new_session_id or new_friendly_id()
     rc = _materialize_fork(
         cwd=cwd,
         src=src,
-        dst=RunLayout(state_dir=state_dir, run_id=child_id),
+        dst=SessionLayout(state_dir=state_dir, session_id=child_id),
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
@@ -323,8 +330,8 @@ def create_fork(  # noqa: PLR0911
 def _materialize_fork(
     *,
     cwd: Path,
-    src: RunLayout,
-    dst: RunLayout,
+    src: SessionLayout,
+    dst: SessionLayout,
     checkpoint_path: Path,
     graph_version: int,
     forked_from_turn: int,
@@ -346,22 +353,22 @@ def _materialize_fork(
     *gate* is the source's pinned verify command and its origin. A fork inherits
     it: derived from the current config instead, a source whose gate was
     inferred or adopted forked to a run the manifest called gateless."""
-    if dst.run_dir.exists():
-        reporter.err(f"ERROR: target run dir already exists: {dst.run_dir}")
+    if dst.session_dir.exists():
+        reporter.err(f"ERROR: target run dir already exists: {dst.session_dir}")
         return 2
     dst.ensure()
 
     # Seed the new run's resume pointer + origin checkpoint from the chosen
     # checkpoint, then rebuild the DAG as it stood at that checkpoint.
     blob = checkpoint_path.read_text(encoding="utf-8")
-    atomic_write(dst.run_dir / "loop_state.json", blob)
+    atomic_write(dst.session_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=graph_version)
 
-    run_branch = f"agent6/{dst.run_id}"
-    write_run_manifest(
+    run_branch = f"agent6/{dst.session_id}"
+    write_session_manifest(
         dst,
-        run_id=dst.run_id,
+        session_id=dst.session_id,
         user_task=user_task,
         base_sha=base_sha,
         base_branch=base_branch,
@@ -370,7 +377,7 @@ def _materialize_fork(
         mode=mode,
         effective_preset=preset,
         preset_from_flag=preset_from_flag,
-        parent_run_id=src.run_id,
+        parent_session_id=src.session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
         gate=gate,
@@ -384,22 +391,22 @@ def _materialize_fork(
         reporter.err(f"ERROR: could not cut fork branch {run_branch}: {exc}")
         # The fork dir was just materialized; don't leave an orphan run dir +
         # manifest (and a lineage gap) when the branch couldn't be cut.
-        shutil.rmtree(dst.run_dir, ignore_errors=True)
+        shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 
     # Append the per-repo lineage event (ts minted here, passed into the pure helper).
     append_jsonl(
         src.state_dir / "lineage.jsonl",
         _lineage_entry(
-            child=dst.run_id,
-            parent=src.run_id,
+            child=dst.session_id,
+            parent=src.session_id,
             turn=forked_from_turn,
             sha=forked_from_sha,
             ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         ),
     )
     reporter.err(
-        f"[agent6] forked {src.run_id}@turn {forked_from_turn} -> {dst.run_id} "
+        f"[agent6] forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
         f"(branch {run_branch} at {forked_from_sha[:12]})"
     )
     return 0

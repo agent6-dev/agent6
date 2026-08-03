@@ -56,7 +56,7 @@ from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, set_repo_hook_policy
 from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import Provider, TranscriptSink
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     clear_answer,
     clear_pending_answers,
     clear_question_answers,
@@ -147,7 +147,7 @@ class _MachineBridges:
     Answers are read from the per-state dir, but a front-end registers
     a `frontends/` claim on the instance dir, so the liveness gate probes the instance
     dir (`live_dir`). Prompt/answer events go to the per-state log the front-end
-    already tails, so its RunState fold surfaces them like a run's.
+    already tails, so its SessionState fold surfaces them like a run's.
     """
 
     approve: Approver

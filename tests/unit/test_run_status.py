@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 runs show`: one-shot liveness + progress of a run from its run dir."""
+"""`agent6 sessions show`: one-shot liveness + progress of a run from its run dir."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.ipc import worker_is_alive, write_worker_pid
+from agent6.sessions.ipc import worker_is_alive, write_worker_pid
 from agent6.ui.cli._common import _runs_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.plan_watch import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
@@ -45,7 +45,7 @@ def test_status_running_with_live_pid(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start", "mode": "run"},
+            {"ts": _ts(40), "type": "session.start", "mode": "run"},
             {"ts": _ts(3), "type": "loop.tool.call", "iteration": 3},
         ],
     )
@@ -61,11 +61,11 @@ def test_status_running_with_live_pid(
 def test_status_json_is_machine_readable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     write_worker_pid(d, os.getpid())
     assert _cmd_status("", as_json=True) == 0  # "" -> most recent run
     obj = json.loads(capsys.readouterr().out)
-    assert obj["run_id"] == "winsome-dawn-YWH5ZS"
+    assert obj["session_id"] == "winsome-dawn-YWH5ZS"
     assert obj["alive"] is True
     assert obj["state"] == "running"
 
@@ -74,14 +74,14 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A live run blocked on an unanswered approval/question must read
-    "waiting (needs answer)" -- the same first-class status `agent6 runs`
+    "waiting (needs answer)" -- the same first-class status `agent6 sessions`
     gives it -- not "running (long step, likely a provider call)", which sent
     the operator off to wait on a provider while the run sat blocked on THEM."""
     d = _make_run(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(400), "type": "run.start", "mode": "run"},
+            {"ts": _ts(400), "type": "session.start", "mode": "run"},
             {"ts": _ts(300), "type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
         ],
     )
@@ -98,7 +98,7 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A dead worker without a run.end leads with the hub's word ("stale") plus
+    """A dead worker without a session.end leads with the hub's word ("stale") plus
     this surface's diagnostic detail. The old lead word was "stopped" -- the
     hub's word for an OPERATOR stop (steer_abort), so the same run read as
     deliberately stopped in one surface and crashed in the other."""
@@ -106,7 +106,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start"},
+            {"ts": _ts(40), "type": "session.start"},
             {"ts": _ts(30), "type": "loop.tool.call", "iteration": 1},
         ],
     )
@@ -114,7 +114,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     assert not worker_is_alive(d)
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "state:      stale (no worker, no run.end: likely crashed or killed)" in out
+    assert "state:      stale (no worker, no session.end: likely crashed or killed)" in out
     assert "stopped" not in out
 
 
@@ -122,17 +122,17 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`runs show --json` "state" leads with exactly the word the hub row shows
-    for the SAME dir, for every non-run.end state: "created" (was "unknown"),
+    for the SAME dir, for every non-session.end state: "created" (was "unknown"),
     "starting" (was a bare "running" while the hub said starting), "waiting",
-    "stale". One decision -- status_for_run_dir -- so the two can't drift."""
-    from agent6.viewmodel.listing import summarize_run_dir
+    "stale". One decision -- status_for_session_dir -- so the two can't drift."""
+    from agent6.viewmodel.listing import summarize_session_dir
 
-    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
 
     def state_word() -> str:
         assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
         word = json.loads(capsys.readouterr().out)["state"].split(" (")[0]
-        assert word == summarize_run_dir(d).status
+        assert word == summarize_session_dir(d).status
         return word
 
     write_worker_pid(d, os.getpid())
@@ -142,7 +142,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
     assert state_word() == "created"
     (d / "logs.jsonl").write_text(
-        json.dumps({"ts": _ts(30), "type": "run.start", "mode": "run"})
+        json.dumps({"ts": _ts(30), "type": "session.start", "mode": "run"})
         + "\n"
         + json.dumps({"ts": _ts(9), "type": "approval.prompt", "id": "a1", "prompt": "ok?"})
         + "\n",
@@ -164,8 +164,8 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start"},
-            {"ts": _ts(1), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(40), "type": "session.start"},
+            {"ts": _ts(1), "type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
@@ -179,8 +179,8 @@ def test_status_finish_without_all_passed_reads_finished(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start"},
-            {"ts": _ts(1), "type": "run.end", "reason": "finish_run", "all_passed": False},
+            {"ts": _ts(40), "type": "session.start"},
+            {"ts": _ts(1), "type": "session.end", "reason": "finish_run", "all_passed": False},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
@@ -194,8 +194,8 @@ def test_status_error_reason_reads_failed(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start"},
-            {"ts": _ts(1), "type": "run.end", "reason": "provider_error", "all_passed": False},
+            {"ts": _ts(40), "type": "session.start"},
+            {"ts": _ts(1), "type": "session.end", "reason": "provider_error", "all_passed": False},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
@@ -215,7 +215,7 @@ def test_status_shows_fan_out_compare_outcome(
 ) -> None:
     """`runs show` prints where a lane placed in its fan-out (+ the judge's
     rationale), and the JSON carries the raw compare block."""
-    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     manifest = json.loads((d / "manifest.json").read_text("utf-8"))
     manifest["compare"] = {
         "group": "fan", "rank": 1, "of": 2, "winner": True,
@@ -234,7 +234,7 @@ def test_status_shows_fan_out_compare_outcome(
 
 
 def test_worker_pid_clear(tmp_path: Path) -> None:
-    from agent6.runs.ipc import clear_worker_pid, read_worker_pid
+    from agent6.sessions.ipc import clear_worker_pid, read_worker_pid
 
     write_worker_pid(tmp_path, os.getpid())
     assert read_worker_pid(tmp_path) == os.getpid()
@@ -253,7 +253,7 @@ def test_status_shows_usage_from_budget_update_event(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(40), "type": "run.start"},
+            {"ts": _ts(40), "type": "session.start"},
             {
                 "ts": _ts(30),
                 "type": "loop.budget",
@@ -296,13 +296,13 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
 ) -> None:
     # A resume leg restarts the budget from 0 and un-finishes the run; `runs
     # show` banks legs (same rule as `runs list` and the run view) and must
-    # not report leg 1's run.end for a run that is live again. A valid-JSON
+    # not report leg 1's session.end for a run that is live again. A valid-JSON
     # non-object line is skipped, not a crash.
     d = _make_run(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(60), "type": "run.start"},
+            {"ts": _ts(60), "type": "session.start"},
             {
                 "ts": _ts(50),
                 "type": "budget.update",
@@ -311,7 +311,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "usd_total": 0.02,
                 "usd_partial": True,
             },
-            {"ts": _ts(40), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(40), "type": "session.end", "reason": "finish_run", "all_passed": True},
             {"ts": _ts(30), "type": "loop.resume.start", "iteration": 4},
             {
                 "ts": _ts(5),
@@ -348,7 +348,7 @@ def test_status_missing_id_and_empty_state_speak_human(
     err = capsys.readouterr().err
     assert "no run matches 'zzz'" in err and "machine-drafts" not in err
     assert _cmd_status("", as_json=False) == 2
-    assert 'no runs yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
+    assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 
 
 def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
@@ -360,7 +360,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
         tmp_path,
         monkeypatch,
         [
-            {"ts": _ts(90), "type": "run.start", "mode": "run", "user_task": "t"},
+            {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
             {
                 "ts": _ts(80),
                 "type": "budget.update",
@@ -368,7 +368,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
                 "output_total": 500,
                 "usd_total": 0.02,
             },
-            {"ts": _ts(70), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(70), "type": "session.end", "reason": "finish_run", "all_passed": True},
             {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
             {
                 "ts": _ts(10),
@@ -377,7 +377,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
                 "output_total": 50,
                 "usd_total": 0.005,
             },
-            {"ts": _ts(5), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(5), "type": "session.end", "reason": "finish_run", "all_passed": True},
         ],
     )
     write_worker_pid(d, 999999999)
@@ -412,7 +412,7 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
     durable write now uses a unique mkstemp temp per call."""
     import threading
 
-    from agent6.runs.ipc import write_answer
+    from agent6.sessions.ipc import write_answer
 
     d = tmp_path / "run"
     d.mkdir()
@@ -443,11 +443,11 @@ def test_status_ambiguous_prefix_names_the_candidates(
     `runs stop` do. `runs show` swallowed the resolver's error and printed
     "no run matches 't'" -- telling the operator no such run exists while two
     did."""
-    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     sibling = d.parent / "winsome-dusk-AAAAAA"
     sibling.mkdir()
     (sibling / "logs.jsonl").write_text(
-        json.dumps({"ts": _ts(9), "type": "run.start", "mode": "run"}) + "\n", encoding="utf-8"
+        json.dumps({"ts": _ts(9), "type": "session.start", "mode": "run"}) + "\n", encoding="utf-8"
     )
 
     assert _cmd_status("winsome-d") == 2
@@ -474,7 +474,7 @@ def test_worker_pid_is_published_atomically(tmp_path: Path) -> None:
     start-time identity stripped -- and a prefix that happens to name a live
     process you own reads alive with nothing left to refute it, which is the
     recycled-pid lie the identity was added to kill."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     seen: list[str] = []
     real = ipc.atomic_write

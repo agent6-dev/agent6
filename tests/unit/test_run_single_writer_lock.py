@@ -16,17 +16,17 @@ import time
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
 
-from agent6.runs.lock import acquire_single_writer, release_single_writer
+from agent6.sessions.lock import acquire_single_writer, release_single_writer
 
 
 def test_second_acquire_on_same_dir_is_refused(tmp_path: Path) -> None:
-    run_dir = tmp_path / "runs" / "R"
-    run_dir.mkdir(parents=True)
-    fd = acquire_single_writer(run_dir)
+    session_dir = tmp_path / "runs" / "R"
+    session_dir.mkdir(parents=True)
+    fd = acquire_single_writer(session_dir)
     assert fd is not None
     try:
         # A concurrent writer on the SAME dir (a second `agent6 resume R`) refuses.
-        assert acquire_single_writer(run_dir) is None
+        assert acquire_single_writer(session_dir) is None
     finally:
         release_single_writer(fd)
 
@@ -48,12 +48,12 @@ def test_distinct_run_dirs_are_independent(tmp_path: Path) -> None:
 def test_reacquire_after_release_succeeds(tmp_path: Path) -> None:
     # Sequential resume-after-exit: once the first writer releases, the next
     # acquires cleanly (the lock must not stay stuck).
-    run_dir = tmp_path / "runs" / "R"
-    run_dir.mkdir(parents=True)
-    fd1 = acquire_single_writer(run_dir)
+    session_dir = tmp_path / "runs" / "R"
+    session_dir.mkdir(parents=True)
+    fd1 = acquire_single_writer(session_dir)
     assert fd1 is not None
     release_single_writer(fd1)
-    fd2 = acquire_single_writer(run_dir)
+    fd2 = acquire_single_writer(session_dir)
     assert fd2 is not None
     release_single_writer(fd2)
 
@@ -62,8 +62,8 @@ def test_release_none_is_noop() -> None:
     release_single_writer(None)  # the refusal path passes None; must not raise
 
 
-def _hold_lock(run_dir: str, ready: EventType, done: EventType) -> None:
-    fd = acquire_single_writer(Path(run_dir))
+def _hold_lock(session_dir: str, ready: EventType, done: EventType) -> None:
+    fd = acquire_single_writer(Path(session_dir))
     if fd is None:  # pragma: no cover - defensive
         return
     ready.set()
@@ -72,17 +72,17 @@ def _hold_lock(run_dir: str, ready: EventType, done: EventType) -> None:
 
 
 def test_cross_process_contention_and_release_on_death(tmp_path: Path) -> None:
-    run_dir = tmp_path / "runs" / "R"
-    run_dir.mkdir(parents=True)
+    session_dir = tmp_path / "runs" / "R"
+    session_dir.mkdir(parents=True)
     ctx = multiprocessing.get_context("spawn")
     ready = ctx.Event()
     done = ctx.Event()
-    holder = ctx.Process(target=_hold_lock, args=(str(run_dir), ready, done))
+    holder = ctx.Process(target=_hold_lock, args=(str(session_dir), ready, done))
     holder.start()
     try:
         assert ready.wait(timeout=10.0)
         # Another process cannot acquire while the holder is alive.
-        assert acquire_single_writer(run_dir) is None
+        assert acquire_single_writer(session_dir) is None
     finally:
         done.set()
         holder.join(timeout=10.0)
@@ -90,7 +90,7 @@ def test_cross_process_contention_and_release_on_death(tmp_path: Path) -> None:
     deadline = time.monotonic() + 5.0
     fd = None
     while fd is None and time.monotonic() < deadline:
-        fd = acquire_single_writer(run_dir)
+        fd = acquire_single_writer(session_dir)
         if fd is None:
             time.sleep(0.05)
     assert fd is not None

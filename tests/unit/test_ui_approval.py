@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     frontend_is_live,
     read_answer,
     read_question_answers,
@@ -161,7 +161,7 @@ def test_answer_landing_during_dead_verdict_is_consumed(
     """An answer written between the round's read and the frontend-dead verdict
     was ignored: read_answer returned None (deny) while the completed answer
     file stayed on disk. The final consume honors it."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     def write_then_dead(_live: Path) -> bool:
         write_answer(tmp_path, "abc", approved=True)
@@ -177,7 +177,7 @@ def test_answer_landing_at_deadline_is_consumed(
 ) -> None:
     """Same race on the timeout exit: the answer lands during the final sleep,
     after the last read; the deadline then expires. Honored, not dropped."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     register_frontend(tmp_path, os.getpid())
 
@@ -203,7 +203,7 @@ def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
     number': after a SIGKILL'd worker left the file behind, a recycled pid made
     the dead run read running forever -- blocking resume and hanging the
     /parallel lane await. The recorded kernel start time disambiguates."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     ipc.write_worker_pid(tmp_path, os.getpid())
     assert ipc.worker_is_alive(tmp_path) is True
@@ -218,7 +218,7 @@ def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
 def test_worker_pid_without_start_time_probes_pid_only(tmp_path: Path) -> None:
     """A record with no start time (written on a host without /proc) degrades
     to the plain pid probe."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     assert ipc.worker_is_alive(tmp_path) is True
@@ -227,7 +227,7 @@ def test_worker_pid_without_start_time_probes_pid_only(tmp_path: Path) -> None:
 
 
 def test_ps_start_time_reports_self_and_rejects_dead() -> None:
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     assert ipc._ps_start_time(os.getpid())  # pyright: ignore[reportPrivateUsage]
     assert ipc._ps_start_time(999999999) == ""  # pyright: ignore[reportPrivateUsage]
@@ -240,7 +240,7 @@ def test_worker_pid_identity_via_ps_where_proc_is_absent(
     there and pid reuse still misread a dead run as running. `ps -o lstart=`
     supplies the identity; its value contains spaces, so the record splits
     once only."""
-    from agent6.runs import ipc
+    from agent6.sessions import ipc
 
     monkeypatch.setattr(ipc, "_HAS_PROC", False)
     ipc.write_worker_pid(tmp_path, os.getpid())

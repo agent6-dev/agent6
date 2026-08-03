@@ -456,14 +456,14 @@ class GitConfig(BaseModel):
     #      abort); non-interactive falls back to "base" (the un-surprising choice).
     # No effect when you are already on the base branch (nothing to stack on).
     branch_from: Literal["current", "base", "ask"] = "current"
-    # Default strategy for `agent6 runs merge`: how the run branch lands on
+    # Default strategy for `agent6 sessions merge`: how the run branch lands on
     # your branch. `squash` (one combined commit), `merge` (a
     # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).
     # The per-step commits always happen on the run branch during the run; this
     # only governs how they are consolidated when you merge.
     merge_strategy: Literal["squash", "merge", "ff"] = "squash"
     # After a successful run, automatically run `merge_strategy` to land the run
-    # branch on its base (what `agent6 runs merge` does, run for you). Default off:
+    # branch on its base (what `agent6 sessions merge` does, run for you). Default off:
     # the run branch is kept until you choose to merge. Requires branch_per_run
     # (without a run branch there is nothing to merge). With auto_stash_pop the
     # merge lands first, then your stashed pre-run changes go back on top.
@@ -547,7 +547,7 @@ class WorkflowConfig(BaseModel):
     # When true, finish_run is refused while the last verify is red (or a verify
     # command is configured but was never run): the worker must get verify green
     # or explicitly stop. Default false keeps finish_run always honorable, but
-    # even then a finish over a red verify is reported honestly (run.end
+    # even then a finish over a red verify is reported honestly (session.end
     # all_passed=False -> "finished", never "passed"); this flag turns the honest
     # signal into a hard gate for operators who want it.
     require_verify_to_finish: bool = False

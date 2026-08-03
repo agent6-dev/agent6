@@ -19,7 +19,7 @@ from agent6.app.machine_agent import (
     _build_machine_bridges,  # pyright: ignore[reportPrivateUsage]
 )
 from agent6.events import EventSink
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     register_frontend,
     write_answer,
     write_question_answers,
@@ -115,7 +115,7 @@ def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
     register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     # A front-end drops a steer.request in the per-state dir.
-    from agent6.runs.ipc import request_steer
+    from agent6.sessions.ipc import request_steer
 
     request_steer(state)
     assert b.steer_requested() is True

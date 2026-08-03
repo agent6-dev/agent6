@@ -28,10 +28,10 @@ ResolveNetworkFix = Callable[
 @dataclass(frozen=True, slots=True)
 class MachineFrontend:
     """The presentation callables `app.machine` run/create drive, injected by
-    `ui/cli`. Mirrors `app.run.RunFrontend` but far thinner: machines are
+    `ui/cli`. Mirrors `app.run.SessionFrontend` but far thinner: machines are
     headless-first, so it is a two-channel `Reporter` for status output plus one
     interactive `resolve_network_fix` callback. `create_machine` uses only
-    `reporter` (as `resume_task` never calls RunFrontend's run-only fields)."""
+    `reporter` (as `resume_task` never calls SessionFrontend's run-only fields)."""
 
     reporter: Reporter
     resolve_network_fix: ResolveNetworkFix

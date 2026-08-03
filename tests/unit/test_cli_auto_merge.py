@@ -13,7 +13,7 @@ import pytest
 from agent6.app import finalize as finmod
 from agent6.app.reporter import STDIO_REPORTER
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -23,9 +23,9 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _setup_run_on_branch(
-    tmp_path: Path, run_id: str, *, commits: list[tuple[str, str, str]], run_branch: str | None
+    tmp_path: Path, session_id: str, *, commits: list[tuple[str, str, str]], run_branch: str | None
 ) -> str:
-    """Init a repo and cut agent6/<run_id> off main with *commits*, leaving the
+    """Init a repo and cut agent6/<session_id> off main with *commits*, leaving the
     checkout ON the run branch (the end-of-run state). Writes the manifest with
     *run_branch* recorded (None to simulate branch_per_run off). Returns base sha."""
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -35,19 +35,19 @@ def _setup_run_on_branch(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
-    branch = f"agent6/{run_id}"
+    branch = f"agent6/{session_id}"
     _git(tmp_path, "checkout", "-q", "-b", branch)
     for name, content, msg in commits:
         (tmp_path / name).write_text(content, encoding="utf-8")
         _git(tmp_path, "add", "-A")
         _git(tmp_path, "commit", "-q", "-m", msg)
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id=run_id)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": run_id,
+                "session_id": session_id,
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": run_branch,
@@ -76,7 +76,7 @@ def test_auto_merge_squashes_and_lands_on_base(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM1111"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM1111"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -104,7 +104,7 @@ def test_auto_merge_noop_without_run_branch(
     _git(tmp_path, "checkout", "-q", "main")
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM2222"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM2222"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -130,7 +130,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-AM3333"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM3333"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -158,7 +158,7 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-GONE11"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-GONE11"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -187,7 +187,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-AP1111"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP1111"),
         cfg=cfg2,
         reporter=STDIO_REPORTER,
     )
@@ -211,7 +211,7 @@ def test_auto_prune_keeps_squash_branch(
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=RunLayout(resolved_state_dir(tmp_path), "run-AP2222"),
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP2222"),
         cfg=cfg2,
         reporter=STDIO_REPORTER,
     )

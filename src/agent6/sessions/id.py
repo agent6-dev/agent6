@@ -28,7 +28,7 @@ from agent6.graph.ulid import new_ulid
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
-class RunIdError(Exception):
+class SessionIdError(Exception):
     """Raised when a user-supplied run id cannot be resolved. ``ambiguous`` is
     True when the query matched more than one run (vs no match), so a caller can
     surface the disambiguation instead of treating it as 'not found'."""
@@ -38,19 +38,19 @@ class RunIdError(Exception):
         self.ambiguous = ambiguous
 
 
-def validate_explicit_run_id(run_id: str) -> str:
-    """Return *run_id* if it is a safe single path component, else raise.
+def validate_explicit_session_id(session_id: str) -> str:
+    """Return *session_id* if it is a safe single path component, else raise.
 
     A run id becomes a directory name under the state dir (``state_dir/<subdir>/
-    <run_id>``). An operator ``--run-id`` with a separator, ``..``, or an
+    <session_id>``). An operator ``--session-id`` with a separator, ``..``, or an
     absolute path would place run state outside the state dir; reject those so an
     explicit id can only ever name a run, never a traversal. Generated ids are
     slug-safe by construction and skip this."""
-    if not run_id or run_id in (".", "..") or "/" in run_id or "\\" in run_id:
-        raise RunIdError(
-            f"invalid --run-id {run_id!r}: must be a single name with no '/', '\\', or '..'"
+    if not session_id or session_id in (".", "..") or "/" in session_id or "\\" in session_id:
+        raise SessionIdError(
+            f"invalid --session-id {session_id!r}: must be a single name with no '/', '\\', or '..'"
         )
-    return run_id
+    return session_id
 
 
 def new_friendly_id() -> str:
@@ -67,7 +67,7 @@ def new_friendly_id() -> str:
     return f"{adj}-{noun}-{ts_part}{rnd_part}"
 
 
-def list_run_ids(runs_dir: Path) -> list[str]:
+def list_session_ids(runs_dir: Path) -> list[str]:
     """Return run-id directory names under ``runs_dir`` (unsorted)."""
 
     if not runs_dir.is_dir():
@@ -75,24 +75,24 @@ def list_run_ids(runs_dir: Path) -> list[str]:
     return [p.name for p in runs_dir.iterdir() if p.is_dir()]
 
 
-def resolve_run_id(runs_dir: Path, query: str) -> str:
+def resolve_session_id(runs_dir: Path, query: str) -> str:
     """Resolve ``query`` to an exact run-id under ``runs_dir``.
 
     Accepts an exact match or an unambiguous prefix. Raises
-    ``RunIdError`` if no match or more than one match is found.
+    ``SessionIdError`` if no match or more than one match is found.
     """
 
     if not query:
-        raise RunIdError("empty run id")
-    ids = list_run_ids(runs_dir)
+        raise SessionIdError("empty run id")
+    ids = list_session_ids(runs_dir)
     if query in ids:
         return query
     matches = [rid for rid in ids if rid.startswith(query)]
     if not matches:
-        raise RunIdError(f"no run matches {query!r} under {runs_dir}")
+        raise SessionIdError(f"no run matches {query!r} under {runs_dir}")
     if len(matches) > 1:
         preview = ", ".join(sorted(matches)[:5])
-        raise RunIdError(
+        raise SessionIdError(
             f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}",
             ambiguous=True,
         )

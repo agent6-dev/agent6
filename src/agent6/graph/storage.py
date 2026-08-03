@@ -40,7 +40,7 @@ from pathlib import Path
 
 from agent6.graph.models import TaskNode
 from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 
 # ---- atomic write + flock helpers ----------------------------------------
 
@@ -274,7 +274,7 @@ def _ancestor_chain(nodes: dict[str, TaskNode], node_id: str) -> list[str]:
     return chain
 
 
-def node_md_path(layout: RunLayout, nodes: dict[str, TaskNode], node_id: str) -> Path:
+def node_md_path(layout: SessionLayout, nodes: dict[str, TaskNode], node_id: str) -> Path:
     """Resolve the canonical .md path for a node based on its ancestor chain."""
     chain = _ancestor_chain(nodes, node_id)
     # All ancestors above the last become directory components.
@@ -285,7 +285,7 @@ def node_md_path(layout: RunLayout, nodes: dict[str, TaskNode], node_id: str) ->
 # ---- whole-graph read / write --------------------------------------------
 
 
-def write_node(layout: RunLayout, nodes: dict[str, TaskNode], node: TaskNode) -> None:
+def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode) -> None:
     """Atomically write a node's .md file at its canonical path."""
     path = node_md_path(layout, nodes, node.id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -305,7 +305,7 @@ def write_node(layout: RunLayout, nodes: dict[str, TaskNode], node: TaskNode) ->
     _prune_stale_node_files(layout, node.id, keep=path)
 
 
-def _prune_stale_node_files(layout: RunLayout, node_id: str, *, keep: Path) -> None:
+def _prune_stale_node_files(layout: SessionLayout, node_id: str, *, keep: Path) -> None:
     """Delete any other ``<node_id>.md`` under graph/ except ``keep``."""
     if not layout.graph_dir.is_dir():
         return
@@ -318,7 +318,7 @@ def _prune_stale_node_files(layout: RunLayout, node_id: str, *, keep: Path) -> N
             fsync_dir(stale.parent)
 
 
-def load_graph(layout: RunLayout) -> dict[str, TaskNode]:
+def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
     """Read every .md file under ``graph/`` and return a {id: TaskNode} map."""
     nodes: dict[str, TaskNode] = {}
     if not layout.graph_dir.is_dir():
@@ -346,19 +346,19 @@ def load_graph(layout: RunLayout) -> dict[str, TaskNode]:
     return nodes
 
 
-def write_journal(layout: RunLayout, entry: dict[str, object]) -> None:
+def write_journal(layout: SessionLayout, entry: dict[str, object]) -> None:
     """Append one JSON event to graph.jsonl."""
     payload = dict(entry)
     payload.setdefault("ts", datetime.now(tz=UTC).isoformat())
     _append_line(layout.journal_path, json.dumps(payload, sort_keys=True))
 
 
-def write_cursor(layout: RunLayout, node_id: str | None) -> None:
+def write_cursor(layout: SessionLayout, node_id: str | None) -> None:
     payload = json.dumps({"node_id": node_id})
     _atomic_write(layout.cursor_path, payload)
 
 
-def read_cursor(layout: RunLayout) -> str | None:
+def read_cursor(layout: SessionLayout) -> str | None:
     if not layout.cursor_path.is_file():
         return None
     raw = json.loads(layout.cursor_path.read_text(encoding="utf-8"))
@@ -368,7 +368,7 @@ def read_cursor(layout: RunLayout) -> str | None:
     raise ValueError(f"malformed cursor.json: {raw!r}")
 
 
-def list_checkpoint_turns(layout: RunLayout) -> list[int]:
+def list_checkpoint_turns(layout: SessionLayout) -> list[int]:
     """Return the recorded checkpoint turn indices, ascending.
 
     Empty when the run predates the checkpoint store (no ``checkpoints/`` dir),
@@ -387,7 +387,7 @@ def list_checkpoint_turns(layout: RunLayout) -> list[int]:
     return sorted(turns)
 
 
-def write_dot(layout: RunLayout, nodes: dict[str, TaskNode]) -> None:
+def write_dot(layout: SessionLayout, nodes: dict[str, TaskNode]) -> None:
     """Render the graph to Graphviz DOT for visual debugging."""
     lines: list[str] = ["digraph agent6 {", "  rankdir=LR;"]
     for n in nodes.values():

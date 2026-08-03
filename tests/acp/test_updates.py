@@ -22,8 +22,8 @@ def _kinds(updates: list[dict[str, Any]]) -> list[str]:
 def test_reasoning_and_answer_are_different_channels() -> None:
     """An editor renders thinking collapsed; conflating them would present the
     model's scratch work as its answer."""
-    thinking = updates_for(TranscriptItem("thinking", body="let me look"), session_id="s")
-    text = updates_for(TranscriptItem("text", body="the answer"), session_id="s")
+    thinking = updates_for(TranscriptItem("thinking", body="let me look"), acp_session_id="s")
+    text = updates_for(TranscriptItem("text", body="the answer"), acp_session_id="s")
     assert _kinds(thinking) == ["agent_thought_chunk"]
     assert _kinds(text) == ["agent_message_chunk"]
 
@@ -31,7 +31,7 @@ def test_reasoning_and_answer_are_different_channels() -> None:
 def test_the_operators_own_words_echo_back_as_theirs() -> None:
     """A steer is the human speaking. Attributing it to the agent would make
     the transcript lie about who said what."""
-    updates = updates_for(TranscriptItem("operator", body="also add a flag"), session_id="s")
+    updates = updates_for(TranscriptItem("operator", body="also add a flag"), acp_session_id="s")
     assert _kinds(updates) == ["user_message_chunk"]
 
 
@@ -41,7 +41,7 @@ def test_a_tool_is_a_call_and_then_an_outcome() -> None:
     long verify is the whole point."""
     updates = updates_for(
         TranscriptItem("tool", name="run_verify_command", arg="pytest", ok=True, detail="12s"),
-        session_id="s",
+        acp_session_id="s",
     )
     assert _kinds(updates) == ["tool_call", "tool_call_update"]
     call, done = (u["params"]["update"] for u in updates)
@@ -52,7 +52,7 @@ def test_a_tool_is_a_call_and_then_an_outcome() -> None:
 
 def test_a_failed_tool_says_so() -> None:
     updates = updates_for(
-        TranscriptItem("tool", name="run_command", arg="ls", ok=False), session_id="s"
+        TranscriptItem("tool", name="run_command", arg="ls", ok=False), acp_session_id="s"
     )
     assert updates[1]["params"]["update"]["status"] == "failed"
 
@@ -60,17 +60,17 @@ def test_a_failed_tool_says_so() -> None:
 def test_a_tool_still_running_is_not_reported_failed() -> None:
     """`ok=None` is "no outcome yet", which is neither a failure nor a
     success. This asserted "completed" while its own name said otherwise."""
-    updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), session_id="s")
+    updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s")
     assert updates[1]["params"]["update"]["status"] == "in_progress"
 
 
 def test_an_empty_body_produces_nothing() -> None:
     """A blank chunk renders as an empty bubble in the editor."""
-    assert updates_for(TranscriptItem("text", body="   "), session_id="s") == []
+    assert updates_for(TranscriptItem("text", body="   "), acp_session_id="s") == []
 
 
 def test_every_notification_is_addressed_and_well_formed() -> None:
-    updates = updates_for(TranscriptItem("text", body="hi"), session_id="sess-1")
+    updates = updates_for(TranscriptItem("text", body="hi"), acp_session_id="sess-1")
     (one,) = updates
     assert one["jsonrpc"] == "2.0"
     assert one["method"] == "session/update"
@@ -88,7 +88,7 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
         {"type": "role.text_delta", "text": "answer"},
         {"type": "role.result", "role": "worker", "ok": True},
     ]
-    updates = updates_for_events(events, session_id="s")
+    updates = updates_for_events(events, acp_session_id="s")
     assert _kinds(updates) == ["agent_message_chunk"]
     assert updates[0]["params"]["update"]["content"]["text"] == "the answer"
 
@@ -99,7 +99,7 @@ def test_a_headless_run_still_has_something_to_show() -> None:
     events: list[dict[str, Any]] = [
         {"type": "role.result", "role": "worker", "ok": True, "text": "done it"}
     ]
-    updates = updates_for_events(events, session_id="s")
+    updates = updates_for_events(events, acp_session_id="s")
     assert updates[0]["params"]["update"]["content"]["text"] == "done it"
 
 
@@ -109,8 +109,8 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
     and an iteration cap produce ZERO notifications -- an editor watching a run
     that simply stops."""
     for reason in ("provider_error", "budget_exhausted", "max_iterations", "steer_abort"):
-        events = [{"type": "run.end", "reason": reason, "all_passed": False}]
-        updates = updates_for_events(events, session_id="s")
+        events = [{"type": "session.end", "reason": reason, "all_passed": False}]
+        updates = updates_for_events(events, acp_session_id="s")
         assert updates, f"{reason} rendered as nothing"
         assert "did not pass" in updates[-1]["params"]["update"]["content"]["text"]
 
@@ -118,10 +118,10 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
     """`finish_run` with all_passed=False is a finish over a RED verify."""
     red = updates_for_events(
-        [{"type": "run.end", "reason": "finish_run", "all_passed": False}], session_id="s"
+        [{"type": "session.end", "reason": "finish_run", "all_passed": False}], acp_session_id="s"
     )
     green = updates_for_events(
-        [{"type": "run.end", "reason": "finish_run", "all_passed": True}], session_id="s"
+        [{"type": "session.end", "reason": "finish_run", "all_passed": True}], acp_session_id="s"
     )
     assert (
         red[-1]["params"]["update"]["content"]["text"]
@@ -132,7 +132,9 @@ def test_a_red_gate_does_not_look_like_a_green_one() -> None:
 def test_a_commit_is_not_dropped() -> None:
     """A commit's sha and line count live in `detail`; `body` is empty, so
     keying on body alone dropped every auto-commit."""
-    updates = updates_for(TranscriptItem("commit", arg="abc1234", detail="3 lines"), session_id="s")
+    updates = updates_for(
+        TranscriptItem("commit", arg="abc1234", detail="3 lines"), acp_session_id="s"
+    )
     text = updates[0]["params"]["update"]["content"]["text"]
     assert "abc1234" in text and "3 lines" in text
 
@@ -149,7 +151,7 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
     ]
     ids = {
         u["params"]["update"]["toolCallId"]
-        for u in updates_for_events(events, session_id="s")
+        for u in updates_for_events(events, acp_session_id="s")
         if "toolCallId" in u["params"]["update"]
     }
     assert len(ids) == 2, f"the two calls collided on {ids}"
@@ -164,8 +166,8 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     item = TranscriptItem(kind="tool", name="run_command", arg="ls", ok=True, call_id="1")
-    first = updates_for(item, session_id="s", run_id="brave-oak-AAAAAA")
-    second = updates_for(item, session_id="s", run_id="clever-elm-BBBBBB")
+    first = updates_for(item, acp_session_id="s", session_id="brave-oak-AAAAAA")
+    second = updates_for(item, acp_session_id="s", session_id="clever-elm-BBBBBB")
     assert first[0]["params"]["update"]["toolCallId"] != second[0]["params"]["update"]["toolCallId"]
     assert first[0]["params"]["update"]["toolCallId"].startswith("brave-oak-AAAAAA:")
 
@@ -184,7 +186,7 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     item = TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1")
-    _call, outcome = updates_for(item, session_id="s")
+    _call, outcome = updates_for(item, acp_session_id="s")
     content = outcome["params"]["update"]["content"]
     assert content == [{"type": "content", "content": {"type": "text", "text": "exit 1"}}]
 
@@ -199,7 +201,7 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
     item = TranscriptItem(
         kind="tool", name="run_verify", arg="", ok=False, detail="exit 1", tail="E   assert 1 == 2"
     )
-    _call, outcome = updates_for(item, session_id="s")
+    _call, outcome = updates_for(item, acp_session_id="s")
     text = outcome["params"]["update"]["content"][0]["content"]["text"]
     assert "assert 1 == 2" in text
 
@@ -210,7 +212,7 @@ def test_a_tool_still_running_is_not_reported_finished() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     live = TranscriptItem(kind="tool", name="run_command", arg="sleep 60", ok=None)
-    _call, outcome = updates_for(live, session_id="s")
+    _call, outcome = updates_for(live, acp_session_id="s")
     assert outcome["params"]["update"]["status"] == "in_progress"
 
 
@@ -224,7 +226,7 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     hostile = "hi\x1b]0;pwned\x07 there\x1b[2J\nsecond\tline"
-    (update,) = updates_for(TranscriptItem(kind="text", body=hostile), session_id="s")
+    (update,) = updates_for(TranscriptItem(kind="text", body=hostile), acp_session_id="s")
     text = update["params"]["update"]["content"]["text"]
     assert "\x1b" not in text and "\x07" not in text
     assert "\nsecond\tline" in text, "real whitespace is content, not an escape"
@@ -239,7 +241,7 @@ def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
 
     hostile = "sh -c '\x1b]0;PWNED\x07'"
     call, _outcome = updates_for(
-        TranscriptItem(kind="tool", name="run_command", arg=hostile, ok=True), session_id="s"
+        TranscriptItem(kind="tool", name="run_command", arg=hostile, ok=True), acp_session_id="s"
     )
     assert "\x1b" not in call["params"]["update"]["title"]
     assert "\x07" not in call["params"]["update"]["title"]

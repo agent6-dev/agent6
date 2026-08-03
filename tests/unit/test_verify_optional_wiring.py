@@ -92,16 +92,16 @@ def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path:
     start -- with the system prompt, which is frozen from the same config."""
     from agent6.app.preflight import drop_gate_if_unrunnable
     from agent6.app.reporter import Reporter
-    from agent6.runs.ipc import set_away_mode
+    from agent6.sessions.ipc import set_away_mode
 
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
     said: list[str] = []
     reporter = Reporter(out=said.append, err=said.append)
     gated = Config.model_validate({"workflow": {"verify_command": ["pytest", "-q"]}})
 
     assert drop_gate_if_unrunnable(
-        gated, run_dir=run_dir, reporter=reporter
+        gated, session_dir=session_dir, reporter=reporter
     ).workflow.verify_command == (
         "pytest",
         "-q",
@@ -111,7 +111,7 @@ def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path:
     )
     assert (
         drop_gate_if_unrunnable(
-            withheld, run_dir=run_dir, reporter=reporter
+            withheld, session_dir=session_dir, reporter=reporter
         ).workflow.verify_command
         == ()
     )
@@ -119,9 +119,11 @@ def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path:
 
     # An away-mode of deny reaches the same answer: the EFFECTIVE policy, not
     # just the configured knob.
-    set_away_mode(run_dir, "deny")
+    set_away_mode(session_dir, "deny")
     assert (
-        drop_gate_if_unrunnable(gated, run_dir=run_dir, reporter=reporter).workflow.verify_command
+        drop_gate_if_unrunnable(
+            gated, session_dir=session_dir, reporter=reporter
+        ).workflow.verify_command
         == ()
     )
 
@@ -155,15 +157,15 @@ def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:
     EFFECTIVE policy to "no" while the config still names a gate. The leg kept
     the gate, lost the tool, and ended red."""
     from agent6.config import Config
-    from agent6.runs.ipc import set_away_mode
+    from agent6.sessions.ipc import set_away_mode
     from agent6.tools.dispatch import ToolDispatcher
 
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
     cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
-    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=run_dir)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert "run_verify_command" in d.available_tool_names()
-    set_away_mode(run_dir, "deny")
+    set_away_mode(session_dir, "deny")
     assert d.command_policy() == "no"
     assert "run_verify_command" not in d.available_tool_names()
 
@@ -174,10 +176,10 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: Path) 
     from agent6.config import Config
     from agent6.tools.dispatch import ToolDispatcher
 
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
     cfg = Config.model_validate({"sandbox": {"run_commands": "no"}})
-    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=run_dir)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert d.adopt_verify_command(("/bin/true",)) is False
     assert d._config.workflow.verify_command == ()  # pyright: ignore[reportPrivateUsage]
 

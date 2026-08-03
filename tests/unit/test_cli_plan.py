@@ -12,8 +12,8 @@ from agent6.config.layer import resolved_state_dir
 from agent6.ui.cli import main
 
 
-def _seed_plan(tmp_path: Path, run_id: str, body: str) -> Path:
-    plan_dir = resolved_state_dir(tmp_path) / "runs" / run_id
+def _seed_plan(tmp_path: Path, session_id: str, body: str) -> Path:
+    plan_dir = resolved_state_dir(tmp_path) / "runs" / session_id
     plan_dir.mkdir(parents=True)
     plan = plan_dir / "plan.md"
     plan.write_text(body, encoding="utf-8")

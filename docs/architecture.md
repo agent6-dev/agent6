@@ -46,7 +46,7 @@ almost always a sign of the wrong design.
   provider construction, agent-process egress confinement (`app.egress`), and
   the `--parallel` fan-out + coordinator dispatch. Never imports `agent6.ui`:
   what it can't do itself (own a terminal, render a live view, spawn a detached
-  `agent6`) the front-end injects as frozen callables (`RunFrontend`,
+  `agent6`) the front-end injects as frozen callables (`SessionFrontend`,
   `LaneRuntime`), and its output goes through an injected two-channel
   `Reporter`. That keeps `ui/` presentation-only.
 - **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): two
@@ -85,10 +85,10 @@ Notes:
   conversation. The in-loop critic and the adversarial review panel
   are opt-in (`[review]` config) and layer onto this same history.
 - **Snapshot before every LLM call.** `loop_state.json` is rewritten
-  in the run directory (`<state-dir>/<repo-id>/runs/<run-id>/`,
+  in the session directory (`<state-dir>/<repo-id>/runs/<session-id>/`,
   out of the workspace) before each provider request, with a per-turn
   copy under `checkpoints/<NNNN>.json` (see "Run state on disk").
-  `agent6 resume <run-id>` rehydrates from `loop_state.json`,
+  `agent6 resume <session-id>` rehydrates from `loop_state.json`,
   `agent6 fork --at-turn N` from the matching checkpoint;
   combined with the per-tool transcripts under `transcripts/`, any
   interrupted run can be replayed deterministically up to the model
@@ -97,7 +97,7 @@ Notes:
   `git_ops.py` from outside the jail, onto the run branch (or your current
   branch when `branch_per_run` is off). Every passing step commits, so a run
   stays resumable and forkable; how those commits consolidate onto your branch
-  is chosen later at `agent6 runs merge` time via `git.merge_strategy`
+  is chosen later at `agent6 sessions merge` time via `git.merge_strategy`
   (`squash` / `merge` / `ff`).
 - **DAG-as-scaffold.** `add_task` / `update_task` /
   `set_cursor` / `list_tasks` / `add_dependency` write to a curator-owned
@@ -176,7 +176,7 @@ Notes:
   `use_skill` from the index alone, so the reliable paths are `always`,
   `/name` in the pause menu, and `run --skill` (see docs/config.md).
 - **`finish_run(summary)`** is the only terminal tool. Calling it
-  emits a `run.end` event and returns control to the CLI.
+  emits a `session.end` event and returns control to the CLI.
 
 ## Workflow: `review`
 
@@ -225,9 +225,9 @@ primitive is pure git plumbing in
 (no LLM, no UI, no process spawning), over `git_ops`:
 
 - `clone_workspace(origin, dest)`: plain `git clone` of a disposable lane workspace.
-- `import_run(origin, lane_repo, branch, lane_run_dir, origin_state)`: fetches the
-  lane's branch into *origin* and moves its run dir under `<origin_state>/runs/`;
-  refuses to overwrite an existing branch or run dir.
+- `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the
+  lane's branch into *origin* and moves its session dir under `<origin_state>/runs/`;
+  refuses to overwrite an existing branch or session dir.
 - `join_branch(workspace, branch)`: merges a branch into the current branch;
   returns the merged sha, or `None` after an aborted conflict.
 - `LaneSpawner` / `GroupLaneSpawner` Protocols: one lane, or a sibling group,
@@ -238,24 +238,24 @@ is the orchestrator: it implements the spawner Protocols and is the only module
 that knows how to actually run a lane; the detached spawn it drives
 (`ui.spawn`, the same path `attach`/`resume` use) is injected as a
 `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`. Lane liveness/stop
-requests go straight to the run-dir bridge (`agent6.runs.ipc`), which
+requests go straight to the run-dir bridge (`agent6.sessions.ipc`), which
 `agent6.app` already depends on. `agent6.app` is the application layer:
 pipelines composed over the engine, never importing `agent6.ui`.
 
 - **`agent6 run --parallel N|model-a,model-b`** (`dispatch_parallel` /
   `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary
   detached `agent6 run` (its own jail, egress broker, `run_commands` policy --
-  see [security.md](security.md)), symlinks each lane's live run dir into
+  see [security.md](security.md)), symlinks each lane's live session dir into
   `<origin_state>/runs/` as soon as it is located, and polls until every lane
-  is terminal. Every hub (`agent6 runs`, the TUI, the web hub) resolves that
-  symlink like any other run dir, so a fan-out is visible live, not just at
+  is terminal. Every hub (`agent6 sessions`, the TUI, the web hub) resolves that
+  symlink like any other session dir, so a fan-out is visible live, not just at
   the end. On completion each lane is imported (`import_run`) and the symlink
   is replaced by the real directory; an un-imported lane (failed to start,
   still running, import refused) keeps its clone and symlink rather than
   losing the only copy of its work. Imported candidates are auto-compared
   (`workflows/judge.py`'s structured judge call when a reviewer model is
   configured, else a mechanical verify-then-cost ranking) into a ranked
-  report with `agent6 runs merge <id>` lines. The auto-compare also stamps a
+  report with `agent6 sessions merge <id>` lines. The auto-compare also stamps a
   `compare` block (`rank`/`of`/`winner`/`ranked_by`/`rationale`/
   `judge_cost_usd`+`judge_cost_partial`, the judge call's group cost; the fan-out
   id itself is the manifest's top-level `parallel_id`) into each imported lane's
@@ -270,7 +270,7 @@ pipelines composed over the engine, never importing `agent6.ui`.
   multi-segment message spawns one detached `run --parallel <spec>` per segment
   (omitted spec = `--parallel 1`, one isolated lane). A malformed directive is
   refused before any spawn (all-or-nothing).
-- **`agent6 runs compare <id> <id> ...`** (`ui/cli/_compare.py`, shared by both
+- **`agent6 sessions compare <id> <id> ...`** (`ui/cli/_compare.py`, shared by both
   callers so the ranking/report logic exists once): the same ranked report
   over any >=2 existing runs, including different-task runs; degrades to the
   mechanical table without a reviewer model.
@@ -286,7 +286,7 @@ pipelines composed over the engine, never importing `agent6.ui`.
   HEAD only), expands each segment into its lanes (`spec` -> one model per lane),
   then clones + spawns + awaits + imports every lane and joins each branch into
   the run branch sequentially in dispatch order (`join_branch`). Like the
-  fan-out, each lane's run dir is symlinked into `<origin_state>/runs/` while it
+  fan-out, each lane's session dir is symlinked into `<origin_state>/runs/` while it
   runs, so coordinator lanes appear in the hubs like fan-out lanes and their
   approvals/asks are answered there. Each SEGMENT (task) gets one DAG node
   stamped `passed` (with the last joined sha; its note names every lane) or
@@ -360,23 +360,23 @@ flowchart LR
 ```
 
 Every mutation is validated against a pydantic schema before it applies, so the
-on-disk graph stays consistent. What keeps the whole run directory safe from
+on-disk graph stays consistent. What keeps the whole session directory safe from
 jailed commands is its location: it lives out of the workspace
 (`<state-dir>/<repo-id>/`), unreachable from the repo cwd that jailed commands
 run on.
 
-One curator per run is an invariant: two live curators on one run dir cache the
+One curator per run is an invariant: two live curators on one session dir cache the
 graph independently, so a second one's write silently drops the first's
 parent→child links. `agent6 run`/`resume`/`fork` therefore take a run-level
 single-writer flock on `<run-dir>/worker.lock` (the analogue of `machine.lock`);
 a second process on the same run refuses. A crashed writer releases the lock on
 death, so resume-after-crash is never blocked. The curator additionally holds a
-per-mutation flock on the run dir, guarding the files against a concurrent
+per-mutation flock on the session dir, guarding the files against a concurrent
 operator-CLI read/write. A write-path fault (ENOSPC, a serialization error)
 after the in-memory update reloads the graph from disk before surfacing, so a
 later read never observes a node that was never persisted.
 
-One live run-mode worker per CHECKOUT is the level above (`runs/lock.py`, a
+One live run-mode worker per CHECKOUT is the level above (`sessions/lock.py`, a
 repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working
 tree, so a second one would interleave auto-commits onto whatever HEAD points
 at. A second `agent6 run` refuses loudly and PARKS the submitted task verbatim
@@ -389,7 +389,7 @@ one lock.
 
 ## Run state on disk
 
-Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
+Each run's directory `<state-dir>/<repo-id>/runs/<session-id>/` holds:
 
 - `graph.jsonl`: append-only journal of every task-graph mutation
   (curator-owned).
@@ -411,10 +411,10 @@ Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
   written by the main process.
 
 A fork (`agent6 fork <src>`) clones a source run's state, as of a checkpoint,
-into a NEW run dir with a new id: it copies the checkpoint as the new run's
+into a NEW session dir with a new id: it copies the checkpoint as the new run's
 `loop_state.json` + seed `checkpoints/0000.json`, REBUILDS the curator DAG
 (`graph/`, `graph.jsonl`, `cursor.json`) at the checkpoint's `graph_version`,
-writes a manifest with `parent_run_id` / `forked_from_turn` / `forked_from_sha`,
+writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha`,
 and cuts `agent6/<new>` at the turn's sha (additive `git branch`, the operator's
 checkout is untouched). The source run is never mutated. One fork edge per line
 lands in a per-repo `lineage.jsonl` at the state-dir root.
@@ -446,12 +446,12 @@ the browser web UI
 `agent6 acp`, see [editor integration](acp.md)) all fold the same event stream
 and render their own way. Two shared layers sit under all four: the read side
 [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
-(the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
+(the `SessionState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
 `agent6 attach --json` and the web JSON/SSE endpoints emit) and the textual-free
 write side:
 [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py)
 spawns the CLI detached, and
-[src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py)
+[src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py)
 holds the approval / question / steer / compact-request file contract the
 workflow process polls. See [the web UI](web.md).
 
@@ -466,21 +466,21 @@ any external viewer (the fold to render-ready state lives in
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
-| `run.start`                 | `user_task`                                 |
+| `session.start`                 | `user_task`                                 |
 | `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`; emitted as a pair for every dispatched tool, including ones a guard rejects (`ok=false`, trusted reason), so no call is unaccounted for. Execution tools (`run_command`/`run_metric_command`) also carry capped `stdout_tail`/`stderr_tail` like `verify.end` |
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
 | `loop.verify_inferred`      | `command` (argv, `[]` if none), `source` (`agents_md`/manifest/`llm`/`none`); `adopted_at` (iteration) when a gateless run adopts one mid-run |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |
-| `run.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
+| `session.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
 | `question.prompt`/`.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
-| `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 runs show`) |
+| `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 sessions show`) |
 | `loop.review.*`             | adversarial review panel: `loop.review.start` (trigger, seats), `loop.review.seat` (seat, model, verdict, findings), `loop.review.panel` (blocked, raw_blocked, decision, n_block, disarmed), `loop.review.skipped` |
-| `run.end`                   | `reason`, `iterations`, `all_passed`; one shape from every exit path (loop, machine-create, interrupt fallback) |
+| `session.end`                   | `reason`, `iterations`, `all_passed`; one shape from every exit path (loop, machine-create, interrupt fallback) |
 
 A `run_command` approval is published as `approval.prompt`; the dashboard
 TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
@@ -489,10 +489,10 @@ headless (stdin prompt, or deny for a machine state) only after the front-end
 has stayed dead for 30 consecutive seconds, so a transient drop (a page
 reload, a phone locking its browser) does not convert a pending approval into
 a deny. The web UI drives the same answer-file contract (via
-[src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py)):
+[src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py)):
 while a browser watches a run it registers as the run's answer front-end, so
 approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is
-curator-owned and lives in `graph.jsonl` (read via `agent6 runs
+curator-owned and lives in `graph.jsonl` (read via `agent6 sessions
 graph`).
 
 ## Where things live
@@ -510,16 +510,16 @@ graph`).
 | Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Subordinate-run primitive (clone/import/join) | [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
-| Run-dir single-writer lock       | [src/agent6/runs/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/lock.py) (the `worker.lock` flock; see "Curator") |
+| Run-dir single-writer lock       | [src/agent6/sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) (the `worker.lock` flock; see "Curator") |
 | Compare judge (structured ranking) | [src/agent6/workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
 | Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
-| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
-| Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
+| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (SessionState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
+| Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
-| Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
+| Run state on disk                | `<state-dir>/<repo-id>/runs/<session-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability
 

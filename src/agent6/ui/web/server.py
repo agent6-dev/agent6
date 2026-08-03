@@ -10,7 +10,7 @@ Serves web.page to a browser, fed by:
 Uses the stdlib `http.server.ThreadingHTTPServer`. Binds loopback by default; a
 non-loopback bind is opt-in (see the `[web]` config section) and widens the
 inbound network surface. The server only ever renders folded read-state and (in
-the write phase) drives the typed `agent6.runs.ipc` contracts; it never serves
+the write phase) drives the typed `agent6.sessions.ipc` contracts; it never serves
 secrets and never executes arbitrary input.
 """
 
@@ -34,13 +34,13 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from agent6 import __version__
 from agent6.config import is_loopback_host
 from agent6.machine import MachineError
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     read_worker_pid,
     register_frontend,
     unregister_frontend,
     worker_is_alive,
 )
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.web import actions, model
 from agent6.ui.web.page import (
     FAVICON_SVG,
@@ -54,8 +54,8 @@ from agent6.viewmodel import (
     died_without_end,
     initial_state,
     machine_is_parked,
-    run_state_as_dict,
-    summarize_run_dir,
+    session_state_as_dict,
+    summarize_session_dir,
     tail_events,
 )
 
@@ -161,31 +161,31 @@ class WebServer(ThreadingHTTPServer):
             return
         super().handle_error(request, client_address)
 
-    def claim_run(self, run_dir: Path) -> None:
+    def claim_session(self, session_dir: Path) -> None:
         """A browser opened this run's stream: register as an answer front-end
         so its approval/question/steer prompts bridge here. Reference-counted
         across concurrent viewers; the claim file is per-process, so other
         front-ends (TUI, attach) are never displaced."""
-        key = str(run_dir)
+        key = str(session_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 0) + 1
             self._watch_counts[key] = n
             if n == 1:
-                register_frontend(run_dir, os.getpid())
+                register_frontend(session_dir, os.getpid())
 
-    def release_run(self, run_dir: Path) -> None:
+    def release_session(self, session_dir: Path) -> None:
         """The last browser watching this run went away: drop our own claim so
         the run falls back to its headless behaviour instead of blocking on
         answers no one gives. The count transition and the claim change share
-        the lock so a concurrent claim_run cannot interleave."""
-        key = str(run_dir)
+        the lock so a concurrent claim_session cannot interleave."""
+        key = str(session_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 1) - 1
             if n > 0:
                 self._watch_counts[key] = n
                 return
             self._watch_counts.pop(key, None)
-            unregister_frontend(run_dir, os.getpid())
+            unregister_frontend(session_dir, os.getpid())
 
 
 class _IPv6WebServer(WebServer):
@@ -330,23 +330,23 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _route_post(self, path: str) -> None:  # noqa: PLR0911
         parts = path.strip("/").split("/")
-        # /api/new  /api/runs/prune  /api/config  /api/machine/create  /api/machine/run
+        # /api/new  /api/sessions/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
-            run_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.preset)
-            self._ok_or_err(run_id is not None, {"run_id": run_id}, err)
+            session_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.preset)
+            self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
-        if path == "/api/runs/rm_asks":
+        if path == "/api/sessions/rm_asks":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.remove_asks(self.cwd)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        if path == "/api/runs/prune":
+        if path == "/api/sessions/prune":
             # Drain the body (the client posts `{}`) even though prune takes no
             # params: an unread body would sit on the keep-alive socket and the
             # next request line would be parsed with it prepended.
             self._read_body()
-            ok, msg = actions.prune_runs(self.cwd)
+            ok, msg = actions.prune_sessions(self.cwd)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/config":
@@ -367,9 +367,9 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.spawn_machine_run(self.cwd, body.file)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        # /api/run/<id>/<verb>
-        if len(parts) == 4 and parts[0] == "api" and parts[1] == "run":
-            self._route_run_post(parts[2], parts[3])
+        # /api/session/<id>/<verb>
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "session":
+            self._route_session_post(parts[2], parts[3])
             return
         # /api/machine/<name>/<verb>
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "machine":
@@ -383,33 +383,33 @@ class _Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         self._send_json({"error": f"not found: {what}"}, status=404)
 
-    def _route_run_post(self, run_id: str, verb: str) -> None:
+    def _route_session_post(self, session_id: str, verb: str) -> None:
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
-            ok, msg = actions.steer(self.cwd, run_id, body.text)
+            ok, msg = actions.steer(self.cwd, session_id, body.text)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.approve(self.cwd, run_id, ab.id, ab.approved, session=ab.session)
+            ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.approved, session=ab.session)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
-            ok, msg = actions.answer_question(self.cwd, run_id, qb.id, qb.answers)
+            ok, msg = actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
-            ok, msg = actions.merge_run(self.cwd, run_id, mb.strategy)
+            ok, msg = actions.merge_run(self.cwd, session_id, mb.strategy)
         elif verb == "resume":
             rb = ResumeBody.model_validate(self._read_body())
-            ok, msg = actions.resume_run(self.cwd, run_id, rb.text)
+            ok, msg = actions.resume_run(self.cwd, session_id, rb.text)
         elif verb == "stop_step":
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.stop_after_step(self.cwd, run_id)
+            ok, msg = actions.stop_after_step(self.cwd, session_id)
         elif verb == "compact":
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.compact_run(self.cwd, run_id)
+            ok, msg = actions.compact_run(self.cwd, session_id)
         elif verb == "rm":
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.remove_run(self.cwd, run_id)
+            ok, msg = actions.remove_session(self.cwd, session_id)
         else:
-            self._post_not_found(f"run/{run_id}/{verb}")
+            self._post_not_found(f"run/{session_id}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
@@ -475,9 +475,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"values": model.config_suggestions(self.cwd, key)})
             return
         parts = path.strip("/").split("/")
-        # /api/run/<id>[/conversation|/events]
-        if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "run":
-            self._route_run(parts[2], parts[3] if len(parts) > 3 else "")
+        # /api/session/<id>[/conversation|/events]
+        if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
+            self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
             return
         # /api/machine/<name>[/reasoning|/conversation|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "machine":
@@ -490,14 +490,14 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def _target_kind(self) -> str:
-        """Which view the CLI-given target deep-links to (run / draft / machine),
+        """Which view the CLI-given target deep-links to (session / draft / machine),
         or "" when there is no target or it matches nothing. Resolved per request,
         so a target that appears after startup still resolves."""
         t = self.server.target
         if not t:
             return ""
-        if model.run_dir_for(self.cwd, t) is not None:
-            return "run"
+        if model.session_dir_for(self.cwd, t) is not None:
+            return "session"
         if model.draft_dir_for(self.cwd, t) is not None:
             return "draft"
         if model.machine_dir_for(self.cwd, t) is not None:
@@ -510,27 +510,27 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no draft {name!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(model.run_snapshot(draft_dir))
+            self._send_json(model.session_snapshot(draft_dir))
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "events":
-            self._sse_run(draft_dir)
+            self._sse_session(draft_dir)
         else:
             self._send_json({"error": f"not found: draft/{name}/{sub}"}, status=404)
 
-    def _route_run(self, run_id: str, sub: str) -> None:
-        run_dir = model.run_dir_for(self.cwd, run_id)
-        if run_dir is None:
-            self._send_json({"error": f"no run {run_id!r}"}, status=404)
+    def _route_session(self, session_id: str, sub: str) -> None:
+        session_dir = model.session_dir_for(self.cwd, session_id)
+        if session_dir is None:
+            self._send_json({"error": f"no run {session_id!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(model.run_snapshot(run_dir))
+            self._send_json(model.session_snapshot(session_dir))
         elif sub == "conversation":
-            self._send_json(model.conversation_payload(run_dir))
+            self._send_json(model.conversation_payload(session_dir))
         elif sub == "events":
-            self._sse_run(run_dir)
+            self._sse_session(session_dir)
         else:
-            self._send_json({"error": f"not found: run/{run_id}/{sub}"}, status=404)
+            self._send_json({"error": f"not found: run/{session_id}/{sub}"}, status=404)
 
     def _route_machine(self, name: str, sub: str) -> None:
         machine_dir = model.machine_dir_for(self.cwd, name)
@@ -602,25 +602,25 @@ class _Handler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _sse_run(self, run_dir: Path) -> None:
-        """Stream a run: fold logs.jsonl incrementally, push a fresh RunState
+    def _sse_session(self, session_dir: Path) -> None:
+        """Stream a run: fold logs.jsonl incrementally, push a fresh SessionState
         snapshot on each event (coalescing streaming deltas). A background tailer
         feeds a queue so the response loop can heartbeat idle periods and exit
         promptly when the client disconnects. While connected we register as the
         run's answer front-end so its approval/steer prompts bridge to the browser."""
         self._begin_sse()
-        self.server.claim_run(run_dir)
+        self.server.claim_session(session_dir)
         try:
-            self._sse_run_loop(run_dir)
+            self._sse_session_loop(session_dir)
         finally:
-            self.server.release_run(run_dir)
+            self.server.release_session(session_dir)
 
-    def _sse_run_loop(self, run_dir: Path) -> None:
+    def _sse_session_loop(self, session_dir: Path) -> None:
         events: queue.Queue[dict[str, Any] | None] = queue.Queue()
         stop = threading.Event()
 
         def tail() -> None:
-            src = run_dir / LOGS_NAME
+            src = session_dir / LOGS_NAME
             try:
                 for ev in tail_events(
                     src, follow=True, stop_when_finished=True, should_stop=stop.is_set
@@ -636,16 +636,16 @@ class _Handler(BaseHTTPRequestHandler):
         # Manifest-derived header fields (branch facts + the fan-out compare
         # outcome), read once per connection: they are fixed for the run's life
         # (merged_into lands after the run ends; a reopen/reconnect re-reads).
-        header = model.manifest_header(run_dir)
+        header = model.manifest_header(session_dir)
 
         def frame(*, dead: bool = False) -> dict[str, Any]:
-            # run_dir per frame, not once at connect: a parked run the operator
+            # session_dir per frame, not once at connect: a parked run the operator
             # resumes starts logging into this same stream, and the label (and
             # `live`) have to follow.
-            d = {**run_state_as_dict(state, run_dir), **header}
+            d = {**session_state_as_dict(state, session_dir), **header}
             if dead:
                 # Transport signal, distinct from the fold's `finished`: this
-                # stream will send nothing more (dead worker, no run.end), so
+                # stream will send nothing more (dead worker, no session.end), so
                 # the client must close instead of letting EventSource retry
                 # into a reconnect-refold loop. `finished` stays the fold truth
                 # -- a crashed run is stale, not "finished".
@@ -661,19 +661,19 @@ class _Handler(BaseHTTPRequestHandler):
                 except queue.Empty:
                     if not self._sse_ping():
                         return
-                    # A run that reached terminal without its own run.end
+                    # A run that reached terminal without its own session.end
                     # (crash, went quiet, killed in preflight) would otherwise
                     # pin this worker forever; ask the codebase's own
                     # died_without_end rather than one word of it. `parked` is
                     # deliberately excluded: a parked submission the operator
                     # resumes starts logging into this same stream.
-                    word = summarize_run_dir(run_dir).status
+                    word = summarize_session_dir(session_dir).status
                     if word != "parked" and died_without_end(word):
                         self._sse_send(frame(dead=True))
                         return
                     continue
                 # Fold everything already queued into ONE frame. On connect the
-                # tailer replays the whole history, and a full RunState frame per
+                # tailer replays the whole history, and a full SessionState frame per
                 # historical event is quadratic (13 MB probed on a 502-event run).
                 last_type = ""
                 while ev is not None:
@@ -693,7 +693,8 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 last_delta_emit = now
         finally:
-            stop.set()  # cancel the tailer so it exits on disconnect / dead run, not just run.end
+            # cancel the tailer so it exits on disconnect / dead run, not just session.end
+            stop.set()
 
     def _sse_machine(self, machine_dir: Path) -> None:
         """Stream a machine: re-fold the journal + the current agent state's
@@ -703,11 +704,11 @@ class _Handler(BaseHTTPRequestHandler):
         browser (the state's answer files live in its per-state dir; the liveness
         gate probes this instance dir)."""
         self._begin_sse()
-        self.server.claim_run(machine_dir)
+        self.server.claim_session(machine_dir)
         try:
             self._sse_machine_loop(machine_dir)
         finally:
-            self.server.release_run(machine_dir)
+            self.server.release_session(machine_dir)
 
     def _sse_machine_loop(self, machine_dir: Path) -> None:
         prev = ""

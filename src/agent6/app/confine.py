@@ -223,7 +223,7 @@ def maybe_apply_agent_landlock(
         )
         if p.exists()
     )
-    run_paths = (Path("/run"),) if Path("/run").exists() else ()
+    session_paths = (Path("/run"),) if Path("/run").exists() else ()
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
     # The jail launcher (agent6-jail, hardened isolation) grants the CHILD
     # read+execute on its ro_paths by opening each one from inside THIS
@@ -289,7 +289,7 @@ def maybe_apply_agent_landlock(
         tmp,
         *sys_exec_dirs,
         *dev_files,
-        *run_paths,
+        *session_paths,
         *proc_paths,
         *py_paths,
         *jail_paths,

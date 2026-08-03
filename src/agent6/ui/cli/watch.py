@@ -18,21 +18,21 @@ import sys
 from pathlib import Path
 
 from agent6.machine import MachineError, MachineJournal, load_machine
-from agent6.runs.id import RunIdError
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.id import SessionIdError
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.cli._common import (
     _machines_dir,
     _runs_dir,
-    print_no_run_match,
-    resolve_run_layout,
+    print_no_session_match,
+    resolve_session_layout,
 )
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
-from agent6.ui.cli.plan_watch import _cmd_watch, _resolve_run_dir
+from agent6.ui.cli.plan_watch import _cmd_watch, _resolve_session_dir
 from agent6.viewmodel import (
     fold_machine,
-    fold_run,
+    fold_session,
     machine_state_as_dict,
-    run_state_as_dict,
+    session_state_as_dict,
     tail_events,
 )
 
@@ -44,15 +44,15 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
     prefix, a run-intent error the caller should surface rather than fall
     through to machine lookup."""
     try:
-        resolve_run_layout(repo_root, target)
-    except RunIdError as exc:
+        resolve_session_layout(repo_root, target)
+    except SessionIdError as exc:
         return (False, str(exc)) if exc.ambiguous else (False, None)
     return (True, None)
 
 
-def _run_json_snapshot(run_dir: Path) -> int:
-    """Print a run's folded RunState as one JSON object (the web wire form)."""
-    logs = run_dir / LOGS_NAME
+def _session_json_snapshot(session_dir: Path) -> int:
+    """Print a run's folded SessionState as one JSON object (the web wire form)."""
+    logs = session_dir / LOGS_NAME
     # No log yet is a STATE, not an error: a parked submission (the busy-checkout
     # refusal saved it) or a `fork --no-run`. Every listing names it; this path
     # answered with a raw filesystem error instead. Fold nothing and let the dir
@@ -60,7 +60,7 @@ def _run_json_snapshot(run_dir: Path) -> int:
     events = tail_events(logs, follow=False) if logs.is_file() else []
     # With the run dir in hand the label is the dir-aware status (parked /
     # stale / waiting), not the fold's blanket "running".
-    snap = run_state_as_dict(fold_run(events), run_dir)
+    snap = session_state_as_dict(fold_session(events), session_dir)
     print(json.dumps(snap))
     return 0
 
@@ -114,11 +114,11 @@ def _cmd_watch_target(  # noqa: PLR0911
     if is_run:
         if not json_out:
             return _cmd_watch(target, tui=tui, since=since, raw=raw)
-        run_dir = _resolve_run_dir(cwd, target)
-        if run_dir is None or not run_dir.is_dir():
-            print_no_run_match(target, runs_dir.parent)
+        session_dir = _resolve_session_dir(cwd, target)
+        if session_dir is None or not session_dir.is_dir():
+            print_no_session_match(target, runs_dir.parent)
             return 2
-        return _run_json_snapshot(run_dir)
+        return _session_json_snapshot(session_dir)
 
     # Else a machine by name.
     machine_dir = machines_dir / target

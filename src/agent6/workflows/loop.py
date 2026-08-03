@@ -699,8 +699,8 @@ class Workflow:
     _snapshot_write_failed: bool = field(default=False, init=False)
     # The loop iteration currently being driven (0 before the loop starts). The
     # app-level KeyboardInterrupt fallbacks in run/resume read it so their
-    # emergency run.end carries a truthful iteration count, matching the shape
-    # the loop's own run.end emitters use.
+    # emergency session.end carries a truthful iteration count, matching the shape
+    # the loop's own session.end emitters use.
     iterations_reached: int = field(default=0, init=False)
 
     def run(self, user_task: str) -> RunResult:
@@ -708,10 +708,12 @@ class Workflow:
         self.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
-        # The run dir name is the authoritative run id; stamped into run.start so
+        # The run dir name is the authoritative run id; stamped into session.start so
         # every fold reports it without re-deriving it from the path.
-        run_id = self.events.path.parent.name if self.events is not None else ""
-        self._emit("run.start", run_id=run_id, user_task=user_task[:200], mode=self.mode)
+        session_id = self.events.path.parent.name if self.events is not None else ""
+        self._emit(
+            "session.start", session_id=session_id, user_task=user_task[:200], mode=self.mode
+        )
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()
         system = build_system_prompt(
@@ -727,7 +729,7 @@ class Workflow:
         except PromptRevisionError as exc:
             self._log(f"LOOP: prompt revision failed: {exc}")
             self._emit(
-                "run.end",
+                "session.end",
                 reason="prompt_revision_failed",
                 iterations=0,
                 all_passed=False,
@@ -817,11 +819,11 @@ class Workflow:
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
             ) from exc
 
-        # The leg's log opens with this event: stamp run_id + mode like
-        # run.start so the log identifies itself (the manifest owns the task).
+        # The leg's log opens with this event: stamp session_id + mode like
+        # session.start so the log identifies itself (the manifest owns the task).
         self._emit(
             "loop.resume.start",
-            run_id=self.events.path.parent.name if self.events is not None else "",
+            session_id=self.events.path.parent.name if self.events is not None else "",
             mode=self.mode,
             iteration=snapshot.next_iteration,
             messages=len(snapshot.messages),
@@ -1033,7 +1035,7 @@ class Workflow:
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
         self._final_checkpoint(self.max_iterations)
         self._emit(
-            "run.end",
+            "session.end",
             reason="max_iterations",
             iterations=self.max_iterations,
             all_passed=False,
@@ -1112,7 +1114,7 @@ class Workflow:
             self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
             self._final_checkpoint(iteration)
             self._emit(
-                "run.end",
+                "session.end",
                 reason="budget_exhausted",
                 iterations=iteration,
                 all_passed=False,
@@ -1127,7 +1129,7 @@ class Workflow:
         except ProviderAborted:
             self.steer_clear()  # consume the stop; don't leave it on disk to re-read
             self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
-            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
             return RunResult(
                 completed=False,
                 reason="steer_abort",
@@ -1154,7 +1156,7 @@ class Workflow:
             self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
             self._final_checkpoint(iteration)
             self._emit(
-                "run.end",
+                "session.end",
                 reason="provider_error",
                 iterations=iteration,
                 all_passed=False,
@@ -1561,7 +1563,7 @@ class Workflow:
                 # same truth rule as steer_abort ("stopped", never "passed").
                 self._pass_pending_root_tasks()
                 self._emit(
-                    "run.end",
+                    "session.end",
                     reason="interactive_stop",
                     iterations=turn.iteration,
                     all_passed=False,
@@ -2180,7 +2182,10 @@ class Workflow:
             )
             self._final_checkpoint(turn.iteration)
             self._emit(
-                "run.end", reason="tool_error_stuck", iterations=turn.iteration, all_passed=False
+                "session.end",
+                reason="tool_error_stuck",
+                iterations=turn.iteration,
+                all_passed=False,
             )
             return RunResult(
                 completed=False,
@@ -2201,7 +2206,7 @@ class Workflow:
             )
             self._final_checkpoint(turn.iteration)
             self._emit(
-                "run.end",
+                "session.end",
                 reason="no_progress",
                 iterations=turn.iteration,
                 all_passed=False,
@@ -2240,7 +2245,7 @@ class Workflow:
             # The work is committed and the worker went quiet, but nothing
             # verified the FINAL tree, so this end never claims "passed".
             self._pass_pending_root_tasks()
-            self._emit("run.end", reason="settled", iterations=turn.iteration, all_passed=False)
+            self._emit("session.end", reason="settled", iterations=turn.iteration, all_passed=False)
             if state.verify_ever_passed:
                 summary = (
                     "the worker settled, but edits after the last green verify were"
@@ -2301,7 +2306,7 @@ class Workflow:
             )
             self._final_checkpoint(turn.iteration)
             self._emit(
-                "run.end",
+                "session.end",
                 reason="loop_guard_killed",
                 iterations=turn.iteration,
                 all_passed=False,
@@ -2639,7 +2644,7 @@ class Workflow:
         # Ask mode's prose answer is the success (it never runs verify), so it
         # always ends passed.
         if reason == "silent_finish" and self._tree_is_verify_green(state) is False:
-            self._emit("run.end", reason=reason, iterations=iteration, all_passed=False)
+            self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
         else:
             self._emit_run_end_passed(reason=reason, iterations=iteration)
         return RunResult(
@@ -2795,7 +2800,7 @@ class Workflow:
             return None
         self._final_checkpoint(iteration)
         self._emit(
-            "run.end",
+            "session.end",
             reason="went_quiet",
             iterations=iteration,
             all_passed=False,
@@ -2927,7 +2932,7 @@ class Workflow:
 
     def _verification(self, state: _LoopState) -> Verification:
         """The verify verdict for the RunResult, from the same tri-state
-        `run.end.all_passed` is grounded on, so the result and the event can
+        `session.end.all_passed` is grounded on, so the result and the event can
         never disagree.
 
         Only a run is gated: plan and ask finish clean whatever the tree looks
@@ -2941,11 +2946,11 @@ class Workflow:
         return "not_applicable" if green is None else "passed" if green else "failed"
 
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
-        """Emit a successful ``run.end``, first auto-passing any still-pending
+        """Emit a successful ``session.end``, first auto-passing any still-pending
         root task so the DAG (and every viewer + resume) agrees the run
         completed -- otherwise a finish_run-only ask/run reads ``tasks 0/1``."""
         self._pass_pending_root_tasks()
-        self._emit("run.end", reason=reason, iterations=iterations, all_passed=True)
+        self._emit("session.end", reason=reason, iterations=iterations, all_passed=True)
 
     def _tree_is_verify_green(self, state: _LoopState) -> bool | None:
         """Is the current tree in a verified-green state? None when no verify
@@ -2989,7 +2994,7 @@ class Workflow:
         there too left a red-verify finish reading ``tasks 0/1`` forever."""
         self._pass_pending_root_tasks()
         green = self._tree_is_verify_green(state) is not False
-        self._emit("run.end", reason=reason, iterations=iteration, all_passed=green)
+        self._emit("session.end", reason=reason, iterations=iteration, all_passed=green)
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
@@ -3277,7 +3282,7 @@ class Workflow:
         # the run's edits may exist only in the worktree.
         self._final_checkpoint(iteration)
         self._emit(
-            "run.end",
+            "session.end",
             reason="verify_command_unexecutable",
             iterations=iteration,
             all_passed=False,
@@ -3987,7 +3992,7 @@ class Workflow:
         if self.stop_requested():
             self.stop_clear()
             self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
-            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
             return RunResult(
                 completed=False,
                 reason="steer_abort",
@@ -4010,7 +4015,7 @@ class Workflow:
         """Map a _maybe_handle_steer result to a terminal RunResult, or None to keep
         going (empty steer, or an instruction injected into messages)."""
         if steer_result == "abort":
-            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
             return RunResult(
                 completed=False,
                 reason="steer_abort",
@@ -4023,7 +4028,7 @@ class Workflow:
             )
         if steer_result == "detach":
             # Not an end: the caller respawns a detached `resume` that appends to this
-            # same log, so a persistent viewer follows straight through (no run.end).
+            # same log, so a persistent viewer follows straight through (no session.end).
             # The per-iteration snapshot is the resume point.
             return RunResult(
                 completed=False,
@@ -4272,7 +4277,7 @@ class Workflow:
         self._emit_graph_snapshot()
 
         payload = [
-            {"run_id": j.run_id, "branch": j.branch, "status": j.status, "sha": j.sha}
+            {"session_id": j.session_id, "branch": j.branch, "status": j.status, "sha": j.sha}
             for j in joined
         ]
         self._emit("loop.parallel.joined", group=group, lanes=payload)
@@ -4370,7 +4375,7 @@ class Workflow:
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. Lets
-        `agent6 runs show` / the TUI show live spend, and leaves a recent event at
+        `agent6 sessions show` / the TUI show live spend, and leaves a recent event at
         the start of each iteration so a long provider call is still
         distinguishable from a stall."""
         if self.budget is None:

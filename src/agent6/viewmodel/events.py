@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed read model for the ~22 logs.jsonl event families the RunState fold consumes.
+"""Typed read model for the ~22 logs.jsonl event families the SessionState fold consumes.
 
 The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
-**fields}` dicts and never validates; ~90 distinct types exist. The RunState fold
+**fields}` dicts and never validates; ~90 distinct types exist. The SessionState fold
 (`viewmodel.state.apply_event`) structurally consumes only the families defined
 here. `parse_event` turns one raw event dict into exactly one of those frozen
 families, or a `RawEvent` passthrough for every other type -- the compatibility
@@ -79,7 +79,7 @@ def _as_int(value: object) -> int:
 
 
 @dataclass(frozen=True, slots=True)
-class RunStart:
+class SessionStart:
     user_task: str
 
 
@@ -250,11 +250,11 @@ class CompactSummarised:
 
 @dataclass(frozen=True, slots=True)
 class SteerRequested:
-    """run.steer_requested: an operator Ctrl-C mid-run."""
+    """session.steer_requested: an operator Ctrl-C mid-run."""
 
 
 @dataclass(frozen=True, slots=True)
-class RunEnd:
+class SessionEnd:
     all_passed: bool
     reason: str
 
@@ -270,7 +270,7 @@ class RawEvent:
 
 
 Event = (
-    RunStart
+    SessionStart
     | ResumeStart
     | GraphUpdate
     | DiffUpdated
@@ -294,7 +294,7 @@ Event = (
     | CompactGists
     | CompactSummarised
     | SteerRequested
-    | RunEnd
+    | SessionEnd
     | RawEvent
 )
 
@@ -319,11 +319,11 @@ def parse_event(raw: dict[str, Any]) -> Event:
 
 def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
     """The per-family arms. Each reproduces, field-for-field, the coercion the
-    RunState fold applied inline before this module existed, so the fold output
+    SessionState fold applied inline before this module existed, so the fold output
     is byte-identical for every historical event."""
     match raw.get("type", ""):
-        case "run.start":
-            return RunStart(user_task=str(raw.get("user_task", "")))
+        case "session.start":
+            return SessionStart(user_task=str(raw.get("user_task", "")))
         case "loop.resume.start":
             return ResumeStart()
         case "graph.update":
@@ -432,10 +432,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             )
         case "loop.compact.summarise.done":
             return CompactSummarised()
-        case "run.steer_requested":
+        case "session.steer_requested":
             return SteerRequested()
-        case "run.end":
-            return RunEnd(
+        case "session.end":
+            return SessionEnd(
                 all_passed=bool(raw.get("all_passed", False)),
                 reason=str(raw.get("reason", "") or ""),
             )

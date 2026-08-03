@@ -83,7 +83,7 @@ class ConsoleView:
     def __init__(
         self, out: TextIO | None = None, *, color: bool | None = None, policy: str = ""
     ) -> None:
-        # The run's policy line (viewmodel.run_policy), printed under the task so
+        # The run's policy line (viewmodel.session_policy), printed under the task so
         # an operator sees the model, the command setting, the sandbox and the
         # gate without interrupting. "" when the caller has no run dir.
         self._policy = policy
@@ -105,7 +105,7 @@ class ConsoleView:
         # thread shows a spinner + "working… Ns" during silence so the run never
         # looks hung; only on a real terminal (no spinner in a pipe or a test).
         self._last_output_at = time.monotonic()
-        self._active = False  # run is between run.start and run.end (a turn or a tool)
+        self._active = False  # run is between session.start and session.end (a turn or a tool)
         self._status_active = False  # a transient spinner line is on screen now
         self._paused = False  # True while an interactive /dev/tty prompt owns the line
         self._spin = 0
@@ -139,9 +139,9 @@ class ConsoleView:
             # verify command running in the jail (which happens between role.result
             # and the next role.call, so a role-only flag would miss it and the
             # CLI would look frozen through a whole test suite).
-            if etype in ("run.start", "role.call", "tool.call"):
+            if etype in ("session.start", "role.call", "tool.call"):
                 self._active = True
-            elif etype in ("run.end", "run.steer_requested"):
+            elif etype in ("session.end", "session.steer_requested"):
                 self._active = False
                 # A btw that lands after the last turn would otherwise sit in
                 # the queue forever: the run ending IS a clean break.
@@ -154,12 +154,12 @@ class ConsoleView:
                 self._end_block()  # a provider call boundary closes any open prose
                 self._drain_btw()
                 return
-            if etype == "run.steer_requested":
+            if etype == "session.steer_requested":
                 # A Ctrl-C pause message is about to print to the same terminal;
                 # close any open (dim) block so it doesn't bleed into the message.
                 self._end_block()
                 return
-            if etype == "run.start":
+            if etype == "session.start":
                 task = " ".join(str(event.get("user_task", "")).split())
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
                 if self._policy:

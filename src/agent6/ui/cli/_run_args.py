@@ -11,7 +11,7 @@ from pathlib import Path
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
-    _complete_plan_run_ids,
+    _complete_plan_session_ids,
     _complete_presets,
     _complete_run_ids,
     _complete_session_ids,
@@ -27,7 +27,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         help="Task description (in quotes). Omit to execute the most recent plan.",
     )
-    run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    run_p.add_argument(
+        "--session-id", default="", help="Explicit session id (default: generate one)."
+    )
     run_from = run_p.add_argument(
         "--from",
         dest="seed_from",
@@ -100,7 +102,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " task description. Mutually exclusive with a positional task."
         ),
     )
-    run_from_plan.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    run_from_plan.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
     run_p.add_argument(
         "--decompose",
         action="store_true",
@@ -141,7 +143,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     resume_p = _sub(sub, "resume", help="Resume a paused run from its snapshot.")
     resume_run = resume_p.add_argument(
-        "run_id",
+        "session_id",
         nargs="?",
         default="",
         help="Run id under the per-repo run-state dir (omit for the most recent run).",
@@ -192,7 +194,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         ),
     )
     fork_src = fork_p.add_argument(
-        "run_id",
+        "session_id",
         nargs="?",
         default="",
         help="Source run id or unambiguous prefix to fork from (omit for the most recent run).",
@@ -207,10 +209,10 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         help="Checkpoint turn to fork from (default: the latest checkpoint).",
     )
     fork_p.add_argument(
-        "--run-id",
+        "--session-id",
         default="",
-        dest="new_run_id",
-        help="Explicit id for the new (forked) run (default: generate one).",
+        dest="new_session_id",
+        help="Explicit id for the new (forked) session (default: generate one).",
     )
     fork_p.add_argument(
         "--no-run",

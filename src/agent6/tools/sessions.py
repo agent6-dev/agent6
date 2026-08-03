@@ -18,8 +18,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.runs.layout import LOGS_NAME, RUN_BUCKETS, RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
+from agent6.sessions.manifest import ManifestError, read_manifest
 
 # What a reader needs from another session: who said what, and from which
 # field. Deltas are the same prose arriving in pieces, so only the settled
@@ -28,7 +28,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 # its own.
 _SPEAKER = {
     "role.result": ("assistant", "text"),
-    "run.start": ("user", "user_task"),
+    "session.start": ("user", "user_task"),
     "loop.steer.injected": ("user", "text"),
 }
 
@@ -74,7 +74,7 @@ class SessionBrief:
 def session_briefs(state_dir: Path) -> list[SessionBrief]:
     """Every session in this project, newest first."""
     found: list[tuple[float, SessionBrief]] = []
-    for bucket in RUN_BUCKETS:
+    for bucket in SESSION_BUCKETS:
         root = state_dir / bucket
         if not root.is_dir():
             continue
@@ -100,7 +100,7 @@ def session_briefs(state_dir: Path) -> list[SessionBrief]:
     return [brief for _mtime, brief in sorted(found, key=lambda pair: -pair[0])]
 
 
-def conversation(layout: RunLayout, *, max_chars: int) -> str:
+def conversation(layout: SessionLayout, *, max_chars: int) -> str:
     """*layout*'s conversation as plain text, oldest first, tail-truncated.
 
     Truncation keeps the TAIL: a session's conclusion is what a later one

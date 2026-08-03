@@ -25,7 +25,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.schema import LOOP_EXTRA_TOOLS, PLAN_EXTRA_TOOLS, DagAddDependencyInput
 from agent6.workflows import loop as loopmod
@@ -132,7 +132,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
     lists (not tuples), under a top-level {tasks, count}. Interface-independent:
     drives a real curator + real dispatcher, so it pins the returned shape
     regardless of how the curator hands state to the tool internally."""
-    cur = GraphCurator(RunLayout(state_dir=tmp_path / ".agent6", run_id="run1"))
+    cur = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
     root = cur.add_subtask(
         AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
     )

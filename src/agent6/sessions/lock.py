@@ -16,7 +16,7 @@ from pathlib import Path
 from agent6.portable import lock_exclusive, unlock
 
 
-def acquire_single_writer(run_dir: Path) -> int | None:
+def acquire_single_writer(session_dir: Path) -> int | None:
     """Take a non-blocking exclusive lock on ``<run-dir>/worker.lock``.
 
     One run's shared state (``loop_state.json``, ``checkpoints/``, the curator
@@ -32,8 +32,8 @@ def acquire_single_writer(run_dir: Path) -> int | None:
     leaves no lock -- flock releases on process death -- so resume-after-crash is
     never blocked by a stale lock.
     """
-    run_dir.mkdir(parents=True, exist_ok=True)
-    fd = os.open(run_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(session_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
     try:
         lock_exclusive(fd, blocking=False)
     except OSError:
@@ -65,7 +65,7 @@ SINGLE_WRITER_BUSY = (
 )
 
 
-def acquire_repo_writer(state_dir: Path, run_id: str) -> int | None:
+def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
     """Take a non-blocking exclusive lock on ``<state-dir>/repo.lock``: one live
     ``run``-mode worker per CHECKOUT.
 
@@ -89,7 +89,7 @@ def acquire_repo_writer(state_dir: Path, run_id: str) -> int | None:
         os.close(fd)
         return None
     os.ftruncate(fd, 0)
-    os.write(fd, f"{run_id}\n".encode())
+    os.write(fd, f"{session_id}\n".encode())
     return fd
 
 

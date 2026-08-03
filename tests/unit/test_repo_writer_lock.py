@@ -21,14 +21,14 @@ import pytest
 
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.layout import RunLayout
-from agent6.runs.lock import (
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.lock import (
     acquire_repo_writer,
     release_single_writer,
     repo_writer_held,
     repo_writer_holder,
 )
-from agent6.runs.manifest import read_manifest
+from agent6.sessions.manifest import read_manifest
 
 
 def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: Path) -> None:
@@ -106,14 +106,14 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
             _load_cfg(),
             long_task,
             frontend=MagicMock(),
-            run_id="run-PARKED",
+            session_id="run-PARKED",
             mode="run",
         )
     finally:
         release_single_writer(holder_fd)
     assert rc == 2
-    layout = RunLayout(state_dir=state, run_id="run-PARKED")
-    m = read_manifest(layout.run_dir)
+    layout = SessionLayout(state_dir=state, session_id="run-PARKED")
+    m = read_manifest(layout.session_dir)
     assert m.parked_task == long_task  # verbatim, not the truncated display twin
     assert m.run_branch is None
     # No branch was cut and the tree is untouched.
@@ -126,9 +126,9 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
     assert branches.strip() == ""
     # The parked dir survives (it is a saved run, not a discardable husk) and
     # the listing tells the truth about it.
-    from agent6.viewmodel.listing import summarize_run_dir
+    from agent6.viewmodel.listing import summarize_session_dir
 
-    row = summarize_run_dir(layout.run_dir)
+    row = summarize_session_dir(layout.session_dir)
     assert row.status == "parked"
     assert "resume" in row.reason
 
@@ -140,14 +140,14 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     verbatim saved task under the same run id (releasing its own locks first,
     so the fresh start can take them)."""
     from agent6.app import resume as resume_mod
-    from agent6.app.manifest import write_run_manifest
+    from agent6.app.manifest import write_session_manifest
 
     state = resolved_state_dir(repo)
-    layout = RunLayout(state_dir=state, run_id="run-PARKED2")
+    layout = SessionLayout(state_dir=state, session_id="run-PARKED2")
     layout.ensure()
-    write_run_manifest(
+    write_session_manifest(
         layout,
-        run_id="run-PARKED2",
+        session_id="run-PARKED2",
         user_task="do the saved thing",
         base_sha="",
         base_branch="main",
@@ -160,19 +160,19 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
 
     def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
         called["task"] = task
-        called["run_id"] = kw.get("run_id")
+        called["session_id"] = kw.get("session_id")
         called["mode"] = kw.get("mode")
         return 0
 
     monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
     rc = resume_mod.resume_task(None, "run-PARKED2", frontend=MagicMock(), force=False)
     assert rc == 0
-    assert called == {"task": "do the saved thing", "run_id": "run-PARKED2", "mode": "run"}
+    assert called == {"task": "do the saved thing", "session_id": "run-PARKED2", "mode": "run"}
     # The delegation released the run-dir lock before handing off, so a real
     # run_task can re-acquire it: prove the lock is free.
-    from agent6.runs.lock import acquire_single_writer
+    from agent6.sessions.lock import acquire_single_writer
 
-    fd = acquire_single_writer(layout.run_dir)
+    fd = acquire_single_writer(layout.session_dir)
     assert fd is not None
     release_single_writer(fd)
 
@@ -185,13 +185,13 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     from agent6.app import resume as resume_mod
 
     state = resolved_state_dir(repo)
-    layout = RunLayout(state_dir=state, run_id="run-B")
+    layout = SessionLayout(state_dir=state, session_id="run-B")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": "run-B",
+                "session_id": "run-B",
                 "mode": "run",
                 "base_sha": "",
                 "base_branch": "main",
@@ -229,10 +229,10 @@ def test_web_new_work_preflight_refuses_while_checkout_busy(
     state = resolved_state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
-        run_id, err = actions.spawn_new_work(repo, "run", "another task")
+        session_id, err = actions.spawn_new_work(repo, "run", "another task")
     finally:
         release_single_writer(holder_fd)
-    assert run_id is None
+    assert session_id is None
     assert "run-LIVE" in err and "checkout" in err
     assert spawned == []
 
@@ -254,7 +254,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
             _load_cfg(),
             "add a retry to the fetch helper",
             frontend=MagicMock(),
-            run_id="run-PARKED",
+            session_id="run-PARKED",
             mode="run",
         )
     finally:
@@ -283,13 +283,13 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
             _load_cfg(),
             "do the thing",
             frontend=MagicMock(),
-            run_id="run-PROF",
+            session_id="run-PROF",
             mode="run",
         )
     finally:
         release_single_writer(holder_fd)
     assert rc == 2
-    m = read_manifest(RunLayout(state_dir=state, run_id="run-PROF").run_dir)
+    m = read_manifest(SessionLayout(state_dir=state, session_id="run-PROF").session_dir)
     assert m.workflow.preset == _load_cfg().preset  # the CONFIG preset ("")
     # The exact call resume makes with it must not blow up on a sandbox word.
     load_effective(repo, None, preset=m.workflow.preset)
@@ -302,14 +302,14 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     wiped by run_task's own stale-state clear, so the follow-up must ride the
     delegation (initial_steer) instead of dying on the floor."""
     from agent6.app import resume as resume_mod
-    from agent6.app.manifest import write_run_manifest
+    from agent6.app.manifest import write_session_manifest
 
     state = resolved_state_dir(repo)
-    layout = RunLayout(state_dir=state, run_id="run-PSTEER")
+    layout = SessionLayout(state_dir=state, session_id="run-PSTEER")
     layout.ensure()
-    write_run_manifest(
+    write_session_manifest(
         layout,
-        run_id="run-PSTEER",
+        session_id="run-PSTEER",
         user_task="do the saved thing",
         base_sha="",
         base_branch="main",
@@ -337,7 +337,7 @@ def test_run_task_seeds_initial_steer_after_its_stale_state_clear(repo: Path) ->
     so the loop's first boundary poll finds it (a pre-seeded file would be
     wiped by that same clear)."""
     from agent6.app.run import run_task
-    from agent6.runs.ipc import read_steer_answer, steer_request_pending
+    from agent6.sessions.ipc import read_steer_answer, steer_request_pending
 
     state = resolved_state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
@@ -346,13 +346,13 @@ def test_run_task_seeds_initial_steer_after_its_stale_state_clear(repo: Path) ->
             _load_cfg(),
             "do the thing",
             frontend=MagicMock(),
-            run_id="run-STEERSEED",
+            session_id="run-STEERSEED",
             mode="run",
             initial_steer="focus on tests",
         )
     finally:
         release_single_writer(holder_fd)
     assert rc == 2  # parked (checkout busy) -- but the steer already landed
-    d = RunLayout(state_dir=state, run_id="run-STEERSEED").run_dir
+    d = SessionLayout(state_dir=state, session_id="run-STEERSEED").session_dir
     assert steer_request_pending(d)
     assert read_steer_answer(d) == "focus on tests"

@@ -77,7 +77,7 @@ def test_dashboard_menu_items_all_resolve(tmp_path: Path) -> None:
     run = tmp_path / "run"
     run.mkdir()
     (run / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "x"}) + "\n",
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "x"}) + "\n",
         encoding="utf-8",
     )
 

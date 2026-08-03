@@ -23,13 +23,13 @@ def _render(events: list[dict[str, object]]) -> str:
 def test_reasoning_tool_call_and_result_all_render() -> None:
     out = _render(
         [
-            {"type": "run.start", "user_task": "fix the failing test"},
+            {"type": "session.start", "user_task": "fix the failing test"},
             {"type": "role.call", "role": "worker"},
             {"type": "role.thinking_delta", "role": "worker", "text": "let me read the file"},
             {"type": "role.result", "role": "worker"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ]
     )
     assert "fix the failing test" in out
@@ -80,7 +80,7 @@ def test_steer_request_closes_open_dim_block() -> None:
     view = ConsoleView(buf, color=True)
     view.feed({"type": "role.thinking_delta", "text": "pondering the fix"})
     assert not buf.getvalue().endswith("\033[0m\n")  # block still open
-    view.feed({"type": "run.steer_requested", "source": "sigint"})
+    view.feed({"type": "session.steer_requested", "source": "sigint"})
     assert buf.getvalue().endswith("\033[0m\n")  # closed + reset before the message prints
 
 

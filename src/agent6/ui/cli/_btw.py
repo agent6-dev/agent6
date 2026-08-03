@@ -66,7 +66,7 @@ def make_btw_runner(
     that is the whole point of asking beside it rather than steering it.
     """
 
-    def run_btw(question: str, _run_dir: Path) -> str:
+    def run_btw(question: str, _session_dir: Path) -> str:
         session, err = start_btw(
             question, parent_id, cwd=Path.cwd(), launch=launch, list_asks=list_asks
         )

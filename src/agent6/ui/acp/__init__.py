@@ -4,7 +4,7 @@
 
 A FOURTH front-end beside `ui/cli`, `ui/tui` and `ui/web`, over the same two
 seams they use -- the viewmodel fold for everything it reports, and
-`RunFrontend` + `FrontendCapabilities` for everything it is asked to do. ACP's
+`SessionFrontend` + `FrontendCapabilities` for everything it is asked to do. ACP's
 `initialize` IS a capability exchange, so it maps onto the second rather than
 needing plumbing of its own.
 

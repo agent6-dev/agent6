@@ -10,15 +10,15 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
-from agent6.runs.layout import session_layout
-from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
+from agent6.sessions.layout import session_layout
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 
 
 def _session(state: Path, bucket: str, sid: str, mode: str) -> Path:
     d = state / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "mode": mode, "run_id": sid}), encoding="utf-8"
+        json.dumps({"version": 3, "mode": mode, "session_id": sid}), encoding="utf-8"
     )
     return d
 
@@ -31,13 +31,13 @@ def test_an_ask_id_resolves_to_its_own_bucket(tmp_path: Path) -> None:
     run = session_layout(tmp_path, "brave-elk-BBBBBB")
     assert ask is not None and ask.subdir == "asks"
     assert run is not None and run.subdir == "runs"
-    assert ask.run_dir.is_dir()
+    assert ask.session_dir.is_dir()
 
 
 def test_a_unique_prefix_resolves_across_buckets(tmp_path: Path) -> None:
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
     found = session_layout(tmp_path, "quiet-fox")
-    assert found is not None and found.run_id == "quiet-fox-AAAAAA"
+    assert found is not None and found.session_id == "quiet-fox-AAAAAA"
 
 
 def test_an_ambiguous_prefix_resolves_to_nothing_rather_than_guessing(tmp_path: Path) -> None:
@@ -77,7 +77,7 @@ def test_a_resumed_ask_is_still_clamped() -> None:
 
 
 def test_an_ask_records_a_mode_that_survives_a_round_trip(tmp_path: Path) -> None:
-    m = RunManifest(mode="ask", run_id="x")
+    m = SessionManifest(mode="ask", session_id="x")
     assert m.session_mode() == "ask"
 
 
@@ -98,7 +98,7 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
         encoding="utf-8",
     )
     (ask / "logs.jsonl").write_text(
-        json.dumps({"type": "run.end", "reason": "answered", "iterations": 1}) + "\n",
+        json.dumps({"type": "session.end", "reason": "answered", "iterations": 1}) + "\n",
         encoding="utf-8",
     )
     task, err = _compose_task("do it", Config(), skills=(), seed_from="quiet-fox-AAAAAA")

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 runs diff/commits/merge/prune/compare` commands (the run-branch
+"""`agent6 sessions diff/commits/merge/prune/compare` commands (the run-branch
 lifecycle)."""
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
-from agent6.runs.id import RunIdError, resolve_run_id
-from agent6.runs.ipc import request_stop, worker_is_alive
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
+from agent6.sessions.id import SessionIdError, resolve_session_id
+from agent6.sessions.ipc import request_stop, worker_is_alive
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -49,11 +49,11 @@ from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank,
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     died_without_end,
-    is_run_husk,
+    is_session_husk,
     is_winner,
-    newest_run_dir,
-    run_is_live,
-    summarize_run_dir,
+    newest_session_dir,
+    session_is_live,
+    summarize_session_dir,
     task_snippet,
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
@@ -96,12 +96,14 @@ def _cmd_list() -> int:
     for sub in ("runs", "asks"):
         d = _state_dir(cwd) / sub
         if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
+            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     if not dirs:
-        print('no runs yet. Start one with `agent6 run "<task>"`.')
+        print('no sessions yet. Start one with `agent6 run "<task>"`.')
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
-    summaries = sorted((summarize_run_dir(d) for d in dirs), key=lambda s: s.mtime, reverse=True)
+    summaries = sorted(
+        (summarize_session_dir(d) for d in dirs), key=lambda s: s.mtime, reverse=True
+    )
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for s in summaries:
@@ -116,20 +118,22 @@ def _cmd_list() -> int:
         )
         # A winner lane gets a ★ suffix on its id (folded into the width math, so
         # the columns stay aligned); a non-disruptive marker the hub/home mirror.
-        run_id = f"{s.run_id} {WINNER_GLYPH}" if s.run_id in winners else s.run_id
-        rows.append((when, styled, plain, s.mode, cost, run_id, task_snippet(s.task, max_chars=60)))
+        session_id = f"{s.session_id} {WINNER_GLYPH}" if s.session_id in winners else s.session_id
+        rows.append(
+            (when, styled, plain, s.mode, cost, session_id, task_snippet(s.task, max_chars=60))
+        )
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))
     print(
         f"{'updated':<11}  {'status':<{status_w}}  {'mode':<4}  {'cost':<8}  {'id':<{id_w}}  task"
     )
-    for when, styled, plain, mode, cost, run_id, task in rows:
+    for when, styled, plain, mode, cost, session_id, task in rows:
         pad = " " * (status_w - len(plain))
-        print(f"{when:<11}  {styled}{pad}  {mode:<4}  {cost:<8}  {run_id:<{id_w}}  {task}")
+        print(f"{when:<11}  {styled}{pad}  {mode:<4}  {cost:<8}  {session_id:<{id_w}}  {task}")
     return 0
 
 
-def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
+def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     """Print the git diff a run produced (manifest.base_sha -> branch HEAD).
 
     Resolves the run id (or unique prefix; empty string means most-recent),
@@ -144,9 +148,9 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     patch) and disable the per-file textconv driver the ``-c`` flags do not reach.
     """
     cwd = Path.cwd()
-    res = _resolve_run_manifest(
+    res = _resolve_session_manifest(
         cwd,
-        run_id,
+        session_id,
         recent_note="diffing most recent run",
         missing_hint=" (predates manifest support, or was killed before setup)",
     )
@@ -238,13 +242,13 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     )
 
 
-def _resolve_run_manifest(
+def _resolve_session_manifest(
     cwd: Path,
-    run_id: str,
+    session_id: str,
     *,
     recent_note: str = "using most recent run",
     missing_hint: str = "",
-) -> tuple[RunLayout, RunManifest] | int:
+) -> tuple[SessionLayout, SessionManifest] | int:
     """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
     code on error. Shared by `runs diff`/`merge`/`commits`; the two note strings vary
     per caller."""
@@ -252,9 +256,9 @@ def _resolve_run_manifest(
     if not runs_dir.is_dir():
         print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
         return 2
-    target_id = run_id
+    target_id = session_id
     if not target_id:
-        latest = newest_run_dir([runs_dir])
+        latest = newest_session_dir([runs_dir])
         if latest is None:
             print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
             return 2
@@ -262,23 +266,23 @@ def _resolve_run_manifest(
         print(f"[agent6] {recent_note}: {target_id}", file=sys.stderr)
     else:
         try:
-            target_id = resolve_run_id(runs_dir, target_id)
-        except RunIdError as exc:
+            target_id = resolve_session_id(runs_dir, target_id)
+        except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target_id)
+    layout = SessionLayout(state_dir=_state_dir(cwd), session_id=target_id)
     if not layout.manifest_path.is_file():
         print(f"ERROR: run {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
         return 2
     try:
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
     except ManifestError as exc:
         print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
         return 2
     return layout, manifest
 
 
-def _cmd_stop(*, run_id: str) -> int:
+def _cmd_stop(*, session_id: str) -> int:
     """Ask a running detached run to stop cleanly after its current step.
 
     Drops the same 'stop after this step' marker the TUI/web Stop button uses:
@@ -287,28 +291,28 @@ def _cmd_stop(*, run_id: str) -> int:
     with a note."""
     cwd = Path.cwd()
     try:
-        layout = resolve_or_newest_layout(cwd, run_id)
-    except RunIdError as exc:
+        layout = resolve_or_newest_layout(cwd, session_id)
+    except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        print("ERROR: no runs to stop.", file=sys.stderr)
+        print("ERROR: no sessions to stop.", file=sys.stderr)
         return 2
-    run_dir = layout.run_dir
-    rid = run_dir.name
-    if not run_is_live(run_dir):
+    session_dir = layout.session_dir
+    rid = session_dir.name
+    if not session_is_live(session_dir):
         # The liveness owner, not the pid: a finished run's worker.pid lingers
         # through teardown, and "it ends after the current step" would promise
         # a stop the exited loop will never read.
         print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
         return 0
-    request_stop(run_dir)
+    request_stop(session_dir)
     print(f"[agent6] requested stop for {rid}; it ends after the current step.")
     print(f"  resume with:  agent6 resume {rid}")
     return 0
 
 
-def _pruned_branch_note(cwd: Path, manifest: RunManifest, run_branch: str) -> str | None:
+def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
     """A friendly message when a run's branch no longer exists (it was pruned),
     or None if the branch is still present. Uses the manifest's recorded merge so
     diff/commits say where the work went instead of leaking a raw git fatal."""
@@ -324,10 +328,10 @@ def _pruned_branch_note(cwd: Path, manifest: RunManifest, run_branch: str) -> st
     return f"[agent6] run branch {run_branch} no longer exists (deleted, and no merge recorded)."
 
 
-def _cmd_commits(*, run_id: str) -> int:
+def _cmd_commits(*, session_id: str) -> int:
     """List the per-step commits on a run's branch (manifest.base_sha -> run branch)."""
     cwd = Path.cwd()
-    res = _resolve_run_manifest(cwd, run_id)
+    res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
     _layout, manifest = res
@@ -358,8 +362,8 @@ class _MergePlan:
     """A validated, mutation-ready merge: everything `_cmd_merge` needs after every
     guard has passed. `_plan_merge` builds it without touching the repo."""
 
-    layout: RunLayout
-    manifest: RunManifest
+    layout: SessionLayout
+    manifest: SessionManifest
     run_branch: str
     target: str
     base_sha: str
@@ -370,11 +374,11 @@ class _MergePlan:
 
 
 def _plan_merge(  # noqa: PLR0911
-    cwd: Path, run_id: str, into: str | None, strategy: str | None
+    cwd: Path, session_id: str, into: str | None, strategy: str | None
 ) -> _MergePlan | int:
     """Resolve and validate everything a merge needs, or return an exit code. Pure:
     every guard fails before `_cmd_merge` mutates the repo."""
-    res = _resolve_run_manifest(cwd, run_id)
+    res = _resolve_session_manifest(cwd, session_id)
     if isinstance(res, int):
         return res
     layout, manifest = res
@@ -382,16 +386,16 @@ def _plan_merge(  # noqa: PLR0911
     # clean for the whole duration of every provider call, so every guard below
     # passes mid-run -- and execute_merge would then switch the checkout to the
     # base branch under the worker, whose next auto-commit lands mid-run WIP
-    # directly on it. The gate is the raw pid, NOT run_is_live: this is a
-    # checkout mutex, and after run.end the worker's finalizer may still be
+    # directly on it. The gate is the raw pid, NOT session_is_live: this is a
+    # checkout mutex, and after session.end the worker's finalizer may still be
     # switching branches. The run's own end-of-run finalize_auto_merge is
     # unaffected (it calls execute_merge directly, not this planner).
-    if worker_is_alive(layout.run_dir):
+    if worker_is_alive(layout.session_dir):
         print(
-            f"REFUSING: run {run_id!r} is still live; merging now would switch the"
+            f"REFUSING: run {session_id!r} is still live; merging now would switch the"
             " shared checkout out from under the worker and its next auto-commit"
             " would land on the base branch. Stop it first:\n"
-            f"    agent6 runs stop {run_id}",
+            f"    agent6 sessions stop {session_id}",
             file=sys.stderr,
         )
         return 2
@@ -458,13 +462,15 @@ def _plan_merge(  # noqa: PLR0911
     )
 
 
-def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: str | None) -> int:
+def _cmd_merge(
+    *, session_id: str, strategy: str | None, into: str | None, message: str | None
+) -> int:
     """Merge a run's branch into a target (default: the branch the run was cut
     from), with the chosen strategy (default: git.merge_strategy). Refuses a dirty
     worktree, leaves a clean tree on failure, restores your original checkout, and
     records the merge in the manifest."""
     cwd = Path.cwd()
-    plan = _plan_merge(cwd, run_id, into, strategy)
+    plan = _plan_merge(cwd, session_id, into, strategy)
     if isinstance(plan, int):
         return plan
     if plan.base_sha and not list_run_commits(cwd, plan.base_sha, plan.run_branch):
@@ -504,7 +510,7 @@ def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: 
 
 
 def _manifest_merged_into(state_dir: Path, branch: str) -> str:
-    """The base branch the run owning *branch* (agent6/<run_id>) was merged into, or
+    """The base branch the run owning *branch* (agent6/<session_id>) was merged into, or
     "" if there is no (readable) manifest or it was never recorded as merged.
 
     Frozen semantics: `runs prune --delete-squashed` force-deletes a branch ONLY
@@ -513,9 +519,11 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     force-deleted (fail-safe). The model's leniency preserves that: the legacy flat
     merged_into/merged_sha keys fold into `merged`, and any parse failure raises
     ManifestError -> ""."""
-    run_id = branch.removeprefix("agent6/")
+    session_id = branch.removeprefix("agent6/")
     try:
-        manifest = read_manifest(RunLayout(state_dir=state_dir, run_id=run_id).run_dir)
+        manifest = read_manifest(
+            SessionLayout(state_dir=state_dir, session_id=session_id).session_dir
+        )
     except ManifestError:
         return ""
     return manifest.merged.into if (manifest.merged and manifest.merged.sha) else ""
@@ -524,9 +532,11 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
 def _merged_tip(state_dir: Path, branch: str) -> str:
     """The run-branch tip recorded when the merge happened, or "" when none was
     recorded (a pre-``tip`` manifest, or no readable manifest)."""
-    run_id = branch.removeprefix("agent6/")
+    session_id = branch.removeprefix("agent6/")
     try:
-        manifest = read_manifest(RunLayout(state_dir=state_dir, run_id=run_id).run_dir)
+        manifest = read_manifest(
+            SessionLayout(state_dir=state_dir, session_id=session_id).session_dir
+        )
     except ManifestError:
         return ""
     return manifest.merged.tip if manifest.merged else ""
@@ -654,10 +664,10 @@ def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:
 
 
 def _screen_candidates(
-    cwd: Path, resolved: list[tuple[RunLayout, RunManifest]]
+    cwd: Path, resolved: list[tuple[SessionLayout, SessionManifest]]
 ) -> tuple[list[CandidateBrief], list[str]]:
     """Briefs for the comparable runs, plus printed notes naming each excluded
-    one. A run without a run.end -- died, or simply not there YET -- has no
+    one. A run without a session.end -- died, or simply not there YET -- has no
     verdict to compare and a truncated (lowest) spend, so ranking floated it to
     first place and offered a merge (for a live run, of a branch still moving).
     The fan-out excludes such lanes; say which run was dropped rather than
@@ -665,23 +675,23 @@ def _screen_candidates(
     candidates: list[CandidateBrief] = []
     notes: list[str] = []
     for layout, manifest in resolved:
-        summary = summarize_run_dir(layout.run_dir)
+        summary = summarize_session_dir(layout.session_dir)
         if summary.status in LIVE_STATUS_WORDS:
             notes.append(
-                f"note: {layout.run_id} is still {summary.status};"
+                f"note: {layout.session_id} is still {summary.status};"
                 " excluded (stop it or let it finish first)"
             )
             continue
         if died_without_end(summary.status):
             notes.append(
-                f"note: {layout.run_id} never finished ({summary.status});"
+                f"note: {layout.session_id} never finished ({summary.status});"
                 " excluded from the ranking"
             )
             continue
         candidates.append(
             CandidateBrief(
-                run_id=layout.run_id,
-                task=manifest_task(layout.run_dir, fallback=layout.run_id),
+                session_id=layout.session_id,
+                task=manifest_task(layout.session_dir, fallback=layout.session_id),
                 diff=_candidate_diff(cwd, manifest.base_sha, manifest.run_branch or ""),
                 verify_ok=verify_ok(summary.status),
                 cost_usd=summary.cost_usd,
@@ -690,31 +700,31 @@ def _screen_candidates(
     return candidates, notes
 
 
-def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
+def _cmd_compare(*, session_ids: tuple[str, ...]) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
     model when configured, else the mechanical verify+cost ranking) -- for
     runs picked by hand, not necessarily from the same fan-out or even the
     same task (each candidate's own manifest `user_task` is its task).
     Read-only: no merges, no writes."""
-    if len(run_ids) < 2:
+    if len(session_ids) < 2:
         print(
-            f"ERROR: runs compare needs at least 2 run ids (got {len(run_ids)}).",
+            f"ERROR: runs compare needs at least 2 run ids (got {len(session_ids)}).",
             file=sys.stderr,
         )
         return 2
     cwd = Path.cwd()
-    resolved: list[tuple[RunLayout, RunManifest]] = []
+    resolved: list[tuple[SessionLayout, SessionManifest]] = []
     seen: set[str] = set()
-    for query in run_ids:
-        res = _resolve_run_manifest(cwd, query)
+    for query in session_ids:
+        res = _resolve_session_manifest(cwd, query)
         if isinstance(res, int):
             return res
         layout, manifest = res
-        if layout.run_id in seen:
-            print(f"ERROR: run {layout.run_id!r} was given more than once.", file=sys.stderr)
+        if layout.session_id in seen:
+            print(f"ERROR: run {layout.session_id!r} was given more than once.", file=sys.stderr)
             return 2
-        seen.add(layout.run_id)
+        seen.add(layout.session_id)
         resolved.append((layout, manifest))
     eff = load_config_or_exit(cwd, None)
     if isinstance(eff, int):
@@ -745,7 +755,7 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     if outcome.ranking and len(groups) == 1 and None not in groups:
         stamped = next(
             (
-                layout.run_id
+                layout.session_id
                 for layout, manifest in resolved
                 if manifest.compare is not None and manifest.compare.winner
             ),
@@ -765,16 +775,16 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     return 0
 
 
-def _cmd_runs_dir() -> int:
+def _cmd_sessions_dir() -> int:
     """Print the per-repo state dir: where this repo's run history lives.
 
-    One bare line so it composes (`ls "$(agent6 runs dir)"`, or delete a bucket
+    One bare line so it composes (`ls "$(agent6 sessions dir)"`, or delete a bucket
     outright). The buckets under it are runs/, asks/, and machine-drafts/."""
     print(_state_dir(Path.cwd()))
     return 0
 
 
-def _cmd_runs_rm(*, run_id: str, asks: bool) -> int:
+def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir.
 
     Only history: the run's branch and its commits are git's, and are left
@@ -783,7 +793,7 @@ def _cmd_runs_rm(*, run_id: str, asks: bool) -> int:
     elsewhere are untouched."""
     cwd = Path.cwd()
     if asks:
-        if run_id:
+        if session_id:
             print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
             return 2
         bucket = _state_dir(cwd) / "asks"
@@ -792,20 +802,20 @@ def _cmd_runs_rm(*, run_id: str, asks: bool) -> int:
         print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
         return 0
     try:
-        layout = resolve_or_newest_layout(cwd, run_id)
-    except RunIdError as exc:
+        layout = resolve_or_newest_layout(cwd, session_id)
+    except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        print("ERROR: no runs to remove.", file=sys.stderr)
+        print("ERROR: no sessions to remove.", file=sys.stderr)
         return 2
-    if run_is_live(layout.run_dir):
+    if session_is_live(layout.session_dir):
         print(
-            f"REFUSING: {layout.run_id} is still live; stop it first"
-            f" (agent6 runs stop {layout.run_id}).",
+            f"REFUSING: {layout.session_id} is still live; stop it first"
+            f" (agent6 sessions stop {layout.session_id}).",
             file=sys.stderr,
         )
         return 2
-    shutil.rmtree(layout.run_dir, ignore_errors=True)
-    print(f"removed {layout.run_id}")
+    shutil.rmtree(layout.session_dir, ignore_errors=True)
+    print(f"removed {layout.session_id}")
     return 0

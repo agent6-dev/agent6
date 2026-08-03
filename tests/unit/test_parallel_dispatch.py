@@ -24,8 +24,8 @@ from agent6.workflows.subrun import LaneResult, LaneSpec, SubrunError
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> LaneResult:
-    spec = LaneSpec(lane=1, run_id="lane-1", workdir=Path("/nowhere"), model=None)
-    return LaneResult(spec=spec, run_dir=Path("/nowhere"), branch=branch, ok=ok, error=error)
+    spec = LaneSpec(lane=1, session_id="lane-1", workdir=Path("/nowhere"), model=None)
+    return LaneResult(spec=spec, session_dir=Path("/nowhere"), branch=branch, ok=ok, error=error)
 
 
 def test_segment_lanes_expands_counts_and_models() -> None:
@@ -65,8 +65,10 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (j.status, j.sha) == ("joined", "a" * 40)
 
 
-def _join(status: Any, run_id: str = "lane-1", sha: str = "") -> LaneJoin:
-    return LaneJoin(run_id, f"agent6/{run_id}", status, sha, "boom" if status == "failed" else "")
+def _join(status: Any, session_id: str = "lane-1", sha: str = "") -> LaneJoin:
+    return LaneJoin(
+        session_id, f"agent6/{session_id}", status, sha, "boom" if status == "failed" else ""
+    )
 
 
 def test_segment_stamp_reduces_lanes() -> None:

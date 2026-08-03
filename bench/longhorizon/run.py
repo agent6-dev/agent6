@@ -224,17 +224,17 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def _find_logs(state_home: Path, run_id: str) -> Path | None:
-    exact = list(state_home.glob(f"agent6/*/runs/{run_id}/logs.jsonl"))
+def _find_logs(state_home: Path, session_id: str) -> Path | None:
+    exact = list(state_home.glob(f"agent6/*/runs/{session_id}/logs.jsonl"))
     if exact:
         return exact[0]
     for cand in state_home.glob("agent6/*/runs/*/logs.jsonl"):
-        if run_id in cand.parent.name:
+        if session_id in cand.parent.name:
             return cand
     return None
 
 
-def _extract_metrics(state_home: Path, run_id: str, traps: tuple[str, ...]) -> dict[str, Any]:
+def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) -> dict[str, Any]:
     """Pull one leg's metrics from its run's logs.jsonl under the state home."""
     m: dict[str, Any] = {
         "run_found": False,
@@ -277,7 +277,7 @@ def _extract_metrics(state_home: Path, run_id: str, traps: tuple[str, ...]) -> d
         "memory_finish_nudges": 0,
         "trap_edits": 0,
     }
-    logs = _find_logs(state_home, run_id)
+    logs = _find_logs(state_home, session_id)
     if logs is None:
         return m
     m["run_found"] = True
@@ -293,7 +293,7 @@ def _extract_metrics(state_home: Path, run_id: str, traps: tuple[str, ...]) -> d
             last_budget = e
         elif t == "graph.update":
             last_graph = e
-        elif t == "run.end":
+        elif t == "session.end":
             m["end_reason"] = e.get("reason")
             m["iterations"] = e.get("iterations")
             m["all_passed"] = e.get("all_passed")
@@ -452,7 +452,7 @@ def one_sequence(
 
         state_home = workdir / f".state-leg{i}" if cond.fresh_state_per_leg else shared_state
         state_home.mkdir(parents=True, exist_ok=True)
-        run_id = f"{seq}-L{i}"
+        session_id = f"{seq}-L{i}"
 
         env = dict(os.environ)
         env["XDG_STATE_HOME"] = str(state_home)
@@ -476,8 +476,8 @@ def one_sequence(
             leg.prompt,
             "--config",
             str(cfg),
-            "--run-id",
-            run_id,
+            "--session-id",
+            session_id,
             *budget_flags,
         ]
         t0 = time.time()
@@ -502,7 +502,7 @@ def one_sequence(
         wall = round(time.time() - t0, 1)
 
         grade = _grade(task, workdir, leg.name)
-        metrics = _extract_metrics(state_home, run_id, spec.trap_patterns)
+        metrics = _extract_metrics(state_home, session_id, spec.trap_patterns)
         records.append(
             {
                 "label": label,
@@ -514,7 +514,7 @@ def one_sequence(
                 "provider": provider,
                 "condition": condition,
                 "rep": rep,
-                "run_id": run_id,
+                "session_id": session_id,
                 "score": grade.get("score", 0.0),
                 "cases_passed": grade.get("cases_passed"),
                 "cases_total": grade.get("cases_total"),

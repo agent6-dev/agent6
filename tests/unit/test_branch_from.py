@@ -12,7 +12,7 @@ import pytest
 
 from agent6.app.preflight import resolve_base_branch
 from agent6.config import Config
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._preflight import choose_branch_start_point
 
 
@@ -20,11 +20,11 @@ def _cfg(branch_from: str) -> Config:
     return Config.model_validate({"git": {"branch_from": branch_from}})
 
 
-def _manifest(state_dir: Path, run_id: str, base_branch: str) -> None:
-    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+def _manifest(state_dir: Path, session_id: str, base_branch: str) -> None:
+    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
-        json.dumps({"version": 2, "run_id": run_id, "base_branch": base_branch}) + "\n",
+        json.dumps({"version": 2, "session_id": session_id, "base_branch": base_branch}) + "\n",
         encoding="utf-8",
     )
 

@@ -120,13 +120,13 @@ def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
 
 
 @contextlib.contextmanager
-def tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
+def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
     """Run the dashboard TUI as a co-process that owns the terminal.
 
     While it is up, this process's own console chatter is redirected to
-    `<run_dir>/tui_console.log` so it doesn't fight the TUI for the terminal;
+    `<session_dir>/tui_console.log` so it doesn't fight the TUI for the terminal;
     progress still flows through `logs.jsonl`, which the TUI tails, and approvals
-    go through the file bridge. The TUI quits itself on the `run.end` event; we
+    go through the file bridge. The TUI quits itself on the `session.end` event; we
     reap it on the way out (terminating if it lingers). A spawn failure degrades
     gracefully to a normal (TUI-less) run rather than aborting."""
     if not enabled:
@@ -134,20 +134,20 @@ def tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
         return
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "agent6.ui.tui", "--watch", str(run_dir), "--exit-on-end"]
+            [sys.executable, "-m", "agent6.ui.tui", "--watch", str(session_dir), "--exit-on-end"]
         )
     except OSError as exc:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
     orig_out, orig_err = sys.stdout, sys.stderr
-    log_fh = (run_dir / "tui_console.log").open("w", encoding="utf-8")
+    log_fh = (session_dir / "tui_console.log").open("w", encoding="utf-8")
     sys.stdout = log_fh
     sys.stderr = log_fh
     try:
         yield
     finally:
-        # The TUI closes itself on the run.end event. If the run ended without
+        # The TUI closes itself on the session.end event. If the run ended without
         # one (a crash), nudge it with SIGINT first -- textual restores the
         # terminal cleanly -- and only hard-terminate as a last resort. Keep our
         # own output redirected until it's gone so nothing scribbles its screen.

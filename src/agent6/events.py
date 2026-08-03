@@ -51,7 +51,7 @@ class EventSink:
     """Append structured JSON events to a JSONL file. Thread-safe.
 
     Uses a *reentrant* lock so emitting from a SIGINT handler (the Ctrl-C steer
-    path emits ``run.steer_requested``) cannot deadlock against the main thread
+    path emits ``session.steer_requested``) cannot deadlock against the main thread
     being mid-``emit``, the handler runs in the same thread and re-acquires.
     """
 

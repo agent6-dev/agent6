@@ -61,7 +61,7 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "run.start", "user_task": "polish the TUI", "mode": "run"},
+                {"type": "session.start", "user_task": "polish the TUI", "mode": "run"},
                 {
                     "type": "graph.update",
                     "cursor": "t1",
@@ -132,10 +132,10 @@ def test_pause_menu_prefixes_and_word_rule(
 
     from agent6.ui.cli._steer_menu import pause_menu
 
-    # A run mid-pause always has run.start on disk (the menu is Ctrl-C on a
+    # A run mid-pause always has session.start on disk (the menu is Ctrl-C on a
     # live attach); a fresh log mtime reads "running".
     (tmp_path / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "t", "mode": "run"}) + "\n",
+        json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
     # /sta is uniquely /status; /st matches /status and /stop -> re-ask.
@@ -155,7 +155,7 @@ def test_pause_menu_prefixes_and_word_rule(
 def test_pause_menu_compact_requests_compaction(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.runs.ipc import read_compact_request
+    from agent6.sessions.ipc import read_compact_request
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -175,7 +175,7 @@ def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "t", "mode": "run"}) + "\n",
+        json.dumps({"type": "session.start", "user_task": "t", "mode": "run"}) + "\n",
         encoding="utf-8",
     )
     (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
@@ -198,7 +198,7 @@ def test_pause_menu_status_shows_ctx_and_profile(
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {"type": "session.start", "user_task": "polish", "mode": "run"},
                 {
                     "type": "role.call",
                     "role": "worker",
@@ -234,7 +234,7 @@ def test_pause_menu_status_shows_compaction_truth(
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {"type": "session.start", "user_task": "polish", "mode": "run"},
                 {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]},
                 {
                     "type": "loop.compact.gists",
@@ -343,7 +343,7 @@ def test_pause_menu_status_and_bare_pin_list_pins(
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {"type": "session.start", "user_task": "polish", "mode": "run"},
                 {"type": "loop.pin.added", "text": "never touch schema", "chars": 18, "count": 1},
                 {"type": "loop.pin.added", "text": "goal:\nship X", "chars": 12, "count": 2},
             )
@@ -368,7 +368,7 @@ def test_pause_menu_compact_accepts_focus(
 ) -> None:
     """`/compact <focus>` routes to the compact request with the focus text;
     an ambiguous prefix with args stays a verbatim steer."""
-    from agent6.runs.ipc import read_compact_request
+    from agent6.sessions.ipc import read_compact_request
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -394,7 +394,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     holding its worker lock and its egress broker."""
     import signal
 
-    from agent6.app.run import RunFacts
+    from agent6.app.run import SessionFacts
     from agent6.events import EventSink
     from agent6.ui.cli import _steer
 
@@ -402,7 +402,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     monkeypatch.setattr(_steer, "tty_message", printed.append)
     monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
-    facts = RunFacts(
+    facts = SessionFacts(
         spend_usd=1.42,
         spend_partial=False,
         model="claude-sonnet-4-6",

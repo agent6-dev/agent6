@@ -50,21 +50,21 @@ the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+
 
 `agent6 attach [<target>]` follows live: a run renders its conversation (the same view
 as `agent6 run`; `--raw` tails the plain event stream), a machine streams its state
-overview and reasoning; `--tui` opens the full-screen TUI instead. `agent6 runs <verb> [<run-id>]` inspects or merges a run. The id is a positional
+overview and reasoning; `--tui` opens the full-screen TUI instead. `agent6 sessions <verb> [<session-id>]` inspects or merges a run. The id is a positional
 argument everywhere (an exact id or an unambiguous prefix); omit it for the most recent run.
 
 ```sh
 agent6 attach              # follow the conversation live; --raw, --tui, or --json instead
-agent6 runs show          # status, iteration, elapsed, cost; --json for scripts
-agent6 runs diff          # the git diff the run produced
-agent6 runs commits       # the per-step commits on the run branch
-agent6 runs merge         # merge the run branch into your branch (squash/merge/ff)
-agent6 runs prune         # delete safely-merged agent6/* run branches; report the rest
-agent6 runs dir           # where this repo's run history lives (one line, scriptable)
-agent6 runs rm            # delete one run's history; --asks clears every saved ask
-agent6 runs compare <id> <id> ...  # advisory ranked comparison across >=2 runs
-agent6 runs transcript    # the full conversation, every tool call with its I/O
-agent6 runs graph         # the persisted task graph
+agent6 sessions show          # status, iteration, elapsed, cost; --json for scripts
+agent6 sessions diff          # the git diff the run produced
+agent6 sessions commits       # the per-step commits on the run branch
+agent6 sessions merge         # merge the run branch into your branch (squash/merge/ff)
+agent6 sessions prune         # delete safely-merged agent6/* run branches; report the rest
+agent6 sessions dir           # where this repo's run history lives (one line, scriptable)
+agent6 sessions rm            # delete one run's history; --asks clears every saved ask
+agent6 sessions compare <id> <id> ...  # advisory ranked comparison across >=2 runs
+agent6 sessions transcript    # the full conversation, every tool call with its I/O
+agent6 sessions graph         # the persisted task graph
 ```
 
 `agent6 history search <query>` greps across the transcripts of every run.
@@ -72,8 +72,8 @@ agent6 runs graph         # the persisted task graph
 ## When a run goes wrong
 
 ```sh
-agent6 resume <run-id>                 # continue from the last snapshot
-agent6 fork <run-id> --at-turn 7       # branch a new run from turn 7; --steer "try X" seeds the new direction
+agent6 resume <session-id>                 # continue from the last snapshot
+agent6 fork <session-id> --at-turn 7       # branch a new run from turn 7; --steer "try X" seeds the new direction
 ```
 
 State is snapshotted before each model call and checkpointed per turn. `fork` rolls a

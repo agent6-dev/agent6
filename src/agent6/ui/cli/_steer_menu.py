@@ -39,15 +39,15 @@ from agent6.config.layer import load_effective
 from agent6.directive import parse_btw
 from agent6.models.registry import context_window
 from agent6.paths import data_dir
-from agent6.runs.ipc import request_compact
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.ipc import request_compact
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.background import roster_from_dir
 from agent6.ui.cli._menu_input import menu_capable, menu_input
-from agent6.viewmodel import fold_run, status_for_run_dir, tail_events
+from agent6.viewmodel import fold_session, status_for_session_dir, tail_events
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
-from agent6.viewmodel.state import RunState, status_facts
+from agent6.viewmodel.state import SessionState, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -128,23 +128,23 @@ def _menu_read(prompt: str) -> str:
     return menu_input(prompt, MENU_COMMANDS, _HISTORY)
 
 
-def _fold(run_dir: Path) -> RunState:
-    return fold_run(tail_events(run_dir / LOGS_NAME, follow=False))
+def _fold(session_dir: Path) -> SessionState:
+    return fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
 
 
-def _read_preset(run_dir: Path) -> str:
+def _read_preset(session_dir: Path) -> str:
     """The effective preset the run started with (manifest.json), or ""."""
     try:
-        return read_manifest(run_dir).workflow.preset
+        return read_manifest(session_dir).workflow.preset
     except ManifestError:
         return ""
 
 
-def _print_status(run_dir: Path) -> None:
-    s = _fold(run_dir)
+def _print_status(session_dir: Path) -> None:
+    s = _fold(session_dir)
     # THE dir decision, not the fold alone: an attached run's worker can be
     # gone ("stale"), and the fold-only label called that "running".
-    label = status_label(*status_for_run_dir(run_dir, status_facts(s)))
+    label = status_label(*status_for_session_dir(session_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
@@ -159,16 +159,16 @@ def _print_status(run_dir: Path) -> None:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:
         ctx += f" · pins {len(s.pins)}"
-    preset = _read_preset(run_dir)
+    preset = _read_preset(session_dir)
     prof = f" · preset {preset}" if preset else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {s.user_task[:80]}")
 
 
-def _print_pins(run_dir: Path) -> None:
+def _print_pins(session_dir: Path) -> None:
     """Bare /pin: the recorded pins (fold truth). `/pin <text>` has a space, so
     the menu sends it verbatim as a steer and the loop's parser records it."""
-    s = _fold(run_dir)
+    s = _fold(session_dir)
     if not s.pins:
         print("[agent6] no pinned instructions; pin one with `/pin <text>`")
         return
@@ -177,8 +177,8 @@ def _print_pins(run_dir: Path) -> None:
         print(f"  {i}. {pin}")
 
 
-def _print_tasks(run_dir: Path) -> None:
-    s = _fold(run_dir)
+def _print_tasks(session_dir: Path) -> None:
+    s = _fold(session_dir)
     if not s.tasks:
         print("[agent6] (no tasks yet)")
         return
@@ -202,10 +202,10 @@ def _print_help(offered: dict[str, str]) -> None:
 BtwRunner = Callable[[str, Path], str]
 
 
-def _print_shells(run_dir: Path) -> None:
+def _print_shells(session_dir: Path) -> None:
     """The run's background commands. Read off disk, not from the dispatcher:
     the menu answers from the same place every other surface reads."""
-    lines = roster_from_dir(run_dir / "shells")
+    lines = roster_from_dir(session_dir / "shells")
     if not lines:
         print("[agent6] no background commands this run")
         return
@@ -213,42 +213,42 @@ def _print_shells(run_dir: Path) -> None:
         print(f"  {line}")
 
 
-def _start_btw(cmd: str, run_dir: Path, runner: BtwRunner | None) -> str:
+def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
     question = parse_btw(cmd)
     if not question:
         return "[agent6] ask something: `/btw <question>`"
     if runner is None:
         return "[agent6] /btw needs a live run with a terminal"
-    return runner(question, run_dir)
+    return runner(question, session_dir)
 
 
 # Commands that end the menu, mapped to the canonical steer action.
 _ACTIONS: dict[str, str] = {"/continue": "", "/stop": "abort", "/detach": "detach"}
 
 
-def _run_info_command(cmd: str, run_dir: Path, btw_runner: BtwRunner | None = None) -> None:
+def _run_info_command(cmd: str, session_dir: Path, btw_runner: BtwRunner | None = None) -> None:
     """Run a print-and-re-prompt command (everything not in ``_ACTIONS``)."""
     if cmd == "/help":
         _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw())
     elif cmd == "/status":
-        _print_status(run_dir)
+        _print_status(session_dir)
     elif cmd == "/tasks":
-        _print_tasks(run_dir)
+        _print_tasks(session_dir)
     elif cmd == "/pin":
-        _print_pins(run_dir)
+        _print_pins(session_dir)
     elif cmd == "/compact":
-        if request_compact(run_dir):
+        if request_compact(session_dir):
             print("[agent6] compaction requested; applies before the next model call")
         else:
             print("[agent6] could not write the compaction request; nothing was requested")
     elif cmd == "/shells":
-        _print_shells(run_dir)
+        _print_shells(session_dir)
     elif cmd.startswith("/btw"):
-        print(_start_btw(cmd, run_dir, btw_runner))
+        print(_start_btw(cmd, session_dir, btw_runner))
 
 
 def pause_menu(  # noqa: PLR0911, PLR0912
-    run_dir: Path,
+    session_dir: Path,
     *,
     input_fn: Callable[[str], str] | None = None,
     btw_runner: BtwRunner | None = None,
@@ -289,7 +289,7 @@ def pause_menu(  # noqa: PLR0911, PLR0912
             builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
             smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
             if builtin == ["/compact"] and not smatches:
-                if request_compact(run_dir, focus=args.strip()):
+                if request_compact(session_dir, focus=args.strip()):
                     print(
                         "[agent6] compaction requested (focus noted);"
                         " applies before the next model call"
@@ -300,7 +300,7 @@ def pause_menu(  # noqa: PLR0911, PLR0912
             if builtin == ["/btw"] and not smatches:
                 # A btw is a question asked BESIDE the run; letting it fall
                 # through would send it to the loop as steer text instead.
-                print(_start_btw(stripped, run_dir, btw_runner))
+                print(_start_btw(stripped, session_dir, btw_runner))
                 continue
             if len(smatches) == 1 and not builtin:
                 return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
@@ -323,4 +323,4 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         elif matches[0] in skills:
             return skill_steer_payload(matches[0][1:], skills[matches[0]][1], "")
         else:
-            _run_info_command(matches[0], run_dir, btw_runner)
+            _run_info_command(matches[0], session_dir, btw_runner)

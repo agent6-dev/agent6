@@ -1,4 +1,4 @@
-{"ts": "2026-06-23T11:49:44.513450+00:00", "type": "run.start", "user_task": "# Implement `html_to_text` (HTML → plain text with entities)\n\n`mylib/html_strip.py` contains a stub implementation of\n`html_to_text(s: str) -> str` that currently just does\n`re.sub(r'<[^>]+>', '', s)`", "mode": "run"}
+{"ts": "2026-06-23T11:49:44.513450+00:00", "type": "session.start", "user_task": "# Implement `html_to_text` (HTML → plain text with entities)\n\n`mylib/html_strip.py` contains a stub implementation of\n`html_to_text(s: str) -> str` that currently just does\n`re.sub(r'<[^>]+>', '', s)`", "mode": "run"}
 {"ts": "2026-06-23T11:49:45.367155+00:00", "type": "graph.update", "nodes": {"01KVT5187TQ6CYD25RK80WW97P": {"title": "# Implement `html_to_text` (HTML → plain text with entities)", "status": "pending", "parent_id": null, "children": []}}, "cursor": null}
 {"ts": "2026-06-23T11:49:45.426723+00:00", "type": "role.call", "role": "worker", "model": "deepseek/deepseek-v4-flash-20260423", "provider": "openrouter"}
 {"ts": "2026-06-23T11:50:03.285011+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 6020, "tokens_out": 135, "cache_read": 1024, "cache_creation": 0, "stop_reason": "tool_calls"}
@@ -486,4 +486,4 @@
 {"ts": "2026-06-23T12:27:50.840780+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "html_to_text implementation complete. Metric is at maximum possible value: 29/29 (all hidden test cases pass). No further optimization is possible — this is the ceiling of the scoring function."}}
 {"ts": "2026-06-23T12:27:50.842585+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
 {"ts": "2026-06-23T12:27:50.858962+00:00", "type": "graph.update", "nodes": {"01KVT5187TQ6CYD25RK80WW97P": {"title": "# Implement `html_to_text` (HTML → plain text with entities)", "status": "passed", "parent_id": null, "children": ["01KVT578N2JZR9TJATGA0YFVZ9"]}, "01KVT578N2JZR9TJATGA0YFVZ9": {"title": "Implement html_to_text using HTMLParser", "status": "passed", "parent_id": "01KVT5187TQ6CYD25RK80WW97P", "children": []}}, "cursor": null}
-{"ts": "2026-06-23T12:27:50.862916+00:00", "type": "run.end", "reason": "finish_run", "iterations": 60, "all_passed": true}
+{"ts": "2026-06-23T12:27:50.862916+00:00", "type": "session.end", "reason": "finish_run", "iterations": 60, "all_passed": true}

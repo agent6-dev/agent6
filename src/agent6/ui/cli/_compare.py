@@ -6,7 +6,7 @@ The rank/report core is headless in `app.compare`; this module supplies the two
 presentation pieces it cannot: the console `judging...` spinner shown while the
 judge call is in flight, and the reviewer-provider builder wired from the
 configured `reviewer` role. `rank` binds those into `app.compare.rank` so
-`runs compare` (`runs_cmds.py`) and the fan-out's auto-compare share one
+`runs compare` (`sessions_cmds.py`) and the fan-out's auto-compare share one
 implementation. `verify_ok` / `manifest_task` / `print_ranked_candidates` are
 re-exported from the core so existing call sites import them from here.
 """

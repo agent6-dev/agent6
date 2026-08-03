@@ -81,14 +81,14 @@ def test_approver_uses_tui_answer_when_live(
 def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A premature /api/run/<id>/approve (ids are predictable counters) pre-writes
+    # A premature /api/session/<id>/approve (ids are predictable counters) pre-writes
     # approvals/approval-1.answer before the run reaches its first approval. The
     # approver must clear that stale slot before emitting the prompt, so it is
     # not silently consumed as an auto-approval. Uses the REAL read_answer (short
     # timeout) so this exercises the actual file-bridge ordering.
     import functools
 
-    from agent6.runs.ipc import read_answer, write_answer
+    from agent6.sessions.ipc import read_answer, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -115,7 +115,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     import threading
     import time
 
-    from agent6.runs.ipc import read_answer, write_answer
+    from agent6.sessions.ipc import read_answer, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -163,7 +163,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
     import threading
     import time
 
-    from agent6.runs.ipc import register_frontend, write_answer
+    from agent6.sessions.ipc import register_frontend, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -295,7 +295,7 @@ def test_spawned_away_default_sets_wait_from_env(
     # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
     # terminal-less run WAITS for a viewer instead of fabricating empty answers.
     from agent6.app.run import apply_spawned_away_default
-    from agent6.runs.ipc import away_mode
+    from agent6.sessions.ipc import away_mode
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
     apply_spawned_away_default(tmp_path)
@@ -310,7 +310,7 @@ def test_spawned_away_default_approve_reuses_session_allow(
     the file's deny|wait vocabulary, so the reader fell into the wait branch and
     the spawn BLOCKED on every approval instead of approving."""
     from agent6.app.run import apply_spawned_away_default
-    from agent6.runs.ipc import away_mode, session_allow_set
+    from agent6.sessions.ipc import away_mode, session_allow_set
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
     apply_spawned_away_default(tmp_path)
@@ -321,7 +321,7 @@ def test_spawned_away_default_approve_reuses_session_allow(
 def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: Path) -> None:
     # away.mode's contract is deny|wait; anything else must fail loudly at the
     # writer, never land on disk for readers to misinterpret.
-    from agent6.runs.ipc import set_away_mode
+    from agent6.sessions.ipc import set_away_mode
 
     with pytest.raises(ValueError, match="deny"):
         set_away_mode(tmp_path, "approve")
@@ -333,7 +333,7 @@ def test_spawned_away_default_is_noop_without_env(
     # A pure headless run (no launcher, no env) is untouched, keeping its
     # non-hanging default so CI never blocks on an unanswerable question.
     from agent6.app.run import apply_spawned_away_default
-    from agent6.runs.ipc import away_mode
+    from agent6.sessions.ipc import away_mode
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     apply_spawned_away_default(tmp_path)
@@ -342,7 +342,7 @@ def test_spawned_away_default_is_noop_without_env(
 
 def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Detach chose "deny all": every run_command is denied without prompting.
-    from agent6.runs.ipc import set_away_mode
+    from agent6.sessions.ipc import set_away_mode
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -359,7 +359,7 @@ def test_approver_live_front_end_wins_over_away_mode(
     # A live front-end (a re-attached watch/TUI/web) is always asked, in its own
     # UI, regardless of the detach away-mode -- away-mode governs only the window
     # when nothing is attached. Even under away="deny", a live front-end answers.
-    from agent6.runs.ipc import set_away_mode
+    from agent6.sessions.ipc import set_away_mode
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -380,7 +380,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     import threading
     import time
 
-    from agent6.runs.ipc import register_frontend, set_away_mode, write_answer
+    from agent6.sessions.ipc import register_frontend, set_away_mode, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -408,16 +408,16 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
     import os
 
     from agent6.app.run import apply_spawned_away_default
-    from agent6.runs.ipc import away_mode, set_away_mode
+    from agent6.sessions.ipc import away_mode, set_away_mode
 
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    set_away_mode(run_dir, "deny")  # the operator's detach answer
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    set_away_mode(session_dir, "deny")  # the operator's detach answer
     old = os.environ.get("AGENT6_DETACHED_AWAY")
     os.environ["AGENT6_DETACHED_AWAY"] = "wait"  # what the spawned resume carries
     try:
-        apply_spawned_away_default(run_dir)
-        assert away_mode(run_dir) == "deny"
+        apply_spawned_away_default(session_dir)
+        assert away_mode(session_dir) == "deny"
         # With nothing chosen, the launcher's default still applies.
         other = tmp_path / "other"
         other.mkdir()

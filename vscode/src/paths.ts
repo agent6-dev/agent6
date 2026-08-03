@@ -4,7 +4,7 @@
 // Where agent6 keeps run state, mirrored from src/agent6/paths.py.
 //
 // Runs live out of the workspace, under the per-repo state dir
-// `<state base>/<repo-id>/runs/<run-id>/`. Keep this in lockstep with
+// `<state base>/<repo-id>/runs/<session-id>/`. Keep this in lockstep with
 // paths.state_base and paths.repo_id: the extension is a viewer and must
 // find exactly the runs the CLI writes. No `vscode` import, so the module
 // also loads under plain node for sanity checks.

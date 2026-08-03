@@ -1086,7 +1086,7 @@ def test_squash_merge_noop_when_nothing_to_merge(tmp_path: Path) -> None:
 def test_diff_of_non_utf8_file_does_not_crash(tmp_path: Path) -> None:
     # git diff/show emit raw file bytes; a latin-1 text file (no NULs, so git
     # does not treat it as binary) put non-UTF-8 bytes in the output, and the
-    # strict text=True decode raised UnicodeDecodeError mid-run with no run.end.
+    # strict text=True decode raised UnicodeDecodeError mid-run with no session.end.
     # Both diff surfaces must return a (lossily-decoded) string instead.
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha

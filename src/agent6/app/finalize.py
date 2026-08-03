@@ -30,9 +30,9 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.runs.layout import LOGS_NAME, RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.viewmodel import scan_run_log, summarize_run_dir
+from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.viewmodel import scan_session_log, summarize_session_dir
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import RunResult
 
@@ -47,7 +47,7 @@ _EXIT_BUDGET_EXHAUSTED = 3
 _EXIT_VERIFY_FAILED = 4
 
 
-def run_exit_code(result: RunResult) -> int:
+def session_exit_code(result: RunResult) -> int:
     """Map a finished run to its process exit code.
 
     0 finished (nothing to gate on, or the gate was green) / 3 budget /
@@ -63,7 +63,7 @@ def run_exit_code(result: RunResult) -> int:
     return 1
 
 
-def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
+def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
     """Binaries the run flagged as host-present but jail-broken
     (loop.sandbox_tool_unreachable events), for the operator diagnostic."""
     out: list[str] = []
@@ -82,7 +82,7 @@ def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
     return out
 
 
-def _print_next_session(layout: RunLayout, *, reporter: Reporter) -> None:
+def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
     """After a session that produced something to act on, name the next step.
 
     Seeding already exists; what was missing was the affordance -- an operator
@@ -90,12 +90,14 @@ def _print_next_session(layout: RunLayout, *, reporter: Reporter) -> None:
     holding work someone else does, so they get the line.
     """
     with contextlib.suppress(ManifestError):
-        mode = read_manifest(layout.run_dir).mode
+        mode = read_manifest(layout.session_dir).mode
         if mode in ("plan", "ask"):
-            reporter.out(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
+            reporter.out(f'\nnext:  agent6 run --from {layout.session_id} "<what to do with it>"')
 
 
-def _print_unknown_baseline(result: RunResult, *, layout: RunLayout, reporter: Reporter) -> None:
+def _print_unknown_baseline(
+    result: RunResult, *, layout: SessionLayout, reporter: Reporter
+) -> None:
     """On a red gate nothing observed at the base, say so and name the check.
 
     A run whose FIRST verify ran against an unmodified tree already answered
@@ -110,7 +112,7 @@ def _print_unknown_baseline(result: RunResult, *, layout: RunLayout, reporter: R
     gate = ()
     base = ""
     with contextlib.suppress(ManifestError):
-        m = read_manifest(layout.run_dir)
+        m = read_manifest(layout.session_dir)
         gate, base = m.workflow.verify_command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
         return
@@ -144,10 +146,10 @@ def _print_stale_gate(result: RunResult, *, reporter: Reporter) -> None:
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
 
 
-def print_run_end(
+def print_session_end(
     result: RunResult,
     *,
-    layout: RunLayout,
+    layout: SessionLayout,
     budget: BudgetTracker,
     console_stream: bool,
     reporter: Reporter,
@@ -157,14 +159,14 @@ def print_run_end(
     When the live ConsoleView already rendered the `● done <summary>` terminator
     (console_stream), this omits the summary and just adds what the stream
     lacks: cost and the branch / next-step footer."""
-    # Read the outcome from the SAME fold `agent6 runs` uses, not from
+    # Read the outcome from the SAME fold `agent6 sessions` uses, not from
     # result.completed: completed means "the agent finished deliberately", which
     # is true for a finish_run even when verify never went green. status_word off
-    # result.completed then prints "passed" while runs list reads the run.end
+    # result.completed then prints "passed" while runs list reads the session.end
     # event's real all_passed and prints "finished" -- the exact disagreement
-    # status_word exists to prevent. summarize_run_dir folds that event, so the
+    # status_word exists to prevent. summarize_session_dir folds that event, so the
     # console headline and the listing can never diverge.
-    summary = summarize_run_dir(layout.run_dir)
+    summary = summarize_session_dir(layout.session_dir)
     word, reason = summary.status, summary.reason
     if not console_stream:
         # Headless: no ConsoleView ran, so this block is the only end output.
@@ -196,7 +198,7 @@ def print_run_end(
     base_branch = ""
     merged_into = ""
     with contextlib.suppress(ManifestError):
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
         if manifest.merged is not None:
@@ -205,11 +207,11 @@ def print_run_end(
         # auto_merge already merged this branch into the base (and auto_prune may
         # have deleted it); don't tell the operator to merge it again.
         reporter.out(f"\nchanges merged into {merged_into}")
-        reporter.out(f"  inspect:     agent6 runs diff {layout.run_id}")
+        reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
     elif result.completed and run_branch:
         reporter.out(f"\nchanges are on {run_branch}")
-        reporter.out(f"  merge with:  agent6 runs merge {layout.run_id}")
-        reporter.out(f"  inspect:     agent6 runs diff {layout.run_id}")
+        reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
+        reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
         # The run left the checkout ON its branch (branch_per_run cuts it and
         # never switches back). Say so + how to leave, or the next run stacks on
         # it (see git.branch_from) and merge/prune defaults quietly shift.
@@ -219,33 +221,35 @@ def print_run_end(
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif not result.completed:
-        reporter.out(f"\nresume with:  agent6 resume {layout.run_id}")
+        reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
 
 
-def _print_run_total_across_legs(layout: RunLayout, *, reporter: Reporter) -> None:
+def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -> None:
     """After the leg's token+cost banner: the run's true cumulative spend when
     resume legs precede this one. The tracker is per-leg (each resume starts a
     fresh budget), so its "TOTAL" line undersells a resumed run without this."""
-    scan = scan_run_log(layout.run_dir / LOGS_NAME)
+    scan = scan_session_log(layout.session_dir / LOGS_NAME)
     if scan.legs > 1 and scan.cost_usd is not None:
         cost = format_cost(scan.cost_usd, partial=scan.usd_partial)
         reporter.out(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
 
 
-def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker, reporter: Reporter) -> None:
+def print_interrupt_end(
+    *, layout: SessionLayout, budget: BudgetTracker, reporter: Reporter
+) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
-    branch-return hint. The interrupt cuts the run before ``print_run_end``, so
+    branch-return hint. The interrupt cuts the run before ``print_session_end``, so
     without this the user saw only "run interrupted" -- no spend, no way to pick
     the (auto-committed, resumable) work back up, and no note they were left on
-    the run branch. Mirrors the not-completed footer of ``print_run_end``."""
+    the run branch. Mirrors the not-completed footer of ``print_session_end``."""
     reporter.out("")
     reporter.out(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
-    reporter.out(f"\nresume with:  agent6 resume {layout.run_id}")
+    reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""
     base_branch = ""
     with contextlib.suppress(ManifestError):
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
     if run_branch:
@@ -256,7 +260,9 @@ def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker, reporter: R
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
 
-def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config, reporter: Reporter) -> None:
+def finalize_auto_merge(
+    cwd: Path, *, layout: SessionLayout, cfg: Config, reporter: Reporter
+) -> None:
     """After a successful run, merge the run branch into its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
     run + resume share it. Ends on the base branch (the pre-run branch) with a clean
@@ -264,7 +270,7 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config, reporter: 
     intact and the message says how to merge by hand. No-op when branch_per_run was
     off."""
     try:
-        manifest = read_manifest(layout.run_dir)
+        manifest = read_manifest(layout.session_dir)
     except ManifestError:
         return
     run_branch = manifest.run_branch
@@ -341,12 +347,12 @@ def _stash_apply_cmd(sha: str, base_branch: str, *, needs_checkout: bool) -> str
     return f"git checkout {base_branch} && {apply}" if needs_checkout else apply
 
 
-def stash_recovery_hint(cwd: Path, *, run_id: str, base_branch: str) -> str | None:
+def stash_recovery_hint(cwd: Path, *, session_id: str, base_branch: str) -> str | None:
     """How to restore this run's pre-run auto-stash by hand, or None when the
     run pushed no stash. For callers that must tell the operator where their
     work went without restoring it (a detached run keeps the checkout on its
     run branch, so the stash has to wait)."""
-    entry = find_stash(cwd, auto_stash_message(run_id))
+    entry = find_stash(cwd, auto_stash_message(session_id))
     if entry is None:
         return None
     return _stash_apply_cmd(entry.sha, base_branch, needs_checkout=True)
@@ -358,7 +364,7 @@ def finalize_auto_stash(
     base_branch: str,
     run_branch: str | None,
     auto_pop: bool,
-    run_id: str,
+    session_id: str,
     reporter: Reporter,
 ) -> None:
     """Restore or report the pre-run auto-stash so the user's work is never left in a
@@ -373,7 +379,7 @@ def finalize_auto_stash(
     sha too (``git stash apply <sha>``), which stays correct however the
     stash stack shifts later -- a positional ``pop 'stash@{N}'`` printed now
     but run after another stash push would restore the wrong one."""
-    message = auto_stash_message(run_id)
+    message = auto_stash_message(session_id)
     entry = find_stash(cwd, message)
     if entry is None:
         reporter.err("[agent6] pre-run auto-stash not found (already restored?); nothing to pop")
@@ -437,8 +443,8 @@ def hook_env(**agent6_vars: str) -> dict[str, str]:
 def fire_notify_hook(
     notify: NotifyConfig,
     *,
-    run_id: str,
-    run_dir: Path,
+    session_id: str,
+    session_dir: Path,
     ok: bool,
     reason: str,
     verified: str,
@@ -453,14 +459,14 @@ def fire_notify_hook(
     if not notify.on_complete:
         return
     env = hook_env(
-        AGENT6_RUN_ID=run_id,
+        AGENT6_RUN_ID=session_id,
         # OK = the agent stopped deliberately; VERIFIED = what the gate said
         # (passed / failed / not_applicable). A hook that wants "green" reads
         # the second: OK alone is true for a finish over a red verify.
         AGENT6_RUN_OK="1" if ok else "0",
         AGENT6_RUN_VERIFIED=verified,
         AGENT6_RUN_REASON=reason,
-        AGENT6_RUN_DIR=str(run_dir),
+        AGENT6_RUN_DIR=str(session_dir),
     )
     try:
         subprocess.run(

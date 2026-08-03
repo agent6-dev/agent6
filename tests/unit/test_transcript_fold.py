@@ -44,7 +44,7 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     events = [
         {"type": "tool.call", "name": "finish_run", "args": {"summary": "all green"}},
         {"type": "tool.result", "name": "finish_run", "ok": True, "summary": "finish_run"},
-        {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_run"},
     ]
     items = fold_transcript(events)
     assert [i.kind for i in items] == ["done"]
@@ -106,9 +106,9 @@ def test_parallel_joined_names_lane_ids_branches_shas() -> None:
                 "type": "loop.parallel.joined",
                 "group": "p1",
                 "lanes": [
-                    {"run_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
+                    {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
                      "sha": "abcdef1234567890"},
-                    {"run_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict",
+                    {"session_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict",
                      "sha": ""},
                 ],
             }
@@ -202,13 +202,15 @@ def test_unmatched_tool_result_is_dropped() -> None:
 def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
     # A steer_abort run must render "stopped", not the raw "steer_abort" nor a
     # failure -- the CLI/TUI done line shows item.name for a not-ok run.
-    (done,) = fold_transcript([{"type": "run.end", "reason": "steer_abort", "all_passed": False}])
+    (done,) = fold_transcript(
+        [{"type": "session.end", "reason": "steer_abort", "all_passed": False}]
+    )
     assert done.kind == "done" and done.ok is False and done.name == "stopped"
 
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
-    """The app layer emits run.end reason="interrupted" on KeyboardInterrupt;
-    the value must live in RunReason (the wire vocabulary of run.end.reason).
+    """The app layer emits session.end reason="interrupted" on KeyboardInterrupt;
+    the value must live in RunReason (the wire vocabulary of session.end.reason).
     The raw token IS the accepted done-line rendering (it reads fine; the
     label map exists only for unfriendly tokens like steer_abort)."""
     from typing import get_args
@@ -216,7 +218,9 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     from agent6.workflows._run_state import RunReason
 
     assert "interrupted" in get_args(RunReason)
-    (done,) = fold_transcript([{"type": "run.end", "reason": "interrupted", "all_passed": False}])
+    (done,) = fold_transcript(
+        [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
+    )
     assert done.kind == "done" and done.ok is False and done.name == "interrupted"
 
 

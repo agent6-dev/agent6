@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The shared run-listing helpers (run_mtime, task_snippet, summarize_run_dir)."""
+"""The shared run-listing helpers (session_mtime, task_snippet, summarize_session_dir)."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ import os
 import time
 from pathlib import Path
 
-from agent6.runs.manifest import CompareStamp
+from agent6.sessions.manifest import CompareStamp
 from agent6.viewmodel import (
-    is_run_husk,
+    is_session_husk,
     is_winner,
-    run_compare,
-    run_is_live,
-    run_mtime,
-    summarize_run_dir,
+    session_compare,
+    session_is_live,
+    session_mtime,
+    summarize_session_dir,
     task_snippet,
 )
 from agent6.viewmodel.format import format_compare
@@ -29,14 +29,14 @@ def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
     log.write_text("{}\n", encoding="utf-8")
     os.utime(log, (1000.0, 1000.0))
     os.utime(d, (5000.0, 5000.0))  # dir bumped later (a viewer wrote frontend.pid)
-    assert run_mtime(d) == 1000.0  # keyed off the log, not the dir
+    assert session_mtime(d) == 1000.0  # keyed off the log, not the dir
 
 
 def test_run_mtime_falls_back_to_dir(tmp_path: Path) -> None:
     d = tmp_path / "run"
     d.mkdir()
     os.utime(d, (2000.0, 2000.0))
-    assert run_mtime(d) == 2000.0  # no log yet -> dir mtime
+    assert session_mtime(d) == 2000.0  # no log yet -> dir mtime
 
 
 def test_task_snippet_skips_seeded_file_block() -> None:
@@ -56,9 +56,9 @@ def test_task_snippet_falls_back_to_stripped_text() -> None:
     assert task_snippet("   ") == ""
 
 
-def _stamp(run_dir: Path, compare: object) -> None:
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
+def _stamp(session_dir: Path, compare: object) -> None:
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
 
 
 def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> None:
@@ -67,14 +67,14 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> No
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"})
     assert is_winner(win) is True
-    assert isinstance(run_compare(win), CompareStamp)
+    assert isinstance(session_compare(win), CompareStamp)
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False, "ranked_by": "judge"})
     assert is_winner(loser) is False
     # A run outside any fan-out (no manifest / no compare block) reads as None.
     plain = tmp_path / "plain"
     plain.mkdir()
-    assert run_compare(plain) is None and is_winner(plain) is False
+    assert session_compare(plain) is None and is_winner(plain) is False
 
 
 def test_format_compare_headline_and_rationale() -> None:
@@ -91,13 +91,13 @@ def test_format_compare_headline_and_rationale() -> None:
     assert format_compare(None) is None
 
 
-# --- summarize_run_dir / status_word (shared by TUI hub, web hub, runs list) --
+# --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --
 
 
-def _write_run(base: Path, sub: str, run_id: str, events: list[dict[str, object]]) -> Path:
+def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, object]]) -> Path:
     import json
 
-    rd = base / sub / run_id
+    rd = base / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
@@ -109,13 +109,13 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "fix [the] bug"},
+            {"type": "session.start", "mode": "run", "user_task": "fix [the] bug"},
             {"type": "tool.call", "name": "read_file"},
             {"type": "budget.update", "usd_total": 0.12},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.task, s.status, s.reason) == ("run", "fix [the] bug", "passed", "")
     assert s.cost_usd == 0.12
 
@@ -128,11 +128,11 @@ def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
         "asks",
         "a1",
         [
-            {"type": "run.start", "mode": "ask", "user_task": "what does x do?"},
-            {"type": "run.end", "all_passed": True, "reason": "answered"},
+            {"type": "session.start", "mode": "ask", "user_task": "what does x do?"},
+            {"type": "session.end", "all_passed": True, "reason": "answered"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.status, s.reason) == ("ask", "answered", "")
 
 
@@ -144,11 +144,11 @@ def test_summary_failure_carries_its_reason(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": False, "reason": "provider_error"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": "provider_error"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("failed", "provider_error")
 
 
@@ -158,11 +158,11 @@ def test_summary_stop_is_not_a_failure(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": False, "reason": "steer_abort"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
         ],
     )
-    assert summarize_run_dir(rd).status == "stopped"
+    assert summarize_session_dir(rd).status == "stopped"
 
 
 def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
@@ -173,33 +173,33 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": False, "reason": "interrupted"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": "interrupted"},
         ],
     )
-    assert summarize_run_dir(rd).status == "stopped"
+    assert summarize_session_dir(rd).status == "stopped"
 
 
 def test_summary_resume_unfinishes(tmp_path: Path) -> None:
-    """A detached resume appends past the first run.end; the run is running
+    """A detached resume appends past the first session.end; the run is running
     again, not whatever it last ended as."""
     rd = _write_run(
         tmp_path,
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": False, "reason": "steer_abort"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
             {"type": "loop.resume.start", "iteration": 2},
         ],
     )
-    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
 
 
 def test_summary_running_and_stale(tmp_path: Path) -> None:
-    rd = _write_run(tmp_path, "runs", "r2", [{"type": "run.start", "mode": "plan"}])
-    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
-    assert summarize_run_dir(rd, stale_after_s=0.0).status == "stale"
+    rd = _write_run(tmp_path, "runs", "r2", [{"type": "session.start", "mode": "plan"}])
+    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd, stale_after_s=0.0).status == "stale"
 
 
 def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
@@ -211,24 +211,24 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
         "runs",
         "r5",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
         ],
     )
-    s = summarize_run_dir(rd, stale_after_s=10_000_000)
+    s = summarize_session_dir(rd, stale_after_s=10_000_000)
     assert (s.status, s.reason) == ("waiting", "needs answer")
     # Once answered, the run is running again (the approver appends the answer).
     with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "approval.answer", "id": "a1", "approved": true}\n')
-    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
 
 
 def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
-    # A killed run (worker.pid points at a dead process, no run.end) must not
+    # A killed run (worker.pid points at a dead process, no session.end) must not
     # read "running" for the whole silence window; the pid probe settles it now.
-    rd = _write_run(tmp_path, "runs", "r3", [{"type": "run.start", "mode": "run"}])
+    rd = _write_run(tmp_path, "runs", "r3", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max: never alive
-    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "stale"
+    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "stale"
 
 
 def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Path) -> None:
@@ -236,42 +236,42 @@ def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Pat
     # events, but it is not stale -- the pid probe wins over log silence.
     import os
 
-    rd = _write_run(tmp_path, "runs", "r4", [{"type": "run.start", "mode": "run"}])
+    rd = _write_run(tmp_path, "runs", "r4", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert summarize_run_dir(rd, stale_after_s=0.0).status == "running"
+    assert summarize_session_dir(rd, stale_after_s=0.0).status == "running"
 
 
 def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
-    """LogScan's sticky usd_partial must reach RunSummary: listings printed an
+    """LogScan's sticky usd_partial must reach SessionSummary: listings printed an
     exact $0.0123 while the run page printed ~$0.0123 for the same run."""
     rd = _write_run(
         tmp_path,
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    assert summarize_run_dir(rd).usd_partial is True
+    assert summarize_session_dir(rd).usd_partial is True
     clean = _write_run(
         tmp_path,
         "runs",
         "r2",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    assert summarize_run_dir(clean).usd_partial is False
+    assert summarize_session_dir(clean).usd_partial is False
 
 
 def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path) -> None:
     """A finished run whose worker.pid survives into teardown is NOT live: the
     loop has exited, so a steer/compact/answer marker written now is read by
-    nobody. run_is_live must fold the log facts; fed empty facts it degenerates
+    nobody. session_is_live must fold the log facts; fed empty facts it degenerates
     to worker_is_alive under a new name (the exact question it exists to
     replace) and called this run "starting"."""
     rd = _write_run(
@@ -279,12 +279,12 @@ def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path)
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert run_is_live(rd) is False
+    assert session_is_live(rd) is False
 
 
 def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: Path) -> None:
@@ -295,18 +295,18 @@ def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert run_is_live(rd) is True
+    assert session_is_live(rd) is True
 
 
 def test_run_is_live_dead_worker_is_not_live(tmp_path: Path) -> None:
-    rd = _write_run(tmp_path, "runs", "r1", [{"type": "run.start", "mode": "run"}])
+    rd = _write_run(tmp_path, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max
-    assert run_is_live(rd) is False
+    assert session_is_live(rd) is False
 
 
 def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
@@ -317,10 +317,10 @@ def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
     (rd / "manifest.json").write_text(
         json.dumps({"version": 2, "parked_task": "queued work"}), encoding="utf-8"
     )
-    assert run_is_live(rd) is False
+    assert session_is_live(rd) is False
     live = _write_run(tmp_path, "runs", "launching", [])
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert run_is_live(live) is True
+    assert session_is_live(live) is True
 
 
 def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
@@ -329,21 +329,21 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
         "asks",
         "a1",
         [
-            {"type": "run.start", "mode": "ask", "user_task": '<file path="a.py">\nx'},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.start", "mode": "ask", "user_task": '<file path="a.py">\nx'},
+            {"type": "session.end", "all_passed": True},
         ],
     )
     (rd / "transcript.md").write_text(
         "# agent6 ask\n\n## Question\n\nwhat is the default port?\n", encoding="utf-8"
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert task_snippet(s.task) == "what is the default port?"
 
 
 def test_summary_no_logs(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "empty"
     rd.mkdir(parents=True)
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.status, s.task) == ("created", "(no logs)")
 
 
@@ -355,11 +355,11 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
         "runs",
         "p1",
         [
-            {"type": "run.start", "mode": "plan", "user_task": "plan the refactor"},
-            {"type": "run.end", "all_passed": True, "reason": "finish_planning"},
+            {"type": "session.start", "mode": "plan", "user_task": "plan the refactor"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.status, s.reason) == ("plan", "planned", "")
     # A real run still reads "passed" (finish_run + all_passed) -- unchanged.
     rd2 = _write_run(
@@ -367,11 +367,11 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    assert summarize_run_dir(rd2).status == "passed"
+    assert summarize_session_dir(rd2).status == "passed"
 
 
 def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
@@ -382,13 +382,13 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "created")
 
 
 def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
-    # A run with no verify_command spends ~80s inferring one BEFORE run.start.
-    # During it the log has a role.call (the inference LLM call) but no run.start,
+    # A run with no verify_command spends ~80s inferring one BEFORE session.start.
+    # During it the log has a role.call (the inference LLM call) but no session.start,
     # and the worker is alive -- it must read "starting" (its real mode+task from
     # the manifest), not a blank "? / (no task) / running" that looks missing.
     rd = _write_run(tmp_path, "runs", "boot", [{"type": "role.call", "role": "verify_inferer"}])
@@ -396,12 +396,12 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
         json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
-    s = summarize_run_dir(rd, stale_after_s=0.0)
+    s = summarize_session_dir(rd, stale_after_s=0.0)
     assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
 
 
 def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> None:
-    # The converse: no run.start and no LIVE worker (a `fork --no-run`, or a run
+    # The converse: no session.start and no LIVE worker (a `fork --no-run`, or a run
     # that died in preflight) must NOT read a false "stale" -- it never claimed to
     # be running. It reads "created", never a false "stale".
     rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
@@ -409,7 +409,7 @@ def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> N
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    assert summarize_run_dir(rd, stale_after_s=0.0).status == "created"
+    assert summarize_session_dir(rd, stale_after_s=0.0).status == "created"
 
 
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
@@ -420,17 +420,17 @@ def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
         "runs",
         "r1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
             {"type": "budget.update", "usd_total": 0.02},  # leg 1 ends at $0.02
-            {"type": "run.end", "all_passed": False, "reason": "budget_exhausted"},
+            {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"},
             {"type": "loop.resume.start", "iteration": 3},
             {"type": "budget.update", "usd_total": 0.003},
             {"type": "budget.update", "usd_total": 0.007},  # leg 2 ends at $0.007
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (leg 1) + 0.007 (leg 2), not 0.007
 
 
@@ -438,27 +438,27 @@ def test_is_run_husk(tmp_path: Path) -> None:
     # Neither manifest nor logs: never started, a husk.
     husk = tmp_path / "husk"
     husk.mkdir()
-    assert is_run_husk(husk)
+    assert is_session_husk(husk)
     # Either file makes it a real run.
     with_logs = tmp_path / "with-logs"
     with_logs.mkdir()
     (with_logs / "logs.jsonl").write_text("", encoding="utf-8")
-    assert not is_run_husk(with_logs)
+    assert not is_session_husk(with_logs)
     with_manifest = tmp_path / "with-manifest"
     with_manifest.mkdir()
     (with_manifest / "manifest.json").write_text("{}", encoding="utf-8")
-    assert not is_run_husk(with_manifest)
+    assert not is_session_husk(with_manifest)
     # A dir with neither file but a LIVE worker.pid is a launching run in its
     # pre-manifest preflight window, not a husk -- keep it listed (as "starting").
     launching = tmp_path / "launching"
     launching.mkdir()
     (launching / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    assert not is_run_husk(launching)
+    assert not is_session_husk(launching)
     # ... but a dead worker.pid with no files is still a husk.
     dead = tmp_path / "dead-husk"
     dead.mkdir()
     (dead / "worker.pid").write_text("999999999", encoding="utf-8")
-    assert is_run_husk(dead)
+    assert is_session_husk(dead)
 
 
 def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
@@ -468,15 +468,15 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "weird"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "do a thing"})
+        json.dumps({"type": "session.start", "user_task": "do a thing"})
         + "\n"
         + "[1, 2, 3]\n"  # valid JSON, not a dict
         + '"a bare string"\n'
-        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
         + "\n",
         encoding="utf-8",
     )
-    s = summarize_run_dir(rd)  # must not raise
+    s = summarize_session_dir(rd)  # must not raise
     assert s.task == "do a thing"
     assert s.status == "passed"
 
@@ -489,7 +489,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "torn-usd"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "t"})
+        json.dumps({"type": "session.start", "user_task": "t"})
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": 0.25})
         + "\n"
@@ -501,11 +501,11 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": False})
         + "\n"
-        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"})
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_run"})
         + "\n",
         encoding="utf-8",
     )
-    s = summarize_run_dir(rd)  # must not raise
+    s = summarize_session_dir(rd)  # must not raise
     assert s.status == "passed"
     assert s.cost_usd == 0.25  # the last good figure, not 0 and not a crash
 
@@ -520,16 +520,16 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> No
         "runs",
         "g1",
         [
-            {"type": "run.start", "mode": "run", "user_task": "build it"},
-            {"type": "run.end", "all_passed": False, "reason": "settled"},
+            {"type": "session.start", "mode": "run", "user_task": "build it"},
+            {"type": "session.end", "all_passed": False, "reason": "settled"},
         ],
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.status, s.reason) == ("finished", "unverified")
 
 
 def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
-    """An ask REPL follow-up re-runs on the same log via a plain run.start; the
+    """An ask REPL follow-up re-runs on the same log via a plain session.start; the
     hub row must read "running" while the follow-up leg streams, not the prior
     leg's "answered"."""
     rd = _write_run(
@@ -537,13 +537,13 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
         "asks",
         "ask-repl",
         [
-            {"type": "run.start", "mode": "ask", "user_task": "q"},
-            {"type": "run.end", "all_passed": True, "reason": "answered"},
-            {"type": "run.start", "mode": "ask", "user_task": "q2"},
+            {"type": "session.start", "mode": "ask", "user_task": "q"},
+            {"type": "session.end", "all_passed": True, "reason": "answered"},
+            {"type": "session.start", "mode": "ask", "user_task": "q2"},
             {"type": "role.call", "role": "worker", "model": "m"},
         ],
     )
-    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
+    assert summarize_session_dir(rd, stale_after_s=10_000_000).status == "running"
 
 
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
@@ -551,34 +551,37 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
     every listing, but the recency query returned it, so a bare `attach` /
     `runs show` / `runs stop` targeted a phantom the operator cannot see -- and
     could miss a live run whose log was quiet during a long provider call."""
-    from agent6.viewmodel.listing import newest_run_dir
+    from agent6.viewmodel.listing import newest_session_dir
 
     bucket = tmp_path / "runs"
     bucket.mkdir()
     real = bucket / "real-run-0001"
     real.mkdir()
     (real / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"}) + "\n", encoding="utf-8"
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
     )
     os.utime(real, (time.time() - 7200, time.time() - 7200))
     os.utime(real / "logs.jsonl", (time.time() - 7200, time.time() - 7200))
     husk = bucket / "zz-husk-0002"  # newer, but nothing ever ran
     husk.mkdir()
 
-    assert newest_run_dir([bucket]) == real
+    assert newest_session_dir([bucket]) == real
 
 
 def test_summary_forked_leg_reads_mode_and_task_from_manifest(tmp_path: Path) -> None:
     """A fork/resumed leg's log holds only loop.resume.start, which sets
-    saw_start=True but records no mode/task (only run.start carries them). Gating
+    saw_start=True but records no mode/task (only session.start carries them). Gating
     the manifest fallback on saw_start therefore blanked the row to "? (no logs)";
     gate on the missing mode instead so the row shows the run's real work."""
     rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "loop.resume.start"}])
     (rd / "manifest.json").write_text(
-        json.dumps({"version": 2, "run_id": "forked-0001", "mode": "run", "user_task": "carry on"}),
+        json.dumps(
+            {"version": 2, "session_id": "forked-0001", "mode": "run", "user_task": "carry on"}
+        ),
         encoding="utf-8",
     )
-    s = summarize_run_dir(rd)
+    s = summarize_session_dir(rd)
     assert (s.mode, s.task) == ("run", "carry on")
 
 
@@ -586,42 +589,42 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: Path) -> None:
     """The answer side discards str(id), but the prompt side only registered
     string ids -- so an int id (events.py coerces ids to str) left a run blocked
     on the operator reading as plain "running". Coerce on the prompt side too."""
-    from agent6.viewmodel.listing import scan_run_log
+    from agent6.viewmodel.listing import scan_session_log
 
     log = tmp_path / "logs.jsonl"
     log.write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
         + json.dumps({"type": "approval.prompt", "id": 7})
         + "\n",
         encoding="utf-8",
     )
-    assert scan_run_log(log).operator_blocked  # the int id still registers as unanswered
+    assert scan_session_log(log).operator_blocked  # the int id still registers as unanswered
 
     log.write_text(
         log.read_text(encoding="utf-8") + json.dumps({"type": "approval.answer", "id": 7}) + "\n",
         encoding="utf-8",
     )
-    assert not scan_run_log(log).operator_blocked  # answered by the same int id
+    assert not scan_session_log(log).operator_blocked  # answered by the same int id
 
 
 def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
-    """A run whose loop escaped with a fault records run.end reason=crashed, so
+    """A run whose loop escaped with a fault records session.end reason=crashed, so
     every surface calls it failed immediately. Without that record the dying
     process still cleared worker.pid -- the only immediate liveness evidence --
     and the fold fell back to the silence window, so `runs list`, `runs show`,
     attach, the web hub and the TUI all showed a dead run as "running" for ten
     minutes. (A SIGKILLed run leaves its pid file, which is why that case
     always read stale at once.)"""
-    run_dir = tmp_path / "runs" / "gone"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+    session_dir = tmp_path / "runs" / "gone"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "run.end", "reason": "crashed", "all_passed": False})
+        + json.dumps({"type": "session.end", "reason": "crashed", "all_passed": False})
         + "\n",
         encoding="utf-8",
     )
-    summary = summarize_run_dir(run_dir)
+    summary = summarize_session_dir(session_dir)
     assert (summary.status, summary.reason) == ("failed", "crashed")
-    assert run_is_live(run_dir) is False
+    assert session_is_live(session_dir) is False

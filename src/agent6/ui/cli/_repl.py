@@ -22,7 +22,7 @@ from agent6.git_ops import (
     revert_head,
 )
 from agent6.init import init_workspace
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _runs_dir
 from agent6.ui.cli._interact import _pause
@@ -31,13 +31,13 @@ from agent6.ui.cli.plan_watch import (
     event_epoch,
     format_plain_event,
 )
-from agent6.ui.cli.runs_cmds import _cmd_diff
+from agent6.ui.cli.sessions_cmds import _cmd_diff
 
 REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another iteration\n"
     "  /cost                    - print the running token + USD summary\n"
     "  /diff                    - git diff: base_sha -> this run's HEAD\n"
-    "                              (read-only; same as `agent6 runs diff`)\n"
+    "                              (read-only; same as `agent6 sessions diff`)\n"
     "  /watch                   - print the last 20 events from this run\n"
     "                              (snapshot; not a live tail)\n"
     "  /mcp                     - list MCP servers + tools currently wired\n"
@@ -59,7 +59,7 @@ def build_repl_hook(
     root: Path,
     budget: BudgetTracker,
     *,
-    run_id: str = "",
+    session_id: str = "",
     mcp_manager: MCPManager | None = None,
     console_view: ConsoleView | None = None,
 ) -> Callable[[int, str], Literal["continue", "stop"]]:
@@ -106,10 +106,10 @@ def build_repl_hook(
                 print(budget.format_summary(), file=sys.stderr)
                 continue
             if cmd == "/diff":
-                repl_run_diff(run_id)
+                repl_run_diff(session_id)
                 continue
             if cmd == "/watch":
-                repl_show_recent_events(root, run_id, n=20)
+                repl_show_recent_events(root, session_id, n=20)
                 continue
             if cmd == "/mcp":
                 repl_list_mcp(mcp_manager)
@@ -136,25 +136,25 @@ def build_repl_hook(
     return hook
 
 
-def repl_run_diff(run_id: str) -> None:
+def repl_run_diff(session_id: str) -> None:
     """REPL /diff: print `git diff base_sha..HEAD` for the live run."""
     try:
-        _cmd_diff(run_id=run_id, stat=False, paths=())
+        _cmd_diff(session_id=session_id, stat=False, paths=())
     except Exception as exc:
         print(f"[agent6] /diff failed: {exc}", file=sys.stderr)
 
 
-def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
+def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
     """REPL /watch: snapshot the last n events from this run's logs.jsonl.
 
     Intentionally NOT a live tail - the REPL is between turns of the
     agent loop; a tail would block the next iteration. Operators who
     want continuous tail use ``agent6 attach`` in another shell.
     """
-    if not run_id:
+    if not session_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    events_path = _runs_dir(root) / run_id / LOGS_NAME
+    events_path = _runs_dir(root) / session_id / LOGS_NAME
     if not events_path.is_file():
         print(f"[agent6] /watch: no logs.jsonl at {events_path}", file=sys.stderr)
         return
@@ -163,18 +163,18 @@ def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
     except OSError as exc:
         print(f"[agent6] /watch failed: {exc}", file=sys.stderr)
         return
-    run_start_ts: float | None = None
+    session_start_ts: float | None = None
     if lines:
         try:
             obj0 = json.loads(lines[0])
             if isinstance(obj0, dict):
-                run_start_ts = event_epoch(obj0.get("ts"))
+                session_start_ts = event_epoch(obj0.get("ts"))
         except json.JSONDecodeError:
-            run_start_ts = None
+            session_start_ts = None
     tail = lines[-n:]
-    print(f"[agent6] /watch: last {len(tail)} events from {run_id}", file=sys.stderr)
+    print(f"[agent6] /watch: last {len(tail)} events from {session_id}", file=sys.stderr)
     for raw in tail:
-        print(format_plain_event(raw, run_start_ts=run_start_ts))
+        print(format_plain_event(raw, session_start_ts=session_start_ts))
 
 
 def repl_list_mcp(mcp_manager: MCPManager | None) -> None:

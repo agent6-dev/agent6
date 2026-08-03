@@ -12,14 +12,14 @@ import pytest
 from agent6.viewmodel.state import (
     ApprovalPrompt,
     BudgetView,
-    RunState,
+    SessionState,
     TaskNodeView,
     apply_event,
-    fold_run,
+    fold_session,
     format_log_line,
     initial_state,
-    run_state_as_dict,
-    run_status_label,
+    session_state_as_dict,
+    session_status_label,
 )
 
 
@@ -63,24 +63,24 @@ def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, 
 
 def test_initial_state_is_empty() -> None:
     s = initial_state()
-    assert s == RunState()
+    assert s == SessionState()
     assert s.tasks == ()
     assert s.budget == BudgetView()
 
 
 def test_run_start_records_task() -> None:
-    s = apply_event(initial_state(), {"type": "run.start", "user_task": "fix bug"})
+    s = apply_event(initial_state(), {"type": "session.start", "user_task": "fix bug"})
     assert s.user_task == "fix bug"
 
 
 def test_run_start_records_run_id() -> None:
-    # The loop now stamps the run dir name into run.start; the fold picks it up,
+    # The loop now stamps the run dir name into session.start; the fold picks it up,
     # so watch --json / the web snapshot report a real id, not "".
     s = apply_event(
         initial_state(),
-        {"type": "run.start", "run_id": "deep-granite-CSSYTJ", "user_task": "t"},
+        {"type": "session.start", "session_id": "deep-granite-CSSYTJ", "user_task": "t"},
     )
-    assert s.run_id == "deep-granite-CSSYTJ"
+    assert s.session_id == "deep-granite-CSSYTJ"
 
 
 def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
@@ -240,13 +240,13 @@ def test_budget_update_carries_usd_total() -> None:
 def test_budget_usd_cumulative_across_resume_legs() -> None:
     # Each resume leg's budget.update restarts usd_total from 0; the view banks
     # the finished leg on loop.resume.start so "cost" stays the cumulative
-    # spend -- the same rule the hub scanner applies (listing.scan_run_log),
+    # spend -- the same rule the hub scanner applies (listing.scan_session_log),
     # keeping the hub row and the run view in agreement.
     def _update(usd: float, *, partial: bool = False) -> dict[str, object]:
         return {"type": "budget.update", "usd_total": usd, "usd_partial": partial}
 
     s = apply_event(initial_state(), _update(0.02, partial=True))
-    s = apply_event(s, {"type": "run.end", "reason": "finish_run", "all_passed": True})
+    s = apply_event(s, {"type": "session.end", "reason": "finish_run", "all_passed": True})
     s = apply_event(s, {"type": "loop.resume.start"})
     # Banked, and the header keeps the old total until the new leg reports.
     assert s.budget.usd_total == 0.02
@@ -301,14 +301,14 @@ def test_diff_updated_stores_latest_patch() -> None:
 
 
 def test_run_end_marks_finished() -> None:
-    s = apply_event(initial_state(), {"type": "run.end", "all_passed": True})
+    s = apply_event(initial_state(), {"type": "session.end", "all_passed": True})
     assert s.finished is True
     assert s.all_passed is True
 
 
 def test_unknown_event_type_still_appends_to_log() -> None:
     s = apply_event(initial_state(), {"type": "totally.new", "x": 1})
-    # Unknown events should not change RunState identity-relevant fields
+    # Unknown events should not change SessionState identity-relevant fields
     # but DO go into the log tail.
     assert s.tasks == ()
     assert len(s.log_tail) == 1
@@ -328,7 +328,7 @@ def test_full_run_trace_replay() -> None:
         "two": {"title": "two", "parent_id": None, "status": "failed", "children": []},
     }
     events = [
-        {"type": "run.start", "user_task": "do thing"},
+        {"type": "session.start", "user_task": "do thing"},
         {"type": "graph.update", "nodes": tasks, "cursor": "two"},
         {"type": "role.call", "role": "worker", "model": "gpt-5"},
         {"type": "tool.call", "name": "apply_patch", "args": {"path": "x.py"}},
@@ -342,7 +342,7 @@ def test_full_run_trace_replay() -> None:
             "output_cap": 1000,
         },
         {"type": "diff.updated", "sha": "abc", "patch": "+ added"},
-        {"type": "run.end", "all_passed": False},
+        {"type": "session.end", "all_passed": False},
     ]
     s = initial_state()
     for e in events:
@@ -371,12 +371,12 @@ def test_log_count_is_monotonic_past_window_cap() -> None:
 
 
 def test_fold_run_reduces_events_to_a_snapshot() -> None:
-    state = fold_run(
+    state = fold_session(
         [
-            {"type": "run.start", "user_task": "do it"},
+            {"type": "session.start", "user_task": "do it"},
             {"type": "role.call", "role": "worker", "model": "m"},
             {"type": "role.text_delta", "text": "hi"},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.end", "all_passed": True},
         ]
     )
     assert state.user_task == "do it"
@@ -387,31 +387,31 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
 def test_run_state_as_dict_is_json_serializable() -> None:
     import json
 
-    state = fold_run(
+    state = fold_session(
         [
-            {"type": "run.start", "user_task": "t"},
+            {"type": "session.start", "user_task": "t"},
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
         ]
     )
-    d = run_state_as_dict(state)
+    d = session_state_as_dict(state)
     assert d["user_task"] == "t"
     assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
     json.dumps(d)  # the wire form must serialize
 
 
 def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: Path) -> None:
-    """A resumed/forked leg's log can start at loop.resume.start (no run.start),
-    folding run_id/user_task empty. With the dir in hand THE wire owner fills
+    """A resumed/forked leg's log can start at loop.resume.start (no session.start),
+    folding session_id/user_task empty. With the dir in hand THE wire owner fills
     them (dir name + manifest task) so no consumer patches its own copy."""
     import json
 
-    run_dir = tmp_path / "sunny-otter-K4Q7B2"
-    run_dir.mkdir()
-    (run_dir / "manifest.json").write_text(
+    session_dir = tmp_path / "sunny-otter-K4Q7B2"
+    session_dir.mkdir()
+    (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "user_task": "queued work"}), encoding="utf-8"
     )
-    d = run_state_as_dict(fold_run([]), run_dir)
-    assert d["run_id"] == "sunny-otter-K4Q7B2"
+    d = session_state_as_dict(fold_session([]), session_dir)
+    assert d["session_id"] == "sunny-otter-K4Q7B2"
     assert d["user_task"] == "queued work"
     assert d["live"] is False  # no worker: the dir word is not live
 
@@ -419,22 +419,22 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: Path) -> None:
 def test_run_state_as_dict_always_carries_live(tmp_path: Path) -> None:
     # `live` is part of the wire shape: None (unknowable) without a dir, a real
     # bool with one -- never an absent key a client must typeof-probe.
-    assert run_state_as_dict(fold_run([]))["live"] is None
+    assert session_state_as_dict(fold_session([]))["live"] is None
     d = tmp_path / "r"
     d.mkdir()
-    assert isinstance(run_state_as_dict(fold_run([]), d)["live"], bool)
+    assert isinstance(session_state_as_dict(fold_session([]), d)["live"], bool)
 
 
 def test_run_state_as_dict_flags_operator_blocked() -> None:
     """The wire carries operator_blocked from the fold so a DIR-LESS consumer (the
-    machine watch, which folds an agent-state log with no run_dir) can quiet its
+    machine watch, which folds an agent-state log with no session_dir) can quiet its
     heartbeat when the agent is blocked on a prompt, not paint 'agent working…'."""
-    idle = run_state_as_dict(fold_run([{"type": "run.start", "user_task": "t"}]))
+    idle = session_state_as_dict(fold_session([{"type": "session.start", "user_task": "t"}]))
     assert idle["operator_blocked"] is False
-    blocked = run_state_as_dict(
-        fold_run(
+    blocked = session_state_as_dict(
+        fold_session(
             [
-                {"type": "run.start", "user_task": "t"},
+                {"type": "session.start", "user_task": "t"},
                 {"type": "approval.prompt", "id": "a1", "prompt": "run cmd?"},
             ]
         )
@@ -445,33 +445,33 @@ def test_run_state_as_dict_flags_operator_blocked() -> None:
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).
-    def end(reason: str, all_passed: bool) -> RunState:
-        s = apply_event(initial_state(), {"type": "run.start", "user_task": "t"})
-        return apply_event(s, {"type": "run.end", "reason": reason, "all_passed": all_passed})
+    def end(reason: str, all_passed: bool) -> SessionState:
+        s = apply_event(initial_state(), {"type": "session.start", "user_task": "t"})
+        return apply_event(s, {"type": "session.end", "reason": reason, "all_passed": all_passed})
 
-    assert run_status_label(initial_state()) == "running"
-    assert run_status_label(end("steer_abort", False)) == "stopped"
-    assert run_status_label(end("finish_run", True)) == "passed"
-    assert run_status_label(end("finish_run", False)) == "finished"
-    assert run_status_label(end("provider_error", False)) == "failed · provider error"
+    assert session_status_label(initial_state()) == "running"
+    assert session_status_label(end("steer_abort", False)) == "stopped"
+    assert session_status_label(end("finish_run", True)) == "passed"
+    assert session_status_label(end("finish_run", False)) == "finished"
+    assert session_status_label(end("provider_error", False)) == "failed · provider error"
     # and the computed label rides along on the wire dict for the web client
-    assert run_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+    assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
     # the raw status WORD rides along too, so a client can branch on it (the web
     # heartbeat goes quiet on "waiting" instead of painting "working" over a run
     # blocked on the operator).
-    assert run_state_as_dict(initial_state())["status"] == "running"
-    assert run_state_as_dict(end("steer_abort", False))["status"] == "stopped"
-    assert run_state_as_dict(end("finish_run", True))["status"] == "passed"
+    assert session_state_as_dict(initial_state())["status"] == "running"
+    assert session_state_as_dict(end("steer_abort", False))["status"] == "stopped"
+    assert session_state_as_dict(end("finish_run", True))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
     # A resume restarts a finished/stopped run in place; the header must show it
     # running again (else steer/stop stay disabled on a live run).
-    s = apply_event(initial_state(), {"type": "run.end", "reason": "steer_abort"})
+    s = apply_event(initial_state(), {"type": "session.end", "reason": "steer_abort"})
     assert s.finished and s.end_reason == "steer_abort"
     s = apply_event(s, {"type": "loop.resume.start"})
     assert not s.finished and s.end_reason == ""
-    assert run_status_label(s) == "running"
+    assert session_status_label(s) == "running"
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
@@ -504,20 +504,20 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
 
 
 def test_run_start_after_run_end_unfinishes_without_banking() -> None:
-    """The ask REPL re-enters wf.run() per follow-up, emitting a fresh run.start
-    on the same log with no resume marker. A run.start begins a leg: it must
+    """The ask REPL re-enters wf.run() per follow-up, emitting a fresh session.start
+    on the same log with no resume marker. A session.start begins a leg: it must
     clear the terminal state (or the streaming follow-up renders "answered").
     It must NOT bank usd like ResumeStart: the REPL reuses one BudgetTracker,
     so usd_total is already cumulative and banking would double-count."""
     s = initial_state()
-    s = apply_event(s, {"type": "run.start", "user_task": "q"})
+    s = apply_event(s, {"type": "session.start", "user_task": "q"})
     s = apply_event(s, {"type": "budget.update", "usd_total": 0.02})
-    s = apply_event(s, {"type": "run.end", "all_passed": False, "reason": "answered"})
-    s = apply_event(s, {"type": "run.start", "user_task": "follow-up"})
+    s = apply_event(s, {"type": "session.end", "all_passed": False, "reason": "answered"})
+    s = apply_event(s, {"type": "session.start", "user_task": "follow-up"})
     s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
     assert s.finished is False
     assert s.end_reason == ""
-    assert run_status_label(s) == "running"
+    assert session_status_label(s) == "running"
     s = apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.usd_total == pytest.approx(0.03)
     assert s.budget.usd_prior_legs == pytest.approx(0.0)
@@ -525,11 +525,11 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
 
 def test_resume_resets_the_leg_token_counters() -> None:
     """ResumeStart banks usd but must also drop the dead leg's token counters
-    and caps: BudgetView documents them as the CURRENT leg's, and scan_run_log
+    and caps: BudgetView documents them as the CURRENT leg's, and scan_session_log
     already resets -- until the resumed leg's first budget.update the header
     would otherwise render the finished leg's ~100%%."""
     s = initial_state()
-    s = apply_event(s, {"type": "run.start", "user_task": "t"})
+    s = apply_event(s, {"type": "session.start", "user_task": "t"})
     s = apply_event(
         s,
         {
@@ -542,7 +542,7 @@ def test_resume_resets_the_leg_token_counters() -> None:
             "tokens_fallback_cap": 1000,
         },
     )
-    s = apply_event(s, {"type": "run.end", "all_passed": False, "reason": "budget_exhausted"})
+    s = apply_event(s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"})
     s = apply_event(s, {"type": "loop.resume.start"})
     assert s.budget.input_total == 0
     assert s.budget.output_total == 0
@@ -705,11 +705,11 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
     unwrapped inside live tails (attach, TUI, web SSE), so one wrong-shaped
     field in a corrupted or foreign log crashed every viewer and turned the
     web run endpoint into a 500."""
-    state = fold_run(
+    state = fold_session(
         [
-            {"type": "run.start", "user_task": "t"},
+            {"type": "session.start", "user_task": "t"},
             bad,
-            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "session.end", "reason": "finish_run", "all_passed": True},
         ]
     )
     assert state.finished  # the fold survived the bad line and kept folding

@@ -25,8 +25,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.runs.layout import LOGS_NAME
-from agent6.viewmodel import summarize_run_dir
+from agent6.sessions.layout import LOGS_NAME
+from agent6.viewmodel import summarize_session_dir
 
 # How a btw is started: (cwd, agent6 argv without the exe, env extras) -> "" or
 # an error. Exactly `app.egress.HostLaneLaunch`, which the coordinator already
@@ -92,7 +92,7 @@ def start_btw(
         time.sleep(0.1)
     return None, (
         f"the btw did not start within {_START_TIMEOUT_S:g}s: no new ask session appeared."
-        " The spawn is fire-and-forget, so check `agent6 runs` and that `agent6 ask` works"
+        " The spawn is fire-and-forget, so check `agent6 sessions` and that `agent6 ask` works"
         " from this directory."
     )
 
@@ -109,7 +109,7 @@ def btw_answer(session: BtwSession) -> str | None:
     # ending declared a btw dead on the watcher's FIRST poll, and the watcher
     # then stopped looking: the session ran to completion and its answer was
     # never collected.
-    status = summarize_run_dir(session.dir).status
+    status = summarize_session_dir(session.dir).status
     if status in {"created", "running", "starting", "waiting"}:
         return None
     return _final_prose(session.dir) or f"(the btw ended without an answer: {status})"

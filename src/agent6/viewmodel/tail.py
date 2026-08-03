@@ -23,7 +23,7 @@ def tail_events(
 
     - Waits for the file to appear (up to forever if follow=True).
     - Yields each existing line on startup, then tails for new ones.
-    - If *stop_when_finished* is true, exits after a `run.end` event.
+    - If *stop_when_finished* is true, exits after a `session.end` event.
     - If *should_stop* is given, exits at the next poll boundary once it returns
       True (lets a caller cancel a follow, e.g. on client disconnect).
     - If *follow* is false, yields existing lines and returns.
@@ -63,14 +63,14 @@ def tail_events(
             lines = pending.split(b"\n")
             pending = lines[-1]  # last fragment may be incomplete
             parsed = [e for e in map(_parse_event_line, lines[:-1]) if e is not None]
-            # stop_when_finished halts at a run.end only when nothing follows it
-            # in this batch: a resume appends events AFTER a run.end (a stopped
+            # stop_when_finished halts at a session.end only when nothing follows it
+            # in this batch: a resume appends events AFTER a session.end (a stopped
             # run's steer_abort, or the resume of a finished one), and stopping
             # at that superseded end would silently drop everything the resumed
             # run does. A live run's real end is the batch's last event.
             for i, evt in enumerate(parsed):
                 yield evt
-                if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "run.end":
+                if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
                     return
 
         if not follow:

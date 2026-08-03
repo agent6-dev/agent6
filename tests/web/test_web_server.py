@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.ipc import write_worker_pid
+from agent6.sessions.ipc import write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.web.server import (
     WebServer,
@@ -51,8 +51,8 @@ reason = "routed"
 """
 
 
-def _make_run(cwd: Path, run_id: str, events: list[dict[str, object]]) -> None:
-    runs = resolved_state_dir(cwd) / "runs" / run_id
+def _make_run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> None:
+    runs = resolved_state_dir(cwd) / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
@@ -134,13 +134,13 @@ def test_run_snapshot_matches_watch_json(
         tmp_path,
         "willing-glen-001",
         [
-            {"type": "run.start", "user_task": "demo"},
+            {"type": "session.start", "user_task": "demo"},
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
             {"type": "tool.result", "name": "grep", "ok": True, "summary": "1 hit"},
         ],
     )
     # The web GET must equal `agent6 attach <id> --json` byte-for-byte in content.
-    status, body, ctype = _get(port, "/api/run/willing-glen-001")
+    status, body, ctype = _get(port, "/api/session/willing-glen-001")
     assert status == 200
     assert "application/json" in ctype
     from_web = json.loads(body)
@@ -150,28 +150,28 @@ def test_run_snapshot_matches_watch_json(
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["tool_calls"][0]["name"] == "grep"
-    # Even for a log whose run.start predates the run_id field, both surfaces
-    # stamp the authoritative id from the dir (never an empty run_id).
-    assert from_web["run_id"] == "willing-glen-001"
+    # Even for a log whose session.start predates the session_id field, both surfaces
+    # stamp the authoritative id from the dir (never an empty session_id).
+    assert from_web["session_id"] == "willing-glen-001"
 
 
 def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    _make_run(tmp_path, "run-a", [{"type": "run.start", "mode": "run", "user_task": "task a"}])
+    _make_run(tmp_path, "run-a", [{"type": "session.start", "mode": "run", "user_task": "task a"}])
     _make_run(
         tmp_path,
         "run-b",
         [
-            {"type": "run.start", "mode": "run", "user_task": "task b"},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.start", "mode": "run", "user_task": "task b"},
+            {"type": "session.end", "all_passed": True},
         ],
     )
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     hub = json.loads(body)
-    ids = {r["id"] for r in hub["runs"]}
+    ids = {r["id"] for r in hub["sessions"]}
     assert ids == {"run-a", "run-b"}
-    by_id = {r["id"]: r for r in hub["runs"]}
+    by_id = {r["id"]: r for r in hub["sessions"]}
     assert by_id["run-b"]["status"] == "passed"
     assert by_id["run-b"]["task"] == "task b"
 
@@ -201,7 +201,7 @@ def test_machine_snapshot_matches_watch_json(
 
 def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
-    status, body, _ = _get(port, "/api/run/nope")
+    status, body, _ = _get(port, "/api/session/nope")
     assert status == 404
     assert "no run" in json.loads(body)["error"]
 
@@ -211,7 +211,7 @@ def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
     # kind of view the target names.
     runs = resolved_state_dir(tmp_path) / "runs" / "run-t"
     runs.mkdir(parents=True)
-    (runs / "logs.jsonl").write_text('{"type": "run.start"}\n', encoding="utf-8")
+    (runs / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
     srv = WebServer(("127.0.0.1", 0), tmp_path, "run-t")
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
@@ -221,7 +221,7 @@ def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
         assert status == 200
         meta = json.loads(body)
         assert meta["target"] == "run-t"
-        assert meta["target_kind"] == "run"
+        assert meta["target_kind"] == "session"
     finally:
         srv.shutdown()
         srv.server_close()
@@ -233,15 +233,15 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     from agent6.ui.web import actions
 
     _srv, port = server
-    _make_run(tmp_path, "run-r", [{"type": "run.start"}, {"type": "run.end"}])
+    _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
     calls: list[tuple[Path, str, str]] = []
 
-    def fake_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
-        calls.append((cwd, run_id, steer))
+    def fake_resume(cwd: Path, session_id: str, *, steer: str = "") -> str:
+        calls.append((cwd, session_id, steer))
         return ""
 
     monkeypatch.setattr(actions, "spawn_detached_resume", fake_resume)
-    status, data = _post(port, "/api/run/run-r/resume", {"text": "also fix the docs"})
+    status, data = _post(port, "/api/session/run-r/resume", {"text": "also fix the docs"})
     assert status == 200 and data["ok"] is True
     assert calls == [(tmp_path, "run-r", "also fix the docs")]
 
@@ -252,10 +252,10 @@ def test_resume_refused_while_the_worker_is_alive(
     import os
 
     _srv, port = server
-    _make_run(tmp_path, "run-l", [{"type": "run.start"}])
+    _make_run(tmp_path, "run-l", [{"type": "session.start"}])
     runs = resolved_state_dir(tmp_path) / "runs" / "run-l"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    status, data = _post(port, "/api/run/run-l/resume", {"text": ""})
+    status, data = _post(port, "/api/session/run-l/resume", {"text": ""})
     assert status == 422
     assert "still live" in str(data["error"])
 
@@ -266,21 +266,21 @@ def test_stop_step_and_compact_drop_markers_on_a_live_run(
     import os
 
     _srv, port = server
-    _make_run(tmp_path, "run-m", [{"type": "run.start"}])
+    _make_run(tmp_path, "run-m", [{"type": "session.start"}])
     runs = resolved_state_dir(tmp_path) / "runs" / "run-m"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    status, data = _post(port, "/api/run/run-m/stop_step", {})
+    status, data = _post(port, "/api/session/run-m/stop_step", {})
     assert status == 200 and data["ok"] is True
     assert (runs / "stop.request").exists()
-    status, data = _post(port, "/api/run/run-m/compact", {})
+    status, data = _post(port, "/api/session/run-m/compact", {})
     assert status == 200 and data["ok"] is True
     assert (runs / "compact.request").exists()
 
 
 def test_stop_step_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    _make_run(tmp_path, "run-d", [{"type": "run.start"}, {"type": "run.end"}])
-    status, data = _post(port, "/api/run/run-d/stop_step", {})
+    _make_run(tmp_path, "run-d", [{"type": "session.start"}, {"type": "session.end"}])
+    status, data = _post(port, "/api/session/run-d/stop_step", {})
     assert status == 422
     assert "not live" in str(data["error"])
 
@@ -291,16 +291,16 @@ def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path
         tmp_path,
         "run-c",
         [
-            {"type": "run.start", "mode": "run", "user_task": "task c"},
+            {"type": "session.start", "mode": "run", "user_task": "task c"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+            {"type": "session.end", "all_passed": True, "reason": "finish_run"},
         ],
     )
-    status, body, _ = _get(port, "/api/run/run-c/conversation")
+    status, body, _ = _get(port, "/api/session/run-c/conversation")
     assert status == 200
     payload = json.loads(body)
-    assert payload["run_id"] == "run-c"
+    assert payload["session_id"] == "run-c"
     kinds = [it["kind"] for it in payload["items"]]
     assert kinds == ["tool", "done"]
     tool = payload["items"][0]
@@ -321,71 +321,73 @@ def test_config_endpoint(server: tuple[WebServer, int]) -> None:
 
 def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "appr-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
-    status, body = _post(port, "/api/run/appr-run/approve", {"id": "p1", "approved": True})
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "appr-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "approved": True})
     assert status == 200
     assert body["ok"] is True
-    assert (run_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
+    assert (session_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
 
 
 def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "q-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
-    status, body = _post(port, "/api/run/q-run/answer", {"id": "q1", "answers": ["option B"]})
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "q-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    status, body = _post(port, "/api/session/q-run/answer", {"id": "q1", "answers": ["option B"]})
     assert status == 200 and body["ok"] is True
-    assert (run_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
+    assert (session_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
         ["option B"]
     )
 
 
 def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "steer-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    (run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    status, body = _post(port, "/api/run/steer-run/steer", {"text": "focus on tests"})
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "steer-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    status, body = _post(port, "/api/session/steer-run/steer", {"text": "focus on tests"})
     assert status == 200 and body["ok"] is True
-    assert (run_dir / "steer.answer").read_text(encoding="utf-8") == "focus on tests"
-    assert (run_dir / "steer.request").exists()
+    assert (session_dir / "steer.answer").read_text(encoding="utf-8") == "focus on tests"
+    assert (session_dir / "steer.request").exists()
 
 
 def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
-    """A crashed run (no run.end, dead worker) folds as unfinished, so the
+    """A crashed run (no session.end, dead worker) folds as unfinished, so the
     composer offers steer; the action must refuse like stop_step/compact do
     instead of toasting "steer sent" for a marker nothing will ever read (the
     next resume even deletes it via clear_pending_answers)."""
     _srv, port = server
-    _make_run(tmp_path, "run-sd", [{"type": "run.start"}, {"type": "run.end"}])
-    status, data = _post(port, "/api/run/run-sd/steer", {"text": "abort"})
+    _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.end"}])
+    status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})
     assert status == 422
     assert "not live" in str(data["error"])
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "run-sd"
-    assert not (run_dir / "steer.answer").exists()
-    assert not (run_dir / "steer.request").exists()
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "run-sd"
+    assert not (session_dir / "steer.answer").exists()
+    assert not (session_dir / "steer.request").exists()
 
 
 def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_path: Path) -> None:
     # A malicious answer id must not escape the run's approvals/ dir.
     _srv, port = server
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "trav-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    write_worker_pid(run_dir, os.getpid())  # a prompt is answerable only while live
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "trav-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
-        port, "/api/run/trav-run/approve", {"id": "../../../../pwned", "approved": True}
+        port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "approved": True}
     )
     assert status != 200
     assert not escape.exists()
     # a normal id still works
-    ok_status, ok_body = _post(port, "/api/run/trav-run/approve", {"id": "p1", "approved": True})
+    ok_status, ok_body = _post(
+        port, "/api/session/trav-run/approve", {"id": "p1", "approved": True}
+    )
     assert ok_status == 200 and ok_body["ok"] is True
 
 
@@ -481,21 +483,21 @@ def test_favicon_matches_the_docs_asset(server: tuple[WebServer, int]) -> None:
 
 def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
-    status, _body, _ = _get(port, "/api/run/..")
+    status, _body, _ = _get(port, "/api/session/..")
     assert status == 404
 
 
 def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    _make_run(tmp_path, "seg-run", [{"type": "run.start", "user_task": "x"}])
+    _make_run(tmp_path, "seg-run", [{"type": "session.start", "user_task": "x"}])
     machine = resolved_state_dir(tmp_path) / "machines" / "tiny"
     machine.mkdir(parents=True)
     (machine / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     draft = resolved_state_dir(tmp_path) / "machine-drafts" / "drafty"
     draft.mkdir(parents=True)
-    (draft / "logs.jsonl").write_text('{"type": "run.start"}\n', encoding="utf-8")
+    (draft / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
 
-    assert _get(port, "/api/run/seg-run/events/extra")[0] == 404
+    assert _get(port, "/api/session/seg-run/events/extra")[0] == 404
     assert _get(port, "/api/machine/tiny/events/extra")[0] == 404
     assert _get(port, "/api/draft/drafty/events/extra")[0] == 404
 
@@ -506,7 +508,7 @@ def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_p
     draft = resolved_state_dir(tmp_path) / "machine-drafts" / "brave-otter"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
-        '{"type": "run.start", "user_task": "author a fixer machine"}\n', encoding="utf-8"
+        '{"type": "session.start", "user_task": "author a fixer machine"}\n', encoding="utf-8"
     )
     status, body, _ = _get(port, "/api/draft/brave-otter")
     assert status == 200
@@ -552,13 +554,13 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         tmp_path,
         "stream-run",
         [
-            {"type": "run.start", "user_task": "streamed"},
-            {"type": "run.end", "all_passed": True},
+            {"type": "session.start", "user_task": "streamed"},
+            {"type": "session.end", "all_passed": True},
         ],
     )
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        conn.request("GET", "/api/run/stream-run/events")
+        conn.request("GET", "/api/session/stream-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
         assert "text/event-stream" in resp.getheader("Content-Type", "")
@@ -586,16 +588,16 @@ def test_sse_run_frame_carries_the_compare_outcome(
     frame must carry the manifest's compare block (branch facts + compare share
     one manifest_header helper so the two endpoints can never drift)."""
     _srv, port = server
-    _make_run(tmp_path, "cmp-run", [{"type": "run.start", "user_task": "x"},
-                                    {"type": "run.end", "all_passed": True}])  # fmt: skip
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "cmp-run"
-    (run_dir / "manifest.json").write_text(
+    _make_run(tmp_path, "cmp-run", [{"type": "session.start", "user_task": "x"},
+                                    {"type": "session.end", "all_passed": True}])  # fmt: skip
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "cmp-run"
+    (session_dir / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
         encoding="utf-8",
     )
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        conn.request("GET", "/api/run/cmp-run/events")
+        conn.request("GET", "/api/session/cmp-run/events")
         resp = conn.getresponse()
         seen = b""
         while True:
@@ -625,7 +627,7 @@ def test_corrupt_journal_hub_shows_unreadable(
     _srv, port = server
     inst, _ = _make_machine_with_state(tmp_path, "sick", "0000-review")
     _corrupt_journal(inst)
-    _make_run(tmp_path, "healthy-run", [{"type": "run.start", "user_task": "x"}])
+    _make_run(tmp_path, "healthy-run", [{"type": "session.start", "user_task": "x"}])
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     hub = json.loads(body)
@@ -686,19 +688,19 @@ def test_corrupt_journal_machine_sse_sends_error_frame(
 def test_sse_run_catchup_folds_history_into_few_frames(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
-    # Connecting to a run with a long history must not emit one full RunState
+    # Connecting to a run with a long history must not emit one full SessionState
     # frame per historical event (13 MB probed on a 502-event run): the backlog
     # folds into (almost) one snapshot.
     _srv, port = server
-    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "big"}]
+    events: list[dict[str, object]] = [{"type": "session.start", "user_task": "big"}]
     for i in range(150):
         events.append({"type": "tool.call", "name": f"t{i}", "args": {}})
         events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
-    events.append({"type": "run.end", "all_passed": True})
+    events.append({"type": "session.end", "all_passed": True})
     _make_run(tmp_path, "big-run", events)
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        conn.request("GET", "/api/run/big-run/events")
+        conn.request("GET", "/api/session/big-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
         seen = resp.read()
@@ -726,10 +728,10 @@ def test_sse_run_closes_even_if_tailer_dies(
 
     monkeypatch.setattr(server_mod, "tail_events", _boom)
     _srv, port = server
-    _make_run(tmp_path, "dead-tail", [{"type": "run.start", "user_task": "x"}])
+    _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        conn.request("GET", "/api/run/dead-tail/events")
+        conn.request("GET", "/api/session/dead-tail/events")
         resp = conn.getresponse()
         assert resp.status == 200
         seen = resp.read()  # must reach EOF, not time out
@@ -742,7 +744,7 @@ def test_sse_run_closes_even_if_tailer_dies(
 def test_sse_run_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run whose worker died without a run.end must close its SSE stream with
+    """A run whose worker died without a session.end must close its SSE stream with
     a TERMINAL frame carrying the dedicated transport bit: stream_dead=True +
     status_label="stale". `finished` stays the fold truth (False -- a crashed
     run is stale, not finished); the client closes on either signal, so the
@@ -753,14 +755,14 @@ def test_sse_run_dead_worker_frame_is_terminal(
     _make_run(
         tmp_path,
         "dead-worker",
-        [{"type": "run.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-worker"
-    (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "dead-worker"
+    (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
     try:
-        conn.request("GET", "/api/run/dead-worker/events")
+        conn.request("GET", "/api/session/dead-worker/events")
         resp = conn.getresponse()
         assert resp.status == 200
         seen = resp.read()  # must reach EOF (the close sticks), not hang
@@ -778,7 +780,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 ) -> None:
     """A crashed run that never recorded worker.pid (killed in preflight, or
     the pid file cleaned) heartbeated forever: the idle close only probed a
-    RECORDED pid. The one dir decision (summarize_run_dir) already calls a
+    RECORDED pid. The one dir decision (summarize_session_dir) already calls a
     pid-less run silent past its window "stale"; the stream must close on it
     with the same terminal frame as the recorded-dead-pid case."""
     import agent6.ui.web.server as server_mod
@@ -787,18 +789,18 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     _make_run(
         tmp_path,
         "pidless-stale",
-        [{"type": "run.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "pidless-stale"
-    assert not (run_dir / "worker.pid").exists()
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "pidless-stale"
+    assert not (session_dir / "worker.pid").exists()
     old = 1_000_000_000.0  # silent far past the stale window
-    os.utime(run_dir / "logs.jsonl", (old, old))
+    os.utime(session_dir / "logs.jsonl", (old, old))
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=1)
     seen = b""
     eof = False
     try:
-        conn.request("GET", "/api/run/pidless-stale/events")
+        conn.request("GET", "/api/session/pidless-stale/events")
         resp = conn.getresponse()
         assert resp.status == 200
         # Bounded read: the buggy stream never closes but keeps heartbeating,
@@ -828,8 +830,8 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 def test_sse_run_created_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A `created` run (worker killed in preflight before run.start, or a
-    fork --no-run) reaches terminal WITHOUT a run.end, but the close only
+    """A `created` run (worker killed in preflight before session.start, or a
+    fork --no-run) reaches terminal WITHOUT a session.end, but the close only
     checked "stale": the tailer pinged forever, holding the thread and the
     frontends/ claim. The close now asks the codebase's own died_without_end,
     and the terminal frame keeps the truthful label ("created", not a
@@ -837,15 +839,15 @@ def test_sse_run_created_frame_is_terminal(
     import agent6.ui.web.server as server_mod
 
     monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "created-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "created-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=1)
     seen = b""
     eof = False
     try:
-        conn.request("GET", "/api/run/created-run/events")
+        conn.request("GET", "/api/session/created-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
         import time as _time
@@ -874,17 +876,17 @@ def test_sse_run_created_frame_is_terminal(
 def test_sse_run_parked_keeps_streaming(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`parked` also never reached run.end, but its stream deliberately stays
+    """`parked` also never reached session.end, but its stream deliberately stays
     open: a parked submission the operator resumes starts logging into this
     same stream. Pin the exclusion so the died_without_end close cannot
     swallow it."""
     import agent6.ui.web.server as server_mod
 
     monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    (run_dir / "manifest.json").write_text(
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "queued", "parked_task": "queued"}),
         encoding="utf-8",
     )
@@ -892,7 +894,7 @@ def test_sse_run_parked_keeps_streaming(
     conn = HTTPConnection("127.0.0.1", port, timeout=1)
     eof = False
     try:
-        conn.request("GET", "/api/run/parked-run/events")
+        conn.request("GET", "/api/session/parked-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
         import time as _time
@@ -984,7 +986,7 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     try:
         body = b"{}"
         prune = (
-            b"POST /api/runs/prune HTTP/1.1\r\n"
+            b"POST /api/sessions/prune HTTP/1.1\r\n"
             b"Host: 127.0.0.1\r\n"
             b"Content-Type: application/json\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
@@ -1006,7 +1008,7 @@ def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
     # hub JSON.
     assert raw.count(b"HTTP/1.1 ") == 2, raw
     assert b" 400 " not in raw, raw
-    assert b'"runs":' in raw, raw  # the GET /api/hub payload came back intact
+    assert b'"sessions":' in raw, raw  # the GET /api/hub payload came back intact
 
 
 def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
@@ -1029,7 +1031,7 @@ def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body = _post_raw(
         port,
-        "/api/runs/prune",
+        "/api/sessions/prune",
         b"",
         {"Transfer-Encoding": "chunked", "Content-Type": "application/json"},
     )
@@ -1044,12 +1046,12 @@ def test_unknown_post_verb_does_not_poison_keepalive(
     # the next request parsed the leftover body as its request line (probed
     # garbage 400). The server now closes; the client reconnects cleanly.
     _srv, port = server
-    _make_run(tmp_path, "ka-run", [{"type": "run.start", "user_task": "x"}])
+    _make_run(tmp_path, "ka-run", [{"type": "session.start", "user_task": "x"}])
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         payload = json.dumps({"text": "hello"}).encode()
         conn.request(
-            "POST", "/api/run/ka-run/bogusverb", payload, {"Content-Type": "application/json"}
+            "POST", "/api/session/ka-run/bogusverb", payload, {"Content-Type": "application/json"}
         )
         resp = conn.getresponse()
         assert resp.status == 404
@@ -1058,7 +1060,7 @@ def test_unknown_post_verb_does_not_poison_keepalive(
         conn.request("GET", "/api/hub")
         resp2 = conn.getresponse()
         assert resp2.status == 200
-        assert json.loads(resp2.read())["runs"]
+        assert json.loads(resp2.read())["sessions"]
     finally:
         conn.close()
 
@@ -1184,18 +1186,20 @@ def test_steer_compact_directive_routes_to_compact_request(
     """A composer `/compact <focus>` on a live run becomes a compact request
     carrying the focus -- never a steer message the loop would read as text."""
     _srv, port = server
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "compact-run"
-    run_dir.mkdir(parents=True)
-    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    (run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "compact-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, body = _post(
-        port, "/api/run/compact-run/steer", {"text": "/compact keep the auth decisions"}
+        port, "/api/session/compact-run/steer", {"text": "/compact keep the auth decisions"}
     )
     assert status == 200 and body["ok"] is True
     assert "compaction requested" in str(body["message"])
-    assert (run_dir / "compact.request").read_text(encoding="utf-8") == "keep the auth decisions"
-    assert not (run_dir / "steer.answer").exists()
-    assert not (run_dir / "steer.request").exists()
+    assert (session_dir / "compact.request").read_text(
+        encoding="utf-8"
+    ) == "keep the auth decisions"
+    assert not (session_dir / "steer.answer").exists()
+    assert not (session_dir / "steer.request").exists()
 
 
 def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

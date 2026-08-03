@@ -31,8 +31,8 @@ from typing import Any, BinaryIO
 from agent6.app.reporter import Reporter
 from agent6.app.run import FrontendCapabilities, run_task
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.runs.id import new_friendly_id
-from agent6.runs.layout import RunLayout
+from agent6.sessions.id import new_friendly_id
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import Session, Sessions, StopReason
@@ -69,7 +69,7 @@ def teeing_reporter(kept: list[str]) -> Reporter:
     """The stderr reporter, remembering what it said.
 
     A lifecycle refusal (`return 2`) writes its reason here and nowhere
-    else: no `run.end` event exists, so the fold produces no ending and the
+    else: no `session.end` event exists, so the fold produces no ending and the
     editor saw a turn stop with a stop reason and no words. There are about
     a dozen such paths -- a missing git identity, a run id already in use,
     another writer holding the repo, a dirty worktree, isolation refused.
@@ -162,11 +162,11 @@ class RunBridge:
             return None
         with self._asks:
             self._asked += 1
-            tool_call_id = f"ask-{session.id}-{self._asked}"
+            tool_call_id = f"ask-{session.acp_id}-{self._asked}"
         answer = self.server.request(
             "session/request_permission",
             {
-                "sessionId": session.id,
+                "sessionId": session.acp_id,
                 "toolCall": {
                     "toolCallId": tool_call_id,
                     "title": printable(prompt),
@@ -199,7 +199,7 @@ class RunBridge:
                 "jsonrpc": "2.0",
                 "method": "session/update",
                 "params": {
-                    "sessionId": session.id,
+                    "sessionId": session.acp_id,
                     "update": {
                         "sessionUpdate": "tool_call_update",
                         "toolCallId": tool_call_id,
@@ -212,9 +212,11 @@ class RunBridge:
 
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to say anything of its own."""
-        if not session.run_id:
+        if not session.session_id:
             return False
-        layout = RunLayout(state_dir=resolved_state_dir(session.cwd), run_id=session.run_id)
+        layout = SessionLayout(
+            state_dir=resolved_state_dir(session.cwd), session_id=session.session_id
+        )
         return layout.logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
@@ -223,7 +225,7 @@ class RunBridge:
         # the id inside left that whole window with no run to address: the
         # cancel wrote no marker, the turn ran to completion spending budget
         # and making commits, and the editor was told "cancelled".
-        session.run_id = new_friendly_id()
+        session.session_id = new_friendly_id()
         with self._runs:
             if session.cancelled:
                 # Cancelled while queued. The marker is for a run in flight;
@@ -240,13 +242,15 @@ class RunBridge:
                 # ending, and saying this too contradicts it.
                 if not self.had_journal(session):
                     self.server.notify_raw(
-                        message_update(session.id, f"the run could not start: {exc}")
+                        message_update(session.acp_id, f"the run could not start: {exc}")
                     )
                 return "refusal"
 
     def _run(self, session: Session, text: str) -> StopReason:
         effective = load_effective(session.cwd)
-        layout = RunLayout(state_dir=resolved_state_dir(session.cwd), run_id=session.run_id)
+        layout = SessionLayout(
+            state_dir=resolved_state_dir(session.cwd), session_id=session.session_id
+        )
         os.chdir(session.cwd)
 
         said: list[str] = []
@@ -258,7 +262,7 @@ class RunBridge:
             `tail_events` checks this at the TOP of each poll, so answering
             False once lets the journal's last lines still reach the editor.
             Stopping immediately dropped them; waiting for the run's own
-            `run.end` taxed every turn that ends without one (a config error,
+            `session.end` taxed every turn that ends without one (a config error,
             an early refusal) with the full drain timeout.
             """
             if not ended.is_set():
@@ -271,7 +275,7 @@ class RunBridge:
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop),
-            name=f"acp-tail-{session.id}",
+            name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
         tail.start()
@@ -290,7 +294,7 @@ class RunBridge:
                     agent6_exe=agent6_exe,
                     spawn_detached_resume=spawn_detached_resume,
                 ),
-                run_id=session.run_id,
+                session_id=session.session_id,
                 explicit_leaves=frozenset(effective.sources),
                 reporter=teeing_reporter(said),
             )
@@ -300,7 +304,7 @@ class RunBridge:
         if code != 0 and not self.had_journal(session):
             # A refusal before the run had anything to say for itself.
             self.server.notify_raw(
-                message_update(session.id, "\n".join(said) or f"the run stopped (exit {code})")
+                message_update(session.acp_id, "\n".join(said) or f"the run stopped (exit {code})")
             )
         return stop_reason(code)
 
@@ -309,7 +313,9 @@ class RunBridge:
         fold = TranscriptFold()
         for event in tail_events(logs_path, stop_when_finished=True, should_stop=stop):
             for item in fold.feed(event):
-                for body in updates_for(item, session_id=session.id, run_id=session.run_id):
+                for body in updates_for(
+                    item, acp_session_id=session.acp_id, session_id=session.session_id
+                ):
                     self.server.notify_raw(body)
 
 

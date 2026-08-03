@@ -5,7 +5,7 @@
 The web server is a thin renderer: every payload it serves is built here from the
 shared read-side (viewmodel folds, config_layer, transcript_render, the machine
 spec/journal). Pure functions, no HTTP or threads, so the run/machine snapshots
-are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
+are exactly `session_state_as_dict` / `machine_state_as_dict` (identical to
 `agent6 attach --json`).
 """
 
@@ -20,21 +20,21 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
-    fold_run,
+    fold_session,
     fold_transcript,
-    is_run_husk,
+    is_session_husk,
     is_winner,
     machine_state_as_dict,
     machine_word_for_dir,
     newest_state_log,
-    run_compare,
-    run_state_as_dict,
-    summarize_run_dir,
+    session_compare,
+    session_state_as_dict,
+    summarize_session_dir,
     tail_events,
     task_snippet,
 )
@@ -42,7 +42,7 @@ from agent6.viewmodel.config_view import render_show
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.transcript_style import item_lines
 
-RUN_SUBDIRS = ("runs", "asks")
+SESSION_SUBDIRS = ("runs", "asks")
 
 
 # --- directory layout --------------------------------------------------------
@@ -74,16 +74,16 @@ def is_safe_component(name: str) -> bool:
 _safe_component = is_safe_component
 
 
-def run_dir_for(cwd: Path, run_id: str) -> Path | None:
+def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     """Locate a run dir by exact id across runs/ and asks/ (no prefix match: the
-    web client always sends the full id from the hub payload). Rejects a run_id
+    web client always sends the full id from the hub payload). Rejects a session_id
     that is not a single safe path component. Husks are skipped so an orphaned
     dir in runs/ cannot shadow a real ask of the same id."""
-    if not _safe_component(run_id):
+    if not _safe_component(session_id):
         return None
-    for sub in RUN_SUBDIRS:
-        d = state_dir_for(cwd) / sub / run_id
-        if d.is_dir() and not is_run_husk(d):
+    for sub in SESSION_SUBDIRS:
+        d = state_dir_for(cwd) / sub / session_id
+        if d.is_dir() and not is_session_husk(d):
             return d
     return None
 
@@ -104,10 +104,10 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
     return d if d.is_dir() else None
 
 
-def run_dir_paths(cwd: Path) -> list[Path]:
+def session_dir_paths(cwd: Path) -> list[Path]:
     """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
     out: list[Path] = []
-    for sub in RUN_SUBDIRS:
+    for sub in SESSION_SUBDIRS:
         d = state_dir_for(cwd) / sub
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir())
@@ -123,14 +123,14 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _run_summary(run_dir: Path) -> dict[str, Any]:
+def _session_summary(session_dir: Path) -> dict[str, Any]:
     """The hub's one-line run summary, from the shared scanner: id, mode, task,
     status (+ reason detail), when, usd. The status words come from
     ``viewmodel.status_word``, so a provider_error death reads "failed" here
-    exactly as in the TUI hub and `agent6 runs list`."""
-    s = summarize_run_dir(run_dir)
+    exactly as in the TUI hub and `agent6 sessions list`."""
+    s = summarize_session_dir(session_dir)
     return {
-        "id": s.run_id,
+        "id": s.session_id,
         "mode": s.mode,
         "task": task_snippet(s.task, max_chars=100),
         "status": s.status,
@@ -141,19 +141,19 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
         "mtime": s.mtime,
         "usd": s.cost_usd,
         "usd_partial": s.usd_partial,
-        "winner": is_winner(run_dir),  # fan-out compare winner: a ★ on the hub row
+        "winner": is_winner(session_dir),  # fan-out compare winner: a ★ on the hub row
     }
 
 
-def _list_runs(cwd: Path) -> list[dict[str, Any]]:
+def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     """All runs (runs/ + asks/) summarized, newest first by last-activity time.
-    Husks (never-started dirs) are skipped, the same rule as `agent6 runs`."""
+    Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     dirs: list[Path] = []
-    for sub in RUN_SUBDIRS:
+    for sub in SESSION_SUBDIRS:
         d = state_dir_for(cwd) / sub
         if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
-    summaries = [_run_summary(p) for p in dirs]
+            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
+    summaries = [_session_summary(p) for p in dirs]
     summaries.sort(key=lambda s: s["mtime"], reverse=True)
     return summaries
 
@@ -202,7 +202,7 @@ def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
     """`machine create` drafts summarized like runs (their logs.jsonl is a
     run-style authoring log), newest first, so the machines page can link to
     the #/draft/<name> view."""
-    summaries = [_run_summary(p) for p in draft_dir_paths(cwd)]
+    summaries = [_session_summary(p) for p in draft_dir_paths(cwd)]
     summaries.sort(key=lambda s: s["mtime"], reverse=True)
     return summaries
 
@@ -221,7 +221,7 @@ def hub_payload(cwd: Path) -> dict[str, Any]:
     """The hub: every run, machine instance, and machine-create draft, plus the
     authored machine files (to run or create from), summarized for the listing."""
     return {
-        "runs": _list_runs(cwd),
+        "sessions": _list_sessions(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
@@ -231,14 +231,14 @@ def hub_payload(cwd: Path) -> dict[str, Any]:
 # --- run snapshot + conversation ----------------------------------------------
 
 
-def manifest_branches(run_dir: Path) -> dict[str, str]:
+def manifest_branches(session_dir: Path) -> dict[str, str]:
     """Branch facts from the run's manifest (run_branch / base_branch /
     merged_into) for the run header. The event fold doesn't carry them, but a
     web user needs to SEE where a run's work lives and where Merge lands --
     consecutive spawns chain branches invisibly otherwise. Empty for a run with
     no manifest (or branch_per_run off)."""
     try:
-        manifest = read_manifest(run_dir)
+        manifest = read_manifest(session_dir)
     except ManifestError:
         return {}
     out: dict[str, str] = {}
@@ -251,26 +251,26 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
     return out
 
 
-def manifest_header(run_dir: Path) -> dict[str, Any]:
+def manifest_header(session_dir: Path) -> dict[str, Any]:
     """Manifest-derived run-header fields the event fold doesn't carry: branch
     facts (run/base/merged) and the fan-out compare outcome (rank/winner/
-    rationale). Merged into the RunState snapshot by BOTH the one-shot
-    `/api/run/<id>` and the SSE stream, so the header the page paints from can
+    rationale). Merged into the SessionState snapshot by BOTH the one-shot
+    `/api/session/<id>` and the SSE stream, so the header the page paints from can
     never drift between them. Empty for a run with no (readable) manifest."""
-    header: dict[str, Any] = dict(manifest_branches(run_dir))
-    compare = run_compare(run_dir)
+    header: dict[str, Any] = dict(manifest_branches(session_dir))
+    compare = session_compare(session_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
     return header
 
 
-def run_snapshot(run_dir: Path) -> dict[str, Any]:
-    """A run's folded RunState as the wire dict (the same fold as
-    `agent6 attach <id> --json`, which owns the dir-backed run_id/user_task
+def session_snapshot(session_dir: Path) -> dict[str, Any]:
+    """A run's folded SessionState as the wire dict (the same fold as
+    `agent6 attach <id> --json`, which owns the dir-backed session_id/user_task
     fill), plus the manifest's branch/compare facts."""
-    state = fold_run(tail_events(run_dir / LOGS_NAME, follow=False))
-    snap = run_state_as_dict(state, run_dir)
-    snap.update(manifest_header(run_dir))
+    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    snap = session_state_as_dict(state, session_dir)
+    snap.update(manifest_header(session_dir))
     return snap
 
 
@@ -292,9 +292,9 @@ def conversation_items(log_path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def conversation_payload(run_dir: Path) -> dict[str, Any]:
+def conversation_payload(session_dir: Path) -> dict[str, Any]:
     """A run's conversation, folded from its event log."""
-    return {"run_id": run_dir.name, "items": conversation_items(run_dir / LOGS_NAME)}
+    return {"session_id": session_dir.name, "items": conversation_items(session_dir / LOGS_NAME)}
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
@@ -319,7 +319,7 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
 
 
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
-    """The RunState of the machine's most recent agent-state execution: the live
+    """The SessionState of the machine's most recent agent-state execution: the live
     reasoning + tool calls inside the state the machine is running. Empty when no
     agent state has produced a log yet.
 
@@ -331,7 +331,7 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     log = newest_state_log(machine_dir)
     if log is None:
         return {}
-    snap = run_state_as_dict(fold_run(tail_events(log, follow=False)))
+    snap = session_state_as_dict(fold_session(tail_events(log, follow=False)))
     snap["state_dir"] = log.parent.name
     return snap
 

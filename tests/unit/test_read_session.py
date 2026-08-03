@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.layout import session_layout
+from agent6.sessions.layout import session_layout
 from agent6.tools.sessions import ROSTER_MAX, conversation, roster, session_briefs
 
 
@@ -23,14 +23,14 @@ def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: li
             {
                 "version": 3,
                 "mode": mode,
-                "run_id": sid,
+                "session_id": sid,
                 "user_task": task,
                 "start_ts": "2026-07-31T01:00:00",
             }
         ),
         encoding="utf-8",
     )
-    lines = [json.dumps({"type": "run.start", "user_task": task})]
+    lines = [json.dumps({"type": "session.start", "user_task": task})]
     lines += [json.dumps({"type": "role.result", "text": t}) for t in turns]
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return d
@@ -55,7 +55,7 @@ def test_the_conversation_reads_oldest_first(tmp_path: Path) -> None:
         ["use ffmpeg", "with libx265"],
     )
     layout = session_layout(tmp_path, "quiet-fox-AAAAAA")
-    assert layout is not None and layout.run_dir == d
+    assert layout is not None and layout.session_dir == d
     text = conversation(layout, max_chars=10_000)
     assert text.index("how do I convert") < text.index("use ffmpeg") < text.index("libx265")
     assert text.startswith("user: how do I convert")
@@ -191,7 +191,7 @@ def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path)
     from agent6.app.providers import InstrumentedProvider
     from agent6.budget import BudgetTracker
     from agent6.events import EventSink
-    from agent6.runs.layout import session_layout
+    from agent6.sessions.layout import session_layout
 
     d = tmp_path / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
@@ -200,7 +200,7 @@ def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path)
         encoding="utf-8",
     )
     events = EventSink(d / "logs.jsonl")
-    events.emit("run.start", user_task="how do I convert h264")
+    events.emit("session.start", user_task="how do I convert h264")
     inner = MagicMock()
     inner.call.return_value = SimpleNamespace(
         text="use ffmpeg -c:v libx265",

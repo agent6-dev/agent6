@@ -64,8 +64,8 @@ def scrub(text: str) -> str:
     return text
 
 
-def find_run(run_id: str) -> Path | None:
-    hits = sorted(STATE.glob(f"*/runs/{run_id}"))
+def find_run(session_id: str) -> Path | None:
+    hits = sorted(STATE.glob(f"*/runs/{session_id}"))
     return hits[0] if hits else None
 
 
@@ -102,12 +102,12 @@ def main() -> None:
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
     total = 0
-    for run_id in SOURCES:
-        src = find_run(run_id)
+    for session_id in SOURCES:
+        src = find_run(session_id)
         if not src:
-            print(f"  SKIP {run_id}: not found under {STATE}")
+            print(f"  SKIP {session_id}: not found under {STATE}")
             continue
-        dst = OUT / run_id
+        dst = OUT / session_id
         (dst / "transcripts").mkdir(parents=True)
         for name in ("manifest.json", "graph.jsonl", "graph.dot"):
             if (src / name).is_file():
@@ -118,7 +118,7 @@ def main() -> None:
             else 0
         )
         tr = sorted((src / "transcripts").glob("*.json")) if (src / "transcripts").is_dir() else []
-        keep = tr[:KEEP_TRANSCRIPTS_HEAD_FEATURE] if run_id == FEATURE_RUN else []
+        keep = tr[:KEEP_TRANSCRIPTS_HEAD_FEATURE] if session_id == FEATURE_RUN else []
         seen: set[str] = set()
         for t in keep:
             if t.name in seen:
@@ -127,7 +127,7 @@ def main() -> None:
             copy_scrubbed(t, dst / "transcripts" / t.name)
         size = sum(p.stat().st_size for p in dst.rglob("*") if p.is_file())
         total += size
-        print(f"  {run_id}: {n} log lines, {len(seen)} transcripts, {size // 1024} kB")
+        print(f"  {session_id}: {n} log lines, {len(seen)} transcripts, {size // 1024} kB")
     print(f"total fixtures: {total // 1024} kB -> {OUT}")
 
 

@@ -402,15 +402,15 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
 
 
 def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
-    """loop.resume.start opens a resumed/forked leg's log; it stamps run_id and
-    mode like run.start so the leg's log identifies itself (the manifest owns
+    """loop.resume.start opens a resumed/forked leg's log; it stamps session_id and
+    mode like session.start so the leg's log identifies itself (the manifest owns
     the task). An identity-less leg log left every fold empty and each consumer
     patching its own copy."""
     from agent6.workflows._run_state import RunSnapshot as _Snap
 
-    run_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
-    run_dir.mkdir(parents=True)
-    snap_path = run_dir / "loop_state.json"
+    session_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    session_dir.mkdir(parents=True)
+    snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
         _Snap(
             system="s",
@@ -447,7 +447,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     )
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"ok": True})
-    ev = _EventCapture(path=run_dir / "logs.jsonl")
+    ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
         provider=provider,
         dispatcher=dispatcher,
@@ -458,7 +458,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     )
     wf.resume()
     (start,) = [e for e in ev.events if e["type"] == "loop.resume.start"]
-    assert start["run_id"] == "tidy-otter-AB12CD"
+    assert start["session_id"] == "tidy-otter-AB12CD"
     assert start["mode"] == "run"
 
 
@@ -964,9 +964,9 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     graded on another. Silence there is the worst case: it looks like it worked."""
     from agent6.workflows._run_state import RunSnapshot as _Snap
 
-    run_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
-    run_dir.mkdir(parents=True)
-    snap_path = run_dir / "loop_state.json"
+    session_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    session_dir.mkdir(parents=True)
+    snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
         _Snap(
             system="s",
@@ -1003,7 +1003,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     )
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = RawResult({"ok": True})
-    ev = _EventCapture(path=run_dir / "logs.jsonl")
+    ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
         provider=provider,
         dispatcher=dispatcher,

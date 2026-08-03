@@ -40,7 +40,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.models.validate import known_models, refusal_message, validate_spec_models
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -51,17 +51,17 @@ from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.viewmodel import (
-    RunSummary,
-    is_run_husk,
+    SessionSummary,
+    is_session_husk,
     is_winner,
-    run_mtime,
-    summarize_run_dir,
+    session_mtime,
+    summarize_session_dir,
     task_snippet,
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
-_RUN_SUBDIRS = ("runs", "asks")
+_SESSION_SUBDIRS = ("runs", "asks")
 
 # The hub re-asks on this cadence (the web hub's poll rate): it was the one TUI
 # screen that never refreshed, so a run that died while you watched kept its
@@ -130,7 +130,7 @@ _STATUS_STYLE = {
 }
 
 
-def _status_cell(summary: RunSummary) -> Text:
+def _status_cell(summary: SessionSummary) -> Text:
     label = status_label(summary.status, summary.reason)
     return Text(label, style=_STATUS_STYLE.get(summary.status, ""))
 
@@ -142,15 +142,15 @@ def _cost_cell(cost_usd: float, *, partial: bool) -> str:
     return format_cost(cost_usd, partial=partial)
 
 
-def _list_runs(agent6_dir: Path) -> list[Path]:
+def _list_sessions(agent6_dir: Path) -> list[Path]:
     """All run directories (runs/ + asks/), newest first by last-activity time.
-    Husks (never-started dirs) are skipped, the same rule as `agent6 runs`."""
+    Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     out: list[Path] = []
-    for sub in _RUN_SUBDIRS:
+    for sub in _SESSION_SUBDIRS:
         d = agent6_dir / sub
         if d.is_dir():
-            out.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
-    out.sort(key=run_mtime, reverse=True)
+            out.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
+    out.sort(key=session_mtime, reverse=True)
     return out
 
 
@@ -398,7 +398,7 @@ class HomeScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <path>"
-        yield DataTable(id="runs")
+        yield DataTable(id="sessions")
         yield Footer()
 
     def action_menu(self, mnemonic: str) -> None:
@@ -416,7 +416,7 @@ class HomeScreen(Screen[None]):
                 await result
 
     def on_mount(self) -> None:
-        table = self.query_one("#runs", DataTable)
+        table = self.query_one("#sessions", DataTable)
         table.cursor_type = "row"
         table.add_columns("when", "mode", "status", "cost", "id", "task")
         self.action_refresh()
@@ -437,7 +437,7 @@ class HomeScreen(Screen[None]):
             self.action_refresh()
 
     def action_refresh(self) -> None:
-        table = self.query_one("#runs", DataTable)
+        table = self.query_one("#sessions", DataTable)
         # The poll rebuilds the whole table; keep the operator's selection by
         # run id, not row index -- new activity reorders the rows.
         selected = ""
@@ -449,21 +449,21 @@ class HomeScreen(Screen[None]):
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
         # run for cursor positions past the gap.
         survivors: list[Path] = []
-        for rd in _list_runs(self.agent6_dir):
+        for rd in _list_sessions(self.agent6_dir):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
-            s = summarize_run_dir(rd)
+            s = summarize_session_dir(rd)
             # last-activity time (logs.jsonl), so opening a run to view it does not
             # bump its "when" the way the run-dir mtime did.
-            when = time.strftime("%m-%d %H:%M", time.localtime(run_mtime(rd)))
+            when = time.strftime("%m-%d %H:%M", time.localtime(session_mtime(rd)))
             # Text cells: task is model/user input and may carry markup brackets.
-            run_id = f"{s.run_id} {WINNER_GLYPH}" if is_winner(rd) else s.run_id
+            session_id = f"{s.session_id} {WINNER_GLYPH}" if is_winner(rd) else s.session_id
             table.add_row(
                 when,
                 s.mode,
                 _status_cell(s),
                 _cost_cell(s.cost_usd, partial=s.usd_partial),
-                Text(run_id),
+                Text(session_id),
                 Text(task_snippet(s.task, max_chars=60)),
             )
             survivors.append(rd)
@@ -478,7 +478,7 @@ class HomeScreen(Screen[None]):
         table.show_cursor = table.row_count > 0
 
     def action_open_selected(self) -> None:
-        table = self.query_one("#runs", DataTable)
+        table = self.query_one("#sessions", DataTable)
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             self.app.exit(self._runs[table.cursor_row])
 
@@ -486,11 +486,11 @@ class HomeScreen(Screen[None]):
         """Open a scrollable, read-only log of the selected run (current or
         finished) without leaving the hub -- the run list only shows a one-line
         status, so this is how you read what a past run actually did."""
-        table = self.query_one("#runs", DataTable)
+        table = self.query_one("#sessions", DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
-        run_dir = self._runs[table.cursor_row]
-        self.app.push_screen(LogScreen(run_dir / LOGS_NAME, title=f"logs · {run_dir.name}"))
+        session_dir = self._runs[table.cursor_row]
+        self.app.push_screen(LogScreen(session_dir / LOGS_NAME, title=f"logs · {session_dir.name}"))
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter
@@ -512,27 +512,27 @@ class HomeScreen(Screen[None]):
 
     def action_merge_selected(self) -> None:
         """Merge the selected run's branch into its base, after a confirm. The TUI
-        shells out to `agent6 runs merge` (never git_ops directly); the CLI applies
+        shells out to `agent6 sessions merge` (never git_ops directly); the CLI applies
         git.merge_strategy and refuses a dirty tree / unconfigured identity."""
-        table = self.query_one("#runs", DataTable)
+        table = self.query_one("#sessions", DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
-        run_id = self._runs[table.cursor_row].name
+        session_id = self._runs[table.cursor_row].name
         self.app.push_screen(
             ConfirmModal(
-                f"Merge run {run_id}?",
-                "Runs `agent6 runs merge` to land this run's branch on its base using your "
+                f"Merge run {session_id}?",
+                "Runs `agent6 sessions merge` to land this run's branch on its base using your "
                 "git.merge_strategy. The working tree must be clean.",
                 confirm_label="Merge",
             ),
-            self._on_merge_confirm(run_id),
+            self._on_merge_confirm(session_id),
         )
 
-    def _on_merge_confirm(self, run_id: str) -> Callable[[bool | None], None]:
+    def _on_merge_confirm(self, session_id: str) -> Callable[[bool | None], None]:
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_merge_cli(self.repo_cwd, run_id)
+            ok, msg = _run_merge_cli(self.repo_cwd, session_id)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -583,11 +583,11 @@ class HomeScreen(Screen[None]):
         if result is None:
             return
         mode, task, preset = result
-        run_dir, error = _spawn_and_locate(
+        session_dir, error = _spawn_and_locate(
             self.agent6_dir, self.repo_cwd, mode, task, preset=preset
         )
-        if run_dir is not None:
-            self.app.exit(run_dir)
+        if session_dir is not None:
+            self.app.exit(session_dir)
         else:
             self.app.notify(error or "Could not start the run.", severity="error", timeout=8.0)
 
@@ -609,13 +609,15 @@ class Agent6HomeApp(MuxPointerShapes, App[Path | None]):
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* half the 2-wide default */
     /* I-beam over anything you can type into (kitty OSC 22; inert elsewhere). */
     Input, TextArea { pointer: text; }
-    #runs { height: 1fr; border: round $primary; background: $surface; }
-    #runs:focus { border: round $accent; }
+    #sessions { height: 1fr; border: round $primary; background: $surface; }
+    #sessions:focus { border: round $accent; }
     /* Panel-coloured header bar (matches the menu bar + footer + config header),
        and a selection bar only when focused. */
-    #runs > .datatable--header { background: $panel; color: $foreground; text-style: bold; }
-    #runs > .datatable--cursor { background: transparent; color: $foreground; }
-    #runs:focus > .datatable--cursor { background: $primary 40%; color: $text; text-style: bold; }
+    #sessions > .datatable--header { background: $panel; color: $foreground; text-style: bold; }
+    #sessions > .datatable--cursor { background: transparent; color: $foreground; }
+    #sessions:focus > .datatable--cursor {
+        background: $primary 40%; color: $text; text-style: bold;
+    }
     """
     )
 
@@ -667,13 +669,13 @@ def _spawn_and_locate(
     first: Path | None = None
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
-        run_dir, err = _spawn_run(
+        session_dir, err = _spawn_run(
             agent6_dir, repo_cwd, "run", seg.task, preset=preset, spec=seg.spec or "1"
         )
-        if run_dir is None:
+        if session_dir is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
         elif first is None:
-            first = run_dir
+            first = session_dir
     if failures:
         # The caller's surfaces are open-the-run XOR show-the-error; a partial
         # failure must not vanish behind a surviving lane, so stay on the hub.
@@ -718,8 +720,8 @@ def _spawn_run(
     return spawn_and_locate(
         argv,
         repo_cwd,
-        before=set(_list_runs(agent6_dir)),
-        list_dirs=lambda: _list_runs(agent6_dir),
+        before=set(_list_sessions(agent6_dir)),
+        list_dirs=lambda: _list_sessions(agent6_dir),
         # The hub watches this run on the dashboard, which renders the model's
         # reasoning + answer from role.*_delta events. Tell the detached (non-TTY)
         # run to emit those deltas to its logs.jsonl; without this it takes the
@@ -730,11 +732,11 @@ def _spawn_run(
     )
 
 
-def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
-    """Run `agent6 runs merge <run_id>` (capturing output) and return (ok, message).
+def _run_merge_cli(repo_cwd: Path, session_id: str) -> tuple[bool, str]:
+    """Run `agent6 sessions merge <session_id>` (capturing output) and return (ok, message).
     The hub shells out to the same CLI a user would, so merging stays a CLI concern
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
-    return run_cli_capture([agent6_exe(), "runs", "merge", run_id], repo_cwd)
+    return run_cli_capture([agent6_exe(), "sessions", "merge", session_id], repo_cwd)
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path) -> Path | None:

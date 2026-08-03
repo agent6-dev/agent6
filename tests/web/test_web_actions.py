@@ -93,8 +93,8 @@ def test_spawn_new_work_malformed_parallel_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_locate(monkeypatch)
-    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel")
-    assert run_id is None
+    session_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel")
+    assert session_id is None
     assert "/parallel" in err  # the directive error surfaces, no spawn happens
     assert captured == []
 
@@ -143,8 +143,10 @@ def test_spawn_new_work_parallel_refuses_unknown_model_before_spawn(
 
     monkeypatch.setattr(actions, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
-    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it")
-    assert run_id is None
+    session_id, err = actions.spawn_new_work(
+        tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it"
+    )
+    assert session_id is None
     assert "unknown model 'moonshotai/kimi-k2.7'" in err
     assert "closest: moonshotai/kimi-k2.6" in err
     assert captured == []  # nothing spawned
@@ -214,8 +216,10 @@ def test_parallel_partial_spawn_failure_surfaces(
         return None
 
     monkeypatch.setattr(actions, "_model_refusal", no_refusal)
-    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel 2 task A /parallel 3 task B")
-    assert run_id is None
+    session_id, err = actions.spawn_new_work(
+        tmp_path, "run", "/parallel 2 task A /parallel 3 task B"
+    )
+    assert session_id is None
     assert "boom" in err and "task B" in err
 
 
@@ -224,8 +228,8 @@ def test_spawn_new_work_multi_segment_malformed_spawns_nothing(
 ) -> None:
     # all-or-nothing: a later empty segment refuses the whole message, no spawn.
     captured = _capture_locate(monkeypatch)
-    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel 2 good task /parallel")
-    assert run_id is None and "/parallel" in err
+    session_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel 2 good task /parallel")
+    assert session_id is None and "/parallel" in err
     assert captured == []
 
 
@@ -254,7 +258,7 @@ def test_merge_and_config_argv_end_options_before_values(
 
     monkeypatch.setattr(actions, "run_cli_capture", _fake_capture)
     actions.merge_run(tmp_path, "-rid", "squash")
-    assert captured[-1][1:] == ["runs", "merge", "--strategy", "squash", "--", "-rid"]
+    assert captured[-1][1:] == ["sessions", "merge", "--strategy", "squash", "--", "-rid"]
     actions.set_config(tmp_path, "sandbox.protect_git", "-1", repo=True)
     assert captured[-1][1:] == ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"]
 
@@ -268,7 +272,7 @@ def test_merge_and_config_argv_end_options_before_values(
         ["plan", "--", "-dashy task"],
         ["ask", "--", "-dashy question"],
         ["machine", "create", "--", "-dashy task"],
-        ["runs", "merge", "--strategy", "squash", "--", "-rid"],
+        ["sessions", "merge", "--strategy", "squash", "--", "-rid"],
         ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"],
     ],
 )
@@ -276,7 +280,7 @@ def test_cli_parser_accepts_double_dash_before_positionals(argv: list[str]) -> N
     # The argv shapes the web actions build must parse: `--` ends options and the
     # dashy value lands in the positional.
     ns = build_parser().parse_args(_inject_default_verb(argv))
-    positional = ns.task if hasattr(ns, "task") else getattr(ns, "run_id", None) or ns.value
+    positional = ns.task if hasattr(ns, "task") else getattr(ns, "session_id", None) or ns.value
     assert str(positional).startswith("-")
 
 
@@ -306,7 +310,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     # not read as "this spawn started".
     from collections.abc import Callable
 
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
     from agent6.ui.web import model
 
     mf = tmp_path / "tiny.asm.toml"
@@ -424,24 +428,24 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     the answer and reported success with no worker left to consume it -- the
     same shape as the typed steer that used to reach a corpse. Every sibling
     action already refuses "run is not live"."""
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run-A1"
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
-        '{"version":2,"run_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
     )
-    (run_dir / "logs.jsonl").write_text(
-        '{"type":"run.start","mode":"run","user_task":"t"}\n'
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
         '{"type":"approval.prompt","id":"approval-1","prompt":"ok?"}\n',
         encoding="utf-8",
     )
-    (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    before = sorted(p.name for p in run_dir.iterdir())
+    (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
+    before = sorted(p.name for p in session_dir.iterdir())
 
     ok, msg = actions.approve(tmp_path, "dead-run-A1", "approval-1", True)
     assert ok is False and "not live" in msg
     ok2, msg2 = actions.answer_question(tmp_path, "dead-run-A1", "q-1", ["yes"])
     assert ok2 is False and "not live" in msg2
-    assert sorted(p.name for p in run_dir.iterdir()) == before, "nothing may be written"
+    assert sorted(p.name for p in session_dir.iterdir()) == before, "nothing may be written"
 
 
 def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:

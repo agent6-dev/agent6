@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 runs compare`: advisory verify+judge ranking across
+"""Tests for `agent6 sessions compare`: advisory verify+judge ranking across
 already-run candidates. Real tmp git repos + fabricated run state (manifest.json
 + logs.jsonl), same fabrication pattern as test_cli_runs_merge.py (branches) and
 test_parallel_orchestrator.py (`_write_fake_run`). The judge path is driven with
@@ -22,7 +22,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.config.layer import repo_config_path_for, resolved_state_dir
 from agent6.providers import Provider, ProviderError
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _compare as compare_mod
 from agent6.ui.cli import main
 from agent6.workflows.judge import CandidateBrief
@@ -46,7 +46,7 @@ def _init_repo(repo: Path) -> str:
 
 def _setup_run(
     repo: Path,
-    run_id: str,
+    session_id: str,
     *,
     base_sha: str,
     commits: list[tuple[str, str, str]],
@@ -55,11 +55,11 @@ def _setup_run(
     cost: float = 0.05,
     manifest_extra: dict[str, Any] | None = None,
 ) -> None:
-    """Cut agent6/<run_id> off base_sha with *commits*, write manifest.json +
+    """Cut agent6/<session_id> off base_sha with *commits*, write manifest.json +
     logs.jsonl (the run-branch + run-state fixture `runs compare` reads), and
     return the checkout to where it was. *manifest_extra* merges extra manifest
     fields (e.g. a fan-out lane's parallel_id + compare stamp)."""
-    branch = f"agent6/{run_id}"
+    branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     _git(repo, "checkout", "-q", base_sha)
     _git(repo, "checkout", "-q", "-b", branch)
@@ -69,13 +69,13 @@ def _setup_run(
         _git(repo, "commit", "-q", "-m", msg)
     _git(repo, "checkout", "-q", current)
 
-    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id=run_id)
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": run_id,
+                "session_id": session_id,
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": branch,
@@ -87,13 +87,13 @@ def _setup_run(
         encoding="utf-8",
     )
     events: list[dict[str, object]] = [
-        {"type": "run.start", "mode": "run", "user_task": task},
+        {"type": "session.start", "mode": "run", "user_task": task},
         {"type": "budget.update", "usd_total": cost},
     ]
     if status == "passed":
-        events.append({"type": "run.end", "reason": "finish_run", "all_passed": True})
+        events.append({"type": "session.end", "reason": "finish_run", "all_passed": True})
     elif status == "failed":
-        events.append({"type": "run.end", "reason": "provider_error", "all_passed": False})
+        events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
     layout.logs_path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
 
@@ -116,7 +116,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
-    rc = main(["runs", "compare", "run-AAAA11"])
+    rc = main(["sessions", "compare", "run-AAAA11"])
     assert rc == 2
     assert "at least 2" in capsys.readouterr().err
 
@@ -124,7 +124,7 @@ def test_compare_needs_at_least_two_ids(repo: Path, capsys: pytest.CaptureFixtur
 def test_compare_unknown_id_errors_loudly(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
-    rc = main(["runs", "compare", "run-AAAA11", "nonexistent"])
+    rc = main(["sessions", "compare", "run-AAAA11", "nonexistent"])
     assert rc == 2
     assert "no run matches" in capsys.readouterr().err
 
@@ -134,7 +134,7 @@ def test_compare_ambiguous_id_errors_loudly(repo: Path, capsys: pytest.CaptureFi
     _setup_run(repo, "run-DUPXX1", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-DUPXX2", base_sha=base, commits=[("b.txt", "b\n", "add b")])
     _setup_run(repo, "run-CCCC33", base_sha=base, commits=[("c.txt", "c\n", "add c")])
-    rc = main(["runs", "compare", "run-DUP", "run-CCCC33"])
+    rc = main(["sessions", "compare", "run-DUP", "run-CCCC33"])
     assert rc == 2
     assert "ambiguous" in capsys.readouterr().err
 
@@ -143,7 +143,7 @@ def test_compare_rejects_duplicate_id(repo: Path, capsys: pytest.CaptureFixture[
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
-    rc = main(["runs", "compare", "run-AAAA11", "run-AAAA11"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-AAAA11"])
     assert rc == 2
     assert "more than once" in capsys.readouterr().err
 
@@ -175,12 +175,12 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
         status="passed",
         cost=0.09,
     )
-    rc = main(["runs", "compare", "run-AAAA", "run-BBBB22"])  # unique prefix + exact id
+    rc = main(["sessions", "compare", "run-AAAA", "run-BBBB22"])  # unique prefix + exact id
     assert rc == 0
     out = capsys.readouterr().out
     assert "ranked candidates" in out
     assert out.index("run-BBBB22") < out.index("run-AAAA11")
-    assert "agent6 runs merge run-BBBB22" in out
+    assert "agent6 sessions merge run-BBBB22" in out
     assert "no reviewer model configured" in out
     # Candidate spend is totaled; no judge ran, so no judge figure.
     assert "total: candidates $0.1000" in out and "+ judge" not in out
@@ -209,7 +209,7 @@ def test_compare_rows_and_total_format_cost_the_same_way(
         status="passed",
         cost=0.02,
     )
-    assert main(["runs", "compare", "run-CCCC33", "run-DDDD44"]) == 0
+    assert main(["sessions", "compare", "run-CCCC33", "run-DDDD44"]) == 0
     out = capsys.readouterr().out
     assert "$1.5000" not in out
     assert "$1.50" in out
@@ -219,7 +219,7 @@ def test_compare_rows_and_total_format_cost_the_same_way(
 def test_compare_excludes_a_run_that_never_finished(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run that died without reaching run.end has no verdict to compare, and
+    """A run that died without reaching session.end has no verdict to compare, and
     its truncated spend is the LOWEST, so mechanical ranking (verify-pass first,
     then cheapest) floated it to first place and told the operator to merge it.
     The fan-out already excludes such lanes; the hand-picked path must too, and
@@ -238,18 +238,18 @@ def test_compare_excludes_a_run_that_never_finished(
         "run-FFFF66",
         base_sha=base,
         commits=[("f.txt", "f\n", "add f")],
-        status="crashed",  # no run.end
+        status="crashed",  # no session.end
         cost=0.01,
     )
     # A recorded-but-dead worker pid is what makes an unfinished run read "stale".
-    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id="run-FFFF66")
-    (layout.run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-FFFF66")
+    (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
 
-    assert main(["runs", "compare", "run-EEEE55", "run-FFFF66"]) == 0
+    assert main(["sessions", "compare", "run-EEEE55", "run-FFFF66"]) == 0
     out = capsys.readouterr().out
     assert "1. run-EEEE55" in out
     assert "1. run-FFFF66" not in out
-    assert "agent6 runs merge run-FFFF66" not in out
+    assert "agent6 sessions merge run-FFFF66" not in out
     assert "run-FFFF66" in out and "stale" in out  # named as excluded, not hidden
 
 
@@ -276,17 +276,19 @@ def test_compare_excludes_a_run_that_is_still_live(
         "run-HHHH88",
         base_sha=base,
         commits=[("h.txt", "h\n", "add h")],
-        status="crashed",  # no run.end...
+        status="crashed",  # no session.end...
         cost=0.01,
     )
-    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id="run-HHHH88")
-    (layout.run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # ...but LIVE
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-HHHH88")
+    (layout.session_dir / "worker.pid").write_text(
+        str(os.getpid()), encoding="utf-8"
+    )  # ...but LIVE
 
-    assert main(["runs", "compare", "run-GGGG77", "run-HHHH88"]) == 0
+    assert main(["sessions", "compare", "run-GGGG77", "run-HHHH88"]) == 0
     out = capsys.readouterr().out
     assert "1. run-GGGG77" in out
     assert "1. run-HHHH88" not in out
-    assert "agent6 runs merge run-HHHH88" not in out
+    assert "agent6 sessions merge run-HHHH88" not in out
     assert "run-HHHH88 is still running" in out  # named as excluded, with why
 
 
@@ -297,13 +299,13 @@ def test_compare_is_read_only(repo: Path) -> None:
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
     head_before = _git(repo, "rev-parse", "main")
     manifest_before = (
-        RunLayout(state_dir=resolved_state_dir(repo), run_id="run-AAAA11").manifest_path
+        SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-AAAA11").manifest_path
     ).read_text(encoding="utf-8")
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
     assert rc == 0
     assert _git(repo, "rev-parse", "main") == head_before
     assert (
-        RunLayout(state_dir=resolved_state_dir(repo), run_id="run-AAAA11").manifest_path
+        SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-AAAA11").manifest_path
     ).read_text(encoding="utf-8") == manifest_before
 
 
@@ -389,7 +391,7 @@ def test_compare_uses_judge_when_reviewer_configured(
     provider = _FakeProvider([verdict])
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -412,7 +414,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     provider = _CostingFakeProvider([verdict])
     monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -453,7 +455,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     verdict = '{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "a is cleaner"}'
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -483,7 +485,7 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b still wins"}'
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     assert "note:" not in capsys.readouterr().out
@@ -502,7 +504,7 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
     provider = _CostingFakeProvider(["not json at all", "still not json"])
     monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     captured = capsys.readouterr()
@@ -548,7 +550,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 
     monkeypatch.setattr(compare_mod, "build_role_provider", _build)
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -582,7 +584,7 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     provider = _FakeProvider(["not json at all", "still not json"])
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
-    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+    rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
 
     assert rc == 0
     captured = capsys.readouterr()
@@ -612,8 +614,8 @@ def _reviewer_cfg() -> Config:
 
 def _two_candidates() -> list[CandidateBrief]:
     return [
-        CandidateBrief(run_id="run-AAAA11", task="t", diff="", verify_ok=True, cost_usd=0.1),
-        CandidateBrief(run_id="run-BBBB22", task="t", diff="", verify_ok=True, cost_usd=0.2),
+        CandidateBrief(session_id="run-AAAA11", task="t", diff="", verify_ok=True, cost_usd=0.1),
+        CandidateBrief(session_id="run-BBBB22", task="t", diff="", verify_ok=True, cost_usd=0.2),
     ]
 
 
@@ -719,9 +721,9 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     side only injects the console spinner + reviewer-provider wiring."""
     from agent6.app import compare as app_compare
     from agent6.app import parallel
-    from agent6.ui.cli import runs_cmds
+    from agent6.ui.cli import sessions_cmds
 
     # The fan-out's auto-compare calls the core directly.
     assert getattr(parallel, "rank") is app_compare.rank  # noqa: B009
     # `runs compare` goes through the CLI wrapper, which delegates to that core.
-    assert runs_cmds.rank is compare_mod.rank
+    assert sessions_cmds.rank is compare_mod.rank

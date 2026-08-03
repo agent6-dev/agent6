@@ -11,7 +11,7 @@ import pytest
 
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import (
-    RunLayout,
+    SessionLayout,
     _dump_frontmatter,  # pyright: ignore[reportPrivateUsage]
     _parse_frontmatter,  # pyright: ignore[reportPrivateUsage]
     load_graph,
@@ -75,14 +75,14 @@ def test_frontmatter_round_trips_adversarial_scalars(evil: str) -> None:
 
 
 def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     assert layout.graph_dir.is_dir()
     assert layout.transcripts_dir.is_dir()
 
 
 def test_write_and_load_single_node(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     n = _mk_node("0" * 25 + "A", relevant_paths=("src/a.py", "src/b.py"))
     write_node(layout, {n.id: n}, n)
@@ -94,7 +94,7 @@ def test_write_and_load_single_node(tmp_path: Path) -> None:
 
 
 def test_frontmatter_quotes_special_chars(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     n = _mk_node(
         "0" * 25 + "B",
@@ -108,7 +108,7 @@ def test_frontmatter_quotes_special_chars(tmp_path: Path) -> None:
 
 
 def test_load_graph_reconstructs_parent_dir_layout(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
     layout.ensure()
     root = _mk_node("0" * 25 + "C", children=("0" * 25 + "D",))
     child = _mk_node("0" * 25 + "D", parent=root.id)
@@ -121,7 +121,7 @@ def test_load_graph_reconstructs_parent_dir_layout(tmp_path: Path) -> None:
 
 
 def test_checkpoints_dir_and_path(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path, run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path, session_id="run1")
     layout.ensure()
     assert layout.checkpoints_dir.is_dir()
     assert layout.checkpoint_path(7) == layout.checkpoints_dir / "0007.json"
@@ -131,7 +131,7 @@ def test_checkpoints_dir_and_path(tmp_path: Path) -> None:
 def test_list_checkpoint_turns(tmp_path: Path) -> None:
     from agent6.graph.storage import list_checkpoint_turns
 
-    layout = RunLayout(state_dir=tmp_path, run_id="run1")
+    layout = SessionLayout(state_dir=tmp_path, session_id="run1")
     # No checkpoints dir yet (old run): empty.
     assert list_checkpoint_turns(layout) == []
     layout.ensure()
@@ -149,9 +149,9 @@ def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: obje
     above the run's graph tree). The Crockford charset validator at the reload
     boundary turns it into the standard skip-with-warning."""
     from agent6.graph.storage import load_graph
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
 
-    layout = RunLayout(state_dir=tmp_path / "state", run_id="r1")
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.ensure()
     bad_id = "../zzzzzzzzzzzzzzzzzzzzzzz"
     assert len(bad_id) == 26

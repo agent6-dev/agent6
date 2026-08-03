@@ -12,7 +12,7 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.machine import MachineJournal
-from agent6.runs.ipc import clear_worker_pid, write_worker_pid
+from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.ui.cli import main
 
 
@@ -471,7 +471,7 @@ def test_run_refuses_rerun_of_ended_instance(
     # An ended instance can only be replayed, never advanced. A rerun must refuse
     # BEFORE stamping worker.pid, so a dead machine never reads "running".
     from agent6.machine import drive, load_machine
-    from agent6.runs.ipc import read_worker_pid, write_worker_pid
+    from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"

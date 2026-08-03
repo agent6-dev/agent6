@@ -33,7 +33,7 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, dirty_paths
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.runs.id import new_friendly_id
+from agent6.sessions.id import new_friendly_id
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.ui.spawn import agent6_exe, spawn_and_locate
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -71,7 +71,7 @@ def build_coordinator_spawner(
     origin_state: Path,
     *,
     mode: str,
-    run_id: str,
+    session_id: str,
     max_usd: float | None = None,
     auto_approve: bool = False,
 ) -> GroupLaneSpawner | None:
@@ -86,7 +86,7 @@ def build_coordinator_spawner(
         origin,
         origin_state,
         mode=mode,
-        run_id=run_id,
+        session_id=session_id,
         runtime=lane_runtime(),
         max_usd=max_usd,
         auto_approve=auto_approve,

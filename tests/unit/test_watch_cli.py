@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.ipc import write_worker_pid
+from agent6.sessions.ipc import write_worker_pid
 from agent6.ui.cli import main
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
@@ -40,8 +40,8 @@ reason = "routed"
 """
 
 
-def _make_run(tmp_path: Path, run_id: str, events: list[dict[str, object]]) -> None:
-    runs = resolved_state_dir(tmp_path) / "runs" / run_id
+def _make_run(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> None:
+    runs = resolved_state_dir(tmp_path) / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
@@ -51,13 +51,13 @@ def test_watch_run_json_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A target that resolves to a run id (here by exact match) yields the folded
-    # RunState as JSON -- the same wire form a web client reads.
+    # SessionState as JSON -- the same wire form a web client reads.
     monkeypatch.chdir(tmp_path)
     _make_run(
         tmp_path,
         "willing-glen-001",
         [
-            {"type": "run.start", "user_task": "demo"},
+            {"type": "session.start", "user_task": "demo"},
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
         ],
     )
@@ -98,8 +98,8 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
     # An ambiguous run prefix must report the ambiguity, not fall through to a
     # machine lookup and print "no run or machine matches".
     monkeypatch.chdir(tmp_path)
-    _make_run(tmp_path, "willing-glen-001", [{"type": "run.start"}])
-    _make_run(tmp_path, "willing-glen-002", [{"type": "run.start"}])
+    _make_run(tmp_path, "willing-glen-001", [{"type": "session.start"}])
+    _make_run(tmp_path, "willing-glen-002", [{"type": "session.start"}])
     assert main(["attach", "willing-glen"]) == 2
     err = capsys.readouterr().err
     assert "ambiguous" in err
@@ -109,7 +109,7 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
 def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A crashed worker never writes run.end: attach used to replay, re-ask the
+    """A crashed worker never writes session.end: attach used to replay, re-ask the
     dead worker's pending approval, then follow forever behind a "working"
     spinner while `runs show` called the same run stopped. With a stale
     worker.pid it must render read-only, never prompt, and end with the
@@ -122,14 +122,14 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
         tmp_path,
         "dead-run",
         [
-            {"type": "run.start", "user_task": "t"},
+            {"type": "session.start", "user_task": "t"},
             {"type": "tool.call", "name": "run_command", "args": {}},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "run?"},
         ],
     )
     monkeypatch.chdir(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run"
-    (run_dir / "worker.pid").write_text("999999", encoding="utf-8")
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run"
+    (session_dir / "worker.pid").write_text("999999", encoding="utf-8")
 
     def _no_prompt(*a: object, **k: object) -> None:
         raise AssertionError("a dead worker's prompt must not be re-asked")
@@ -153,13 +153,13 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     logs.jsonl in <path>" and exited 2, so the operator who clicked through from
     a listing got a path instead of the state and the way out."""
     monkeypatch.chdir(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run-77"
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run-77"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": "parked-run-77",
+                "session_id": "parked-run-77",
                 "mode": "run",
                 "user_task": "t",
                 "parked_task": "finish the parser",
@@ -177,7 +177,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     assert main(["attach", "parked-run-77", "--json"]) == 0
     snap = json.loads(capsys.readouterr().out)
     assert snap["status_label"].startswith("parked")
-    assert snap["run_id"] == "parked-run-77"
+    assert snap["session_id"] == "parked-run-77"
 
 
 def test_attach_to_a_launching_run_says_starting_not_resume(
@@ -188,13 +188,15 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
     running, not resumable: telling the operator to `resume` would refuse or fork
     a second worker, so attach says it is starting instead."""
     monkeypatch.chdir(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / "launching-run-88"
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "run_id": "launching-run-88", "mode": "run", "user_task": "t"}),
+    session_dir = resolved_state_dir(tmp_path) / "runs" / "launching-run-88"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {"version": 2, "session_id": "launching-run-88", "mode": "run", "user_task": "t"}
+        ),
         encoding="utf-8",
     )
-    write_worker_pid(run_dir, os.getpid())  # a live worker, mid-preflight
+    write_worker_pid(session_dir, os.getpid())  # a live worker, mid-preflight
 
     assert main(["attach", "launching-run-88"]) == 0
     out = capsys.readouterr().out

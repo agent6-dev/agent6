@@ -29,7 +29,7 @@ from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
 _SCHEMA = json.loads(
     (Path(__file__).parent / "data" / "acp-schema.json").read_text(encoding="utf-8")
 )
-_RECORDED = Path(__file__).parent.parent / "unit" / "data" / "golden_run_logs.jsonl"
+_RECORDED = Path(__file__).parent.parent / "unit" / "data" / "golden_session_logs.jsonl"
 
 
 def _validator(definition: str) -> Draft202012Validator:
@@ -59,7 +59,7 @@ def _notifications() -> list[dict[str, Any]]:
             continue  # the fixture's trailing malformed lines
         if isinstance(event, dict):
             for item in fold.feed(event):
-                out.extend(updates_for(item, session_id="s", run_id="brave-oak-AAAAAA"))
+                out.extend(updates_for(item, acp_session_id="s", session_id="brave-oak-AAAAAA"))
     return out
 
 
@@ -89,7 +89,7 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
 def test_each_fold_item_projects_to_a_valid_update(item: TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
-    for body in updates_for(item, session_id="s", run_id="r"):
+    for body in updates_for(item, acp_session_id="s", session_id="r"):
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 
@@ -125,8 +125,10 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
         return {}
 
     bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    bridge.ask(Session(id="s", cwd=Path("/x")), "Allow run_command: ls", ("allow", "deny"), True)
-    bridge.ask(Session(id="s", cwd=Path("/x")), "Theme?", ("dark", "light"), None)
+    bridge.ask(
+        Session(acp_id="s", cwd=Path("/x")), "Allow run_command: ls", ("allow", "deny"), True
+    )
+    bridge.ask(Session(acp_id="s", cwd=Path("/x")), "Theme?", ("dark", "light"), None)
     assert len(sent) == 2
     validator = _validator("RequestPermissionRequest")
     for params in sent:

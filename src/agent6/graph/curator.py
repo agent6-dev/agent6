@@ -57,7 +57,7 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.graph.storage import (
-    RunLayout,
+    SessionLayout,
     flock,
     load_graph,
     read_cursor,
@@ -147,7 +147,7 @@ def _now() -> datetime:
 class GraphCurator:
     """Owns one run's graph, in-memory and on-disk."""
 
-    def __init__(self, layout: RunLayout) -> None:
+    def __init__(self, layout: SessionLayout) -> None:
         self._layout = layout
         layout.ensure()
         self._nodes: dict[str, TaskNode] = load_graph(layout)
@@ -166,7 +166,7 @@ class GraphCurator:
     # ---- accessors --------------------------------------------------------
 
     @property
-    def layout(self) -> RunLayout:
+    def layout(self) -> SessionLayout:
         return self._layout
 
     @property

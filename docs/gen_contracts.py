@@ -70,7 +70,7 @@ class Contract:
     one more entry."""
 
     title: str
-    module: str  # dotted, e.g. "agent6.runs.manifest"
+    module: str  # dotted, e.g. "agent6.sessions.manifest"
     primary: tuple[str, ...]  # contract class/alias name(s) whose docstrings are lifted
     writers: tuple[str, ...]  # who CONSTRUCTS it (not import-derivable), src-relative posix
     pins: tuple[
@@ -87,9 +87,9 @@ CONTRACTS: tuple[Contract, ...] = (
         pins=("tests/unit/data/golden_loop_wire.json",),
     ),
     Contract(
-        title="RunManifest",
-        module="agent6.runs.manifest",
-        primary=("RunManifest",),
+        title="SessionManifest",
+        module="agent6.sessions.manifest",
+        primary=("SessionManifest",),
         writers=("app/manifest.py",),
         pins=("tests/unit/test_runs_manifest.py",),
     ),
@@ -121,7 +121,7 @@ CONTRACTS: tuple[Contract, ...] = (
         # parse_event constructs the union (the raw EventSink writes dicts;
         # the typed shape exists only on the read side).
         writers=("viewmodel/events.py",),
-        pins=("tests/unit/data/golden_run_logs.jsonl",),
+        pins=("tests/unit/data/golden_session_logs.jsonl",),
     ),
     Contract(
         title="MachineSpec",
@@ -153,9 +153,9 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.viewmodel.state",
         # The dict these builders return IS the payload `attach --json`, the web
         # page, and the SSE stream serialize; their docstrings state the contract.
-        primary=("run_state_as_dict",),
+        primary=("session_state_as_dict",),
         writers=("viewmodel/state.py", "viewmodel/machine_state.py"),
-        pins=("tests/unit/data/golden_run_state.json", "tests/unit/test_viewmodel_state.py"),
+        pins=("tests/unit/data/golden_session_state.json", "tests/unit/test_viewmodel_state.py"),
     ),
 )
 
@@ -177,7 +177,9 @@ COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 # --- AST + prose helpers -----------------------------------------------------
 
-_ROLE = re.compile(r":[a-z]+:`([^`]+)`")  # RST role, e.g. :class:`RunManifest` -> RunManifest
+_ROLE = re.compile(
+    r":[a-z]+:`([^`]+)`"
+)  # RST role, e.g. :class:`SessionManifest` -> SessionManifest
 
 
 def _norm(text: str) -> str:
@@ -288,7 +290,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
     class_fields: dict[str, tuple[tuple[str, str, str], ...]] = {}
     for node in tree.body:
         if isinstance(node, ast.FunctionDef):
-            # A wire-form BUILDER (run_state_as_dict) can be a primary too: its
+            # A wire-form BUILDER (session_state_as_dict) can be a primary too: its
             # docstring states the payload contract a class cannot (the dict it
             # returns IS the frozen shape).
             class_docs[node.name] = ast.get_docstring(node)

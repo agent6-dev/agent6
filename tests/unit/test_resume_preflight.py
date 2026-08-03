@@ -16,7 +16,7 @@ import pytest
 
 import agent6.app._session as session_mod
 import agent6.app.resume as resume_mod
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 
@@ -42,13 +42,13 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    run_dir = _state_dir(repo) / "runs" / "parked-AAAA11"
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
+    session_dir = _state_dir(repo) / "runs" / "parked-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": "parked-AAAA11",
+                "session_id": "parked-AAAA11",
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
@@ -88,13 +88,13 @@ class _StubLoaded:
     config = _StubCfg()
 
 
-def _park_manifest(run_dir: Path, *, preset: str, from_flag: bool) -> None:
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
+def _park_manifest(session_dir: Path, *, preset: str, from_flag: bool) -> None:
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
-                "run_id": run_dir.name,
+                "session_id": session_dir.name,
                 "mode": "run",
                 "user_task": "queued work",
                 "parked_task": "queued work",
@@ -185,14 +185,14 @@ class _Stop(Exception):
     """Sentinel: the resume path reached the seam past the assertion point."""
 
 
-def _plan_run_dir(repo: Path, run_id: str) -> None:
-    run_dir = _state_dir(repo) / "runs" / run_id
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "run_id": run_id, "mode": "plan", "user_task": "t"}),
+def _plan_session_dir(repo: Path, session_id: str) -> None:
+    session_dir = _state_dir(repo) / "runs" / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": session_id, "mode": "plan", "user_task": "t"}),
         encoding="utf-8",
     )
-    (run_dir / "loop_state.json").write_text(
+    (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
                 "version": 2,
@@ -271,7 +271,7 @@ def test_plan_resume_requires_the_planner_role(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _plan_run_dir(repo, "plan-AAAA11")
+    _plan_session_dir(repo, "plan-AAAA11")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
 
     def _stop(*_a: object, **_k: object) -> object:
@@ -293,13 +293,13 @@ def test_plan_resume_builds_the_planner_provider(
     import dataclasses
 
     import agent6.ui.cli.resume as cli_resume_mod
-    from agent6.ui.cli.run import run_frontend
+    from agent6.ui.cli.run import session_frontend
 
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _plan_run_dir(repo, "plan-BBBB22")
+    _plan_session_dir(repo, "plan-BBBB22")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     # The default run_commands="ask" with no tty now REFUSES rather than
     # hanging; this test is about which provider drives the leg.
@@ -309,7 +309,7 @@ def test_plan_resume_builds_the_planner_provider(
         return True
 
     def _frontend() -> object:
-        return dataclasses.replace(run_frontend(), confirm_unconfined_autorun=_yes)
+        return dataclasses.replace(session_frontend(), confirm_unconfined_autorun=_yes)
 
     def _none(*_a: object, **_k: object) -> None:
         return None
@@ -317,7 +317,7 @@ def test_plan_resume_builds_the_planner_provider(
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"
 
-    monkeypatch.setattr(cli_resume_mod, "run_frontend", _frontend)
+    monkeypatch.setattr(cli_resume_mod, "session_frontend", _frontend)
     monkeypatch.setattr(session_mod, "detect_env", object)
     monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
@@ -344,7 +344,7 @@ def _session_dir(state: Path, bucket: str, sid: str, mode: str) -> Path:
     d = state / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
-        json.dumps({"version": 3, "run_id": sid, "mode": mode, "user_task": "t"}),
+        json.dumps({"version": 3, "session_id": sid, "mode": mode, "user_task": "t"}),
         encoding="utf-8",
     )
     return d
@@ -413,7 +413,7 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     assert rc == 2
     assert "no resume snapshot" in capsys.readouterr().err
 
-    layout = RunLayout(state_dir=state, run_id="quiet-fox-AAAAAA", subdir="asks")
+    layout = SessionLayout(state_dir=state, session_id="quiet-fox-AAAAAA", subdir="asks")
     save_ask_transcript(layout, question="q", answer="first")
     save_ask_transcript(layout, question="q", answer="second")
     text = (ask / "transcript.md").read_text(encoding="utf-8")

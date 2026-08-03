@@ -17,8 +17,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.jail import keep_out_of_the_sweep
+from agent6.sessions.layout import LOGS_NAME
 
 
 def agent6_exe() -> str:
@@ -30,8 +30,8 @@ def agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
-def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
-    """Fire-and-forget a detached ``agent6 resume <run_id>`` (new session, no
+def spawn_detached_resume(cwd: Path, session_id: str, *, steer: str = "") -> str:
+    """Fire-and-forget a detached ``agent6 resume <session_id>`` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
 
     A non-empty *steer* rides along as ``--steer=TEXT`` (the ``=`` form, so a
@@ -46,7 +46,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
     answer (every caller here is a front-end or a detach the operator re-attaches
     to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
     success, else an error message."""
-    argv = [agent6_exe(), "resume", run_id]
+    argv = [agent6_exe(), "resume", session_id]
     if steer:
         argv.append(f"--steer={steer}")
     try:
@@ -68,7 +68,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
 # Subcommand groups whose verb is the SECOND argv word ("machine run",
 # "runs prune", "config set"); everything else is a one-word subcommand whose
 # next arg is already a value.
-_COMMAND_GROUPS = frozenset({"machine", "runs", "config"})
+_COMMAND_GROUPS = frozenset({"machine", "sessions", "config"})
 
 
 def subcommand_label(argv: list[str]) -> str:

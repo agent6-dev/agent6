@@ -12,7 +12,7 @@ import pytest
 from agent6.ui.cli.history_cmds import (
     _parse_rg_matches,  # pyright: ignore[reportPrivateUsage]
     _render_history_hits,  # pyright: ignore[reportPrivateUsage]
-    _run_id_from_path,  # pyright: ignore[reportPrivateUsage]
+    _session_id_from_path,  # pyright: ignore[reportPrivateUsage]
     _window,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -56,16 +56,18 @@ def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
 
 
 def test_run_id_from_path_finds_the_run_dir_child() -> None:
-    assert _run_id_from_path(Path("/s/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
-    assert _run_id_from_path(Path("/s/asks/quiet-fox-CD/transcripts/0003.json")) == "quiet-fox-CD"
+    assert _session_id_from_path(Path("/s/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
+    assert (
+        _session_id_from_path(Path("/s/asks/quiet-fox-CD/transcripts/0003.json")) == "quiet-fox-CD"
+    )
     # A state-base ANCESTOR sharing a bucket name must not shadow the real
     # bucket (XDG_STATE_HOME=/mnt/runs/state mislabelled every hit as "state").
     assert (
-        _run_id_from_path(Path("/mnt/runs/state/agent6/repo-x/runs/deep-poppy-AB/logs.jsonl"))
+        _session_id_from_path(Path("/mnt/runs/state/agent6/repo-x/runs/deep-poppy-AB/logs.jsonl"))
         == "deep-poppy-AB"
     )
     assert (
-        _run_id_from_path(Path("/mnt/asks/state/agent6/repo-x/asks/quiet-fox-CD/logs.jsonl"))
+        _session_id_from_path(Path("/mnt/asks/state/agent6/repo-x/asks/quiet-fox-CD/logs.jsonl"))
         == "quiet-fox-CD"
     )
 
@@ -74,7 +76,7 @@ def test_parse_extracts_event_type_and_time_for_logs_jsonl() -> None:
     event = {"ts": "2026-07-12T09:15:30.1Z", "type": "tool.call", "name": "grep"}
     out = _parse_rg_matches(_rg_match("/s/runs/r1/logs.jsonl", json.dumps(event), 40))
     assert len(out) == 1
-    assert out[0].run_id == "r1"
+    assert out[0].session_id == "r1"
     assert out[0].kind == "tool.call"
     assert out[0].when == "09:15:30"
 
@@ -115,7 +117,7 @@ def test_event_snippet_windows_inside_the_matched_field(
 def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # One task string is stored many ways: the run.start event, manifest.json,
+    # One task string is stored many ways: the session.start event, manifest.json,
     # the graph's dot label, a per-call transcript body. A search for a word in
     # it must print ONE line per run (the timestamped event) with a count,
     # not the same content in every storage encoding (raw JSON fragments
@@ -123,7 +125,7 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     # suffix-only content key sees through it.
     task = "Improve the wording of the end banner"
     lines: list[str] = []
-    event = json.dumps({"ts": "2026-07-12T07:36:51.1Z", "type": "run.start", "user_task": task})
+    event = json.dumps({"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task})
     lines.append(_rg_match("/s/runs/r1/logs.jsonl", event, event.index("Improve")))
     manifest = json.dumps({"version": 2, "user_task": task})
     lines.append(_rg_match("/s/runs/r1/manifest.json", manifest, manifest.index("Improve")))
@@ -139,7 +141,7 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     assert out.count("Improve the wording") == 1  # one representative line
     assert "(x4)" in out  # all four encodings counted
     assert "manifest.json" not in out and "graph.dot" not in out  # internals lose
-    assert "run.start" in out  # the timestamped event wins
+    assert "session.start" in out  # the timestamped event wins
 
 
 def _rg_match_bytes(path: str, line: str, needle: str) -> str:
@@ -179,7 +181,7 @@ def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:
     # \uXXXX decode in the normal form makes both sides one identity.
     task = "Improve the résumé wording NEEDLE of the banner"
     raw_event = json.dumps(
-        {"ts": "2026-07-12T07:36:51.1Z", "type": "run.start", "user_task": task},
+        {"ts": "2026-07-12T07:36:51.1Z", "type": "session.start", "user_task": task},
         ensure_ascii=False,
     )
     escaped_manifest = json.dumps({"version": 2, "user_task": task})  # ascii-escaped

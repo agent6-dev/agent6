@@ -11,12 +11,12 @@ Textual exports SVG; if the output path ends in ``.png`` and a converter is foun
 PNG/JPG can view it.
 
 Usage:
-    uv run python docs/screenshots/tui_snapshot.py <run_dir> <out.(svg|png)> [screen]
+    uv run python docs/screenshots/tui_snapshot.py <session_dir> <out.(svg|png)> [screen]
 
     screen: transcript (default: the conversation the app opens on)
             | dashboard (Ctrl+D toggles it up) | log
 
-    <run_dir> is any run directory holding a logs.jsonl, e.g.
+    <session_dir> is any run directory holding a logs.jsonl, e.g.
     $XDG_STATE_HOME/agent6/<repo-id>/runs/<run-id>. Pair with llm_proxy.py's
     replay mode to snapshot a deterministic, key-free run.
 """
@@ -76,8 +76,8 @@ def _svg_to_png(svg: Path, png: Path) -> bool:
     return False
 
 
-async def _snapshot(run_dir: Path, out: Path, screen: str) -> None:
-    app = Agent6TUI(run_dir)
+async def _snapshot(session_dir: Path, out: Path, screen: str) -> None:
+    app = Agent6TUI(session_dir)
     async with app.run_test(size=(150, 42)) as pilot:
         for _ in range(80):  # let the reader thread replay + fold the log
             await pilot.pause()
@@ -108,12 +108,12 @@ def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__)
         return 2
-    run_dir, out = Path(sys.argv[1]), Path(sys.argv[2])
+    session_dir, out = Path(sys.argv[1]), Path(sys.argv[2])
     screen = sys.argv[3] if len(sys.argv) > 3 else "transcript"
-    if not (run_dir / "logs.jsonl").is_file():
-        print(f"ERROR: no logs.jsonl in {run_dir}", file=sys.stderr)
+    if not (session_dir / "logs.jsonl").is_file():
+        print(f"ERROR: no logs.jsonl in {session_dir}", file=sys.stderr)
         return 2
-    asyncio.run(_snapshot(run_dir, out, screen))
+    asyncio.run(_snapshot(session_dir, out, screen))
     return 0
 
 

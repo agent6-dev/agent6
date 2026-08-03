@@ -10,7 +10,7 @@ characters in page.py; keep them in sync.
 
 from __future__ import annotations
 
-from agent6.runs.manifest import CompareStamp
+from agent6.sessions.manifest import CompareStamp
 
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
 # renders them. ruff's ambiguous-glyph rule (RUF001) flags the en-dash /

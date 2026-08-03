@@ -42,7 +42,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.runs.ipc import clear_steer_answer, request_steer, write_steer_answer
+from agent6.sessions.ipc import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
@@ -55,7 +55,7 @@ from agent6.ui.tui.menubar import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
-from agent6.viewmodel.policy import run_policy
+from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
@@ -169,7 +169,7 @@ RUN_MENU = Menu(
         MenuItem("Stop now", "stop_now"),
         MenuItem("Resume the run", "resume"),
         MenuItem("Fork the run", "fork"),
-        MenuItem("Delete this run…", "delete_run"),
+        MenuItem("Delete this run…", "delete_session"),
     ),
 )
 
@@ -191,7 +191,7 @@ class SteerInput(TextArea):
         self.set_mode(live=True)
         self._resize()
 
-    policy = ""  # viewmodel.run_policy(...).short(), set once the run dir is known
+    policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
 
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
         """Relabel for the run's state: steering (live) vs resuming (finished),
@@ -376,8 +376,8 @@ class ConversationScreen(Screen[None]):
         self._tail_lines = 0
         self._live_think: list[str] = []
         self._live_text: list[str] = []
-        # A session-start event (run.start OR loop.resume.start) seen and no
-        # run.end since -> the steer bar shows.
+        # A session-start event (session.start OR loop.resume.start) seen and no
+        # session.end since -> the steer bar shows.
         self._live = False
         self._prev_subtitle = ""  # app sub_title to restore when the view closes
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
@@ -499,13 +499,13 @@ class ConversationScreen(Screen[None]):
     def _track_live(self, event: dict[str, object]) -> None:
         etype = event.get("type")
         if etype in SESSION_START_EVENTS:
-            # run.start OR loop.resume.start: a resumed leg is live too (the
+            # session.start OR loop.resume.start: a resumed leg is live too (the
             # dashboard's fold un-finishes on ResumeStart; this screen must
             # agree, or its composer mislabels the live leg "resume" and a
             # submit spawns a second resume that dies on the run lock while
             # the toast claims success).
             self._live = True
-        elif etype == "run.end":
+        elif etype == "session.end":
             self._live = False
         if etype in ("role.call", "role.result"):
             self._live_think.clear()
@@ -612,7 +612,7 @@ class ConversationScreen(Screen[None]):
         """Whether the run is still live, per the Agent6TUI host's dir status
         (which knows a dead worker and a parked run) and falling back to this
         screen's event-derived tracking on a pushed viewer with no host."""
-        live_fn = getattr(self.app, "run_controllable", None)
+        live_fn = getattr(self.app, "session_controllable", None)
         return bool(live_fn()) if callable(live_fn) else self._live
 
     def _sync_input(self) -> None:
@@ -630,7 +630,7 @@ class ConversationScreen(Screen[None]):
                 bar.display = shown
             if bar.display:
                 if not bar.policy:  # folded once: the manifest does not change mid-run
-                    bar.policy = run_policy(self._logs_path.parent).short()
+                    bar.policy = session_policy(self._logs_path.parent).short()
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
                 bar.set_mode(live=self._host_live(), ctx_pct=pct if isinstance(pct, int) else None)
@@ -674,10 +674,12 @@ class ConversationScreen(Screen[None]):
             submit(message.text)
             return
         if self._live:
-            run_dir = self._logs_path.parent
-            clear_steer_answer(run_dir)  # discard any stale answer -> the run waits for this one
-            request_steer(run_dir)
-            write_steer_answer(run_dir, message.text)
+            session_dir = self._logs_path.parent
+            clear_steer_answer(
+                session_dir
+            )  # discard any stale answer -> the run waits for this one
+            request_steer(session_dir)
+            write_steer_answer(session_dir, message.text)
             self.notify("steering the run…")
 
     # -- copy ---------------------------------------------------------------
@@ -764,8 +766,8 @@ class ConversationScreen(Screen[None]):
 
     def action_view_logs(self) -> None:
         """Open the raw event log of this run (the audit-log companion view)."""
-        run_id = self._logs_path.parent.name
-        self.app.push_screen(LogScreen(self._logs_path, title=f"logs · {run_id}"))
+        session_id = self._logs_path.parent.name
+        self.app.push_screen(LogScreen(self._logs_path, title=f"logs · {session_id}"))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)

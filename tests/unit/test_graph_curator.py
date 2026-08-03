@@ -19,11 +19,11 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 
 
-def _layout(tmp_path: Path) -> RunLayout:
-    return RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+def _layout(tmp_path: Path) -> SessionLayout:
+    return SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
 
 
 def _draft(title: str = "do thing", deps: tuple[str, ...] = ()) -> TaskNodeDraft:

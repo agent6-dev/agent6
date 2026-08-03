@@ -15,15 +15,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.runs.ipc import read_worker_pid, worker_is_alive
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.sessions.ipc import read_worker_pid, worker_is_alive
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel.events import event_epoch
 
 STALE_AFTER_S = 600.0
 
 
-def run_mtime(run_dir: Path) -> float:
+def session_mtime(session_dir: Path) -> float:
     """Last-activity time of a run: the mtime of its ``logs.jsonl`` (when the run
     last appended an event), falling back to the dir mtime before the log exists.
 
@@ -31,7 +31,7 @@ def run_mtime(run_dir: Path) -> float:
     into the dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
     merely-viewed run to "most recent". Keying off the log keeps "when" stable.
     """
-    for candidate in (run_dir / LOGS_NAME, run_dir):
+    for candidate in (session_dir / LOGS_NAME, session_dir):
         try:
             return candidate.stat().st_mtime
         except OSError:
@@ -39,14 +39,14 @@ def run_mtime(run_dir: Path) -> float:
     return 0.0
 
 
-def newest_run_dir(buckets: Iterable[Path]) -> Path | None:
+def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
     """The most recently active run dir (by logs.jsonl mtime, not dir mtime: a
     viewer's front-end claim must not float a run to latest) across the given
     bucket dirs.
 
     The one run-recency query: callers name the buckets in scope explicitly --
     a lone ``runs/`` dir for run/plan/resume/fork/ask scope, or every
-    ``RUN_BUCKETS`` dir for a cross-bucket listing (attach / runs stop). A
+    ``SESSION_BUCKETS`` dir for a cross-bucket listing (attach / runs stop). A
     missing bucket dir is skipped; returns None when no bucket holds a run.
     Callers that key off the id take ``.name`` of the result.
 
@@ -58,8 +58,8 @@ def newest_run_dir(buckets: Iterable[Path]) -> Path | None:
     runs: list[Path] = []
     for bucket in buckets:
         if bucket.is_dir():
-            runs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_run_husk(p))
-    dirs = sorted(runs, key=run_mtime, reverse=True)
+            runs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_session_husk(p))
+    dirs = sorted(runs, key=session_mtime, reverse=True)
     return dirs[0] if dirs else None
 
 
@@ -102,7 +102,7 @@ def task_snippet(text: str, max_chars: int | None = None) -> str:
     return snip
 
 
-def is_run_husk(run_dir: Path) -> bool:
+def is_session_husk(session_dir: Path) -> bool:
     """True for a run dir that never really started: neither manifest.json nor
     logs.jsonl (a preflight refused it, or a crash orphaned it). Listings skip
     husks -- "(no logs)" forever is noise, not a run -- and id lookups must not
@@ -111,36 +111,36 @@ def is_run_husk(run_dir: Path) -> bool:
     Exception: a dir with a LIVE worker.pid is a just-launched run in its
     pre-manifest preflight window, not a husk -- keep it listed (it reads
     "starting"). Only a dir with no live worker is a true husk."""
-    if (run_dir / "manifest.json").exists() or (run_dir / LOGS_NAME).exists():
+    if (session_dir / "manifest.json").exists() or (session_dir / LOGS_NAME).exists():
         return False
-    return not worker_is_alive(run_dir)
+    return not worker_is_alive(session_dir)
 
 
-def run_compare(run_dir: Path) -> CompareStamp | None:
+def session_compare(session_dir: Path) -> CompareStamp | None:
     """The ``compare`` stamp a fan-out's auto-compare recorded on an imported
     lane's manifest (rank/of/winner/ranked_by/rationale), or None for a run that
     was never part of a compared fan-out. The event fold doesn't carry it (it is
     post-import manifest state), so every run view reads it from here. Best effort:
     a missing/corrupt manifest reads as None, never an error."""
     try:
-        manifest = read_manifest(run_dir)
+        manifest = read_manifest(session_dir)
     except ManifestError:
         return None
     return manifest.compare
 
 
-def is_winner(run_dir: Path) -> bool:
+def is_winner(session_dir: Path) -> bool:
     """True when a run is the fan-out compare winner (rank 1), for a listing
     marker. False for any run outside a compared fan-out."""
-    compare = run_compare(run_dir)
+    compare = session_compare(session_dir)
     return compare is not None and compare.winner
 
 
 @dataclass(frozen=True, slots=True)
-class RunSummary:
+class SessionSummary:
     """One listing row: everything a hub or `runs list` needs, uncolored."""
 
-    run_id: str
+    session_id: str
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
     # created|starting|running|waiting|stale|passed|answered|planned|finished|
@@ -156,7 +156,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     """Map an end state to ``(word, reason-detail)``.
 
     The single place that decides how a run's outcome reads -- shared by
-    ``run_status_label`` (headers) and ``summarize_run_dir`` (listings) so the
+    ``session_status_label`` (headers) and ``summarize_session_dir`` (listings) so the
     surfaces can never disagree. "stopped" is the operator's own act (not a
     failure); "planned" and "answered" are the no-verify clean exits (a plan
     pass / an ask, where "passed" would mislead); "passed" means all verify
@@ -203,67 +203,67 @@ PARKED_STATUS = ("parked", "resume to start")
 
 @dataclass(frozen=True, slots=True)
 class StatusFacts:
-    """The event-derived inputs to :func:`status_for_run_dir`, producible from
+    """The event-derived inputs to :func:`status_for_session_dir`, producible from
     either event reader -- ``LogScan.status_facts()`` (the tolerant scanner
     behind listings and ``runs show``) and ``state.status_facts`` (the typed
     fold behind the live views) -- so every surface feeds the one status
     decision the same answers for the same log."""
 
-    started: bool = False  # a run.start was seen (a parked/created run has none)
+    started: bool = False  # a session.start was seen (a parked/created run has none)
     finished: bool = False
     all_passed: bool = False
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
 
 
-def status_for_run_dir(
-    run_dir: Path, facts: StatusFacts, *, stale_after_s: float = STALE_AFTER_S
+def status_for_session_dir(
+    session_dir: Path, facts: StatusFacts, *, stale_after_s: float = STALE_AFTER_S
 ) -> tuple[str, str]:
     """THE ``(word, reason)`` for a run that has a dir on disk.
 
     Every listing and header feeds this the event facts and lets the DIR
     supply what events cannot: a parked submission (manifest), worker
-    liveness (worker.pid), log silence. The pure fold's ``run_status_label``
+    liveness (worker.pid), log silence. The pure fold's ``session_status_label``
     is only for a stream with genuinely no dir (``attach --json``); a surface
-    with a run dir that folds events alone reads every non-``run.end`` state
+    with a run dir that folds events alone reads every non-``session.end`` state
     as "running" and disagrees with the hub -- parked/starting/created/stale/
     waiting each shipped a real surface-disagreement bug before this existed.
     """
     if facts.finished:
         return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
     if not facts.started:
-        return _unstarted_status(run_dir)
-    if _running_is_stale(run_dir, stale_after_s):
+        return _unstarted_status(session_dir)
+    if _running_is_stale(session_dir, stale_after_s):
         return "stale", ""
     if facts.operator_blocked:
         return "waiting", "needs answer"
     return "running", ""
 
 
-def _unstarted_status(run_dir: Path) -> tuple[str, str]:
-    """Status before any run.start: a live worker is still launching (egress +
+def _unstarted_status(session_dir: Path) -> tuple[str, str]:
+    """Status before any session.start: a live worker is still launching (egress +
     verify inference run before the loop's first turn) -> "starting". No live
     worker is either a parked submission (the busy-checkout refusal saved it;
     resume starts it) or a never-started dir (`fork --no-run`) -> "created"."""
-    if worker_is_alive(run_dir):
+    if worker_is_alive(session_dir):
         return "starting", ""
     with contextlib.suppress(ManifestError):
-        if read_manifest(run_dir).parked_task:
+        if read_manifest(session_dir).parked_task:
             return PARKED_STATUS
     return "created", ""
 
 
-def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
+def _running_is_stale(session_dir: Path, stale_after_s: float) -> bool:
     """Probe the worker pid when the run recorded one: a killed run reads
     "stale" at once (not after the silence window), and a live worker blocked
     in a long provider call stays "running" however quiet the log. Runs
     without a pid record keep the log-silence fallback."""
-    if read_worker_pid(run_dir) is not None:
-        return not worker_is_alive(run_dir)
-    return (time.time() - run_mtime(run_dir)) > stale_after_s
+    if read_worker_pid(session_dir) is not None:
+        return not worker_is_alive(session_dir)
+    return (time.time() - session_mtime(session_dir)) > stale_after_s
 
 
-# Status words for a run that reached terminal WITHOUT its own run.end: the
+# Status words for a run that reached terminal WITHOUT its own session.end: the
 # worker died (stale) or never started (created/parked/?). The fan-out's
 # awaiting gate deliberately accepts them so an await cannot hang, but they are
 # not results: such a run must never rank as a candidate, win a compare, or join
@@ -274,7 +274,7 @@ _DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
 
 
 def died_without_end(status: str) -> bool:
-    """Whether *status* is a run that never reached its own ``run.end``."""
+    """Whether *status* is a run that never reached its own ``session.end``."""
     return status in _DIED_WITHOUT_END
 
 
@@ -285,7 +285,7 @@ def died_without_end(status: str) -> bool:
 LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
-def run_is_live(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
+def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
     """Whether the operator can still act on this run: THE affordance question,
     "will anything read what I write", not ``worker_is_alive``'s "is a pid
     running" (a parked run resumes; a dead worker's buttons reach nobody).
@@ -293,9 +293,12 @@ def run_is_live(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
     Derived from the status word, so a surface cannot disagree with the label
     it is showing; fed empty facts it degenerates to the pid probe.
     """
-    logs = run_dir / LOGS_NAME
-    facts = scan_run_log(logs).status_facts() if logs.is_file() else StatusFacts()
-    return status_for_run_dir(run_dir, facts, stale_after_s=stale_after_s)[0] in LIVE_STATUS_WORDS
+    logs = session_dir / LOGS_NAME
+    facts = scan_session_log(logs).status_facts() if logs.is_file() else StatusFacts()
+    return (
+        status_for_session_dir(session_dir, facts, stale_after_s=stale_after_s)[0]
+        in LIVE_STATUS_WORDS
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,7 +315,7 @@ class LogScan:
     """
 
     saw_start: bool = (
-        False  # run.start OR loop.resume.start seen (a leg began); neither = unstarted
+        False  # session.start OR loop.resume.start seen (a leg began); neither = unstarted
     )
     mode: str = "?"
     task: str = ""
@@ -325,13 +328,13 @@ class LogScan:
     input_tokens: int | None = None
     output_tokens: int | None = None
     iteration: int | None = None  # last event carrying an int iteration
-    start_ep: float | None = None  # run.start ts (epoch seconds)
+    start_ep: float | None = None  # session.start ts (epoch seconds)
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
     operator_blocked: bool = False  # a prompt is still unanswered on this leg
 
     def status_facts(self) -> StatusFacts:
-        """This scan's answers to the status questions, for status_for_run_dir.
+        """This scan's answers to the status questions, for status_for_session_dir.
         The typed fold's ``state.status_facts`` must agree on the same log
         (pinned by the status matrix test)."""
         return StatusFacts(
@@ -357,9 +360,9 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
     return last_good
 
 
-def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
-    """Fold ``logs.jsonl`` into a :class:`LogScan`: run.start (mode/task), the
-    last run.end (un-finished again by a later resume), the running per-leg
+def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
+    """Fold ``logs.jsonl`` into a :class:`LogScan`: session.start (mode/task), the
+    last session.end (un-finished again by a later resume), the running per-leg
     budget banked across resumes into a cumulative total, and the liveness
     anchors (timestamps, iteration, last event type) ``runs show`` reads.
 
@@ -381,7 +384,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
     last_ep: float | None = None
     last_type: str | None = None
     # Prompt ids still awaiting their answer. A later event must not clear the
-    # bit: Ctrl-C emits run.steer_requested while an approval still waits.
+    # bit: Ctrl-C emits session.steer_requested while an approval still waits.
     pending_prompts: set[str] = set()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
@@ -408,7 +411,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
                         pending_prompts.add(str(pid))
                 elif etype in OPERATOR_ANSWER_EVENTS:
                     pending_prompts.discard(str(ev.get("id")))
-                if etype == "run.start":
+                if etype == "session.start":
                     saw_start = True
                     finished = False  # a leg is starting (ask REPL re-runs in place)
                     mode = str(ev.get("mode", mode))
@@ -419,14 +422,14 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
                     pending_prompts.clear()
                     if start_ep is None:
                         start_ep = ep
-                elif etype == "run.end":
+                elif etype == "session.end":
                     finished = True
                     all_passed = bool(ev.get("all_passed"))
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     saw_start = True  # a leg has begun; a fork's log has only this
                     finished = False  # a resume un-finishes the run
-                    pending_prompts.clear()  # see run.start
+                    pending_prompts.clear()  # see session.start
                     # Each resume leg starts a FRESH budget (usd_total resets to
                     # 0), so bank the finished leg's total before it does -- the
                     # displayed cost is then the true cumulative spend across all
@@ -470,13 +473,15 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
     )
 
 
-def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> RunSummary:
+def summarize_session_dir(
+    session_dir: Path, *, stale_after_s: float = STALE_AFTER_S
+) -> SessionSummary:
     """One listing row from ``logs.jsonl`` + the manifest. Replaced the
     near-duplicate scanners in the TUI hub and the web hub that badged a
     provider_error death as a neutral "done". An "ask" run's task is replaced by
     its transcript, which shows what was asked."""
-    logs = run_dir / LOGS_NAME
-    scan = scan_run_log(logs) if logs.is_file() else LogScan()
+    logs = session_dir / LOGS_NAME
+    scan = scan_session_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
     if mode == "?" and not task:
         # The log gave us no mode AND no task: a launching run still in preflight
@@ -484,26 +489,28 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
         # manifest-only `fork --no-run`, or a forked/resumed leg whose log holds
         # only loop.resume.start (which begins a leg but records no mode/task).
         # saw_start alone is now true in that last case, so gate on the missing
-        # mode+task instead. The `not task` guard keeps a run.start that carried
+        # mode+task instead. The `not task` guard keeps a session.start that carried
         # a user_task but no `mode` field (mode stays "?") from being blanked.
         # Read mode+task from the manifest so the row shows its real work, not a
         # bare "? (no logs)". A truly empty husk (no manifest) keeps "(no logs)".
         task = "(no logs)"
         with contextlib.suppress(ManifestError):
-            manifest = read_manifest(run_dir)
+            manifest = read_manifest(session_dir)
             mode = manifest.mode
             task = manifest.user_task or "(no logs)"
-    word, reason = status_for_run_dir(run_dir, scan.status_facts(), stale_after_s=stale_after_s)
+    word, reason = status_for_session_dir(
+        session_dir, scan.status_facts(), stale_after_s=stale_after_s
+    )
     if mode == "ask":
         with contextlib.suppress(OSError):
-            task = (run_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
-    return RunSummary(
-        run_id=run_dir.name,
+            task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
+    return SessionSummary(
+        session_id=session_dir.name,
         mode=mode,
         task=task,
         status=word,
         reason=reason,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
-        mtime=run_mtime(run_dir),
+        mtime=session_mtime(session_dir),
     )

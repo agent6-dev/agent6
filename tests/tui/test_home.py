@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     approvals_dir,
     clear_pending_answers,
     questions_dir,
@@ -22,11 +22,13 @@ from agent6.runs.ipc import (
     write_answer,
     write_question_answers,
 )
-from agent6.ui.tui.home import _list_runs, run_mtime
+from agent6.ui.tui.home import _list_sessions, session_mtime
 
 
-def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, object]]) -> Path:
-    rd = agent6_dir / sub / run_id
+def _write_run(
+    agent6_dir: Path, sub: str, session_id: str, events: list[dict[str, object]]
+) -> Path:
+    rd = agent6_dir / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
@@ -41,9 +43,9 @@ async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> 
 
 def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run"}])
-    _write_run(a6, "asks", "a1", [{"type": "run.start", "mode": "ask"}])
-    names = {p.name for p in _list_runs(a6)}  # pyright: ignore[reportPrivateUsage]
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
+    _write_run(a6, "asks", "a1", [{"type": "session.start", "mode": "ask"}])
+    names = {p.name for p in _list_sessions(a6)}  # pyright: ignore[reportPrivateUsage]
     assert names == {"r1", "a1"}
 
 
@@ -54,13 +56,13 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
     import os
 
     a6 = tmp_path / ".agent6"
-    rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run"}])
+    rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     os.utime(rd / "logs.jsonl", (1000, 1000))  # last real activity
     # Simulate opening the dashboard: it writes a front-end claim, bumping the dir
     # mtime well past the log's. Pre-fix this became the displayed/sort time.
     register_frontend(rd, 123)
     os.utime(rd, (5000, 5000))
-    assert run_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
+    assert session_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
 
 
 def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
@@ -69,7 +71,7 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "fresh"
     rd.mkdir(parents=True)
     os.utime(rd, (2000, 2000))
-    assert run_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
+    assert session_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
 
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:
@@ -116,7 +118,7 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
 
     a6 = tmp_path / ".agent6"
     for rid in ("r1", "r2", "r3"):
-        _write_run(a6, "runs", rid, [{"type": "run.start", "mode": "run", "user_task": rid}])
+        _write_run(a6, "runs", rid, [{"type": "session.start", "mode": "run", "user_task": rid}])
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
@@ -124,7 +126,7 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, HomeScreen)
-            table = screen.query_one("#runs", DataTable)
+            table = screen.query_one("#sessions", DataTable)
             assert table.row_count == 3
             # Delete the run currently shown in the MIDDLE row, then refresh.
             vanished = screen._runs[1]  # pyright: ignore[reportPrivateUsage]
@@ -146,7 +148,7 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
     from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "do [x]"}])
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "do [x]"}])
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
@@ -157,7 +159,7 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
 
             await pilot.pause()  # let on_mount push the HomeScreen
             assert isinstance(app.screen, HomeScreen)  # hub lives on its own screen
-            table = app.screen.query_one("#runs", DataTable)
+            table = app.screen.query_one("#sessions", DataTable)
             assert table.row_count == 1  # the one run is listed
             # 'n' opens the new-work modal; Esc closes it without starting work.
             await pilot.press("n")
@@ -178,7 +180,7 @@ def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> N
     from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
@@ -217,7 +219,7 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
     from agent6.ui.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
@@ -337,16 +339,16 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
 
     # Malformed: refused before any Popen (nothing new captured).
     before = len(captured)
-    run_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", preset="")
-    assert run_dir is None and "/parallel" in err
+    session_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", preset="")
+    assert session_dir is None and "/parallel" in err
     assert len(captured) == before
 
     # All-or-nothing: a later empty segment refuses the whole message.
     before = len(captured)
-    run_dir, err = home._spawn_and_locate(
+    session_dir, err = home._spawn_and_locate(
         a6, tmp_path, "run", "/parallel 2 ok /parallel", preset=""
     )
-    assert run_dir is None and "/parallel" in err
+    assert session_dir is None and "/parallel" in err
     assert len(captured) == before
 
 
@@ -366,10 +368,10 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
 
     monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
     monkeypatch.setattr(home, "_model_refusal", lambda repo_cwd, segments: None)  # type: ignore[attr-defined]
-    run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
+    session_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
         tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
     )
-    assert run_dir is None
+    assert session_dir is None
     assert "boom" in err and "task B" in err
 
     # reversed: first lane fails, second succeeds -- lane 1's diagnostic survives
@@ -381,10 +383,10 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
         return tmp_path / "r2", ""
 
     monkeypatch.setattr(home, "_spawn_run", fake_spawn_rev)  # type: ignore[attr-defined]
-    run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
+    session_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
         tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
     )
-    assert run_dir is None
+    assert session_dir is None
     assert "boom" in err and "task A" in err
 
 
@@ -436,10 +438,10 @@ def test_spawn_parallel_refuses_unknown_model_before_spawn(
     a6 = tmp_path / ".agent6"
     a6.mkdir()
 
-    run_dir, err = home._spawn_and_locate(
+    session_dir, err = home._spawn_and_locate(
         a6, tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it", preset=""
     )
-    assert run_dir is None
+    assert session_dir is None
     assert "unknown model 'moonshotai/kimi-k2.7'" in err
     assert "closest: moonshotai/kimi-k2.6" in err
     assert captured == []
@@ -480,7 +482,7 @@ def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> No
 
 
 def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
-    """The hub's merge helper shells out to `agent6 runs merge <id>` and reports the
+    """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports the
     captured output as (ok, message) -- it never touches git_ops itself."""
     import subprocess
 
@@ -502,13 +504,13 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
     monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
 
     ok, msg = home._run_merge_cli(tmp_path, "r1")  # pyright: ignore[reportPrivateUsage]
-    assert captured[-1] == ["agent6", "runs", "merge", "r1"]
+    assert captured[-1] == ["agent6", "sessions", "merge", "r1"]
     assert ok is True
     assert "merged agent6/r1" in msg
 
 
 def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
-    """Pressing `m` opens a confirm modal; confirming runs `agent6 runs merge` for the
+    """Pressing `m` opens a confirm modal; confirming runs `agent6 sessions merge` for the
     selected run (stubbed here so no real CLI is spawned)."""
     import asyncio
 
@@ -519,12 +521,12 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
     from agent6.ui.tui.modals import ConfirmModal
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     calls: list[str] = []
 
-    def _fake_merge(cwd: Path, run_id: str) -> tuple[bool, str]:
-        calls.append(run_id)
+    def _fake_merge(cwd: Path, session_id: str) -> tuple[bool, str]:
+        calls.append(session_id)
         return True, "merged"
 
     monkeypatch.setattr(home, "_run_merge_cli", _fake_merge)  # type: ignore[attr-defined]
@@ -533,7 +535,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            tbl = app.screen.query_one("#runs", DataTable)
+            tbl = app.screen.query_one("#sessions", DataTable)
             tbl.focus()
             tbl.move_cursor(row=0)
             await pilot.press("m")
@@ -556,13 +558,13 @@ def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
     from agent6.ui.tui.home import Agent6HomeApp
 
     a6 = tmp_path / ".agent6"
-    rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+    rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            tbl = app.screen.query_one("#runs", DataTable)
+            tbl = app.screen.query_one("#sessions", DataTable)
             tbl.focus()
             tbl.move_cursor(row=0)
             await pilot.press("enter")
@@ -585,7 +587,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
 
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2, raising=False)
     a6 = tmp_path / ".agent6"
-    rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run"}])
+    rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
@@ -593,7 +595,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
         async with app.run_test(size=(140, 40)) as pilot:
 
             def status_cell() -> str:
-                table = app.screen.query_one("#runs", DataTable)
+                table = app.screen.query_one("#sessions", DataTable)
                 if table.row_count == 0:
                     return ""
                 return str(table.get_row_at(0)[2])
@@ -619,7 +621,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0, raising=False)  # manual refresh only
     a6 = tmp_path / ".agent6"
     for name, ts in (("r1", 1000), ("r2", 2000), ("r3", 3000)):
-        rd = _write_run(a6, "runs", name, [{"type": "run.start", "mode": "run"}])
+        rd = _write_run(a6, "runs", name, [{"type": "session.start", "mode": "run"}])
         os.utime(rd / "logs.jsonl", (ts, ts))
 
     async def scenario() -> None:
@@ -627,7 +629,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
         async with app.run_test(size=(140, 40)) as pilot:
 
             def table() -> DataTable[Any]:  # newest first: r3, r2, r1
-                return app.screen.query_one("#runs", DataTable)
+                return app.screen.query_one("#sessions", DataTable)
 
             await _wait_for(pilot, lambda: table().row_count == 3, "the three rows")
             await pilot.press("down")  # cursor onto r2

@@ -17,7 +17,7 @@ from agent6.config.layer import (
     preset_catalog,
 )
 from agent6.config.write import PROVIDER_DEFAULTS
-from agent6.ui.cli._common import _machines_dir, _runs_dir, run_bucket_dirs
+from agent6.ui.cli._common import _machines_dir, _runs_dir, session_bucket_dirs
 from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 
@@ -159,7 +159,7 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: ids across every session bucket (runs, asks, machine
     drafts). Offers exactly what `--from` accepts, so the two cannot drift."""
     out: list[str] = []
-    for bucket in run_bucket_dirs(Path.cwd()):
+    for bucket in session_bucket_dirs(Path.cwd()):
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
@@ -177,7 +177,7 @@ def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
         return []
 
 
-def _complete_plan_run_ids(prefix: str, **_kw: object) -> list[str]:
+def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: run ids that hold a plan.md (for --from-plan / plan show/edit)."""
     try:
         runs = _runs_dir(Path.cwd())

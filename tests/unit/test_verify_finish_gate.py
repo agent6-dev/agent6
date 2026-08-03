@@ -65,7 +65,7 @@ def _verified(wf: Workflow, **state_kw: Any) -> str:
 
 
 def test_verification_carries_the_same_verdict_the_event_does() -> None:
-    """RunResult.verified is the app layer's copy of run.end.all_passed's
+    """RunResult.verified is the app layer's copy of session.end.all_passed's
     grounding, so exit code, auto-merge, and the notify hook read the verify
     truth instead of `completed` (true for any deliberate finish)."""
     assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=False) == "passed"
@@ -78,7 +78,7 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
 
 def test_plan_and_ask_are_never_gated_on_verify() -> None:
     """plan/ask end clean whatever the tree looks like -- finish_planning and
-    the ask answer both emit run.end all_passed=True -- so they have no verify
+    the ask answer both emit session.end all_passed=True -- so they have no verify
     verdict to report. Reporting one made `agent6 plan` exit 4 (preflight
     INFERS a verify command for plan, and plan never runs it, so the tree read
     as red) while its own journal and every listing said passed."""

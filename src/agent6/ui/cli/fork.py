@@ -16,16 +16,16 @@ from agent6.ui.cli.resume import _cmd_resume
 
 def _cmd_fork(
     config_path: Path | None,
-    source_run_id: str,
+    source_session_id: str,
     *,
     at_turn: int | None = None,
-    new_run_id: str = "",
+    new_session_id: str = "",
     no_run: bool = False,
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
     steer: str = "",
 ) -> int:
-    """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
+    """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
 
     Default: fork from the latest checkpoint and immediately continue the new run
     from that turn (resume-like); ``--steer`` seeds the fresh direction at its
@@ -39,7 +39,11 @@ def _cmd_fork(
         )
         return 2
     child_id, rc = create_fork(
-        config_path, source_run_id, at_turn=at_turn, new_run_id=new_run_id, cwd=Path.cwd()
+        config_path,
+        source_session_id,
+        at_turn=at_turn,
+        new_session_id=new_session_id,
+        cwd=Path.cwd(),
     )
     if rc != 0:
         return rc

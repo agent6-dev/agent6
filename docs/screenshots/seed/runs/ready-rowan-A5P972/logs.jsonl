@@ -1,4 +1,4 @@
-{"ts": "2026-06-23T08:59:52.366547+00:00", "type": "run.start", "user_task": "# Implement `parse_csv_row` per RFC 4180\n\n`mylib/csv_parse.py` contains a stub implementation of `parse_csv_row(line: str) -> list[str]`\nthat currently only handles the simplest comma-split case. Make", "mode": "run"}
+{"ts": "2026-06-23T08:59:52.366547+00:00", "type": "session.start", "user_task": "# Implement `parse_csv_row` per RFC 4180\n\n`mylib/csv_parse.py` contains a stub implementation of `parse_csv_row(line: str) -> list[str]`\nthat currently only handles the simplest comma-split case. Make", "mode": "run"}
 {"ts": "2026-06-23T08:59:52.696872+00:00", "type": "graph.update", "nodes": {"01KVSVA6FAP70KDFGXBA36AZQC": {"title": "# Implement `parse_csv_row` per RFC 4180", "status": "pending", "parent_id": null, "children": []}}, "cursor": null}
 {"ts": "2026-06-23T08:59:52.715218+00:00", "type": "role.call", "role": "worker", "model": "moonshotai/kimi-k2.7-code-20260612", "provider": "openrouter"}
 {"ts": "2026-06-23T08:59:53.828098+00:00", "type": "role.thinking_delta", "role": "worker", "text": "Let"}
@@ -227,4 +227,4 @@
 {"ts": "2026-06-23T09:08:11.278204+00:00", "type": "tool.call", "name": "finish_run", "args": {"summary": "Restored `parse_csv_row` in `mylib/csv_parse.py` to parse a single CSV row per RFC 4180. The implementation strips a trailing CR/LF or LF, then delegates to Python's `csv.reader` (which already handle… (396 chars)"}}
 {"ts": "2026-06-23T09:08:11.279982+00:00", "type": "tool.result", "name": "finish_run", "ok": true, "summary": "finish_run"}
 {"ts": "2026-06-23T09:08:11.296205+00:00", "type": "graph.update", "nodes": {"01KVSVA6FAP70KDFGXBA36AZQC": {"title": "# Implement `parse_csv_row` per RFC 4180", "status": "passed", "parent_id": null, "children": []}}, "cursor": null}
-{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "run.end", "reason": "finish_run", "iterations": 22, "all_passed": true}
+{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "session.end", "reason": "finish_run", "iterations": 22, "all_passed": true}

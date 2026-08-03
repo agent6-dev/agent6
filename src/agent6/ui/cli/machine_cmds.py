@@ -59,9 +59,9 @@ from agent6.machine import (
     render,
 )
 from agent6.paths import chown_to_real_user
-from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import jail_search_path
+from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.types import IsolationLevel
 from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import format_plain_event
@@ -635,7 +635,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
                 if anchor is None:
                     with contextlib.suppress(json.JSONDecodeError):
                         anchor = event_epoch(json.loads(line).get("ts"))
-                print("    " + format_plain_event(line, run_start_ts=anchor), flush=True)
+                print("    " + format_plain_event(line, session_start_ts=anchor), flush=True)
             if ms.ended is not None:
                 print(
                     f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} after"

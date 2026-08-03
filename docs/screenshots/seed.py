@@ -94,9 +94,9 @@ def main() -> None:
     base = time.time() - len(ORDER) * 300
     found = sorted(p.name for p in SEED.iterdir() if p.is_dir())
     ordered = [r for r in ORDER if r in found] + [r for r in found if r not in ORDER]
-    for i, run_id in enumerate(reversed(ordered)):
-        dst = runs_dir / run_id
-        shutil.copytree(SEED / run_id, dst)
+    for i, session_id in enumerate(reversed(ordered)):
+        dst = runs_dir / session_id
+        shutil.copytree(SEED / session_id, dst)
         mtime = base + i * 300
         for p in [*dst.rglob("*"), dst]:
             os.utime(p, (mtime, mtime))

@@ -23,19 +23,19 @@ The loop-owned conversation: typed turns over the provider wire.
 - **Read by:** workflows/{_compaction, _critic}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
 
-## RunManifest
+## SessionManifest
 
-[`agent6.runs.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/manifest.py) &middot; pydantic model + 6 nested models
+[`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 6 nested models
 
-Read a run's manifest.json into the typed RunManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
+Read a run's manifest.json into the typed SessionManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
 
-**RunManifest** &mdash; The typed manifest.json a run starts with (and later stamps).
+**SessionManifest** &mdash; The typed manifest.json a run starts with (and later stamps).
 
 | field | type | default |
 | --- | --- | --- |
 | `version` | `int` | `MANIFEST_VERSION` |
 | `agent6_version` | `str` | `''` |
-| `run_id` | `str` | `''` |
+| `session_id` | `str` | `''` |
 | `mode` | `str` | `''` |
 | `start_ts` | `str` | `''` |
 | `user_task` | `str` | `''` |
@@ -46,7 +46,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
 | `policy` | `PolicyStamp` | `PolicyStamp()` |
 | `parked_task` | `str` | `''` |
-| `parent_run_id` | `str | None` | `None` |
+| `parent_session_id` | `str | None` | `None` |
 | `forked_from_turn` | `int | None` | `None` |
 | `forked_from_sha` | `str | None` | `None` |
 | `merged` | `MergeStamp | None` | `None` |
@@ -55,8 +55,8 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/{sessions}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, policy, state}
-- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (8 test files exercise it)
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/{sessions}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, sessions_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, policy, state}
+- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (9 test files exercise it)
 
 ## RunSnapshot
 
@@ -108,13 +108,13 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 [`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 26 frozen families
 
-Typed read model for the ~22 logs.jsonl event families the RunState fold consumes.
+Typed read model for the ~22 logs.jsonl event families the SessionState fold consumes.
 
-Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `RunEnd`, `RawEvent`
+Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `RawEvent`
 
 - **Written by:** viewmodel/{events}
 - **Read by:** viewmodel/{__init__, listing, state, transcript}
-- **Guarded by:** [golden_run_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_logs.jsonl) (4 test files exercise it)
+- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (4 test files exercise it)
 
 ## MachineSpec
 
@@ -184,10 +184,10 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 
 [`agent6.viewmodel.state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) &middot; mutable container + 11 frozen turn types
 
-Pure event-fold: list[event_dict] -> RunState.
+Pure event-fold: list[event_dict] -> SessionState.
 
-**run_state_as_dict** &mdash; The JSON-able wire form of a RunState, stable field names: what `agent6 attach --json` and a web client serialize.
+**session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals}, viewmodel/{__init__}
-- **Guarded by:** [golden_run_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (5 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (5 test files exercise it)

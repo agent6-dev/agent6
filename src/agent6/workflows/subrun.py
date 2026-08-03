@@ -28,7 +28,7 @@ class LaneSpec:
     model (None = the configured worker model)."""
 
     lane: int
-    run_id: str
+    session_id: str
     workdir: Path
     model: str | None
 
@@ -39,7 +39,7 @@ class LaneResult:
     whether it succeeded (`error` set on failure)."""
 
     spec: LaneSpec
-    run_dir: Path
+    session_dir: Path
     branch: str
     ok: bool
     error: str
@@ -96,10 +96,10 @@ def import_run(
     origin: Path,
     lane_repo: Path,
     branch: str,
-    lane_run_dir: Path,
+    lane_session_dir: Path,
     origin_state: Path,
 ) -> Path:
-    """Land a finished lane's *branch* in *origin* and move `lane_run_dir`
+    """Land a finished lane's *branch* in *origin* and move `lane_session_dir`
     under `<origin_state>/runs/`. Returns the imported run dir.
 
     Refuses (SubrunError) to overwrite an existing branch in *origin* or an
@@ -108,16 +108,16 @@ def import_run(
     """
     if branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
-    dest_run_dir = origin_state / "runs" / lane_run_dir.name
-    if dest_run_dir.exists():
-        raise SubrunError(f"run dir already exists: {dest_run_dir}")
+    dest_session_dir = origin_state / "runs" / lane_session_dir.name
+    if dest_session_dir.exists():
+        raise SubrunError(f"run dir already exists: {dest_session_dir}")
     try:
         fetch_branch(origin, lane_repo, f"{branch}:{branch}")
     except GitError as exc:
         raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
-    dest_run_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(lane_run_dir), str(dest_run_dir))
-    return dest_run_dir
+    dest_session_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(lane_session_dir), str(dest_session_dir))
+    return dest_session_dir
 
 
 def join_branch(workspace: Path, branch: str) -> str | None:

@@ -4,10 +4,10 @@
 `/parallel` dispatch.
 
 Spawn N isolated lanes -- each a disposable clone of the repo running its own
-detached `agent6 run` -- symlink the live lanes into `agent6 runs` for
+detached `agent6 run` -- symlink the live lanes into `agent6 sessions` for
 visibility, await them, import each finished lane's branch + run dir back into
 the origin, then auto-compare and print a ranked report. Nothing is merged: the
-operator picks a winner and runs `agent6 runs merge <id>`.
+operator picks a winner and runs `agent6 sessions merge <id>`.
 
 The origin repo is never mutated (no branch cut, no run dir, no commits) until
 `import_run` lands a lane's branch. Clones + lane state are torn down after
@@ -51,10 +51,10 @@ from agent6.git_ops import GitError, diff_since
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
-from agent6.runs.ipc import request_stop, steer_answer_is_abort, worker_is_alive
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
-from agent6.viewmodel import died_without_end, summarize_run_dir
+from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.viewmodel import died_without_end, summarize_session_dir
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
@@ -83,7 +83,7 @@ class SpawnRun(Protocol):
 
     The front-end's process-spawn primitive (ui.spawn's
     `spawn_and_locate` with `agent6_exe` prepended); *argv* is the agent6
-    subcommand + flags, WITHOUT the executable. Returns `(run_dir, "")` once the
+    subcommand + flags, WITHOUT the executable. Returns `(session_dir, "")` once the
     new run dir with a logs.jsonl appears, else `(None, error)`."""
 
     def __call__(
@@ -109,7 +109,7 @@ class LaneRuntime:
       compares its lanes).
 
     Lane liveness (`worker_is_alive`) and stop requests (`request_stop`) are the
-    run-dir bridge itself (`agent6.runs.ipc`), imported directly below: `app`
+    run-dir bridge itself (`agent6.sessions.ipc`), imported directly below: `app`
     already depends on it (`run.py`, `machine_agent.py`), so routing them through
     this front-end seam was a dead pass-through."""
 
@@ -147,7 +147,7 @@ def build_lane_specs(
     return [
         LaneSpec(
             lane=i,
-            run_id=f"{fanout_id}-l{i}",
+            session_id=f"{fanout_id}-l{i}",
             workdir=workdir_root / f"lane-{i}",
             model=model,
         )
@@ -171,7 +171,7 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
     + secrets apply automatically."""
     lane_cfg = cfg.with_machine_agent_overrides(model=spec.model) if spec.model else cfg
     # A lane's branch IS how its work comes back (the import fetches
-    # agent6/<run_id>), so the origin's branch_per_run=false must not ride
+    # agent6/<session_id>), so the origin's branch_per_run=false must not ride
     # along: every lane ran to completion, billed, and then failed the import
     # with a raw git "couldn't find remote ref".
     lane_cfg = lane_cfg.model_copy(
@@ -204,11 +204,13 @@ def bridge_spawner(
     netns, so the lane's `agent6 run` is launched through the pre-forked host
     spawner (escaping the netns) rather than a plain child that would inherit the
     empty namespace and die with no provider reachable."""
-    branch = f"agent6/{spec.run_id}"
+    branch = f"agent6/{spec.session_id}"
     try:
         clone_workspace(origin, spec.workdir)
     except SubrunError as exc:
-        return LaneResult(spec=spec, run_dir=spec.workdir, branch=branch, ok=False, error=str(exc))
+        return LaneResult(
+            spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
+        )
     config_path = _write_lane_config(cfg, spec)
     lane_runs = state_dir(spec.workdir, cfg.agent6.state_dir) / "runs"
 
@@ -219,8 +221,8 @@ def bridge_spawner(
 
     argv = [
         "run",
-        "--run-id",
-        spec.run_id,
+        "--session-id",
+        spec.session_id,
         "--config",
         str(config_path),
     ]
@@ -245,14 +247,14 @@ def bridge_spawner(
         "AGENT6_DETACHED_AWAY": "wait",
         "AGENT6_SUBRUN": "1",
     }
-    run_dir, err = runtime.spawn(
+    session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
     )
-    if run_dir is None:
+    if session_dir is None:
         return LaneResult(
-            spec=spec, run_dir=lane_runs / spec.run_id, branch=branch, ok=False, error=err
+            spec=spec, session_dir=lane_runs / spec.session_id, branch=branch, ok=False, error=err
         )
-    return LaneResult(spec=spec, run_dir=run_dir, branch=branch, ok=True, error="")
+    return LaneResult(spec=spec, session_dir=session_dir, branch=branch, ok=True, error="")
 
 
 # ---------------------------------------------------------------------------
@@ -260,16 +262,16 @@ def bridge_spawner(
 # ---------------------------------------------------------------------------
 
 
-def _lane_terminal(run_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
+def _lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
     """Terminal gate for an awaited lane: the fold left "running" AND the worker
-    pid is cleared/dead. run.end lands in logs.jsonl before the lane's teardown
+    pid is cleared/dead. session.end lands in logs.jsonl before the lane's teardown
     clears worker.pid, so status alone races the teardown, and importing inside
     that window would misread a finished lane as still running. A lane that dies
-    WITHOUT a run.end cannot hang this gate: the fold flips a dead recorded pid
+    WITHOUT a session.end cannot hang this gate: the fold flips a dead recorded pid
     to "stale" at once, a pid-less silent lane to "stale" after its bounded
     silence window, and a lane that never wrote logs reads "?" (see
-    `summarize_run_dir`)."""
-    return status != "running" and not worker_is_alive(run_dir)
+    `summarize_session_dir`)."""
+    return status != "running" and not worker_is_alive(session_dir)
 
 
 def _await_lane(
@@ -285,8 +287,8 @@ def _await_lane(
     blocks until every lane ends. Same gate as the fan-out's `_await_lanes`,
     for a single lane."""
     while True:
-        summary = summarize_run_dir(res.run_dir)
-        if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
+        summary = summarize_session_dir(res.session_dir)
+        if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
             return True
         if should_stop is not None and should_stop():
             return False
@@ -304,8 +306,8 @@ def _drain_lane(
     while time.monotonic() < deadline:
         if hard_stop is not None and hard_stop.is_set():
             return False
-        summary = summarize_run_dir(res.run_dir)
-        if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
+        summary = summarize_session_dir(res.session_dir)
+        if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
             return True
         if hard_stop is not None:
             if hard_stop.wait(poll_interval_s):
@@ -338,7 +340,7 @@ def run_lane_to_completion(
 
     Clone + spawn (via *spawner*, default the bridge spawner), await the lane to
     terminal, then import its branch + run dir into the coordinator's repo and
-    stamp `<group>` lineage. Returns a LaneResult whose `run_dir` is the imported
+    stamp `<group>` lineage. Returns a LaneResult whose `session_dir` is the imported
     dir on success; `ok=False` (nothing imported, *origin* untouched for this
     lane) when the lane failed to start, was still running at teardown, or its
     import was refused. The coordinator runs a group of these on a thread pool, so
@@ -372,36 +374,36 @@ def run_lane_to_completion(
     if not _await_lane(
         res, runtime=runtime, poll_interval_s=poll_interval_s, should_stop=should_stop
     ):
-        request_stop(res.run_dir)
+        request_stop(res.session_dir)
         if not _drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: keep the clone + live symlink (they hold the only
             # copy of its branch until an import) and report the truth.
             return LaneResult(
                 spec=spec,
-                run_dir=res.run_dir,
+                session_dir=res.session_dir,
                 branch=res.branch,
                 ok=False,
                 error="interrupted; lane was asked to stop and keeps running"
                 " detached; not imported",
             )
     lock = import_lock if import_lock is not None else contextlib.nullcontext()
-    link = _lane_link(origin_state, res.spec.run_id)
+    link = _lane_link(origin_state, res.spec.session_id)
     had_link = link.is_symlink()
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
     try:
         with lock:
-            dest = import_run(origin, spec.workdir, res.branch, res.run_dir, origin_state)
+            dest = import_run(origin, spec.workdir, res.branch, res.session_dir, origin_state)
     except SubrunError as exc:
         if had_link:
             _symlink_lane(origin_state, res)  # restore the live view; nothing moved
         return LaneResult(
-            spec=spec, run_dir=res.run_dir, branch=res.branch, ok=False, error=str(exc)
+            spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
     stamp_err = _stamp_lineage(dest, group, spec.lane)
     if stamp_err is not None:
         reporter.err(
-            f"[agent6] lane {spec.lane} [{spec.run_id}]: imported, but the lineage"
+            f"[agent6] lane {spec.lane} [{spec.session_id}]: imported, but the lineage"
             f" stamp failed: {stamp_err}"
         )
     # The module contract ("clones + lane state are torn down after import")
@@ -411,19 +413,19 @@ def run_lane_to_completion(
     # safe: each lane removes only its own dirs, and the group-dir rmdir inside
     # _cleanup succeeds only for whichever lane empties it last.
     _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
-    status = summarize_run_dir(dest).status
+    status = summarize_session_dir(dest).status
     if died_without_end(status):
         # The branch is imported (nothing lost), but the lane never finished:
         # joining it into the coordinator as a success told the model "joined
         # at <sha>" for half-done work.
         return LaneResult(
             spec=spec,
-            run_dir=dest,
+            session_dir=dest,
             branch=res.branch,
             ok=False,
             error=f"crashed before finishing ({status}); branch imported as {res.branch}",
         )
-    return LaneResult(spec=spec, run_dir=dest, branch=res.branch, ok=True, error="")
+    return LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")
 
 
 def build_lane_spawner(
@@ -431,7 +433,7 @@ def build_lane_spawner(
     origin: Path,
     origin_state: Path,
     *,
-    coordinator_run_id: str,
+    coordinator_session_id: str,
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -444,7 +446,7 @@ def build_lane_spawner(
     terminal on a thread pool (one thread per lane, like the review panel's
     seats), imports each into *origin* (serialized by a shared lock), and returns
     per-lane LaneResults in dispatch order. Lane run ids are
-    `<coordinator_run_id>-<group>-l<i>`; lane workspaces live under the same
+    `<coordinator_session_id>-<group>-l<i>`; lane workspaces live under the same
     `[parallel].workdir` cache the fan-out uses, in a `<group>` subdir. The bridge
     spawner tags each lane `AGENT6_SUBRUN=1`, so a lane can never itself dispatch
     (depth 1 by construction). `auto_approve` forwards the coordinator's own
@@ -470,11 +472,11 @@ def build_lane_spawner(
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
             reporter.err(f"[agent6] WARNING: {warning_message(verdict)}")
-        workdir_root = _workdir_root(cfg, coordinator_run_id) / group
+        workdir_root = _workdir_root(cfg, coordinator_session_id) / group
         specs = [
             LaneSpec(
                 lane=i,
-                run_id=f"{coordinator_run_id}-{group}-l{i}",
+                session_id=f"{coordinator_session_id}-{group}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
                 model=lane.model,
             )
@@ -482,7 +484,7 @@ def build_lane_spawner(
         ]
         (origin_state / "runs").mkdir(parents=True, exist_ok=True)
         import_lock = threading.Lock()
-        coord_dir = origin_state / "runs" / coordinator_run_id
+        coord_dir = origin_state / "runs" / coordinator_session_id
         hard_stop = threading.Event()
 
         def should_stop() -> bool:
@@ -549,7 +551,7 @@ def build_coordinator_spawner(
     origin_state: Path,
     *,
     mode: str,
-    run_id: str,
+    session_id: str,
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -569,7 +571,7 @@ def build_coordinator_spawner(
         cfg,
         origin,
         origin_state,
-        coordinator_run_id=run_id,
+        coordinator_session_id=session_id,
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,
@@ -582,19 +584,19 @@ def build_coordinator_spawner(
 # ---------------------------------------------------------------------------
 
 
-def _lane_link(origin_state: Path, run_id: str) -> Path:
-    return origin_state / "runs" / run_id
+def _lane_link(origin_state: Path, session_id: str) -> Path:
+    return origin_state / "runs" / session_id
 
 
 def _symlink_lane(origin_state: Path, res: LaneResult) -> None:
     """Symlink a located lane's (clone-side) run dir into the origin's `runs/` so
-    `agent6 runs`/hub shows it live. Replaced by the real imported dir at import."""
-    link = _lane_link(origin_state, res.spec.run_id)
+    `agent6 sessions`/hub shows it live. Replaced by the real imported dir at import."""
+    link = _lane_link(origin_state, res.spec.session_id)
     link.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
     with contextlib.suppress(OSError):
-        link.symlink_to(res.run_dir)
+        link.symlink_to(res.session_dir)
 
 
 def _await_lanes(
@@ -614,29 +616,29 @@ def _await_lanes(
     `already_interrupted=True` (a Ctrl+C the spawn loop caught before the await
     even began) skips the normal poll and goes straight into that same stop-grace
     path, so a mid-spawn interrupt stops the already-started lanes identically."""
-    pending = {r.spec.run_id: r for r in started}
+    pending = {r.spec.session_id: r for r in started}
     seen: dict[str, tuple[str, str, float]] = {}
 
     def poll_once() -> None:
         for rid, res in list(pending.items()):
-            summary = summarize_run_dir(res.run_dir)
+            summary = summarize_session_dir(res.session_dir)
             # A "waiting" lane is blocked on an approval/question no detached
             # lane can answer; point the operator at the hub. _pending_prompt
             # supplies only the approval-vs-question wording.
-            waiting = _pending_prompt(res.run_dir) if summary.status == "waiting" else ""
+            waiting = _pending_prompt(res.session_dir) if summary.status == "waiting" else ""
             key = (summary.status, waiting, round(summary.cost_usd, 4))
             if seen.get(rid) != key:
                 seen[rid] = key
                 _print_lane_status(
                     res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
                 )
-            if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
+            if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
                 pending.pop(rid)
 
     def stop_and_drain() -> None:
         reporter.err("\n[agent6] interrupted; stopping lanes...")
         for res in pending.values():
-            request_stop(res.run_dir)
+            request_stop(res.session_dir)
         deadline = time.monotonic() + _STOP_GRACE_S
         with contextlib.suppress(KeyboardInterrupt):
             while pending and time.monotonic() < deadline:
@@ -663,16 +665,16 @@ _PROMPT_KIND = {"approval.prompt": "approval", "question.prompt": "a question"}
 _ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
-def _pending_prompt(run_dir: Path) -> str:
+def _pending_prompt(session_dir: Path) -> str:
     """ "approval" / "a question" if the lane is blocked on an unanswered prompt,
     else "". The worker emits `approval.prompt`/`question.prompt` then BLOCKS on
     its `*.answer` (lanes run with AGENT6_DETACHED_AWAY=wait, so a prompt with no
     hub attached waits rather than denies), so the LAST prompt/answer event in
     logs.jsonl decides it -- a cheap trailing scan, no `*.request` marker exists
-    for approvals/questions. Deliberately not the heavyweight RunState fold; the
+    for approvals/questions. Deliberately not the heavyweight SessionState fold; the
     fan-out status line needs only this one bit."""
     try:
-        lines = (run_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return ""
     for raw in reversed(lines):
@@ -701,7 +703,7 @@ def _print_lane_status(
     model = f" ({spec.model})" if spec.model else ""
     cost_s = f"  {format_cost(cost)}" if cost > 0 else ""
     wait_s = f" · waiting on {waiting} (answer via the web or TUI hub)" if waiting else ""
-    reporter.err(f"[agent6] lane {spec.lane} [{spec.run_id}]{model}: {status}{wait_s}{cost_s}")
+    reporter.err(f"[agent6] lane {spec.lane} [{spec.session_id}]{model}: {status}{wait_s}{cost_s}")
 
 
 # ---------------------------------------------------------------------------
@@ -709,16 +711,16 @@ def _print_lane_status(
 # ---------------------------------------------------------------------------
 
 
-def _stamp(run_dir: Path, **updates: object) -> str | None:
+def _stamp(session_dir: Path, **updates: object) -> str | None:
     """Apply typed field *updates* to an imported lane's manifest (read the model,
     ``model_copy``, atomic rewrite). Returns an error string when the manifest
     cannot be read/parsed or written (the import itself stands; the caller reports
     the degradation). The one stamping helper: `_stamp_lineage` (post-import) and
     `_stamp_compare_outcomes` (post-ranking) both go through it, so the read +
     atomic rewrite + loud-degrade contract lives in one place."""
-    mpath = run_dir / "manifest.json"
+    mpath = session_dir / "manifest.json"
     try:
-        m = read_manifest(run_dir)
+        m = read_manifest(session_dir)
     except ManifestError as exc:
         return f"could not read {mpath}: {exc}"
     try:
@@ -731,11 +733,11 @@ def _stamp(run_dir: Path, **updates: object) -> str | None:
     return None
 
 
-def _stamp_lineage(run_dir: Path, fanout_id: str, lane: int) -> str | None:
+def _stamp_lineage(session_dir: Path, fanout_id: str, lane: int) -> str | None:
     """Record fan-out lineage on an imported lane's manifest. The lane process
     wrote the manifest not knowing it was a lane, so the orchestrator adds
     `parallel_id`/`lane` post-import."""
-    return _stamp(run_dir, parallel_id=fanout_id, lane=lane)
+    return _stamp(session_dir, parallel_id=fanout_id, lane=lane)
 
 
 def _stamp_compare_outcomes(
@@ -755,7 +757,7 @@ def _stamp_compare_outcomes(
     A per-lane stamp failure degrades loudly and never blocks the others."""
     of = len(candidates)
     text = outcome.rationale[:2000] if outcome.ranked_by == "judge" else ""
-    for rank_pos, run_id in enumerate(outcome.ranking, start=1):
+    for rank_pos, session_id in enumerate(outcome.ranking, start=1):
         compare = CompareStamp(
             rank=rank_pos,
             of=of,
@@ -765,9 +767,11 @@ def _stamp_compare_outcomes(
             judge_cost_usd=outcome.judge_cost_usd,
             judge_cost_partial=outcome.judge_cost_partial,
         )
-        err = _stamp(_lane_link(origin_state, run_id), compare=compare)
+        err = _stamp(_lane_link(origin_state, session_id), compare=compare)
         if err is not None:
-            reporter.err(f"[agent6] lane [{run_id}]: imported, but the compare stamp failed: {err}")
+            reporter.err(
+                f"[agent6] lane [{session_id}]: imported, but the compare stamp failed: {err}"
+            )
 
 
 def _import_lanes(
@@ -796,14 +800,14 @@ def _import_lanes(
         if not res.ok:
             failed.append((res, res.error))
             continue
-        link = _lane_link(origin_state, res.spec.run_id)
-        if worker_is_alive(res.run_dir):
+        link = _lane_link(origin_state, res.spec.session_id)
+        if worker_is_alive(res.session_dir):
             failed.append(
                 (
                     res,
                     "still running; left in place"
-                    f" (watch: agent6 attach {res.spec.run_id};"
-                    f" stop: agent6 runs stop {res.spec.run_id})",
+                    f" (watch: agent6 attach {res.spec.session_id};"
+                    f" stop: agent6 sessions stop {res.spec.session_id})",
                 )
             )
             continue
@@ -811,7 +815,7 @@ def _import_lanes(
         with contextlib.suppress(FileNotFoundError):
             link.unlink()  # drop the live symlink so import can place the real dir
         try:
-            dest = import_run(origin, res.spec.workdir, res.branch, res.run_dir, origin_state)
+            dest = import_run(origin, res.spec.workdir, res.branch, res.session_dir, origin_state)
         except SubrunError as exc:
             if had_link:
                 _symlink_lane(origin_state, res)  # restore the live view; nothing moved
@@ -821,10 +825,10 @@ def _import_lanes(
         stamp_err = _stamp_lineage(dest, fanout_id, res.spec.lane)
         if stamp_err is not None:
             reporter.err(
-                f"[agent6] lane {res.spec.lane} [{res.spec.run_id}]: imported, but the"
+                f"[agent6] lane {res.spec.lane} [{res.spec.session_id}]: imported, but the"
                 f" lineage stamp failed: {stamp_err}"
             )
-        summary = summarize_run_dir(dest)
+        summary = summarize_session_dir(dest)
         if died_without_end(summary.status):
             # Imported (its branch is safe in the origin) but NOT a candidate:
             # verify_ok reads a crash as the same tri-state as a clean unverified
@@ -840,7 +844,7 @@ def _import_lanes(
             continue
         candidates.append(
             CandidateBrief(
-                run_id=res.spec.run_id,
+                session_id=res.spec.session_id,
                 task=manifest_task(dest, task),
                 diff=diff_since(res.spec.workdir, base_sha),
                 verify_ok=verify_ok(summary.status),
@@ -881,8 +885,8 @@ def _print_report(
     if failed:
         reporter.out("\nfailed lanes (nothing of theirs was deleted):")
         for res, err in failed:
-            reporter.out(f"  - lane {res.spec.lane} [{res.spec.run_id}]: {err}")
-            kept = [p for p in (res.spec.workdir, res.run_dir) if p.exists()]
+            reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
+            kept = [p for p in (res.spec.workdir, res.session_dir) if p.exists()]
             if kept:
                 reporter.out(f"    kept: {', '.join(str(p) for p in kept)}")
 
@@ -917,7 +921,7 @@ def run_parallel(
         reporter.err("ERROR: no lanes to run")
         return 2
     if fanout_id is None:
-        fanout_id = lanes[0].run_id.rsplit("-l", 1)[0]
+        fanout_id = lanes[0].session_id.rsplit("-l", 1)[0]
     if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
@@ -951,7 +955,7 @@ def run_parallel(
                 _print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
                 reporter.err(
-                    f"[agent6] lane {spec.lane} [{spec.run_id}]: FAILED to start: {res.error}"
+                    f"[agent6] lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}"
                 )
         interrupted = _await_lanes([r for r in results if r.ok], runtime=runtime, reporter=reporter)
     except KeyboardInterrupt:

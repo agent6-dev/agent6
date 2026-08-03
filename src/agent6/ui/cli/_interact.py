@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     away_mode,
     clear_answer,
     clear_question_answers,
@@ -78,7 +78,7 @@ def default_stdin_approver(prompt: str) -> str:
     return "yes" if ans in {"y", "yes"} else "no"
 
 
-def prompt_detach_away_mode(run_dir: Path) -> None:
+def prompt_detach_away_mode(session_dir: Path) -> None:
     """On detach with run_commands=ask, ask how approvals/questions should be
     handled while nothing is watching, and record it for the background run.
 
@@ -87,7 +87,7 @@ def prompt_detach_away_mode(run_dir: Path) -> None:
     cleanly at the approval and is resumable -- re-attach with `agent6 attach`
     and answer. Non-interactive (no tty) also defaults to wait."""
     if not sys.stdin.isatty():
-        set_away_mode(run_dir, "wait")
+        set_away_mode(session_dir, "wait")
         return
     print(
         "[agent6] Detaching with run_commands=ask -- nothing will be watching to approve.",
@@ -99,17 +99,17 @@ def prompt_detach_away_mode(run_dir: Path) -> None:
     )
     choice = (ans or "").strip().lower()
     if choice in {"a", "approve"}:
-        set_session_allow(run_dir)  # reuse the session-allow marker
+        set_session_allow(session_dir)  # reuse the session-allow marker
         print("  -> approving every run_command.", file=sys.stderr)
     elif choice in {"d", "deny"}:
-        set_away_mode(run_dir, "deny")
+        set_away_mode(session_dir, "deny")
         print("  -> denying run_commands until you reattach.", file=sys.stderr)
     else:
-        set_away_mode(run_dir, "wait")
+        set_away_mode(session_dir, "wait")
         print("  -> waiting; reattach (agent6 attach / the TUI) to approve.", file=sys.stderr)
 
 
-def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> object | None:
+def _wait_for_reply(session_dir: Path, read_once: Callable[[], object | None]) -> object | None:
     """Detach 'wait' mode: block until a reattached front-end supplies an answer
     (``read_once`` returns non-None) or stops the run. ``read_once`` polls a live
     front-end for up to its own (short) timeout; between calls, when no front-end is
@@ -117,9 +117,9 @@ def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> ob
     abort, which breaks the wait so the run can end. Returns the reply, or None on
     stop."""
     while True:
-        if steer_answer_is_abort(run_dir):
+        if steer_answer_is_abort(session_dir):
             return None
-        if frontend_is_live(run_dir):
+        if frontend_is_live(session_dir):
             reply = read_once()
             if reply is not None:
                 return reply
@@ -128,7 +128,7 @@ def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> ob
 
 
 def build_approver(
-    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
+    session_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Approver:
     """Build the command approver, bridged to a live TUI when present.
 
@@ -147,27 +147,29 @@ def build_approver(
         # and both the prompt they answered and the modal they clicked say
         # exactly that. Reading it as consent for the network too turned one
         # keystroke into unlimited egress for the rest of the run.
-        if standing and session_allow_set(run_dir):
+        if standing and session_allow_set(session_dir):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
         # Clear any premature answer for this id, then emit the prompt so ANY live
         # front-end (a re-attached `agent6 attach`, the TUI, the web) can render and
         # answer it. clear_answer stops a pre-written answer (a premature approve
         # POST, ids being predictable) from silently auto-passing.
-        clear_answer(run_dir, prompt_id)
+        clear_answer(session_dir, prompt_id)
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         # A live front-end ALWAYS gets asked, in its own UI, regardless of the
         # detach away-mode: away-mode governs only the window when nothing is
         # attached. (A foreground run writes no front-end claim, so it falls through
         # to the stdin prompt below.)
-        if frontend_is_live(run_dir):
-            answer = read_answer(run_dir, prompt_id)  # the front-end wrote "allow session" itself
+        if frontend_is_live(session_dir):
+            answer = read_answer(
+                session_dir, prompt_id
+            )  # the front-end wrote "allow session" itself
             if answer is not None:
                 events.emit("approval.answer", id=prompt_id, approved=answer, source="frontend")
                 return answer
         # Nothing attached (or the front-end died mid-prompt): the detached run's
         # chosen away-mode governs. deny/wait are only reached headless.
-        away = away_mode(run_dir)
+        away = away_mode(session_dir)
         if away == "deny":
             events.emit("approval.answer", id=prompt_id, approved=False, source="away-deny")
             return False
@@ -178,7 +180,8 @@ def build_approver(
             # front-end attaches and answers, rather than deny. Deny discards the
             # run's work; wait pauses cleanly and is resumable (the default).
             reply = _wait_for_reply(
-                run_dir, lambda: read_answer(run_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0)
+                session_dir,
+                lambda: read_answer(session_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0),
             )
             approved = bool(reply)
             events.emit("approval.answer", id=prompt_id, approved=approved, source="await-frontend")
@@ -187,12 +190,12 @@ def build_approver(
         with _pause(console_view):
             answer_s = default_stdin_approver(prompt)
         if answer_s == "session":
-            set_session_allow(run_dir)
+            set_session_allow(session_dir)
         elif answer_s == "session-deny":
             # Withdraws the tools from the next turn (see effective_run_commands),
             # rather than refusing every later call: the model stops spending
             # turns on a door that will not open.
-            set_session_deny(run_dir)
+            set_session_deny(session_dir)
         approved = answer_s in {"yes", "session"}
         events.emit("approval.answer", id=prompt_id, approved=approved, source="stdin")
         return approved
@@ -201,7 +204,7 @@ def build_approver(
 
 
 def build_questioner(
-    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
+    session_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
@@ -216,7 +219,7 @@ def build_questioner(
         question_id = f"question-{counter['n']}"
         # Clear a pre-written answer before emitting (see build_approver): an
         # ask_user answer that arrived before the prompt must not be consumed.
-        clear_question_answers(run_dir, question_id)
+        clear_question_answers(session_dir, question_id)
         events.emit(
             "question.prompt",
             id=question_id,
@@ -226,16 +229,16 @@ def build_questioner(
         source = "stdin"
         # A live front-end (re-attached CLI watch, TUI, web) always gets asked,
         # whatever the away-mode; away-mode is the no-front-end fallback.
-        if frontend_is_live(run_dir):
-            answers = read_question_answers(run_dir, question_id)
+        if frontend_is_live(session_dir):
+            answers = read_question_answers(session_dir, question_id)
             if answers is not None:
                 source = "frontend"
-        if answers is None and away_mode(run_dir) == "wait":
+        if answers is None and away_mode(session_dir) == "wait":
             # Detached 'wait', nothing attached: block until a front-end answers.
             reply = _wait_for_reply(
-                run_dir,
+                session_dir,
                 lambda: read_question_answers(
-                    run_dir, question_id, timeout_s=20.0, dead_grace_s=8.0
+                    session_dir, question_id, timeout_s=20.0, dead_grace_s=8.0
                 ),
             )
             answers = reply if isinstance(reply, tuple) else tuple("" for _ in questions)

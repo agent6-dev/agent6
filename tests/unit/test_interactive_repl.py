@@ -228,15 +228,15 @@ def test_after_auto_commit_field_is_overridable() -> None:
 # --- steer marker self-heals on a dismissed/timed-out TUI modal ------------
 
 
-def _tui_live(_run_dir: Path) -> bool:
+def _tui_live(_session_dir: Path) -> bool:
     return True
 
 
-def _answer_none(_run_dir: Path) -> str | None:
+def _answer_none(_session_dir: Path) -> str | None:
     return None  # modal dismissed / read_steer_answer timed out
 
 
-def _answer_text(_run_dir: Path) -> str | None:
+def _answer_text(_session_dir: Path) -> str | None:
     return "do the thing"
 
 
@@ -246,23 +246,23 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     """A TUI-initiated steer whose modal is dismissed (read_steer_answer -> None
     on timeout) must clear the `steer.request` marker so the run does NOT
     re-enter the 600s blocking prompt at every later boundary."""
-    from agent6.runs.ipc import request_steer, steer_request_pending
+    from agent6.sessions.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
-    run_dir = tmp_path
-    request_steer(run_dir)  # TUI `s`-key dropped the marker
-    assert steer_request_pending(run_dir)
+    session_dir = tmp_path
+    request_steer(session_dir)  # TUI `s`-key dropped the marker
+    assert steer_request_pending(session_dir)
 
     # TUI is live but the modal yields no answer (dismissed / 600s timeout).
     monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_none)
 
-    state = _steer.install_steer_sigint(MagicMock(), run_dir)
+    state = _steer.install_steer_sigint(MagicMock(), session_dir)
     try:
         assert state.requested() is True  # marker seen -> would prompt
         assert state.prompt() is None  # dismissed modal
         # The marker is gone, so the next boundary does NOT re-trigger a steer.
-        assert not steer_request_pending(run_dir)
+        assert not steer_request_pending(session_dir)
         assert state.requested() is False
     finally:
         state.restore()
@@ -273,20 +273,20 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 ) -> None:
     """A genuinely-answered steer still works: prompt() returns the answer and
     leaves clearing to the caller's clear() (which consumes request+answer)."""
-    from agent6.runs.ipc import request_steer, steer_request_pending
+    from agent6.sessions.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
-    run_dir = tmp_path
-    request_steer(run_dir)
+    session_dir = tmp_path
+    request_steer(session_dir)
     monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_text)
 
-    state = _steer.install_steer_sigint(MagicMock(), run_dir)
+    state = _steer.install_steer_sigint(MagicMock(), session_dir)
     try:
         assert state.prompt() == "do the thing"
         # prompt() must NOT clear on the answered path (caller's clear() owns it).
-        assert steer_request_pending(run_dir)
+        assert steer_request_pending(session_dir)
         state.clear()  # caller clears after consuming the answer
-        assert not steer_request_pending(run_dir)
+        assert not steer_request_pending(session_dir)
     finally:
         state.restore()

@@ -19,7 +19,7 @@ The same UI on a phone (single column, bottom nav):
 
 ```bash
 agent6 web            # serve the hub on http://127.0.0.1:7658
-agent6 web <run-id>   # open a run on load
+agent6 web <session-id>   # open a run on load
 agent6 web <machine>  # open a machine instance on load
 ```
 
@@ -84,17 +84,17 @@ The page reads the same wire form as `agent6 attach --json`:
 
 ```bash
 curl -s localhost:7658/api/hub                 # runs + machines + machine files
-curl -s localhost:7658/api/run/<id>            # a run's state, as JSON
-curl -s localhost:7658/api/run/<id>/conversation # the folded conversation items
+curl -s localhost:7658/api/session/<id>            # a run's state, as JSON
+curl -s localhost:7658/api/session/<id>/conversation # the folded conversation items
 curl -s localhost:7658/api/machine/<name>      # a machine's state, as JSON
 curl -s localhost:7658/api/config              # effective config (no secrets)
-curl -sN localhost:7658/api/run/<id>/events    # SSE: a fresh snapshot per change
+curl -sN localhost:7658/api/session/<id>/events    # SSE: a fresh snapshot per change
 ```
 
-`curl /api/run/<id>` returns exactly what `agent6 attach <id> --json` prints.
+`curl /api/session/<id>` returns exactly what `agent6 attach <id> --json` prints.
 Writes are small JSON `POST`s (`/api/new`,
-`/api/run/<id>/{steer,approve,answer,merge,resume,stop_step,compact}`,
-`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/runs/prune`,
+`/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact}`,
+`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/prune`,
 `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn /
 answer-file contracts, never arbitrary execution. A machine's `approve`/`answer`/
 `steer` land in the current agent state's per-state dir; `poke` drops a signal

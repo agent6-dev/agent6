@@ -8,15 +8,15 @@ has been stripped out. The CLI imports it lazily.
 Architecture:
 - `Agent6TUI` (the App) is the data plane: a background thread tails
   logs.jsonl -> apply_event -> call_from_thread, and the app owns the folded
-  RunState, the approval/question/steer prompt dispatch, run control (steer /
+  SessionState, the approval/question/steer prompt dispatch, run control (steer /
   stop / resume / fork), and the exit codes.
 - `DashboardScreen` is the presentation: the panes, their key bindings and
-  menus, and the coalesced repaint of the app's RunState.
+  menus, and the coalesced repaint of the app's SessionState.
 
 The dashboard is READ-ONLY on the log stream and only writes the answer files
-the workflow polls: `<run_dir>/approvals/<id>.answer` (approve), `.../questions/
-<id>.answer` (ask_user), `<run_dir>/steer.answer` (steer), and the
-`<run_dir>/compact.request` marker (Compact now). Any other front-end can
+the workflow polls: `<session_dir>/approvals/<id>.answer` (approve), `.../questions/
+<id>.answer` (ask_user), `<session_dir>/steer.answer` (steer), and the
+`<session_dir>/compact.request` marker (Compact now). Any other front-end can
 mirror this contract.
 """
 
@@ -58,7 +58,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.directive import parse_compact
 from agent6.models.registry import context_window
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     clear_steer_answer,
     register_frontend,
     request_compact,
@@ -70,8 +70,8 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
@@ -86,21 +86,21 @@ from agent6.ui.tui.modals import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
-from agent6.viewmodel import run_compare
+from agent6.viewmodel import session_compare
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost, status_label
-from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_run_dir
+from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     SESSION_START_EVENTS,
     STREAM_DELTA_EVENTS,
     ApprovalPrompt,
     QuestionPrompt,
-    RunState,
+    SessionState,
     ToolCallView,
     apply_event,
-    fold_run,
+    fold_session,
     initial_state,
-    run_status_label,
+    session_status_label,
     status_facts,
 )
 from agent6.viewmodel.tail import tail_events
@@ -174,7 +174,7 @@ class _ScrollPane(VerticalScroll):
 class DashboardScreen(Screen[None]):
     """The run dashboard panes: task graph, live stream, tool table, log window,
     diff/verify, and the composer bar. Presentation only -- it renders the app's
-    folded RunState and dispatches run control back through the app (see the
+    folded SessionState and dispatches run control back through the app (see the
     module docstring)."""
 
     CSS = """
@@ -279,7 +279,7 @@ class DashboardScreen(Screen[None]):
         post-import, by which point it is finished) and cached: it never changes."""
         if self._compare_line is not None:
             return self._compare_line
-        formatted = format_compare(run_compare(self._tui.run_dir))
+        formatted = format_compare(session_compare(self._tui.session_dir))
         if formatted is None:
             return ""  # not stamped (yet); don't cache -- a live lane may get stamped later
         headline, rationale = formatted
@@ -409,13 +409,13 @@ class DashboardScreen(Screen[None]):
         small sliding window; this is the whole history, scroll-anchored. (l again
         inside the view closes it: LogScreen binds l -> close.)"""
         self.app.push_screen(
-            LogScreen(self._tui.logs_path, title=f"logs · {self._tui.run_dir.name}")
+            LogScreen(self._tui.logs_path, title=f"logs · {self._tui.session_dir.name}")
         )
 
     def on_screen_resume(self) -> None:
         # The conversation stamps its own sub_title; re-stamp ours when the
         # toggle (or a closing viewer) brings the dashboard back on top.
-        self.app.sub_title = f"run · {self._tui.run_dir.name}"
+        self.app.sub_title = f"run · {self._tui.session_dir.name}"
 
     # --- command palette ---------------------------------------------
 
@@ -495,8 +495,8 @@ class DashboardScreen(Screen[None]):
 
     # --- rendering ---------------------------------------------------
 
-    def _end_label(self, s: RunState) -> str:
-        """The top-line status label, from THE dir decision (status_for_run_dir,
+    def _end_label(self, s: SessionState) -> str:
+        """The top-line status label, from THE dir decision (status_for_session_dir,
         the same word the hub row shows): coloured end words for a finished run
         (green passed, yellow deliberate end, red involuntary), red "stale" for
         a lost worker, yellow "parked · resume to start", dim created/starting
@@ -521,7 +521,7 @@ class DashboardScreen(Screen[None]):
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         self.query_one("#dash-input", SteerInput).set_mode(
-            live=tui.run_controllable(), ctx_pct=tui.context_pct()
+            live=tui.session_controllable(), ctx_pct=tui.context_pct()
         )
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
@@ -529,7 +529,7 @@ class DashboardScreen(Screen[None]):
         # NOT while "waiting": a run blocked on an operator prompt is controllable
         # (steerable) but not working, so the ticking beat would contradict the
         # same line's "waiting · needs answer" -- the rule the stream body honors.
-        active = tui.run_controllable() and tui.dir_status[0] != "waiting"
+        active = tui.session_controllable() and tui.dir_status[0] != "waiting"
         beat = ""
         if active and role is not None:
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
@@ -560,7 +560,7 @@ class DashboardScreen(Screen[None]):
         # never parsed as markup.
         self.query_one("#stream-body", Static).update(self._stream_story(s, active=active))
 
-    def _stream_story(self, s: RunState, *, active: bool) -> Text:
+    def _stream_story(self, s: SessionState, *, active: bool) -> Text:
         """What the stream pane says: the end story for a finished run, live
         deltas or the working heartbeat while active, and a truthful line for
         every dead state (stale/parked/created) -- never "(waiting for the
@@ -574,7 +574,7 @@ class DashboardScreen(Screen[None]):
         if s.finished:
             # The end story, not a stale "idle": how it ended + the closing summary.
             color = _end_color(s.all_passed, s.end_reason)
-            st.append(run_status_label(s) + "\n", style=f"bold {color}")
+            st.append(session_status_label(s) + "\n", style=f"bold {color}")
             if s.finish_summary:
                 st.append(s.finish_summary, style="dim")
         elif streaming:
@@ -754,14 +754,16 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
     ]
 
-    def __init__(self, run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> None:
+    def __init__(
+        self, session_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False
+    ) -> None:
         super().__init__()
-        self.run_dir = run_dir
+        self.session_dir = session_dir
         # When launched from the hub loop, Esc returns to it and q quits the hub
         # (signalled by the exit code); standalone, both just close the dashboard.
         self.from_hub = from_hub
-        self.logs_path = run_dir / LOGS_NAME
-        self.state: RunState = initial_state()
+        self.logs_path = session_dir / LOGS_NAME
+        self.state: SessionState = initial_state()
         self._seen_approval_ids: set[str] = set()
         self._seen_question_ids: set[str] = set()
         self._seen_steer = 0
@@ -772,17 +774,19 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # dashboard once the run ends so the parent command returns; `agent6
         # watch` leaves this False and keeps following.
         self.exit_on_end = exit_on_end
-        # THE (word, reason) for this run -- status_for_run_dir, the same
+        # THE (word, reason) for this run -- status_for_session_dir, the same
         # decision the hub row shows -- refreshed on the ~1/s heartbeat.
         # Derived, never latched: a crash->resume flips it back to running
         # (a one-way latch would keep "worker exited" painted over the live
         # resumed leg and drop operator steers).
-        self.dir_status: tuple[str, str] = status_for_run_dir(run_dir, status_facts(self.state))
-        # Header task line for a run with no run.start yet (parked/created):
+        self.dir_status: tuple[str, str] = status_for_session_dir(
+            session_dir, status_facts(self.state)
+        )
+        # Header task line for a run with no session.start yet (parked/created):
         # the fold has no user_task, but the manifest knows the work.
         self.fallback_task = ""
         with contextlib.suppress(ManifestError):
-            self.fallback_task = read_manifest(run_dir).user_task
+            self.fallback_task = read_manifest(session_dir).user_task
         # Live heartbeat: a run can be silent for a whole reasoning turn (or the
         # resume context-rebuild gap). Track when the last event landed and
         # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
@@ -795,24 +799,26 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self._ctx_windows: dict[tuple[str, str], int | None] = {}
         self._dash = DashboardScreen()
         self._conv = ConversationScreen(
-            self.logs_path, title=f"conversation · {run_dir.name}", primary=True
+            self.logs_path, title=f"conversation · {session_dir.name}", primary=True
         )
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
         # Per-process claim file: nothing to defend or re-assert, concurrent
         # web/TUI/attach viewers each hold their own.
-        register_frontend(self.run_dir, os.getpid())
-        self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
+        register_frontend(self.session_dir, os.getpid())
+        self.sub_title = f"run · {self.session_dir.name}"  # menu-bar title context
         # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
-        # detached, whose run.steer_requested replays on open); only prompt for ones
+        # detached, whose session.steer_requested replays on open); only prompt for ones
         # that arrive AFTER we start watching, so opening a run never pops a stale,
         # already-handled steer modal. Seed with the SAME fold _tick compares
         # against: a byte-substring count also matched the literal inside event
         # payloads (a grep of the source for the event name), over-seeding the
         # baseline and swallowing the next real steer.
         with contextlib.suppress(OSError):
-            self._seen_steer = fold_run(tail_events(self.logs_path, follow=False)).steer_requests
+            self._seen_steer = fold_session(
+                tail_events(self.logs_path, follow=False)
+            ).steer_requests
         # Pushed (not the app's default screen): only the push path loads a
         # screen's CSS, and the hub pushes its HomeScreen the same way. The
         # conversation opens on top -- the primary view -- with the dashboard
@@ -833,7 +839,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def on_unmount(self) -> None:
         self._stop.set()
         # Drop only our own front-end claim; concurrent viewers keep theirs.
-        unregister_frontend(self.run_dir, os.getpid())
+        unregister_frontend(self.session_dir, os.getpid())
 
     # --- reader thread -----------------------------------------------
 
@@ -856,13 +862,13 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self.last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
         if event.get("type") in SESSION_START_EVENTS:
             # A session boundary (fresh run OR a resumed leg -- a resume emits
-            # only loop.resume.start, never a second run.start) restarts the
+            # only loop.resume.start, never a second session.start) restarts the
             # prompt id counters at approval-1/question-1; a stale seen-set
             # would swallow the new session's first prompts and the run would
             # block forever on a modal that never opens.
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
-        if event.get("type") == "run.end" or event.get("type") in SESSION_START_EVENTS:
+        if event.get("type") == "session.end" or event.get("type") in SESSION_START_EVENTS:
             # A terminal / leg-boundary event changes the status NOW: refresh
             # synchronously so the label and the composer routing never serve
             # the previous state for up to a heartbeat.
@@ -880,7 +886,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     @property
     def worker_lost(self) -> bool:
-        """The recorded worker is gone without a run.end (kill -9 / OOM) --
+        """The recorded worker is gone without a session.end (kill -9 / OOM) --
         the hub's "stale". Derived from dir_status, so a resume that brings a
         live worker back clears it."""
         return self.dir_status[0] == "stale"
@@ -891,7 +897,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         A change repaints and relabels BOTH composer bars -- the covered
         screen's too, which otherwise kept a stale label until its next
         event-driven paint (the two bars visibly disagreed live)."""
-        status = status_for_run_dir(self.run_dir, status_facts(self.state))
+        status = status_for_session_dir(self.session_dir, status_facts(self.state))
         if status != self.dir_status:
             self.dir_status = status
             self._dirty = True
@@ -899,12 +905,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     def _tick(self) -> None:
         # Prompt modals only while the run can consume an answer: the fold
-        # keeps an unanswered prompt across run.end and a worker death (it
+        # keeps an unanswered prompt across session.end and a worker death (it
         # clears only on the answer event or a leg boundary), so an open would
         # otherwise pop live-looking Allow/Deny over a dead run and write the
         # answer into a file nobody polls. Skipped ids are NOT marked seen, so
         # a prompt that outlives a stale probe still pops on the next tick.
-        if self.run_controllable():
+        if self.session_controllable():
             for ap in self.state.pending_approvals:
                 if not ap.answered and ap.id not in self._seen_approval_ids:
                     self._seen_approval_ids.add(ap.id)
@@ -926,7 +932,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         if now - self._heartbeat_at >= 1.0:
             self._heartbeat_at = now
             self._refresh_dir_status()
-            if self.run_controllable():
+            if self.session_controllable():
                 self.spin += 1
                 self._light_dirty = True
         # Coalesced repaint: once per tick, and only when the dashboard is the
@@ -947,7 +953,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 self._light_dirty = False
                 with contextlib.suppress(NoMatches):
                     self._dash.render_heartbeat()
-        # Exit only once the run ended (a clean run.end, or the worker died
+        # Exit only once the run ended (a clean session.end, or the worker died
         # without one) and no modal is open: never yank an in-flight answer,
         # but a ghost prompt on a dead run (its answer read by nobody) must
         # not pin the dashboard open forever.
@@ -962,21 +968,21 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         def cb(answer: str | None) -> None:
             # The worker can die while the modal is open; say the answer went
             # nowhere instead of silently writing a file the next resume drops.
-            if not self.run_controllable():
+            if not self.session_controllable():
                 self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
                 return
             if answer == "session":  # allow every later run_command this run
-                set_session_allow(self.run_dir)
-            write_answer(self.run_dir, ap.id, approved=answer in ("yes", "session"))
+                set_session_allow(self.session_dir)
+            write_answer(self.session_dir, ap.id, approved=answer in ("yes", "session"))
 
         return cb
 
     def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
         def cb(answers: tuple[str, ...] | None) -> None:
-            if not self.run_controllable():
+            if not self.session_controllable():
                 self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
                 return
-            write_question_answers(self.run_dir, qp.id, answers or ())
+            write_question_answers(self.session_dir, qp.id, answers or ())
 
         return cb
 
@@ -986,20 +992,20 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Write the steer request + instruction over the file bridge: discard
         any stale answer, mark the request, and provide the answer in one
         shot."""
-        clear_steer_answer(self.run_dir)
-        request_steer(self.run_dir)
-        write_steer_answer(self.run_dir, text)
+        clear_steer_answer(self.session_dir)
+        request_steer(self.session_dir)
+        write_steer_answer(self.session_dir, text)
 
     def submit_instruction(self, text: str) -> None:
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call) -- the run keeps going.
         Finished: resume THIS run with the instruction as the follow-up."""
-        if self.run_controllable():
+        if self.session_controllable():
             focus = parse_compact(text)
             if focus is not None:
                 # `/compact [focus]` is an out-of-band request, not steer text;
                 # /pin and /parallel stay steers the loop parses itself.
-                if request_compact(self.run_dir, focus=focus):
+                if request_compact(self.session_dir, focus=focus):
                     self.notify("compaction requested; applies before the next model call")
                 else:
                     self.notify("could not write the compaction request", severity="warning")
@@ -1014,9 +1020,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         `agent6 resume --steer`, which seeds the steer files AFTER its stale-
         state clear; a pre-seed here would be wiped by that clear). The new
         session's steer poll injects the text at its first boundary."""
-        err = spawn_detached_resume(Path.cwd(), self.run_dir.name, steer=text)
+        err = spawn_detached_resume(Path.cwd(), self.session_dir.name, steer=text)
         self.notify(
-            err or f"resuming {self.run_dir.name} with your instruction…",
+            err or f"resuming {self.session_dir.name} with your instruction…",
             severity="error" if err else "information",
         )
 
@@ -1039,10 +1045,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Ask the run to compact its context now: drop the compact.request
         marker (the same file-bridge pattern as steer); the loop honors it at
         its next safe boundary by forcing a summarise-and-restart."""
-        if not self.run_controllable():
+        if not self.session_controllable():
             self.notify("run is not live -- nothing to compact", severity="warning")
             return
-        if request_compact(self.run_dir):
+        if request_compact(self.session_dir):
             self.notify("compaction requested; applies at the next safe boundary")
         else:
             self.notify("could not write the compaction request", severity="warning")
@@ -1051,7 +1057,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Stop the run immediately: confirm, then write the abort answer over
         the file bridge -- the stream watchdog interrupts the in-flight turn and
         the run ends (resumable)."""
-        if not self.run_controllable():
+        if not self.session_controllable():
             self.notify("run is not live -- nothing to stop", severity="warning")
             return
 
@@ -1073,13 +1079,13 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Stop AFTER the current step completes: drop the stop.request marker
         the loop honors at its next completed-iteration boundary, so the step's
         tool results and auto-commit land before the run ends (resumable)."""
-        if not self.run_controllable():
+        if not self.session_controllable():
             self.notify("run is not live -- nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                request_stop(self.run_dir)
+                request_stop(self.session_dir)
                 self.notify("stopping after this step…")
 
         self.push_screen(
@@ -1092,17 +1098,17 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             _confirmed,
         )
 
-    def action_delete_run(self) -> None:
+    def action_delete_session(self) -> None:
         """Delete this run's history and return to the hub. History only: the run
         branch and its commits are git's (`runs prune` is the branch verb)."""
-        if self.run_controllable():
+        if self.session_controllable():
             self.notify("run is still live -- stop it first", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
                 ok, msg = run_cli_capture(
-                    [agent6_exe(), "runs", "rm", "--", self.run_dir.name], Path.cwd()
+                    [agent6_exe(), "sessions", "rm", "--", self.session_dir.name], Path.cwd()
                 )
                 self.notify(
                     msg or ("removed" if ok else "could not remove"),
@@ -1124,25 +1130,25 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def action_resume(self) -> None:
         """Resume a finished/stopped run: it continues in the background (appending
         to the same log) and this dashboard follows straight through."""
-        if self.run_controllable():
+        if self.session_controllable():
             self.notify("run is still going -- nothing to resume", severity="warning")
             return
-        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
+        err = spawn_detached_resume(Path.cwd(), self.session_dir.name)
         self.notify(
-            err or f"resuming {self.run_dir.name} in the background…",
+            err or f"resuming {self.session_dir.name} in the background…",
             severity="error" if err else "information",
         )
 
     def action_fork(self) -> None:
         """Fork this run into a NEW run (from its latest checkpoint) that runs in the
         background and shows up in the hub. Spawns off-thread so the UI stays live."""
-        self.notify(f"forking {self.run_dir.name}…", severity="information")
+        self.notify(f"forking {self.session_dir.name}…", severity="information")
         threading.Thread(target=self._do_fork, daemon=True).start()
 
     def _do_fork(self) -> None:
-        runs = self.run_dir.parent  # sibling run dirs under runs/
+        runs = self.session_dir.parent  # sibling run dirs under runs/
         new_dir, err = spawn_and_locate(
-            [agent6_exe(), "fork", self.run_dir.name],
+            [agent6_exe(), "fork", self.session_dir.name],
             Path.cwd(),
             before={p for p in runs.iterdir() if p.is_dir()},
             list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
@@ -1169,7 +1175,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             return None
         return min(100, round(100 * role.ctx_tokens / window))
 
-    def run_controllable(self) -> bool:
+    def session_controllable(self) -> bool:
         """True while the run can receive operator input over the file bridge:
         the dir status is a live word. Parked/created (never started), stale
         (worker gone), and every end word route the composer to resume -- the
@@ -1218,5 +1224,5 @@ def _append_colored_diff(dt: Text, patch: str) -> None:
             dt.append(line + "\n")
 
 
-def run_tui(run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> int:
-    return Agent6TUI(run_dir, exit_on_end=exit_on_end, from_hub=from_hub).run() or 0
+def run_tui(session_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> int:
+    return Agent6TUI(session_dir, exit_on_end=exit_on_end, from_hub=from_hub).run() or 0

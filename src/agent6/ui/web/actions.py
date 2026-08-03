@@ -3,7 +3,7 @@
 """The web write side: drive a run/machine through the shared frontend bridge.
 
 Every mutation the browser can make goes through here, and every one is either
-the typed answer-file contract (`agent6.runs.ipc`) or spawning / running
+the typed answer-file contract (`agent6.sessions.ipc`) or spawning / running
 the same `agent6` CLI a user would (`agent6.ui.spawn`). Nothing here
 executes arbitrary input: new-work spawns fixed argv with the task as a single
 argv element, answers are written to the run's own answer files, and the quick
@@ -22,7 +22,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.directive import DirectiveError, Segment, parse_compact, parse_directive, parse_spec
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.validate import refusal_message, validate_spec_models
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
     request_steer,
@@ -33,7 +33,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.runs.lock import repo_writer_held, repo_writer_holder
+from agent6.sessions.lock import repo_writer_held, repo_writer_holder
 from agent6.ui.spawn import (
     agent6_exe,
     run_cli_capture,
@@ -42,7 +42,7 @@ from agent6.ui.spawn import (
     spawn_detached_resume,
 )
 from agent6.ui.web import model
-from agent6.viewmodel import newest_state_log, run_is_live
+from agent6.viewmodel import newest_state_log, session_is_live
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
@@ -92,11 +92,11 @@ def spawn_new_work(  # noqa: PLR0911
     first: str | None = None
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
-        run_id, err = _spawn_run(cwd, "run", seg.task, preset, spec=seg.spec or "1")
-        if run_id is None:
+        session_id, err = _spawn_run(cwd, "run", seg.task, preset, spec=seg.spec or "1")
+        if session_id is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
         elif first is None:
-            first = run_id
+            first = session_id
     if failures:
         # Binary contract (navigate XOR toast): a partial failure surfaces the
         # diagnostic instead of navigating away from it.
@@ -136,17 +136,17 @@ def _spawn_run(
     # `--` ends option parsing: the body-derived task can start with `-` without
     # being read as a flag.
     argv += ["--", task]
-    run_dir, err = spawn_and_locate(
+    session_dir, err = spawn_and_locate(
         argv,
         cwd,
-        before=set(model.run_dir_paths(cwd)),
-        list_dirs=lambda: model.run_dir_paths(cwd),
+        before=set(model.session_dir_paths(cwd)),
+        list_dirs=lambda: model.session_dir_paths(cwd),
         # AGENT6_DETACHED_AWAY=wait: this run is driven from the browser over the
         # bridge, so approvals and questions must WAIT for a viewer, not fabricate
         # empty answers when the tab is momentarily disconnected (see run.py).
         env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
     )
-    return (run_dir.name if run_dir is not None else None), err
+    return (session_dir.name if session_dir is not None else None), err
 
 
 def spawn_machine_create(cwd: Path, task: str) -> tuple[str | None, str]:
@@ -189,46 +189,46 @@ def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
 
 
 def approve(
-    cwd: Path, run_id: str, prompt_id: str, approved: bool, *, session: bool = False
+    cwd: Path, session_id: str, prompt_id: str, approved: bool, *, session: bool = False
 ) -> tuple[bool, str]:
     """Answer a pending approval prompt (the run's `approval.prompt`). ``session``
     (the "allow session" button) also auto-approves every later run_command."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if not run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if not session_is_live(session_dir):
         # The prompt box outlives the worker (it clears on the answer event,
         # which a dead run will never emit), so refuse like every sibling
         # action: nothing would consume the answer, and the next resume drops
         # it. A session grant would be just as stranded.
         return False, "run is not live"
     if session:
-        set_session_allow(run_dir)
-    write_answer(run_dir, prompt_id, approved=approved)
+        set_session_allow(session_dir)
+    write_answer(session_dir, prompt_id, approved=approved)
     return True, "answered"
 
 
 def answer_question(
-    cwd: Path, run_id: str, question_id: str, answers: list[str]
+    cwd: Path, session_id: str, question_id: str, answers: list[str]
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt (one answer per question, by index)."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if not run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if not session_is_live(session_dir):
         return False, "run is not live"  # see approve()
-    write_question_answers(run_dir, question_id, answers)
+    write_question_answers(session_dir, question_id, answers)
     return True, "answered"
 
 
-def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
+def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     """Steer a live run: pre-place the answer, then drop the request marker the
     run picks up at its next safe boundary. `text` is a free instruction; "" means
     continue, "abort" stops the run (the same contract the TUI steer modal uses)."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if not run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if not session_is_live(session_dir):
         # A crashed run folds as unfinished, so the composer still offers
         # steer; nothing would ever read the marker (and the next resume
         # deletes it), so refuse like the stop/compact siblings.
@@ -237,48 +237,48 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     if focus is not None:
         # `/compact [focus]` is an out-of-band request, not steer text the
         # loop should read; /pin and /parallel stay steers the loop parses.
-        if not request_compact(run_dir, focus=focus):
+        if not request_compact(session_dir, focus=focus):
             return False, "could not write the compaction request"
         return True, "compaction requested"
-    write_steer_answer(run_dir, text)  # ready before the run reads it
-    request_steer(run_dir)
+    write_steer_answer(session_dir, text)  # ready before the run reads it
+    request_steer(session_dir)
     return True, "steer requested"
 
 
-def resume_run(cwd: Path, run_id: str, text: str = "") -> tuple[bool, str]:
+def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:
     """Resume a finished/stopped run detached, optionally seeding *text* as the
     first steering instruction (the composer's Enter on a finished run). Refused
     while the run's worker is alive: a live run is steered, not resumed."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if session_is_live(session_dir):
         return False, "run is still live; steer it instead"
-    err = spawn_detached_resume(cwd, run_dir.name, steer=text)
+    err = spawn_detached_resume(cwd, session_dir.name, steer=text)
     return (err == ""), (err or "resuming")
 
 
-def stop_after_step(cwd: Path, run_id: str) -> tuple[bool, str]:
+def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to end cleanly at its next completed-iteration boundary
     (the finished step's tool results and auto-commit land first). The immediate
     stop stays the steer "abort" answer."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if not run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if not session_is_live(session_dir):
         return False, "run is not live"
-    request_stop(run_dir)
+    request_stop(session_dir)
     return True, "stopping after the current step"
 
 
-def compact_run(cwd: Path, run_id: str) -> tuple[bool, str]:
+def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to compact its context at the next safe boundary."""
-    run_dir = model.run_dir_for(cwd, run_id)
-    if run_dir is None:
-        return False, f"no run {run_id!r}"
-    if not run_is_live(run_dir):
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no run {session_id!r}"
+    if not session_is_live(session_dir):
         return False, "run is not live"
-    if not request_compact(run_dir):
+    if not request_compact(session_dir):
         return False, "could not write the compaction request"
     return True, "compaction requested"
 
@@ -398,32 +398,32 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     return True, "steer requested"
 
 
-def merge_run(cwd: Path, run_id: str, strategy: str = "") -> tuple[bool, str]:
-    """Merge a run's branch: `agent6 runs merge <id> [--strategy S]`. `--` before
+def merge_run(cwd: Path, session_id: str, strategy: str = "") -> tuple[bool, str]:
+    """Merge a run's branch: `agent6 sessions merge <id> [--strategy S]`. `--` before
     the client-supplied run id so a dashy value cannot be read as a flag."""
-    argv = [agent6_exe(), "runs", "merge"]
+    argv = [agent6_exe(), "sessions", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
-    argv += ["--", run_id]
+    argv += ["--", session_id]
     return run_cli_capture(argv, cwd)
 
 
-def prune_runs(cwd: Path) -> tuple[bool, str]:
-    """Prune merged/obsolete run branches: `agent6 runs prune`."""
-    return run_cli_capture([agent6_exe(), "runs", "prune"], cwd)
+def prune_sessions(cwd: Path) -> tuple[bool, str]:
+    """Prune merged/obsolete run branches: `agent6 sessions prune`."""
+    return run_cli_capture([agent6_exe(), "sessions", "prune"], cwd)
 
 
-def remove_run(cwd: Path, run_id: str) -> tuple[bool, str]:
-    """Delete one run's history: `agent6 runs rm <id>`. History only -- the run
+def remove_session(cwd: Path, session_id: str) -> tuple[bool, str]:
+    """Delete one run's history: `agent6 sessions rm <id>`. History only -- the run
     branch is git's, and `runs prune` is the branch verb. The CLI refuses a live
     run, so this surface inherits that."""
-    return run_cli_capture([agent6_exe(), "runs", "rm", "--", run_id], cwd)
+    return run_cli_capture([agent6_exe(), "sessions", "rm", "--", session_id], cwd)
 
 
 def remove_asks(cwd: Path) -> tuple[bool, str]:
-    """Clear every saved ask: `agent6 runs rm --asks`. The bucket that
+    """Clear every saved ask: `agent6 sessions rm --asks`. The bucket that
     accumulates, since an ask runs in any directory."""
-    return run_cli_capture([agent6_exe(), "runs", "rm", "--asks"], cwd)
+    return run_cli_capture([agent6_exe(), "sessions", "rm", "--asks"], cwd)
 
 
 def set_config(cwd: Path, key: str, value: str, *, repo: bool = False) -> tuple[bool, str]:

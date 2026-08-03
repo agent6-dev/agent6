@@ -19,9 +19,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    run_dir = Path(args.watch).expanduser().resolve()
-    if not run_dir.exists():
-        print(f"agent6 tui: run dir does not exist: {run_dir}", file=sys.stderr)
+    session_dir = Path(args.watch).expanduser().resolve()
+    if not session_dir.exists():
+        print(f"agent6 tui: run dir does not exist: {session_dir}", file=sys.stderr)
         return 2
 
     try:
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as e:
         print(f"agent6 tui: {e}", file=sys.stderr)
         return 3
-    return run_tui(run_dir, exit_on_end=args.exit_on_end)
+    return run_tui(session_dir, exit_on_end=args.exit_on_end)
 
 
 if __name__ == "__main__":

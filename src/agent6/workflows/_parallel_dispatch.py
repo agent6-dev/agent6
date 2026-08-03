@@ -30,7 +30,7 @@ class LaneJoin:
     merge), or "failed" (the lane never produced an importable branch).
     """
 
-    run_id: str
+    session_id: str
     branch: str
     status: Literal["joined", "conflict", "failed"]
     sha: str
@@ -61,7 +61,7 @@ def join_lane_result(root: Path, res: LaneResult) -> LaneJoin:
     lane (nothing imported) or a conflicted merge yields a non-"joined" status;
     a clean merge yields "joined" with the sha. Never raises; DAG stamping is
     the segment's (see `segment_stamp`)."""
-    rid = res.spec.run_id
+    rid = res.spec.session_id
     if not res.ok:
         return LaneJoin(rid, res.branch, "failed", "", res.error)
     try:
@@ -88,10 +88,10 @@ def segment_stamp(lanes: list[LaneJoin]) -> tuple[NodeStatus, str, str]:
 
 def lane_note(j: LaneJoin) -> str:
     if j.status == "joined":
-        return f"{j.run_id} joined at {j.sha[:12]}"
+        return f"{j.session_id} joined at {j.sha[:12]}"
     if j.status == "conflict":
-        return f"{j.run_id} conflicted; merge manually"
-    return f"{j.run_id} failed: {j.detail}"
+        return f"{j.session_id} conflicted; merge manually"
+    return f"{j.session_id} failed: {j.detail}"
 
 
 def summary_text(group: str, joined: list[LaneJoin]) -> str:
@@ -100,14 +100,14 @@ def summary_text(group: str, joined: list[LaneJoin]) -> str:
     lines = [f"[parallel] group {group} complete ({len(joined)} lane(s)):"]
     for j in joined:
         if j.status == "joined":
-            lines.append(f"  - {j.run_id} ({j.branch}): joined at {j.sha[:12]}")
+            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
         elif j.status == "conflict":
             lines.append(
-                f"  - {j.run_id} ({j.branch}): CONFLICT -- branch imported but the merge"
+                f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
                 f" conflicted. It exists locally; run `git merge {j.branch}` and resolve,"
                 " or discard it."
             )
         else:
-            lines.append(f"  - {j.run_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
+            lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
     lines.append("Review what landed and continue.")
     return "\n".join(lines)

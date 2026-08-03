@@ -23,11 +23,11 @@ import dataclasses
 import json
 from pathlib import Path
 
-from agent6.viewmodel import fold_run, fold_transcript, run_state_as_dict, tail_events
+from agent6.viewmodel import fold_session, fold_transcript, session_state_as_dict, tail_events
 
 _DATA = Path(__file__).parent / "data"
-_FIXTURE = _DATA / "golden_run_logs.jsonl"
-_STATE = _DATA / "golden_run_state.json"
+_FIXTURE = _DATA / "golden_session_logs.jsonl"
+_STATE = _DATA / "golden_session_state.json"
 _TRANSCRIPT = _DATA / "golden_transcript.json"
 
 
@@ -38,7 +38,7 @@ def _wire(obj: object) -> object:
 
 
 def _folded_state() -> object:
-    return _wire(run_state_as_dict(fold_run(tail_events(_FIXTURE, follow=False))))
+    return _wire(session_state_as_dict(fold_session(tail_events(_FIXTURE, follow=False))))
 
 
 def _folded_transcript() -> object:

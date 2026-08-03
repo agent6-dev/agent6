@@ -52,7 +52,7 @@ open-ended agent loop.
 - Parallel fan-out (`agent6 run --parallel N|model-a,model-b`): N isolated clone-based
   lanes run independently, each an ordinary sandboxed run; results auto-compare
   (reviewer-model judge, else verify+cost) into a ranked report. Nothing auto-merges;
-  `agent6 runs merge <id>` picks a winner. `agent6 runs compare <id> <id> ...` runs the
+  `agent6 sessions merge <id>` picks a winner. `agent6 sessions compare <id> <id> ...` runs the
   same ranked comparison over any past runs. The web/TUI composer and a live-run
   steer share one grammar, `/parallel [N|models] <task>` (repeat the token to
   queue more tasks), to dispatch and join a sibling group mid-conversation
@@ -85,7 +85,7 @@ cd your-repo
 agent6 run "add a --json output mode to the CLI"
 
 # Watch and drive runs from a terminal, a full-screen TUI, a browser, or an editor.
-agent6 attach <run-id>        # follow + answer a run live (default: conversation view; --raw for the event stream)
+agent6 attach <session-id>        # follow + answer a run live (default: conversation view; --raw for the event stream)
 agent6 tui                    # full-screen dashboard hub
 agent6 web                    # browser UI on http://127.0.0.1:7658 (phone-friendly)
 agent6 acp                    # speak ACP on stdio; an editor spawns this
@@ -93,8 +93,8 @@ agent6 acp                    # speak ACP on stdio; an editor spawns this
 # Audit the effective config, pre-flight the sandbox, resume or fork a run.
 agent6 config show
 agent6 check
-agent6 resume <run-id>
-agent6 fork <run-id> --at-turn 7
+agent6 resume <session-id>
+agent6 fork <session-id> --at-turn 7
 ```
 
 That is the whole loop. See [getting started](https://agent6.dev/getting-started/) for the

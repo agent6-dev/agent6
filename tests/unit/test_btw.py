@@ -49,7 +49,7 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
         launched.append(argv)
         envs.append(env)
-        _ask_dir(asks, "quiet-fox-AAAAAA", events=[{"type": "run.start"}])
+        _ask_dir(asks, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
         return ""
 
     session, err = start_btw(
@@ -91,7 +91,7 @@ def test_a_launch_failure_is_reported_not_swallowed(tmp_path: Path) -> None:
 
 
 def test_the_answer_is_none_until_the_btw_finishes(tmp_path: Path) -> None:
-    d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "run.start"}])
+    d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])
     assert btw_answer(BtwSession(id=d.name, dir=d, question="q")) is None
 
 
@@ -101,10 +101,10 @@ def test_the_answer_is_the_final_prose(tmp_path: Path) -> None:
         tmp_path,
         "quiet-fox-AAAAAA",
         events=[
-            {"type": "run.start"},
+            {"type": "session.start"},
             {"type": "role.result", "text": "first thought"},
             {"type": "role.result", "text": "use ffmpeg -c:v libx265"},
-            {"type": "run.end", "reason": "answered", "all_passed": True},
+            {"type": "session.end", "reason": "answered", "all_passed": True},
         ],
     )
     assert btw_answer(BtwSession(id=d.name, dir=d, question="q")) == "use ffmpeg -c:v libx265"
@@ -115,8 +115,8 @@ def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: Path) -> 
         tmp_path,
         "quiet-fox-AAAAAA",
         events=[
-            {"type": "run.start"},
-            {"type": "run.end", "reason": "crashed", "all_passed": False},
+            {"type": "session.start"},
+            {"type": "session.end", "reason": "crashed", "all_passed": False},
         ],
     )
     answer = btw_answer(BtwSession(id=d.name, dir=d, question="q"))

@@ -41,14 +41,14 @@ def _nlines(app: App[None]) -> int:
 
 
 _EVENTS: list[dict[str, object]] = [
-    {"type": "run.start", "user_task": "do X"},
+    {"type": "session.start", "user_task": "do X"},
     {"type": "role.call", "role": "worker"},
     {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here"},
     {"type": "role.text_delta", "role": "worker", "text": "on it"},
     {"type": "role.result", "role": "worker"},
     {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-    {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+    {"type": "session.end", "all_passed": True, "reason": "finish_run"},
 ]
 
 
@@ -116,7 +116,7 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
 
 def test_steer_bar_hidden_for_a_finished_run(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
-    _write(logs, _EVENTS)  # _EVENTS ends with run.end -> nothing to steer
+    _write(logs, _EVENTS)  # _EVENTS ends with session.end -> nothing to steer
 
     async def scenario() -> None:
         app = _Host(logs)
@@ -128,10 +128,10 @@ def test_steer_bar_hidden_for_a_finished_run(tmp_path: Path) -> None:
 
 
 def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Path) -> None:
-    from agent6.runs.ipc import STEER_ANSWER_FILE, steer_request_pending
+    from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
 
     logs = tmp_path / "logs.jsonl"
-    _write(logs, _EVENTS[:-1])  # drop run.end -> the run is live
+    _write(logs, _EVENTS[:-1])  # drop session.end -> the run is live
 
     async def scenario() -> None:
         app = _Host(logs)
@@ -148,16 +148,16 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Pa
 
 
 def test_resumed_leg_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
-    """A resumed leg emits ONLY loop.resume.start (never a second run.start).
+    """A resumed leg emits ONLY loop.resume.start (never a second session.start).
     The conversation screen must treat it as live -- matching the dashboard's
     fold, which un-finishes on ResumeStart -- so a submit routes to the steer
-    bridge. Keying _live on run.start alone mislabeled the live leg as
+    bridge. Keying _live on session.start alone mislabeled the live leg as
     finished, and Enter spawned a second resume that died on the run lock
     while the toast claimed the instruction was delivered."""
-    from agent6.runs.ipc import STEER_ANSWER_FILE, steer_request_pending
+    from agent6.sessions.ipc import STEER_ANSWER_FILE, steer_request_pending
 
     logs = tmp_path / "logs.jsonl"
-    _write(logs, _EVENTS)  # ends with run.end -> finished
+    _write(logs, _EVENTS)  # ends with session.end -> finished
 
     async def scenario() -> None:
         app = _Host(logs)
@@ -215,14 +215,14 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
     # A live turn that only THINKS (no completed turn appended) still grows the live
     # pane, shrinking the scroll viewport. Follow mode must survive that nudge.
     logs = tmp_path / "logs.jsonl"
-    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "x"}]
+    events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     for i in range(20):  # overflow a short viewport
         more: list[dict[str, object]] = [
             {"type": "tool.call", "name": "read_file", "args": {"path": f"f{i}"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": f"{i} bytes"},
         ]
         events += more
-    _write(logs, events)  # no run.end -> live
+    _write(logs, events)  # no session.end -> live
 
     async def scenario() -> None:
         app = _Host(logs)
@@ -246,7 +246,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
     # Expanding a big failed-tool block above the viewport must not carry your place
     # away: the block at the top of the viewport stays put across the re-render.
     logs = tmp_path / "logs.jsonl"
-    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "x"}]
+    events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     big: list[dict[str, object]] = [
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "b"}},
         {
@@ -292,7 +292,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
     _write(
         logs,
         [
-            {"type": "run.start", "user_task": "do X"},
+            {"type": "session.start", "user_task": "do X"},
             {"type": "role.call", "role": "worker"},
             {"type": "role.thinking_delta", "role": "worker", "text": "still reasoning"},
         ],
@@ -378,7 +378,7 @@ class _LivenessHost(App[None]):
         self._logs = logs_path
         self._live = live
 
-    def run_controllable(self) -> bool:
+    def session_controllable(self) -> bool:
         return self._live
 
     def on_mount(self) -> None:
@@ -394,11 +394,11 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
     _write(
         logs,
         [
-            {"type": "run.start", "user_task": "fix it"},
+            {"type": "session.start", "user_task": "fix it"},
             {"type": "role.call", "role": "worker"},
             {"type": "role.thinking_delta", "text": "planning the edit"},
             {"type": "role.text_delta", "text": "I will now edit"},
-            # killed here: no role.result, no run.end
+            # killed here: no role.result, no session.end
         ],
     )
 

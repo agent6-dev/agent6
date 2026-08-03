@@ -18,7 +18,7 @@ from agent6.app._setup import (
 from agent6.app.preflight import (
     require_git_repo,
 )
-from agent6.app.run import FrontendCapabilities, RunFrontend, run_task
+from agent6.app.run import FrontendCapabilities, SessionFrontend, run_task
 from agent6.config import (
     Config,
     ConfigError,
@@ -37,7 +37,7 @@ from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.types import session_kind
 from agent6.ui.cli._ask import (
-    build_ask_run_digest,
+    build_ask_session_digest,
     run_ask_repl,
     save_ask_transcript,
 )
@@ -72,7 +72,7 @@ from agent6.ui.cli.parallel import (
     dispatch_parallel,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
-from agent6.viewmodel import run_policy
+from agent6.viewmodel import session_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -94,7 +94,7 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     )
 
 
-def run_frontend() -> RunFrontend:
+def session_frontend() -> SessionFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view cell is run-scoped). The console
     view is created lazily on ``attach_console_view``; the builders that need it
@@ -106,7 +106,7 @@ def run_frontend() -> RunFrontend:
     def attach_console_view(events: EventSink) -> None:
         # The sink writes into the run dir, so its path is the handle to the
         # run's policy facts without threading the layout through the protocol.
-        view = ConsoleView(sys.stderr, policy=run_policy(events.path.parent).line())
+        view = ConsoleView(sys.stderr, policy=session_policy(events.path.parent).line())
         console_cell[0] = view
         events.subscribe(view)
 
@@ -115,7 +115,7 @@ def run_frontend() -> RunFrontend:
         if view is not None:
             view.close()
 
-    return RunFrontend(
+    return SessionFrontend(
         # The CLI is the surface with a terminal: it can do everything. What it
         # cannot do -- ask a human with no tty and no away-mode -- is the
         # lifecycle's own preflight refusal, not a missing capability.
@@ -128,23 +128,27 @@ def run_frontend() -> RunFrontend:
         attach_console_view=attach_console_view,
         close_console_view=close_console_view,
         loop_logger=lambda mode: loop_logger(mode, console_cell[0]),
-        tui_session=lambda run_dir, enabled: tui_session(run_dir, enabled=enabled),
-        build_approver=lambda run_dir, events: build_approver(run_dir, events, console_cell[0]),
-        build_questioner=lambda run_dir, events: build_questioner(run_dir, events, console_cell[0]),
-        make_steer_state=lambda events, run_dir, facts: make_steer_state(
+        tui_session=lambda session_dir, enabled: tui_session(session_dir, enabled=enabled),
+        build_approver=lambda session_dir, events: build_approver(
+            session_dir, events, console_cell[0]
+        ),
+        build_questioner=lambda session_dir, events: build_questioner(
+            session_dir, events, console_cell[0]
+        ),
+        make_steer_state=lambda events, session_dir, facts: make_steer_state(
             events,
-            run_dir,
+            session_dir,
             console_cell[0],
             facts,
             # `/btw` spawns beside the run. `direct_launch` is right here: the
             # CLI process is the one with a terminal, so it is not the confined
             # coordinator a `/parallel` lane has to escape from.
             make_btw_runner(
-                run_dir.name,
+                session_dir.name,
                 launch=direct_launch,
                 list_asks=lambda: (
-                    [d for d in (run_dir.parent.parent / "asks").iterdir() if d.is_dir()]
-                    if (run_dir.parent.parent / "asks").is_dir()
+                    [d for d in (session_dir.parent.parent / "asks").iterdir() if d.is_dir()]
+                    if (session_dir.parent.parent / "asks").is_dir()
                     else []
                 ),
                 events=events,
@@ -157,8 +161,12 @@ def run_frontend() -> RunFrontend:
         select_revised_prompt=lambda original, revised, questions: select_revised_prompt(
             original, revised, questions, console_cell[0]
         ),
-        build_repl_hook=lambda cwd, budget, run_id, mcp_manager: build_repl_hook(
-            cwd, budget, run_id=run_id, mcp_manager=mcp_manager, console_view=console_cell[0]
+        build_repl_hook=lambda cwd, budget, session_id, mcp_manager: build_repl_hook(
+            cwd,
+            budget,
+            session_id=session_id,
+            mcp_manager=mcp_manager,
+            console_view=console_cell[0],
         ),
         run_ask_repl=lambda wf, budget, layout, first_question: run_ask_repl(
             wf, budget, layout, first_question=first_question
@@ -167,13 +175,13 @@ def run_frontend() -> RunFrontend:
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
-            lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve: (
+            lambda cfg, cwd, state_dir, mode, session_id, max_usd, auto_approve: (
                 build_coordinator_spawner(
                     cfg,
                     cwd,
                     state_dir,
                     mode=mode,
-                    run_id=run_id,
+                    session_id=session_id,
                     max_usd=max_usd,
                     auto_approve=auto_approve,
                 )
@@ -223,7 +231,7 @@ def _compose_task(
             return task, skills_err
         task = prefix + task
     if seed_from:
-        digest = build_ask_run_digest(Path.cwd(), seed_from, latest=False)
+        digest = build_ask_session_digest(Path.cwd(), seed_from, latest=False)
         if digest is None:
             return task, f"could not seed from {seed_from!r}"
         task = f"{digest}\n\n{task}" if task else digest
@@ -234,7 +242,7 @@ def _cmd_run(  # noqa: PLR0911
     config_path: Path | None,
     task: str,
     *,
-    run_id: str = "",
+    session_id: str = "",
     interactive: bool = False,
     tui: bool = False,
     decompose: bool = False,
@@ -326,8 +334,8 @@ def _cmd_run(  # noqa: PLR0911
     return run_task(
         cfg,
         task,
-        frontend=run_frontend(),
-        run_id=run_id,
+        frontend=session_frontend(),
+        session_id=session_id,
         interactive=interactive,
         tui=tui,
         mode=mode,

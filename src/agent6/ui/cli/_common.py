@@ -19,9 +19,9 @@ from agent6.paths import (
     is_root,
     root_optin_enabled,
 )
-from agent6.runs.id import RunIdError, list_run_ids
-from agent6.runs.layout import RUN_BUCKETS, RunLayout
-from agent6.viewmodel import newest_run_dir
+from agent6.sessions.id import SessionIdError, list_session_ids
+from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout
+from agent6.viewmodel import newest_session_dir
 
 
 def _sub(
@@ -122,30 +122,30 @@ def _runs_dir(repo_root: Path) -> Path:
     return _state_dir(repo_root) / "runs"
 
 
-def print_no_run_match(query: str, state: Path) -> None:
+def print_no_session_match(query: str, state: Path) -> None:
     """The one missing-run error, shared by every command that resolves a run:
     name the query and where it looked (never the bucket-layout internals), or
     the same first-contact copy as `runs` when there is nothing to show at all."""
     if query:
         print(f"ERROR: no run matches {query!r} (looked under {state})", file=sys.stderr)
     else:
-        print('no runs yet. Start one with `agent6 run "<task>"`.', file=sys.stderr)
+        print('no sessions yet. Start one with `agent6 run "<task>"`.', file=sys.stderr)
 
 
-def run_bucket_dirs(repo_root: Path) -> list[Path]:
+def session_bucket_dirs(repo_root: Path) -> list[Path]:
     """The run-style bucket dirs (runs/, asks/, machine-drafts/) under the state
     dir, the cross-bucket scope for latest-run resolution and history. A missing
     bucket is still listed; iterators skip non-dirs."""
     state = _state_dir(repo_root)
-    return [state / subdir for subdir in RUN_BUCKETS]
+    return [state / subdir for subdir in SESSION_BUCKETS]
 
 
-def all_run_dirs(repo_root: Path) -> list[Path]:
-    """Every run directory across all RUN_BUCKETS. So latest-run resolution and
+def all_session_dirs(repo_root: Path) -> list[Path]:
+    """Every run directory across all SESSION_BUCKETS. So latest-run resolution and
     history search cover asks and machine-drafts, not just runs/ (a bare `attach`
     or `history search` right after an `ask` must find that ask)."""
     dirs: list[Path] = []
-    for bucket in run_bucket_dirs(repo_root):
+    for bucket in session_bucket_dirs(repo_root):
         if bucket.is_dir():
             dirs.extend(p for p in bucket.iterdir() if p.is_dir())
     return dirs
@@ -156,69 +156,71 @@ def _machines_dir(repo_root: Path) -> Path:
     return _state_dir(repo_root) / "machines"
 
 
-def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
+def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
     """Resolve a run id (or unique prefix) across every run-style bucket --
-    ``runs/``, ``asks/``, and ``machine-drafts/`` -- returning a ``RunLayout``
+    ``runs/``, ``asks/``, and ``machine-drafts/`` -- returning a ``SessionLayout``
     with the matching subdir.
 
     `agent6 run`/`plan` live under ``runs/``, `agent6 ask` under ``asks/``, and
     `machine create` authoring logs under ``machine-drafts/``; read-only
     commands (``runs show``/``watch``/``history search``) use this so anything
-    a listing shows is also inspectable by id. Raises ``RunIdError`` if no run
+    a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
     matches in any bucket.
     """
     if not query:
-        raise RunIdError("empty run id")
+        raise SessionIdError("empty run id")
     state = _state_dir(repo_root)
     exact: list[tuple[str, str]] = []
     prefix: list[tuple[str, str]] = []
-    for subdir in RUN_BUCKETS:
+    for subdir in SESSION_BUCKETS:
         d = state / subdir
         if not d.is_dir():
             continue
-        for rid in list_run_ids(d):
+        for rid in list_session_ids(d):
             if rid == query:
                 exact.append((subdir, rid))
             elif rid.startswith(query):
                 prefix.append((subdir, rid))
     if len(exact) == 1:
         subdir, rid = exact[0]
-        return RunLayout(state_dir=state, run_id=rid, subdir=subdir)
+        return SessionLayout(state_dir=state, session_id=rid, subdir=subdir)
     if len(exact) > 1:
         preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(exact)[:5])
-        raise RunIdError(
+        raise SessionIdError(
             f"run id {query!r} is ambiguous ({len(exact)} exact matches): {preview}",
             ambiguous=True,
         )
     if len(prefix) == 1:
         subdir, rid = prefix[0]
-        return RunLayout(state_dir=state, run_id=rid, subdir=subdir)
+        return SessionLayout(state_dir=state, session_id=rid, subdir=subdir)
     if len(prefix) > 1:
         preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(prefix)[:5])
-        raise RunIdError(
+        raise SessionIdError(
             f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
             ambiguous=True,
         )
-    raise RunIdError(f"no run matches {query!r} (looked under {state})")
+    raise SessionIdError(f"no run matches {query!r} (looked under {state})")
 
 
-def resolve_or_newest_layout(repo_root: Path, run_id: str) -> RunLayout | None:
-    """Resolve an explicit *run_id* across every run-style bucket, or fall back to
-    the newest run across all buckets when *run_id* is empty.
+def resolve_or_newest_layout(repo_root: Path, session_id: str) -> SessionLayout | None:
+    """Resolve an explicit *session_id* across every run-style bucket, or fall back to
+    the newest run across all buckets when *session_id* is empty.
 
-    Returns the resolved ``RunLayout``. Returns None only for the empty-*run_id*
-    "no runs exist" case, so the caller phrases its own 'no runs' message. Raises
-    ``RunIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
+    Returns the resolved ``SessionLayout``. Returns None only for the empty-*session_id*
+    "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
+    ``SessionIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
     ``attach`` / ``runs stop`` / ``runs status``: a new such command resolves the
     same way instead of re-deriving the id-or-newest glue.
     """
-    if run_id:
-        return resolve_run_layout(repo_root, run_id)
-    newest = newest_run_dir(run_bucket_dirs(repo_root))
+    if session_id:
+        return resolve_session_layout(repo_root, session_id)
+    newest = newest_session_dir(session_bucket_dirs(repo_root))
     if newest is None:
         return None
-    return RunLayout(state_dir=_state_dir(repo_root), run_id=newest.name, subdir=newest.parent.name)
+    return SessionLayout(
+        state_dir=_state_dir(repo_root), session_id=newest.name, subdir=newest.parent.name
+    )
 
 
 def load_config_or_exit(repo_root: Path, config_path: Path | None) -> EffectiveConfig | int:

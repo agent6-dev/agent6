@@ -10,7 +10,7 @@ The load-bearing invariants, collected; each is detailed below or in `docs/`.
 
 - No `git push`, `--force`, history rewrite, or `reset --hard`. `git_ops.py`
   refuses them unconditionally; don't add overrides. `branch -D` has ONE
-  operator-only exception: `runs prune --delete-squashed` force-deletes a run
+  operator-only exception: `sessions prune --delete-squashed` force-deletes a run
   branch the manifest confirms was squash-merged into its base (content-safe,
   the commit survives in the reflog). That path never touches LLM output. What
   the MODEL can do to a repo is bounded by the jail, never by a verb blocklist
@@ -134,7 +134,7 @@ and the principles the Zen doesn't cover:
   imports the UI. `app/` holds the application pipelines that compose the engine
   but are not a front-end -- the run/resume/fork/machine-agent lifecycles and
   the `--parallel` fan-out -- taking the presentation, process-spawn, and
-  run-dir bridge callables the front-end injects (`RunFrontend`, `LaneRuntime`),
+  run-dir bridge callables the front-end injects (`SessionFrontend`, `LaneRuntime`),
   and printing only through the injected two-channel `Reporter`.
   `ui/` is the presentation layer and the composition root: the three
   front-ends (`ui/cli`, `ui/tui`, `ui/web`) plus `ui/spawn.py` and

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import (
-    _complete_plan_run_ids,
+    _complete_plan_session_ids,
     _complete_presets,
     _complete_session_ids,
 )
@@ -39,7 +39,9 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         default="",
         help="Task to plan (in quotes). Required; `plan show/edit <id>` inspect prior plans.",
     )
-    plan_run.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    plan_run.add_argument(
+        "--session-id", default="", help="Explicit session id (default: generate one)."
+    )
     plan_profile = plan_run.add_argument(
         "--preset", default="", help="Strategy preset (see `agent6 run --preset`)."
     )
@@ -57,24 +59,24 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
     plan_show_id = plan_show.add_argument(
-        "run_id",
+        "session_id",
         nargs="?",
         default="",
         help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
     )
-    plan_show_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    plan_show_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
     plan_edit = _sub(
         plan_sub,
         "edit",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
     plan_edit_id = plan_edit.add_argument(
-        "run_id",
+        "session_id",
         nargs="?",
         default="",
         help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
     )
-    plan_edit_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    plan_edit_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
 
 
 def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -113,9 +115,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     # One seed, named one way: passing both silently ignored --from.
     seed = ask_query.add_mutually_exclusive_group()
-    ask_run = seed.add_argument(
+    ask_session = seed.add_argument(
         "--from",
-        dest="ask_run",
+        dest="ask_session",
         default="",
         metavar="SESSION_ID",
         help=(
@@ -123,10 +125,10 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " outcome, diff and key events (exact id or unambiguous prefix)."
         ),
     )
-    ask_run.completer = _complete_session_ids  # type: ignore[attr-defined]
+    ask_session.completer = _complete_session_ids  # type: ignore[attr-defined]
     seed.add_argument(
         "--from-latest",
-        dest="ask_run_latest",
+        dest="ask_session_latest",
         action="store_true",
         help="Like --from, but seed the most recent session.",
     )

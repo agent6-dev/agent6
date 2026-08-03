@@ -47,7 +47,7 @@ OPERATOR = "❯"  # noqa: RUF001 -- deliberate prompt glyph, not a mistyped >
 # stays free of a tools import (layering).
 _FINISH_TOOLS = frozenset({"finish_run", "finish_planning"})
 
-# Friendly word for a run.end reason on the terminal/TUI "done" line, so a stop
+# Friendly word for a session.end reason on the terminal/TUI "done" line, so a stop
 # reads as "stopped" (not the raw "steer_abort") and an error names itself.
 _END_REASON_LABEL = {
     "steer_abort": "stopped",
@@ -156,7 +156,7 @@ def _parallel_joined_body(event: dict[str, Any]) -> str:
     rows: list[str] = []
     for ln in lanes:
         status = str(ln.get("status", "?"))
-        parts = [str(ln.get("run_id", "?"))]
+        parts = [str(ln.get("session_id", "?"))]
         branch = str(ln.get("branch", "")).strip()
         if branch:
             parts.append(branch)
@@ -259,7 +259,7 @@ class TranscriptFold:
             if body:
                 out.append(TranscriptItem(kind, body=body))
             return out
-        if etype == "run.end":
+        if etype == "session.end":
             out = self._flush_message()
             tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
             commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"

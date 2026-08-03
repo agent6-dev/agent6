@@ -15,10 +15,10 @@ from agent6.ui.cli._mcp_args import _add_mcp_server_parsers
 from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
 from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _add_system_parser
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
-from agent6.ui.cli._runs_args import _add_runs_parser
+from agent6.ui.cli._sessions_args import _add_sessions_parser
 from agent6.ui.cli._skills_args import _add_skills_parser
 from agent6.ui.cli._watch_args import _add_attach_parser, _add_tui_parser, _add_web_parser
-from agent6.ui.cli.completers import _complete_run_ids
+from agent6.ui.cli.completers import _complete_session_ids
 
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
 # `ask <q>` == `ask query <q>`. _inject_default_verb rewrites argv so a bare
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_attach_parser(sub)
 
-    _add_runs_parser(sub)
+    _add_sessions_parser(sub)
 
     _add_tui_parser(sub)
 
@@ -230,13 +230,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     hist_search.add_argument(
         "--regex", action="store_true", help="Interpret query as a regex instead of fixed string."
     )
-    hist_search_run = hist_search.add_argument(
-        "--run",
+    hist_search_session = hist_search.add_argument(
+        "--session",
         default="",
-        metavar="RUN_ID",
-        help="Restrict to a single run id (default: all runs).",
+        metavar="SESSION_ID",
+        help="Restrict to a single session id (default: all sessions).",
     )
-    hist_search_run.completer = _complete_run_ids  # type: ignore[attr-defined]
+    hist_search_session.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     init_p = _sub(
         sub,
@@ -276,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "serve",
         help=(
             "Run agent6 as an MCP stdio server, exposing run_verify /"
-            " run_in_sandbox / apply_patch_in_sandbox / query_dag / list_runs"
+            " run_in_sandbox / apply_patch_in_sandbox / query_dag / list_sessions"
             " using the cwd's agent6 config. Speaks line-delimited JSON-RPC"
             " on stdin/stdout; spawn from an MCP-aware client (e.g. VS Code"
             " Copilot's hand-off menu) and configure it with this command."

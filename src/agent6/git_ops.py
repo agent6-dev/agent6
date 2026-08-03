@@ -327,11 +327,11 @@ def stash_all(path: Path, message: str) -> None:
     _run(path, "stash", "push", "--include-untracked", "--message", message)
 
 
-def auto_stash_message(run_id: str) -> str:
+def auto_stash_message(session_id: str) -> str:
     """The auto-stash identity: the run pushes with this message and the
     finalizer finds the stash BY it -- never by position, since stash@{0} may
     be a stash someone else pushed while the run was running."""
-    return f"agent6 auto-stash before run {run_id}"
+    return f"agent6 auto-stash before run {session_id}"
 
 
 @dataclass(frozen=True, slots=True)

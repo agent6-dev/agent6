@@ -32,7 +32,9 @@ _CHUNK_KIND = {
 }
 
 
-def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> list[dict[str, Any]]:
+def updates_for(
+    item: TranscriptItem, *, acp_session_id: str, session_id: str = ""
+) -> list[dict[str, Any]]:
     """The `session/update` notifications one fold item becomes.
 
     A tool becomes TWO: the call, then its outcome. ACP models a tool call as a
@@ -42,7 +44,7 @@ def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> l
     if item.kind == "done":
         return [
             _update(
-                session_id,
+                acp_session_id,
                 {"sessionUpdate": "agent_message_chunk", "content": _text(_ending(item))},
             )
         ]
@@ -51,16 +53,18 @@ def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> l
         # `detail`. Keying on body alone dropped every auto-commit.
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [
-            _update(session_id, {"sessionUpdate": "agent_message_chunk", "content": _text(text)})
+            _update(
+                acp_session_id, {"sessionUpdate": "agent_message_chunk", "content": _text(text)}
+            )
         ]
     if item.kind == "tool":
         return [
-            _update(session_id, {"sessionUpdate": "tool_call", **_tool_call(item, run_id)}),
+            _update(acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, session_id)}),
             _update(
-                session_id,
+                acp_session_id,
                 {
                     "sessionUpdate": "tool_call_update",
-                    "toolCallId": _tool_id(item, run_id),
+                    "toolCallId": _tool_id(item, session_id),
                     "status": _tool_status(item),
                     **({"content": _tool_content(item)} if _tool_content(item) else {}),
                 },
@@ -70,7 +74,7 @@ def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> l
     body = item.body.strip()
     if chunk is None or not body:
         return []
-    return [_update(session_id, {"sessionUpdate": chunk, "content": _text(body)})]
+    return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
 
 
 def _ending(item: TranscriptItem) -> str:
@@ -92,7 +96,9 @@ def _ending(item: TranscriptItem) -> str:
     return f"{item.body}\n\n{ending}" if item.body.strip() else ending
 
 
-def updates_for_events(events: list[dict[str, Any]], *, session_id: str) -> list[dict[str, Any]]:
+def updates_for_events(
+    events: list[dict[str, Any]], *, acp_session_id: str
+) -> list[dict[str, Any]]:
     """Every notification a run's events produce, in order.
 
     One fold instance across the whole sequence, because the fold is stateful:
@@ -103,11 +109,11 @@ def updates_for_events(events: list[dict[str, Any]], *, session_id: str) -> list
     out: list[dict[str, Any]] = []
     for event in events:
         for item in fold.feed(event):
-            out.extend(updates_for(item, session_id=session_id))
+            out.extend(updates_for(item, acp_session_id=acp_session_id))
     return out
 
 
-def message_update(session_id: str, text: str) -> dict[str, Any]:
+def message_update(acp_session_id: str, text: str) -> dict[str, Any]:
     """One line of agent6's own prose, as a `session/update`.
 
     What the harness says when there is no run to say it: a cancel for a
@@ -116,16 +122,16 @@ def message_update(session_id: str, text: str) -> dict[str, Any]:
     agent6's own, because the model did not say it.
     """
     return _update(
-        session_id,
+        acp_session_id,
         {"sessionUpdate": "agent_message_chunk", "content": _text(f"[agent6] {text}")},
     )
 
 
-def _update(session_id: str, update: dict[str, Any]) -> dict[str, Any]:
+def _update(acp_session_id: str, update: dict[str, Any]) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": {"sessionId": session_id, "update": update},
+        "params": {"sessionId": acp_session_id, "update": update},
     }
 
 
@@ -181,7 +187,7 @@ def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
     return [{"type": "content", "content": _text(body)}] if body else []
 
 
-def _tool_id(item: TranscriptItem, run_id: str) -> str:
+def _tool_id(item: TranscriptItem, session_id: str) -> str:
     """The provider's stamped call id, so every call is its own entity.
 
     Reconstructing one from name+arg made two identical calls share an id, and
@@ -195,15 +201,15 @@ def _tool_id(item: TranscriptItem, run_id: str) -> str:
     unique for the life of the session.
     """
     within_run = item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
-    return f"{run_id}:{within_run}" if run_id else within_run
+    return f"{session_id}:{within_run}" if session_id else within_run
 
 
-def _tool_call(item: TranscriptItem, run_id: str) -> dict[str, Any]:
+def _tool_call(item: TranscriptItem, session_id: str) -> dict[str, Any]:
     # The model wrote `arg` (its own argv / path / pattern), so it is scrubbed
     # like any other model text; `content` next door already was.
     title = printable(f"{item.name} {item.arg}".strip())
     return {
-        "toolCallId": _tool_id(item, run_id),
+        "toolCallId": _tool_id(item, session_id),
         "title": title,
         # ACP's `kind` drives the editor's icon. agent6's own tool names are
         # the honest source; guessing a finer category from them would be a

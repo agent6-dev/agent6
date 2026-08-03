@@ -28,11 +28,11 @@ from agent6.graph import storage
 from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft, UpdateStatusIntent
 from agent6.graph.storage import load_graph, node_md_path
-from agent6.runs.layout import RunLayout
+from agent6.sessions.layout import SessionLayout
 
 
-def _layout(tmp_path: Path) -> RunLayout:
-    return RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
+def _layout(tmp_path: Path) -> SessionLayout:
+    return SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
 
 
 def _draft(title: str = "do thing") -> TaskNodeDraft:
@@ -97,7 +97,7 @@ def test_curator_error_reject_does_not_reload(
     calls = {"n": 0}
     real = storage.load_graph
 
-    def counting_load(lyt: RunLayout) -> dict[str, TaskNode]:
+    def counting_load(lyt: SessionLayout) -> dict[str, TaskNode]:
         calls["n"] += 1
         return real(lyt)
 

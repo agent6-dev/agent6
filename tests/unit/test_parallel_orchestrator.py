@@ -51,26 +51,27 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "commit", "-q", "-m", "init")
 
 
-def _write_fake_run(run_dir: Path, task: str, *, status: str, cost: float) -> None:
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "run_id": run_dir.name, "mode": "run", "user_task": task}) + "\n",
+def _write_fake_run(session_dir: Path, task: str, *, status: str, cost: float) -> None:
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": session_dir.name, "mode": "run", "user_task": task})
+        + "\n",
         encoding="utf-8",
     )
     events: list[dict[str, object]] = [
-        {"type": "run.start", "mode": "run", "user_task": task},
+        {"type": "session.start", "mode": "run", "user_task": task},
         {"type": "budget.update", "usd_total": cost},
     ]
     if status == "passed":
-        events.append({"type": "run.end", "reason": "finish_run", "all_passed": True})
+        events.append({"type": "session.end", "reason": "finish_run", "all_passed": True})
     elif status == "failed":
-        events.append({"type": "run.end", "reason": "provider_error", "all_passed": False})
+        events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
     elif status == "stale":
-        # Died without a run.end (OOM/SIGKILL): a recorded pid that is gone.
-        (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+        # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
+        (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     else:  # "finished": a deliberate finish without all-passed
-        events.append({"type": "run.end", "reason": "finish_run", "all_passed": False})
-    (run_dir / "logs.jsonl").write_text(
+        events.append({"type": "session.end", "reason": "finish_run", "all_passed": False})
+    (session_dir / "logs.jsonl").write_text(
         "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
     )
 
@@ -98,7 +99,7 @@ class _FakeSpawner:
         self.status_by_lane = status_by_lane or {}
         self.cost_by_lane = cost_by_lane or {}
         # Lanes whose fabricated run dir carries a LIVE worker.pid (this test
-        # process), simulating the teardown window where run.end is already in
+        # process), simulating the teardown window where session.end is already in
         # logs.jsonl but the lane process has not yet cleared its pid.
         self.pid_lanes = pid_lanes or set()
         self.prior_link_was_symlink: dict[int, bool] = {}
@@ -106,29 +107,29 @@ class _FakeSpawner:
 
     def __call__(self, spec: LaneSpec, task: str) -> LaneResult:
         self.tasks.append(task)
-        branch = f"agent6/{spec.run_id}"
+        branch = f"agent6/{spec.session_id}"
         if spec.lane > 1:  # observe the previous lane's live symlink
-            prefix = spec.run_id.rsplit("-l", 1)[0]
+            prefix = spec.session_id.rsplit("-l", 1)[0]
             prior = self.origin_state / "runs" / f"{prefix}-l{spec.lane - 1}"
             self.prior_link_was_symlink[spec.lane] = prior.is_symlink()
         if spec.lane in self.fail:
             return LaneResult(
-                spec=spec, run_dir=spec.workdir, branch=branch, ok=False, error="boom"
+                spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error="boom"
             )
         clone_workspace(self.origin, spec.workdir)
         create_branch(spec.workdir, branch)
         (spec.workdir / f"lane{spec.lane}.txt").write_text(f"lane {spec.lane}\n", encoding="utf-8")
         commit_all(spec.workdir, f"lane {spec.lane} work")
-        run_dir = self.state_root / f"lane{spec.lane}" / "runs" / spec.run_id
+        session_dir = self.state_root / f"lane{spec.lane}" / "runs" / spec.session_id
         _write_fake_run(
-            run_dir,
+            session_dir,
             task,
             status=self.status_by_lane.get(spec.lane, "passed"),
             cost=self.cost_by_lane.get(spec.lane, 0.05),
         )
         if spec.lane in self.pid_lanes:
-            (run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-        return LaneResult(spec=spec, run_dir=run_dir, branch=branch, ok=True, error="")
+            (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+        return LaneResult(spec=spec, session_dir=session_dir, branch=branch, ok=True, error="")
 
 
 @pytest.fixture
@@ -161,7 +162,7 @@ def _specs(tmp_path: Path, cfg: Config, fanout_id: str, spec: str) -> list[LaneS
 
 def test_build_lane_specs_int_layout(tmp_path: Path) -> None:
     lanes = _specs(tmp_path, Config(), "fan", "3")
-    assert [(ln.lane, ln.run_id, ln.model) for ln in lanes] == [
+    assert [(ln.lane, ln.session_id, ln.model) for ln in lanes] == [
         (1, "fan-l1", None),
         (2, "fan-l2", None),
         (3, "fan-l3", None),
@@ -329,7 +330,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
 
     monkeypatch.setattr(parallel, "clone_workspace", _boom)
     dispatch = parallel.build_lane_spawner(
-        _provider_cfg(), origin, origin_state, coordinator_run_id="coord", runtime=runtime
+        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
     )
     with pytest.raises(ParallelError, match=r"unknown model 'moonshotai/kimi-k2\.7'"):
         dispatch([LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
@@ -357,12 +358,14 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
             # Stands in for a long-running healthy lane: it unblocks only when
             # the dispatcher propagates the other lane's failure.
             seen["lane1_released_by_stop"] = hard_stop.wait(timeout=8.0)
-            return LaneResult(spec=spec, run_dir=tmp_path / "l1", branch="b1", ok=True, error="")
+            return LaneResult(
+                spec=spec, session_dir=tmp_path / "l1", branch="b1", ok=True, error=""
+            )
         raise RuntimeError("lane thread blew up")
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
     dispatch = parallel.build_lane_spawner(
-        _provider_cfg(), origin, origin_state, coordinator_run_id="coord", runtime=runtime
+        _provider_cfg(), origin, origin_state, coordinator_session_id="coord", runtime=runtime
     )
     start = time.monotonic()
     with pytest.raises(RuntimeError, match="lane thread blew up"):
@@ -391,7 +394,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "--allow-root pwn", cfg=cfg, origin=origin, max_usd=2.0,
         runtime=replace(runtime, spawn=fake_spawn),
@@ -400,7 +403,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
     argv = captured[-1]
     assert argv[:1] == ["run"]  # the exe is prepended inside the injected spawn
     dd = argv.index("--")
-    assert {"--run-id", "--config", "--max-usd"} <= set(argv[:dd])  # flags precede `--`
+    assert {"--session-id", "--config", "--max-usd"} <= set(argv[:dd])  # flags precede `--`
     assert argv[dd + 1 :] == ["--allow-root pwn"]  # task is the sole element after
 
 
@@ -416,7 +419,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
         runtime=replace(runtime, spawn=fake_spawn),
@@ -437,7 +440,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
         return workdir, ""
 
     cfg = Config()
-    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None,
         runtime=replace(runtime, spawn=fake_spawn),
@@ -457,12 +460,14 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
         captured.append(kw)
         return LaneResult(
-            spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=False, error="stub"
+            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="stub"
         )
 
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
     cfg = Config()
-    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None)
+    spec = LaneSpec(
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+    )
 
     parallel.run_lane_to_completion(
         spec,
@@ -492,7 +497,9 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
 
     def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
         captured.append(kw)
-        return LaneResult(spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=False, error="s")
+        return LaneResult(
+            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
+        )
 
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
     run_parallel(
@@ -507,15 +514,15 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
 # ---------------------------------------------------------------------------
 
 
-def _lane_logs(run_dir: Path, *events: Mapping[str, object]) -> None:
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "logs.jsonl").write_text(
+def _lane_logs(session_dir: Path, *events: Mapping[str, object]) -> None:
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
 
 
 def test_pending_prompt_reads_last_prompt_answer_event(tmp_path: Path) -> None:
-    start = {"type": "run.start", "mode": "run", "user_task": "t"}
+    start = {"type": "session.start", "mode": "run", "user_task": "t"}
     q = tmp_path / "q"
     _lane_logs(q, start, {"type": "question.prompt", "id": "question-1"})
     assert parallel._pending_prompt(q) == "a question"  # pyright: ignore[reportPrivateUsage]
@@ -549,32 +556,32 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     fan-out sat on a bare "waiting" forever with no pointer at the hub. The
     hint must fire on the real word, with _pending_prompt supplying only the
     approval-vs-question wording."""
-    from agent6.viewmodel import RunSummary
+    from agent6.viewmodel import SessionSummary
 
     lane = tmp_path / "lane"
     _lane_logs(
         lane,
-        {"type": "run.start", "mode": "run", "user_task": "t"},
+        {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "question.prompt", "id": "question-1"},
     )
-    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "wd", model=None)
-    res = LaneResult(spec=spec, run_dir=lane, branch="agent6/fan-l1", ok=True, error="")
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", model=None)
+    res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     statuses = iter(["waiting", "failed"])  # blocked first poll, terminal next
 
-    def fake_summary(rd: Path) -> RunSummary:
-        return RunSummary(
-            run_id=rd.name, mode="run", task="t", status=next(statuses),
+    def fake_summary(rd: Path) -> SessionSummary:
+        return SessionSummary(
+            session_id=rd.name, mode="run", task="t", status=next(statuses),
             reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
         )  # fmt: skip
 
-    def fake_worker_is_alive(_run_dir: Path) -> bool:
+    def fake_worker_is_alive(_session_dir: Path) -> bool:
         return False
 
     def fake_sleep(*_args: object) -> None:
         return None
 
-    monkeypatch.setattr(parallel, "summarize_run_dir", fake_summary)
+    monkeypatch.setattr(parallel, "summarize_session_dir", fake_summary)
     monkeypatch.setattr(parallel.time, "sleep", fake_sleep)
     monkeypatch.setattr(parallel, "worker_is_alive", fake_worker_is_alive)
 
@@ -641,7 +648,9 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
 
     def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
         captured.append(kw)
-        return LaneResult(spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=False, error="s")
+        return LaneResult(
+            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
+        )
 
     monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
 
@@ -814,7 +823,7 @@ def test_report_ranks_passing_lane_first(
     assert "ranked candidates" in out
     # The passing lane ranks first despite costing more.
     assert out.index("fan-l2") < out.index("fan-l1")
-    assert "agent6 runs merge fan-l2" in out
+    assert "agent6 sessions merge fan-l2" in out
 
 
 def test_run_parallel_all_failed_returns_1(
@@ -939,7 +948,7 @@ def test_await_waits_for_worker_pid_to_clear(
     capsys: pytest.CaptureFixture[str],
     runtime: LaneRuntime,
 ) -> None:
-    """run.end lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
+    """session.end lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
     The await gate must keep waiting through that window (terminal = non-running
     status AND pid cleared/dead); importing inside it would misread the lane as
     still running and cleanup would destroy its only copy."""
@@ -952,18 +961,18 @@ def test_await_waits_for_worker_pid_to_clear(
 
     # Clear the live pid only on the SECOND status poll of the lane's run dir,
     # so poll 1 exercises the race window deterministically.
-    real_summarize = parallel.summarize_run_dir
+    real_summarize = parallel.summarize_session_dir
     polls = {"n": 0}
 
-    def summarize_then_clear_pid(run_dir: Path) -> object:
-        summary = real_summarize(run_dir)
-        if run_dir.name == "fan-l1":
+    def summarize_then_clear_pid(session_dir: Path) -> object:
+        summary = real_summarize(session_dir)
+        if session_dir.name == "fan-l1":
             polls["n"] += 1
             if polls["n"] >= 2:
-                (run_dir / "worker.pid").unlink(missing_ok=True)
+                (session_dir / "worker.pid").unlink(missing_ok=True)
         return summary
 
-    monkeypatch.setattr(parallel, "summarize_run_dir", summarize_then_clear_pid)
+    monkeypatch.setattr(parallel, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(parallel, "_POLL_INTERVAL_S", 0.01)
 
     rc = run_parallel(
@@ -1084,19 +1093,21 @@ def test_run_lane_to_completion_imports_and_stamps(
     origin_state = resolved_state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None)
+    spec = LaneSpec(
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+    )
 
-    # The await polls summarize_run_dir; observe the origin link state then -- it
+    # The await polls summarize_session_dir; observe the origin link state then -- it
     # must be a live symlink while the lane is still running.
     link = origin_state / "runs" / "co-p1-l1"
-    real_summarize = parallel.summarize_run_dir
+    real_summarize = parallel.summarize_session_dir
     seen: dict[str, bool] = {}
 
-    def observe(run_dir: Path) -> object:
+    def observe(session_dir: Path) -> object:
         seen.setdefault("symlink_during_life", link.is_symlink())
-        return real_summarize(run_dir)
+        return real_summarize(session_dir)
 
-    monkeypatch.setattr(parallel, "summarize_run_dir", observe)
+    monkeypatch.setattr(parallel, "summarize_session_dir", observe)
 
     res = parallel.run_lane_to_completion(
         spec,
@@ -1115,7 +1126,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     assert branch_exists(origin, "agent6/co-p1-l1")
     imported = origin_state / "runs" / "co-p1-l1"
     assert imported.is_dir() and not imported.is_symlink()  # replaced by the real dir
-    assert res.run_dir == imported
+    assert res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["parallel_id"] == "p1"
     assert manifest["lane"] == 1
@@ -1129,7 +1140,9 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     origin_state = resolved_state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1})
-    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None)
+    spec = LaneSpec(
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+    )
 
     res = parallel.run_lane_to_completion(
         spec,
@@ -1159,12 +1172,12 @@ def test_build_lane_spawner_over_cap_refused(
     called: list[str] = []
 
     def fake_rltc(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
-        called.append(spec.run_id)
-        return LaneResult(spec=spec, run_dir=spec.workdir, branch="b", ok=True, error="")
+        called.append(spec.session_id)
+        return LaneResult(spec=spec, session_dir=spec.workdir, branch="b", ok=True, error="")
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, resolved_state_dir(origin), coordinator_run_id="co", runtime=runtime
+        cfg, origin, resolved_state_dir(origin), coordinator_session_id="co", runtime=runtime
     )
     with pytest.raises(ParallelError, match="max_lanes"):
         dispatch([LaneTask(task="t", model=None)] * 3, "p1")
@@ -1185,7 +1198,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     spec = LaneSpec(
-        lane=1, run_id="co-p9-l1", workdir=tmp_path / "work" / "grp" / "lane-1", model=None
+        lane=1, session_id="co-p9-l1", workdir=tmp_path / "work" / "grp" / "lane-1", model=None
     )
     res = parallel.run_lane_to_completion(
         spec,
@@ -1207,7 +1220,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     create_branch(origin, "main")
     spawner2 = _FakeSpawner(origin, origin_state, tmp_path / "lane-state-2")
     spec2 = LaneSpec(
-        lane=1, run_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", model=None
+        lane=1, session_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", model=None
     )
     res2 = parallel.run_lane_to_completion(
         spec2,
@@ -1236,19 +1249,23 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     seen: list[tuple[int, str, str, str, str]] = []
 
     def fake_rltc(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
-        seen.append((spec.lane, spec.run_id, task, str(kw["group"]), str(spec.workdir)))
+        seen.append((spec.lane, spec.session_id, task, str(kw["group"]), str(spec.workdir)))
         return LaneResult(
-            spec=spec, run_dir=spec.workdir, branch=f"agent6/{spec.run_id}", ok=True, error=""
+            spec=spec,
+            session_dir=spec.workdir,
+            branch=f"agent6/{spec.session_id}",
+            ok=True,
+            error="",
         )
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, origin_state, coordinator_run_id="co", runtime=runtime
+        cfg, origin, origin_state, coordinator_session_id="co", runtime=runtime
     )
     lanes = [LaneTask(task="task a", model="kimi"), LaneTask(task="task b", model=None)]
     results = dispatch(lanes, "p2")
 
-    assert [r.spec.run_id for r in results] == ["co-p2-l1", "co-p2-l2"]
+    assert [r.spec.session_id for r in results] == ["co-p2-l1", "co-p2-l2"]
     assert [r.spec.model for r in results] == ["kimi", None]  # per-lane model threaded through
     assert sorted(s[0] for s in seen) == [1, 2]  # every lane ran once
     assert all(group == "p2" for (_l, _r, _t, group, _w) in seen)
@@ -1266,11 +1283,11 @@ def test_build_lane_spawner_forwards_auto_approve(
 
     def fake_rltc(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
         seen.append(kw["auto_approve"])
-        return LaneResult(spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=True, error="")
+        return LaneResult(spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=True, error="")
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, origin_state, coordinator_run_id="co", runtime=runtime, auto_approve=True
+        cfg, origin, origin_state, coordinator_session_id="co", runtime=runtime, auto_approve=True
     )
     dispatch([LaneTask(task="task a", model=None)], "p3")
 
@@ -1295,10 +1312,10 @@ def test_build_coordinator_spawner_forwards_auto_approve(
     monkeypatch.setattr(parallel, "build_lane_spawner", fake_build_lane_spawner)
 
     parallel.build_coordinator_spawner(
-        cfg, origin, origin_state, mode="run", run_id="co", runtime=runtime, auto_approve=True
+        cfg, origin, origin_state, mode="run", session_id="co", runtime=runtime, auto_approve=True
     )
     parallel.build_coordinator_spawner(
-        cfg, origin, origin_state, mode="run", run_id="co", runtime=runtime
+        cfg, origin, origin_state, mode="run", session_id="co", runtime=runtime
     )
 
     assert captured == [True, False]
@@ -1318,12 +1335,12 @@ def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: Lane
     lane_dir = tmp_path / "lane-run"
     lane_dir.mkdir()
     _write_fake_run(lane_dir / "sub", "t", status="running", cost=0.0)
-    from agent6.runs.ipc import write_worker_pid
+    from agent6.sessions.ipc import write_worker_pid
 
-    run_dir = lane_dir / "sub"
-    write_worker_pid(run_dir, _os.getpid())  # a live lane: never terminal
-    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "w", model=None)
-    res = LaneResult(spec=spec, run_dir=run_dir, branch="agent6/x", ok=True, error="")
+    session_dir = lane_dir / "sub"
+    write_worker_pid(session_dir, _os.getpid())  # a live lane: never terminal
+    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+    res = LaneResult(spec=spec, session_dir=session_dir, branch="agent6/x", ok=True, error="")
     calls = {"n": 0}
 
     def stop_after_two() -> bool:
@@ -1347,15 +1364,15 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     import os as _os
     import threading as _threading
 
-    from agent6.runs.ipc import stop_request_pending, write_worker_pid
+    from agent6.sessions.ipc import stop_request_pending, write_worker_pid
 
     lane_dir = tmp_path / "lane-run" / "sub"
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
     write_worker_pid(lane_dir, _os.getpid())  # live forever from the test's view
-    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+    spec = LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", model=None)
 
     def fake_spawner(spec: LaneSpec, task: str) -> LaneResult:
-        return LaneResult(spec=spec, run_dir=lane_dir, branch="agent6/x", ok=True, error="")
+        return LaneResult(spec=spec, session_dir=lane_dir, branch="agent6/x", ok=True, error="")
 
     hard_stop = _threading.Event()
     hard_stop.set()
@@ -1381,7 +1398,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
 def test_crashed_lane_is_not_a_rankable_candidate(
     origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane that died without a run.end folds to "stale", which verify_ok maps
+    """A lane that died without a session.end folds to "stale", which verify_ok maps
     to None -- the same tri-state as a clean unverified finish. Mechanical
     ranking then sorts by cost, so the cheapest (earliest-crashing) lane ranked
     first and was stamped compare.winner=true, wearing the winner glyph in every
@@ -1425,7 +1442,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
 
 def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
     """A lane's branch is how its work is imported (bridge_spawner fetches
-    agent6/<run_id>), but the origin's [git].branch_per_run=false materialized
+    agent6/<session_id>), but the origin's [git].branch_per_run=false materialized
     into the lane config, so the branch was never cut: every lane completed and
     billed, then failed at import with a raw git 'couldn't find remote ref'."""
     import tomllib
@@ -1434,7 +1451,7 @@ def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
 
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
-    spec = LaneSpec(lane=1, run_id="fan-l1", workdir=tmp_path / "clone", model=None)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", model=None)
     path = _write_lane_config(cfg, spec)
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True

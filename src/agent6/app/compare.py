@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Candidate-ranking core shared by `--parallel`'s auto-compare (`app.parallel`)
-and the standalone `runs compare` (`ui/cli/runs_cmds.py`): rank candidates (judge
+and the standalone `runs compare` (`ui/cli/sessions_cmds.py`): rank candidates (judge
 via the reviewer model when one is built, else the deterministic mechanical
 fallback) and print the ranked table. One implementation so the two callers can
 never drift.
@@ -24,7 +24,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, ProviderError, TranscriptSink
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
@@ -67,10 +67,10 @@ def verify_ok(status: str) -> bool | None:
     return None
 
 
-def manifest_task(run_dir: Path, fallback: str) -> str:
+def manifest_task(session_dir: Path, fallback: str) -> str:
     """The run's own recorded `user_task`, else *fallback*."""
     try:
-        manifest = read_manifest(run_dir)
+        manifest = read_manifest(session_dir)
     except ManifestError:
         return fallback
     return manifest.user_task or fallback
@@ -129,14 +129,14 @@ def print_ranked_candidates(
     rationale if there is one. Prints nothing when the ranking is empty."""
     if not outcome.ranking:
         return
-    by_id = {c.run_id: c for c in candidates}
+    by_id = {c.session_id: c for c in candidates}
     reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(outcome.ranking, start=1):
         c = by_id[rid]
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
         reporter.out(
             f"  {rnk}. {rid}  {verify:<9} {format_cost(c.cost_usd)}"
-            f"   merge with: agent6 runs merge {rid}"
+            f"   merge with: agent6 sessions merge {rid}"
         )
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)

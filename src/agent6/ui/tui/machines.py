@@ -43,7 +43,7 @@ from agent6.machine import (
     render,
     validate_semantics,
 )
-from agent6.runs.ipc import (
+from agent6.sessions.ipc import (
     clear_steer_answer,
     read_worker_pid,
     register_frontend,
@@ -54,7 +54,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.runs.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -71,7 +71,7 @@ from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
     fold_machine,
-    fold_run,
+    fold_session,
     machine_word_for_dir,
     newest_state_log,
     tail_events,
@@ -383,7 +383,7 @@ class MachineWatchScreen(Screen[None]):
         state_dir = self._state_dir()
         if state_dir is None:
             return
-        rs = fold_run(tail_events(state_dir / LOGS_NAME, follow=False))
+        rs = fold_session(tail_events(state_dir / LOGS_NAME, follow=False))
         for ap in rs.pending_approvals:
             key = f"{state_dir}|{ap.id}"
             if not ap.answered and key not in self._seen_prompt_keys:

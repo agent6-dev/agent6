@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The RunFrontend an ACP client provides.
+"""The SessionFrontend an ACP client provides.
 
 The rule every case here pins: a client that cannot be asked is never asked,
 and the answer is the CAUTIOUS one. A session that cannot ask is a session that

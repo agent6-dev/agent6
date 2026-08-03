@@ -37,10 +37,15 @@ def _lines(screen: LogScreen) -> list[str]:
 def test_logscreen_renders_structural_events(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     events: list[dict[str, object]] = [
-        {"type": "run.start", "mode": "run", "user_task": "do x", "ts": "2026-06-22T01:02:03.4Z"},
+        {
+            "type": "session.start",
+            "mode": "run",
+            "user_task": "do x",
+            "ts": "2026-06-22T01:02:03.4Z",
+        },
         {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "ts": "t"},
         {"type": "verify.end", "exit_code": 0, "duration_s": 1.2, "ts": "t"},
-        {"type": "run.end", "all_passed": True, "ts": "t"},
+        {"type": "session.end", "all_passed": True, "ts": "t"},
     ]
     _write_log(logs, events)
 
@@ -83,7 +88,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: Path) -> None:
 
 def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
-    _write_log(logs, [{"type": "run.start", "mode": "run", "user_task": "x", "ts": "t"}])
+    _write_log(logs, [{"type": "session.start", "mode": "run", "user_task": "x", "ts": "t"}])
 
     async def scenario() -> None:
         app = _Host(logs)
@@ -94,7 +99,7 @@ def test_logscreen_reload_picks_up_appended_lines(tmp_path: Path) -> None:
             assert len(_lines(screen)) == 1
             # A live run keeps appending; reload pulls the new lines in.
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "run.end", "all_passed": True, "ts": "t"}) + "\n")
+                fh.write(json.dumps({"type": "session.end", "all_passed": True, "ts": "t"}) + "\n")
             screen.action_reload()
             await pilot.pause()
             assert len(_lines(screen)) == 2

@@ -130,12 +130,12 @@ async function route() {
       } catch (_) { /* no meta: fall through to the hub */ }
     }
   }
-  const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
+  const parts = h.split('/').filter(Boolean); // e.g. ['session','abc']
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(undefined, gen); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
-    else if (parts[0] === 'run' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
+    else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }
@@ -225,7 +225,7 @@ function newWorkDock() {
   const start = async () => {
     if (!task.value.trim()) return;
     go.disabled = true;
-    try { const d = await postJSON('/api/new', { mode: mode.value, task: task.value }); if (d.run_id) location.hash = '#/run/' + encodeURIComponent(d.run_id); }
+    try { const d = await postJSON('/api/new', { mode: mode.value, task: task.value }); if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id); }
     catch (e) { toast(e.message, true); go.disabled = false; }
   };
   go.onclick = start;
@@ -279,9 +279,9 @@ function listCard(title, entries, empty, paint) {
   return card;
 }
 
-function runsCard(runs) {
-  const card = listCard('Runs', runs, 'no runs yet', (r, it, g) => {
-    it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
+function sessionsCard(sessions) {
+  const card = listCard('Sessions', sessions, 'no sessions yet', (r, it, g) => {
+    it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.id);
     g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
     // A genuinely clean $0 (no spend, not partial) is blanked, like the CLI/TUI
     // hub rows; an all-unpriced ~$0 still shows (spend happened, price unknown).
@@ -290,13 +290,13 @@ function runsCard(runs) {
     it.appendChild(pill(r.status, r.label || r.status)); // the server's one shared label
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
-  prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
+  prune.onclick = async () => { try { const d = await postJSON('/api/sessions/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
   card.appendChild(prune);
   const rmAsks = el('button', 'danger'); rmAsks.textContent = 'Clear saved asks';
   rmAsks.style.marginTop = '10px'; rmAsks.style.marginLeft = '6px';
   rmAsks.onclick = async () => {
     if (!confirm('Delete every saved ask?')) return;
-    try { const d = await postJSON('/api/runs/rm_asks', {}); toast(d.message || 'cleared'); route(); }
+    try { const d = await postJSON('/api/sessions/rm_asks', {}); toast(d.message || 'cleared'); route(); }
     catch (e) { toast(e.message, true); }
   };
   card.appendChild(rmAsks);
@@ -355,7 +355,7 @@ async function renderHub(focus, gen) {
       lists.appendChild(machinesCard(d.machines));
       if ((d.drafts || []).length) lists.appendChild(draftsCard(d.drafts));
     } else {
-      lists.appendChild(runsCard(d.runs));
+      lists.appendChild(sessionsCard(d.sessions));
     }
     return lists;
   };
@@ -453,7 +453,7 @@ function makeConv(url, box, body) {
     conv.timer = setTimeout(() => { conv.timer = null; conv.refresh(); }, 900);
   };
   // The in-progress turn under the folded items (streamed thinking/text from
-  // the RunState SSE frame): the analogue of the TUI's docked live pane. The
+  // the SessionState SSE frame): the analogue of the TUI's docked live pane. The
   // live "thinking…" marker always shows; the reasoning text itself streams
   // only at the expanded detail level (same rule as the TUI).
   conv.setLive = (s) => {
@@ -562,7 +562,7 @@ function makeComposer(id) {
   const resume = async (text) => {
     busy = true; apply();
     try {
-      await postJSON('/api/run/' + encodeURIComponent(id) + '/resume', { text });
+      await postJSON('/api/session/' + encodeURIComponent(id) + '/resume', { text });
       toast('resuming the run…');
       // The resume is a detached spawn: wait for it to come LIVE, then re-open
       // the view so the SSE stream and controls come back. Waiting on
@@ -573,10 +573,10 @@ function makeComposer(id) {
       for (let i = 0; i < 25; i++) {
         await new Promise(r => setTimeout(r, 1000));
         if (!root.isConnected) return; // navigated away
-        let s; try { s = await getJSON('/api/run/' + encodeURIComponent(id)); } catch (_) { continue; }
+        let s; try { s = await getJSON('/api/session/' + encodeURIComponent(id)); } catch (_) { continue; }
         if (s && s.live === true) { ta.value = ''; route(); return; }
       }
-      toast('the resume has not started yet; check `agent6 runs`', true);
+      toast('the resume has not started yet; check `agent6 sessions`', true);
     } catch (e) { toast(e.message, true); }
     busy = false; apply();
   };
@@ -589,7 +589,7 @@ function makeComposer(id) {
       if (!text) return;
       // The server decides what the text WAS: `/compact [focus]` is an
       // out-of-band request, not a steer, and it says so.
-      postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text })
+      postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
         .then(r => { toast((r && r.message) || 'steer sent'); ta.value = ''; })
         .catch(err => toast(err.message, true));
     } else {
@@ -616,7 +616,7 @@ async function stopRun(base, label) {
 }
 
 // opts: { base, readOnly, title }: a draft (machine-create authoring log) is
-// watched read-only against /api/draft/<name>; a run is driveable at /api/run/<id>.
+// watched read-only against /api/draft/<name>; a run is driveable at /api/session/<id>.
 // The snapshot fetch up front is the existence probe (a bad id used to leave a
 // hollow dashboard: the conversation fetch swallowed its 404 and the
 // EventSource error is silent) and the first paint, so the view never flashes
@@ -653,7 +653,7 @@ function drawerHandle(drawer) {
 
 async function renderRun(id, opts, gen) {
   opts = opts || {};
-  const base = opts.base || ('/api/run/' + encodeURIComponent(id));
+  const base = opts.base || ('/api/session/' + encodeURIComponent(id));
   const snap = await getJSON(base); // throws -> route() shows the error
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   const readOnly = !!opts.readOnly;
@@ -680,11 +680,11 @@ async function renderRun(id, opts, gen) {
   actions.appendChild(dBtn);
   if (!readOnly) {
     const post = (verb, okMsg) => async () => {
-      try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
+      try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
       catch (e) { toast(e.message, true); }
     };
     const stopBtn = el('button', 'danger', '■ Stop now');
-    stopBtn.onclick = () => stopRun('/api/run/' + encodeURIComponent(id), 'the run');
+    stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'the run');
     const stepBtn = el('button', null, 'Stop after step');
     stepBtn.onclick = post('stop_step', 'stopping after the current step');
     const compactBtn = el('button', null, 'Compact context');
@@ -697,7 +697,7 @@ async function renderRun(id, opts, gen) {
       // History only, and not undoable, so it asks. The CLI refuses a live run.
       if (!confirm('Delete this run\'s history? The branch and its commits are kept.')) return;
       try {
-        const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/rm', {});
+        const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});
         toast(d.message || 'removed');
         location.hash = '#/';
       } catch (e) { toast(e.message, true); }
@@ -780,8 +780,8 @@ async function renderRun(id, opts, gen) {
 // resolved ones.
 function paintPrompts(cards, s) {
   const host = cards._prompts;
-  // base is the POST prefix: runs use /api/run/<id>, machines /api/machine/<name>.
-  const base = cards._base || ('/api/run/' + encodeURIComponent(cards._id));
+  // base is the POST prefix: sessions use /api/session/<id>, machines /api/machine/<name>.
+  const base = cards._base || ('/api/session/' + encodeURIComponent(cards._id));
   // For a machine, the per-state dir the reasoning (and its prompts) came from.
   // Prompt ids reset per state (approval-1 in every state), so the answer must
   // carry it AND the box key must include it: when the machine advances to a new
@@ -875,7 +875,7 @@ function paintRun(cards, s) {
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.user_task || '(none)');
-  add('id', s.run_id || cards._id || ''); // older logs carry no run_id in run.start
+  add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
@@ -888,7 +888,7 @@ function paintRun(cards, s) {
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
   if (s.compare && typeof s.compare.rank === 'number') {
     const c = s.compare;
-    // Mirror format_compare (runs show / TUI): `rank 1/2 · winner · judge ($0.01)`.
+    // Mirror format_compare (sessions show / TUI): `rank 1/2 · winner · judge ($0.01)`.
     const parts = ['rank ' + c.rank + '/' + c.of];
     if (c.winner) parts.push('winner');
     if (c.ranked_by) {
@@ -1005,10 +1005,10 @@ function renderDiff(text) {
 
 // --- conversation page ---------------------------------------------------------
 // The run's conversation full-height (the same component the run view embeds),
-// live-following: the RunState /events stream is the change signal; the fold
+// live-following: the SessionState /events stream is the change signal; the fold
 // re-fetches on it (debounced) and the stream closes once the run finishes.
 async function renderConversation(id, gen) {
-  const base = '/api/run/' + encodeURIComponent(id);
+  const base = '/api/session/' + encodeURIComponent(id);
   const snap = await getJSON(base); // existence probe: throws -> route() shows the error
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   setCrumb('conversation ' + id);
@@ -1160,7 +1160,7 @@ function machineNotify(ctx, m) {
 function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (data.error) { structBody.innerHTML=''; structBody.appendChild(el('div', 'err', data.error)); return; }
   const m = data.machine || {};
-  // Pending approval/question/steer come from the current agent state's RunState.
+  // Pending approval/question/steer come from the current agent state's SessionState.
   // Track which per-state dir this frame rendered so prompt answers + steer route
   // to that exact state (ids reset per state; the machine may advance meanwhile).
   cards._state = (data.reasoning || {}).state_dir || '';
@@ -1201,7 +1201,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no
-  // run.end, which would leave a live "thinking..." marker up forever. Steer
+  // session.end, which would leave a live "thinking..." marker up forever. Steer
   // additionally needs a RUNNING worker (a parked or stopped machine's newest
   // state is finished; nothing polls the marker) and an agent state to inject
   // into. A poke is the exception: waking a waiting machine is its purpose.
@@ -1223,7 +1223,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
   // Gate on the machine's DIR liveness (notRunning), not the reasoning fold's
-  // `finished`: an agent-state per-state log carries no run.end, so the dir-less
+  // `finished`: an agent-state per-state log carries no session.end, so the dir-less
   // fold's `finished` is STRUCTURALLY always false -- a parked/ended/stopped
   // machine would otherwise show its last (finished) turn as live and tick
   // "agent working…" forever. Matches the TUI, which gates on worker liveness.

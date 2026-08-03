@@ -13,8 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from agent6.runs.id import RunIdError, resolve_run_id
-from agent6.runs.ipc import (
+from agent6.sessions.id import SessionIdError, resolve_session_id
+from agent6.sessions.ipc import (
     read_worker_pid,
     register_frontend,
     set_session_allow,
@@ -23,13 +23,13 @@ from agent6.runs.ipc import (
     write_answer,
     write_question_answers,
 )
-from agent6.runs.layout import LOGS_NAME
-from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
+from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
-    print_no_run_match,
+    print_no_session_match,
     resolve_or_newest_layout,
 )
 from agent6.ui.cli._console_view import ConsoleView
@@ -38,32 +38,32 @@ from agent6.viewmodel import (
     LogScan,
     StatusFacts,
     event_epoch,
-    run_mtime,
-    scan_run_log,
-    status_for_run_dir,
+    scan_session_log,
+    session_mtime,
+    status_for_session_dir,
     tail_events,
 )
 from agent6.viewmodel.format import format_compare, format_cost
 from agent6.viewmodel.state import SESSION_START_EVENTS
 
 
-def _resolve_plan_run_id(run_id: str) -> str | None:
+def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a (possibly prefix) run-id under the per-repo run-state dir.
 
     Prints an error and returns None on failure. Used by ``run --from-plan``,
-    ``plan show``, and ``plan edit``. An empty *run_id* resolves the most recent
+    ``plan show``, and ``plan edit``. An empty *session_id* resolves the most recent
     planning run, matching the omit-for-latest convention of the runs commands.
     """
     runs_dir = _runs_dir(Path.cwd())
-    if not run_id:
-        latest = _most_recent_plan_run_id(runs_dir)
+    if not session_id:
+        latest = _most_recent_plan_session_id(runs_dir)
         if latest is None:
             print("ERROR: no planning runs yet (start one with `agent6 plan`).", file=sys.stderr)
             return None
-        run_id = latest
+        session_id = latest
     try:
-        resolved = resolve_run_id(runs_dir, run_id)
-    except RunIdError as exc:
+        resolved = resolve_session_id(runs_dir, session_id)
+    except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return None
     plan = runs_dir / resolved / "plan.md"
@@ -76,9 +76,9 @@ def _resolve_plan_run_id(run_id: str) -> str | None:
     return resolved
 
 
-def _cmd_plan_show(run_id: str) -> int:
+def _cmd_plan_show(session_id: str) -> int:
     """Print a planning run's plan.md to stdout."""
-    resolved = _resolve_plan_run_id(run_id)
+    resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
     plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
@@ -86,13 +86,13 @@ def _cmd_plan_show(run_id: str) -> int:
     return 0
 
 
-def _cmd_plan_edit(run_id: str) -> int:
+def _cmd_plan_edit(session_id: str) -> int:
     """Open a planning run's plan.md in $EDITOR (default: vi).
 
     Operator-controlled argv (the editor name + the resolved plan path),
     not LLM-controlled, so direct subprocess.run is allowed.
     """
-    resolved = _resolve_plan_run_id(run_id)
+    resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
     plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
@@ -107,7 +107,7 @@ def _cmd_plan_edit(run_id: str) -> int:
     return result.returncode
 
 
-def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
+def _most_recent_plan_session_id(runs_dir: Path) -> str | None:
     """Most recently active run dir that holds a ``plan.md`` (a plan run).
 
     Used by bare `agent6 run` (no task) to offer the latest plan for execution.
@@ -116,13 +116,13 @@ def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
         return None
     candidates = sorted(
         (p for p in runs_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
-        key=run_mtime,
+        key=session_mtime,
         reverse=True,
     )
     return candidates[0].name if candidates else None
 
 
-def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = False) -> int:
+def _cmd_watch(session_id: str, *, tui: bool = False, since: int = 0, raw: bool = False) -> int:
     """Read-only live view of a run directory.
 
     Default follows the run's conversation (the same render as ``agent6 run``).
@@ -134,15 +134,15 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     # Empty most-recent spans every bucket, so a bare `attach` after an `ask`
     # finds it.
     try:
-        layout = resolve_or_newest_layout(cwd, run_id)
-    except RunIdError as exc:
+        layout = resolve_or_newest_layout(cwd, session_id)
+    except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
         print("ERROR: no runs found for this cwd.", file=sys.stderr)
         return 2
-    target = layout.run_dir
-    if not run_id:
+    target = layout.session_dir
+    if not session_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)
@@ -161,18 +161,18 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     return run_tui(target)
 
 
-def _resolve_run_dir(repo_root: Path, run_id: str) -> Path | None:
+def _resolve_session_dir(repo_root: Path, session_id: str) -> Path | None:
     """Resolve a run id (or the most-recent run when empty) to its run dir.
 
     An explicit id resolves across every run-style bucket (runs/, asks/,
-    machine-drafts/): anything `agent6 runs` lists must also be inspectable
+    machine-drafts/): anything `agent6 sessions` lists must also be inspectable
     by id. The empty (most-recent) case also spans every bucket, so a bare
     `attach` right after an `ask` finds that ask."""
     try:
-        layout = resolve_or_newest_layout(repo_root, run_id)
-    except RunIdError:
+        layout = resolve_or_newest_layout(repo_root, session_id)
+    except SessionIdError:
         return None
-    return layout.run_dir if layout is not None else None
+    return layout.session_dir if layout is not None else None
 
 
 def _fmt_dur(seconds: float | None) -> str:
@@ -186,10 +186,10 @@ def _fmt_dur(seconds: float | None) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-def _print_fork_lineage(manifest: RunManifest) -> None:
+def _print_fork_lineage(manifest: SessionManifest) -> None:
     """Print the fork-lineage line for a run created by `agent6 fork` (no-op
     otherwise)."""
-    parent = manifest.parent_run_id
+    parent = manifest.parent_session_id
     if not parent:
         return
     sha = manifest.forked_from_sha
@@ -197,7 +197,7 @@ def _print_fork_lineage(manifest: RunManifest) -> None:
     print(f"forked from: {parent}@turn {manifest.forked_from_turn}{sha_note}")
 
 
-def _print_parallel_compare(manifest: RunManifest) -> None:
+def _print_parallel_compare(manifest: SessionManifest) -> None:
     """Print the fan-out compare outcome for a lane (no-op for a non-lane run):
     where it placed, whether it won, judged or mechanical, and the judge's
     rationale when there is one."""
@@ -210,20 +210,20 @@ def _print_parallel_compare(manifest: RunManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _status_state(run_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
+def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
     """The one-line state `runs show` prints (and emits as --json "state").
 
-    Leads with the LISTING's word -- ``status_for_run_dir``, the one decision
+    Leads with the LISTING's word -- ``status_for_session_dir``, the one decision
     every surface feeds -- then appends this surface's diagnostic detail (what
     to do, or why the word applies). The pre-unification words lied twice: a
     crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
     launching run with "running" (the hub said "starting")."""
-    word, _reason = status_for_run_dir(run_dir, scan.status_facts())
+    word, _reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
         return f"{word} ({scan.end_reason})"
     detail = {
         "waiting": "needs answer -- attach to respond",
-        "stale": "no worker, no run.end: likely crashed or killed",
+        "stale": "no worker, no session.end: likely crashed or killed",
         "parked": "resume to start",
         "created": "no events yet",
     }.get(word, "")
@@ -232,7 +232,7 @@ def _status_state(run_dir: Path, scan: LogScan, *, last_age: float | None) -> st
     return f"{word} ({detail})" if detail else word
 
 
-def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
+def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
     Answers "is this run still alive, and what is it doing?" from the run dir
@@ -242,28 +242,28 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     or scripted check; `agent6 attach` is the live follower.
     """
     try:
-        layout = resolve_or_newest_layout(Path.cwd(), run_id)
-    except RunIdError as exc:
+        layout = resolve_or_newest_layout(Path.cwd(), session_id)
+    except SessionIdError as exc:
         # An ambiguous prefix names its candidates (as attach and runs stop do);
         # swallowing it printed "no run matches <id>", which is false when
         # several do.
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    target = layout.run_dir if layout is not None else None
+    target = layout.session_dir if layout is not None else None
     if target is None or not target.is_dir():
-        print_no_run_match(run_id, _state_dir(Path.cwd()))
+        print_no_session_match(session_id, _state_dir(Path.cwd()))
         return 2
 
-    loaded: RunManifest | None = None
+    loaded: SessionManifest | None = None
     with contextlib.suppress(ManifestError):
         loaded = read_manifest(target)
     # A missing/corrupt manifest still renders (defaults), but `mode` reads "?"
     # rather than the model default so a manifest-less run isn't shown as "run".
-    manifest = loaded or RunManifest()
+    manifest = loaded or SessionManifest()
     mode_display = loaded.mode if loaded is not None else None
 
     logs = target / LOGS_NAME
-    scan = scan_run_log(logs) if logs.is_file() else LogScan()
+    scan = scan_session_log(logs) if logs.is_file() else LogScan()
 
     pid = read_worker_pid(target)
     alive = worker_is_alive(target)
@@ -284,7 +284,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         print(
             json.dumps(
                 {
-                    "run_id": target.name,
+                    "session_id": target.name,
                     "mode": mode_display,
                     "model": model,
                     "state": state,
@@ -301,7 +301,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
                     "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
-                    "parent_run_id": manifest.parent_run_id,
+                    "parent_session_id": manifest.parent_session_id,
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
                     "compare": compare_json,
@@ -315,7 +315,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         pid_note = f"  (worker pid {pid} alive)"
     elif pid is not None and not scan.finished:
         pid_note = f"  (worker pid {pid} not running)"
-    print(f"run:        {target.name}  (mode={mode_display or '?'})")
+    print(f"session:    {target.name}  (mode={mode_display or '?'})")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
     print(f"model:      {model}")
@@ -342,16 +342,16 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     return 0
 
 
-def _print_task_tree(run_dir: Path) -> None:
+def _print_task_tree(session_dir: Path) -> None:
     """Show the run's task DAG when it decomposed into subtasks. Makes the plan
     visible for a headless run (no TUI #plan pane), the decompose case the user
     could not see. A single root (no decomposition) is not worth the block."""
     from agent6.graph.storage import load_graph  # noqa: PLC0415
-    from agent6.runs.layout import RunLayout  # noqa: PLC0415
+    from agent6.sessions.layout import SessionLayout  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
 
     with contextlib.suppress(Exception):
-        layout = RunLayout(state_dir=_state_dir(Path.cwd()), run_id=run_dir.name)
+        layout = SessionLayout(state_dir=_state_dir(Path.cwd()), session_id=session_dir.name)
         nodes = load_graph(layout)
         if len(nodes) <= 1:
             return
@@ -379,19 +379,19 @@ def _cmd_tui() -> int:
     cwd = Path.cwd()
     agent6_dir = _runs_dir(cwd).parent
     while True:
-        run_dir = run_home(agent6_dir, cwd)
-        if run_dir is None:
+        session_dir = run_home(agent6_dir, cwd)
+        if session_dir is None:
             return 0
         # Esc in the dashboard returns here (reopen home); q quits the hub.
-        if run_tui(run_dir, from_hub=True) == QUIT_HUB_CODE:
+        if run_tui(session_dir, from_hub=True) == QUIT_HUB_CODE:
             return 0
 
 
-def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
+def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
     """Pretty-print one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
     Falls back to the raw line on parse error so a corrupt event doesn't
-    abort the tail. ``run_start_ts`` is the wall-clock timestamp of the
+    abort the tail. ``session_start_ts`` is the wall-clock timestamp of the
     earliest event seen so far; used to render relative elapsed seconds.
     """
     raw = line.rstrip("\n")
@@ -403,12 +403,12 @@ def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
         return raw
     ts = event_epoch(obj.get("ts"))
     event = obj.get("event") or obj.get("type") or "?"
-    if ts is not None and run_start_ts is not None:
-        elapsed = max(0.0, ts - run_start_ts)
+    if ts is not None and session_start_ts is not None:
+        elapsed = max(0.0, ts - session_start_ts)
         ts_str = f"+{elapsed:7.1f}s"
     else:
         ts_str = "        "
-    skip = {"ts", "event", "type", "run_id"}
+    skip = {"ts", "event", "type", "session_id"}
     pairs: list[str] = []
     for k, v in obj.items():
         if k in skip:
@@ -438,8 +438,8 @@ class _CliFrontEnd:
     attach, so ``_answered`` (ids with an answer seen) and ``_handled`` (ids WE
     prompted for) gate re-prompting a historical or already-answered prompt."""
 
-    def __init__(self, run_dir: Path, view: ConsoleView) -> None:
-        self._run_dir = run_dir
+    def __init__(self, session_dir: Path, view: ConsoleView) -> None:
+        self._session_dir = session_dir
         self._view = view
         self._answered: set[str] = set()
         self._handled: set[str] = set()
@@ -481,8 +481,8 @@ class _CliFrontEnd:
             with self._view.pause():
                 answer = default_stdin_approver(str(content))
             if answer == "session":
-                set_session_allow(self._run_dir)
-            write_answer(self._run_dir, prompt_id, approved=answer != "no")
+                set_session_allow(self._session_dir)
+            write_answer(self._session_dir, prompt_id, approved=answer != "no")
         else:
             questions = tuple(
                 UserQuestion(
@@ -494,7 +494,7 @@ class _CliFrontEnd:
             with self._view.pause():
                 answers = default_stdin_questioner(questions)
             write_question_answers(
-                self._run_dir,
+                self._session_dir,
                 prompt_id,
                 answers if answers is not None else tuple("" for _ in questions),
             )
@@ -542,13 +542,13 @@ class _CliFrontEnd:
 def _print_crashed_line(target: Path) -> None:
     print(
         f"[agent6] {target.name}: worker not running and the run never ended"
-        f" (crashed or killed); see `agent6 runs show {target.name}`.",
+        f" (crashed or killed); see `agent6 sessions show {target.name}`.",
         file=sys.stderr,
     )
 
 
-def _render_dead_run(target: Path, events_path: Path) -> int:
-    """Crashed/killed: no run.end will ever come and no worker reads answers.
+def _render_dead_session(target: Path, events_path: Path) -> int:
+    """Crashed/killed: no session.end will ever come and no worker reads answers.
     Render the log read-only (no front-end, no re-asked prompts), then say
     what `runs show` already knows."""
     view = ConsoleView(sys.stdout)
@@ -584,14 +584,14 @@ def _watch_transcript(target: Path) -> int:
     ``ask_user`` answer, prompt on the terminal exactly as the foreground run
     would (see ``_CliFrontEnd``). Piped/redirected (no tty) stays a pure reader.
     Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
-    A detach emits no run.end, so watching a detached run follows it to its end."""
+    A detach emits no session.end, so watching a detached run follows it to its end."""
     events_path = target / LOGS_NAME
     if not events_path.is_file():
         # Not an error: a parked submission, a `fork --no-run`, or a run still
         # launching (egress + the ~80s verify inference run before the first log
         # line) has no log yet. Answer with the same word the listings and
         # `runs show` use, plus what to do, instead of a raw filesystem message.
-        word, reason = status_for_run_dir(target, StatusFacts())
+        word, reason = status_for_session_dir(target, StatusFacts())
         print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
         if word == "starting":
             # A live worker is mid-preflight: it IS running, not resumable.
@@ -608,7 +608,7 @@ def _watch_transcript(target: Path) -> int:
         return read_worker_pid(target) is not None and not worker_is_alive(target)
 
     if worker_dead():
-        return _render_dead_run(target, events_path)
+        return _render_dead_session(target, events_path)
     view = ConsoleView(sys.stdout)
     front_end = _install_front_end(target, view)
     interrupted = False
@@ -629,24 +629,24 @@ def _watch_transcript(target: Path) -> int:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
             unregister_frontend(target, os.getpid())  # our claim only
-    if not interrupted and not _run_has_ended(events_path):
+    if not interrupted and not _session_has_ended(events_path):
         _print_crashed_line(target)
     return 0
 
 
-def _line_is_run_end(raw: bytes | str) -> bool:
-    """True if a logs.jsonl line is a ``run.end`` event."""
+def _line_is_session_end(raw: bytes | str) -> bool:
+    """True if a logs.jsonl line is a ``session.end`` event."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)
     except (ValueError, TypeError):
         return False
-    return isinstance(obj, dict) and obj.get("type") == "run.end"
+    return isinstance(obj, dict) and obj.get("type") == "session.end"
 
 
-def _run_has_ended(events_path: Path) -> bool:
-    """True if the run's last logged event is ``run.end`` (finished, nothing to
-    follow). A resume appends events after a run.end, so only the LAST line
+def _session_has_ended(events_path: Path) -> bool:
+    """True if the run's last logged event is ``session.end`` (finished, nothing to
+    follow). A resume appends events after a session.end, so only the LAST line
     counts."""
     try:
         with events_path.open("rb") as fh:
@@ -655,7 +655,7 @@ def _run_has_ended(events_path: Path) -> bool:
                 pass
     except OSError:
         return False
-    return bool(last) and _line_is_run_end(last)
+    return bool(last) and _line_is_session_end(last)
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0912, PLR0915
@@ -672,16 +672,16 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
 
     # Read the first event for the elapsed-time anchor. Binary readline: a
     # torn-mid-UTF-8 first line must not crash the watch before it starts.
-    run_start_ts: float | None = None
+    session_start_ts: float | None = None
     try:
         with events_path.open("rb") as fh:
             first = fh.readline()
         if first:
             obj0 = json.loads(first.decode("utf-8"))
             if isinstance(obj0, dict):
-                run_start_ts = event_epoch(obj0.get("ts"))
+                session_start_ts = event_epoch(obj0.get("ts"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        run_start_ts = None
+        session_start_ts = None
 
     print(
         f"[agent6] tailing {events_path}. Ctrl-C to exit.",
@@ -711,12 +711,12 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                 line = raw.decode("utf-8", errors="replace")
                 # flush: piped/redirected output must not lose the replay to the
                 # block buffer when the run is idle/finished (nothing else flushes).
-                print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
-            if lines and _line_is_run_end(lines[-1]):
+                print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
+            if lines and _line_is_session_end(lines[-1]):
                 return 0  # already finished: replayed, nothing to follow
         else:
             # A finished run has no new events to follow; seeking to end would hang.
-            if _run_has_ended(events_path):
+            if _session_has_ended(events_path):
                 print("[agent6] run already finished.", file=sys.stderr)
                 return 0
             # Seek to end; only show new events going forward.
@@ -734,8 +734,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                     continue  # partial line at EOF; the rest arrives next read
                 line = pending.decode("utf-8", errors="replace")
                 pending = b""
-                print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
-                if _line_is_run_end(line):
+                print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
+                if _line_is_session_end(line):
                     return 0  # run ended: stop, like the default follower
                 continue
             # No new data: check for rotation and sleep briefly.

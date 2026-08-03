@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Build + write the canonical manifest.json a run starts with (run/fork). The
-reader and the on-disk shape (:class:`RunManifest`) live in ``runs.manifest``."""
+reader and the on-disk shape (:class:`SessionManifest`) live in ``runs.manifest``."""
 
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.portable import atomic_write
-from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import (
+from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import (
     MANIFEST_VERSION,
     ManifestError,
     ModelBrief,
     ModelsBrief,
     PolicyStamp,
-    RunManifest,
+    SessionManifest,
     WorkflowStamp,
     read_manifest,
 )
@@ -36,10 +36,10 @@ def _model_brief(rm: Any) -> ModelBrief | None:
     return ModelBrief(provider=rm.provider, model=rm.model)
 
 
-def write_manifest(path: Path, m: RunManifest) -> None:
+def write_manifest(path: Path, m: SessionManifest) -> None:
     """Serialize *m* to *path* (indent=2 + trailing newline), atomically.
 
-    The one place a RunManifest reaches disk: the initial write below and the
+    The one place a SessionManifest reaches disk: the initial write below and the
     stamp rewrites (merge / lineage / compare) all route through here, so the
     format lives in one spot. Durable temp+replace: the TUI hub and `runs show`
     poll this file on live runs, and resume/fork need it after a crash.
@@ -60,10 +60,10 @@ def write_manifest(path: Path, m: RunManifest) -> None:
     atomic_write(path, m.model_dump_json(indent=2) + "\n")
 
 
-def write_run_manifest(
-    layout: RunLayout,
+def write_session_manifest(
+    layout: SessionLayout,
     *,
-    run_id: str,
+    session_id: str,
     user_task: str,
     base_sha: str,
     base_branch: str,
@@ -75,7 +75,7 @@ def write_run_manifest(
     gate: tuple[Sequence[str], str] | None = None,
     isolation: str = "",
     parked_task: str = "",
-    parent_run_id: str | None = None,
+    parent_session_id: str | None = None,
     forked_from_turn: int | None = None,
     forked_from_sha: str | None = None,
 ) -> None:
@@ -83,17 +83,17 @@ def write_run_manifest(
 
     Format is JSON for the same reason logs.jsonl is JSON: trivially grep-able
     from a shell and easy to consume from any language. The on-disk shape is
-    *liquid* until 1.0 - bump ``RunManifest.version`` only when the new shape
+    *liquid* until 1.0 - bump ``SessionManifest.version`` only when the new shape
     genuinely improves a downstream consumer.
 
-    ``parent_run_id`` / ``forked_from_turn`` / ``forked_from_sha`` / ``gate`` are
+    ``parent_session_id`` / ``forked_from_turn`` / ``forked_from_sha`` / ``gate`` are
     set only for a run created by ``agent6 fork``; they record the lineage
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
     """
-    m = RunManifest(
+    m = SessionManifest(
         agent6_version=__version__,
-        run_id=run_id,
+        session_id=session_id,
         # run | plan | ask. `fork` and `resume` act on session_mode(), never on
         # this string: a damaged manifest must not silently escalate a
         # read-only session to the privileged write tools.
@@ -132,29 +132,29 @@ def write_run_manifest(
             isolation=isolation or str(cfg.sandbox.isolation),
         ),
         parked_task=parked_task,
-        parent_run_id=parent_run_id,
+        parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
     )
     write_manifest(layout.manifest_path, m)
 
 
-def stamp_verify_gate(run_dir: Path, argv: Sequence[str], origin: str) -> None:
+def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:
     """Pin the gate this run is judged by, and where it came from.
 
     Written after resolution rather than at run start because inference runs
     later; from here on the pair is the run's, so a mid-run edit to AGENTS.md
     cannot move the gate under it, on this leg or a resumed one.
     """
-    m = read_manifest(run_dir)
+    m = read_manifest(session_dir)
     workflow = m.workflow.model_copy(
         update={"verify_command": tuple(argv), "verify_origin": origin}
     )
-    write_manifest(run_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
+    write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
 
 
 def pin_gate(
-    run_dir: Path,
+    session_dir: Path,
     argv: Sequence[str],
     origin: str,
     *,
@@ -172,7 +172,7 @@ def pin_gate(
 
     def _stamp(gate: Sequence[str], why: str) -> None:
         try:
-            stamp_verify_gate(run_dir, gate, why)
+            stamp_verify_gate(session_dir, gate, why)
         except (ManifestError, OSError) as exc:
             reporter.err(f"[agent6] could not record this run's verify gate: {exc}")
 

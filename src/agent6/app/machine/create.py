@@ -40,10 +40,10 @@ from agent6.machine import (
     extract_toml,
     load_machine,
 )
-from agent6.runs.id import new_friendly_id
-from agent6.runs.ipc import write_worker_pid
-from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sessions.id import new_friendly_id
+from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions.layout import LOGS_NAME
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -152,16 +152,16 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # but a plain prompt.txt is what a human looks for).
     (scratch / "prompt.txt").write_text(task, encoding="utf-8")
     # A watchable event log for the draft: the TUI opens the dashboard on this dir
-    # and follows the authoring agent live. The parent owns the run.start header
-    # (the NL task) + the per-attempt markers + the final run.end; each attempt's
+    # and follows the authoring agent live. The parent owns the session.start header
+    # (the NL task) + the per-attempt markers + the final session.end; each attempt's
     # subprocess appends its own role.*_delta / tool.* events to the same file.
     events_log = scratch / LOGS_NAME
     events = EventSink(events_log)
-    events.emit("run.start", user_task=task, mode="machine")
+    events.emit("session.start", user_task=task, mode="machine")
     # Liveness marker, mirroring machine run: the draft dir is watchable (the
     # hub lists it, the SSE endpoints stream it), and without a pid a draft that
     # died read "running" until the 10-minute log-silence window expired, with
-    # its stream held open the whole time. A terminal draft has its own run.end,
+    # its stream held open the whole time. A terminal draft has its own session.end,
     # which the status decision reads first, so the marker needs no clearing.
     write_worker_pid(scratch, os.getpid())
     # Authoring can take minutes with nothing on this terminal; say where the
@@ -181,7 +181,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     total_usd = 0.0
     total_in = 0
     total_out = 0
-    attempt = 0  # bound for the run.end below (the loop always runs: max_attempts >= 1)
+    attempt = 0  # bound for the session.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
         prompt = build_authoring_prompt(
             task,
@@ -277,11 +277,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         input_total=total_in,
         output_total=total_out,
     )
-    # run.end reasons below are tokens, like every other emitter's: the listing
+    # session.end reasons below are tokens, like every other emitter's: the listing
     # prints the reason as the detail beside "failed", where a prose sentence
     # contradicted the word. `iterations` = authoring attempts made.
     if spec is None or valid_toml is None:
-        events.emit("run.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: no valid machine after {max_attempts} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
@@ -307,29 +307,31 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             p for p in (target, *(target.parent / rel for rel in valid_scripts)) if p.exists()
         ]
         if clashes:
-            # The refusal fails the command with nothing written; run.end must
+            # The refusal fails the command with nothing written; session.end must
             # say so, not machine_created.
-            events.emit("run.end", reason="output_collision", iterations=attempt, all_passed=False)
+            events.emit(
+                "session.end", reason="output_collision", iterations=attempt, all_passed=False
+            )
             reporter.err("REFUSING to overwrite existing file(s):")
             for clash in clashes:
                 reporter.err(f"  {clash}")
             reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
             reporter.out(payload.removesuffix("\n"))
             return 1
-    # The writes decide the outcome, so run.end waits for them.
+    # The writes decide the outcome, so session.end waits for them.
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(payload, encoding="utf-8")
         _write_scripts(target.parent, valid_scripts)
     except OSError as exc:
-        events.emit("run.end", reason="write_failed", iterations=attempt, all_passed=False)
+        events.emit("session.end", reason="write_failed", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
         reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
         reporter.out(payload.removesuffix("\n"))
         return 1
     # End the watchable session; all_passed marks a valid machine authored AND
     # written.
-    events.emit("run.end", reason="machine_created", iterations=attempt, all_passed=True)
+    events.emit("session.end", reason="machine_created", iterations=attempt, all_passed=True)
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     reporter.err(
         f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}."

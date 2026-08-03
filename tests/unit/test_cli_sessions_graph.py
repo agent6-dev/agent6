@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 runs graph` DFS tree rendering."""
+"""Tests for `agent6 sessions graph` DFS tree rendering."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import pytest
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
-from agent6.runs.ipc import register_frontend
-from agent6.runs.layout import RunLayout
+from agent6.sessions.ipc import register_frontend
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
 
@@ -47,7 +47,7 @@ def _node(
     )
 
 
-def _seed_tree(tmp_path: Path, run_id: str) -> None:
+def _seed_tree(tmp_path: Path, session_id: str) -> None:
     """Build a small tree:
     root
       step1 (passed, commit aaaaaaa...)
@@ -55,7 +55,7 @@ def _seed_tree(tmp_path: Path, run_id: str) -> None:
         sub1b
       step2 (failed)
     """
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id=run_id)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     root_id = "0" * 25 + "R"
     s1_id = "0" * 25 + "1"
@@ -84,7 +84,7 @@ def test_history_graph_renders_dfs_order(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "test-run-AAAA11")
-    rc = main(["runs", "graph", "test-run-AAAA11"])
+    rc = main(["sessions", "graph", "test-run-AAAA11"])
     out = capsys.readouterr().out
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Run id:")]
@@ -107,11 +107,11 @@ def test_history_graph_uses_most_recent_when_no_arg(
     _seed_tree(tmp_path, "newer-run-BBBB22")
     runs = resolved_state_dir(tmp_path) / "runs"
     for name in ("older-run-AAAA11", "newer-run-BBBB22"):
-        (runs / name / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+        (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run-BBBB22" / "logs.jsonl", (1000, 1000))
     register_frontend(runs / "older-run-AAAA11", 12345)
-    rc = main(["runs", "graph"])
+    rc = main(["sessions", "graph"])
     captured = capsys.readouterr()
     assert rc == 0
     assert "· root task" in captured.out
@@ -122,7 +122,7 @@ def test_history_graph_missing_run_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    rc = main(["runs", "graph", "nonexistent"])
+    rc = main(["sessions", "graph", "nonexistent"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no runs directory" in err or "no run matches" in err
@@ -132,9 +132,9 @@ def test_history_graph_empty_graph_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="empty-run-CCCC33")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="empty-run-CCCC33")
     layout.ensure()
-    rc = main(["runs", "graph", "empty-run-CCCC33"])
+    rc = main(["sessions", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no persisted graph nodes" in err

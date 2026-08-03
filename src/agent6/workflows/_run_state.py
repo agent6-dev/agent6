@@ -106,7 +106,7 @@ class RunResult:
     # The replacement gate the worker proposed, when it finished declaring the
     # configured one stale. Recorded and surfaced; never acted on.
     stale_gate: str = ""
-    # The SAME fact `run.end.all_passed` carries, on the result the app layer
+    # The SAME fact `session.end.all_passed` carries, on the result the app layer
     # reads: `completed` means the agent stopped deliberately, never that the
     # work verified.
     verified: Verification = "not_applicable"
@@ -147,7 +147,7 @@ class RunSnapshot(BaseModel):
     root_task_id: str | None
     # The exact task string the run launched with. Resume re-enters with it
     # verbatim, instead of recovering a truncated copy out of messages[0].
-    # RunManifest.user_task is the DISPLAY twin (truncated [:4000]); this is
+    # SessionManifest.user_task is the DISPLAY twin (truncated [:4000]); this is
     # engine state -- never read one where the other is meant.
     original_task: str
     # The verify command the original run resolved (possibly inferred): resume

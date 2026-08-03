@@ -50,8 +50,8 @@ from agent6.machine import (
     machine_lock,
     write_source,
 )
-from agent6.runs.ipc import write_worker_pid
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sessions.ipc import write_worker_pid
 from agent6.types import IsolationLevel
 from agent6.viewmodel.format import format_cost
 

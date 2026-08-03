@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from agent6.app.preflight import git_repo_refusal
-from agent6.runs.id import new_friendly_id
-from agent6.runs.ipc import request_stop
-from agent6.runs.layout import RunLayout
+from agent6.sessions.id import new_friendly_id
+from agent6.sessions.ipc import request_stop
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.rpc import INVALID_PARAMS, RpcError
 
 # What ACP is told a turn ended as. `cancelled` is the operator's own act, so
@@ -31,9 +31,11 @@ StopReason = str
 class Session:
     """One ACP session: a working directory, and at most one live turn."""
 
-    id: str
+    # ACP's own id for this conversation, minted by `session/new` and what
+    # every notification addresses. Distinct from `session_id`, agent6's.
+    acp_id: str
     cwd: Path
-    run_id: str = ""
+    session_id: str = ""
     thread: threading.Thread | None = None
     cancelled: bool = False
     # Cleared BEFORE the turn answers. `thread.is_alive()` is still true while
@@ -71,15 +73,15 @@ class Sessions:
         refusal = git_repo_refusal(cwd)
         if refusal is not None:
             raise RpcError(INVALID_PARAMS, refusal)
-        session = Session(id=new_friendly_id(), cwd=cwd)
-        self._by_id[session.id] = session
-        return {"sessionId": session.id}
+        session = Session(acp_id=new_friendly_id(), cwd=cwd)
+        self._by_id[session.acp_id] = session
+        return {"sessionId": session.acp_id}
 
     def get(self, params: dict[str, Any]) -> Session:
-        session_id = params.get("sessionId")
-        session = self._by_id.get(session_id) if isinstance(session_id, str) else None
+        acp_session_id = params.get("sessionId")
+        session = self._by_id.get(acp_session_id) if isinstance(acp_session_id, str) else None
         if session is None:
-            raise RpcError(INVALID_PARAMS, f"no session {session_id!r}")
+            raise RpcError(INVALID_PARAMS, f"no session {acp_session_id!r}")
         return session
 
     def start_turn(
@@ -100,7 +102,7 @@ class Sessions:
             finish(answer)
 
         session.turn_live = True
-        session.thread = threading.Thread(target=_work, name=f"acp-{session.id}", daemon=True)
+        session.thread = threading.Thread(target=_work, name=f"acp-{session.acp_id}", daemon=True)
         try:
             session.thread.start()
         except RuntimeError:
@@ -135,9 +137,11 @@ class Sessions:
         operator can read rather than halfway through one.
         """
         session.cancelled = True
-        if session.run_id:
+        if session.session_id:
             request_stop(
-                RunLayout(state_dir=self.state_dir_for(session.cwd), run_id=session.run_id).run_dir
+                SessionLayout(
+                    state_dir=self.state_dir_for(session.cwd), session_id=session.session_id
+                ).session_dir
             )
 
 

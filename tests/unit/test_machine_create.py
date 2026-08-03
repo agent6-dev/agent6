@@ -224,8 +224,8 @@ def test_create_writes_default_path(
 
 
 def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """machine create writes a logs.jsonl in the draft dir (run.start carrying the
-    NL task + run.end) and points the agent runner at that same path, so the TUI
+    """machine create writes a logs.jsonl in the draft dir (session.start carrying the
+    NL task + session.end) and points the agent runner at that same path, so the TUI
     can open the dashboard on the draft and follow the authoring live, like a run."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
@@ -251,10 +251,10 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     # The runner was pointed at that same log (so the subprocess appends to it).
     assert captured_log and str(captured_log[0]) == str(logs[0])
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    assert events[0]["type"] == "run.start"
+    assert events[0]["type"] == "session.start"
     assert events[0]["user_task"] == "Greet the user"  # the dashboard header
-    end = next(e for e in events if e["type"] == "run.end")
-    # run.end carries the one shape every emitter agrees on: reason + iterations
+    end = next(e for e in events if e["type"] == "session.end")
+    # session.end carries the one shape every emitter agrees on: reason + iterations
     # (authoring attempts) + all_passed. One attempt succeeded here.
     assert {"reason", "iterations", "all_passed"} <= end.keys()
     assert end["iterations"] == 1
@@ -363,7 +363,7 @@ def test_create_refuses_to_overwrite_default_path(
 def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The collision refusal exits 1 and writes nothing, but run.end had
+    """The collision refusal exits 1 and writes nothing, but session.end had
     already said machine_created / all_passed=true -- a failed create rendered
     as done on every watch surface. The refusal ends the log as its own
     failure token instead."""
@@ -380,7 +380,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "run.end")
+    end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
     assert end["reason"] == "output_collision"
 
@@ -416,7 +416,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "run.end")
+    end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
     assert end["reason"] == "write_failed"
 
@@ -874,11 +874,11 @@ def test_create_failure_end_reason_names_the_failure(
 
     logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "run.end")
+    end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
     word, detail = status_word(finished=True, all_passed=False, end_reason=end["reason"])
     assert word == "failed"
-    assert " " not in detail  # a token, like every other run.end reason
+    assert " " not in detail  # a token, like every other session.end reason
     assert "finished" not in detail  # never success prose under a failed status
 
 

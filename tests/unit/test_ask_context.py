@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.ipc import register_frontend
+from agent6.sessions.ipc import register_frontend
 from agent6.ui.cli._ask import (
-    build_ask_run_digest as _build_ask_run_digest,
+    build_ask_session_digest as _build_ask_session_digest,
 )
 from agent6.ui.cli._ask import (
     seed_files as _seed_files,
@@ -41,21 +41,21 @@ def _make_run(tmp_path: Path) -> str:
     (tmp_path / "m.py").write_text("x = 2  # changed by the run\n", encoding="utf-8")
     _git(tmp_path, "commit", "-aqm", "run change")
     rid = "sunny-otter-AAA111"
-    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
+    session_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
         json.dumps(
             {"user_task": "make x equal 2", "base_sha": base_sha, "run_branch": "agent6/run"}
         ),
         encoding="utf-8",
     )
-    (run_dir / "logs.jsonl").write_text(
+    (session_dir / "logs.jsonl").write_text(
         "\n".join(
             [
-                json.dumps({"type": "run.start", "user_task": "make x equal 2"}),
+                json.dumps({"type": "session.start", "user_task": "make x equal 2"}),
                 json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
                 json.dumps({"type": "verify.end", "exit_code": 0}),
-                json.dumps({"type": "run.end", "reason": "finish_run", "iterations": 3}),
+                json.dumps({"type": "session.end", "reason": "finish_run", "iterations": 3}),
             ]
         )
         + "\n",
@@ -69,7 +69,7 @@ def test_ask_run_digest_includes_task_diff_and_outcome(
 ) -> None:
     rid = _make_run(tmp_path)
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "make x equal 2" in digest  # the run's task
     assert "changed by the run" in digest  # the diff
@@ -85,7 +85,7 @@ def test_ask_run_digest_continue_picks_a_run(
 ) -> None:
     _make_run(tmp_path)
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, "", latest=True)
+    digest = _build_ask_session_digest(tmp_path, "", latest=True)
     assert digest is not None and "make x equal 2" in digest
 
 
@@ -94,7 +94,7 @@ def test_ask_run_digest_unknown_run_returns_none(
 ) -> None:
     (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
-    assert _build_ask_run_digest(tmp_path, "nope", latest=False) is None
+    assert _build_ask_session_digest(tmp_path, "nope", latest=False) is None
 
 
 def test_ask_from_latest_no_sessions_names_the_flag(
@@ -105,7 +105,7 @@ def test_ask_from_latest_no_sessions_names_the_flag(
     (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
-    assert _build_ask_run_digest(tmp_path, "", latest=True) is None
+    assert _build_ask_session_digest(tmp_path, "", latest=True) is None
     assert "--from-latest" in capsys.readouterr().err
 
 
@@ -154,7 +154,7 @@ def test_ask_list_uses_log_activity_not_frontend_dir_touch(
     for name, question in (("older-ask", "old question"), ("newer-ask", "new question")):
         d = asks / name
         d.mkdir(parents=True)
-        (d / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+        (d / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
         (d / "transcript.md").write_text(
             f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n",
             encoding="utf-8",
@@ -172,7 +172,7 @@ def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import run_ask_repl as _run_ask_repl
     from agent6.workflows.loop import RunResult
 
@@ -197,8 +197,8 @@ def test_ask_repl_multi_turn_carries_context(
         def format_summary(self) -> str:
             return "cost: $0.00"
 
-    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="x", subdir="asks")
-    layout.run_dir.mkdir(parents=True)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="x", subdir="asks")
+    layout.session_dir.mkdir(parents=True)
     wf = _FakeWf()
     inputs = iter(["a follow-up", "/quit"])
 
@@ -217,19 +217,19 @@ def test_ask_repl_multi_turn_carries_context(
     assert "answer-1" in out and "answer-2" in out
     assert result.summary == "answer-2"
     # cumulative transcript written
-    assert "## Q2" in (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
+    assert "## Q2" in (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
 
 
 def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
     # REPL transcripts head their sections "## Q1"/"## A1" (not "## Question");
     # `ask list` used to show "(no question)" for every interactive ask.
-    from agent6.runs.layout import RunLayout
+    from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import ask_question_snippet, save_ask_repl_transcript
 
-    layout = RunLayout(state_dir=tmp_path, run_id="ask-x")
+    layout = SessionLayout(state_dir=tmp_path, session_id="ask-x")
     layout.ensure()
     save_ask_repl_transcript(layout, [("why is the broker slow?", "because"), ("more?", "sure")])
-    text = (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
+    text = (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
     assert ask_question_snippet(text) == "why is the broker slow?"
 
 
@@ -369,7 +369,7 @@ def test_ask_run_digest_survives_non_utf8_diff(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "latin-1 bytes")
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "latin.txt" in digest
     assert "changed by the run" in digest
@@ -383,17 +383,17 @@ def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
     though the manifest's merge stamp still names the commit that carries the
     run's content. The stamped commit is diffed instead."""
     rid = _make_run(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
-    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    session_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "merge", "--squash", "agent6/run")
     _git(tmp_path, "commit", "-qm", "squash-merge run")
     merge_sha = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "branch", "-D", "agent6/run")
     m["merged"] = {"into": "master", "sha": merge_sha, "ts": "2026-07-24T00:00:00Z"}
-    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    (session_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "changed by the run" in digest
     assert "run branch pruned" in digest
@@ -407,8 +407,8 @@ def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
     lost its first change from the digest. The stamp's `tip` names that case
     (sha == tip), and the digest diffs base..merged instead."""
     rid = _make_run(tmp_path)  # leaves one commit on agent6/run
-    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
-    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    session_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     (tmp_path / "second.py").write_text("y = 3  # second run commit\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-qm", "second run change")
@@ -418,9 +418,9 @@ def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
     assert _git(tmp_path, "rev-parse", "HEAD") == tip  # a true fast-forward
     _git(tmp_path, "branch", "-D", "agent6/run")
     m["merged"] = {"into": "main-line", "sha": tip, "tip": tip, "ts": "2026-07-26T00:00:00Z"}
-    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    (session_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "second run commit" in digest
     assert "changed by the run" in digest  # the FIRST commit is not dropped
@@ -435,17 +435,17 @@ def test_ask_run_digest_does_not_call_a_present_branch_pruned(
     the branch still sitting there, so the digest told the model the branch was
     gone when the model could have read it."""
     rid = _make_run(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
-    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    session_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "merge", "--squash", "agent6/run")
     _git(tmp_path, "commit", "-qm", "squash-merge run")
     m["merged"] = {"into": "master", "sha": _git(tmp_path, "rev-parse", "HEAD"), "ts": "2026-07"}
     m["base_sha"] = "deadbeef" * 5  # unreachable base, branch untouched
-    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    (session_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "changed by the run" in digest  # still falls back to the merge commit
     assert "run branch pruned" not in digest  # ...without lying about why
@@ -458,12 +458,12 @@ def test_ask_run_digest_reports_unavailable_diff(
     rendered as an empty diff block the model reads as "no changes"; the digest
     now says why the diff is unavailable."""
     rid = _make_run(tmp_path)
-    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
-    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    session_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "branch", "-D", "agent6/run")
     monkeypatch.chdir(tmp_path)
-    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    digest = _build_ask_session_digest(tmp_path, rid, latest=False)
     assert digest is not None
     assert "diff unavailable" in digest
 
@@ -475,7 +475,7 @@ def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: st
         json.dumps(
             {
                 "version": 3,
-                "run_id": sid,
+                "session_id": sid,
                 "mode": mode,
                 "user_task": f"the {mode} task",
                 "base_sha": "0" * 40,
@@ -485,7 +485,7 @@ def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: st
         encoding="utf-8",
     )
     (d / "logs.jsonl").write_text(
-        json.dumps({"type": "run.end", "reason": "finish_run", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.end", "reason": "finish_run", "all_passed": True}) + "\n",
         encoding="utf-8",
     )
 
@@ -500,7 +500,7 @@ def test_a_session_that_wrote_no_code_shows_no_diff(
     _session(tmp_path, "runs", "plan-only-BBB222", "plan", run_branch=None)
     monkeypatch.chdir(tmp_path)
 
-    digest = _build_ask_run_digest(tmp_path, "plan-only-BBB222", latest=False)
+    digest = _build_ask_session_digest(tmp_path, "plan-only-BBB222", latest=False)
 
     assert digest is not None
     assert "the plan task" in digest
@@ -518,6 +518,6 @@ def test_from_latest_skips_a_machine_draft(tmp_path: Path, monkeypatch: pytest.M
     _session(tmp_path, "machine-drafts", "draft-CCC333", "machine", run_branch=None)
     monkeypatch.chdir(tmp_path)
 
-    digest = _build_ask_run_digest(tmp_path, "", latest=True)
+    digest = _build_ask_session_digest(tmp_path, "", latest=True)
 
     assert digest is not None and rid in digest

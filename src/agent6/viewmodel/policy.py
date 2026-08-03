@@ -15,11 +15,11 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, read_manifest
 
 
 @dataclass(frozen=True, slots=True)
-class RunPolicy:
+class SessionPolicy:
     """What a run was launched under. Empty strings where the dir says nothing."""
 
     model: str
@@ -55,14 +55,14 @@ class RunPolicy:
         return " · ".join(parts)
 
 
-def run_policy(run_dir: Path) -> RunPolicy:
-    """Fold *run_dir*'s manifest into its policy facts."""
+def session_policy(session_dir: Path) -> SessionPolicy:
+    """Fold *session_dir*'s manifest into its policy facts."""
     try:
-        m = read_manifest(run_dir)
+        m = read_manifest(session_dir)
     except ManifestError:
-        return RunPolicy("", "", "", (), "")
+        return SessionPolicy("", "", "", (), "")
     driver = m.models.driver
-    return RunPolicy(
+    return SessionPolicy(
         model=driver.model if driver else "",
         run_commands=m.policy.run_commands,
         isolation=m.policy.isolation,

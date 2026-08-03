@@ -15,18 +15,18 @@ from agent6.viewmodel.tail import LogTail, tail_events
 def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        json.dumps({"type": "run.start"}) + "\n" + json.dumps({"type": "run.end"}) + "\n",
+        json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}) + "\n",
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=False))
-    assert [e["type"] for e in out] == ["run.start", "run.end"]
+    assert [e["type"] for e in out] == ["session.start", "session.end"]
 
 
 def test_tail_yields_final_line_without_trailing_newline(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
-    p.write_text(json.dumps({"type": "run.start"}) + "\n" + json.dumps({"type": "run.end"}))
+    p.write_text(json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}))
     out = list(tail_events(p, follow=False))
-    assert [e["type"] for e in out] == ["run.start", "run.end"]
+    assert [e["type"] for e in out] == ["session.start", "session.end"]
 
 
 def test_tail_skips_malformed_lines(tmp_path: Path) -> None:
@@ -54,22 +54,22 @@ def test_tail_returns_when_file_missing_and_not_follow(tmp_path: Path) -> None:
 def test_tail_stops_at_run_end_when_requested(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        json.dumps({"type": "a"}) + "\n" + json.dumps({"type": "run.end"}) + "\n",
+        json.dumps({"type": "a"}) + "\n" + json.dumps({"type": "session.end"}) + "\n",
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=False, stop_when_finished=True))
-    assert [e["type"] for e in out] == ["a", "run.end"]
+    assert [e["type"] for e in out] == ["a", "session.end"]
 
 
 def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> None:
-    # A resume appends events AFTER run.end (no second end yet while it runs).
+    # A resume appends events AFTER session.end (no second end yet while it runs).
     # A watcher opening the log mid-resume must stream past the stale end, not
     # close on it and show the run as finished while it is live again.
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        json.dumps({"type": "run.start"})
+        json.dumps({"type": "session.start"})
         + "\n"
-        + json.dumps({"type": "run.end", "reason": "steer_abort"})
+        + json.dumps({"type": "session.end", "reason": "steer_abort"})
         + "\n"
         + json.dumps({"type": "loop.resume.start"})
         + "\n"
@@ -78,7 +78,12 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> 
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=False, stop_when_finished=True))
-    assert [e["type"] for e in out] == ["run.start", "run.end", "loop.resume.start", "role.call"]
+    assert [e["type"] for e in out] == [
+        "session.start",
+        "session.end",
+        "loop.resume.start",
+        "role.call",
+    ]
 
 
 def _torn_utf8_line() -> tuple[bytes, bytes]:
@@ -95,9 +100,9 @@ def test_tail_survives_torn_utf8_tail(tmp_path: Path) -> None:
     # through and the torn tail must not raise UnicodeDecodeError.
     p = tmp_path / "logs.jsonl"
     head, _rest = _torn_utf8_line()
-    p.write_bytes(json.dumps({"type": "run.start"}).encode() + b"\n" + head)
+    p.write_bytes(json.dumps({"type": "session.start"}).encode() + b"\n" + head)
     out = list(tail_events(p, follow=False))
-    assert [e["type"] for e in out] == ["run.start"]
+    assert [e["type"] for e in out] == ["session.start"]
 
 
 def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
@@ -111,14 +116,14 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
         time.sleep(0.3)
         with p.open("ab") as fh:
             fh.write(rest + b"\n")
-            fh.write(json.dumps({"type": "run.end"}).encode() + b"\n")
+            fh.write(json.dumps({"type": "session.end"}).encode() + b"\n")
             fh.flush()
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
-    assert [e["type"] for e in out] == ["first", "role.text_delta", "run.end"]
+    assert [e["type"] for e in out] == ["first", "role.text_delta", "session.end"]
     assert out[1]["text"] == "café"
 
 
@@ -156,14 +161,14 @@ def test_tail_follows_appended_lines(tmp_path: Path) -> None:
             fh.flush()
         time.sleep(0.2)
         with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "run.end"}) + "\n")
+            fh.write(json.dumps({"type": "session.end"}) + "\n")
             fh.flush()
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
-    assert [e["type"] for e in out] == ["first", "second", "run.end"]
+    assert [e["type"] for e in out] == ["first", "second", "session.end"]
 
 
 def test_logtail_reads_only_new_events_incrementally(tmp_path: Path) -> None:
@@ -194,27 +199,30 @@ def test_logtail_missing_file_is_empty(tmp_path: Path) -> None:
 def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        '{"type": "run.start"}\n'
+        '{"type": "session.start"}\n'
         '{"type": "tool.call", "name": "x"}\n'
-        '{"type": "run.end", "reason": "finish_run"}\n',
+        '{"type": "session.end", "reason": "finish_run"}\n',
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=True, stop_when_finished=True))
-    assert [e["type"] for e in out] == ["run.start", "tool.call", "run.end"]
+    assert [e["type"] for e in out] == ["session.start", "tool.call", "session.end"]
 
 
 def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> None:
-    # A stop then resume shares one log: two run.end events. stop_when_finished must
+    # A stop then resume shares one log: two session.end events. stop_when_finished must
     # follow past the intermediate one (steer_abort) to the final one, not halt at
     # the stop -- else a watcher of a resumed run wrongly shows "stopped".
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        '{"type": "run.start"}\n'
-        '{"type": "run.end", "reason": "steer_abort"}\n'
+        '{"type": "session.start"}\n'
+        '{"type": "session.end", "reason": "steer_abort"}\n'
         '{"type": "role.call"}\n'
-        '{"type": "run.end", "reason": "finish_run"}\n',
+        '{"type": "session.end", "reason": "finish_run"}\n',
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=True, stop_when_finished=True))
-    assert [e.get("reason") for e in out if e["type"] == "run.end"] == ["steer_abort", "finish_run"]
+    assert [e.get("reason") for e in out if e["type"] == "session.end"] == [
+        "steer_abort",
+        "finish_run",
+    ]
     assert out[-1]["reason"] == "finish_run"  # stopped at the final end, not the stop

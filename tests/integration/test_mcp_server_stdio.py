@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.runs.manifest import MANIFEST_VERSION
+from agent6.sessions.manifest import MANIFEST_VERSION
 
 
 def _userns_available() -> bool:
@@ -70,7 +70,7 @@ def _send_recv(
 def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
-    # Seed a run dir so list_runs has something to enumerate.
+    # Seed a run dir so list_sessions has something to enumerate.
     (resolved_state_dir(tmp_path) / "runs" / "demo").mkdir(parents=True)
     (resolved_state_dir(tmp_path) / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"user_task": "demo-task"}), encoding="utf-8"
@@ -115,7 +115,7 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
                     "jsonrpc": "2.0",
                     "id": 3,
                     "method": "tools/call",
-                    "params": {"name": "list_runs", "arguments": {}},
+                    "params": {"name": "list_sessions", "arguments": {}},
                 },
             ],
         )
@@ -138,14 +138,14 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
         "run_in_sandbox",
         "apply_patch_in_sandbox",
         "query_dag",
-        "list_runs",
+        "list_sessions",
     }
-    list_runs_resp = by_id[3]["result"]
-    assert isinstance(list_runs_resp, dict)
-    runs = list_runs_resp["structuredContent"]["runs"]
+    list_sessions_resp = by_id[3]["result"]
+    assert isinstance(list_sessions_resp, dict)
+    runs = list_sessions_resp["structuredContent"]["sessions"]
     assert len(runs) == 1
-    assert runs[0]["run_id"] == "demo"
-    # The manifest ships as the typed RunManifest dump (defaults filled in).
+    assert runs[0]["session_id"] == "demo"
+    # The manifest ships as the typed SessionManifest dump (defaults filled in).
     assert runs[0]["manifest"]["user_task"] == "demo-task"
     assert runs[0]["manifest"]["version"] == MANIFEST_VERSION
 

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from agent6.runs.ipc import register_frontend
+from agent6.sessions.ipc import register_frontend
 from agent6.viewmodel.transcript_render import (
     conversation_transcripts,
     fold_conversation,
@@ -160,7 +160,7 @@ def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
     assert tool.text == "FULL FILE CONTENTS"  # full result, not a summary
     assert turns[4].text == "all done"
 
-    md = render_markdown(turns, run_id="r1", show_thinking=True)
+    md = render_markdown(turns, session_id="r1", show_thinking=True)
     assert "SYSTEM PROMPT" in md and "do X" in md and "all done" in md
     assert "-> read_file(" in md and "FULL FILE CONTENTS" in md
     assert "let me think" in md  # thinking shown
@@ -168,11 +168,11 @@ def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
 
 def test_render_flags_hide_thinking_and_tools() -> None:
     turns = fold_conversation(_OPENAI)
-    md = render_markdown(turns, run_id="r1", show_thinking=False, tools="none")
+    md = render_markdown(turns, session_id="r1", show_thinking=False, tools="none")
     assert "let me think" not in md
     assert "-> read_file" not in md and "FULL FILE CONTENTS" not in md
     # calls-only keeps the call line but drops the result
-    md2 = render_markdown(turns, run_id="r1", tools="calls")
+    md2 = render_markdown(turns, session_id="r1", tools="calls")
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
 
 
@@ -415,7 +415,7 @@ def test_load_transcripts_sorted_by_seq(tmp_path: Path) -> None:
 def test_cmd_history_transcript_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 runs transcript <run>` resolves the run, folds its transcripts,
+    """`agent6 sessions transcript <run>` resolves the run, folds its transcripts,
     and prints the conversation (full tool I/O), with --json as the raw escape."""
     from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.history_cmds import (
@@ -465,7 +465,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
         tdir = runs / name / "transcripts"
         tdir.mkdir(parents=True)
         (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
-        (runs / name / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+        (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
     register_frontend(runs / "older-run", 12345)
@@ -540,7 +540,7 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
     assert a1.thinking == "let me think"
     assert a1.tool_calls and a1.tool_calls[0][0] == "read_file"
     assert turns[2].tool_name == "read_file"  # the call id resolved to a name
-    md = render_markdown(turns, run_id="r1", show_thinking=True)
+    md = render_markdown(turns, session_id="r1", show_thinking=True)
     assert "## assistant" in md and "-> read_file(" in md
 
 
