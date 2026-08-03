@@ -281,17 +281,12 @@ LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
 def run_is_live(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
-    """Whether the operator can still act on this run: THE affordance question.
+    """Whether the operator can still act on this run: THE affordance question,
+    "will anything read what I write", not ``worker_is_alive``'s "is a pid
+    running" (a parked run resumes; a dead worker's buttons reach nobody).
 
-    Surfaces asked ``worker_is_alive`` instead, which answers "is a pid running",
-    not "will anything read what I write" -- so a parked run offered no controls
-    though it resumes, and a run whose worker died kept live-looking Approve /
-    Deny / Send buttons whose answers nobody would ever poll. Deriving it from
-    the status word means a surface cannot disagree with the label it is showing.
-
-    Folds the log for the same facts the listings feed the decision: fed empty
-    facts this degenerates to the pid probe it replaces, and a finished run
-    whose worker.pid lingers through teardown counted as "starting".
+    Derived from the status word, so a surface cannot disagree with the label
+    it is showing; fed empty facts it degenerates to the pid probe.
     """
     logs = run_dir / "logs.jsonl"
     facts = scan_run_log(logs).status_facts() if logs.is_file() else StatusFacts()
@@ -380,11 +375,8 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
     start_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
-    # Prompt ids still awaiting their answer. Reading "blocked" off the LAST
-    # event type instead lost the bit to any later one -- Ctrl-C in the
-    # launching terminal emits run.steer_requested from the signal handler while
-    # the approval waits -- so every listing read a run that needs the operator
-    # as plain "running" while the run view (typed fold) said "waiting".
+    # Prompt ids still awaiting their answer. A later event must not clear the
+    # bit: Ctrl-C emits run.steer_requested while an approval still waits.
     pending_prompts: set[str] = set()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:

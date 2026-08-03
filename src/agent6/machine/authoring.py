@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Prompt scaffolding for `agent6 machine create` (Phase 5, §7.1).
+"""Prompt scaffolding for `agent6 machine create`.
 
 `machine create` is an ordinary jailed agent6 loop whose job is to *draft*
 a `.asm.toml` state machine from a natural-language task. This module holds

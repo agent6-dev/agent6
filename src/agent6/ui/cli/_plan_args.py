@@ -43,11 +43,8 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     plan_run.add_argument(
         "--config",
         type=Path,
-        # SUPPRESS (not None): a subparser default would otherwise clobber a
-        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
-        # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F plan` and `agent6 plan --config F`
-        # work; the top-level --config supplies the always-present default.
+        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
+        # rationale at `_run_args._add_run_parser`.
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
@@ -104,8 +101,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     ask_query.add_argument(
         "--config",
         type=Path,
-        # SUPPRESS so a top-level `agent6 --config F ask` is not clobbered; see
-        # the run/plan --config notes above.
+        # SUPPRESS so a top-level `agent6 --config F <cmd>` is not clobbered;
+        # rationale at `_run_args._add_run_parser`.
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",

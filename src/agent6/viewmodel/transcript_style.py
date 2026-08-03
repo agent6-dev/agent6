@@ -7,10 +7,7 @@ TUI conversation view.
 ``(text, style)`` spans, where *style* is a SEMANTIC name (not an ANSI code or a
 Rich style). Each front-end maps those names to its own output -- the CLI to ANSI,
 the TUI to a Rich ``Text`` -- so the structure and the styling decisions live in
-ONE place and the two skins can't drift (they used to: the tool-output tail was
-clipped at 100 chars in the CLI vs 160 in the TUI, its colour was ``dim`` vs
-``dim red``, and the TUI painted a failed tool's whole detail red by appending it
-to the red result marker).
+ONE place and the two skins cannot drift.
 
 Relative indent is baked into the line text (a tool's result/tail sit under its
 call); each front-end adds its own left margin (the CLI a two-space gutter, the

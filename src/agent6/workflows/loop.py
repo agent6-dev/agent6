@@ -664,8 +664,7 @@ class Workflow:
     # ``plan_output_path`` is required when ``mode="plan"``.
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run"
     plan_output_path: Path | None = None
-    # weak-model resilience. Open-weights models (observed live
-    # with Kimi K2.6) sometimes emit a single empty assistant turn
+    # weak-model resilience. Open-weights models sometimes emit an empty turn
     # mid-run (no text, no tool_use, stop_reason="end_turn" or
     # equivalent) and would otherwise terminate the run immediately.
     # When `went_quiet_max_nudges > 0`, the loop instead injects a
@@ -1312,11 +1311,9 @@ class Workflow:
             )
             raw_result = tool_input.get("result") if isinstance(tool_input, dict) else None
             if isinstance(raw_result, str):
-                # Weak models routinely STRINGIFY the structured result
-                # (observed live: qwen returned result="{\"found\": true, ...}"
-                # and the machine state's whole cycle failed on shape; deepseek
-                # does the same). One tolerant parse here; the schema
-                # validation downstream stays strict about content.
+                # Weak models routinely STRINGIFY the structured result; one
+                # tolerant parse here, schema validation downstream stays
+                # strict about content.
                 try:
                     raw_result = json.loads(raw_result)
                 except ValueError:
@@ -2706,11 +2703,8 @@ class Workflow:
         calls with ``parent_id=None`` attach under this root."""
         if self.curator is None:
             return None
-        # audit: TaskNodeDraft.title has min_length=1. The previous
-        # `user_task.splitlines()[0]` crashed when user_task started with `\n`
-        # (the first line was the empty string before the newline). Pick the
-        # first NON-EMPTY line; fall back to "(run)" if the whole task is
-        # blank.
+        # TaskNodeDraft.title has min_length=1, so take the first NON-EMPTY
+        # line ("(run)" when the task is blank).
         first_nonempty = next(
             (line.strip() for line in user_task.splitlines() if line.strip()),
             "",
@@ -2777,9 +2771,8 @@ class Workflow:
                 self._log(f"  final checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
                 # Also emit diff.updated so the commit is COUNTED: every fold
-                # (web/TUI/CLI) tallies commits + the latest diff from diff.updated,
-                # so without this the final checkpoint's work read as "0 commit(s)"
-                # and an empty diff even though git had the commit.
+                # (web/TUI/CLI) tallies commits and the latest diff from
+                # diff.updated alone, never from loop.auto_commit.
                 self._emit(
                     "diff.updated",
                     sha=sha,
@@ -3281,7 +3274,7 @@ class Workflow:
         # The DAG is agent6's compaction memory: at each restart we ask the
         # summariser to check off finished tasks and surface newly-found ones, so
         # task state stays accurate across compaction without depending on the
-        # worker calling update_task (which weak models rarely do -- observed live).
+        # worker calling update_task (which weak models rarely do).
         open_tasks = self._open_tasks_for_checkoff()
         if open_tasks:
             task_lines = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
@@ -3538,9 +3531,8 @@ class Workflow:
           doesn't abort the run. ``BudgetExceeded`` is never retried (hard stop).
           Permanent client errors (``ProviderError.status_code`` in
           ``NON_RETRYABLE_HTTP_STATUSES``: 400/401/402/403/404/422) re-raise
-          immediately without consuming a retry -- a second identical request
-          cannot succeed (observed live: a 402 "Insufficient credits" was
-          otherwise retried every remaining turn).
+          immediately without consuming a retry: a second identical request
+          cannot succeed.
         - A self-contradictory empty tool-call response
           (``is_empty_tool_call_response``: stop_reason promises a tool call but
           none and no text came back -- GLM via OpenRouter, ~50% post-restart):

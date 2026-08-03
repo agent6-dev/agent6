@@ -28,8 +28,7 @@ TASK_STATUS_GLYPH = {
 def format_cost(usd: float, *, partial: bool = False) -> str:
     """Render a USD cost identically on every surface: cents at >= $1, four
     decimals below (so small runs aren't all '$0.00'), with a leading '~' when
-    the figure is a known under-estimate (a model without price data). Surfaces
-    had drifted between 2- and 4-decimal and disagreed on the '~' marker. The web
+    the figure is a known under-estimate (a model without price data). The web
     SPA mirrors this in page.py's fmtUsd."""
     prefix = "~" if partial else ""
     return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
@@ -67,6 +66,5 @@ def status_label(status: str, reason: str = "") -> str:
     """The one human label for a run outcome: the status word (from
     ``status_word``), plus the reason with underscores spaced when there is one
     ("failed · provider error"). Shared by every hub listing, the run header, and
-    the web wire form, which had drifted ("failed · X" vs "ended · X" vs
-    "finished · all passed") so the same run read differently across surfaces."""
+    the web wire form, so the same run reads the same on every surface."""
     return status if not reason else f"{status} · {reason.replace('_', ' ')}"

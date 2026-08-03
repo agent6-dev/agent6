@@ -121,5 +121,5 @@ def format_effective_task(raw_task: str, revision: PromptRevision) -> str:
 
 # A `plan` run injects a one-shot "finish now" directive once its token budget
 # drops below this fraction OR it has taken `PLAN_NUDGE_AFTER_ITERS` turns.
-# Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever,
+# Verbose reasoning models otherwise read forever,
 # cheaply, under prompt caching, and never call finish_planning, yielding NO

@@ -155,7 +155,7 @@ class EditPair(BaseModel):
 
     # Default to "replace": small models routinely omit the discriminator and
     # send a bare {old_string, new_string}, which pydantic otherwise rejects
-    # with "Field required: kind" (observed live with qwen3-coder-30b). Replace
+    # with "Field required: kind". Replace
     # is the overwhelming-majority case; `create` must still be set explicitly
     # and `_check_shape` enforces its empty-old_string contract.
     kind: str = Field(default="replace", pattern="^(replace|create)$")
@@ -330,8 +330,7 @@ class DagSetCursorInput(_ToolInput):
         " snapshots loop state separately)."
     )
 
-    # audit finding: ULID is exactly 26 chars; match
-    # update_task's enforcement. None still clears the cursor.
+    # ULID is exactly 26 chars, matching update_task; None clears the cursor.
     id: str | None = Field(default=None, min_length=26, max_length=26)
 
 
@@ -345,9 +344,8 @@ class DagListTasksInput(_ToolInput):
         " per task."
     )
 
-    # audit finding: enforce the same status enum here that
-    # update_task uses, so an agent typo gets a clear schema rejection
-    # rather than a silently-empty result.
+    # The same status enum update_task uses, so a typo is a schema rejection
+    # rather than an empty result.
     status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
 
 
@@ -644,7 +642,7 @@ def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeT
     if mode in ("machine", "agent"):
         # Machine authoring / agent states additionally never run commands:
         # the deliverable is the finish_run payload, and command tools only
-        # tempt a weak model into spelunking (observed live on Kimi K2.6).
+        # tempt a weak model into spelunking.
         # `ask` keeps run_command for read-only, approval-gated investigation.
         blocked |= {RunVerifyInput.TOOL_NAME, RunCommandInput.TOOL_NAME}
     base = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)

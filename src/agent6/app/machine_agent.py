@@ -248,24 +248,13 @@ def _build_agent_providers(
     """The agent state's worker provider (instrumented), its reviewer-role
     summariser, and the optional event sink.
 
-    One TranscriptSink for both (the per-run seq counter is per-instance);
-    the summariser matches the run path's wiring -- without it, compaction
-    side-calls fell back to the worker-stamped provider and their transcripts
-    carried the conversation seat.
+    One TranscriptSink for both (its seq counter is per-instance), each seat
+    stamped. An EventSink only when the caller passes events_log; the console
+    attach is injected so this module never imports `agent6.ui`.
 
-    An EventSink only when the caller passes events_log: the machine
-    supervisor points it at this state's per-state
-    `states/<seq>-<name>/logs.jsonl` (and `machine create` at the draft's
-    logs.jsonl), so the TUI/web can watch the agent's reasoning + tool calls
-    live, exactly like a run. The console attach is the front-end's live view
-    (a stderr ConsoleView at a TTY / forced), injected so this module never
-    imports `agent6.ui`.
-
-    stream_text: ALWAYS the streaming transport. Machine agents run headless
-    (cron / nohup) and produce long generations; the non-streaming path drops
-    the connection mid-body on OpenRouter-style gateways (SSE heartbeats
-    corrupt it, observed as "incomplete chunked read" on ~14k-token authoring
-    calls). It also feeds the role.*_delta events to the sink."""
+    ALWAYS streams: machine agents run headless and generate long, and
+    OpenRouter-style gateways' SSE heartbeats corrupt a non-streaming body
+    mid-read. Streaming also feeds the role.*_delta events."""
     transcript_sink = TranscriptSink(req.transcript_dir)
     inner_provider = build_role_provider(
         cfg, "worker", transcript_sink=transcript_sink, budget=budget

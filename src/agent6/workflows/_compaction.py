@@ -206,7 +206,7 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
 
 # per-tool-result cap. was a hard 20_000 char slice
 # applied mid-JSON, which produced a malformed result the model could
-# not parse. Weak models (Kimi K2.6 observed live) then concluded the
+# not parse. Weak models then conclude the
 # tool result was "cut off" and re-called `read_file` repeatedly trying
 # to see the rest, latching the loop-guard. The fix: lift the cap to
 # 60_000 chars (~15k tokens, comfortably fits most source files) AND
@@ -288,7 +288,7 @@ def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
     The summariser is asked to append a fenced ```checkoff block holding
     ``{"completed_ids": [...], "new_tasks": [...]}`` so agent6 can mark finished
     tasks done and queue newly-discovered ones in the curator-owned DAG (the
-    model rarely calls update_task itself -- observed live). Returns
+    model rarely calls update_task itself). Returns
     ``(completed_ids, new_task_titles)``. Best-effort and total: a missing or
     malformed block yields ``([], [])`` so a bad summary never breaks the run.
     """

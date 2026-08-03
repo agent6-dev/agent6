@@ -129,8 +129,7 @@ def build_approver(
     answer comes from its Allow/Deny modal via the file bridge
     (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
     falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
-    This is what actually wires the watch/auto-spawn TUI to run_command approval
-    (previously the modal's answer was written but never read)."""
+    This is what wires the watch/auto-spawn TUI to run_command approval."""
     counter = {"n": 0}
 
     def approve(prompt: str) -> bool:

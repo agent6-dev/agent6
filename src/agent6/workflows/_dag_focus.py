@@ -29,12 +29,11 @@ DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 # Anti-grind: a weak model on a vague/oversized task can stay on one DAG task for
 # many turns, reading without ever marking it done, decomposing it, or trying to
 # finish -- so neither the finish-gate (fires on a finish attempt) nor went_quiet
-# (it is busy) catches it (observed live: GLM ground task 1 for 200 turns, 394
-# reads, 0 passed). Every this-many consecutive turns on the SAME focus task with
+# (it is busy) catches it. Every this-many consecutive turns on the SAME task with
 # no forward motion (cursor advance / mark-done / decompose, any of which changes
 # the focus and resets the count), fire a nudge offering split / pass / skip. It
-# re-fires periodically -- a weak model was observed ignoring a single nudge --
-# but caps at STUCK_NUDGE_MAX per task so it cannot nag forever; generous so a
+# re-fires periodically (one nudge is easy to ignore) but caps at
+# STUCK_NUDGE_MAX per task so it cannot nag forever; generous so a
 # model making normal progress (which changes focus well before this) never sees it.
 STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3

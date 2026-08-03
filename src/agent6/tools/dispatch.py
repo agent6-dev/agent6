@@ -99,9 +99,8 @@ def _coerce_stringified_args(
     """Recover a tool call whose structured argument arrived as a JSON string.
 
     Weak models occasionally serialize an array/object argument to a string
-    (observed live: haiku 4.5 sending apply_edit ``edits`` as
-    ``'[{...}]\\n</invoke>'``), wasting a full round-trip on a validation
-    error the model must repair. For each top-level field named in the
+    (e.g. apply_edit ``edits`` arriving as ``'[{...}]'``), wasting a
+    round-trip on a validation error the model must repair. For each top-level field named in the
     validation error whose provided value is a str, parse the string's head
     as JSON (``raw_decode`` tolerates trailing junk like a leaked closing
     tag) and substitute the parsed value when it is a container. Fields the
@@ -692,17 +691,11 @@ class ToolDispatcher:
     def _run_metric(self, _raw: dict[str, Any]) -> MetricResult:
         """Run ``cfg.workflow.metric.command`` in the jail.
 
-        Exposed to the agent loop so the LLM can call it directly between
-        edits to check its optimisation progress.
-        Raises ToolError if no metric is configured.
-
         Return shape mirrors `_run_argv_in_jail` (returncode / stdout /
-        stderr / duration_s) plus a parsed ``score`` field (audit
-        finding: the schema description had always promised this, but the
-        old handler only forwarded the raw command output. Now the
-        ``pattern`` regex's first capture group is parsed to a float; if
-        the pattern doesn't match or doesn't parse, ``score`` is null and
-        the agent can fall back to grepping stdout itself).
+        stderr / duration_s) plus ``score``: the ``pattern`` regex's first
+        capture group as a float, or null when it does not match or parse (the
+        agent can then grep stdout itself). Raises ToolError when no metric is
+        configured.
         """
         metric_cfg = self._config.workflow.metric
         if metric_cfg is None:

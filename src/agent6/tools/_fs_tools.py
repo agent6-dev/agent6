@@ -224,9 +224,7 @@ def _refuse_env_write(candidate: str, resolved: SafePath) -> None:
     tree. These are the operator's ENVIRONMENT, not source: a run editing them
     (e.g. rewriting an editable-install ``.pth`` to make an in-jail verify pass)
     silently corrupts the operator's venv, and since venvs are gitignored the
-    damage never shows in ``runs diff`` / merge. Observed live: a run rewrote
-    ``.venv/.../_editable_impl_*.pth`` from the host path to the jail's
-    ``/workspace`` and broke ``import`` on the host afterward.
+    damage never shows in ``runs diff`` / merge.
 
     A directory holding ``pyvenv.cfg`` is a virtualenv root (the canonical
     marker, name-agnostic: ``.venv`` / ``venv`` / ``env``); a ``site-packages``

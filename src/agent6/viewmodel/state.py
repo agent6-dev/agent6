@@ -273,12 +273,8 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             # forever and duplicate when the same id is re-prompted.
             return replace(
                 state,
-                # A leg has begun. `started` means exactly that, not "a run.start
-                # was seen": a FORK is driven by resume(), so its fresh log never
-                # carries one, and keying on run.start alone left every forked run
-                # reading "starting" while alive and "created" -- the word for
-                # never-started -- once it died, with the waiting/stale branches
-                # unreachable behind the not-started short-circuit.
+                # `started` = a leg has begun, NOT "a run.start was seen": a
+                # fork is driven by resume(), so its fresh log never carries one.
                 started=True,
                 finished=False,
                 end_reason="",

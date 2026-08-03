@@ -112,8 +112,8 @@ def save_secret(
     Rewrites the whole file atomically, preserving other providers'
     entries, then forces ``0600`` and chowns back to the real user. The
     read-merge-publish cycle runs under ``locked_file``: two concurrent
-    ``agent6 connect`` invocations both read the same base file, and the
-    later publish silently dropped the earlier provider's credential.
+    ``agent6 connect`` invocations would otherwise read the same base file
+    and the later publish would drop the earlier provider's credential.
     """
     user = user or effective_user()
     path = secrets_path(user)

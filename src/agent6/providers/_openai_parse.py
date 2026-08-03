@@ -57,7 +57,7 @@ def parse_response(  # noqa: PLR0912, PLR0915
             if not isinstance(call, dict):
                 continue
             func = call.get("function") or {}
-            # Small open-weight models (observed live: qwen3-coder-30b via the
+            # Small open-weight models (via some OpenRouter backends,
             # Novita backend) sometimes emit a NATIVE tool_call with a blank
             # `function.name`. Dispatching it yields "Unknown tool: " and, worse,
             # echoing the blank-name call back in the next request makes strict
@@ -73,13 +73,10 @@ def parse_response(  # noqa: PLR0912, PLR0915
             # surfaces as an empty dict + the raw string under
             # `_raw_arguments` so debugging is possible.
             #
-            # When a model degenerates and emits a 30+ KB
-            # tool-arg payload of repeated escape sequences (observed live
-            # with Kimi K2.6 looping on `\\n\\n\\n...` until hitting the
-            # completion_tokens cap), the raw blob ends up echoed in the
-            # subsequent tool_error message and re-enters the model's
-            # context window, priming the same degeneration on the next
-            # turn. Cap the diagnostic string at 500 chars so the
+            # A degenerate tool-arg payload (tens of KB of repeated escape
+            # sequences) would be echoed in the tool_error message and re-enter
+            # the context, priming the same degeneration next turn. Cap the
+            # diagnostic at 500 chars so the
             # repetition doesn't survive the round-trip.
             _RAW_ARGS_CAP = 500
             try:

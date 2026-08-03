@@ -321,9 +321,6 @@ class DashboardScreen(Screen[None]):
             )
             with _ScrollPane(id="diff"):
                 yield Static("", id="diff-body")
-        # The composer bar (steer a live run / type the follow-up a finished one
-        # resumes with) sits where the budget bar used to; the budget readout
-        # lives in the top status line now.
         yield SteerInput(id="dash-input")
         yield Footer()
 
@@ -586,9 +583,6 @@ class DashboardScreen(Screen[None]):
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
         elif tui.dir_status[0] == "waiting":
-            # Blocked on an unanswered approval/question: "working…" here
-            # contradicted the top line's "waiting · needs answer" (the model
-            # is not working, it is waiting on the operator).
             st.append("waiting for your answer (see the prompt)", style="bold yellow")
         elif active and role is not None:
             # No live deltas: the model is thinking, or a resume is rebuilding

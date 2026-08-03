@@ -56,9 +56,8 @@ def code_review(
     parts: list[str] = []
     if agents_md.strip():
         # AGENTS.md holds the conventions the reviewer is told to check, so the
-        # old 4000-char cap silently dropped most of them. Use a generous bound
-        # (the diff itself is allowed 60k) that fits any realistic AGENTS.md
-        # while still guarding against a pathologically huge one.
+        # bound is generous (the diff itself gets 60k): it must fit a realistic
+        # AGENTS.md whole, while still capping a pathological one.
         parts.append(f"AGENTS.md:\n{agents_md.strip()[:16000]}")
     if recent_log.strip():
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")

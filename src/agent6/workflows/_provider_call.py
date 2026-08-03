@@ -17,8 +17,7 @@ from typing import Any
 # HTTP statuses that will never succeed on a blind retry of the same request.
 # 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
 # model/endpoint, 422 malformed body. Retrying these only burns wall-time
-# (observed live: a 402 "Insufficient credits" was retried on every turn for the
-# rest of the run). 408/409/429 and all 5xx remain retryable and fall through to
+# 408/409/429 and all 5xx remain retryable and fall through to
 # the normal backoff.
 NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
@@ -54,9 +53,8 @@ def is_empty_tool_call_response(resp: Any) -> bool:
     """A self-contradictory provider response: the finish/stop reason says the
     model stopped to make a tool call, but no tool_use and no text came back.
 
-    Observed live with GLM via OpenRouter after a tier-2 context restart (~50% of
-    turns): finish_reason=tool_calls with an empty payload (~20 reasoning tokens,
-    no content, no tool_calls). A blind retry of the identical request recovers it
+    Seen on GLM via OpenRouter after a tier-2 context restart (~50% of turns):
+    finish_reason=tool_calls with an empty payload. A blind retry recovers it
     about half the time; without one the loop counts it as went_quiet and the run
     dies at the first compaction. Excludes stop_reason=="length" (deterministic
     reasoning starvation, handled separately with its own nudge)."""

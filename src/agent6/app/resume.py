@@ -714,10 +714,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             chown_to_real_user(state_dir)
 
         if interrupted:
-            # Same closing story the run path prints (print_interrupt_end):
-            # the leg's spend, the cross-leg run total, the resume hint, and
-            # the you-are-on-the-run-branch note. A resumed leg is where the
-            # run total matters most, and Ctrl-C previously dropped all of it.
+            # Same close the run path prints: the leg's spend, the cross-leg
+            # run total, the resume hint, the on-the-run-branch note.
             print_interrupt_end(layout=layout, budget=budget)
             return 130
         if result is None:

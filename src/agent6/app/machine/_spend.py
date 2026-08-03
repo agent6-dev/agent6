@@ -58,7 +58,7 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     the PRIOR call's totals and double-books them. Recovers spend for a
     timed-out/killed subprocess whose ``result.json`` never landed, and reads
     the LIVE total of an in-flight state whose ``StepEvent`` is not written yet
-    (observed live: a 600s hunt state spent $0.059 that would otherwise book as
+    (an agent state's spend would otherwise book as
     $0, so a 24/7 machine burns real money against a $0 ledger and its budget
     guard never trips)."""
     usd, tin, tout = 0.0, 0, 0
