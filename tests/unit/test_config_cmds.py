@@ -193,7 +193,10 @@ def test_config_set_refuses_a_target_that_does_not_parse(
     def _global_path(*_a: object, **_k: object) -> Path:
         return cfg
 
+    from agent6.config import write as write_mod
+
     monkeypatch.setattr(cc, "global_config_path", _global_path)
+    monkeypatch.setattr(write_mod, "global_config_path", _global_path)
 
     rc = cli_main(["config", "set", "sandbox.run_commands", "yes"])
     out = capsys.readouterr()
@@ -235,7 +238,7 @@ def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
 
-    err = cc._revalidate_config(target, _GOOD, machine=target)  # pyright: ignore[reportPrivateUsage]
+    err = cc._revalidate_machine(target, _GOOD)  # pyright: ignore[reportPrivateUsage]
 
     assert err is not None  # the invalid machine was caught (not silently left)
     assert target.read_text(encoding="utf-8") == _GOOD  # and the file was rolled back
@@ -248,7 +251,7 @@ def test_revalidate_machine_accepts_valid_spec(
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 
-    assert cc._revalidate_config(target, None, machine=target) is None  # pyright: ignore[reportPrivateUsage]
+    assert cc._revalidate_machine(target, None) is None  # pyright: ignore[reportPrivateUsage]
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
 
@@ -336,12 +339,13 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     fresh root-owned inode -- the rollback of a refused value included. The
     handover ran only after a successful write, so `sudo agent6 config set` with
     a bad value left the operator's own config owned by root."""
+    from agent6.config import write as write_mod
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
     handed: list[Path] = []
-    monkeypatch.setattr(cc, "chown_to_real_user", handed.append)
-    monkeypatch.setattr(cc, "mkdir_for_real_user", handed.append)  # the dir handover
+    monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
+    monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)  # the dir handover
     gpath = global_config_path()
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -773,7 +777,7 @@ def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
     target = tmp_path / "m.asm.toml"
     target.write_text(_BAD, encoding="utf-8")
 
-    err = cc._revalidate_config(target, _GOOD, machine=target, held=False)  # pyright: ignore[reportPrivateUsage]
+    err = cc._revalidate_machine(target, _GOOD, held=False)  # pyright: ignore[reportPrivateUsage]
 
     assert err is not None and "kept as written" in err
     assert target.read_text(encoding="utf-8") == _BAD  # NOT rolled back

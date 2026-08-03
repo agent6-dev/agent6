@@ -30,6 +30,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.config.write import set_config_value
+from agent6.errors import OperatorError
 from agent6.verify_infer import infer_verify_command
 
 _EMPTY_CONFIG = """\
@@ -189,9 +190,12 @@ def _setup_verify_command(root: Path, *, ecosystem: str, ask: _Ask) -> None:
     if not ask(f"  Set workflow.verify_command to `{shown}` (from {inferred.source}){warn}?", True):
         print("  skipped verify_command.")
         return
-    err = set_config_value(
-        root, "workflow.verify_command", json.dumps(list(inferred.argv)), to_repo=True
-    )
+    try:
+        err = set_config_value(
+            root, "workflow.verify_command", json.dumps(list(inferred.argv)), to_repo=True
+        )
+    except OperatorError as exc:
+        err = str(exc)  # an unwritable repo config skips this step, never the whole init
     if err:
         print(f"  ERROR setting verify_command: {err}")
     else:

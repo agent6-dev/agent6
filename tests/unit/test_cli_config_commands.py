@@ -320,6 +320,19 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     assert cfg.read_text(encoding="utf-8") == "sandbox.protect_git = false\n"
 
 
+def test_set_warns_when_another_layer_is_still_broken(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A valid write over a config broken in ANOTHER layer lands, exits 0, and
+    warns with the other layer's error; delegating the CLI writers to the
+    engine must not silence the warning."""
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
+    rc = _run(["config", "set", "--repo", "sandbox.protect_git", "false"])
+    assert rc == 0
+    assert "another layer" in capsys.readouterr().err
+
+
 def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """`--config FILE` reaches `config get`, not just `config show`.
 
@@ -420,12 +433,12 @@ def test_a_write_command_bug_still_crash_reports(
 ) -> None:
     """Routing operator errors to the boundary must not soften real bugs: an
     unexpected exception inside `config set` keeps the crash report at exit 1."""
-    from agent6.ui.cli import config_cmds
+    from agent6.config import write as write_mod
 
     def _boom(*_a: object, **_k: object) -> None:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(config_cmds, "upsert_toml_leaf", _boom)
+    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert _refuse(["config", "set", "workflow.max_iterations", "7"]) == 1
     err = capsys.readouterr().err

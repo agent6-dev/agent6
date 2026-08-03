@@ -31,7 +31,14 @@ from agent6.config.layer import (
     preset_catalog,
     repo_config_path_for,
 )
-from agent6.config.write import target_unparseable, written_value_error
+from agent6.config.write import (
+    keep_or_rollback,
+    merged_config_error,
+    revalidate_write,
+    set_config_value,
+    unset_config_value,
+    writing_config,
+)
 from agent6.errors import OperatorError, read_operator_file
 from agent6.machine import (
     PROTECTED_OVERLAY_LEAVES,
@@ -130,21 +137,18 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
     # lock let a concurrent `config set` land in between, and the plain
     # write_text then overwrote it with the stale snapshot (lost update) and
     # could tear on a crash.
-    try:
-        with locked_file(target):
-            eff = load_effective(Path.cwd(), config_path)
-            if target.is_file() and not force:
-                print(
-                    f"ERROR: {target} already exists. Re-run with --force to overwrite.",
-                    file=sys.stderr,
-                )
-                return 2
-            atomic_write(
-                target,
-                materialize(eff.config, for_repo=to_repo, keep_presets_from=target),
+    with writing_config(target):
+        eff = load_effective(Path.cwd(), config_path)
+        if target.is_file() and not force:
+            print(
+                f"ERROR: {target} already exists. Re-run with --force to overwrite.",
+                file=sys.stderr,
             )
-    finally:
-        chown_to_real_user(target)
+            return 2
+        atomic_write(
+            target,
+            materialize(eff.config, for_repo=to_repo, keep_presets_from=target),
+        )
     print(f"Wrote fully-resolved config to {target}")
     return 0
 
@@ -207,130 +211,42 @@ def _machine_is_valid(text: str | None) -> bool:
     return True
 
 
-def _restore_file(target: Path, text: str | None) -> None:
-    """Put *target* back to *text* (published atomically, so a concurrent
-    reader never sees a torn rollback), or delete it when *text* is None.
-    Callers hold ``locked_file`` across their whole write+revalidate+restore
-    cycle -- an unserialized restore erased a concurrent writer's
-    just-validated update by republishing a snapshot taken before it."""
-    if text is None:
-        target.unlink(missing_ok=True)
-    else:
-        atomic_write(target, text)
+def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = True) -> str | None:
+    """Re-validate a machine file after a ``[config]``-overlay write; restore
+    *prior_text* on failure (kept, saying so, when the lock failed open).
 
-
-def _merged_config_error() -> str | None:
-    """Validate the merged config as it sits on disk; the ConfigError message, or
-    None when it is valid."""
-    try:
-        load_effective(Path.cwd(), None)
-        return None
-    except ConfigError as exc:
-        return str(exc)
-
-
-# Appended to a validation error when the config lock FAILED OPEN (a stale
-# root-owned .lock): a snapshot restore without the lock could erase a
-# concurrent writer's update, so the write is kept and the operator undoes it.
-_KEPT_NO_LOCK = (
-    "(kept as written: the config lock could not be taken, so an automatic"
-    " rollback might erase a concurrent edit; undo by hand or run `agent6 config fix`)"
-)
-
-
-def _revalidate_layered(
-    target: Path,
-    prior_text: str | None,
-    *,
-    was_valid: bool,
-    written: tuple[str, object] | None = None,
-    held: bool = True,
-) -> str | None:
-    """Re-validate after a plain (global/repo) config write: revert only if this write
-    BROKE a previously-valid config. If the config was already invalid -- a value left
-    stale in a different, unedited layer -- keep the write and warn (a global set that
-    the repo layer shadows hits this), so an already-broken config stays fixable through
-    `config set` (rolling back on ANY error would let one stale value refuse every write).
-
-    *written* is the ``(key, value)`` a `config set` just wrote; its value is
-    validated against the model even when a higher layer masks it in the merge.
-    *held* is whether the config lock was actually taken: a snapshot restore
-    without it could erase a concurrent writer's update, so the write is kept
-    and the error surfaced instead (layer._revalidate's rule).
+    Validates the overlay against the config stack, and the WHOLE machine spec
+    when the file has ``[states]`` -- `config set --machine-file` must not BREAK
+    a runnable machine. Blocks only when the edit made a previously-VALID
+    machine invalid; one already invalid (or a brand-new stub) is left for the
+    author to finish. The layered (global/repo) writers revalidate through
+    ``config.write`` instead.
     """
-    if written is not None:
-        value_err = written_value_error(*written)
-        if value_err is not None:
-            if not held:
-                return f"{value_err}\n{_KEPT_NO_LOCK}"
-            _restore_file(target, prior_text)
-            return value_err
-    after = _merged_config_error()
-    if after is None:
-        return None  # valid -> success
-    # A target that no longer PARSES is always this write's doing, never "a
-    # value in another layer": keeping it there left a config no command could
-    # read, and each retry appended more surgery to it.
-    if was_valid or target_unparseable(target):
-        if not held:
-            return f"{after}\n{_KEPT_NO_LOCK}"
-        _restore_file(target, prior_text)  # the write broke the config -> fail loud
-        return after
-    print(
-        "WARNING: the config is still invalid because of a value in another layer;"
-        f" fix that one on its own:\n{after}",
-        file=sys.stderr,
-    )
-    return None
-
-
-def _revalidate_config(
-    target: Path,
-    prior_text: str | None,
-    *,
-    machine: Path | None,
-    was_valid: bool = False,
-    written: tuple[str, object] | None = None,
-    held: bool = True,
-) -> str | None:
-    """Re-validate the config after a write; restore *prior_text* on real failure.
-
-    Returns a ready-to-print error message when THIS edit broke a previously-valid
-    config (so the caller fails loud and the file is reverted), else None. A value
-    left stale in a different, unedited layer never blocks an otherwise-valid write;
-    *was_valid* is whether the merged config loaded before this write (see
-    :func:`_revalidate_layered`). *written* is the ``(key, value)`` a `config set`
-    wrote, checked standalone so a masked bad value is caught. The machine path
-    keeps its own spec guard.
-    """
-    if machine is None:
-        return _revalidate_layered(
-            target, prior_text, was_valid=was_valid, written=written, held=held
-        )
     err: str | None = None
     try:
         data = read_toml_file(target)
         overlay = data.get("config", {})
         load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
-        # Validate the WHOLE machine spec too (not just the [config] overlay) so
-        # `config set --machine-file` can't BREAK a runnable machine. Block only
-        # when the edit made a previously-VALID machine invalid; a machine already
-        # invalid (or a brand-new stub) is left for the author to finish.
         if "states" in data and _machine_is_valid(prior_text):
             load_machine(target)
     except ConfigError as exc:
         err = str(exc)
     except MachineError as exc:
         err = "; ".join(exc.problems)
-    if err is not None:
-        if not held:
-            # Same rule as the layer writers: a whole-file restore without the
-            # lock could clobber a concurrent writer, so keep the write and
-            # surface the error (see layer._revalidate / _revalidate_layered).
-            return f"{err}\n{_KEPT_NO_LOCK}"
-        _restore_file(target, prior_text)
-        return err
-    return None
+    if err is None:
+        return None
+    return keep_or_rollback(target, prior_text, err, held=held)
+
+
+def _warn_if_still_broken() -> None:
+    """After a kept layered write: the config loads, or another layer still
+    breaks it and the operator should hear which one, not a false success."""
+    if (after := merged_config_error(Path.cwd())) is not None:
+        print(
+            "WARNING: the config is still invalid because of a value in another layer;"
+            f" fix that one on its own:\n{after}",
+            file=sys.stderr,
+        )
 
 
 def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None) -> int:
@@ -364,32 +280,21 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
-    _open_target(target)
     parsed = parse_cli_value(value)
-    try:
-        with locked_file(target) as held:
+    if machine is None:
+        err = set_config_value(Path.cwd(), key, value, to_repo=repo)
+    else:
+        _open_target(target)
+        with writing_config(target) as held:
             prior = read_operator_file(target) if target.is_file() else None
-            was_valid = machine is None and _merged_config_error() is None  # BEFORE this write?
-            # Line surgery on a file we cannot parse only appends to the
-            # damage (a malformed header is invisible to the lookups, so
-            # the write lands as a duplicate table), and the already-invalid
-            # branch below would then report it as another layer's fault.
-            read_toml_file(target)
+            read_toml_file(target)  # refuse line surgery on a file that does not parse
             upsert_toml_leaf(target, prefix + key, parsed)
-            if err := _revalidate_config(
-                target,
-                prior,
-                machine=machine,
-                was_valid=was_valid,
-                written=(key, parsed),
-                held=held,
-            ):
-                print(f"ERROR: {err}", file=sys.stderr)
-                return 2
-    finally:
-        # Every publish -- the rollback of a refused value included -- replaces
-        # the target's inode, so the handover belongs on every exit path.
-        chown_to_real_user(target)
+            err = _revalidate_machine(target, prior, held=held)
+    if err:
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 2
+    if machine is None:
+        _warn_if_still_broken()
     print(f"Set {key} = {format_value(parsed)} in {target}")
     return 0
 
@@ -403,22 +308,23 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:
     if not target.is_file():
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
         return 2
-    try:
-        with locked_file(target) as held:
+    if machine is None:
+        res = unset_config_value(Path.cwd(), key, to_repo=repo)
+        removed, err = res.removed, res.error
+    else:
+        with writing_config(target) as held:
             prior = read_operator_file(target)
-            was_valid = machine is None and _merged_config_error() is None  # BEFORE this unset?
-            read_toml_file(target)  # see _cmd_config_set: never edit what we cannot read
+            read_toml_file(target)  # refuse line surgery on a file that does not parse
             removed = remove_toml_leaf(target, prefix + key)
-            if not removed:
-                print(f"{key} is not set in {target}; nothing to unset.")
-                return 0
-            if err := _revalidate_config(
-                target, prior, machine=machine, was_valid=was_valid, held=held
-            ):
-                print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
-                return 2
-    finally:
-        chown_to_real_user(target)
+            err = _revalidate_machine(target, prior, held=held) if removed else None
+    if err:
+        print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
+        return 2
+    if not removed:
+        print(f"{key} is not set in {target}; nothing to unset.")
+        return 0
+    if machine is None:
+        _warn_if_still_broken()
     print(f"Unset {key} in {target}")
     return 0
 
@@ -449,19 +355,11 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
+    _open_target(target)
     # The lock spans from the current-items read: the list RMW starts there,
     # and two concurrent adds otherwise both read the same base list and the
     # later publish drops the earlier element.
-    try:
-        return _locked_list_edit(target, prefix, key, value, machine=machine, add=add)
-    finally:
-        chown_to_real_user(target)
-
-
-def _locked_list_edit(
-    target: Path, prefix: str, key: str, value: str, *, machine: Path | None, add: bool
-) -> int:
-    with locked_file(target) as held:
+    with writing_config(target) as held:
         current = read_toml_leaf(read_toml_file(target), prefix + key)
         if current is None:
             if _schema_says_not_a_list(key):
@@ -473,25 +371,29 @@ def _locked_list_edit(
             return 2
         parsed = parse_cli_value(value)
         items = list(current)
-        if add:
-            if parsed in items:
-                print(f"{format_value(parsed)} already in {key}.")
-                return 0
-            items.append(parsed)
-        else:
-            if parsed not in items:
-                print(f"{format_value(parsed)} not in {key}.")
-                return 0
-            items = [x for x in items if x != parsed]
-        _open_target(target)
+        if (parsed in items) == add:
+            print(f"{format_value(parsed)} {'already' if add else 'not'} in {key}.")
+            return 0
+        items = [*items, parsed] if add else [x for x in items if x != parsed]
         prior = read_operator_file(target) if target.is_file() else None
-        was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this edit?
+        was_valid = machine is None and merged_config_error(Path.cwd()) is None
         upsert_toml_leaf(target, prefix + key, items)
-        if err := _revalidate_config(
-            target, prior, machine=machine, was_valid=was_valid, held=held
-        ):
+        if machine is None:
+            err = revalidate_write(
+                Path.cwd(),
+                target,
+                prior,
+                was_valid=was_valid,
+                held=held,
+                written=[(key, items)],
+            )
+        else:
+            err = _revalidate_machine(target, prior, held=held)
+        if err:
             print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
             return 2
+    if machine is None:
+        _warn_if_still_broken()
     verb, prep = ("Added", "to") if add else ("Removed", "from")
     print(f"{verb} {format_value(parsed)} {prep} {key} in {target}")
     return 0

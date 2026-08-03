@@ -15,6 +15,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.config.write import set_config_value, unset_config_value
+from agent6.errors import OperatorError
 from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
@@ -173,8 +174,30 @@ def test_set_then_unset_config_value(repo: Path) -> None:
     assert eff.config.sandbox.run_commands == "no"
     assert eff.sources["sandbox.run_commands"] == "repo"
     # unset removes the repo override -> falls through to the global "ask".
-    assert unset_config_value(repo, "sandbox.run_commands", to_repo=True) is None
+    res = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    assert res.removed and res.error is None
     assert load_effective(repo).config.sandbox.run_commands == "ask"
+
+
+def test_unset_reports_whether_anything_was_removed(repo: Path) -> None:
+    """`config unset` says "nothing to unset" only when nothing was removed; a
+    bare None return conflated that with a successful removal."""
+    res = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    assert res.removed and res.error is None
+    again = unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    assert not again.removed and again.error is None
+
+
+def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: Path) -> None:
+    """A dotted top-level key has no [table] header to match: the refusal is an
+    OperatorError for the one boundary, never a returned string a caller would
+    print as a revalidation failure."""
+    rcfg = repo_config_path_for(repo)
+    before = 'sandbox.run_commands = "yes"\n'
+    rcfg.write_text(before, encoding="utf-8")
+    with pytest.raises(OperatorError):
+        unset_config_value(repo, "sandbox.run_commands", to_repo=True)
+    assert rcfg.read_text(encoding="utf-8") == before
 
 
 def test_set_config_value_invalid_rolls_back(repo: Path) -> None:
@@ -548,22 +571,21 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
     assert repo_config_path_for(repo) in handed
 
 
-def test_engine_writers_roll_back_a_write_into_an_unparseable_target(
+def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     repo: Path, tmp_path: Path
 ) -> None:
-    """`agent6 connect`, `agent6 init`, `agent6 model` and the TUI config page
-    write through this path, not the CLI one. Over a target that does not parse,
-    the surgery appends a block and the file still does not parse -- and the
-    "already invalid, so blame another layer" arm kept it and reported success,
-    leaving a config no command could read. The CLI writers already refused."""
+    """Line surgery on a file that does not parse only appends to the damage
+    (a malformed header is invisible to the lookups, so the write lands as a
+    duplicate table): every writer refuses up front with the parse error, the
+    same refusal the CLI always gave."""
     gcfg = tmp_path / "g" / "config.toml"
     gcfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
     before = gcfg.read_text(encoding="utf-8")
 
-    err = set_config_value(repo, "sandbox.run_commands", "no")
+    with pytest.raises(ConfigError):
+        set_config_value(repo, "sandbox.run_commands", "no")
 
-    assert err is not None, "a write into an unparseable target must not report success"
-    assert gcfg.read_text(encoding="utf-8") == before, "the broken write was kept"
+    assert gcfg.read_text(encoding="utf-8") == before
 
 
 def test_no_lock_rollback_keeps_the_write_and_says_so(
@@ -588,22 +610,22 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
     assert 'run_commands = "bogus_value"' in text
 
 
-def test_set_config_leaves_returns_the_message_when_an_ancestor_is_headerless(
+def test_set_config_leaves_refuses_a_headerless_ancestor(
     repo: Path,
 ) -> None:
     """`agent6 connect` / init / the TUI write providers through set_config_leaves.
     A leaf whose ancestor is a header-less (inline) table cannot be set on its own;
-    the surgery raises ValueError, which must come back as a printable message with
-    the file untouched, never escape as a traceback to the caller."""
+    the surgery's refusal is an OperatorError -- a printable message at the one
+    boundary, never a traceback -- and the file is untouched."""
     from agent6.config.write import set_config_leaves
 
     rcfg = repo_config_path_for(repo)
     before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
     rcfg.write_text(before, encoding="utf-8")
 
-    err = set_config_leaves(repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True)
+    with pytest.raises(OperatorError, match="not a plain"):
+        set_config_leaves(repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True)
 
-    assert err is not None and "not a plain [table]" in err
     assert rcfg.read_text(encoding="utf-8") == before  # nothing partially written
 
 
@@ -631,15 +653,54 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
 
-    err = set_config_leaves(
-        repo,
-        "providers.anthropic",
-        {"base_url": "https://x/v1", "api_key_env": "KEY"},
-        to_repo=True,
-    )
+    with pytest.raises(OperatorError, match="second leaf refused"):
+        set_config_leaves(
+            repo,
+            "providers.anthropic",
+            {"base_url": "https://x/v1", "api_key_env": "KEY"},
+            to_repo=True,
+        )
 
-    assert err == "second leaf refused"
     assert rcfg.read_text(encoding="utf-8") == before  # the first leaf's write rolled back
+
+
+def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the lock failed open, restoring the prior file could erase a
+    concurrent writer's update, so a partial multi-leaf write is KEPT and the
+    refusal says so -- the same keep-and-warn every writer applies."""
+    import agent6.portable as portable_mod
+    from agent6.config import write as write_mod
+    from agent6.config.write import set_config_leaves
+
+    def _no_lock(_p: Path) -> int | None:
+        return None
+
+    monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
+    rcfg = repo_config_path_for(repo)
+    before = '[providers.anthropic]\napi_format = "anthropic"\n'
+    rcfg.write_text(before, encoding="utf-8")
+    real = write_mod.upsert_toml_leaf
+    calls = {"n": 0}
+
+    def _fail_second(path: Path, key: str, value: object) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise ConfigError("second leaf refused")
+        real(path, key, value)
+
+    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
+
+    with pytest.raises(OperatorError, match="kept as written"):
+        set_config_leaves(
+            repo,
+            "providers.anthropic",
+            {"base_url": "https://x/v1", "api_key_env": "KEY"},
+            to_repo=True,
+        )
+
+    assert "base_url" in rcfg.read_text(encoding="utf-8")  # the landed leaf was kept
 
 
 def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:

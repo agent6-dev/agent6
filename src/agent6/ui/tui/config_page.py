@@ -50,6 +50,7 @@ from agent6.config.write import (
     set_config_value,
     unset_config_value,
 )
+from agent6.errors import OperatorError
 from agent6.models.cache import cached_models, list_models
 from agent6.models.registry import resolved_adaptive_values
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
@@ -505,7 +506,10 @@ class ProviderModal(ModalScreen[None]):
         if keyenv:
             fields["api_key_env"] = keyenv
         to_repo = self.query_one("#prov-target", ChoiceField).index == 1
-        err = set_config_table(self._repo, f"providers.{name}", fields, to_repo=to_repo)
+        try:
+            err = set_config_table(self._repo, f"providers.{name}", fields, to_repo=to_repo)
+        except OperatorError as exc:
+            err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return  # stay in the form so the user can fix it
@@ -1023,12 +1027,18 @@ class ConfigScreen(Screen[None]):
             if action == "unset":
                 if self._refuse_unset(setting):
                     return
-                err = unset_config_value(
-                    self.repo_root, setting.key, to_repo=setting.source == "repo"
-                )
+                try:
+                    err = unset_config_value(
+                        self.repo_root, setting.key, to_repo=setting.source == "repo"
+                    ).error
+                except OperatorError as exc:
+                    err = str(exc)
                 msg = f"Reset {setting.key} to default"
             else:
-                err = set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
+                try:
+                    err = set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
+                except OperatorError as exc:
+                    err = str(exc)
                 msg = f"Set {setting.key}"
             if err:
                 self.notify(err, severity="error", timeout=8.0)
@@ -1072,7 +1082,12 @@ class ConfigScreen(Screen[None]):
             return
         if self._refuse_unset(setting):
             return
-        err = unset_config_value(self.repo_root, setting.key, to_repo=setting.source == "repo")
+        try:
+            err = unset_config_value(
+                self.repo_root, setting.key, to_repo=setting.source == "repo"
+            ).error
+        except OperatorError as exc:
+            err = str(exc)
         if err:
             self.notify(err, severity="error", timeout=8.0)
         else:
