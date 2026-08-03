@@ -625,17 +625,13 @@ class _Handler(BaseHTTPRequestHandler):
             # resumes starts logging into this same stream, and the label (and
             # `live`) have to follow.
             d = {**run_state_as_dict(state, run_dir), **header}
-            if dead and not d.get("finished"):
-                # Fold the liveness truth the dead-worker branch already knows
-                # into the frame: a run with no run.end folds to
-                # finished=false/"running", but s.finished is the client's ONLY
-                # stream-terminate signal (onerror deliberately lets
-                # EventSource auto-retry). Without this the close never sticks:
-                # the tab reconnects and re-folds the whole log every ~18s
-                # forever, painting a live "working…" spinner over a dead run.
-                # status_label already carries the dir word (stale/created), so
-                # only the terminate bit needs forcing.
-                d["finished"] = True
+            if dead:
+                # Transport signal, distinct from the fold's `finished`: this
+                # stream will send nothing more (dead worker, no run.end), so
+                # the client must close instead of letting EventSource retry
+                # into a reconnect-refold loop. `finished` stays the fold truth
+                # -- a crashed run is stale, not "finished".
+                d["stream_dead"] = True
             return d
 
         try:

@@ -595,7 +595,7 @@ function makeComposer(id) {
   root.setState = (s) => {
     if (busy) return;
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
-    else if (typeof s.finished === 'boolean') { finished = s.finished; apply(); }
+    else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)
   };
   apply();
   return root;
@@ -750,7 +750,7 @@ async function renderRun(id, opts, gen) {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     paintRun(cards, s);
     hbState.spin++;
-    if (s.finished) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
+    if (s.finished || s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
@@ -1029,7 +1029,7 @@ async function renderConversation(id, gen) {
       spin: hbState.spin + 1,
     };
     hbTick();
-    if (s.finished) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
+    if (s.finished || s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }

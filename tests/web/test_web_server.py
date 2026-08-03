@@ -743,12 +743,10 @@ def test_sse_run_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run whose worker died without a run.end must close its SSE stream with
-    a TERMINAL frame: finished=True + status_label="stale" (the hub's word for
-    the same pid-dead condition). The fold alone says finished=false/"running",
-    and s.finished is the client's only stream-terminate signal (onerror
-    deliberately lets EventSource auto-retry) -- so the old fold-only frame made
-    the tab reconnect and re-fold the whole log every ~18s forever, over a live
-    "working…" spinner on a dead run."""
+    a TERMINAL frame carrying the dedicated transport bit: stream_dead=True +
+    status_label="stale". `finished` stays the fold truth (False -- a crashed
+    run is stale, not finished); the client closes on either signal, so the
+    tab never reconnect-refolds forever over a dead run."""
     import agent6.ui.web.server as server_mod
 
     monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
@@ -770,7 +768,8 @@ def test_sse_run_dead_worker_frame_is_terminal(
         conn.close()
     frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
     last = json.loads(frames[-1][len(b"data:") :])
-    assert last["finished"] is True
+    assert last["stream_dead"] is True
+    assert last["finished"] is False  # the fold truth is not overwritten
     assert last["status_label"] == "stale"
 
 
@@ -821,7 +820,8 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     assert eof, "stream never closed for a pid-less stale run"
     frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
     last = json.loads(frames[-1][len(b"data:") :])
-    assert last["finished"] is True
+    assert last["stream_dead"] is True
+    assert last["finished"] is False  # the fold truth is not overwritten
     assert last["status_label"] == "stale"
 
 
@@ -865,7 +865,8 @@ def test_sse_run_created_frame_is_terminal(
     assert eof, "stream never closed for a created run"
     frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
     last = json.loads(frames[-1][len(b"data:") :])
-    assert last["finished"] is True
+    assert last["stream_dead"] is True
+    assert last["finished"] is False  # created, never started: not "finished"
     assert last["status_label"] == "created"
     assert last["live"] is False
 
