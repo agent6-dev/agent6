@@ -511,3 +511,24 @@ def test_a_platform_without_proc_still_starts_a_background_command(
     finally:
         monkeypatch.undo()
         shells.stop_all()
+
+
+def test_an_unsandboxed_background_command_survives_a_siblings_stop(
+    tmp_path: Path,
+) -> None:
+    """The escapee sweep spares every launcher agent6 deliberately started, and
+    the jailed branch registers its own -- the unsandboxed one did not. So
+    stopping ONE background command swept a sibling as an escapee, and the
+    sibling's next status read poll() over a reaped pid, which CPython reports
+    as returncode 0: agent6 killed a command and then called it a clean exit.
+    """
+    shells = BackgroundShells(tmp_path / "shells")
+    first = shells.start(("/bin/sh", "-c", "echo one; sleep 300"), _policy_for(tmp_path, "none"))
+    second = shells.start(("/bin/sh", "-c", "echo two; sleep 300"), _policy_for(tmp_path, "none"))
+    try:
+        assert _wait_state(shells, second.id, "running") == "running"
+        shells.stop(first.id)
+        states = {v.id: v.state for v in shells.roster()}
+        assert states[second.id] == "running", f"a sibling's stop took it down: {states}"
+    finally:
+        shells.stop_all()

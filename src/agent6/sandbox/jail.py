@@ -719,15 +719,22 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
     outcome_dir.mkdir(parents=True, exist_ok=True)
     if policy.isolation == "none":
         # Unsandboxed escape hatch (non-Linux only); see run_in_jail's note.
-        proc = subprocess.Popen(
-            list(policy.argv),
-            cwd=str(policy.cwd),
-            env={**os.environ, **dict(policy.env)},
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        with _sweep_lock:
+            proc = subprocess.Popen(
+                list(policy.argv),
+                cwd=str(policy.cwd),
+                env={**os.environ, **dict(policy.env)},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            # Registered like the jailed launcher: the sweep spares what agent6
+            # deliberately started. Unregistered, stopping ONE background
+            # command swept every sibling as an escapee, and the sibling's next
+            # status polled a reaped pid -- which reads as returncode 0, so
+            # agent6 killed a command and then called it a clean exit.
+            _live_launchers.add(proc.pid)
         return BackgroundJob(proc, None)
     binary = _require_jail_binary()
     spec = _policy_to_json(policy)
