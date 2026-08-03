@@ -205,6 +205,9 @@ fn run_strict(policy: &Policy) -> ! {
             if let Err(e) = apply_seccomp() {
                 die(format!("seccomp failed: {e}"));
             }
+            if let Err(e) = hide_from_children() {
+                die(format!("PR_SET_DUMPABLE failed: {e}"));
+            }
             if policy.mode == "serve" {
                 serve(Path::new("/workspace"), true);
             }
@@ -228,6 +231,9 @@ fn run_hardened(policy: &Policy) -> ! {
     }
     if let Err(e) = apply_seccomp() {
         die(format!("seccomp failed: {e}"));
+    }
+    if let Err(e) = hide_from_children() {
+        die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
         serve(&policy.cwd, false);
@@ -1456,32 +1462,37 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     // a cgroup, which an unprivileged launcher cannot assume). Raising the
     // hard limit back needs CAP_SYS_RESOURCE in the INITIAL user namespace,
     // which a jailed child (even userns root under `strict`) never has.
-    if spec.memory_limit_mb > 0 {
-        let bytes: libc::rlim_t =
-            (spec.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024);
-        unsafe {
-            cmd.pre_exec(move || {
-                // Clamp to the inherited hard limit: lowering is always
-                // permitted, and if the operator's shell already set a
-                // stricter hard cap the stricter value wins (never EPERM).
-                let mut cur = libc::rlimit {
-                    rlim_cur: 0,
-                    rlim_max: 0,
-                };
-                if libc::getrlimit(libc::RLIMIT_DATA, &mut cur) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                let cap = bytes.min(cur.rlim_max);
-                let lim = libc::rlimit {
-                    rlim_cur: cap,
-                    rlim_max: cap,
-                };
-                if libc::setrlimit(libc::RLIMIT_DATA, &lim) != 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
+    let mem_bytes: libc::rlim_t = if spec.memory_limit_mb > 0 {
+        (spec.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024)
+    } else {
+        0
+    };
+    unsafe {
+        cmd.pre_exec(move || {
+            drop_capabilities()?;
+            if mem_bytes == 0 {
+                return Ok(());
+            }
+            // Clamp to the inherited hard limit: lowering is always
+            // permitted, and if the operator's shell already set a
+            // stricter hard cap the stricter value wins (never EPERM).
+            let mut cur = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_DATA, &mut cur) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let cap = mem_bytes.min(cur.rlim_max);
+            let lim = libc::rlimit {
+                rlim_cur: cap,
+                rlim_max: cap,
+            };
+            if libc::setrlimit(libc::RLIMIT_DATA, &lim) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
 
     let mut child = cmd.spawn()?;
@@ -1563,6 +1574,91 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
 /// namespaces: no wait, and no process-group kill, so a server survives the
 /// request that started it. The PID namespace remains the bound -- when the
 /// session's stdin closes, everything in it dies with the namespace.
+/// Version 3 of the capset ABI: two 32-bit words per set.
+const LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
+
+#[repr(C)]
+struct CapHeader {
+    version: u32,
+    pid: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CapData {
+    effective: u32,
+    permitted: u32,
+    inheritable: u32,
+}
+
+/// Make this process's /proc entry unreadable to the commands it runs.
+///
+/// The launcher answers every request on its stdout and, under strict, is PID 1
+/// of the jail's own PID namespace. A command that opens `/proc/1/fd/1` writes
+/// the line the agent reads as a command result: it can hand itself an exit
+/// code, and the real answer then serves the NEXT request, so a verify gate
+/// reads the result of a command the model chose. Landlock does not cover it
+/// (a pipe reopened through /proc/<pid>/fd is exempt) and neither does the
+/// seccomp ptrace deny (reaching another /proc entry is a permission check,
+/// not that syscall). With dumpable 0 the check is ptrace_may_access, which
+/// demands CAP_SYS_PTRACE in this user namespace -- which every child gives up
+/// in `drop_capabilities`. Both halves are needed: userns root passes the
+/// same-uid check on its own.
+fn hide_from_children() -> io::Result<()> {
+    if unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// Drop every capability, in the child, between fork and exec.
+///
+/// A jailed command is uid 0 in the jail's user namespace, so it starts with a
+/// full capability set over everything that namespace owns -- including
+/// CAP_SYS_PTRACE over the launcher. Nothing agent6 runs needs a capability:
+/// the files it touches are owned by that same uid. Async-signal-safe: raw
+/// syscalls only.
+///
+/// # Safety
+/// Called inside `pre_exec`, so it must not allocate or take locks.
+unsafe fn drop_capabilities() -> io::Result<()> {
+    // The bounding set first: what leaves it cannot be regained, file
+    // capabilities included. EINVAL means we walked past this kernel's last.
+    // EPERM means no CAP_SETPCAP, which on a profile with no user namespace
+    // means an ordinary uid with nothing to drop -- there the launcher's own
+    // /proc entry is already out of reach, since ptrace_may_access on a
+    // non-dumpable process wants CAP_SYS_PTRACE in the INITIAL namespace.
+    for cap in 0..=63 {
+        if unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0) } != 0 {
+            match io::Error::last_os_error().raw_os_error() {
+                Some(libc::EINVAL) => break,
+                Some(libc::EPERM) => return Ok(()),
+                _ => return Err(io::Error::last_os_error()),
+            }
+        }
+    }
+    let header = CapHeader {
+        version: LINUX_CAPABILITY_VERSION_3,
+        pid: 0,
+    };
+    let empty = [CapData {
+        effective: 0,
+        permitted: 0,
+        inheritable: 0,
+    }; 2];
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_capset,
+            &header as *const CapHeader,
+            empty.as_ptr(),
+        )
+    };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// The exit code a wait status carries, in the shape run_child reports it.
 /// None means the child is not gone (stopped, traced), never "exited 0".
 fn wait_code(status: WaitStatus) -> Option<i32> {
@@ -1644,6 +1740,11 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     cmd.stderr(Stdio::null());
     cmd.current_dir(cwd);
     cmd.process_group(0);
+    // A backgrounded command outlives the request, so it is the one with time
+    // to go looking for the launcher's fds.
+    unsafe {
+        cmd.pre_exec(|| drop_capabilities());
+    }
     let child = cmd.spawn()?;
     let result = serde_json::json!({
         "returncode": 0,

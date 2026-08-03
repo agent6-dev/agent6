@@ -491,8 +491,13 @@ def test_a_fully_populated_policy_holds_every_invariant(
         "    if f[4].startswith('/dev/'): continue\n"
         "    if 'nosuid' not in f[5] or 'nodev' not in f[5]: gaps.append(f[4])\n"
         "print('GAPS', gaps)\n"
+        "def env(p):\n"
+        # Denied beats readable-and-empty: PID 1 is non-dumpable and the child
+        # holds no capability, so its /proc entry cannot be opened at all.
+        "    try: return open(p,'rb').read()\n"
+        "    except OSError: return b''\n"
         "leak = [p for p in glob.glob('/proc/[0-9]*/environ')\n"
-        "        if int(p.split('/')[2]) != me and b'PARENT-SECRET' in open(p,'rb').read()]\n"
+        "        if int(p.split('/')[2]) != me and b'PARENT-SECRET' in env(p)]\n"
         "print('LEAK', leak)\n"
         "try:\n"
         "    open('/workspace/.git/config','w').write('x'); print('PROTECT writable')\n"
