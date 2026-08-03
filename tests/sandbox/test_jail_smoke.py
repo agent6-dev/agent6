@@ -493,3 +493,54 @@ def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
     )
     assert res.returncode == 0, res.stderr
     assert (data / "out").read_text().strip() == "persisted"
+
+
+def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
+    jail_bin: Path, tmp_path: Path
+) -> None:
+    """A protect path does not have to sit at the root of cwd: `machine run
+    ops/deploy.asm.toml` protects ops/deploy.asm.toml and ops/scripts, both
+    NESTED under the top-level entry ops/. Comparing entries to the protect set
+    by equality let ops/ take a recursive RW grant that covered them, so the
+    jailed child could rewrite the machine's own spec and scripts. Landlock
+    rules combine permissively, so an ancestor grant always wins."""
+    ws = tmp_path / "ws"
+    (ws / "ops" / "scripts").mkdir(parents=True)
+    asm = ws / "ops" / "deploy.asm.toml"
+    asm.write_text("machine = 'deploy'\n", encoding="utf-8")
+    step = ws / "ops" / "scripts" / "step.py"
+    step.write_text("print('original')\n", encoding="utf-8")
+    sibling = ws / "ops" / "notes.md"  # a NON-protected sibling must stay writable
+    sibling.write_text("notes\n", encoding="utf-8")
+
+    targets = f"(({str(asm)!r}, 'ASM'), ({str(step)!r}, 'STEP'), ({str(sibling)!r}, 'SIBLING'))"
+    script = (
+        "import pathlib\n"
+        f"for p, tag in {targets}:\n"
+        "    try:\n"
+        "        pathlib.Path(p).write_text('PWNED-' + tag)\n"
+        "        print('WROTE', tag)\n"
+        "    except OSError:\n"
+        "        print('DENIED', tag)\n"
+    )
+
+    try:
+        res = run_in_jail(
+            JailPolicy(
+                cwd=ws,
+                argv=("/usr/bin/python3", "-c", script),
+                profile="hardened",
+                extra_protect_paths=(asm, ws / "ops" / "scripts"),
+                timeout_s=20.0,
+            )
+        )
+    except JailUnavailableError:
+        pytest.skip("jail unavailable")
+
+    assert "DENIED ASM" in res.stdout, f"the machine spec was writable: {res.stdout!r}"
+    assert "DENIED STEP" in res.stdout, f"the machine scripts were writable: {res.stdout!r}"
+    # The carve-out must stay precise: a non-protected sibling under the same
+    # directory keeps its write access (strict re-binds only the protect paths).
+    assert "WROTE SIBLING" in res.stdout, f"the carve-out over-denied: {res.stdout!r}"
+    assert asm.read_text(encoding="utf-8").startswith("machine =")
+    assert step.read_text(encoding="utf-8").startswith("print('original')")

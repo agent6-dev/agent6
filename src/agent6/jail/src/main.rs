@@ -24,8 +24,8 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use landlock::{
-    Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
-    RulesetStatus, ABI,
+    Access, AccessFs, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreated,
+    RulesetCreatedAttr, RulesetStatus, ABI,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
@@ -707,6 +707,74 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     Ok(())
 }
 
+/// Grant recursive RW under `dir` on everything EXCEPT the protect paths,
+/// descending only into the directories that actually contain one.
+///
+/// Comparing each entry to the protect set by equality let a protect path
+/// NESTED below an entry (a machine bundle at `ops/deploy.asm.toml`, whose
+/// top-level entry is `ops/`) be covered by that ancestor's recursive grant, so
+/// the jailed child could rewrite the machine's own spec and scripts. Landlock
+/// rules combine permissively, so an ancestor grant always wins -- the sibling
+/// `rw_paths` loop refuses such an ancestor outright for this reason. Here the
+/// carve-out is kept precise instead: descending grants the siblings normally
+/// and leaves only the protected leaf ungranted, which matches `strict`, where
+/// each protect path is re-bound read-only at its real nested location.
+fn grant_rw_carved(
+    mut ruleset: RulesetCreated,
+    dir: &Path,
+    protect_set: &std::collections::HashSet<PathBuf>,
+    canon_cwd: &Path,
+    access_all: BitFlags<AccessFs>,
+) -> io::Result<RulesetCreated> {
+    let entries = match fs::read_dir(dir) {
+        Ok(it) => it,
+        Err(e) => {
+            return Err(io::Error::new(
+                e.kind(),
+                format!("read_dir {}: {e}", dir.display()),
+            ));
+        }
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+        if protect_set.contains(&canon) || protect_set.contains(&p) {
+            continue;
+        }
+        // A top-level symlink whose real target escapes cwd would otherwise
+        // get a recursive RW rule on that outside inode (PathFd::new follows
+        // symlinks; Landlock attaches to the resolved inode), letting the
+        // child write outside the workspace and defeating cwd confinement
+        // under the hardened profile. Skip any entry that does not resolve
+        // inside cwd. Mirrors the strip_prefix(cwd) check in setup_rootfs.
+        if !canon.starts_with(canon_cwd) {
+            eprintln!(
+                "agent6-jail: hardened: skipping rw grant on {} (resolves outside cwd to {})",
+                p.display(),
+                canon.display()
+            );
+            continue;
+        }
+        // Only strict descendants reach here (equality was handled above), so a
+        // hit means this directory CONTAINS something protected.
+        if canon.is_dir() && protect_set.iter().any(|prot| prot.starts_with(&canon)) {
+            ruleset = grant_rw_carved(ruleset, &p, protect_set, canon_cwd, access_all)?;
+            continue;
+        }
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule rw {}: {e}", p.display()),
+                    )
+                })?;
+        }
+    }
+    Ok(ruleset)
+}
+
 fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // Hardened profile runs in the real filesystem. We protect the host by
     // listing exactly the paths the child may read or write — its own cwd
@@ -762,46 +830,13 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             .cwd
             .canonicalize()
             .unwrap_or_else(|_| policy.cwd.clone());
-        let entries = match fs::read_dir(&policy.cwd) {
-            Ok(it) => it,
-            Err(e) => {
-                return Err(io::Error::new(
-                    e.kind(),
-                    format!("read_dir cwd {}: {e}", policy.cwd.display()),
-                ));
-            }
-        };
-        for entry in entries.flatten() {
-            let p = entry.path();
-            let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
-            if protect_set.contains(&canon) || protect_set.contains(&p) {
-                continue;
-            }
-            // A top-level symlink whose real target escapes cwd would otherwise
-            // get a recursive RW rule on that outside inode (PathFd::new follows
-            // symlinks; Landlock attaches to the resolved inode), letting the
-            // child write outside the workspace and defeating cwd confinement
-            // under the hardened profile. Skip any entry that does not resolve
-            // inside cwd. Mirrors the strip_prefix(cwd) check in setup_rootfs.
-            if !canon.starts_with(&canon_cwd) {
-                eprintln!(
-                    "agent6-jail: hardened: skipping rw grant on {} (resolves outside cwd to {})",
-                    p.display(),
-                    canon.display()
-                );
-                continue;
-            }
-            if let Ok(fd) = PathFd::new(&p) {
-                ruleset = ruleset
-                    .add_rule(PathBeneath::new(fd, access_all))
-                    .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("rule rw {}: {e}", p.display()),
-                        )
-                    })?;
-            }
-        }
+        ruleset = grant_rw_carved(
+            ruleset,
+            &policy.cwd,
+            &protect_set,
+            &canon_cwd,
+            access_all,
+        )?;
     } else {
         // No protect set: original behavior, RW on cwd as a whole.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
