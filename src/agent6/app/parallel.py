@@ -55,6 +55,7 @@ from agent6.paths import cache_dir, state_dir
 from agent6.runs.ipc import request_stop, steer_answer_is_abort, worker_is_alive
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel import died_without_end, summarize_run_dir
+from agent6.viewmodel.format import format_cost
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -741,7 +742,7 @@ def _print_lane_status(
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     model = f" ({spec.model})" if spec.model else ""
-    cost_s = f"  ${cost:.4f}" if cost > 0 else ""
+    cost_s = f"  {format_cost(cost)}" if cost > 0 else ""
     wait_s = f" · waiting on {waiting} (answer via the web or TUI hub)" if waiting else ""
     reporter.err(f"[agent6] lane {spec.lane} [{spec.run_id}]{model}: {status}{wait_s}{cost_s}")
 
