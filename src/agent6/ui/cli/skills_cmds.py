@@ -421,11 +421,23 @@ def _cmd_skills_list() -> int:
 
 
 def _known_skill_names(repo_root: Path) -> tuple[str, ...]:
-    try:
-        skills, _ = discover_skills(_search_dirs(repo_root))
-    except Exception:
-        return ()
+    """Installed skill names. RAISES when discovery itself fails.
+
+    Swallowing that to an empty tuple made `skills enable/disable` answer
+    "unknown skill 'x'; installed: (none)" -- sending the operator after a
+    skill that is missing when one is unreadable.
+    """
+    skills, _ = discover_skills(_search_dirs(repo_root))
     return tuple(s.name for s in skills)
+
+
+def _known_or_reported(repo_root: Path) -> tuple[str, ...] | None:
+    """`_known_skill_names`, with a discovery failure printed and None returned."""
+    try:
+        return _known_skill_names(repo_root)
+    except OSError as exc:
+        print(f"SKILLS ERROR: could not read the installed skills: {exc}", file=sys.stderr)
+        return None
 
 
 def _state_target(repo: bool) -> Path:
@@ -433,7 +445,9 @@ def _state_target(repo: bool) -> Path:
 
 
 def _cmd_skills_enable(name: str, *, always: bool, repo: bool) -> int:
-    known = _known_skill_names(Path.cwd())
+    known = _known_or_reported(Path.cwd())
+    if known is None:
+        return 2
     if name not in known:
         print(
             f"SKILLS ERROR: unknown skill {name!r}; installed: {', '.join(known) or '(none)'}",
@@ -463,7 +477,9 @@ def _cmd_skills_enable(name: str, *, always: bool, repo: bool) -> int:
 
 
 def _cmd_skills_disable(name: str, *, repo: bool) -> int:
-    known = _known_skill_names(Path.cwd())
+    known = _known_or_reported(Path.cwd())
+    if known is None:
+        return 2
     if name not in known:
         print(
             f"SKILLS ERROR: unknown skill {name!r}; installed: {', '.join(known) or '(none)'}",
@@ -505,8 +521,16 @@ def _cmd_skills_remove(name: str) -> int:
 
 
 def resolved_skill_names_for_completion(repo_root: Path) -> list[str]:
-    """Names for argcomplete: cheap discovery, never raises."""
-    return list(_known_skill_names(repo_root))
+    """Names for argcomplete: cheap discovery, never raises.
+
+    A shell completion has nowhere to show an error and must not raise into the
+    shell, so a discovery failure is nothing at all -- unlike the enable/disable
+    commands, which a human is reading.
+    """
+    try:
+        return list(_known_skill_names(repo_root))
+    except OSError:
+        return []
 
 
 __all__ = [
