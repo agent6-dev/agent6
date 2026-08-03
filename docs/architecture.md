@@ -175,8 +175,10 @@ Notes:
   duplicates merged -- which is what keeps a working document readable past
   twenty sessions. Whole-file replace, not patch. Over the cap the write is
   refused, not truncated: dropping the tail loses the newest thinking, and
-  the refusal is what forces a prune. Never in the workspace, so never in a
-  diff and never mounted into the jail. Same mode rule as memories: machine
+  the refusal is what forces a prune. The block clips at the same cap on the
+  way in, because the file is the operator's to edit and one written by hand
+  reaches the prompt having passed no check. Never in the workspace, so never
+  in a diff and never mounted into the jail. Same mode rule as memories: machine
   and agent modes see none. A resumed run keeps the `<notes>` block frozen in
   its snapshot like the rest of its system prompt, but `read_notes` always
   reads the file, so a later leg can still pick up what it wrote.
