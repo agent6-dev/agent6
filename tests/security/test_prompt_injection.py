@@ -192,7 +192,7 @@ def test_unknown_tool_rejected(tmp_path: Path, fake: str) -> None:
 
 def test_run_command_disabled_by_config(tmp_path: Path) -> None:
     d = _dispatcher(tmp_path)  # run_commands = "no" in _VALID_TOML
-    with pytest.raises(ToolError, match="disabled"):
+    with pytest.raises(ToolError, match="not available"):
         d.dispatch("run_command", {"argv": ["/bin/echo", "hi"]})
 
 

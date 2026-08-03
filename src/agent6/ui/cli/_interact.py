@@ -25,6 +25,7 @@ from agent6.runs.ipc import (
     session_allow_set,
     set_away_mode,
     set_session_allow,
+    set_session_deny,
     steer_answer_is_abort,
 )
 from agent6.tools.schema import UserQuestion
@@ -59,15 +60,20 @@ def _has_controlling_tty() -> bool:
 
 def default_stdin_approver(prompt: str) -> str:
     """Plain-terminal fallback for tool approval (no live TUI, or its answer
-    timed out). Returns "yes", "no", or "session" (allow all for the rest of this
-    run). Routed via /dev/tty so the prompt stays visible when a TUI has redirected
-    the std streams to its console log; plain stdin without one."""
-    ans = tty_prompt(f"{prompt} [y/N/a]  (a = allow all this session): ")
+    timed out). Returns "yes", "no", "session" (allow all for the rest of this
+    run) or "session-deny" (withhold the tools for the rest of it).
+
+    A plain y/n answers ONE call, either way; only the two session choices
+    persist, and they mirror each other. Routed via /dev/tty so the prompt stays
+    visible when a TUI has redirected the std streams to its console log."""
+    ans = tty_prompt(f"{prompt} [y/N/a/d]  (a = allow all, d = deny all, this session): ")
     if ans is None:
         return "no"
     ans = ans.strip().lower()
     if ans in {"a", "all", "always", "session"}:
         return "session"
+    if ans in {"d", "deny", "never"}:
+        return "session-deny"
     return "yes" if ans in {"y", "yes"} else "no"
 
 
@@ -177,7 +183,12 @@ def build_approver(
             answer_s = default_stdin_approver(prompt)
         if answer_s == "session":
             set_session_allow(run_dir)
-        approved = answer_s != "no"
+        elif answer_s == "session-deny":
+            # Withdraws the tools from the next turn (see effective_run_commands),
+            # rather than refusing every later call: the model stops spending
+            # turns on a door that will not open.
+            set_session_deny(run_dir)
+        approved = answer_s in {"yes", "session"}
         events.emit("approval.answer", id=prompt_id, approved=approved, source="stdin")
         return approved
 

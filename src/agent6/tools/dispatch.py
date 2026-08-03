@@ -27,6 +27,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
+from agent6.runs.ipc import effective_run_commands
 from agent6.runs.layout import session_layout
 from agent6.sandbox.jail import (
     JailUnavailableError,
@@ -276,6 +277,9 @@ class ToolDispatcher:
         # and `runs rm` clears them. None (tests, review dispatchers) leaves
         # them unwired: the tools raise ToolError, like the DAG tools.
         self._shells = BackgroundShells(run_dir / "shells") if run_dir is not None else None
+        # The run's dir, for the effective command policy: the operator's
+        # session choice and away-mode live there and can change mid-run.
+        self._run_dir = run_dir
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
@@ -346,9 +350,21 @@ class ToolDispatcher:
         ``add_task`` with parent_id=None falls back to this as the parent."""
         self._run_root_node_id = node_id
 
+    def command_policy(self) -> str:
+        """ "no" | "ask" | "yes" for this run, right now.
+
+        Re-read rather than cached: an operator who denies for the session
+        mid-run withdraws the tools from the next turn, and one who allows for
+        the session stops being prompted from the next call.
+        """
+        configured = self._config.sandbox.run_commands
+        if self._run_dir is None:
+            return configured
+        return effective_run_commands(configured, self._run_dir)
+
     def available_tool_names(self) -> tuple[str, ...]:
         names = list(self._available)
-        if self._config.sandbox.run_commands == "no":
+        if self.command_policy() == "no":
             names = [n for n in names if n not in _COMMAND_TOOLS]
         # No verify_command (and none inferred) -> a gateless run: hide
         # run_verify_command rather than offer a tool that would error.
@@ -447,8 +463,8 @@ class ToolDispatcher:
                 raise ToolError(str(exc)) from exc
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
-        if name in _COMMAND_TOOLS and self._config.sandbox.run_commands == "no":
-            raise ToolError(f"{name} is disabled by config (run_commands = 'no')")
+        if name in _COMMAND_TOOLS and self.command_policy() == "no":
+            raise ToolError(f"{name} is not available (run_commands = 'no')")
         if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1" and name in {
             OutlineInput.TOOL_NAME,
             FindDefinitionInput.TOOL_NAME,
@@ -623,7 +639,7 @@ class ToolDispatcher:
 
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)
-        if self._config.sandbox.run_commands == "ask" and not self._approver(
+        if self.command_policy() == "ask" and not self._approver(
             f"Allow run_verify_command: {shlex.join(argv)}"
         ):
             raise ToolDenied("run_verify_command not approved (sandbox.run_commands='ask')")
@@ -660,7 +676,7 @@ class ToolDispatcher:
 
     def _run_command(self, raw: dict[str, Any]) -> ExecResult:
         args = RunCommandInput.model_validate(raw)
-        if self._config.sandbox.run_commands == "ask":
+        if self.command_policy() == "ask":
             # A shell-style command line, not a Python tuple repr: the operator
             # is approving a command, so show it the way they would type it.
             ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}")
@@ -698,7 +714,7 @@ class ToolDispatcher:
     def _run_background(self, raw: dict[str, Any]) -> BackgroundResult:
         args = RunBackgroundInput.model_validate(raw)
         shells = self._background()
-        if self._config.sandbox.run_commands == "ask" and not self._approver(
+        if self.command_policy() == "ask" and not self._approver(
             f"Allow run_background: {shlex.join(args.argv)}"
         ):
             raise ToolDenied("run_background not approved (sandbox.run_commands='ask')")

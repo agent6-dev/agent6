@@ -783,7 +783,7 @@ def test_apply_edit_preview_truncates_giant_diff(tmp_path: Path) -> None:
 def test_run_command_disabled_when_no(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="disabled"):
+    with pytest.raises(ToolError, match="not available"):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "run_command" not in d.available_tool_names()
 
@@ -1405,7 +1405,7 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
         ("totally_unknown_tool", False),
     ]
     # Reasons come from the dispatcher's own guard messages, not model content.
-    assert "disabled by config" in results[0]["summary"]
+    assert "not available" in results[0]["summary"]
     assert "Unknown tool" in results[1]["summary"]
 
 

@@ -317,10 +317,11 @@ def clear_question_answers(run_dir: Path, question_id: str) -> None:
 # without a front-end to prompt). Scoped to the run's approvals dir, so other runs
 # are unaffected; a fresh run has a fresh dir and prompts again.
 SESSION_ALLOW_FILE = "session.allow"
+SESSION_DENY_FILE = "session.deny"
 
 
 def set_session_allow(run_dir: Path) -> None:
-    """Record the operator's 'allow all run_commands for the session' choice."""
+    """Record the operator's 'allow every command for the session' choice."""
     d = approvals_dir(run_dir)
     d.mkdir(parents=True, exist_ok=True)
     _write_answer_atomic(d / SESSION_ALLOW_FILE, "1")
@@ -328,6 +329,44 @@ def set_session_allow(run_dir: Path) -> None:
 
 def session_allow_set(run_dir: Path) -> bool:
     return (approvals_dir(run_dir) / SESSION_ALLOW_FILE).exists()
+
+
+def set_session_deny(run_dir: Path) -> None:
+    """Record the mirror choice: 'no commands for the rest of the session'.
+
+    A single "no" answers one call, exactly as a single "yes" approves one; only
+    the session choices persist. Denying for the session WITHDRAWS the tools
+    rather than refusing each call, so the model stops spending turns on a door
+    that will not open.
+    """
+    d = approvals_dir(run_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    _write_answer_atomic(d / SESSION_DENY_FILE, "1")
+
+
+def session_deny_set(run_dir: Path) -> bool:
+    return (approvals_dir(run_dir) / SESSION_DENY_FILE).exists()
+
+
+def effective_run_commands(configured: str, run_dir: Path) -> str:
+    """What the command policy IS right now: "no" | "ask" | "yes".
+
+    One answer from three inputs, so every consumer agrees: the configured
+    knob, the operator's session choice, and the away-mode a detached run was
+    left with. Only "ask" is movable -- a configured "yes" or "no" is the
+    operator's standing policy and no in-run choice overrides it.
+
+    "no" means the tools are WITHDRAWN, not refused per call: that is the same
+    wiring for `run_commands = "no"`, `--no-commands`, deny-for-session and an
+    away-mode of "deny", so the rules fall out consistently.
+    """
+    if configured != "ask":
+        return configured
+    if session_allow_set(run_dir):
+        return "yes"
+    if session_deny_set(run_dir) or away_mode(run_dir) == "deny":
+        return "no"
+    return "ask"
 
 
 # How a DETACHED run (no terminal to prompt) handles run_command approvals and
