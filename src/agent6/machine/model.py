@@ -379,6 +379,19 @@ StateSpec = Annotated[
 ]
 
 
+# What a machine `[config]` overlay may never carry, in one place: the loader
+# below enforces it, and `config set --machine-file` refuses the same keys up
+# front. The CLI guard used to keep its own shorter copy, so it wrote overlays
+# the loader always rejected.
+PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "profiles")
+PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
+    "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
+    "git.run_repo_hooks": (
+        "honoring the repo's .git/hooks runs repo-controlled code on the host outside the jail"
+    ),
+}
+
+
 class MachineSpec(BaseModel):
     """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
     named `states` graph, and an optional agent6 `[config]` overlay whose
@@ -422,7 +435,7 @@ class MachineSpec(BaseModel):
         # the effective config). Those are read only from the global/repo config;
         # an overlay that sets them is rejected at load so a machine can never
         # weaken the sandbox the operator chose.
-        for table in ("providers", "sandbox", "profiles"):
+        for table in PROTECTED_OVERLAY_TABLES:
             if table in self.config:
                 raise ValueError(
                     f"machine `[config]` overlay must not declare `[{table}.*]`:"
@@ -430,28 +443,17 @@ class MachineSpec(BaseModel):
                     " operator decisions set in the global/repo config, never in a"
                     " .asm.toml file"
                 )
-        # The machine notify hook runs an operator argv on the host OUTSIDE the
-        # jail, so it must never come from a (possibly LLM-drafted) machine file.
-        machine_overlay = self.config.get("machine")
-        if isinstance(machine_overlay, dict) and "notify" in machine_overlay:
-            raise ValueError(
-                "machine `[config]` overlay must not declare `[machine.notify]`:"
-                " the notify hook runs an operator argv outside the jail and is"
-                " set only in the global/repo config, never in a .asm.toml file"
-            )
-        # `git.run_repo_hooks` decides whether a `mode="run"` state's auto-commit
-        # honors the repo's `.git/hooks/*`, which is repo-controlled code that runs
-        # on the HOST outside the jail (a host-RCE vector). Secure-by-default false;
-        # a machine file must not be able to flip it on. Other `[git]` keys (commit
-        # identity) are harmless overlay knobs and stay allowed.
-        git_overlay = self.config.get("git")
-        if isinstance(git_overlay, dict) and "run_repo_hooks" in git_overlay:
-            raise ValueError(
-                "machine `[config]` overlay must not set `git.run_repo_hooks`:"
-                " honoring the repo's .git/hooks runs repo-controlled code on the"
-                " host outside the jail; it is an operator decision in the"
-                " global/repo config, never in a .asm.toml file"
-            )
+        # Individual operator-only leaves (the rest of their table stays a
+        # legitimate overlay knob, e.g. [config.git.commit] identity).
+        for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
+            head, _, leaf = dotted.partition(".")
+            sub = self.config.get(head)
+            if isinstance(sub, dict) and leaf in sub:
+                raise ValueError(
+                    f"machine `[config]` overlay must not set `{dotted}`: {why};"
+                    " it is an operator decision in the global/repo config, never"
+                    " in a .asm.toml file"
+                )
         return self
 
 

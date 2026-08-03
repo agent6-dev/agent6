@@ -50,6 +50,8 @@ from agent6.machine.journal import (
     write_source,
 )
 from agent6.machine.model import (
+    PROTECTED_OVERLAY_LEAVES,
+    PROTECTED_OVERLAY_TABLES,
     AgentState,
     MachineError,
     MachineSpec,
@@ -58,6 +60,8 @@ from agent6.machine.model import (
 
 __all__ = [
     "MACHINE_AUTHOR_GUIDE",
+    "PROTECTED_OVERLAY_LEAVES",
+    "PROTECTED_OVERLAY_TABLES",
     "SCRIPTS_PAYLOAD_KEY",
     "TOML_PAYLOAD_KEY",
     "AgentExecResult",

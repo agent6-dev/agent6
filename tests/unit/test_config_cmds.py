@@ -144,6 +144,27 @@ _BAD = (
 )
 
 
+def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path) -> None:
+    """The CLI guard documents itself as mirroring the MachineSpec validator but
+    checked only providers/sandbox, so `config set --machine-file` wrote
+    profiles.*, machine.notify.*, and git.run_repo_hooks into an overlay the
+    loader then always rejects -- and the compensating load re-check is skipped
+    while the file is not yet a valid machine (a `machine create` draft), so the
+    operator got a success and a file that can never load."""
+    m = tmp_path / "m.asm.toml"
+    for key in (
+        "providers.openai.base_url",
+        "sandbox.run_commands",
+        "profiles.ultra.sandbox.run_commands",
+        "machine.notify.on_event",
+        "git.run_repo_hooks",
+    ):
+        assert cc._reject_machine_protected(key, m) is not None, key  # pyright: ignore[reportPrivateUsage]
+    # Benign overlay keys stay writable (the forbid is surgical).
+    assert cc._reject_machine_protected("git.commit.name", m) is None  # pyright: ignore[reportPrivateUsage]
+    assert cc._reject_machine_protected("review.panel_size", m) is None  # pyright: ignore[reportPrivateUsage]
+
+
 def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

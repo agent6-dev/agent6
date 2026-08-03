@@ -37,7 +37,12 @@ from agent6.config.layer import (
     profile_catalog,
     repo_config_path_for,
 )
-from agent6.machine import MachineError, load_machine
+from agent6.machine import (
+    PROTECTED_OVERLAY_LEAVES,
+    PROTECTED_OVERLAY_TABLES,
+    MachineError,
+    load_machine,
+)
 from agent6.models import registry as models_registry
 from agent6.paths import (
     chown_to_real_user,
@@ -168,22 +173,25 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
 
 
 def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
-    """Error string if *key* touches an operator-only table in a machine overlay.
+    """Error string if *key* is operator-only in a machine overlay, else None.
 
-    Mirrors ``MachineSpec._forbid_protected_overlay_tables``: a machine
-    ``[config]`` overlay must not carry ``providers.*`` (endpoints/secrets) or
-    ``sandbox.*`` (jail policy, network egress incl. allow_urls, run_commands,
-    .git protection). Those are operator decisions, set in the
-    global/repo config, never in a (possibly untrusted) machine file.
+    Reads the same PROTECTED_OVERLAY_* sets the MachineSpec validator enforces,
+    so this refuses exactly what the loader would: keeping a second, shorter
+    copy here meant `config set --machine-file` wrote profiles.*,
+    machine.notify.*, and git.run_repo_hooks into overlays that can never load.
     """
     if machine is None:
         return None
-    for table in ("providers", "sandbox"):
+    for table in PROTECTED_OVERLAY_TABLES:
         if key == table or key.startswith(f"{table}."):
             return (
                 f"machine [config] overlays must not set {table}.*:"
-                " connections/secrets and sandbox policy are operator-only (global/repo config)"
+                " connections/secrets, sandbox policy, and profile presets are"
+                " operator-only (global/repo config)"
             )
+    for dotted, why in PROTECTED_OVERLAY_LEAVES.items():
+        if key == dotted or key.startswith(f"{dotted}."):
+            return f"machine [config] overlays must not set {dotted}: {why} (operator-only)"
     return None
 
 
