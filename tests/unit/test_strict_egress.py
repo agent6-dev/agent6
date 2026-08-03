@@ -5,6 +5,8 @@ create a userns for the egress broker (surgical AppArmor isolation case)."""
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -99,3 +101,41 @@ def test_only_explicit_states_refuses_rather_than_downgrade(
     isolation, err = egress.resolve_strict_egress_viability(cfg, "strict")
     assert isolation == "strict" and err is not None
     assert "REFUSING" in err and "only_explicit_states" in err
+
+
+def test_broker_sockets_ignore_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The broker's provider sockets must never land where a jail can name them.
+
+    AF_UNIX PATHNAME sockets are not namespaced by the network namespace, so the
+    jail's MOUNT namespace is the only barrier -- and a read-only bind still
+    permits connect(). tempfile's default base honours $TMPDIR, so a $TMPDIR
+    inside the workspace put live provider tunnels in the one directory every
+    jail bind-mounts read-write: an LLM-chosen argv could connect() straight to
+    the operator's provider."""
+    from agent6.app.egress import _egress_socket_dir  # pyright: ignore[reportPrivateUsage]
+
+    workspace = tmp_path / "repo"
+    (workspace / ".tmp").mkdir(parents=True)
+    monkeypatch.setenv("TMPDIR", str(workspace / ".tmp"))
+    sock_dir = _egress_socket_dir(Config(), workspace)
+    try:
+        assert workspace not in sock_dir.parents
+    finally:
+        shutil.rmtree(sock_dir, ignore_errors=True)
+
+
+def test_broker_socket_dir_refuses_an_exposing_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Placement alone is not enough: an extra_read_paths grant (or a workspace)
+    containing the chosen directory bind-mounts it into every jail, so the run
+    is refused rather than started with reachable provider tunnels."""
+    from agent6.app.egress import _egress_socket_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.broker import EgressBrokerError
+
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(runtime)]}})
+    with pytest.raises(EgressBrokerError, match="provider tunnel"):
+        _egress_socket_dir(cfg, tmp_path / "repo")

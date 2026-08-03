@@ -116,6 +116,17 @@ process irrevocably, inherited by every child:
       properties. Default empty, validated at load, honored only under
       `providers`, agent path only. Last-overlay-wins, so `config show` is
       authoritative.
+- **The broker's sockets are placed where no jail can name them.**
+    - `AF_UNIX` PATHNAME sockets are not namespaced by the network namespace, so
+      the jail's MOUNT namespace is the only barrier -- and a read-only bind
+      still permits `connect()`. The socket dir therefore goes in the user
+      runtime dir (`$XDG_RUNTIME_DIR`, else `/run/user/<uid>`, else `/tmp`),
+      never via `tempfile`'s `$TMPDIR`-honouring default: a `$TMPDIR` inside the
+      workspace put live provider tunnels in the one directory every jail
+      bind-mounts read-write.
+    - A run is REFUSED when the chosen dir would still be reachable -- inside the
+      workspace, or inside an `extra_read_paths` grant -- rather than started
+      with a tunnel a `run_command` could dial.
 - **MCP servers get no outbound network under `providers`** (a deliberate limit;
   local `AF_UNIX` helpers are unaffected).
 

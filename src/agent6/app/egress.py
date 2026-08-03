@@ -250,6 +250,55 @@ def resolve_strict_egress_viability(
     return "hardened", None
 
 
+def _egress_socket_dir(cfg: Config, cwd: Path) -> Path:
+    """Create the directory holding the broker's per-provider sockets.
+
+    Deliberately NOT ``tempfile.mkdtemp()``'s default base: that honours
+    ``$TMPDIR``, and a ``$TMPDIR`` pointing inside the workspace put the
+    sockets in the one directory every jail bind-mounts read-write. ``AF_UNIX``
+    pathname sockets are not namespaced by the network namespace, so the jail's
+    MOUNT namespace is the only thing keeping a child away from them: an
+    LLM-chosen argv that can name the socket can ``connect()`` to a live
+    provider tunnel (read-only mounts do not stop connect). The runtime dir is
+    user-private and mounted into no jail; ``/tmp`` is the fallback because the
+    strict jail replaces it with a fresh private tmpfs, so the host's is
+    invisible there too.
+    """
+    for base in (os.environ.get("XDG_RUNTIME_DIR", ""), f"/run/user/{os.getuid()}", "/tmp"):  # noqa: S108
+        if not base or not Path(base).is_dir():
+            continue
+        sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-", dir=base))
+        exposed = _socket_dir_exposed(sock_dir, cfg, cwd)
+        if exposed is None:
+            return sock_dir
+        shutil.rmtree(sock_dir, ignore_errors=True)
+        raise EgressBrokerError(exposed)
+    raise EgressBrokerError("no directory available for the egress broker sockets")
+
+
+def _socket_dir_exposed(sock_dir: Path, cfg: Config, cwd: Path) -> str | None:
+    """A refusal when a jail could NAME the broker sockets, else None.
+
+    Placement alone is not enough: an operator grant (``extra_read_paths``) or
+    a workspace that contains the chosen directory bind-mounts it into every
+    jail, and a read-only bind still permits ``connect()``.
+    """
+    grants = [cwd, *(Path(p) for p in cfg.sandbox.extra_read_paths)]
+    for grant in grants:
+        try:
+            resolved = grant.resolve()
+        except OSError:
+            continue
+        if sock_dir == resolved or resolved in sock_dir.parents:
+            return (
+                f"the egress broker's provider sockets would sit inside {resolved}, which is"
+                " mounted into every jailed command, so a run_command could connect to a"
+                " provider tunnel. Move the workspace, or drop that sandbox.extra_read_paths"
+                " entry."
+            )
+    return None
+
+
 def maybe_start_egress(
     cfg: Config, isolation: IsolationLevel, *, detach_exe: str | None = None
 ) -> tuple[EgressGuard, str | None]:
@@ -302,7 +351,7 @@ def maybe_start_egress(
     broker: BrokerHandle | None = None
     spawner: HostSpawner | None = None
     try:
-        sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
+        sock_dir = _egress_socket_dir(cfg, Path.cwd())
         if detach_exe is not None:
             spawner = fork_host_spawner([detach_exe])
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
