@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -172,7 +173,7 @@ def test_build_review_seats_model_override_overrides_pinned_seat(monkeypatch: An
 
     seats = prov_mod.build_review_seats(
         cfg,
-        transcript_sink=cast(Any, None),
+        transcript_sink=cast(Any, MagicMock()),
         budget=cast(Any, None),
         n=1,
         model_override="claude-haiku-override",
@@ -191,7 +192,7 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     cfg = _cfg_with_seats(("security@anthropic/claude-opus-4-8",))
 
     seats = prov_mod.build_review_seats(
-        cfg, transcript_sink=cast(Any, None), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, MagicMock()), budget=cast(Any, None), n=1
     )
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
@@ -206,7 +207,7 @@ def test_build_review_seats_model_override_on_bare_persona_seat(monkeypatch: Any
 
     seats = prov_mod.build_review_seats(
         cfg,
-        transcript_sink=cast(Any, None),
+        transcript_sink=cast(Any, MagicMock()),
         budget=cast(Any, None),
         n=1,
         model_override="claude-haiku-override",

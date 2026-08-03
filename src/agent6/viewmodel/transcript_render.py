@@ -49,6 +49,17 @@ class Turn:
     seq: int = 0
 
 
+# The seats whose round-trips ARE the conversation: the loop's driving provider,
+# whose role differs by mode ("planner" in plan mode). Everything else shares the
+# run's sink but is a side-call -- the gist distiller, the tier-2 summariser, the
+# critic, a review seat -- and a side-call's one-message request reads as a
+# compaction restart to the fold below, which then printed a phantom "context
+# summarised" marker, rendered its scratch prompt as a turn, and re-emitted the
+# history behind it. A transcript written before seats were stamped has none and
+# is the driving seat's by default.
+CONVERSATION_SEATS = frozenset({"worker", "planner"})
+
+
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
     """Every transcript JSON object under a run's transcripts/ dir, in seq order."""
     if not transcripts_dir.is_dir():
@@ -59,14 +70,7 @@ def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
             obj = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(obj, dict) and str(obj.get("seat", "worker") or "worker") == "worker":
-            # Only the worker's round-trips are the conversation. Compaction's
-            # side-calls (the gist distiller, the tier-2 summariser) share the
-            # sink, and their one-message requests read as a compaction restart
-            # to the fold below: it printed a phantom "context summarised"
-            # marker, rendered the side-call's scratch prompt as a worker turn,
-            # and re-emitted the history behind it. A transcript written before
-            # seats were stamped has none, and is the worker's by default.
+        if isinstance(obj, dict) and str(obj.get("seat", "") or "worker") in CONVERSATION_SEATS:
             out.append(obj)
     out.sort(key=lambda t: t.get("seq", 0))
     return out

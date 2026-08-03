@@ -590,3 +590,32 @@ def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> No
     assert "context summarised" not in body, "a restart that never happened"
     assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a turn"
     assert body.count("reading") == 1, "the history was re-emitted behind the side-call"
+
+
+def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_path: Path) -> None:
+    """The seat filter first kept only "worker", but the loop's driving provider
+    takes its role from the mode: plan mode's is "planner", so every plan run's
+    transcripts were filtered out and `history transcript` said the run had none
+    while the files sat on disk. Review seats must still be excluded -- they
+    share the run's sink and their one-message requests read as a restart."""
+    import json
+
+    d = tmp_path / "transcripts"
+    d.mkdir()
+    for seq, seat in ((1, "planner"), (2, "reviewer"), (3, "review:security"), (4, "")):
+        (d / f"{seq:06d}.json").write_text(
+            json.dumps(
+                {
+                    "seq": seq,
+                    "seat": seat,
+                    "request": {"url": "", "headers": {}, "body": {"messages": []}},
+                    "response": {"status": 200, "body": {}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    kept = [t["seat"] for t in load_transcripts(d)]
+    assert "planner" in kept, "a plan run lost its whole conversation"
+    assert "" in kept, "a transcript written before seats existed is the driving seat's"
+    assert "reviewer" not in kept and "review:security" not in kept

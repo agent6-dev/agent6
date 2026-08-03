@@ -380,7 +380,10 @@ def build_review_seats(
                     entry,
                     seat_model,
                     None,
-                    transcript_sink=transcript_sink,
+                    # Stamp the seat like build_role_provider does: an unstamped
+                    # sink records seat="", which the conversation fold reads as
+                    # the driving seat and renders as worker turns.
+                    transcript_sink=transcript_sink.for_seat(f"review:{persona}"),
                     budget=budget,
                 )
                 label = f"{provider_name}/{seat_model}"
