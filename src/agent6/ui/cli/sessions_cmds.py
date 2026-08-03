@@ -185,14 +185,12 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
             print(pruned)
             return 0
 
-    if not run_branch and (reason := _no_commits_reason(manifest)):
-        # HEAD here would diff the base against whatever the OPERATOR has
-        # committed since and present it as this session's work. Only a run
-        # with branch_per_run off legitimately has its commits on HEAD.
-        print(f"[agent6] {reason}.")
+    ref = _commits_ref(manifest)
+    if not ref.head_ref:
+        print(f"[agent6] {ref.reason}.")
         return 0
 
-    head_ref = run_branch if run_branch else "HEAD"
+    head_ref = ref.head_ref
     # The logical command; printed without the -c hardening overrides (the
     # same convention as git_ops error messages), executed with them.
     args: list[str] = ["diff", *DIFF_SHOW_SAFETY_FLAGS]
@@ -265,18 +263,41 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     )
 
 
-def _no_commits_reason(manifest: SessionManifest) -> str:
-    """Why a branchless session made no commits, or "" when it legitimately
-    committed onto the checked-out branch (a run with branch_per_run off)."""
+@dataclass(frozen=True, slots=True)
+class _CommitsRef:
+    """Where a session's commits end (``base_sha..head_ref``): the run branch,
+    "HEAD" for a run with branch_per_run off (it committed onto the checked-out
+    branch), or "" when the session made none. ``reason`` says why there is no
+    run branch, and is "" exactly when ``head_ref`` is one -- so the branch
+    verbs (commits/merge) refuse on ``reason`` while diff reads ``head_ref``."""
+
+    head_ref: str
+    reason: str
+
+
+def _commits_ref(manifest: SessionManifest) -> _CommitsRef:
+    """The one owner of the branch/HEAD fallback. HEAD only for a run with
+    branch_per_run off: for any other branchless session, ``base..HEAD`` is the
+    OPERATOR'S work presented as the session's."""
+    if manifest.run_branch:
+        return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
         # A parked run never started, so `base..HEAD` is whatever the run that
         # HELD the checkout committed -- the one it was parked behind.
-        return "this run was parked before it started, so it made no commits"
+        return _CommitsRef(
+            head_ref="", reason="this run was parked before it started, so it made no commits"
+        )
     kind = SESSION_KINDS.get(manifest.mode)
     if kind is not None and not kind.edits:
         article = "an" if manifest.mode[:1] in "aeiou" else "a"
-        return f"{article} {manifest.mode} does not write to the repo, so it made no commits"
-    return ""
+        return _CommitsRef(
+            head_ref="",
+            reason=f"{article} {manifest.mode} does not write to the repo, so it made no commits",
+        )
+    return _CommitsRef(
+        head_ref="HEAD",
+        reason="branch_per_run was off, so the work already landed on your current branch",
+    )
 
 
 def _resolve_session_manifest(
@@ -374,14 +395,18 @@ def _cmd_commits(*, session_id: str) -> int:
     if isinstance(res, int):
         return res
     _layout, manifest = res
-    base_sha = manifest.base_sha
-    run_branch = manifest.run_branch
-    if not run_branch or not base_sha:
-        why = _no_commits_reason(manifest) or (
-            "branch_per_run was off, so the work already landed on your current branch"
+    ref = _commits_ref(manifest)
+    if ref.reason:
+        print(
+            f"ERROR: this session has no branch to list commits from ({ref.reason}).",
+            file=sys.stderr,
         )
-        print(f"ERROR: this session has no branch to list commits from ({why}).", file=sys.stderr)
         return 2
+    base_sha = manifest.base_sha
+    if not base_sha:
+        print("ERROR: manifest has no base_sha; nothing to list commits from", file=sys.stderr)
+        return 2
+    run_branch = ref.head_ref
     pruned = _pruned_branch_note(cwd, manifest, run_branch)
     if pruned is not None:
         print(pruned)
@@ -438,13 +463,11 @@ def _plan_merge(  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
-    run_branch = manifest.run_branch
-    if not run_branch:
-        why = _no_commits_reason(manifest) or (
-            "branch_per_run was off, so the work already landed on your current branch"
-        )
-        print(f"ERROR: this session has no branch to merge ({why}).", file=sys.stderr)
+    ref = _commits_ref(manifest)
+    if ref.reason:
+        print(f"ERROR: this session has no branch to merge ({ref.reason}).", file=sys.stderr)
         return 2
+    run_branch = ref.head_ref
     target = into or manifest.base_branch
     if not target:
         print(

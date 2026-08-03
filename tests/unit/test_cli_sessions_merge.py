@@ -144,7 +144,9 @@ def test_runs_merge_refuses_when_no_branch_recorded(
     _setup_run(tmp_path, "run-NOBR11", commits=[], run_branch=None)
     rc = main(["sessions", "merge", "run-NOBR11"])
     assert rc == 2
-    assert "no branch to merge" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "no branch to merge" in err
+    assert "branch_per_run was off, so the work already landed on your current branch" in err
 
 
 def test_runs_merge_refuses_dirty_tree(
@@ -482,3 +484,59 @@ def test_commits_explains_a_plan_the_same_way_merge_does(
     err = capsys.readouterr().err
     assert "does not write to the repo" in err
     assert "branch_per_run was off?" not in err
+
+
+def _set_manifest_field(tmp_path: Path, session_id: str, **fields: str) -> None:
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
+    m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    m.update(fields)
+    layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+
+def test_diff_of_a_branch_per_run_off_run_shows_the_work_on_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """branch_per_run off records no run branch and the run commits onto the
+    checked-out branch, so diff (alone among the branch verbs) falls back to
+    base..HEAD."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-HEADF1", commits=[], run_branch=None)
+    _set_manifest_field(tmp_path, "run-HEADF1", mode="run")
+    (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 1: work on HEAD")
+
+    rc = main(["sessions", "diff", "run-HEADF1"])
+    assert rc == 0
+    out = capfd.readouterr().out
+    assert "+w" in out
+    assert "made no commits" not in out
+
+
+def test_commits_of_a_branch_per_run_off_run_names_where_the_work_went(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-HEADF2", commits=[], run_branch=None)
+    _set_manifest_field(tmp_path, "run-HEADF2", mode="run")
+
+    assert main(["sessions", "commits", "run-HEADF2"]) == 2
+    err = capsys.readouterr().err
+    assert "no branch to list commits from" in err
+    assert "branch_per_run was off, so the work already landed on your current branch" in err
+
+
+def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A manifest that records a run branch but lost base_sha (agent6 never
+    writes that pair) is a base_sha problem; the combined guard called it
+    "branch_per_run was off", a branch it plainly recorded."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-NOBASE1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _set_manifest_field(tmp_path, "run-NOBASE1", base_sha="")
+
+    assert main(["sessions", "commits", "run-NOBASE1"]) == 2
+    err = capsys.readouterr().err
+    assert "no base_sha" in err
+    assert "branch_per_run" not in err
