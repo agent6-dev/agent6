@@ -65,6 +65,27 @@ def test_custom_user_profile(repo: Path) -> None:
     assert cfg.review.panel_size == 2 and cfg.review.trigger == "before_finish"
 
 
+def test_only_a_flag_selected_profile_is_replayed_on_resume(repo: Path) -> None:
+    """A resumed/forked leg re-applies --profile but must NOT hand a
+    config-selected name back as an override: _select_profile would call it a
+    flag, which outranks every config layer, so a run whose repo config beat a
+    global profile came back from resume with the profile winning -- gaining a
+    blocking review veto the original never had. Only the name was stamped, so
+    the two cases were indistinguishable."""
+    from agent6.runs.manifest import WorkflowStamp
+
+    assert WorkflowStamp(profile="t", profile_from_flag=True).replay_profile == "t"
+    assert WorkflowStamp(profile="t").replay_profile == ""  # config-selected: re-resolves
+
+    # Why it matters: the SAME files resolve differently when the name arrives
+    # as a flag, which is exactly what the old replay did.
+    _write_repo_config(repo, f'profile = "t"\n\n[review]\npanel_size = 3\n\n{_PROFILE_T}')
+    assert load_effective(repo).config.review.panel_size == 5  # repo-selected profile wins
+    _write_repo_config(repo, f"[review]\npanel_size = 3\n\n{_PROFILE_T}")
+    assert load_effective(repo).config.review.panel_size == 3  # no selection: config wins
+    assert load_effective(repo, None, profile="t").config.review.panel_size == 5  # as a flag
+
+
 def test_user_profile_named_standard_replaces_the_builtin(repo: Path) -> None:
     """A user table named after a built-in replaces it wholesale (docs/config.md,
     and resolve_profile's own "user profiles win over built-ins" contract). The

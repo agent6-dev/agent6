@@ -425,6 +425,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # back to load_effective, and a sandbox word ("strict") there
                 # made every parked resume die with "unknown profile".
                 effective_profile=profile or cfg.profile,
+                profile_from_flag=bool(profile),
                 parked_task=task,
             )
             reporter.err(
@@ -552,6 +553,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg=cfg,
             mode=mode,
             effective_profile=profile or cfg.profile,
+            profile_from_flag=bool(profile),
         )
 
         # ask gets a small default USD ceiling so an exploratory question can't run

@@ -57,6 +57,7 @@ def write_run_manifest(
     cfg: Config,
     mode: str = "run",
     effective_profile: str = "",
+    profile_from_flag: bool = False,
     parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -93,8 +94,10 @@ def write_run_manifest(
             critic=cfg.review.trigger,
             revise_prompt=cfg.prompt.revise_prompt,
             # The profile the run actually used (--profile flag or top-level
-            # `profile`), so `agent6 resume` re-applies the same strategy.
+            # `profile`), with how it was chosen: only a flag-selected one is
+            # replayed as an override on resume (see WorkflowStamp.replay_profile).
             profile=effective_profile,
+            profile_from_flag=profile_from_flag,
         ),
         parked_task=parked_task,
         parent_run_id=parent_run_id,

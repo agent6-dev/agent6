@@ -388,7 +388,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
-        manifest_profile = manifest.workflow.profile
+        manifest_profile = manifest.workflow.replay_profile
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
 

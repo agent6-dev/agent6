@@ -180,7 +180,13 @@ def _seed_source_run(
                 "base_sha": "basesha000",
                 "base_branch": "main",
                 "run_branch": f"agent6/{run_id}",
-                "workflow": {"critic": "off", "revise_prompt": "off", "profile": workflow_profile},
+                "workflow": {
+                    "critic": "off",
+                    "revise_prompt": "off",
+                    "profile": workflow_profile,
+                    # A seeded profile is one the fork must replay, i.e. flag-selected.
+                    "profile_from_flag": bool(workflow_profile),
+                },
             }
         ),
         encoding="utf-8",

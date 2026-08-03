@@ -220,7 +220,8 @@ def create_fork(  # noqa: PLR0911
     src_base_sha = sm.base_sha
     src_base_branch = sm.base_branch
     src_user_task = sm.user_task
-    src_profile = sm.workflow.profile
+    src_profile = sm.workflow.profile  # the NAME: the child stamps + displays it
+    src_profile_from_flag = sm.workflow.profile_from_flag
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
@@ -235,7 +236,7 @@ def create_fork(  # noqa: PLR0911
         # so the child manifest's models/workflow stamp must be derived from
         # the SAME profiled config or `runs show` reports a model the forked
         # run never uses.
-        cfg = load_effective(cwd, config_path, profile=src_profile).config
+        cfg = load_effective(cwd, config_path, profile=sm.workflow.replay_profile).config
     except ConfigError as exc:
         reporter.err(f"CONFIG ERROR:\n{exc}")
         return "", 2
@@ -259,6 +260,7 @@ def create_fork(  # noqa: PLR0911
         user_task=src_user_task,
         mode=src_mode,
         profile=src_profile,
+        profile_from_flag=src_profile_from_flag,
         cfg=cfg,
         reporter=reporter,
     )
@@ -280,6 +282,7 @@ def _materialize_fork(
     user_task: str,
     mode: str,
     profile: str,
+    profile_from_flag: bool,
     cfg: Config,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
@@ -309,6 +312,7 @@ def _materialize_fork(
         cfg=cfg,
         mode=mode,
         effective_profile=profile,
+        profile_from_flag=profile_from_flag,
         parent_run_id=src.run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,

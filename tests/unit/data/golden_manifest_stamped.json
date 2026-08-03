@@ -18,7 +18,8 @@
   "workflow": {
     "critic": "on",
     "revise_prompt": "off",
-    "profile": ""
+    "profile": "",
+    "profile_from_flag": false
   },
   "parked_task": "",
   "parent_run_id": "r-parent",

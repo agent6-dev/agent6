@@ -21,7 +21,8 @@
   "workflow": {
     "critic": "off",
     "revise_prompt": "on",
-    "profile": "strict"
+    "profile": "strict",
+    "profile_from_flag": false
   },
   "parked_task": "",
   "parent_run_id": null,
