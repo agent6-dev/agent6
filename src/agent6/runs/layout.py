@@ -23,11 +23,9 @@ def is_safe_run_id(run_id: str) -> bool:
     return bool(run_id) and "/" not in run_id and "\\" not in run_id and run_id not in {".", ".."}
 
 
-# The event journal's filename. Named once: a reader that hardcodes the wrong
-# one silently finds nothing, which is indistinguishable from an empty session.
-# The presentation layers (viewmodel, ui.tui, ui.web) are handed run dirs and
-# spell it themselves rather than take a dependency on this module for one
-# constant; the engine imports it.
+# The event journal's filename. Named once, and used everywhere: a reader that
+# hardcodes the wrong one silently finds nothing, which is indistinguishable
+# from an empty session.
 LOGS_NAME = "logs.jsonl"
 
 

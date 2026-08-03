@@ -20,6 +20,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
@@ -267,7 +268,7 @@ def run_snapshot(run_dir: Path) -> dict[str, Any]:
     """A run's folded RunState as the wire dict (the same fold as
     `agent6 attach <id> --json`, which owns the dir-backed run_id/user_task
     fill), plus the manifest's branch/compare facts."""
-    state = fold_run(tail_events(run_dir / "logs.jsonl", follow=False))
+    state = fold_run(tail_events(run_dir / LOGS_NAME, follow=False))
     snap = run_state_as_dict(state, run_dir)
     snap.update(manifest_header(run_dir))
     return snap
@@ -293,7 +294,7 @@ def conversation_items(log_path: Path) -> list[dict[str, Any]]:
 
 def conversation_payload(run_dir: Path) -> dict[str, Any]:
     """A run's conversation, folded from its event log."""
-    return {"run_id": run_dir.name, "items": conversation_items(run_dir / "logs.jsonl")}
+    return {"run_id": run_dir.name, "items": conversation_items(run_dir / LOGS_NAME)}
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:

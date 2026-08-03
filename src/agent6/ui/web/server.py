@@ -40,6 +40,7 @@ from agent6.runs.ipc import (
     unregister_frontend,
     worker_is_alive,
 )
+from agent6.runs.layout import LOGS_NAME
 from agent6.ui.web import actions, model
 from agent6.ui.web.page import (
     FAVICON_SVG,
@@ -619,7 +620,7 @@ class _Handler(BaseHTTPRequestHandler):
         stop = threading.Event()
 
         def tail() -> None:
-            src = run_dir / "logs.jsonl"
+            src = run_dir / LOGS_NAME
             try:
                 for ev in tail_events(
                     src, follow=True, stop_when_finished=True, should_stop=stop.is_set

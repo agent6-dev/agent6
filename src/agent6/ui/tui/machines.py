@@ -54,6 +54,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
+from agent6.runs.layout import LOGS_NAME
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -382,7 +383,7 @@ class MachineWatchScreen(Screen[None]):
         state_dir = self._state_dir()
         if state_dir is None:
             return
-        rs = fold_run(tail_events(state_dir / "logs.jsonl", follow=False))
+        rs = fold_run(tail_events(state_dir / LOGS_NAME, follow=False))
         for ap in rs.pending_approvals:
             key = f"{state_dir}|{ap.id}"
             if not ap.answered and key not in self._seen_prompt_keys:

@@ -73,6 +73,13 @@ _VERIFY_DEAD_SIGNATURES = (
     "importerror while loading conftest",
 )
 
+BASELINE_RED_NOTICE = (
+    "[harness] That verify ran against an unmodified tree, so the gate was"
+    " ALREADY failing before you changed anything. Those failures are not"
+    " yours: fix what you were asked to fix, and do not chase them unless the"
+    " task is about them. Say so in your finish summary."
+)
+
 VERIFY_BROKEN_NUDGE = (
     "[harness verify-broken] The verify command exited immediately WITHOUT"
     " running any tests -- its output indicates the test runner itself is"

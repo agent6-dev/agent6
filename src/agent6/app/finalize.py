@@ -12,9 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent6.app.baseline import gate_on_base
 from agent6.app.merge import execute_merge
-from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
 from agent6.config import Config, NotifyConfig
@@ -34,7 +32,6 @@ from agent6.git_ops import (
 )
 from agent6.runs.layout import LOGS_NAME, RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.types import IsolationLevel
 from agent6.viewmodel import scan_run_log, summarize_run_dir
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import RunResult
@@ -54,7 +51,11 @@ def run_exit_code(result: RunResult) -> int:
     """Map a finished run to its process exit code.
 
     0 finished (nothing to gate on, or the gate was green) / 3 budget /
-    4 finished over a RED verify / 1 else."""
+    4 finished over a RED verify / 1 else.
+
+    A gate that was already red before the run still exits 4: the tree is not
+    green, and that is what 4 means. WHOSE failure it is shows in the word and
+    the reason, not here -- a script reading 0 would take it as passing."""
     if result.completed:
         return _EXIT_VERIFY_FAILED if result.verified == "failed" else 0
     if result.reason == "budget_exhausted":
@@ -94,61 +95,27 @@ def _print_next_session(layout: RunLayout) -> None:
             print(f'\nnext:  agent6 run --from {layout.run_id} "<what to do with it>"')
 
 
-def print_baseline(
-    result: RunResult,
-    *,
-    layout: RunLayout,
-    cfg: Config,
-    isolation: IsolationLevel,
-    reporter: Reporter = STDIO_REPORTER,
-) -> None:
-    """On a red gate, say whether it was red BEFORE this run.
+def _print_unknown_baseline(result: RunResult, *, layout: RunLayout) -> None:
+    """On a red gate nothing observed at the base, say so and name the check.
 
-    "your run failed" and "your change broke nothing new" are different facts,
-    and the operator cannot tell them apart from a red exit alone -- least of
-    all when the task WAS to change the tests. Only on red: green raises no
-    question, and the answer would change nothing.
-
-    Runs OUTSIDE the run's lock scope (it is a second full gate) and announces
-    itself first: a silent wait as long as the gate reads as a hang.
+    A run whose FIRST verify ran against an unmodified tree already answered
+    this for free, and ends `gate_red_at_base`. This is the other case: the
+    model edited before it ever verified, so nobody knows. Saying "I do not
+    know" beats what used to happen here -- a second full gate run in the
+    teardown, holding the checkout for up to verify_timeout_s after the run
+    visibly ended, whose own failures repeatedly answered the question wrong.
     """
-    if result.verified != "failed":
+    if result.verified != "failed" or result.reason == "gate_red_at_base":
         return
-    base_sha = ""
+    gate = ()
+    base = ""
     with contextlib.suppress(ManifestError):
         m = read_manifest(layout.run_dir)
-        # A fork starts where it was CUT, not where its parent started: gating
-        # the parent's base blamed the fork for breakage it inherited.
-        base_sha = m.forked_from_sha or m.base_sha
-    # The PINNED gate, not the app-layer cfg: a run that adopted one mid-run
-    # rebinds the loop's config, never this one, so cfg would say "no gate".
-    pinned = ()
-    with contextlib.suppress(ManifestError):
-        pinned = read_manifest(layout.run_dir).workflow.verify_command
-    # The PIN, never the app-layer cfg: the pin is what judged this run, and
-    # falling back to cfg sent a full extra gate run against the base commit
-    # for a run that deliberately had none.
-    if not (pinned and base_sha):
+        gate, base = m.workflow.verify_command, (m.forked_from_sha or m.base_sha)
+    if not (gate and base):
         return
-    argv = tuple(pinned)
-    reporter.out(f"\nchecking the gate on the base commit ({shlex.join(argv)}) ...")
-    reporter.out("  (Ctrl-C skips it; the run's own result is already decided)")
-    try:
-        baseline = gate_on_base(
-            Path.cwd(),
-            base_sha,
-            argv=argv,
-            config=cfg,
-            isolation=isolation,
-            timeout_s=cfg.workflow.verify_timeout_s,
-        )
-    except (KeyboardInterrupt, OSError) as exc:
-        # This answers a question ABOUT the run, from the teardown. Letting it
-        # out would replace the run's exit code with 130 (or a crash) and lose
-        # the verdict every `agent6 run && ...` chain reads.
-        reporter.out(f"  skipped: {exc.__class__.__name__}")
-        return
-    reporter.out(baseline.line())
+    print(f"\nthe gate is red, and nothing checked it before this run started ({base[:12]}).")
+    print(f"  to see whether this run caused it:  git stash && {shlex.join(gate)}")
 
 
 def _print_stale_gate(result: RunResult) -> None:
@@ -212,6 +179,7 @@ def print_run_end(
         print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout)
+    _print_unknown_baseline(result, layout=layout)
     _print_stale_gate(result)
     print(budget.format_summary())
     _print_run_total_across_legs(layout)

@@ -40,6 +40,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.models.validate import known_models, refusal_message, validate_spec_models
+from agent6.runs.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -489,7 +490,7 @@ class HomeScreen(Screen[None]):
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         run_dir = self._runs[table.cursor_row]
-        self.app.push_screen(LogScreen(run_dir / "logs.jsonl", title=f"logs · {run_dir.name}"))
+        self.app.push_screen(LogScreen(run_dir / LOGS_NAME, title=f"logs · {run_dir.name}"))
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter

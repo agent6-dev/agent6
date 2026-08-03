@@ -35,7 +35,6 @@ from agent6.app.finalize import (
     finalize_auto_merge,
     finalize_auto_stash,
     fire_notify_hook,
-    print_baseline,
     print_interrupt_end,
     print_run_end,
     run_exit_code,
@@ -864,11 +863,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 )
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
-        # Only now: the baseline is a full second gate run, and holding the
-        # checkout for it left `agent6 run` refusing, naming a run the operator
-        # had already watched end.
-        if result is not None:
-            print_baseline(result, layout=layout, cfg=cfg, isolation=isolation, reporter=reporter)
         if detach_requested:
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so

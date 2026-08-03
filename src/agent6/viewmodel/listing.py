@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel.events import event_epoch
 
@@ -30,7 +31,7 @@ def run_mtime(run_dir: Path) -> float:
     into the dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
     merely-viewed run to "most recent". Keying off the log keeps "when" stable.
     """
-    for candidate in (run_dir / "logs.jsonl", run_dir):
+    for candidate in (run_dir / LOGS_NAME, run_dir):
         try:
             return candidate.stat().st_mtime
         except OSError:
@@ -110,7 +111,7 @@ def is_run_husk(run_dir: Path) -> bool:
     Exception: a dir with a LIVE worker.pid is a just-launched run in its
     pre-manifest preflight window, not a husk -- keep it listed (it reads
     "starting"). Only a dir with no live worker is a true husk."""
-    if (run_dir / "manifest.json").exists() or (run_dir / "logs.jsonl").exists():
+    if (run_dir / "manifest.json").exists() or (run_dir / LOGS_NAME).exists():
         return False
     return not worker_is_alive(run_dir)
 
@@ -174,6 +175,10 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
         "settled": ("finished", "unverified"),
+        # The gate is red, and a verify against an UNMODIFIED tree proved it
+        # was red before this run touched anything. "Your run failed" and "your
+        # change broke nothing new" are different facts.
+        "gate_red_at_base": ("finished", "gate was already red"),
     }
     if end_reason in no_verify:
         return no_verify[end_reason]
@@ -288,7 +293,7 @@ def run_is_live(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
     Derived from the status word, so a surface cannot disagree with the label
     it is showing; fed empty facts it degenerates to the pid probe.
     """
-    logs = run_dir / "logs.jsonl"
+    logs = run_dir / LOGS_NAME
     facts = scan_run_log(logs).status_facts() if logs.is_file() else StatusFacts()
     return status_for_run_dir(run_dir, facts, stale_after_s=stale_after_s)[0] in LIVE_STATUS_WORDS
 
@@ -470,7 +475,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     near-duplicate scanners in the TUI hub and the web hub that badged a
     provider_error death as a neutral "done". An "ask" run's task is replaced by
     its transcript, which shows what was asked."""
-    logs = run_dir / "logs.jsonl"
+    logs = run_dir / LOGS_NAME
     scan = scan_run_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
     if mode == "?" and not task:

@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.jail import keep_out_of_the_sweep
 
 
@@ -172,7 +173,7 @@ def spawn_and_confirm(
 def _located(list_dirs: Callable[[], list[Path]], before: set[Path]) -> Path | None:
     """The newest dir from *list_dirs* not in *before* whose logs.jsonl exists."""
     for d in list_dirs():
-        if d not in before and (d / "logs.jsonl").exists():
+        if d not in before and (d / LOGS_NAME).exists():
             return d
     return None
 

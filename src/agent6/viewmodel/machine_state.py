@@ -31,6 +31,7 @@ from agent6.machine.journal import (
 )
 from agent6.machine.model import MachineSpec
 from agent6.runs.ipc import worker_is_alive
+from agent6.runs.layout import LOGS_NAME
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
@@ -193,7 +194,7 @@ def newest_state_log(root: Path) -> Path | None:
         return int(head) if head.isdigit() else -1
 
     for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
-        log = d / "logs.jsonl"
+        log = d / LOGS_NAME
         if log.is_file():
             return log
     return None

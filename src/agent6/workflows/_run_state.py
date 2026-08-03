@@ -41,6 +41,7 @@ RunReason = Literal[
     "max_iterations",
     "ask_repl_empty",
     "gate_stale",
+    "gate_red_at_base",
 ]
 
 
@@ -90,6 +91,10 @@ class RunResult:
                           or cannot run at all) and proposed a replacement. The
                           gate is UNCHANGED and the run does not pass; the
                           operator decides.
+      gate_red_at_base  - the gate is red, and it was ALREADY red before this
+                          run touched anything (a verify ran against an
+                          unmodified tree and failed). "Your run failed" and
+                          "your change broke nothing new" are different facts.
     """
 
     completed: bool

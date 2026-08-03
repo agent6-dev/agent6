@@ -128,6 +128,7 @@ from agent6.workflows._metric import (
     metric_plateau_summary,
 )
 from agent6.workflows._nudges import (
+    BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
     MEMORY_FLIP_NUDGE,
     NO_PROGRESS_ESCALATE_AFTER,
@@ -297,6 +298,11 @@ class _LoopState:
     review_rejections_total: int = 0
     # Last verify result the panel grounds against (None = no verify yet).
     last_verify_ok: bool | None = None
+    # Was the gate already failing before this run touched anything? Recorded
+    # when a verify runs against an unmodified tree, which is what happens
+    # whenever the model's first move is to see where things stand. None means
+    # no such verify happened, and "I do not know" is the honest answer then.
+    baseline_ok: bool | None = None
     last_verify_tail: str = ""
     # No-progress spiral guard: consecutive verify failures sharing one
     # normalized signature. Green verify or a new signature resets the streak
@@ -1268,6 +1274,22 @@ class Workflow:
                 turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
         state.last_verify_ok = rc == 0
+        if (
+            state.baseline_ok is None
+            and not state.ever_edited
+            and not result.exec_failed
+            # A gate that exited instantly without running anything is a BROKEN
+            # gate, not a red one. Recording it as the baseline would excuse
+            # every real failure for the rest of the run.
+            and not verify_did_not_run(result.stdout, result.stderr, result.duration_s)
+            and not self._worktree_dirty()
+        ):
+            # Nothing has changed yet, so this verify judged the base commit.
+            # A free baseline: the same answer a second gate run used to cost.
+            state.baseline_ok = rc == 0
+            self._emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
+            if rc != 0:
+                turn.tool_results.append(Notice(BASELINE_RED_NOTICE))
         tail = f"{result.stdout}\n{result.stderr}"
         state.last_verify_tail = tail.strip()[-2000:]
         if rc == 0:
@@ -1763,6 +1785,10 @@ class Workflow:
             and turn.finish_kind == "finish_run"
             and self.mode == "run"
             and self._tree_is_verify_green(state) is False
+            # A gate that was already red before this run touched anything is
+            # not something the worker can be pushed to fix: demanding green
+            # there is demanding it repair whatever it inherited.
+            and state.baseline_ok is not False
             and self.config.workflow.require_verify_to_finish
             and state.verify_finish_nudges_used < VERIFY_FINISH_PATIENCE
         ):
@@ -2910,9 +2936,17 @@ class Workflow:
         gateless run declaring one end as passed, exit 0 and auto-merged, while
         printing a `config set` line for a command nothing had run. The proposal
         is recorded either way.
+
+        `gate_red_at_base` outranks a plain finish over red: the gate was
+        already failing before this run touched anything, so a red end is not
+        this run's failure. Only ever from an observation, never a guess -- a
+        run where nothing ever verified a clean tree says nothing.
         """
-        if turn.finish_stale_gate and self._tree_is_verify_green(state) is False:
-            return "gate_stale"
+        if self._tree_is_verify_green(state) is False:
+            if turn.finish_stale_gate:
+                return "gate_stale"
+            if state.baseline_ok is False:
+                return "gate_red_at_base"
         return turn.finish_kind
 
     def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:

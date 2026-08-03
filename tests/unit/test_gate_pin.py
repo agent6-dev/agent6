@@ -106,13 +106,29 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: Path) -> No
     assert pinned.verify_origin == "adopted"
 
 
-def test_the_end_of_run_block_never_runs_a_second_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_nothing_runs_a_second_gate_at_the_end_of_a_run(tmp_path: Path) -> None:
+    """The whole feature: a second full gate in the teardown produced nine
+    findings across two audit rounds -- holding the repo and worker locks, a
+    Ctrl-C during it replacing the run's exit code, gating a fork's PARENT
+    base, running with no PATH so every real gate exited 127. The answer is
+    observed for free during the run instead."""
+    import agent6.app.finalize as finalize_mod
+    import agent6.app.resume as resume_mod
+    import agent6.app.run as run_mod
+
+    for module in (finalize_mod, run_mod, resume_mod):
+        src = Path(module.__file__ or "").read_text(encoding="utf-8")
+        assert "gate_on_base" not in src, f"{module.__name__} still runs a second gate"
+
+
+def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The baseline check ran INSIDE print_run_end, which the run calls while
-    still holding the repo and worker locks: a full second gate then kept the
-    checkout for up to verify_timeout_s after the run visibly ended, and
-    `agent6 run` refused, naming a run the operator had watched finish."""
+    """A second full gate run used to answer this in the teardown, holding the
+    checkout for up to verify_timeout_s after the run visibly ended -- and its
+    own failures answered it wrong more than once. A run whose first verify saw
+    a clean tree already knows for free; this is the other case, and saying so
+    beats guessing."""
     import json
 
     from agent6.app import finalize
@@ -125,11 +141,18 @@ def test_the_end_of_run_block_never_runs_a_second_gate(
         json.dumps({"type": "run.end", "reason": "finish_run", "all_passed": False}) + "\n",
         encoding="utf-8",
     )
-
-    def _no_second_gate(*_a: object, **_k: object) -> None:
-        pytest.fail("a second gate ran inside the lock scope")
-
-    monkeypatch.setattr(finalize, "gate_on_base", _no_second_gate)
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "run_id": "r1",
+                "mode": "run",
+                "base_sha": "a" * 40,
+                "workflow": {"verify_command": ["uv", "run", "pytest"]},
+            }
+        ),
+        encoding="utf-8",
+    )
     finalize.print_run_end(
         RunResult(
             completed=True,
@@ -143,65 +166,9 @@ def test_the_end_of_run_block_never_runs_a_second_gate(
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
         console_stream=False,
     )
-
-
-def test_the_baseline_gates_where_a_fork_actually_started(tmp_path: Path) -> None:
-    """A fork inherits its parent's base_sha, but it STARTS at the sha it was
-    cut from. Gating the parent's base told the operator "the gate passes on
-    the base commit, so this run broke it" about breakage the fork inherited."""
-    import json
-
-    from agent6.app import finalize
-    from agent6.app.baseline import Baseline
-    from agent6.workflows._run_state import RunResult
-
-    rd = tmp_path / "runs" / "fork1"
-    rd.mkdir(parents=True)
-    (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "run.end", "reason": "finish_run", "all_passed": False}) + "\n",
-        encoding="utf-8",
-    )
-    (rd / "manifest.json").write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "run_id": "fork1",
-                "mode": "run",
-                "base_sha": "a" * 40,
-                "forked_from_sha": "b" * 40,
-                "workflow": {"verify_command": ["true"], "verify_origin": "configured"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    seen: list[str] = []
-
-    def _capture(_cwd: object, base: str, **_k: object) -> Baseline:
-        seen.append(base)
-        return Baseline(ran=True, returncode=0, detail="")
-
-    import pytest as _pytest
-
-    monkey = _pytest.MonkeyPatch()
-    monkey.setattr(finalize, "gate_on_base", _capture)
-    try:
-        finalize.print_baseline(
-            RunResult(
-                completed=True,
-                reason="finish_run",
-                summary="s",
-                iterations=1,
-                tool_calls=1,
-                verified="failed",
-            ),
-            layout=RunLayout(state_dir=tmp_path, run_id="fork1"),
-            cfg=Config(),
-            isolation="none",
-            reporter=Reporter(out=lambda _m: None, err=lambda _m: None),
-        )
-    finally:
-        monkey.undo()
-    assert seen == ["b" * 40], "the fork was gated against its PARENT's base"
+    out = capsys.readouterr().out
+    assert "nothing checked it before this run started" in out
+    assert "uv run pytest" in out
 
 
 def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: Path) -> None:

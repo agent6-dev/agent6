@@ -29,7 +29,6 @@ from agent6.app._setup import (
 from agent6.app.finalize import (
     finalize_auto_merge,
     fire_notify_hook,
-    print_baseline,
     print_interrupt_end,
     print_run_end,
     run_exit_code,
@@ -765,10 +764,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
-        # Only now: a second full gate run must not hold the checkout past the
-        # leg the operator watched end.
-        if result is not None and cfg is not None and isolation is not None:
-            print_baseline(result, layout=layout, cfg=cfg, isolation=isolation, reporter=reporter)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)

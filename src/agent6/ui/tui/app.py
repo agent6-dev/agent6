@@ -70,6 +70,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
@@ -758,7 +759,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # When launched from the hub loop, Esc returns to it and q quits the hub
         # (signalled by the exit code); standalone, both just close the dashboard.
         self.from_hub = from_hub
-        self.logs_path = run_dir / "logs.jsonl"
+        self.logs_path = run_dir / LOGS_NAME
         self.state: RunState = initial_state()
         self._seen_approval_ids: set[str] = set()
         self._seen_question_ids: set[str] = set()

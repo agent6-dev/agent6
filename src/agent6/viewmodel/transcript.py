@@ -61,6 +61,7 @@ _END_REASON_LABEL = {
     "interactive_stop": "stopped interactively",
     "max_iterations": "hit iteration cap",
     "gate_stale": "finished over a stale gate",
+    "gate_red_at_base": "gate was already red before this run",
 }
 
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]

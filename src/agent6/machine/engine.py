@@ -70,6 +70,7 @@ from agent6.machine.template import (
     render_value,
 )
 from agent6.portable import atomic_write
+from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
 from agent6.types import IsolationLevel, JailPolicy
 
@@ -381,7 +382,7 @@ class LiveWorld:
         if self.state_log_root is None or not request.state_name:
             return None
         _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
-        return self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / "logs.jsonl"
+        return self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / LOGS_NAME
 
     def now(self) -> float:
         return time.time()
