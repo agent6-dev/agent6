@@ -356,6 +356,35 @@ def read_toml_file(path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
 
 
+def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
+    """The outermost ancestor of *dotted_key* that holds a table but is written
+    WITHOUT a ``[header]`` -- an inline table or a dotted key -- else None.
+
+    The leaf surgery only knows ``[table]`` headers, so writing under such an
+    ancestor emits a header that collides with it ("Cannot declare ... twice").
+    `config show` and TAB still offer those leaves (the routing preset agent6
+    suggests writes an inline table), so the refusal should name the value that
+    actually owns the leaf rather than leak the parser's complaint.
+    """
+    if not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8")
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None  # a file that does not parse is refused earlier, with its own message
+    headers = [name for line in text.splitlines() if (name := _header_name(line)) is not None]
+    parts = dotted_key.split(".")
+    for i in range(1, len(parts)):  # proper ancestors, outermost first
+        prefix = ".".join(parts[:i])
+        if not isinstance(read_toml_leaf(data, prefix), dict):
+            continue
+        if any(h == prefix or h.startswith(f"{prefix}.") for h in headers):
+            continue  # a real [table] header declares it
+        return prefix
+    return None
+
+
 def read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:
     """Walk *data* by the dotted key, returning the value or None if absent."""
     cur: object = data

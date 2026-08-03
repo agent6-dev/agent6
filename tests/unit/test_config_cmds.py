@@ -144,6 +144,39 @@ _BAD = (
 )
 
 
+def test_config_set_names_the_inline_table_a_leaf_lives_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config show` and TAB both offer the leaves inside an inline table (the
+    routing preset agent6 itself suggests writes one), but the leaf surgery only
+    knows [table] headers, so setting one emitted a header that collides with
+    the inline parent. The write is refused either way; say WHICH value owns the
+    leaf instead of leaking `Cannot declare (...) twice`."""
+    from agent6.ui.cli import main
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    cfg = gdir / "config.toml"
+    cfg.write_text(
+        "[providers.openrouter]\n"
+        'api_format = "openai"\n'
+        'base_url = "https://o.example/v1"\n'
+        'extra_body = { provider = { sort = "throughput" } }\n',
+        encoding="utf-8",
+    )
+    before = cfg.read_text(encoding="utf-8")
+    # The whole layer stack must read this same file, not just the write path.
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "providers.openrouter.extra_body" in err
+    assert "Cannot declare" not in err, "the raw TOML error is not an explanation"
+    assert cfg.read_text(encoding="utf-8") == before
+
+
 def test_config_set_refuses_a_target_that_does_not_parse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
