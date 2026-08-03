@@ -569,6 +569,11 @@ class GitConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_auto_merge(self) -> GitConfig:
+        if self.auto_stash_pop and not self.auto_stash:
+            raise ValueError(
+                "git.auto_stash_pop requires git.auto_stash: with nothing stashed "
+                "pre-run there is nothing to restore at run end."
+            )
         if self.auto_merge and not self.branch_per_run:
             raise ValueError(
                 "git.auto_merge requires git.branch_per_run: with no run branch there is "

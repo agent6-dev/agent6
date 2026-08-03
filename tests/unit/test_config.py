@@ -575,6 +575,14 @@ def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
     assert "must be greater than" in str(exc.value)
 
 
+def test_auto_stash_pop_requires_auto_stash(tmp_path: Path) -> None:
+    # The same dependent-knob rule as auto_merge/auto_prune: a pop with nothing
+    # ever stashed is inert, so reject it with a pointer instead of loading it.
+    body = _VALID_TOML.replace("auto_stash = false", "auto_stash = false\nauto_stash_pop = true")
+    with pytest.raises(ConfigError, match="auto_stash_pop"):
+        load_config(_write(tmp_path, body))
+
+
 def test_with_budget_overrides(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_budget_overrides(max_usd=5.0, max_tokens_fallback=7)
