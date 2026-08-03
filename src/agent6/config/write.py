@@ -45,14 +45,10 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
 
 
 def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
-    """The config file to write, its directory created and already handed back
-    to the real operator.
-
-    Under ``sudo`` the directory is created as root, so the handover belongs at
-    creation: a writer that fails, or is killed inside the lock, must not leave
-    a root-owned directory behind, or every later non-root write dies creating
-    its atomic-write temp file there with no way back but a manual chown.
-    """
+    """The config file to write, its directory created and handed back to the
+    real operator. Under ``sudo`` the dir is created as root; the handover is at
+    creation, so a failed or killed write never strands a root-owned dir a later
+    non-root write cannot create its atomic-write temp file in."""
     target = _write_target(repo_root, to_repo=to_repo)
     mkdir_for_real_user(target.parent)
     return target
@@ -60,15 +56,11 @@ def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
 
 @contextlib.contextmanager
 def _writing_config(target: Path) -> Generator[bool]:
-    """Hold the config write lock, and hand *target* back to the real operator
-    on every exit path. Yields whether the lock is actually held (see
+    """Hold the config write lock, handing *target* back to the real operator on
+    every exit path. Yields whether the lock is actually held (see
     :func:`agent6.portable.locked_file`), for :func:`_revalidate`'s rollback.
-
-    Under ``sudo`` every publish creates the file as root -- including
-    :func:`_revalidate`'s rollback, which republishes through ``atomic_write``
-    onto a new inode -- so the handover cannot be conditional on the edit
-    turning out to be valid.
-    """
+    Under ``sudo`` every publish -- including the rollback's ``atomic_write`` onto
+    a new inode -- creates the file as root, so the handover is unconditional."""
     with locked_file(target) as held:
         try:
             yield held
@@ -213,28 +205,21 @@ def _revalidate(
     written: Sequence[tuple[str, object]] = (),
 ) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
-    freshly-created file) and return the error string if THIS edit broke it.
-    The rollback publishes atomically, and the caller holds ``locked_file``
-    across its whole write+revalidate+rollback cycle -- an unserialized
-    rollback erased a concurrent writer's just-validated update by restoring
-    a snapshot taken before it landed. When the lock FAILED OPEN (*held*
-    False: a stale root-owned ``.lock`` a killed ``sudo`` writer left), that
-    is exactly what the snapshot restore could do, so the edit is kept and
-    the error surfaced instead -- the same keep-and-warn contract as an
-    already-invalid config, and the exposure narrows back to the unlocked
-    RMW the lock's fail-open always tolerated.
+    freshly-created file) and return the error string if THIS edit broke it. The
+    caller holds ``locked_file`` across the whole write+revalidate+rollback
+    cycle, so the atomic rollback cannot restore a snapshot over a concurrent
+    writer's update. When the lock FAILED OPEN (*held* False: a stale root-owned
+    ``.lock``) the restore could do exactly that, so the edit is kept and the
+    error surfaced -- the keep-and-warn contract an already-invalid config gets.
 
-    A config that was ALREADY invalid keeps the edit, matching `config set`:
-    rolling back on any error let one stale value in an unedited layer refuse
-    every write, and `agent6 connect` saves the API key before writing the
-    provider block -- so it stored a key with no stanza to use it. The
-    pre-existing error still surfaces: every command reports it on the next
-    run, and `agent6 config fix` removes it.
+    A config that was ALREADY invalid keeps the edit: rolling back on any error
+    would let a stale value in an unedited layer refuse every write. The
+    pre-existing error still surfaces on the next run, and `agent6 config fix`
+    removes it.
 
-    *written* is the ``(key, value)`` pairs this edit wrote. Each is validated
-    against the model STANDALONE via :func:`written_value_error` so an invalid
-    value a higher layer masks in the merge is caught here rather than lurking
-    until the mask is gone -- the guard `config set` had, now on every writer."""
+    *written* is the ``(key, value)`` pairs this edit wrote, each validated
+    STANDALONE via :func:`written_value_error` so a value a higher layer masks in
+    the merge is caught here, not left to explode once the mask is gone."""
 
     def _rollback(err: str) -> str:
         # A snapshot restore without the lock (held False) could erase a
@@ -256,9 +241,7 @@ def _revalidate(
     except ConfigError as exc:
         # A target that no longer PARSES is always this write's doing, never a
         # stale value in another layer: keeping it leaves a config no command
-        # can read. The CLI writers had this guard; the engine-level ones the
-        # TUI, connect, init and model use did not, so `connect` appended a
-        # provider block to an unparseable file and reported success.
+        # can read.
         if not was_valid and not target_unparseable(target):
             return None  # broken before this edit; not ours to refuse
         return _rollback(str(exc))
@@ -314,11 +297,10 @@ def set_config_table(
             prior,
             was_valid=was_valid,
             held=held,
-            # PER-LEAF, like set_config_leaves: written_value_error only reports an
-            # error whose pydantic loc == key, so a whole-table (key, dict) dropped
-            # every LEAF-level error (its loc is a child of the table key) and a
-            # masked-invalid leaf still landed. Per-leaf also routes a
-            # providers.<name>.<leaf> through provider_field_error.
+            # PER-LEAF: written_value_error reports an error only at loc == key,
+            # so a whole-table (key, dict) would hide every leaf-level error;
+            # per-leaf also routes providers.<name>.<leaf> through
+            # provider_field_error.
             written=[(f"{table}.{k}", v) for k, v in fields.items() if v is not None],
         )
 
@@ -356,12 +338,10 @@ def set_config_leaves(
     *,
     to_repo: bool = False,
 ) -> str | None:
-    """Upsert individual ``[table]`` leaves, preserving sibling keys and
-    comments verbatim -- the UPDATE counterpart to :func:`set_config_table`'s
-    whole-block replace (which `agent6 connect` used to reach for, erasing
-    hand-added provider keys on every re-run). One revalidate+rollback wraps
-    all the leaf writes, so a bad merged config restores the prior file whole.
-    ``None`` field values are omitted."""
+    """Upsert individual ``[table]`` leaves, preserving sibling keys and comments
+    verbatim -- the UPDATE counterpart to :func:`set_config_table`'s whole-block
+    replace. One revalidate+rollback wraps all the leaf writes, so a bad merged
+    config restores the prior file whole. ``None`` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None

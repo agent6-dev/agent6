@@ -299,11 +299,9 @@ def _region_end(lines: list[str], region: int) -> int:
 def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
     """Index of the line assigning *leaf* within ``[region, end)``, or None.
 
-    Skips the INTERIOR of every multi-line value on the way: a plain per-line
-    regex matched an ``x = 5`` inside a triple-quoted string, so the surgery
-    rewrote the operator's string, left the real leaf below it untouched, and
-    reported success.
-    """
+    Skips the INTERIOR of every multi-line value: a plain per-line regex would
+    match an ``x = 5`` inside a triple-quoted string and rewrite that instead of
+    the real leaf below it."""
     leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
     j = region
     while j < end:
