@@ -117,15 +117,7 @@ class BackgroundShells:
         shell_dir = self._root / shell_id
         log_dir = self.log_root / shell_id
         shell_dir.mkdir(parents=True, exist_ok=True)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        # O_EXCL: we create it, so it is a regular file we own. O_CLOEXEC: no
-        # child inherits the handle. The command's own `exec >` opens the same
-        # path from inside the jail and lands on this inode.
-        log_fd = os.open(
-            log_dir / _LOG_NAME,
-            os.O_RDONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
-            0o600,
-        )
+        log_fd = self._open_log(shell_id)
         (shell_dir / _META_NAME).write_text(
             json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
         )
@@ -148,6 +140,51 @@ class BackgroundShells:
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
         self._shells[shell_id] = shell
         return self._view(shell)
+
+    def _open_log(self, shell_id: str) -> int:
+        """Create this command's log directory and its log, and hand back the
+        one descriptor every later read goes through.
+
+        Every step is relative to a descriptor on the log root, never by path:
+        that root is granted read-write to every command in the run, so one can
+        plant `<log_root>/bg<N>` as a symlink, and `mkdir(exist_ok=True)` (like
+        its `is_dir()` check) FOLLOWS it -- which had the agent, unconfined and
+        outside the jail, create the log inside a directory a command named.
+        O_NOFOLLOW on the leaf never covered the path above it. Creating the
+        directory rather than accepting one also means a planted name fails
+        here instead of quietly becoming this command's log.
+
+        O_EXCL: we create the file, so it is a regular file we own. O_CLOEXEC:
+        no child inherits the handle. The command's own `exec >` opens the same
+        path from inside the jail and lands on this inode.
+        """
+        root_fd = os.open(
+            self.log_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+        try:
+            try:
+                os.mkdir(shell_id, 0o700, dir_fd=root_fd)
+            except FileExistsError as exc:
+                raise BackgroundError(
+                    f"the background log directory for {shell_id} already exists;"
+                    " a command may have created it"
+                ) from exc
+            dir_fd = os.open(
+                shell_id,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=root_fd,
+            )
+            try:
+                return os.open(
+                    _LOG_NAME,
+                    os.O_RDONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    0o600,
+                    dir_fd=dir_fd,
+                )
+            finally:
+                os.close(dir_fd)
+        finally:
+            os.close(root_fd)
 
     def roster(self) -> list[ShellView]:
         """Every background command this run started, live or not."""

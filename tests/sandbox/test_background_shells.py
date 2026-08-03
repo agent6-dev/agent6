@@ -408,3 +408,20 @@ def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
                 p.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
                 p.wait(timeout=5)
+
+
+def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: Path) -> None:
+    """Every command in a run holds read-write on the shared log root, so one
+    can plant `<log_root>/bg<N>` as a symlink. `mkdir(exist_ok=True)` and its
+    `is_dir()` check both FOLLOW it, and the agent -- unconfined, outside the
+    jail, as the operator -- then created the log inside whatever directory the
+    command named. O_NOFOLLOW on the leaf does not protect the path above it.
+    """
+    shells = BackgroundShells(tmp_path / "shells")
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (tmp_path / "shells" / "logs" / "bg1").symlink_to(victim)
+
+    with pytest.raises(BackgroundError):
+        shells.start(("/bin/true",), _policy_for(tmp_path))
+    assert not list(victim.iterdir()), "the agent wrote through a command's symlink"
