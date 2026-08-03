@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -14,7 +15,6 @@ from agent6 import git_ops
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    GitSafetyError,
     auto_stash_message,
     clone_repo,
     commit_all,
@@ -34,9 +34,6 @@ from agent6.git_ops import (
     make_run_branch_name,
     merge_branch,
     recent_log,
-    refuse_force,
-    refuse_history_rewrite,
-    refuse_push,
     reset_to,
     restore_stash,
     set_repo_hook_policy,
@@ -380,13 +377,49 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: Path) -> None:
         create_branch_at(tmp_path, "agent6/fork", other)
 
 
-def test_refuse_helpers() -> None:
-    with pytest.raises(GitSafetyError):
-        refuse_push()
-    with pytest.raises(GitSafetyError):
-        refuse_force()
-    with pytest.raises(GitSafetyError):
-        refuse_history_rewrite()
+def test_git_ops_never_spells_a_destructive_verb() -> None:
+    """The hard rule, at argv level: no function in git_ops passes push,
+    --force, reset --hard, rebase, amend, filter-branch, or branch -D to git.
+    The one sanctioned exception is force_delete_squash_merged_branch's
+    `branch -D` (operator-only, content-safe, never LLM-reachable).
+
+    This replaces three refuse_* helpers that no production code ever called:
+    they raised on demand in a test while git_ops could have grown a real
+    `push` beside them, green."""
+    from agent6 import git_ops as gm
+
+    src = Path(gm.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    forbidden = {"push", "--force", "-f", "--hard", "rebase", "--amend", "filter-branch", "-D"}
+    offenders: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for call in ast.walk(fn):
+            if not isinstance(call, ast.Call) or gm_run_name(call) is None:
+                continue
+            words = {
+                a.value
+                for a in call.args
+                if isinstance(a, ast.Constant) and isinstance(a.value, str)
+            }
+            hit = words & forbidden
+            # `stash push` is git's stash verb, not a remote push.
+            if "stash" in words:
+                hit -= {"push"}
+            if fn.name == "force_delete_squash_merged_branch":
+                hit -= {"-D"}
+            if hit:
+                offenders.append(f"{fn.name}: {sorted(hit)}")
+    assert not offenders, f"destructive git verbs in git_ops: {offenders}"
+
+
+def gm_run_name(call: ast.Call) -> str | None:
+    """The callee name if this is a git-invoking call (`_run(...)`)."""
+    func = call.func
+    if isinstance(func, ast.Name) and func.id == "_run":
+        return func.id
+    return None
 
 
 def test_status_on_non_repo(tmp_path: Path) -> None:

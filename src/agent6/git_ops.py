@@ -2,9 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Git operations with hard safety invariants.
 
-Every dangerous operation (push, force, history rewrite) raises GitSafetyError
-unconditionally. The config can *loosen* benign options (auto-stash, branch-per-run)
-but the destructive operations are not exposed as a code path here at all.
+The destructive operations (push, force, history rewrite) are not exposed as a
+code path here AT ALL -- there is nothing to refuse at runtime because nothing
+spells them (pinned by test_git_ops_never_spells_a_destructive_verb). The one
+sanctioned exception is force_delete_squash_merged_branch. The config can
+*loosen* benign options (auto-stash, branch-per-run) and never these.
 """
 
 from __future__ import annotations
@@ -34,10 +36,6 @@ _GIT_TIMEOUT_S = 120.0
 # How long a timed-out git gets to exit on SIGTERM before SIGKILL. Its TERM
 # handler only has to unlink its lockfiles, so this is generous.
 _GIT_TERM_GRACE_S = 5.0
-
-
-class GitSafetyError(GitError):
-    """Refused to perform a destructive git operation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -965,9 +963,9 @@ def reset_to(path: Path, sha: str, *, mode: str) -> None:
 
     *mode* must be ``"soft"`` (HEAD only; index + worktree unchanged) or
     ``"mixed"`` (HEAD + index; worktree unchanged). ``"hard"`` is
-    intentionally not accepted here: data-destroying resets must go
-    through ``refuse_history_rewrite`` so a caller cannot accidentally
-    obtain one. The commits this reset orphans remain reachable via
+    intentionally not accepted here: this module never performs a
+    data-destroying reset, so a caller cannot accidentally obtain one.
+    The commits this reset orphans remain reachable via
     reflog, so the operation is recoverable.
     """
     if mode not in {"soft", "mixed"}:
@@ -1024,21 +1022,3 @@ def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Refusals, operations agent6 will not perform under any circumstances.
-# ---------------------------------------------------------------------------
-
-
-def refuse_push(*_args: object, **_kwargs: object) -> None:
-    raise GitSafetyError("git push is disabled by agent6")
-
-
-def refuse_force(*_args: object, **_kwargs: object) -> None:
-    raise GitSafetyError("git --force operations are disabled by agent6")
-
-
-def refuse_history_rewrite(*_args: object, **_kwargs: object) -> None:
-    raise GitSafetyError(
-        "git history-rewriting operations (rebase, amend, reset --hard, gc, branch -D)"
-        " are disabled by agent6"
-    )
