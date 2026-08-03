@@ -9,7 +9,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from agent6.config import is_loopback_host
+from pydantic import ValidationError
+
+from agent6.config import WebConfig, is_loopback_host
 from agent6.ui.cli._common import load_config_or_exit
 from agent6.ui.web import run_web
 
@@ -34,6 +36,14 @@ def _cmd_web(
     web = eff.config.web
     eff_host = host if host is not None else web.host
     eff_port = port if port is not None else web.port
+    try:
+        # The flag is held to the leaf's own bounds rather than a second copy of
+        # them. allow_non_loopback silences the host guard here so the friendlier
+        # one below owns that refusal.
+        WebConfig(host=eff_host, port=eff_port, allow_non_loopback=True)
+    except ValidationError:
+        print(f"agent6 web: --port {eff_port} is out of range (1-65535).", file=sys.stderr)
+        return 2
     if not is_loopback_host(eff_host) and not (allow_non_loopback or web.allow_non_loopback):
         print(
             f"agent6 web: refusing to bind non-loopback host {eff_host!r} without opt-in."
