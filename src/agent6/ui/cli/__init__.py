@@ -278,8 +278,8 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         return 2
     question = args.task
     prefix: list[str] = []
-    if args.ask_seed_latest or args.ask_run:
-        digest = build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_seed_latest)
+    if args.ask_run_latest or args.ask_run:
+        digest = build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_run_latest)
         if digest is None:
             return 2
         prefix.append(digest)

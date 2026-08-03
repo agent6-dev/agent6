@@ -173,7 +173,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     if latest:
         newest = newest_run_dir([runs_dir])
         if newest is None:
-            print(f"ERROR: --seed-latest: no runs under {runs_dir}", file=sys.stderr)
+            print(f"ERROR: --run-latest: no runs under {runs_dir}", file=sys.stderr)
             return None
         target = newest.name
     else:

@@ -122,8 +122,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     ask_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     ask_query.add_argument(
-        "--seed-latest",
-        dest="ask_seed_latest",
+        "--run-latest",
+        dest="ask_run_latest",
         action="store_true",
         help="Like --run, but seed the most recent run.",
     )

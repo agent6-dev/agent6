@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 ask --run/--seed-latest` digest + `--file` seed helpers."""
+"""`agent6 ask --run/--run-latest` digest + `--file` seed helpers."""
 
 from __future__ import annotations
 
@@ -97,14 +97,14 @@ def test_ask_run_digest_unknown_run_returns_none(
     assert _build_ask_run_digest(tmp_path, "nope", latest=False) is None
 
 
-def test_ask_seed_latest_no_runs_names_the_flag(
+def test_ask_run_latest_no_runs_names_the_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     assert _build_ask_run_digest(tmp_path, "", latest=True) is None
-    assert "--seed-latest" in capsys.readouterr().err
+    assert "--run-latest" in capsys.readouterr().err
 
 
 def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
