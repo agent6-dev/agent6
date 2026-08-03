@@ -40,7 +40,7 @@ try:
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
     from textual.css.query import NoMatches
-    from textual.screen import Screen
+    from textual.screen import ModalScreen, Screen
     from textual.scroll_view import ScrollView
     from textual.widget import Widget
     from textual.widgets import (
@@ -109,6 +109,10 @@ _TASK_ICONS = TASK_STATUS_GLYPH
 # How many recent tool calls the inline table shows. The RowSelected handler maps
 # a visual row back through the same window, so both must use this one value.
 _TOOL_TABLE_ROWS = 20
+
+# Answer submitted after the worker died mid-modal: the file bridge has no
+# reader, and the next resume re-asks the prompt itself.
+_ANSWER_LOST = "run is not live; the answer reached nothing (a resume re-asks the prompt)"
 
 # A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
 # an answered ask, a gateless settle, a finish over red) is not a failure;
@@ -892,14 +896,21 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             self._conv.refresh_liveness()
 
     def _tick(self) -> None:
-        for ap in self.state.pending_approvals:
-            if not ap.answered and ap.id not in self._seen_approval_ids:
-                self._seen_approval_ids.add(ap.id)
-                self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
-        for qp in self.state.pending_questions:
-            if not qp.answered and qp.id not in self._seen_question_ids:
-                self._seen_question_ids.add(qp.id)
-                self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
+        # Prompt modals only while the run can consume an answer: the fold
+        # keeps an unanswered prompt across run.end and a worker death (it
+        # clears only on the answer event or a leg boundary), so an open would
+        # otherwise pop live-looking Allow/Deny over a dead run and write the
+        # answer into a file nobody polls. Skipped ids are NOT marked seen, so
+        # a prompt that outlives a stale probe still pops on the next tick.
+        if self.run_controllable():
+            for ap in self.state.pending_approvals:
+                if not ap.answered and ap.id not in self._seen_approval_ids:
+                    self._seen_approval_ids.add(ap.id)
+                    self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
+            for qp in self.state.pending_questions:
+                if not qp.answered and qp.id not in self._seen_question_ids:
+                    self._seen_question_ids.add(qp.id)
+                    self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
         # Route an external steer request to the composer bar, once per Ctrl-C
         # (steer_requests is monotonic).
         if self.state.steer_requests > self._seen_steer:
@@ -935,18 +946,23 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 with contextlib.suppress(NoMatches):
                     self._dash.render_heartbeat()
         # Exit only once the run ended (a clean run.end, or the worker died
-        # without one) AND nothing is still awaiting an answer, so a final
-        # approval/question isn't dropped on the way out.
+        # without one) and no modal is open: never yank an in-flight answer,
+        # but a ghost prompt on a dead run (its answer read by nobody) must
+        # not pin the dashboard open forever.
         if (
             self.exit_on_end
             and (self.state.finished or self.worker_lost)
-            and all(ap.answered for ap in self.state.pending_approvals)
-            and all(q.answered for q in self.state.pending_questions)
+            and not (stack and isinstance(stack[-1], ModalScreen))
         ):
             self.exit()
 
     def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
         def cb(answer: str | None) -> None:
+            # The worker can die while the modal is open; say the answer went
+            # nowhere instead of silently writing a file the next resume drops.
+            if not self.run_controllable():
+                self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
+                return
             if answer == "session":  # allow every later run_command this run
                 set_session_allow(self.run_dir)
             write_answer(self.run_dir, ap.id, approved=answer in ("yes", "session"))
@@ -955,6 +971,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
         def cb(answers: tuple[str, ...] | None) -> None:
+            if not self.run_controllable():
+                self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
+                return
             write_question_answers(self.run_dir, qp.id, answers or ())
 
         return cb

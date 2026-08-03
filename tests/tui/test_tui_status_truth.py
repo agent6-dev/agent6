@@ -24,6 +24,7 @@ from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.conversation import SteerInput
+from agent6.ui.tui.modals import ApprovalModal
 
 
 def _mk_parked(d: Path) -> None:
@@ -221,5 +222,98 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) ->
             )
             assert not (d / "steer.answer").exists()
             assert not (d / "steer.request").exists()
+
+    asyncio.run(scenario())
+
+
+def _mk_blocked(d: Path, *, alive: bool) -> None:
+    """A run blocked on an unanswered approval, with a live or dead worker."""
+    d.mkdir(parents=True, exist_ok=True)
+    evs = [
+        {"type": "run.start", "run_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: pytest"},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (d / "worker.pid").write_text(str(os.getpid()) if alive else "999999999", encoding="utf-8")
+
+
+def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
+    """The fold keeps an unanswered prompt past a worker death (it clears only
+    on an answer event or a leg boundary), so the dashboard popped live-looking
+    Allow/Deny over a corpse and wrote the answer where nobody polls."""
+    d = tmp_path / "ghost1"
+    _mk_blocked(d, alive=False)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            await _wait_for(pilot, lambda: app.state.pending_approvals, "the prompt to fold")
+            app._heartbeat_at = 0.0
+            app._tick()
+            await pilot.pause()
+            assert not isinstance(app.screen, ApprovalModal)
+            assert not (d / "approvals" / "ap1.answer").exists()
+
+    asyncio.run(scenario())
+
+
+def _modal_ready(app: Agent6TUI) -> bool:
+    # app.screen flips to the modal synchronously at push; wait for its buttons
+    # to MOUNT too, or run_test teardown races the modal's own mount lifecycle.
+    return isinstance(app.screen, ApprovalModal) and bool(app.screen.query("#yes"))
+
+
+def test_live_run_still_pops_the_approval_modal(tmp_path: Path) -> None:
+    # The converse: gating on liveness must not cost the live run its modal.
+    d = tmp_path / "blocked1"
+    _mk_blocked(d, alive=True)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+
+    asyncio.run(scenario())
+
+
+def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
+    """The worker dies while the modal is open: the answer reaches nothing, so
+    say so instead of silently writing a file the next resume drops."""
+    d = tmp_path / "dies-mid-modal"
+    _mk_blocked(d, alive=True)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+            (d / "worker.pid").write_text("999999999", encoding="utf-8")
+            app._heartbeat_at = 0.0
+            app._tick()
+            await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await pilot.press("y")
+            await pilot.pause()
+            assert not (d / "approvals" / "ap1.answer").exists()
+            notes = [str(n.message) for n in app._notifications]
+            assert any("reached nothing" in n for n in notes)
+
+    asyncio.run(scenario())
+
+
+def test_exit_on_end_is_not_pinned_by_a_ghost_prompt(tmp_path: Path) -> None:
+    """exit_on_end required every prompt answered before closing; a dead run's
+    ghost prompt can never be answered, so the auto-spawned dashboard sat open
+    forever. It must close once the run is over and no modal is up."""
+    d = tmp_path / "ghost2"
+    _mk_blocked(d, alive=False)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d, exit_on_end=True)
+        async with app.run_test(size=(140, 40)) as pilot:
+            del pilot  # the app must exit on its own tick, unprompted
+            deadline = time.monotonic() + 10.0
+            while app.is_running and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+            assert not app.is_running, "exit_on_end never fired over the ghost prompt"
 
     asyncio.run(scenario())
