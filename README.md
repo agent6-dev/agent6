@@ -23,6 +23,14 @@ open-ended agent loop.
 - Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history
+- Sessions build on each other: `--from <session-id>` seeds a new run or ask with
+  another session's context (the source is untouched -- keeping a session's mode is
+  `fork`), a session can read this project's other sessions, and `/btw <question>`
+  asks a one-off question beside a live run without interrupting it -- the answer
+  prints whole at the next turn boundary and stays resumable as the ask it is
+- Long jobs do not hold a turn open: `run_background` starts a dev server or a slow
+  build, `read_background` polls it, `/shells` lists what a run started and how each
+  one ended, and nothing a run started outlives it
 - Transparent, steerable context compaction: every surface shows what left the
   model's context, and the conversation view shows the summary a restart
   continued from; `/compact [focus]` compacts on demand, `/pin <text>` makes an
