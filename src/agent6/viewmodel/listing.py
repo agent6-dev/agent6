@@ -279,8 +279,8 @@ _RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered
 
 def produced_result(status: str) -> bool:
     """Whether the session ended deliberately and left mergeable work: THE
-    lane-candidacy question -- only such a lane ranks, wins a compare, or
-    joins a coordinator's branch."""
+    lane-candidacy question -- only such a lane is a fan-out compare candidate
+    or joins a coordinator's branch."""
     return status in _RESULT_WORDS
 
 
