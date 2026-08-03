@@ -60,6 +60,8 @@ agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch
 agent6 runs merge         # merge the run branch into your branch (squash/merge/ff)
 agent6 runs prune         # delete safely-merged agent6/* run branches; report the rest
+agent6 runs dir           # where this repo's run history lives (one line, scriptable)
+agent6 runs rm            # delete one run's history; --asks clears every saved ask
 agent6 runs compare <id> <id> ...  # advisory ranked comparison across >=2 runs
 agent6 runs transcript    # the full conversation, every tool call with its I/O
 agent6 runs graph         # the persisted task graph

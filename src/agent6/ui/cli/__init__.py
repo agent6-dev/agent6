@@ -91,6 +91,8 @@ from agent6.ui.cli.runs_cmds import (
     _cmd_list,
     _cmd_merge,
     _cmd_prune,
+    _cmd_runs_dir,
+    _cmd_runs_rm,
     _cmd_stop,
 )
 from agent6.ui.cli.skills_cmds import (
@@ -329,6 +331,10 @@ def _dispatch_runs(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return _cmd_stop(run_id=args.run_id)
     if args.runs_command == "prune":
         return _cmd_prune(delete_squashed=args.delete_squashed)
+    if args.runs_command == "dir":
+        return _cmd_runs_dir()
+    if args.runs_command == "rm":
+        return _cmd_runs_rm(run_id=args.run_id, asks=args.asks)
     if args.runs_command == "transcript":
         return _cmd_history_transcript(
             args.run_id,

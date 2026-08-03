@@ -13,6 +13,7 @@ import pytest
 from agent6.config.layer import resolved_state_dir
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli import main
+from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
@@ -326,3 +327,64 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     no_base = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip2")
     assert "remove with: runs prune --delete-squashed" not in no_base
+
+
+def test_runs_dir_prints_the_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One bare line so it composes: `ls "$(agent6 runs dir)"`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    assert main(["runs", "dir"]) == 0
+    printed = capsys.readouterr().out.strip()
+    assert printed == str(_state_dir(repo))
+    assert "\n" not in printed
+
+
+def test_runs_rm_deletes_history_but_refuses_a_live_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`rm` is the HISTORY verb (prune is the branch verb), and it will not
+    delete a run that is still live -- the worker would keep writing into a
+    directory the operator believes is gone."""
+    import os
+
+    from agent6.runs.ipc import write_worker_pid
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _state_dir(repo) / "runs"
+    live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
+    for d in (live, dead):
+        d.mkdir(parents=True)
+        (d / "logs.jsonl").write_text('{"type": "run.start", "mode": "run"}\n', encoding="utf-8")
+    write_worker_pid(live, os.getpid())  # this test process is genuinely alive
+    with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write('{"type": "run.end", "reason": "finish_run", "all_passed": true}\n')
+
+    assert main(["runs", "rm", "live-run"]) == 2
+    assert "still live" in capsys.readouterr().err
+    assert live.is_dir()
+
+    assert main(["runs", "rm", "dead-run"]) == 0
+    assert "removed dead-run-BBBB22" in capsys.readouterr().out
+    assert not dead.exists()
+
+
+def test_runs_rm_asks_clears_the_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Asks accumulate one state dir per directory they are run from, so the
+    bucket gets its own sweep; mixing it with a run id is refused."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    asks = _state_dir(repo) / "asks"
+    for name in ("ask-one", "ask-two"):
+        (asks / name).mkdir(parents=True)
+    assert main(["runs", "rm", "some-id", "--asks"]) == 2
+    assert main(["runs", "rm", "--asks"]) == 0
+    assert "removed 2 asks" in capsys.readouterr().out
+    assert not asks.exists()

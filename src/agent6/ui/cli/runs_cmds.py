@@ -5,6 +5,7 @@ lifecycle)."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -761,4 +762,50 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
             "\n(no reviewer model configured; ranked mechanically: verify-pass first, then"
             " lower cost)"
         )
+    return 0
+
+
+def _cmd_runs_dir() -> int:
+    """Print the per-repo state dir: where this repo's run history lives.
+
+    One bare line so it composes (`ls "$(agent6 runs dir)"`, or delete a bucket
+    outright). The buckets under it are runs/, asks/, and machine-drafts/."""
+    print(_state_dir(Path.cwd()))
+    return 0
+
+
+def _cmd_runs_rm(*, run_id: str, asks: bool) -> int:
+    """Delete run history from the state dir.
+
+    Only history: the run's branch and its commits are git's, and are left
+    alone (`runs prune` is the branch verb). `--asks` clears every saved ask,
+    which is the bucket that accumulates -- an ask runs in any directory, so
+    each one gets a state dir keyed by that path."""
+    cwd = Path.cwd()
+    if asks:
+        if run_id:
+            print("ERROR: --asks clears every ask; drop the run id.", file=sys.stderr)
+            return 2
+        bucket = _state_dir(cwd) / "asks"
+        gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
+        shutil.rmtree(bucket, ignore_errors=True)
+        print(f"removed {gone} ask{'' if gone == 1 else 's'}")
+        return 0
+    try:
+        layout = resolve_or_newest_layout(cwd, run_id)
+    except RunIdError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if layout is None:
+        print("ERROR: no runs to remove.", file=sys.stderr)
+        return 2
+    if run_is_live(layout.run_dir):
+        print(
+            f"REFUSING: {layout.run_id} is still live; stop it first"
+            f" (agent6 runs stop {layout.run_id}).",
+            file=sys.stderr,
+        )
+        return 2
+    shutil.rmtree(layout.run_dir, ignore_errors=True)
+    print(f"removed {layout.run_id}")
     return 0

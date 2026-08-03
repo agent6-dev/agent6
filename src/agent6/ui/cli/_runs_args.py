@@ -146,6 +146,27 @@ def _add_runs_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     runs_stop_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
+    _sub(
+        runs_sub,
+        "dir",
+        help="Print the directory this repo's run history lives in (one line, scriptable).",
+    )
+
+    runs_rm = _sub(
+        runs_sub,
+        "rm",
+        help="Delete a run's history from the state dir (the run branch, if any, is left alone).",
+    )
+    runs_rm_id = runs_rm.add_argument(
+        "run_id", nargs="?", default="", help="Run id or unique prefix; omit for the most recent."
+    )
+    runs_rm_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_rm.add_argument(
+        "--asks",
+        action="store_true",
+        help="Delete every saved ask instead of one run (asks are transient Q&A).",
+    )
+
     runs_prune = _sub(
         runs_sub,
         "prune",
