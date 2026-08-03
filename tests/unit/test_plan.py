@@ -6,15 +6,20 @@ tool-filter, and the Workflow's plan-output side effect.
 
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from agent6.config import Config, load_config
+from agent6.providers import ProviderResponse
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.mcp_client import MCPManager
+from agent6.tools.results import RawResult
 from agent6.tools.schema import (
     PLAN_EXTRA_TOOLS,
     ApplyEditInput,
@@ -467,3 +472,116 @@ def test_workflow_plan_mode_without_output_path_raises() -> None:
     wf = _wf(mode="plan", plan_output_path=None)
     with pytest.raises(ValueError, match="plan_output_path"):
         wf.run("anything")
+
+
+# --- plan.md on disk is the source the planner reads --------------------
+
+
+_STALE_PLAN = "# Plan: X\n\n## Open questions\n> **Q:** which store?\n> **A:**\n"
+_ANSWERED_PLAN = "# Plan: X\n\n## Open questions\n> **Q:** which store?\n> **A:** postgres\n"
+
+
+def _init_repo(repo: Path) -> None:
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "x.txt").write_text("hi\n", encoding="utf-8")
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+
+def _tool_use(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderResponse:
+    block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
+    return ProviderResponse(
+        text="",
+        tool_uses=({"id": tu_id, "name": name, "input": args},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": [block]},
+    )
+
+
+def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Workflow:
+    return Workflow(
+        root=repo,
+        config=MagicMock(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=MagicMock(system_prompt_file="", decompose="off"),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
+        provider=provider,
+        dispatcher=MagicMock(dispatch=MagicMock(return_value=RawResult({"acknowledged": True}))),
+        logger=_silent,
+        provider_retry_count=0,
+        provider_retry_delay_s=0.0,
+        max_iterations=5,
+        mode="plan",
+        plan_output_path=plan_path,
+        resume_state_path=state_path,
+    )
+
+
+def test_an_operator_edit_to_plan_md_survives_the_next_finish_planning(tmp_path: Path) -> None:
+    """`agent6 plan edit` writes plan.md, then `agent6 resume --steer` continues
+    the planner. plan.md on disk is the plan; the conversation only ever holds a
+    copy, so the resumed planner must be shown the FILE. Before this it worked
+    from its snapshot and the next finish_planning erased the operator's answer.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    plan_path, state_path = tmp_path / "plan.md", tmp_path / "loop_state.json"
+
+    first = MagicMock()
+    first.call.return_value = _tool_use(
+        "finish_planning", {"summary": "s", "plan_markdown": _STALE_PLAN}
+    )
+    _plan_wf(repo, first, plan_path, state_path).run("plan it")
+    assert plan_path.read_text(encoding="utf-8") == _STALE_PLAN
+
+    plan_path.write_text(_ANSWERED_PLAN, encoding="utf-8")  # agent6 plan edit
+
+    class Planner:
+        """A planner shown the current plan.md carries its answers forward."""
+
+        def __init__(self) -> None:
+            self.seen = ""
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.seen = json.dumps(kwargs["messages"])
+            plan = _ANSWERED_PLAN if "postgres" in self.seen else _STALE_PLAN
+            return _tool_use("finish_planning", {"summary": "s", "plan_markdown": plan})
+
+    planner = Planner()
+    _plan_wf(repo, planner, plan_path, state_path).resume()
+
+    assert "postgres" in planner.seen  # the harness put the file in front of it
+    assert plan_path.read_text(encoding="utf-8") == _ANSWERED_PLAN  # the edit survived
+
+
+def test_an_unchanged_plan_md_is_not_injected_twice(tmp_path: Path) -> None:
+    """Re-read every turn, inject only on change: an untouched plan.md costs
+    tokens once, not once per turn."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    plan_path, state_path = tmp_path / "plan.md", tmp_path / "loop_state.json"
+
+    first = MagicMock()
+    first.call.return_value = _tool_use(
+        "finish_planning", {"summary": "s", "plan_markdown": _STALE_PLAN}
+    )
+    _plan_wf(repo, first, plan_path, state_path).run("plan it")
+
+    resumed = MagicMock()
+    resumed.call.side_effect = [
+        _tool_use("read_file", {"path": "x.txt"}, tu_id="t1"),
+        _tool_use("read_file", {"path": "x.txt"}, tu_id="t2"),
+        _tool_use("finish_planning", {"summary": "s", "plan_markdown": _STALE_PLAN}, tu_id="t3"),
+    ]
+    _plan_wf(repo, resumed, plan_path, state_path).resume()
+
+    final = json.dumps(resumed.call.call_args_list[-1].kwargs["messages"])
+    assert final.count("which store?") == 2  # the finish_planning arg, plus ONE injection

@@ -141,6 +141,7 @@ from agent6.workflows._nudges import (
     PLAN_BUDGET_NUDGE,
     PLAN_BUDGET_NUDGE_BELOW,
     PLAN_NUDGE_AFTER_ITERS,
+    PLAN_ON_DISK_HEADER,
     QUESTION_NUDGE,
     RUN_BUDGET_NUDGE,
     RUN_BUDGET_NUDGE_BELOW,
@@ -349,6 +350,9 @@ class _LoopState:
     ever_edited: bool = False
     silent_no_work_nudges_used: int = 0
     plan_finish_nudged: bool = False
+    # plan mode: the plan.md text the planner was last shown. Fresh per leg, so a
+    # resumed planner is always re-shown the file the operator may have edited.
+    plan_injected: str = ""
     # A turn that ends in a prose question with no tool_use is nudged ONCE to
     # call ask_user (or finish_session) instead of narrating; then silent_finish is
     # accepted so a model that ignores the nudge cannot loop the run.
@@ -1062,9 +1066,10 @@ class Workflow:
         root_task_id: str | None,
     ) -> list[dict[str, Any]]:
         """Prepare the context for this turn's provider call: budget heartbeat,
-        tiered compaction, pre-call nudges, rolling cache breakpoints, then the
-        pre-call resume snapshot. Returns the serialized wire, so the snapshot
-        on disk and the provider call carry the same list by construction.
+        tiered compaction, the plan re-read, pre-call nudges, rolling cache
+        breakpoints, then the pre-call resume snapshot. Returns the serialized
+        wire, so the snapshot on disk and the provider call carry the same list
+        by construction.
 
         The cache breakpoints advance AFTER compaction + nudges (the tail must
         be final) and BEFORE the snapshot (markers persist across resume).
@@ -1072,9 +1077,11 @@ class Workflow:
         snapshot can be resumed by re-running this same call."""
         self._emit_budget(iteration)
         if self._maybe_compact(conversation, state):
-            # A tier-2 restart wiped the surfaced focus banner; let the next
-            # nudge pass re-surface the current task into the fresh context.
+            # A tier-2 restart wiped the surfaced focus banner and the plan
+            # block; let the passes below put both back into the fresh context.
             state.surfaced_task_id = None
+            state.plan_injected = ""
+        self._maybe_inject_plan(conversation, state)
         self._maybe_pre_call_nudges(
             conversation, state, iteration=iteration, start_iteration=start_iteration
         )
@@ -2353,6 +2360,36 @@ class Workflow:
                 stale_gate=turn.finish_stale_gate,
             )
         return None
+
+    def _maybe_inject_plan(self, conversation: Conversation, state: _LoopState) -> None:
+        """Put the CURRENT plan.md in front of the planner, every turn.
+
+        plan.md on disk is the plan; the conversation only ever holds a copy, and
+        `agent6 plan edit` writes the operator's answers to the file between legs.
+        So the file is re-read here rather than resynced at one chosen moment, and
+        injected only when it differs from what the planner was last shown -- an
+        untouched plan costs nothing. finish_planning stays the only writer.
+        """
+        if self.mode != "plan" or self.plan_output_path is None:
+            return
+        try:
+            text = self.plan_output_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return  # no plan yet; the first finish_planning creates it
+        except (OSError, UnicodeDecodeError) as exc:
+            self._log(f"  plan re-read failed: {exc}")
+            self._emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
+            return
+        if text == state.plan_injected:
+            return
+        state.plan_injected = text
+        conversation.notice(f"{PLAN_ON_DISK_HEADER}\n\n{text}")
+        self._log(f"  plan re-read from disk: {len(text)} chars")
+        self._emit(
+            "loop.plan_reread",
+            path=str(self.plan_output_path),
+            bytes=len(text.encode("utf-8")),
+        )
 
     def _maybe_pre_call_nudges(
         self,

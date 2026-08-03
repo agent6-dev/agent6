@@ -219,6 +219,18 @@ RUN_BUDGET_NUDGE_GATELESS = (
     " short summary of what you changed. Do not run any other commands."
 )
 
+# plan.md on disk is the plan; the planner's conversation only ever holds a
+# copy. The operator answers open questions with `agent6 plan edit`, so the
+# loop re-reads the file each turn and prepends this header when it differs
+# from what the planner was last shown.
+PLAN_ON_DISK_HEADER = (
+    "[harness plan] plan.md on disk now reads as follows. The operator may have"
+    " edited it (answers under `**A:**`, new constraints, deletions), and it"
+    " supersedes any earlier version of the plan in this conversation. Carry"
+    " these edits into the plan_markdown you pass to finish_planning, which"
+    " overwrites the file."
+)
+
 PLAN_BUDGET_NUDGE = (
     "[harness budget] You are running low on token budget and have NOT yet"
     " called finish_planning. Stop reading and reasoning now and call"

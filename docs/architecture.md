@@ -429,6 +429,12 @@ for `machine create` authoring):
   `agent6 fork --at-turn N` rolls a run back to turn N by cloning the matching
   checkpoint into a new run. Kept in full (a run is dozens of turns); written
   by the main process alongside `loop_state.json`.
+- `plan.md` (plan sessions): the plan itself. `finish_planning` is its only
+  writer, `agent6 plan edit` its only editor. The planner re-reads it before
+  every turn and is shown it whenever it differs from what it last saw, so
+  answers the operator wrote there survive the next `finish_planning` instead of
+  being overwritten by the planner's own older copy. `agent6 run --from-plan`
+  feeds it as a new run's task.
 - `transcripts/`: full provider request/response pairs for replay,
   written by the main process.
 
