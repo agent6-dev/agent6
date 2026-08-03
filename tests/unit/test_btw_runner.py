@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.events import EventSink
 from agent6.ui.cli._btw import make_btw_runner
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._steer_menu import (
@@ -39,11 +40,13 @@ def _answered_ask(root: Path, name: str, answer: str) -> Path:
 
 def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -> None:
     """The point of asking beside a run: `/btw` returns immediately, and the
-    answer lands on the view at the next turn boundary."""
+    answer lands at the next turn boundary."""
     asks = tmp_path / "asks"
     asks.mkdir()
     out = io.StringIO()
     view = ConsoleView(out, color=False)
+    events = EventSink(tmp_path / "logs.jsonl")
+    events.subscribe(view.feed)
 
     def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
         _answered_ask(asks, "quiet-fox-AAAAAA", "use ffmpeg -c:v libx265")
@@ -53,7 +56,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -
         "parent-BBBBBB",
         launch=launch,
         list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
-        console_view=lambda: view,
+        events=events,
     )
     started = time.monotonic()
     line = runner("why h265", tmp_path)
@@ -68,6 +71,40 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -
     assert "--- btw: why h265" in text
     assert "use ffmpeg -c:v libx265" in text
     assert "agent6 resume quiet-fox-AAAAAA" in text
+
+
+def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: Path) -> None:
+    """Handed straight to the console view, a btw answer was DROPPED under
+    --tui and the web (there is none) and lost when the parent exited first --
+    after the model had already been paid for. The journal is where every
+    surface reads, and it outlives the process."""
+    import json as _json
+
+    asks = tmp_path / "asks"
+    asks.mkdir()
+    events = EventSink(tmp_path / "logs.jsonl")
+
+    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+        _answered_ask(asks, "quiet-fox-AAAAAA", "use ffmpeg")
+        return ""
+
+    runner = make_btw_runner(
+        "parent-BBBBBB",
+        launch=launch,
+        list_asks=lambda: [d for d in asks.iterdir() if d.is_dir()],
+        events=events,  # no view at all
+    )
+    runner("why h265", tmp_path)
+    deadline = time.monotonic() + 15.0
+    answered: dict[str, object] = {}
+    while not answered and time.monotonic() < deadline:
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines():
+            event = _json.loads(line)
+            if event["type"] == "btw.answered":
+                answered = event
+        time.sleep(0.2)
+    assert answered.get("btw_id") == "quiet-fox-AAAAAA"
+    assert "use ffmpeg" in str(answered.get("block"))
 
 
 def test_btw_is_offered_in_the_menu() -> None:
@@ -112,3 +149,16 @@ def test_ordinary_text_is_still_a_steer(tmp_path: Path) -> None:
 
     lines = iter(["make it faster"])
     assert pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"
+
+
+def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: Path) -> None:
+    """The fold is what the TUI and the web render from; without it the answer
+    reached the journal and still showed nowhere but the CLI."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    fold = TranscriptFold()
+    fold.feed({"type": "role.text_delta", "text": "working"})
+    items = fold.feed({"type": "btw.answered", "btw_id": "x", "block": "--- btw: why\nbecause"})
+    kinds = [i.kind for i in items]
+    assert kinds == ["text", "marker"], "a btw must not join the turn's own prose"
+    assert "because" in items[-1].body

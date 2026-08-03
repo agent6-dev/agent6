@@ -18,7 +18,7 @@ from pathlib import Path
 from threading import Thread
 
 from agent6.app.btw import BtwLaunch, BtwSession, btw_answer, render_btw, start_btw
-from agent6.ui.cli._console_view import ConsoleView
+from agent6.events import EventSink
 from agent6.ui.spawn import agent6_exe
 
 # How often the watcher looks for the answer. A btw is a short question, and
@@ -53,13 +53,13 @@ def make_btw_runner(
     *,
     launch: BtwLaunch,
     list_asks: Callable[[], list[Path]],
-    console_view: Callable[[], ConsoleView | None],
+    events: EventSink,
 ) -> Callable[[str, Path], str]:
     """The `/btw <question>` handler the pause menu calls.
 
-    Returns immediately with a line to print; the answer arrives later on the
-    console view. A btw never blocks the run -- that is the whole point of
-    asking beside it rather than steering it.
+    Returns immediately with a line to print; the answer lands later as a
+    `btw.answered` event on the run's journal. A btw never blocks the run --
+    that is the whole point of asking beside it rather than steering it.
     """
 
     def run_btw(question: str, _run_dir: Path) -> str:
@@ -68,14 +68,20 @@ def make_btw_runner(
         )
         if session is None:
             return f"[agent6] {err}"
-        Thread(target=_watch, args=(session, console_view), daemon=True).start()
+        events.emit("btw.opened", btw_id=session.id, question=session.question)
+        Thread(target=_watch, args=(session, events), daemon=True).start()
         return f"[agent6] btw {session.id} opened; its answer prints here when it lands"
 
     return run_btw
 
 
-def _watch(session: BtwSession, console_view: Callable[[], ConsoleView | None]) -> None:
-    """Poll until the btw answers, then hand the block to the view.
+def _watch(session: BtwSession, events: EventSink) -> None:
+    """Poll until the btw answers, then put the block on the run's journal.
+
+    The journal, not the console view: under --tui or the web there is no
+    console view, and an answer handed to a missing one was dropped after the
+    model had already been paid for. Every surface folds the same log, and a
+    parent that exits first leaves the answer on disk to read afterwards.
 
     Daemon thread: a btw must never hold the run open, and an unanswered one at
     exit is simply an ask the operator can resume.
@@ -84,8 +90,6 @@ def _watch(session: BtwSession, console_view: Callable[[], ConsoleView | None]) 
     while time.monotonic() < deadline:
         answer = btw_answer(session)
         if answer is not None:
-            view = console_view()
-            if view is not None:
-                view.queue_btw(render_btw(session, answer))
+            events.emit("btw.answered", btw_id=session.id, block=render_btw(session, answer))
             return
         time.sleep(_POLL_S)

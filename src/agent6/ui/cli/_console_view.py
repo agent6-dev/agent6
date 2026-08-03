@@ -165,6 +165,11 @@ class ConsoleView:
                 if self._policy:
                     self._line(self._c("dim", f"  {self._policy}") + "\n")
                 return
+            if etype == "btw.answered":
+                # Queued, not printed: it lands whole at the next turn boundary
+                # so it can never break up a streaming turn.
+                self._btw.append(str(event.get("block", "")))
+                return
             if etype == "graph.update":
                 self._render_plan(event)
                 return

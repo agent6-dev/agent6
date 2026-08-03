@@ -143,7 +143,7 @@ def run_frontend() -> RunFrontend:
                     if (run_dir.parent.parent / "asks").is_dir()
                     else []
                 ),
-                console_view=lambda: console_cell[0],
+                events=events,
             ),
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,

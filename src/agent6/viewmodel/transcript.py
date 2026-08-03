@@ -65,6 +65,18 @@ _END_REASON_LABEL = {
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
 
 
+# Events that render BETWEEN turns rather than as part of one: {type: (kind,
+# the field holding the text)}. An empty field renders nothing (an older log
+# carries only a char count).
+_BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
+    # The operator's typed instruction: a steer, or the follow-up a resume
+    # started with.
+    "loop.steer.injected": ("operator", "text"),
+    # A side question's answer: not the run's output, so it never joins its prose.
+    "btw.answered": ("marker", "block"),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class TranscriptItem:
     """One rendered conversation step. Only the fields its `kind` needs are set."""
@@ -184,11 +196,9 @@ class TranscriptFold:
             self._thinking.clear()
             self._text.clear()
             return []
-        if etype == "role.thinking_delta":
-            self._thinking.append(str(event.get("text", "")))
-            return []
-        if etype == "role.text_delta":
-            self._text.append(str(event.get("text", "")))
+        if etype in ("role.thinking_delta", "role.text_delta"):
+            buffer = self._thinking if etype == "role.thinking_delta" else self._text
+            buffer.append(str(event.get("text", "")))
             return []
         if etype == "role.result":
             return self._flush_message()
@@ -232,14 +242,13 @@ class TranscriptFold:
             out = self._flush_message()
             out.append(TranscriptItem("marker", body=_parallel_failed_body(event)))
             return out
-        if etype == "loop.steer.injected":
-            # The operator's typed instruction (a steer, or the follow-up a
-            # resume was started with), shown in the conversation like any
-            # other turn. Older logs carry only a char count -- no item then.
+        aside = _BETWEEN_TURNS.get(etype)
+        if aside is not None:
+            kind, field = aside
             out = self._flush_message()
-            text = str(event.get("text", "")).strip()
-            if text:
-                out.append(TranscriptItem("operator", body=text))
+            body = str(event.get(field, "")).strip()
+            if body:
+                out.append(TranscriptItem(kind, body=body))
             return out
         if etype == "run.end":
             out = self._flush_message()
