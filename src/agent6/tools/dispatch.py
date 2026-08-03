@@ -59,12 +59,14 @@ from agent6.tools._result_format import (
 )
 from agent6.tools.background import BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
+from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
 from agent6.tools.results import (
     BackgroundResult,
     ExecResult,
+    FetchResult,
     MetricResult,
     RawResult,
     SessionsResult,
@@ -82,6 +84,7 @@ from agent6.tools.schema import (
     DagListTasksInput,
     DagSetCursorInput,
     DagUpdateTaskInput,
+    FetchInput,
     FindDefinitionInput,
     FindDefinitionLspInput,
     FindReferencesInput,
@@ -358,6 +361,7 @@ class ToolDispatcher:
             RunVerifyInput.TOOL_NAME: self._run_verify,
             RunCommandInput.TOOL_NAME: self._run_command,
             ReadSessionInput.TOOL_NAME: self._read_session,
+            FetchInput.TOOL_NAME: self._fetch,
             RunBackgroundInput.TOOL_NAME: self._run_background,
             ReadBackgroundInput.TOOL_NAME: self._read_background,
             StopBackgroundInput.TOOL_NAME: self._stop_background,
@@ -434,6 +438,11 @@ class ToolDispatcher:
         # run_verify_command rather than offer a tool that would error.
         if not self._config.workflow.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
+        # `fetch` exists because a jailed command has no network. Where one
+        # DOES (`tool_network = "allow"`), the worker can already run curl, and
+        # two ways to do one thing is the thing we do not do.
+        if self._config.sandbox.tool_network == "allow":
+            names = [n for n in names if n != FetchInput.TOOL_NAME]
         # Python-only LSP tools are dead weight on a non-Python repo or with no
         # ty/uvx installed: hide them rather than offer tools that only error.
         if not self._lsp_tools_useful:
@@ -759,6 +768,34 @@ class ToolDispatcher:
         if self._shells is None:
             raise ToolError("background commands need a run directory; none was wired")
         return self._shells
+
+    def _fetch(self, raw: dict[str, Any]) -> FetchResult:
+        args = FetchInput.model_validate(raw)
+        try:
+            host = check_url(args.url)
+        except FetchRefused as exc:
+            raise ToolError(str(exc)) from exc
+        # On the list: read it. Off the list: ask. The list IS the standing
+        # approval, and a prompt per doc read only trains a reflexive yes --
+        # but a GET can carry data out in its path, so a host the operator
+        # never named is their call, and an absent one is a no (the away-mode
+        # approver refuses without waiting).
+        if not host_allowed(host, self._config.sandbox.fetch_hosts) and not self._approver(
+            f"Allow fetch: {args.url}"
+        ):
+            raise ToolDenied(
+                f"fetch not approved for {host} (add it to sandbox.fetch_hosts to allow it)"
+            )
+        try:
+            got = fetch(args.url)
+        except FetchRefused as exc:
+            raise ToolError(str(exc)) from exc
+        return FetchResult(
+            url=got.url,
+            status=got.status,
+            content_type=got.content_type,
+            body=got.body,
+        )
 
     def _read_session(self, raw: dict[str, Any]) -> SessionsResult:
         args = ReadSessionInput.model_validate(raw)

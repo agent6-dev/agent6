@@ -236,6 +236,33 @@ class PreviewResult(ToolResult):
 
 
 @dataclass(frozen=True, slots=True)
+class FetchResult(ToolResult):
+    """`fetch`: one URL's text. A 30x carries its Location for the model to
+    decide on, since redirects are never followed."""
+
+    url: str
+    status: int
+    content_type: str
+    body: str
+    location: str = ""
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {
+            "url": self.url,
+            "status": self.status,
+            "content_type": self.content_type,
+            "body": self.body,
+        }
+        if self.location:
+            wire["location"] = self.location
+            wire["note"] = "redirects are not followed; fetch this URL if you still want it"
+        return wire
+
+    def summary(self) -> str:
+        return f"{self.status} · {len(self.body)} bytes"
+
+
+@dataclass(frozen=True, slots=True)
 class ExecResult(ToolResult):
     """run_command and run_verify_command: the jailed command's outcome."""
 

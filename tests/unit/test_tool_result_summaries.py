@@ -35,6 +35,7 @@ from agent6.tools.results import (
     DocsIndexResult,
     EditResult,
     ExecResult,
+    FetchResult,
     FinishPlanningResult,
     FinishRunResult,
     GrepResult,
@@ -119,6 +120,12 @@ CASES: list[tuple[str, ToolResult, str]] = [
             would_apply=("replace",),
         ),
         "ok",
+    ),
+    # the web
+    (
+        "fetch",
+        FetchResult(url="https://x/y", status=200, content_type="text/plain", body="hello"),
+        "200 · 5 bytes",
     ),
     # other sessions
     (

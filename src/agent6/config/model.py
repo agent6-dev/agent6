@@ -364,6 +364,18 @@ class SandboxConfig(BaseModel):
     #    instead of getting an empty namespace.
     tool_network: Literal["auto", "block", "only_explicit_states", "allow"] = "auto"
     run_commands: Literal["yes", "no", "ask"] = "ask"
+    # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
+    # none: every fetch is a prompt. `"*"` allows any host, written down so the
+    # opt-out reads as a choice in `config show` rather than as an absent
+    # setting. A leading dot allows subdomains (`.readthedocs.io`). Hosts, not
+    # URL prefixes: a prefix invites `evil.com/docs.python.org`.
+    #
+    # `fetch` exists because a jailed command has no network; it is hidden when
+    # `tool_network = "allow"`, where the worker can already run curl. It is
+    # still an egress channel a model drives -- a GET can encode data in its
+    # path -- so a host not listed here is asked about, and an absent operator
+    # is a no.
+    fetch_hosts: tuple[str, ...] = ()
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository

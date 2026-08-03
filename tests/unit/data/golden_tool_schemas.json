@@ -131,6 +131,15 @@
     }
   },
   {
+    "name": "fetch",
+    "required": [
+      "url"
+    ],
+    "properties": {
+      "url": "string"
+    }
+  },
+  {
     "name": "run_background",
     "required": [
       "argv"

@@ -201,6 +201,19 @@ class RunCommandInput(_ToolInput):
     argv: tuple[str, ...] = Field(min_length=1)
 
 
+class FetchInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "fetch"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Read one https URL and return its text. For documentation, specs, changelogs and"
+        " API references the repo does not contain. GET only, redirects are returned rather"
+        " than followed, and the response must be text (1 MiB cap). Hosts the operator has"
+        " allowed are read straight away; any other host asks them first, so prefer a URL"
+        " you were given over one you guessed."
+    )
+
+    url: str = Field(min_length=1)
+
+
 class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -625,6 +638,7 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     RunVerifyInput,
     RunCommandInput,
     ReadSessionInput,
+    FetchInput,
     RunBackgroundInput,
     ReadBackgroundInput,
     StopBackgroundInput,
