@@ -29,7 +29,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "target",
         nargs="?",
         default="",
-        help="Run id (exact or prefix) or machine id. Omit for the most recent run.",
+        help="Session id (exact or prefix) or machine id. Omit for the most recent.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     watch_p.add_argument(
@@ -78,7 +78,7 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "target",
         nargs="?",
         default="",
-        help="Run id (exact or prefix) or machine id to open on load. Omit for the hub.",
+        help="Session id (exact or prefix) or machine id to open on load. Omit for the hub.",
     )
     web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     web_p.add_argument(

@@ -38,7 +38,11 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
-from agent6.sessions.layout import SessionLayout, is_safe_session_id
+from agent6.sessions.layout import (
+    SESSION_BUCKETS,
+    is_safe_session_id,
+    session_layout,
+)
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
@@ -98,31 +102,39 @@ def _no_one_to_ask(config: Config) -> Config:
     return config.with_sandbox_overrides(no_commands=True)
 
 
-def _runs_root(agent6_dir: Path) -> Path:
-    return agent6_dir / "runs"
+def _session_dirs(agent6_dir: Path) -> list[Path]:
+    """Every session dir under the state base, across every bucket.
+
+    `list_sessions` is named for what it lists; reading runs/ alone hid a plan
+    and an ask from an editor driving agent6 over MCP.
+    """
+    return [
+        d
+        for bucket in SESSION_BUCKETS
+        if (agent6_dir / bucket).is_dir()
+        for d in (agent6_dir / bucket).iterdir()
+        if d.is_dir()
+    ]
 
 
-def _session_dirs_newest_first(runs: Path) -> list[Path]:
-    """Run dirs sorted newest-first by run activity.
+def _newest_first(dirs: list[Path]) -> list[Path]:
+    """Session dirs sorted newest-first by session activity.
 
-    Run ids are NOT chronologically sortable -- they start with a random
+    Session ids are NOT chronologically sortable -- they start with a random
     ``<adjective>-<noun>`` and the embedded ms timestamp rolls over -- so a
-    name sort picks the alphabetically-last run, not the latest. Sort by
+    name sort picks the alphabetically-last one, not the latest. Sort by
     logs.jsonl activity instead of directory mtime so a front-end writing
-    front-end claims into an older run does not make it look newest.
+    front-end claims into an older session does not make it look newest.
     """
     return sorted(
-        (d for d in runs.iterdir() if d.is_dir()),
+        dirs,
         key=session_mtime,
         reverse=True,
     )
 
 
 def _most_recent_session_id(agent6_dir: Path) -> str | None:
-    runs = _runs_root(agent6_dir)
-    if not runs.is_dir():
-        return None
-    candidates = _session_dirs_newest_first(runs)
+    candidates = _newest_first(_session_dirs(agent6_dir))
     return candidates[0].name if candidates else None
 
 
@@ -379,9 +391,9 @@ class MCPServer:
             if resolved is None:
                 raise ToolError("no sessions found under the agent6 state dir")
             session_id = resolved
-        layout = SessionLayout(state_dir=self._agent6_dir, session_id=session_id)
-        if not layout.session_dir.is_dir():
-            raise ToolError(f"run not found: {session_id}")
+        layout = session_layout(self._agent6_dir, session_id)
+        if layout is None or not layout.session_dir.is_dir():
+            raise ToolError(f"session not found: {session_id}")
         nodes = load_graph(layout)
         return {
             "session_id": session_id,
@@ -389,11 +401,8 @@ class MCPServer:
         }
 
     def _h_list_sessions(self, _args: dict[str, Any]) -> dict[str, Any]:
-        runs = _runs_root(self._agent6_dir)
-        if not runs.is_dir():
-            return {"sessions": []}
         entries: list[dict[str, Any]] = []
-        for d in _session_dirs_newest_first(runs):
+        for d in _newest_first(_session_dirs(self._agent6_dir)):
             summary: dict[str, Any] = {"session_id": d.name}
             # A missing/corrupt manifest lists the run without one.
             with contextlib.suppress(ManifestError):

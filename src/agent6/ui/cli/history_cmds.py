@@ -16,14 +16,13 @@ from agent6.graph.storage import load_graph
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
 from agent6.ui.cli._common import (
-    _runs_dir,
     _state_dir,
     all_session_dirs,
+    newest_layout_holding,
     resolve_session_layout,
     sgr,
 )
 from agent6.ui.cli._task_tree import task_tree_lines
-from agent6.viewmodel import session_mtime
 from agent6.viewmodel.transcript_render import (
     conversation_transcripts,
     fold_conversation,
@@ -361,20 +360,15 @@ def _cmd_history_graph(session_id: str) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
-        runs_dir = _runs_dir(cwd)
-        if not runs_dir.is_dir():
-            print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
+        found = newest_layout_holding(cwd, "graph")
+        if found is None:
+            print(f"ERROR: no sessions with a graph under {_state_dir(cwd)}", file=sys.stderr)
             return 2
-        candidates = sorted(
-            (p for p in runs_dir.iterdir() if p.is_dir() and (p / "graph").is_dir()),
-            key=session_mtime,
-            reverse=True,
+        layout = found
+        print(
+            f"[agent6] showing graph for most recent session: {layout.session_id}",
+            file=sys.stderr,
         )
-        if not candidates:
-            print(f"ERROR: no runs with a graph under {runs_dir}", file=sys.stderr)
-            return 2
-        layout = SessionLayout(state_dir=_state_dir(cwd), session_id=candidates[0].name)
-        print(f"[agent6] showing graph for most recent run: {layout.session_id}", file=sys.stderr)
 
     target_id = layout.session_id
     nodes = load_graph(layout)
@@ -382,7 +376,7 @@ def _cmd_history_graph(session_id: str) -> int:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
         return 2
 
-    print(f"Run id: {target_id}")
+    print(f"Session id: {target_id}")
     print()
     for line in task_tree_lines(nodes, show_commit=True):
         print(line)
@@ -410,22 +404,12 @@ def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
         except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    runs_dir = _runs_dir(cwd)
-    candidates = (
-        sorted(
-            (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
-            key=session_mtime,
-            reverse=True,
-        )
-        if runs_dir.is_dir()
-        else []
-    )
-    if not candidates:
-        print(f"ERROR: no runs with transcripts under {runs_dir}", file=sys.stderr)
+    found = newest_layout_holding(cwd, "transcripts")
+    if found is None:
+        print(f"ERROR: no sessions with transcripts under {_state_dir(cwd)}", file=sys.stderr)
         return 2
-    layout = SessionLayout(state_dir=_state_dir(cwd), session_id=candidates[0].name)
-    print(f"[agent6] transcript for most recent run: {layout.session_id}", file=sys.stderr)
-    return layout
+    print(f"[agent6] transcript for most recent session: {found.session_id}", file=sys.stderr)
+    return found
 
 
 def _cmd_history_transcript(

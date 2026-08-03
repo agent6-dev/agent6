@@ -234,7 +234,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
 ) -> None:
     """A run merged before agent6 recorded the merged tip cannot be confirmed,
     so --delete-squashed keeps it. The message must say that and name the manual
-    command -- it told the operator to run `runs prune --delete-squashed`, the
+    command -- it told the operator to run `sessions prune --delete-squashed`, the
     very command that had just skipped the branch."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -280,7 +280,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The advice loop was only closed on the path the operator was already on.
-    Plain `runs prune` still advertised --delete-squashed for a branch that
+    Plain `sessions prune` still advertised --delete-squashed for a branch that
     command refuses -- and every manifest written before the tip stamp is such a
     branch, so it was the default. Same for a recorded tip whose base branch is
     gone: the confirmation needs both."""

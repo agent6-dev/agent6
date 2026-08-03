@@ -415,7 +415,7 @@ def prune_sessions(cwd: Path) -> tuple[bool, str]:
 
 def remove_session(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Delete one run's history: `agent6 sessions rm <id>`. History only -- the run
-    branch is git's, and `runs prune` is the branch verb. The CLI refuses a live
+    branch is git's, and `sessions prune` is the branch verb. The CLI refuses a live
     run, so this surface inherits that."""
     return run_cli_capture([agent6_exe(), "sessions", "rm", "--", session_id], cwd)
 

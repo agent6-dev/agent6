@@ -623,7 +623,7 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_pat
 
 
 def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
-    """`runs transcript --json` advertises "the raw transcript array", and it is
+    """`sessions transcript --json` advertises "the raw transcript array", and it is
     the one CLI surface for a side-call's actual request/response (the thing you
     need to debug a bad compaction). The seat filter lives in the CONVERSATION
     fold, not the loader, so the dump keeps every seat."""

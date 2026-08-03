@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`runs diff`'s dirty-worktree note shelled out `git status`/`git rev-parse`
+"""`sessions diff`'s dirty-worktree note shelled out `git status`/`git rev-parse`
 WITHOUT the host-RCE hardening flags every other git call carries, so a poisoned
 `.git/config` core.fsmonitor would fire on the host during `git status`'s index
 refresh. Both probes must carry the hardening flags."""

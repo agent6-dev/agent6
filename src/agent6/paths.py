@@ -291,7 +291,7 @@ def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
     """The per-repo agent6 state directory (``<base>/<repo-id>``).
 
     Keyed on the PROJECT, not on where the operator was standing: keyed on the
-    cwd, every cross-session feature (`runs`, `resume`, `read_session`, memory)
+    cwd, every cross-session feature (`sessions`, `resume`, `read_session`, memory)
     silently found an empty project from any subdirectory.
 
     ``base_override`` is the global ``[agent6].state_dir`` (an absolute base

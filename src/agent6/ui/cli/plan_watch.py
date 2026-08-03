@@ -211,7 +211,7 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 
 
 def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
-    """The one-line state `runs show` prints (and emits as --json "state").
+    """The one-line state `sessions show` prints (and emits as --json "state").
 
     Leads with the LISTING's word -- ``status_for_session_dir``, the one decision
     every surface feeds -- then appends this surface's diagnostic detail (what
@@ -550,7 +550,7 @@ def _print_crashed_line(target: Path) -> None:
 def _render_dead_session(target: Path, events_path: Path) -> int:
     """Crashed/killed: no session.end will ever come and no worker reads answers.
     Render the log read-only (no front-end, no re-asked prompts), then say
-    what `runs show` already knows."""
+    what `sessions show` already knows."""
     view = ConsoleView(sys.stdout)
     try:
         for event in tail_events(events_path, follow=False):
@@ -590,7 +590,7 @@ def _watch_transcript(target: Path) -> int:
         # Not an error: a parked submission, a `fork --no-run`, or a run still
         # launching (egress + the ~80s verify inference run before the first log
         # line) has no log yet. Answer with the same word the listings and
-        # `runs show` use, plus what to do, instead of a raw filesystem message.
+        # `sessions show` use, plus what to do, instead of a raw filesystem message.
         word, reason = status_for_session_dir(target, StatusFacts())
         print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
         if word == "starting":

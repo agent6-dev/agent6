@@ -294,7 +294,7 @@ def create_fork(  # noqa: PLR0911
     try:
         # The source's preset: resume replays it (preset or manifest_preset),
         # so the child manifest's models/workflow stamp must be derived from
-        # the SAME preset-resolved config or `runs show` reports a model the forked
+        # the SAME preset-resolved config or `sessions show` reports a model the forked
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
     except ConfigError as exc:

@@ -6,7 +6,7 @@
 lifecycle (`run`, `resume`, with their `preflight`/`manifest`/`merge`/
 `finalize`/`providers` pieces) and multi-run orchestration (the `--parallel`
 fan-out and the coordinator's `/parallel` dispatch, `parallel`/`compare`) over
-`workflows`, `git_ops`, `runs`, and the headless `viewmodel`, and never imports
+`workflows`, `git_ops`, `sessions`, and the headless `viewmodel`, and never imports
 `agent6.ui`. What it cannot do itself -- own a terminal, render a live view,
 spawn a detached `agent6` process, or drive the run-dir bridge -- is injected
 by the front-end (`ui/cli`) as frozen values of callables (`run.SessionFrontend`,

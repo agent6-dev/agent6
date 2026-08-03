@@ -202,7 +202,7 @@ def test_diff_range_reports_a_branch_diff_and_empty_on_bad_ref(tmp_path: Path) -
 
 
 def test_diff_range_survives_poisoned_diff_external(tmp_path: Path) -> None:
-    """`runs compare` diffs candidates via `diff_range`; a poisoned repo config
+    """`sessions compare` diffs candidates via `diff_range`; a poisoned repo config
     must not run its payload on the host, same guarantee as `diff_since`."""
     _init_repo(tmp_path)
     base = subprocess.run(

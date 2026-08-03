@@ -240,7 +240,7 @@ def test_web_new_work_preflight_refuses_while_checkout_busy(
 def test_runs_show_reports_a_parked_run_as_parked(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The refusal hands the operator a run id to resume, so `runs show` on it has
+    """The refusal hands the operator a run id to resume, so `sessions show` on it has
     to lead with the same word the listing uses. A parked run is a saved,
     resumable submission -- never "unknown (no events yet)", which reads as a
     broken husk and hides the one action that starts it."""

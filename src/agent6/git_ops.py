@@ -158,7 +158,7 @@ DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
 def git_hardening_flags() -> tuple[str, ...]:
     """The `-c` overrides every agent6 git invocation must carry (see
     _GIT_EGRESS_HARDENING). Public so the few callers that shell out to git
-    outside this module (`agent6 review`/`runs diff` collectors) apply the
+    outside this module (`agent6 review`/`sessions diff` collectors) apply the
     same hardening; place them BEFORE the subcommand. Diff/show callers also add
     DIFF_SHOW_SAFETY_FLAGS after the subcommand."""
     if _hook_policy["honor_repo_hooks"]:
@@ -466,10 +466,10 @@ def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
     `git branch -d` refuses a squash-merged branch because its commits are not
     reachable from the base (the squash collapsed them into one commit ON the
     base), even though the branch's content is safely in that base commit. So a
-    default `runs prune` can never remove a squash-merged branch, and the whole
+    default `sessions prune` can never remove a squash-merged branch, and the whole
     run -> merge -> prune lifecycle leaves the branch behind.
 
-    This is the operator's explicit `runs prune --delete-squashed` opt-in, only
+    This is the operator's explicit `sessions prune --delete-squashed` opt-in, only
     for a branch the manifest CONFIRMS was squash-merged into an existing base
     (its content is in that base commit; the individual per-step commits were
     collapsed anyway and survive in the reflog until GC). Operator-initiated,

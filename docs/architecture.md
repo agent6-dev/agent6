@@ -218,7 +218,7 @@ fresh/offline machine is never blocked on a regenerable cache). All three consum
 one helper -- the `run --parallel` CLI preflight, the composer submit paths, and
 the coordinator's ui-built group dispatcher (so `workflows` needs no models
 dependency; a refused dispatch raises and the loop's group-failure feedback
-carries the message). `runs compare` is not one of them; it only reads
+carries the message). `sessions compare` is not one of them; it only reads
 already-finished runs to rank them, never cloning, importing, or joining. The
 primitive is pure git plumbing in
 [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py)
@@ -259,9 +259,9 @@ pipelines composed over the engine, never importing `agent6.ui`.
   `compare` block (`rank`/`of`/`winner`/`ranked_by`/`rationale`/
   `judge_cost_usd`+`judge_cost_partial`, the judge call's group cost; the fan-out
   id itself is the manifest's top-level `parallel_id`) into each imported lane's
-  manifest -- the ONE writer (`runs compare` stays
+  manifest -- the ONE writer (`sessions compare` stays
   stateless, the coordinator never compares its lanes) -- so every run view
-  (`runs show`, TUI/web run headers) shows where a lane placed and why, and the
+  (`sessions show`, TUI/web run headers) shows where a lane placed and why, and the
   listings mark the winner with a `★`. Nothing merges automatically.
   `--max-usd` is per lane (total spend up to `--max-usd` x lane count; the
   orchestrator prints the `$X/lane x N = $Y total` line before spawning). The

@@ -5880,7 +5880,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
 def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> None:
     """An operator stop deliberately does NOT checkpoint -- committing over
     someone taking over would remove their choice to discard -- but it said
-    nothing, so uncommitted work was invisible to `runs diff` and `runs merge`
+    nothing, so uncommitted work was invisible to `sessions diff` and `sessions merge`
     with no hint it existed. A clean tree adds nothing."""
     import subprocess
 

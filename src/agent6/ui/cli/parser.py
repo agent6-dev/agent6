@@ -222,7 +222,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     hist_p = _sub(
         sub,
         "history",
-        help="Cross-run search over persisted transcripts and run data (per-run views: `runs`).",
+        help=(
+            "Cross-session search over persisted transcripts and session data"
+            " (per-session views: `sessions`)."
+        ),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
     hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all runs.")

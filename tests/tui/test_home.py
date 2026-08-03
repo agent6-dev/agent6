@@ -648,7 +648,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
 
 
 def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
-    """The hub row renders the same '~' lower-bound marker as `runs show`;
+    """The hub row renders the same '~' lower-bound marker as `sessions show`;
     an all-unpriced run's ~$0.0000 is information, a clean $0 stays blank."""
     from agent6.ui.tui.home import _cost_cell
 

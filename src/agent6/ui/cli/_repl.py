@@ -22,9 +22,9 @@ from agent6.git_ops import (
     revert_head,
 )
 from agent6.init import init_workspace
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import session_layout
 from agent6.tools.mcp_client import MCPManager
-from agent6.ui.cli._common import _runs_dir
+from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli._interact import _pause
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.ui.cli.plan_watch import (
@@ -154,7 +154,13 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
     if not session_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    events_path = _runs_dir(root) / session_id / LOGS_NAME
+    # Across buckets: the REPL runs inside an ask, whose dir is asks/ -- a
+    # runs/-only path never found the session's own log.
+    layout = session_layout(_state_dir(root), session_id)
+    if layout is None:
+        print(f"[agent6] /watch: no session {session_id}", file=sys.stderr)
+        return
+    events_path = layout.logs_path
     if not events_path.is_file():
         print(f"[agent6] /watch: no logs.jsonl at {events_path}", file=sys.stderr)
         return

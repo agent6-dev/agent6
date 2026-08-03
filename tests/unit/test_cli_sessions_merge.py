@@ -196,7 +196,7 @@ def test_runs_merge_from_the_run_branch_lands_on_the_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A run strands the checkout on agent6/<id> (branch_per_run never switches
-    # back), so `runs merge` is typically invoked FROM the run branch. Restoring
+    # back), so `sessions merge` is typically invoked FROM the run branch. Restoring
     # to it would leave the user on a squash-dead branch whose tree no longer
     # matches main. They should land on the merge target instead.
     monkeypatch.chdir(tmp_path)

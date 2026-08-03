@@ -187,11 +187,11 @@ def test_the_runs_journal_streams_out_as_session_update(
                 continue
             assert message["params"]["sessionId"] == session_id
             seen.append(json.dumps(message["params"]["update"]))
-            if any("Run passed" in body for body in seen):
+            if any("Session passed" in body for body in seen):
                 break
         assert any("Let me read the file." in body for body in seen), "no thinking reached it"
         assert any('"tool_call"' in body for body in seen), "no tool call reached it"
-        assert any("Run passed" in body for body in seen), "the ending never reached it"
+        assert any("Session passed" in body for body in seen), "the ending never reached it"
     finally:
         wire.close()
 

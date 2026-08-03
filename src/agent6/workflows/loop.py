@@ -2858,7 +2858,7 @@ class Workflow:
         An operator stop deliberately skips ``_final_checkpoint``: committing
         over someone who is taking over would remove their choice to discard.
         The work is still in the checkout, but nothing reads it there --
-        ``runs diff`` and ``runs merge`` both read git history -- so the state
+        ``sessions diff`` and ``sessions merge`` both read git history -- so the state
         is stated rather than left silent."""
         if self.mode != "run":
             return ""

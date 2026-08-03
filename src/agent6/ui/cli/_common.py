@@ -21,7 +21,7 @@ from agent6.paths import (
 )
 from agent6.sessions.id import SessionIdError, list_session_ids
 from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout
-from agent6.viewmodel import newest_session_dir
+from agent6.viewmodel import newest_session_dir, session_mtime
 
 
 def _sub(
@@ -111,7 +111,7 @@ def _state_dir(repo_root: Path) -> Path:
 
     Resolved from the global ``[agent6].state_dir`` base (default
     ``$XDG_STATE_HOME/agent6``) plus a per-repo id, so this is cheap and works
-    for read-only commands (``runs``/``history``/...) without a full config
+    for read-only commands (``sessions``/``history``/...) without a full config
     merge.
     """
     return resolved_state_dir(repo_root)
@@ -130,7 +130,7 @@ def _plans_dir(repo_root: Path) -> Path:
 def print_no_session_match(query: str, state: Path) -> None:
     """The one missing-run error, shared by every command that resolves a run:
     name the query and where it looked (never the bucket-layout internals), or
-    the same first-contact copy as `runs` when there is nothing to show at all."""
+    the same first-contact copy as `sessions` when there is nothing to show at all."""
     if query:
         print(f"ERROR: no run matches {query!r} (looked under {state})", file=sys.stderr)
     else:
@@ -168,7 +168,7 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
 
     `agent6 run`/`plan` live under ``runs/``, `agent6 ask` under ``asks/``, and
     `machine create` authoring logs under ``machine-drafts/``; read-only
-    commands (``runs show``/``watch``/``history search``) use this so anything
+    commands (``sessions show``/``watch``/``history search``) use this so anything
     a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
     matches in any bucket.
     """
@@ -207,6 +207,29 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
     raise SessionIdError(f"no run matches {query!r} (looked under {state})")
 
 
+def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
+    """The newest session across every bucket whose dir holds *child*.
+
+    `history graph` / `history transcript` each scanned runs/ and then built a
+    runs/ layout from the name, so a session in any other bucket was both
+    invisible and, if named explicitly, resolved to a directory that does not
+    exist.
+    """
+    candidates = [
+        d
+        for bucket in session_bucket_dirs(repo_root)
+        if bucket.is_dir()
+        for d in bucket.iterdir()
+        if d.is_dir() and (d / child).is_dir()
+    ]
+    if not candidates:
+        return None
+    newest = max(candidates, key=session_mtime)
+    return SessionLayout(
+        state_dir=_state_dir(repo_root), session_id=newest.name, subdir=newest.parent.name
+    )
+
+
 def resolve_or_newest_layout(repo_root: Path, session_id: str) -> SessionLayout | None:
     """Resolve an explicit *session_id* across every run-style bucket, or fall back to
     the newest run across all buckets when *session_id* is empty.
@@ -215,7 +238,7 @@ def resolve_or_newest_layout(repo_root: Path, session_id: str) -> SessionLayout 
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
     ``SessionIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
-    ``attach`` / ``runs stop`` / ``runs status``: a new such command resolves the
+    ``attach`` / ``sessions stop`` / ``sessions status``: a new such command resolves the
     same way instead of re-deriving the id-or-newest glue.
     """
     if session_id:

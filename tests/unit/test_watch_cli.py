@@ -111,7 +111,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
 ) -> None:
     """A crashed worker never writes session.end: attach used to replay, re-ask the
     dead worker's pending approval, then follow forever behind a "working"
-    spinner while `runs show` called the same run stopped. With a stale
+    spinner while `sessions show` called the same run stopped. With a stale
     worker.pid it must render read-only, never prompt, and end with the
     truthful crashed line."""
     import threading

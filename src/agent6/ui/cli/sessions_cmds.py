@@ -34,7 +34,7 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
-from agent6.sessions.id import SessionIdError, resolve_session_id
+from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import HUB_BUCKETS, SessionLayout
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
@@ -43,6 +43,7 @@ from agent6.ui.cli._common import (
     _state_dir,
     load_config_or_exit,
     resolve_or_newest_layout,
+    resolve_session_layout,
     sgr,
 )
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
@@ -250,29 +251,34 @@ def _resolve_session_manifest(
     missing_hint: str = "",
 ) -> tuple[SessionLayout, SessionManifest] | int:
     """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
-    code on error. Shared by `runs diff`/`merge`/`commits`; the two note strings vary
+    code on error. Shared by `sessions diff`/`merge`/`commits`; the two note strings vary
     per caller."""
     runs_dir = _runs_dir(cwd)
-    if not runs_dir.is_dir():
-        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-        return 2
-    target_id = session_id
-    if not target_id:
+    if not session_id:
+        # No id: the most recent RUN. These verbs are about a run's branch, and
+        # a plan or an ask has none, so widening the default would answer a
+        # question the operator did not ask.
+        if not runs_dir.is_dir():
+            print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
+            return 2
         latest = newest_session_dir([runs_dir])
         if latest is None:
             print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
             return 2
-        target_id = latest.name
-        print(f"[agent6] {recent_note}: {target_id}", file=sys.stderr)
+        layout = SessionLayout(state_dir=_state_dir(cwd), session_id=latest.name)
+        print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
     else:
+        # An EXPLICIT id resolves across every bucket. A plan the operator named
+        # exists; "no run matches" would deny that, when the real answer is that
+        # it has no branch to show.
         try:
-            target_id = resolve_session_id(runs_dir, target_id)
+            layout = resolve_session_layout(cwd, session_id)
         except SessionIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    layout = SessionLayout(state_dir=_state_dir(cwd), session_id=target_id)
+    target_id = layout.session_id
     if not layout.manifest_path.is_file():
-        print(f"ERROR: run {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
+        print(f"ERROR: session {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
         return 2
     try:
         manifest = read_manifest(layout.session_dir)
@@ -513,7 +519,7 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     """The base branch the run owning *branch* (agent6/<session_id>) was merged into, or
     "" if there is no (readable) manifest or it was never recorded as merged.
 
-    Frozen semantics: `runs prune --delete-squashed` force-deletes a branch ONLY
+    Frozen semantics: `sessions prune --delete-squashed` force-deletes a branch ONLY
     when this returns a base name (a manifest-confirmed merge with a recorded sha).
     An unreadable/corrupt/unmerged manifest returns "" -> the branch is KEPT, never
     force-deleted (fail-safe). The model's leniency preserves that: the legacy flat
@@ -742,7 +748,7 @@ def _cmd_compare(*, session_ids: tuple[str, ...]) -> int:
         return 2
 
     reviewer = cfg.models.resolve("reviewer")
-    # `runs compare` is advisory and stateless: it ranks + prints but never stamps
+    # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
     # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
     outcome = rank(cfg, candidates, transcript_dir=_state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
@@ -788,7 +794,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir.
 
     Only history: the run's branch and its commits are git's, and are left
-    alone (`runs prune` is the branch verb). `--asks` clears the asks made in
+    alone (`sessions prune` is the branch verb). `--asks` clears the asks made in
     THIS directory -- an ask is keyed by the directory it ran in, so asks made
     elsewhere are untouched."""
     cwd = Path.cwd()

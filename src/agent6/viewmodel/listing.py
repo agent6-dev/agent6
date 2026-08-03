@@ -52,7 +52,7 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
 
     Husks are skipped, like every listing skips them: a crash-orphaned dir with
     no manifest and no log is newer than the real runs, so returning it pointed
-    bare `attach` / `runs show` / `runs stop` at a phantom the operator cannot
+    bare `attach` / `sessions show` / `sessions stop` at a phantom the operator cannot
     see in any listing.
     """
     runs: list[Path] = []
@@ -138,7 +138,7 @@ def is_winner(session_dir: Path) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class SessionSummary:
-    """One listing row: everything a hub or `runs list` needs, uncolored."""
+    """One listing row: everything a hub or `sessions list` needs, uncolored."""
 
     session_id: str
     mode: str  # run | plan | ask | ?
@@ -190,7 +190,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
 
 
 # The two prompt events that mean "alive but blocked on the OPERATOR". One
-# definition: the hub listing and `runs show` both key their "waiting (needs
+# definition: the hub listing and `sessions show` both key their "waiting (needs
 # answer)" status on it, so the two surfaces can't disagree.
 OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
 OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
@@ -205,7 +205,7 @@ PARKED_STATUS = ("parked", "resume to start")
 class StatusFacts:
     """The event-derived inputs to :func:`status_for_session_dir`, producible from
     either event reader -- ``LogScan.status_facts()`` (the tolerant scanner
-    behind listings and ``runs show``) and ``state.status_facts`` (the typed
+    behind listings and ``sessions show``) and ``state.status_facts`` (the typed
     fold behind the live views) -- so every surface feeds the one status
     decision the same answers for the same log."""
 
@@ -304,7 +304,7 @@ def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) 
 @dataclass(frozen=True, slots=True)
 class LogScan:
     """One tolerant pass over a run's ``logs.jsonl``: the shared scan behind the
-    hub listing and ``runs show``. One owner, because the resume rules (bank
+    hub listing and ``sessions show``. One owner, because the resume rules (bank
     cost legs, un-finish) and the torn-line tolerances drifted when each
     consumer scanned for itself.
 
@@ -364,7 +364,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     """Fold ``logs.jsonl`` into a :class:`LogScan`: session.start (mode/task), the
     last session.end (un-finished again by a later resume), the running per-leg
     budget banked across resumes into a cumulative total, and the liveness
-    anchors (timestamps, iteration, last event type) ``runs show`` reads.
+    anchors (timestamps, iteration, last event type) ``sessions show`` reads.
 
     errors="replace": a live writer can leave a torn multibyte UTF-8 tail; strict
     decoding would take down the whole listing. The mangled line just fails

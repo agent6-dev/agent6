@@ -348,7 +348,7 @@ class ToolDispatcher:
         # like the DAG tools without a curator.
         self._state_dir = state_dir
         # Background commands live under the run dir so they die with the run
-        # and `runs rm` clears them. None (tests, review dispatchers) leaves
+        # and `sessions rm` clears them. None (tests, review dispatchers) leaves
         # them unwired: the tools raise ToolError, like the DAG tools.
         self._shells = BackgroundShells(session_dir / "shells") if session_dir is not None else None
         # The run's dir, for the effective command policy: the operator's

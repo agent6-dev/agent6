@@ -274,7 +274,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
 
 
 def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
-    """`runs show` reads one field for "the model that drove this run". It used
+    """`sessions show` reads one field for "the model that drove this run". It used
     to be the worker unconditionally, so a plan run -- driven by the planner --
     displayed a model that never ran, and disagreed with both the web (which
     reads the role events) and its own cost block."""

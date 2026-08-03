@@ -1100,7 +1100,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     def action_delete_session(self) -> None:
         """Delete this run's history and return to the hub. History only: the run
-        branch and its commits are git's (`runs prune` is the branch verb)."""
+        branch and its commits are git's (`sessions prune` is the branch verb)."""
         if self.session_controllable():
             self.notify("run is still live -- stop it first", severity="warning")
             return

@@ -121,7 +121,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
 def test_status_words_lead_with_the_listing_word_in_every_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`runs show --json` "state" leads with exactly the word the hub row shows
+    """`sessions show --json` "state" leads with exactly the word the hub row shows
     for the SAME dir, for every non-session.end state: "created" (was "unknown"),
     "starting" (was a bare "running" while the hub said starting), "waiting",
     "stale". One decision -- status_for_session_dir -- so the two can't drift."""
@@ -157,7 +157,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `runs show` must agree with `runs list`: a finish_run+all_passed run reads
+    # `sessions show` must agree with `sessions list`: a finish_run+all_passed run reads
     # "passed", not the opposite "finished" the raw reason alone used to print.
     # The raw reason stays in parens as the diagnostic.
     _make_run(
@@ -213,7 +213,7 @@ def test_status_no_such_run_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 def test_status_shows_fan_out_compare_outcome(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`runs show` prints where a lane placed in its fan-out (+ the judge's
+    """`sessions show` prints where a lane placed in its fan-out (+ the judge's
     rationale), and the JSON carries the raw compare block."""
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     manifest = json.loads((d / "manifest.json").read_text("utf-8"))
@@ -246,7 +246,7 @@ def test_worker_pid_clear(tmp_path: Path) -> None:
 def test_status_shows_usage_from_budget_update_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `runs show` must read budget.update (the authoritative post-call totals),
+    # `sessions show` must read budget.update (the authoritative post-call totals),
     # not loop.budget (emitted BEFORE each call: lags one call, 0 on iter 1).
     # A stray loop.budget must NOT override the real usage.
     d = _make_run(
@@ -295,7 +295,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A resume leg restarts the budget from 0 and un-finishes the run; `runs
-    # show` banks legs (same rule as `runs list` and the run view) and must
+    # show` banks legs (same rule as `sessions list` and the run view) and must
     # not report leg 1's session.end for a run that is live again. A valid-JSON
     # non-object line is skipped, not a crash.
     d = _make_run(
@@ -440,7 +440,7 @@ def test_status_ambiguous_prefix_names_the_candidates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An ambiguous id prefix must say so and name the matches, as `attach` and
-    `runs stop` do. `runs show` swallowed the resolver's error and printed
+    `sessions stop` do. `sessions show` swallowed the resolver's error and printed
     "no run matches 't'" -- telling the operator no such run exists while two
     did."""
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Render a persisted task DAG as an indented text tree.
 
-Shared by `runs graph`, `runs show`, and the live CLI stream's plan block, so
+Shared by `sessions graph`, `sessions show`, and the live CLI stream's plan block, so
 the decomposed plan reads the same everywhere (and is visible for a headless
 run that never opened the TUI #plan pane)."""
 

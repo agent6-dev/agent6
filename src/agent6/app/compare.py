@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Candidate-ranking core shared by `--parallel`'s auto-compare (`app.parallel`)
-and the standalone `runs compare` (`ui/cli/sessions_cmds.py`): rank candidates (judge
+and the standalone `sessions compare` (`ui/cli/sessions_cmds.py`): rank candidates (judge
 via the reviewer model when one is built, else the deterministic mechanical
 fallback) and print the ranked table. One implementation so the two callers can
 never drift.
@@ -124,7 +124,7 @@ def print_ranked_candidates(
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print the ranked table (best first) + a `runs merge` line per candidate,
+    """Print the ranked table (best first) + a `sessions merge` line per candidate,
     a total-spend line (candidate costs plus any judge cost), then the judge's
     rationale if there is one. Prints nothing when the ranking is empty."""
     if not outcome.ranking:

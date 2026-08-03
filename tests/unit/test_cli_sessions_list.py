@@ -52,7 +52,7 @@ def test_runs_list_marks_a_partial_cost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A cost the scanner knows is a lower bound (unpriced model in some leg)
-    renders with the '~' marker in the listing, matching `runs show`."""
+    renders with the '~' marker in the listing, matching `sessions show`."""
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()

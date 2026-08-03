@@ -94,7 +94,7 @@ def _capture_message(stdout: str, stderr: str) -> str:
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
     """Run a quick agent6 subcommand synchronously, capturing its output, and
     return ``(ok, message)``. For the fast, foreground CLI ops a front-end drives
-    the same way a user would: `runs merge`, `runs prune`, `config set`. argv is
+    the same way a user would: `sessions merge`, `sessions prune`, `config set`. argv is
     fixed (the agent6 exe + operator-chosen args), never LLM output."""
     try:
         proc = subprocess.run(

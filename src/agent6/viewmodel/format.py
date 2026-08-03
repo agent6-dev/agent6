@@ -46,7 +46,7 @@ def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     ``rank 1/2 · winner · judge ($0.0102)``; the parenthesised figure is the
     judge call's cost for the whole group, present whenever a judge call was
     made (a ``~`` marks an unpriced lower bound). The rationale is the judge's
-    text, empty for a mechanical ranking. Shared by `runs show` and the TUI run
+    text, empty for a mechanical ranking. Shared by `sessions show` and the TUI run
     header; the web SPA renders the same stamp fields from the snapshot JSON."""
     if compare is None:
         return None

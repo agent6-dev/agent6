@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Build + write the canonical manifest.json a run starts with (run/fork). The
-reader and the on-disk shape (:class:`SessionManifest`) live in ``runs.manifest``."""
+reader and the on-disk shape (:class:`SessionManifest`) live in ``sessions.manifest``."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def write_manifest(path: Path, m: SessionManifest) -> None:
 
     The one place a SessionManifest reaches disk: the initial write below and the
     stamp rewrites (merge / lineage / compare) all route through here, so the
-    format lives in one spot. Durable temp+replace: the TUI hub and `runs show`
+    format lives in one spot. Durable temp+replace: the TUI hub and `sessions show`
     poll this file on live runs, and resume/fork need it after a crash.
 
     Refuses to rewrite a NEWER manifest (``ManifestError``): reading one is
@@ -107,7 +107,7 @@ def write_session_manifest(
         run_branch=run_branch,
         models=ModelsBrief(
             # The role that actually drives this mode: a plan run recorded the
-            # worker here and `runs show` then named a model that never ran.
+            # worker here and `sessions show` then named a model that never ran.
             driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
         ),

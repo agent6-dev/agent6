@@ -464,7 +464,7 @@ def test_is_run_husk(tmp_path: Path) -> None:
 def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     # A valid-JSON line that isn't an object (a torn or adversarial writer) must
     # not crash the listing fold -- one bad line otherwise took down the whole
-    # hub / `runs list` / TUI home. It's skipped like an unparseable line.
+    # hub / `sessions list` / TUI home. It's skipped like an unparseable line.
     rd = tmp_path / "runs" / "weird"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
@@ -549,7 +549,7 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
 def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
     """A husk (a dir a crash orphaned before any manifest or log) is hidden by
     every listing, but the recency query returned it, so a bare `attach` /
-    `runs show` / `runs stop` targeted a phantom the operator cannot see -- and
+    `sessions show` / `sessions stop` targeted a phantom the operator cannot see -- and
     could miss a live run whose log was quiet during a long provider call."""
     from agent6.viewmodel.listing import newest_session_dir
 
@@ -612,7 +612,7 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
     """A run whose loop escaped with a fault records session.end reason=crashed, so
     every surface calls it failed immediately. Without that record the dying
     process still cleared worker.pid -- the only immediate liveness evidence --
-    and the fold fell back to the silence window, so `runs list`, `runs show`,
+    and the fold fell back to the silence window, so `sessions list`, `sessions show`,
     attach, the web hub and the TUI all showed a dead run as "running" for ten
     minutes. (A SIGKILLed run leaves its pid file, which is why that case
     always read stale at once.)"""

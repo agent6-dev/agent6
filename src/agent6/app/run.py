@@ -187,7 +187,7 @@ class SessionFrontend:
     run/resume lifecycle: the live console view (held cli-side; the lifecycle
     only signals attach/close), the interactive prompts, and the REPLs. The
     lifecycle owns egress itself (`app.egress`) and the run-dir bridge
-    (`runs.ipc`); only the exe-spawn primitives it can't reach stay injected.
+    (`sessions.ipc`); only the exe-spawn primitives it can't reach stay injected.
     One value serves both `run_task` and `resume_task`; resume simply never
     calls the run-only fields."""
 

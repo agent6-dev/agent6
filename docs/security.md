@@ -225,7 +225,7 @@ fixed argv depending only on operator input, never LLM output.
   LLM output -- with `--` before it so a question starting with a dash cannot
   read as a flag.
 - `ui/spawn.py`: the shared front-end spawn helper; spawns the agent6 CLI
-  detached for run/machine launches and captures `runs merge`/`prune`/
+  detached for run/machine launches and captures `sessions merge`/`prune`/
   `config set`; argv is the agent6 exe plus operator-chosen args.
 - `ui/notify.py`: fires `notify-send` with fixed argv (exe, `--`
   end-of-options, two positional data args, no shell) for the device-present
@@ -233,7 +233,7 @@ fixed argv depending only on operator input, never LLM output.
   option.
 - `ui/cli/` helpers:
     - `$EDITOR` for plan and steer editing.
-    - `git diff/log` for the review subcommand and the `runs`/`ask` diff views;
+    - `git diff/log` for the review subcommand and the `sessions`/`ask` diff views;
       argv from the run manifest the CLI wrote outside the jail.
     - `rg` for history search.
     - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.

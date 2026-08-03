@@ -146,7 +146,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "session_id",
         nargs="?",
         default="",
-        help="Run id under the per-repo run-state dir (omit for the most recent run).",
+        help="Session id under the per-repo state dir (omit for the most recent).",
     )
     resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     resume_p.add_argument(

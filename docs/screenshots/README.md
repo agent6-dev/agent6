@@ -57,8 +57,8 @@ Both demos force streaming (`AGENT6_FORCE_STREAM=1`) so the cassette is SSE and
 the model's reasoning streams live in the recording, the same as a real terminal.
 
 - `cli_demo.sh` (`record`|`replay`) + `cli_demo.tape`: a terminal bug-fix run for
-  the CLI audience. `agent6 run` (headless) fixes a failing test, then `runs diff`,
-  `watch`, `runs show`. Pure typing, so it renders straight with no toast overlay.
+  the CLI audience. `agent6 run` (headless) fixes a failing test, then `sessions diff`,
+  `watch`, `sessions show`. Pure typing, so it renders straight with no toast overlay.
   Seed: `seed/cli-repo/` (the buggy stats repo) + `seed/cli-cassette.jsonl`.
 - `machine_demo.sh` (`record`|`replay`) + `machine_demo.tape`: the code-fixer
   state machine in the TUI. The Machines page runs the fix-loop (agent edits ->

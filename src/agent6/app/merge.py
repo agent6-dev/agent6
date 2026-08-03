@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run-branch merge engine shared by `runs merge` and `git.auto_merge`.
+"""The run-branch merge engine shared by `sessions merge` and `git.auto_merge`.
 
 `cli.sessions_cmds` validates + resolves a run, then calls `execute_merge`; the run
 finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
@@ -51,7 +51,7 @@ def record_merge_in_manifest(
 ) -> None:
     """Record a successful merge in the run manifest so later tooling can tell a
     merged run branch from an unmerged one. *merged_tip* is the run-branch tip
-    that was merged: `runs prune --delete-squashed` force-deletes only a branch
+    that was merged: `sessions prune --delete-squashed` force-deletes only a branch
     still pointing there. Best-effort: a missing/corrupt manifest must not fail a
     merge that already happened."""
     try:
@@ -163,7 +163,7 @@ def execute_merge(
     except GitError as exc:
         return MergeOutcome("error", error=f"could not check out target branch {target!r}: {exc}")
     # A run strands the checkout on its OWN branch (branch_per_run switches at
-    # start and never switches back), so `runs merge <id>` is often invoked from
+    # start and never switches back), so `sessions merge <id>` is often invoked from
     # agent6/<id> -- meaning `original` IS the branch being merged. Restoring to
     # it would leave the user on a now-merged (squash: unreachable) branch whose
     # tree no longer matches the target. Land on the target instead; that is

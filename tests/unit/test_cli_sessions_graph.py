@@ -87,7 +87,7 @@ def test_history_graph_renders_dfs_order(
     rc = main(["sessions", "graph", "test-run-AAAA11"])
     out = capsys.readouterr().out
     assert rc == 0
-    lines = [line for line in out.splitlines() if line and not line.startswith("Run id:")]
+    lines = [line for line in out.splitlines() if line and not line.startswith("Session id:")]
     # Strict DFS: root, then step1, then deep-left sub1a, then sub1b, then step2.
     # Status is a glyph, shared with the TUI tree / web task graph / runs show.
     assert lines == [

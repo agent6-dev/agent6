@@ -87,7 +87,7 @@ def _ending(item: TranscriptItem) -> str:
     to a green one.
     """
     verdict = "passed" if item.ok else "did not pass"
-    parts = [f"Run {verdict}"]
+    parts = [f"Session {verdict}"]
     if item.name:
         parts.append(f"({item.name})")
     if item.detail:

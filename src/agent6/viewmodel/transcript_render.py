@@ -62,7 +62,7 @@ CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
     """Every transcript JSON object under a run's transcripts/ dir, in seq
-    order -- ALL seats. The raw list is `runs transcript --json`'s output, the
+    order -- ALL seats. The raw list is `sessions transcript --json`'s output, the
     one CLI surface for a side-call's actual request/response; the conversation
     fold filters for itself (`conversation_transcripts`)."""
     if not transcripts_dir.is_dir():

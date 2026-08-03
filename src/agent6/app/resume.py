@@ -123,7 +123,7 @@ def ensure_on_run_branch(cwd: Path, layout: SessionLayout) -> str | None:
     ``agent6/<id>`` additively (never switching to it), and an operator may have
     moved branches since the original run. Either way, without this the work
     silently lands on the operator's current branch and the run branch stays
-    empty (so ``runs diff`` shows nothing).
+    empty (so ``sessions diff`` shows nothing).
 
     Reads ``run_branch`` from the manifest. Returns None when there's nothing to
     do (no branch recorded, or already on it) or after a clean checkout; returns

@@ -104,7 +104,7 @@ class LaneRuntime:
 
     - `spawn`: launch a detached `agent6` run and locate its run dir.
     - `build_provider` / `judging_status`: the reviewer provider + judge-progress
-      status the fan-out auto-compare's `rank` uses (same wiring `runs compare`
+      status the fan-out auto-compare's `rank` uses (same wiring `sessions compare`
       uses). The coordinator dispatch path leaves these unexercised (it never
       compares its lanes).
 
@@ -749,7 +749,7 @@ def _stamp_compare_outcomes(
 ) -> None:
     """Stamp the auto-compare outcome into EACH ranked lane's manifest, so every
     run view can show where a lane placed and why. ONE writer: only the fan-out's
-    auto-compare stamps this (`runs compare` stays stateless; the coordinator
+    auto-compare stamps this (`sessions compare` stays stateless; the coordinator
     never compares its lanes). The imported lanes sit at `<origin_state>/runs/<id>`
     (import_run's contract); the same rationale and judge cost are recorded on
     every lane (both describe the judge's ranking of the whole group), the
@@ -876,7 +876,7 @@ def _print_report(
     fanout_id: str,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print the ranked candidate table + a `runs merge` line per candidate, and
+    """Print the ranked candidate table + a `sessions merge` line per candidate, and
     list any failed lanes. Nothing is merged automatically."""
     reporter.out(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"

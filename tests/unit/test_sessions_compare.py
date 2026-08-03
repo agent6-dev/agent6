@@ -56,7 +56,7 @@ def _setup_run(
     manifest_extra: dict[str, Any] | None = None,
 ) -> None:
     """Cut agent6/<session_id> off base_sha with *commits*, write manifest.json +
-    logs.jsonl (the run-branch + run-state fixture `runs compare` reads), and
+    logs.jsonl (the run-branch + run-state fixture `sessions compare` reads), and
     return the checkout to where it was. *manifest_extra* merges extra manifest
     fields (e.g. a fan-out lane's parallel_id + compare stamp)."""
     branch = f"agent6/{session_id}"
@@ -434,7 +434,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
 ) -> None:
     """Re-judging one fan-out's own lanes can flip the winner; the recorded
     stamp (the listings' star) is never rewritten, so the clash must be said
-    out loud, not left for the operator to trip over in `runs list`."""
+    out loud, not left for the operator to trip over in `sessions list`."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -717,7 +717,7 @@ def test_rank_mechanical_path_prints_no_judging_line(
 
 def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     """No second spinner/rank implementation to drift: the fan-out auto-compare
-    and `runs compare` both route through the ONE core in `app.compare`; the CLI
+    and `sessions compare` both route through the ONE core in `app.compare`; the CLI
     side only injects the console spinner + reviewer-provider wiring."""
     from agent6.app import compare as app_compare
     from agent6.app import parallel
@@ -725,5 +725,5 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
 
     # The fan-out's auto-compare calls the core directly.
     assert getattr(parallel, "rank") is app_compare.rank  # noqa: B009
-    # `runs compare` goes through the CLI wrapper, which delegates to that core.
+    # `sessions compare` goes through the CLI wrapper, which delegates to that core.
     assert sessions_cmds.rank is compare_mod.rank
