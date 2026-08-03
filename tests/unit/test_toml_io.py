@@ -19,6 +19,29 @@ from agent6.config.io import (
 )
 
 
+def test_leaf_scan_skips_the_interior_of_a_multiline_value(tmp_path: Path) -> None:
+    """The scan matched `^\\s*leaf\\s*=` on every line of the section, so a line
+    INSIDE a triple-quoted string or multi-line array could be taken for the
+    leaf: the surgery rewrote the operator's string, left the real leaf below
+    untouched, and reported success. (The mirror half -- replacing the whole
+    span once matched -- was already fixed.)"""
+    p = tmp_path / "c.toml"
+    p.write_text(
+        '[workflow]\nverify_command = """\nx = 5\n"""\nx = 30\n',
+        encoding="utf-8",
+    )
+
+    upsert_toml_leaf(p, "workflow.x", 60)
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert parsed["workflow"]["x"] == 60, "the real leaf must be the one rewritten"
+    assert "x = 5" in parsed["workflow"]["verify_command"], "the string was corrupted"
+
+    assert remove_toml_leaf(p, "workflow.x") is True
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert "x" not in parsed["workflow"]
+    assert "x = 5" in parsed["workflow"]["verify_command"], "the string was corrupted"
+
+
 def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: Path) -> None:
     """`[sandbox]  # the jail` is ordinary TOML, but every header lookup matched
     the stripped line exactly, so the table was invisible to the surgery: unset

@@ -187,15 +187,14 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
             len(lines),
         )
-        leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-        for j in range(region, end):
-            if leaf_re.match(lines[j]):
-                # Replace the WHOLE value: a multi-line array or triple-quoted
-                # string spans several lines, and rewriting only the opening one
-                # orphans the rest into unparseable TOML.
-                lines[j : j + _value_line_span(lines, j)] = [new_line]
-                _write(path, "\n".join(lines).rstrip("\n") + "\n")
-                return
+        j = _find_leaf_line(lines, region, end, leaf)
+        if j is not None:
+            # Replace the WHOLE value: a multi-line array or triple-quoted
+            # string spans several lines, and rewriting only the opening one
+            # orphans the rest into unparseable TOML.
+            lines[j : j + _value_line_span(lines, j)] = [new_line]
+            _write(path, "\n".join(lines).rstrip("\n") + "\n")
+            return
         insert_at = end
         while insert_at - 1 >= region and lines[insert_at - 1].strip() == "":
             insert_at -= 1
@@ -223,6 +222,26 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
         if not dropping:
             kept.append(line)
     return kept, removed
+
+
+def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
+    """Index of the line assigning *leaf* within ``[region, end)``, or None.
+
+    Skips the INTERIOR of every multi-line value on the way: a plain per-line
+    regex matched an ``x = 5`` inside a triple-quoted string, so the surgery
+    rewrote the operator's string, left the real leaf below it untouched, and
+    reported success.
+    """
+    leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
+    assign_re = re.compile(r"^\s*[^#\s=\[][^=]*=")
+    j = region
+    while j < end:
+        if leaf_re.match(lines[j]):
+            return j
+        # A value that spans lines is jumped whole, so its contents are never
+        # candidates; _value_line_span is >= 1, so this always advances.
+        j += _value_line_span(lines, j) if assign_re.match(lines[j]) else 1
+    return None
 
 
 def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
@@ -307,18 +326,17 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
             (j for j in range(region, len(lines)) if lines[j].lstrip().startswith("[")),
             len(lines),
         )
-        leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-        for j in range(region, end):
-            if leaf_re.match(lines[j]):
-                span = _value_line_span(lines, j)
-                del lines[j : j + span]
-                if start is not None:
-                    remaining_end = end - span  # next section header shifted up by span
-                    if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
-                        del lines[start:remaining_end]
-                out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
-                _write(path, out)
-                return True
+        j = _find_leaf_line(lines, region, end, leaf)
+        if j is not None:
+            span = _value_line_span(lines, j)
+            del lines[j : j + span]
+            if start is not None:
+                remaining_end = end - span  # next section header shifted up by span
+                if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
+                    del lines[start:remaining_end]
+            out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
+            _write(path, out)
+            return True
         return False
 
 
