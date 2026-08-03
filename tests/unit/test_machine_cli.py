@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.machine import MachineJournal
-from agent6.runs.ipc import clear_worker_pid
+from agent6.runs.ipc import clear_worker_pid, write_worker_pid
 from agent6.ui.cli import main
 
 
@@ -133,6 +134,26 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     out = capsys.readouterr().out
     assert "status: running" in out
     assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
+
+
+def test_status_of_an_alive_but_parked_instance_reads_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """machine_word_for_dir (the shared status-word owner) checks `parked` BEFORE
+    `alive`, so an alive-but-parked instance (a persisted wait written while the
+    worker is still live -- a teardown race) must read "waiting" like the watch
+    screen / web pill, not the CLI alive-branch's hardcoded "running"."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()  # drop run output
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    write_worker_pid(root, os.getpid())  # a LIVE worker alongside the persisted wait
+
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+    out = capsys.readouterr().out
+    assert "status: waiting" in out  # parked wins over alive
+    assert "status: running" not in out
 
 
 def test_status_tolerates_a_corrupt_pending_wait(

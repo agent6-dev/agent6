@@ -744,6 +744,11 @@ def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str,
     # run is blocked on the operator (a "waiting" run is still LIVE).
     d["status"] = word
     d["status_label"] = status_label(word, reason)
+    # Whether an operator prompt is unanswered, straight from the fold: a DIR-LESS
+    # consumer (the machine watch folds an agent-state log with no run_dir, so it
+    # has no dir status) still needs the "blocked, not working" signal to quiet
+    # its heartbeat.
+    d["operator_blocked"] = status_facts(state).operator_blocked
     # log_tail is LogLine objects now; the wire form stays a flat list of strings
     # (web + `watch --json` consumers render lines verbatim). task_id filtering is
     # a TUI-local concern that reads the RunState directly.

@@ -450,20 +450,22 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
 
     alive = worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
+    # machine_word_for_dir is the ONE owner of running/waiting/stopped, shared
+    # with the watch screen, the TUI header, and the web pill: it checks `parked`
+    # BEFORE `alive`, so an alive-but-parked instance (a persisted wait written
+    # while the worker is still live -- a teardown race) reads "waiting" here too,
+    # not a bare "running". A terminal end shows its ok/failed, a crashed instance
+    # "stopped" -- never the engine's raw "incomplete".
+    ms = fold_machine(spec, events)
+    word = machine_word_for_dir(ms, root)
 
     print(f"machine: {spec.machine} (v{spec.version})")
-    if alive:
+    if alive and word == "running":
         pid = read_worker_pid(root)
         running_in = f" -- running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
-        # The same word the watch screen, the TUI header, and the web pill show
-        # for this dir, via machine_word_for_dir (the one owner of the
-        # running/waiting/stopped distinction): a parked --exit-on-wait wait is
-        # "waiting", a terminal end its ok/failed, a crashed instance (dead pid,
-        # no end, no wait) "stopped" -- never the engine's raw "incomplete".
-        ms = fold_machine(spec, events)
-        print(f"  status: {machine_word_for_dir(ms, root)}")
+        print(f"  status: {word}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(

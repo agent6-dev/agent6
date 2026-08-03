@@ -395,6 +395,23 @@ def test_run_state_as_dict_is_json_serializable() -> None:
     json.dumps(d)  # the wire form must serialize
 
 
+def test_run_state_as_dict_flags_operator_blocked() -> None:
+    """The wire carries operator_blocked from the fold so a DIR-LESS consumer (the
+    machine watch, which folds an agent-state log with no run_dir) can quiet its
+    heartbeat when the agent is blocked on a prompt, not paint 'agent working…'."""
+    idle = run_state_as_dict(fold_run([{"type": "run.start", "user_task": "t"}]))
+    assert idle["operator_blocked"] is False
+    blocked = run_state_as_dict(
+        fold_run(
+            [
+                {"type": "run.start", "user_task": "t"},
+                {"type": "approval.prompt", "id": "a1", "prompt": "run cmd?"},
+            ]
+        )
+    )
+    assert blocked["operator_blocked"] is True
+
+
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).

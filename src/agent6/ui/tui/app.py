@@ -527,7 +527,10 @@ class DashboardScreen(Screen[None]):
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
-        active = tui.run_controllable()
+        # NOT while "waiting": a run blocked on an operator prompt is controllable
+        # (steerable) but not working, so the ticking beat would contradict the
+        # same line's "waiting · needs answer" -- the rule the stream body honors.
+        active = tui.run_controllable() and tui.dir_status[0] != "waiting"
         beat = ""
         if active and role is not None:
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]

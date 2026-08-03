@@ -1191,7 +1191,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   cards._conv.poke();
   const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
   hbState = {
-    active: !ended && !r.finished && !!r.last_role && !streaming,
+    // r.operator_blocked: a machine agent state blocked on an approval/question
+    // is not working, so the beat goes quiet (the run pane's rule; the machine
+    // snapshot is dir-less, so it reads the fold's operator_blocked, not status).
+    active: !ended && !r.finished && !!r.last_role && !streaming && !r.operator_blocked,
     role: (r.last_role && r.last_role.role) || 'agent',
     last: Date.now(),
     spin: hbState.spin,

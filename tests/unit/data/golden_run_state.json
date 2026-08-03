@@ -166,5 +166,6 @@
   "compact_gists_live": 0,
   "pins": [],
   "status": "passed",
-  "status_label": "passed"
+  "status_label": "passed",
+  "operator_blocked": false
 }
