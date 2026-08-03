@@ -62,36 +62,38 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
 
 
 def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
-    """The comments call nosuid/nodev an unconditional floor. It was not: the
-    system binds (the mounts most likely to HOLD a setuid binary) and the
-    writable /tmp tmpfs both came back without it -- `ro,relatime` and
-    `rw,relatime` against a build lacking the flags.
+    """EVERY mount, read from the jail's own mountinfo -- not a list of paths
+    someone remembered to add.
 
-    NOT noexec on /tmp: HOME lives there, toolchains run helpers from it, and a
-    child that can already execute from the workspace gains nothing from being
-    stopped there.
+    Three separate audits each found another mount missing the floor the
+    comments call unconditional: the system binds, the writable /tmp, then the
+    root tmpfs. Checking the paths those audits named would have passed each
+    time; enumerating what is actually mounted is what closes the class.
+
+    The /dev nodes are the one exception, and by necessity: `nodev` means "do
+    not interpret device special files", so a device node mounted nodev is
+    unusable. They carry nosuid and noexec instead.
     """
     from agent6.sandbox.jail import run_in_jail
     from agent6.types import JailPolicy
 
     probe = (
-        "def opts(p):\n"
-        "    for l in open('/proc/self/mountinfo'):\n"
-        "        f = l.split(' - ')[0].split()\n"
-        "        if f[4] == p: return f[5]\n"
-        "    return ''\n"
-        "print('usr=' + opts('/usr'));print('tmp=' + opts('/tmp'))\n"
+        "for l in open('/proc/self/mountinfo'):\n"
+        "    f = l.split(' - ')[0].split()\n"
+        "    print(f[4], f[5])\n"
     )
     res = run_in_jail(
         JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
     )
-    out = res.stdout or ""
-    for line in out.splitlines():
-        name, _, flags = line.partition("=")
-        if not flags:
-            continue
-        assert "nosuid" in flags, f"/{name} lacks nosuid: {flags}"
-        assert "nodev" in flags, f"/{name} lacks nodev: {flags}"
+    rows = [ln.split() for ln in (res.stdout or "").strip().splitlines() if ln.split()]
+    if not rows:
+        pytest.skip(f"probe did not run: {res.stderr[:200]}")
+
+    for mountpoint, flags in rows:
+        assert "nosuid" in flags, f"{mountpoint} lacks nosuid: {flags}"
+        if mountpoint.startswith("/dev/"):
+            continue  # a device node mounted nodev cannot be used as one
+        assert "nodev" in flags, f"{mountpoint} lacks nodev: {flags}"
 
 
 def test_the_legacy_umount_syscall_is_blocked_too(tmp_path: Path) -> None:

@@ -263,11 +263,13 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     let _ = fs::remove_dir_all(&new_root);
     fs::create_dir_all(&new_root)?;
     // Make new_root a mount point (pivot_root requirement).
+    // The floor here too. The /dev nodes bound underneath keep their own flags
+    // (a bind's options are its own), so they stay usable.
     mount(
         Some(new_root.as_path()),
         &new_root,
         Some("tmpfs"),
-        MsFlags::empty(),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Some("size=64m"),
     )
     .map_err(io_err)?;
