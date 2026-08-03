@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sandbox.jail import JailSession
+from agent6.sandbox.jail import JailSession, JailUnavailableError
 from agent6.types import JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
@@ -101,6 +101,41 @@ def test_a_jailed_command_cannot_write_the_launchers_answer_pipe(tmp_path: Path)
         after = session.run(("sh", "-c", "echo REAL; exit 3"))
         assert after.returncode == 3, f"the channel is desynced: {after}"
         assert "REAL" in after.stdout, f"the channel is desynced: {after}"
+    finally:
+        session.close()
+
+
+def test_a_command_that_cannot_be_executed_does_not_end_the_session(tmp_path: Path) -> None:
+    """A missing binary is the model's typo, not a broken sandbox. The
+    per-command launcher answers 127 so the model fixes its argv; the session
+    has to answer the same, or one bad argv takes the run's jail process down
+    -- with every backgrounded server inside it."""
+    session = _session(tmp_path)
+    try:
+        bad = session.run(("definitely-not-a-real-binary", "-q"))
+        assert bad.returncode == 127, bad
+        assert bad.exec_failed is True, bad
+        assert "not found" in bad.stderr, bad.stderr
+        after = session.run(("echo", "alive"))
+        assert after.returncode == 0, after.stderr
+        assert "alive" in after.stdout, "the session died with the bad command"
+    finally:
+        session.close()
+
+
+def test_a_dead_session_refuses_with_its_own_error(tmp_path: Path) -> None:
+    """Every caller is written against JailUnavailableError. A raw OSError from
+    the pipe escapes all of them: past the dispatcher's jail handler, past
+    SessionJob's status, and out of ToolDispatcher.close() before teardown has
+    stopped the shells or closed the LSP."""
+    session = _session(tmp_path)
+    proc = session._proc  # pyright: ignore[reportPrivateUsage]
+    try:
+        proc.kill()
+        proc.wait(timeout=10.0)
+        with pytest.raises(JailUnavailableError):
+            for _ in range(3):  # the first write can still buffer
+                session.run(("echo", "hi"))
     finally:
         session.close()
 

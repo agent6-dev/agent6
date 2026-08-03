@@ -276,8 +276,22 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
             Request::Status { pid } => answer_status(pid),
             Request::Stop { pid } => answer_stop(pid),
         };
+        // A command that could not be EXECUTED (bad path, missing interpreter)
+        // is the caller's argv being wrong, not this jail being broken: answer
+        // it like the one-shot launcher does and keep serving. Dying here cost
+        // the whole run its namespaces, and every backgrounded server in them,
+        // over one typo.
         if let Err(e) = outcome {
-            die(format!("serve: child execution failed: {e}"));
+            let result = serde_json::json!({
+                "returncode": 127,
+                "stdout": "",
+                "stderr": format!("child execution failed: {e}"),
+                "exec_failed": true,
+            });
+            println!("{result}");
+            if io::stdout().flush().is_err() {
+                die("serve: the request channel is gone");
+            }
         }
     }
 }

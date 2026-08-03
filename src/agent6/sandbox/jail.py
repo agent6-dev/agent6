@@ -533,13 +533,23 @@ def _launcher_result(
 def _result_from_json(
     result_json: dict[str, object], argv: tuple[str, ...], duration: float
 ) -> CommandResult:
-    """The launcher's result object as a CommandResult."""
+    """The launcher's result object as a CommandResult.
+
+    ``exec_failed`` is the serving launcher saying the command could not be
+    executed; it words that the same way the one-shot path does, so the model
+    reads one message however its run is jailed.
+    """
+    failed_exec = bool(result_json.get("exec_failed", False))
+    stderr = str(result_json.get("stderr", ""))
     return CommandResult(
         argv=argv,
         returncode=int(str(result_json["returncode"])),
         stdout=str(result_json.get("stdout", "")),
-        stderr=str(result_json.get("stderr", "")),
+        stderr=(
+            f"{argv[0]}: command not found or not executable ({stderr})" if failed_exec else stderr
+        ),
         duration_s=duration,
+        exec_failed=failed_exec,
     )
 
 
@@ -828,11 +838,20 @@ class JailSession:
 
     def _request(self, request: dict[str, object]) -> dict[str, object]:
         """One request, one answer line. The channel is in lockstep: every
-        request gets exactly one answer, or the next one reads this one's."""
+        request gets exactly one answer, or the next one reads this one's.
+
+        A dead launcher reaches the caller as JailUnavailableError, never as
+        the raw pipe error: every handler in the run is written against this
+        one, and an OSError escapes all of them -- including out of the
+        dispatcher's close(), before teardown has stopped the shells.
+        """
         assert self._proc.stdin is not None and self._proc.stdout is not None
-        self._proc.stdin.write((json.dumps(request) + "\n").encode())
-        self._proc.stdin.flush()
-        line = self._proc.stdout.readline()
+        try:
+            self._proc.stdin.write((json.dumps(request) + "\n").encode())
+            self._proc.stdin.flush()
+            line = self._proc.stdout.readline()
+        except (OSError, ValueError) as exc:  # ValueError: the pipe is closed
+            raise JailUnavailableError(f"jail session is gone: {exc}") from exc
         if not line:
             raise JailUnavailableError("jail session ended before answering")
         try:
