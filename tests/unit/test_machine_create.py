@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import SimpleNamespace
@@ -881,3 +882,24 @@ def test_create_failure_end_reason_names_the_failure(
     assert word == "failed"
     assert " " not in detail  # a token, like every other run.end reason
     assert "finished" not in detail  # never success prose under a failed status
+
+
+def test_create_stamps_a_liveness_marker_on_the_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The draft dir is watchable -- the hub lists it and the SSE endpoints
+    stream it -- but stamped no worker.pid, so a draft whose process died read
+    "running" until the 10-minute log-silence window expired, holding its stream
+    open the whole time. Every other watchable run-style dir records one."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+    )
+    assert main(["machine", "create", "Greet the user"]) == 0
+
+    pids = list((tmp_path / "state").glob("**/machine-drafts/*/worker.pid"))
+    assert pids, "the draft recorded no liveness marker"
+    assert pids[0].read_text(encoding="utf-8").split()[0] == str(os.getpid())

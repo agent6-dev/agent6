@@ -12,6 +12,7 @@ reporter; the watchable per-draft event log is a separate `EventSink`.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -42,6 +43,7 @@ from agent6.machine import (
 )
 from agent6.models.pricing import lookup_price
 from agent6.runs.id import new_friendly_id
+from agent6.runs.ipc import write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 
 _CREATE_TIMEOUT_S = 900.0
@@ -161,6 +163,12 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     events_log = scratch / "logs.jsonl"
     events = EventSink(events_log)
     events.emit("run.start", user_task=task, mode="machine")
+    # Liveness marker, mirroring machine run: the draft dir is watchable (the
+    # hub lists it, the SSE endpoints stream it), and without a pid a draft that
+    # died read "running" until the 10-minute log-silence window expired, with
+    # its stream held open the whole time. A terminal draft has its own run.end,
+    # which the status decision reads first, so the marker needs no clearing.
+    write_worker_pid(scratch, os.getpid())
     # Authoring can take minutes with nothing on this terminal; say where the
     # live reasoning streams so the operator can follow instead of wondering.
     reporter.err(
