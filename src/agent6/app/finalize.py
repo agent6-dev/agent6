@@ -86,13 +86,22 @@ def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
     """After a session that produced something to act on, name the next step.
 
     Seeding already exists; what was missing was the affordance -- an operator
-    had to know `--from` was there. A plan and an ask are the two that end
-    holding work someone else does, so they get the line.
+    had to know the flag was there. An ask ends holding work someone else does.
+    A plan ends holding OPEN QUESTIONS, and nothing named the loop that answers
+    them: edit plan.md, then resume the planner over it (which re-reads the
+    file). That loop is why there is no `plan revise` verb.
     """
     with contextlib.suppress(ManifestError):
         mode = read_manifest(layout.session_dir).mode
-        if mode in ("plan", "ask"):
-            reporter.out(f'\nnext:  agent6 run --from {layout.session_id} "<what to do with it>"')
+        session_id = layout.session_id
+        if mode == "plan":
+            reporter.out(f"\nedit:     agent6 plan edit {session_id}")
+            reporter.out(
+                f'revise:   agent6 resume {session_id} --steer "answered the open questions"'
+            )
+            reporter.out(f"execute:  agent6 run --from-plan {session_id}")
+        elif mode == "ask":
+            reporter.out(f'\nnext:  agent6 run --from {session_id} "<what to do with it>"')
 
 
 def _print_unknown_baseline(

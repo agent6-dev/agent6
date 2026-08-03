@@ -83,6 +83,8 @@ copy back to a turn and continues it as a new run; the original is never changed
 
 ```sh
 agent6 plan "refactor the config loader"      # edit-free plan; run with --from-plan
+agent6 plan edit <session-id>                 # answer the plan's open questions in plan.md
+agent6 resume <session-id> --steer "answered" # the planner re-reads plan.md and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review
 agent6 ask "how does the task-graph curator work?"
 ```

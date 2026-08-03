@@ -429,15 +429,28 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "suggested"),
-    [("plan", True), ("ask", True), ("run", False)],
+    ("mode", "expected"),
+    [
+        (
+            "plan",
+            [
+                "agent6 plan edit quiet-fox-AAAAAA",
+                "agent6 resume quiet-fox-AAAAAA --steer",
+                "agent6 run --from-plan quiet-fox-AAAAAA",
+            ],
+        ),
+        ("ask", ["agent6 run --from quiet-fox-AAAAAA"]),
+        ("run", []),
+    ],
 )
 def test_a_session_that_ends_holding_work_names_the_next_step(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, suggested: bool
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, expected: list[str]
 ) -> None:
-    """Seeding existed but nothing suggested it, so an operator had to know
-    `--from` was there. A plan and an ask end holding work someone else does;
-    a run has already done its work and needs no handoff."""
+    """Seeding existed but nothing suggested it, so an operator had to know the
+    flag was there. A plan ends holding OPEN QUESTIONS and nothing said that
+    answering them is `plan edit` then `resume --steer`, so the whole loop is
+    printed. An ask ends holding work someone else does. A run has already done
+    its work and needs no handoff."""
     import json
 
     from agent6.app.finalize import _print_next_session  # pyright: ignore[reportPrivateUsage]
@@ -450,7 +463,9 @@ def test_a_session_that_ends_holding_work_names_the_next_step(
     )
     _print_next_session(layout, reporter=STDIO_REPORTER)
     out = capsys.readouterr().out
-    assert ("agent6 run --from quiet-fox-AAAAAA" in out) is suggested
+    for line in expected:
+        assert line in out
+    assert ("agent6" in out) is bool(expected)
 
 
 def test_the_end_of_run_block_goes_through_the_reporter(
