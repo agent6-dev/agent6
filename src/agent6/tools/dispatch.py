@@ -28,6 +28,7 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
 from agent6.sandbox.jail import (
+    JailSession,
     JailUnavailableError,
     jail_search_path,
     operator_tool_paths,
@@ -321,6 +322,7 @@ class ToolDispatcher:
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: Path | None = None,
         session_dir: Path | None = None,
+        use_jail_session: bool = False,
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -359,6 +361,14 @@ class ToolDispatcher:
         # and `sessions rm` clears them. None (tests, review dispatchers) leaves
         # them unwired: the tools raise ToolError, like the DAG tools.
         self._shells = BackgroundShells(session_dir / "shells") if session_dir is not None else None
+        # One jail process for the whole run, opened on the first jailed
+        # command and closed at teardown, so a run's commands share a netns, a
+        # PID namespace and a /tmp and pay the setup once. RUN-SCOPED: a bare
+        # dispatcher (a one-off tool, an embedder) has no run to scope it to
+        # and keeps the per-command launcher.
+        self._use_session = use_jail_session
+        self._session: JailSession | None = None
+        self._session_failed = False
         # The run's dir, for the effective command policy: the operator's
         # session choice and away-mode live there and can change mid-run.
         self._session_dir = session_dir
@@ -710,6 +720,7 @@ class ToolDispatcher:
         """
         if self._shells is not None:
             self._shells.stop_all()
+        self.close_jail_session()
         if self._lsp is not None:
             self._lsp.close()
             self._lsp = None
@@ -993,6 +1004,30 @@ class ToolDispatcher:
             extra_protect_paths=self._extra_protect_paths,
         )
 
+    def _run_session(self, policy: JailPolicy) -> JailSession | None:
+        """The run's jail process, or None to give this command its own.
+
+        STRICT only: the other levels have no PID namespace to bound what a
+        command leaves running. A session that cannot start (an older bundled
+        launcher, a host without namespaces) answers None once and is not
+        retried, so the per-command path is the fallback rather than the run
+        failing.
+        """
+        if not self._use_session or policy.isolation != "strict":
+            return None
+        if self._session is None and not self._session_failed:
+            try:
+                self._session = JailSession.open(policy)
+            except (JailUnavailableError, OSError):
+                self._session_failed = True
+        return self._session
+
+    def close_jail_session(self) -> None:
+        """End the run's jail process; its PID namespace takes the rest down."""
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+
     def _run_argv_in_jail(
         self,
         argv: tuple[str, ...],
@@ -1000,8 +1035,14 @@ class ToolDispatcher:
         label: str,
         timeout_s: float | None = None,
     ) -> ExecResult:
+        policy = self._jail_policy(argv, timeout_s=timeout_s)
         try:
-            res: CommandResult = run_in_jail(self._jail_policy(argv, timeout_s=timeout_s))
+            session = self._run_session(policy)
+            res: CommandResult = (
+                session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
+                if session is not None
+                else run_in_jail(policy)
+            )
         except JailUnavailableError as exc:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
         return ExecResult(

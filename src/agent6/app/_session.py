@@ -235,6 +235,8 @@ def build_session_tools(
         mode=mode,
         state_dir=state_dir,
         session_dir=layout.session_dir,
+        # One jail process for this run's commands.
+        use_jail_session=True,
     )
     compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm_role, log=loop_log)
     cfg = resolve_decompose(cfg, rm_role, log=loop_log)

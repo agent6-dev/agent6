@@ -89,3 +89,35 @@ def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
     session.close()
     with pytest.raises(Exception):
         session.run(("true",))
+
+
+def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: Path) -> None:
+    """A run's commands share one jail process: the second sees what the first
+    left in the private /tmp. A bare dispatcher (no run to scope it to) keeps
+    the per-command launcher, so nothing outside a run changes."""
+    from agent6.config import Config
+    from agent6.tools.dispatch import ToolDispatcher
+
+    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "run_commands": "yes"}})
+    scoped = ToolDispatcher(root=tmp_path, config=cfg, isolation="strict", use_jail_session=True)
+    try:
+        first = scoped.dispatch(
+            "run_command", {"argv": ["sh", "-c", "echo one > /tmp/marker; echo ok"]}
+        ).to_wire()
+        assert first["returncode"] == 0, first
+        second = scoped.dispatch("run_command", {"argv": ["cat", "/tmp/marker"]}).to_wire()
+        assert second["returncode"] == 0, second
+        assert "one" in str(second["stdout"])
+    finally:
+        scoped.close()
+
+    bare = ToolDispatcher(root=tmp_path, config=cfg, isolation="strict")
+    try:
+        wrote = bare.dispatch(
+            "run_command", {"argv": ["sh", "-c", "echo two > /tmp/marker2; echo ok"]}
+        ).to_wire()
+        assert wrote["returncode"] == 0, wrote
+        gone = bare.dispatch("run_command", {"argv": ["cat", "/tmp/marker2"]}).to_wire()
+        assert gone["returncode"] != 0, "a bare dispatcher must not share a namespace"
+    finally:
+        bare.close()
