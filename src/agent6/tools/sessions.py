@@ -21,9 +21,16 @@ from pathlib import Path
 from agent6.runs.layout import LOGS_NAME, RUN_BUCKETS, RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
 
-# What a reader needs from another session: who said what. Deltas are the same
-# prose arriving in pieces, so only the settled events are folded.
-_SPEAKER = {"role.result": "assistant", "run.start": "user"}
+# What a reader needs from another session: who said what, and from which
+# field. Deltas are the same prose arriving in pieces, so only the settled
+# events are folded. The operator speaks twice: the task, and every steer --
+# without the steers the transcript reads as if the session went that way on
+# its own.
+_SPEAKER = {
+    "role.result": ("assistant", "text"),
+    "run.start": ("user", "user_task"),
+    "loop.steer.injected": ("user", "text"),
+}
 
 
 # A roster is context the model pays for on every call, so it is capped. The
@@ -113,17 +120,13 @@ def conversation(layout: RunLayout, *, max_chars: int) -> str:
         if not isinstance(event, dict):
             continue
         etype = str(event.get("type", ""))
-        speaker = _SPEAKER.get(etype)
-        if speaker == "user":
-            body = str(event.get("user_task", ""))
-        elif speaker == "assistant":
-            body = str(event.get("text", ""))
-        elif etype == "tool.call":
-            lines.append(f"[tool] {event.get('name', '')}")
+        said = _SPEAKER.get(etype)
+        if said is None:
+            if etype == "tool.call":
+                lines.append(f"[tool] {event.get('name', '')}")
             continue
-        else:
-            continue
-        body = body.strip()
+        speaker, field = said
+        body = str(event.get(field, "")).strip()
         if body:
             lines.append(f"{speaker}: {body}")
     text = "\n\n".join(lines)

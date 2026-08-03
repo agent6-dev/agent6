@@ -37,7 +37,6 @@ from agent6.app.finalize import (
 from agent6.app.manifest import pin_gate
 from agent6.app.preflight import (
     headless_approval_refusal,
-    infer_verify_if_unset,
     require_git_repo,
 )
 from agent6.app.providers import (
@@ -413,7 +412,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # not after a broker + preamble already printed. wf.resume() re-validates
         # the same snapshot; a corrupt/old file refuses identically here (exit 1).
         try:
-            load_run_snapshot(snapshot_path)
+            snapshot = load_run_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
@@ -520,31 +519,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
         budget = session.budget
         # Resume reuses the verify command the ORIGINAL run resolved (stored in the
-        # snapshot), so the tool list, prompt, and commit branch stay consistent with
-        # the frozen system prompt -- never re-inferring (which could flip and
-        # diverge). Re-infer only when the snapshot can't be read (missing/corrupt/an
-        # old format resume refuses loudly right after), and only when the operator
-        # hasn't since pinned a command in config.
+        # snapshot), so the tool list, prompt, and commit branch stay consistent
+        # with the frozen system prompt -- never re-inferring, which could flip and
+        # diverge. Config the operator has pinned since outranks it (announced
+        # below, and to the worker, since the prompt still names the old one).
+        # `()` means the original run was gateless: stay gateless.
         leg_configured = bool(cfg.workflow.verify_command)
-        if not cfg.workflow.verify_command:
-            snap_verify: tuple[str, ...] | None = None
-            if snapshot_path.is_file():
-                try:
-                    snap_verify = load_run_snapshot(snapshot_path).verify_command
-                except (ValueError, OSError, KeyError):
-                    snap_verify = None
-            if snap_verify is None:  # snapshot unreadable: re-infer as the original did
-                cfg = infer_verify_if_unset(
-                    cfg,
-                    cwd,
-                    mode=mode,
-                    events=events,
-                    transcript_sink=transcript_sink,
-                    budget=budget,
-                )
-            elif snap_verify:  # () means the original run was gateless: stay gateless
-                cfg = cfg.with_verify_command(snap_verify)
-                reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
+        if not leg_configured and snapshot.verify_command:
+            cfg = cfg.with_verify_command(snapshot.verify_command)
+            gate = " ".join(snapshot.verify_command)
+            reporter.err(f"[agent6] reusing this run's verify command: {gate}")
         # Re-pin for this leg: config outranks the pin, the pin outranks a
         # re-inference, and the manifest has to say which one this leg used.
         pinned_origin, pinned_gate = "", ()

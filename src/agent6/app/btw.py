@@ -33,6 +33,10 @@ from agent6.viewmodel import summarize_run_dir
 # injects for `/parallel`; a btw needs the same host-namespace spawn.
 BtwLaunch = Callable[[Path, list[str], dict[str, str]], str]
 
+# How long to wait for the spawned ask's session dir to appear. Generous: the
+# child pays a cold Python start plus config load before it writes anything.
+_START_TIMEOUT_S = 30.0
+
 
 @dataclass(frozen=True, slots=True)
 class BtwSession:
@@ -73,13 +77,24 @@ def start_btw(
     )
     if err:
         return None, err
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + _START_TIMEOUT_S
     while time.monotonic() < deadline:
-        fresh = [d for d in list_asks() if d.name not in before]
+        # Newest, not first-seen: another ask starting in the same window would
+        # otherwise be adopted as this btw, and the operator would read a
+        # stranger's answer as their own.
+        fresh = sorted(
+            (d for d in list_asks() if d.name not in before),
+            key=lambda d: d.stat().st_mtime,
+        )
         if fresh:
-            return BtwSession(id=fresh[0].name, dir=fresh[0], question=question), ""
+            newest = fresh[-1]
+            return BtwSession(id=newest.name, dir=newest, question=question), ""
         time.sleep(0.1)
-    return None, "the btw did not start within 30s"
+    return None, (
+        f"the btw did not start within {_START_TIMEOUT_S:g}s: no new ask session appeared."
+        " The spawn is fire-and-forget, so check `agent6 runs` and that `agent6 ask` works"
+        " from this directory."
+    )
 
 
 def btw_answer(session: BtwSession) -> str | None:

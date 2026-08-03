@@ -165,11 +165,13 @@ can't expand it.
   (blocked), mirror network (provider-only egress), and `/usr`/`/var` writes
   (denied).
 - **Compiling and running host-installed toolchains works.**
-    - `run_verify_command` and (when `run_commands` permits) `run_command` and
-      `run_background` run jailed; they just can't install new tools, and a
-      networked build step needs `tool_network` loosened.
-    - `run_background` answers to the same `run_commands` knob and the same
-      per-command approval: it is `run_command`'s power without the wait.
+    - Every command tool -- `run_command`, `run_verify_command`,
+      `run_background`, `stop_background` -- answers to `run_commands` and runs
+      jailed. They just can't install new tools, and a networked build step
+      needs `tool_network` loosened.
+    - The verify gate is a command like any other: `run_commands = "no"`
+      withholds it too, and such a run starts gateless rather than chasing a
+      green it can never reach.
 - **Provisioning is operator-first.** Install toolchains, venvs, and deps
   yourself before/outside agent6; widen access via config, never sudo
   (`extra_read_paths`, `tool_network`, `[providers.*].base_url`, all in
