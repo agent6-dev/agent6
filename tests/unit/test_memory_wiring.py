@@ -295,6 +295,36 @@ def test_workflow_load_memories_filters_invalidated(tmp_path: Path) -> None:
     assert [e.id for e in loaded] == [keep.id]
 
 
+def test_workflow_load_memories_unreadable_reaches_a_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Degrading to an empty <memories> block is right, but it was announced
+    only through the loop logger, which the console view filters out unless
+    AGENT6_DEBUG=1 and a detached run sends to DEVNULL. No event meant the TUI,
+    web, and `runs log` never saw it: every recorded memory silently vanished
+    from the prompt. It must be an event like any other run error."""
+    from agent6.memory import MemoryStoreError
+    from agent6.workflows import loop as loop_mod
+
+    class _Capture:
+        def __init__(self) -> None:
+            self.events: list[dict[str, Any]] = []
+
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            self.events.append({"type": event_type, **fields})
+
+    def _boom(_state_dir: Path) -> list[Any]:
+        raise MemoryStoreError("facts.md is not valid UTF-8")
+
+    monkeypatch.setattr(loop_mod, "memory_list_entries", _boom)
+    ev = _Capture()
+    wf = _wf(tmp_path, state_dir=tmp_path / "state", events=ev)
+    assert wf._load_memories() == ()  # pyright: ignore[reportPrivateUsage]
+    unavailable = [e for e in ev.events if e["type"] == "loop.memories.unavailable"]
+    assert unavailable, "a degraded memory load must reach the surfaces"
+    assert "UTF-8" in str(unavailable[0].get("error", ""))
+
+
 def test_workflow_load_memories_unset_or_machine_mode_empty(tmp_path: Path) -> None:
     state = tmp_path / "state"
     add(state, "facts", "present")

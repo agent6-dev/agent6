@@ -2898,7 +2898,12 @@ class Workflow:
         try:
             entries = memory_list_entries(self.state_dir)
         except (MemoryStoreError, OSError) as exc:
+            # An event, not just a log line: the console view filters "LOOP:"
+            # unless AGENT6_DEBUG=1 and a detached run's stdout is DEVNULL, so
+            # the log alone reached no surface while every recorded memory
+            # silently left the prompt.
             self._log(f"LOOP: WARNING: cross-run memories unavailable: {exc}")
+            self._emit("loop.memories.unavailable", error=str(exc))
             return ()
         active = tuple(e for e in entries if e.is_active)
         if active:
@@ -2917,6 +2922,7 @@ class Workflow:
         resolved = self.dispatcher.resolved_skills()
         for w in resolved.warnings:
             self._log(f"LOOP: skills: WARNING: {w}")
+            self._emit("loop.skills.warning", warning=str(w))
         if resolved.enabled or resolved.always:
             self._log(
                 f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"
