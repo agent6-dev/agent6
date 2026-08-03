@@ -13,6 +13,7 @@ import pytest
 
 from agent6.runs.ipc import register_frontend
 from agent6.viewmodel.transcript_render import (
+    conversation_transcripts,
     fold_conversation,
     load_transcripts,
     render_markdown,
@@ -615,7 +616,31 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(tmp_pat
             encoding="utf-8",
         )
 
-    kept = [t["seat"] for t in load_transcripts(d)]
+    kept = [t["seat"] for t in conversation_transcripts(load_transcripts(d))]
     assert "planner" in kept, "a plan run lost its whole conversation"
     assert "" in kept, "a transcript written before seats existed is the driving seat's"
     assert "reviewer" not in kept and "review:security" not in kept
+
+
+def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
+    """`runs transcript --json` advertises "the raw transcript array", and it is
+    the one CLI surface for a side-call's actual request/response (the thing you
+    need to debug a bad compaction). The seat filter lives in the CONVERSATION
+    fold, not the loader, so the dump keeps every seat."""
+    import json
+
+    d = tmp_path / "transcripts"
+    d.mkdir()
+    for seq, seat in ((1, "worker"), (2, "reviewer"), (3, "review:security")):
+        (d / f"{seq:06d}.json").write_text(
+            json.dumps(
+                {
+                    "seq": seq,
+                    "seat": seat,
+                    "request": {"url": "", "headers": {}, "body": {"messages": []}},
+                    "response": {"status": 200, "body": {}},
+                }
+            ),
+            encoding="utf-8",
+        )
+    assert [t["seat"] for t in load_transcripts(d)] == ["worker", "reviewer", "review:security"]

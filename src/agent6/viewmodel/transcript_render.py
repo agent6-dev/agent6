@@ -61,7 +61,10 @@ CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
-    """Every transcript JSON object under a run's transcripts/ dir, in seq order."""
+    """Every transcript JSON object under a run's transcripts/ dir, in seq
+    order -- ALL seats. The raw list is `runs transcript --json`'s output, the
+    one CLI surface for a side-call's actual request/response; the conversation
+    fold filters for itself (`conversation_transcripts`)."""
     if not transcripts_dir.is_dir():
         return []
     out: list[dict[str, Any]] = []
@@ -70,10 +73,15 @@ def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
             obj = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(obj, dict) and str(obj.get("seat", "") or "worker") in CONVERSATION_SEATS:
+        if isinstance(obj, dict):
             out.append(obj)
     out.sort(key=lambda t: t.get("seq", 0))
     return out
+
+
+def conversation_transcripts(transcripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Only the CONVERSATION_SEATS' round-trips (see the comment above)."""
+    return [t for t in transcripts if str(t.get("seat", "") or "worker") in CONVERSATION_SEATS]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -273,7 +281,11 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     empty-response retries re-send the identical message list, so blindly
     assuming one committed assistant message per transcript misread every
     provider retry as a compaction restart and re-printed the whole history.
+
+    Folds only the conversation seats: a side-call's one-message request reads
+    as a restart here (see ``CONVERSATION_SEATS``).
     """
+    transcripts = conversation_transcripts(transcripts)
     turns: list[Turn] = []
     names: dict[str, str] = {}  # tool_call/use id -> tool name (to label results)
     prev_len = 0  # messages of the prior request already emitted

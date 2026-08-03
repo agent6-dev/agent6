@@ -25,6 +25,7 @@ from agent6.ui.cli._common import (
 from agent6.ui.cli._task_tree import task_tree_lines
 from agent6.viewmodel import run_mtime
 from agent6.viewmodel.transcript_render import (
+    conversation_transcripts,
     fold_conversation,
     load_transcripts,
     render_markdown,
@@ -400,6 +401,33 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
     return n, n
 
 
+def _transcript_layout(cwd: Path, run_id: str) -> RunLayout | int:
+    """Resolve the run whose transcripts to render: by id, else the most recent
+    run that has a transcripts/ dir. An int is the exit code of a printed error."""
+    if run_id:
+        try:
+            return resolve_run_layout(cwd, run_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+    runs_dir = _runs_dir(cwd)
+    candidates = (
+        sorted(
+            (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
+            key=run_mtime,
+            reverse=True,
+        )
+        if runs_dir.is_dir()
+        else []
+    )
+    if not candidates:
+        print(f"ERROR: no runs with transcripts under {runs_dir}", file=sys.stderr)
+        return 2
+    layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
+    print(f"[agent6] transcript for most recent run: {layout.run_id}", file=sys.stderr)
+    return layout
+
+
 def _cmd_history_transcript(
     run_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
 ) -> int:
@@ -410,29 +438,9 @@ def _cmd_history_transcript(
     view (assistant text/thinking + every tool call with full I/O); for the terse
     EVENT timeline use `agent6 attach` / `agent6 history search`.
     """
-    cwd = Path.cwd()
-    if run_id:
-        try:
-            layout = resolve_run_layout(cwd, run_id)
-        except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-    else:
-        runs_dir = _runs_dir(cwd)
-        candidates = (
-            sorted(
-                (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
-                key=run_mtime,
-                reverse=True,
-            )
-            if runs_dir.is_dir()
-            else []
-        )
-        if not candidates:
-            print(f"ERROR: no runs with transcripts under {runs_dir}", file=sys.stderr)
-            return 2
-        layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
-        print(f"[agent6] transcript for most recent run: {layout.run_id}", file=sys.stderr)
+    layout = _transcript_layout(Path.cwd(), run_id)
+    if isinstance(layout, int):
+        return layout
 
     try:
         window = _parse_seq_window(seq)
@@ -451,6 +459,16 @@ def _cmd_history_transcript(
             transcripts = [t for t in transcripts if lo <= int(t.get("seq", 0)) <= hi]
         print(json.dumps(transcripts, indent=2, ensure_ascii=False))
         return 0
+
+    if not conversation_transcripts(transcripts):
+        # e.g. a review-only dir: every round-trip is a side-call seat, so the
+        # conversation fold would print nothing at all.
+        print(
+            f"run {layout.run_id} has only side-call transcripts (review seats /"
+            " compaction); --json dumps them raw.",
+            file=sys.stderr,
+        )
+        return 2
 
     # Fold the FULL set (the per-seq walk needs every call), then window the turns.
     turns = fold_conversation(transcripts)
