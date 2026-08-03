@@ -47,7 +47,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
 
     monkeypatch.setattr("subprocess.run", _record_run)
 
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0
 
     sp = tmp_path / "g" / "secrets.toml"
@@ -79,7 +79,7 @@ def test_connect_preserves_hand_edited_provider_keys(
     )
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-or-FAKE")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept the preset base_url
-    rc = main(["connect", "--provider", "openrouter"])
+    rc = main(["connect", "openrouter"])
     assert rc == 0
     text = gc.read_text(encoding="utf-8")
     assert "[providers.openrouter]" in text
@@ -93,7 +93,7 @@ def test_connect_validates_key_and_reports_ok(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
-    rc = main(["connect", "--provider", "anthropic"])  # iso stubs the probe -> ok
+    rc = main(["connect", "anthropic"])  # iso stubs the probe -> ok
     assert rc == 0
     out = capsys.readouterr().out
     assert "Checking the key against the provider" in out
@@ -108,7 +108,7 @@ def test_connect_warns_when_provider_rejects_key(
         "agent6.ui.cli.connect.probe_provider_key",
         lambda *a, **k: KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
     )
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0  # the key is saved anyway; the warning is advisory
     err = capsys.readouterr().err
     assert "REJECTED this key" in err
@@ -126,7 +126,7 @@ def test_connect_no_verify_skips_the_probe(
         raise AssertionError("--no-verify must not probe the provider")
 
     monkeypatch.setattr("agent6.ui.cli.connect.probe_provider_key", _boom)
-    rc = main(["connect", "--provider", "anthropic", "--no-verify"])
+    rc = main(["connect", "anthropic", "--no-verify"])
     assert rc == 0
     assert "Checking the key" not in capsys.readouterr().out
 
@@ -145,7 +145,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _boom)
     monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-PIPED")
 
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-PIPED"
 
@@ -155,7 +155,7 @@ def test_connect_rejects_non_bare_key_provider_name(
 ) -> None:
     # A name with a space would corrupt `[providers.<name>]` in the TOML; reject
     # it before writing anything (connect doesn't re-validate the file).
-    rc = main(["connect", "--provider", "my provider"])
+    rc = main(["connect", "my provider"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "not a valid TOML bare key" in err
@@ -175,7 +175,7 @@ def test_connect_prints_post_entry_key_summary(
         return "sk-ant-0123456789wxyz"
 
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key: 21 chars, ending …wxyz" in out
@@ -192,7 +192,7 @@ def test_connect_short_key_summary_omits_tail(
         return "short"
 
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key: 5 chars." in out
@@ -208,7 +208,7 @@ def test_connect_masked_echo_skips_summary(
         return "sk-ant-0123456789wxyz"
 
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
-    rc = main(["connect", "--provider", "anthropic"])
+    rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "Captured key:" not in out
@@ -219,7 +219,7 @@ def test_connect_local_endpoint_no_key(
 ) -> None:
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
-    rc = main(["connect", "--provider", "ollama"])
+    rc = main(["connect", "ollama"])
     assert rc == 0
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.ollama]" in gc
@@ -266,7 +266,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     # later command. (The provider cross-check is active only once a provider is
     # configured, so connect one first.)
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
-    assert main(["connect", "--provider", "anthropic"]) == 0
+    assert main(["connect", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic", "good-x"]) == 0
     cfg = tmp_path / "g" / "config.toml"
     before = cfg.read_text(encoding="utf-8")

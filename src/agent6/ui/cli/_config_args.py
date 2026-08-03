@@ -145,7 +145,8 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Interactively add a provider + API key (stored in the global secrets file).",
     )
     connect_provider = connect_p.add_argument(
-        "--provider",
+        "provider",
+        nargs="?",
         default="",
         help="Provider name to add/update (e.g. anthropic, openrouter). Prompted if omitted.",
     )
