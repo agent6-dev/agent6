@@ -5879,6 +5879,51 @@ def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> 
     assert "2 file" in note  # the real count, not a capped one
 
 
+def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: Path) -> None:
+    """The counter names each group's lanes (<run-id>-p<seq>-l<i>), but it was
+    bumped inside the operator boundary -- which runs AFTER the iteration's
+    snapshot -- so it stayed in RAM for the whole time the group blocked. A
+    crash there resumed with the old value and the next /parallel re-used p1:
+    either the lane clones already existed and every lane failed, or (once the
+    first group's clones were cleaned up) the lanes ran and BILLED before
+    import_run refused their already-existing branches."""
+    import json
+
+    from agent6.directive import Segment
+    from agent6.workflows.subrun import LaneResult, LaneSpec
+
+    snap = tmp_path / "loop_state.json"
+    at_spawn: dict[str, Any] = {}
+
+    def spawner(lanes: Any, group: str) -> list[Any]:
+        at_spawn["group"] = group
+        at_spawn["persisted"] = json.loads(snap.read_text(encoding="utf-8"))[
+            "parallel_groups_dispatched"
+        ]
+        return [
+            LaneResult(
+                spec=LaneSpec(
+                    lane=i, run_id=f"run-{group}-l{i}", workdir=tmp_path, model=lane.model
+                ),
+                run_dir=tmp_path,
+                branch="b",
+                ok=False,
+                error="lane failed",
+            )
+            for i, lane in enumerate(lanes, start=1)
+        ]
+
+    wf = _wf(root=tmp_path, mode="run", lane_spawner=spawner, resume_state_path=snap)
+    conversation = Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    wf._dispatch_parallel(  # pyright: ignore[reportPrivateUsage]
+        conversation, 3, _state(), [Segment(spec="", task="do the thing")]
+    )
+    assert at_spawn["group"] == "p1"
+    assert at_spawn["persisted"] == 1, "the bump must be on disk before the group blocks"
+
+
 def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: Path) -> None:
     """The pause-menu / front-end Stop consumed at the boundary is the fourth
     operator end, and the only one that said nothing about the worktree it

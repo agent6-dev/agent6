@@ -376,6 +376,9 @@ class _LoopState:
     # DAG root task id (set once by _drive_loop), so a steer-boundary phase can
     # parent a node without threading it through every call site.
     root_task_id: str | None = None
+    # The system prompt (set once by _drive_loop), for the same reason: a
+    # steer-boundary phase that must snapshot needs it and is not handed it.
+    system: str = ""
     # How many `/parallel` sibling groups this run has dispatched. Names each
     # group's lanes (`<run-id>-p<seq>-l<i>`); increments per dispatch.
     parallel_groups_dispatched: int = 0
@@ -874,6 +877,7 @@ class Workflow:
         """
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
+        state.system = system  # ... and snapshot with it (see _dispatch_parallel)
         if resume_from is not None:
             _restore_completion_state(state, resume_from)
             # Re-announce restored pins for the read model: a fork's fresh
@@ -4024,6 +4028,20 @@ class Workflow:
 
         state.parallel_groups_dispatched += 1
         group = f"p{state.parallel_groups_dispatched}"
+        # Persist the bump BEFORE the group blocks. This runs inside the
+        # operator boundary, which is after the iteration's snapshot and before
+        # the next one, so the counter would otherwise live only in memory for
+        # the entire group: a crash there resumed with the old value and the
+        # next /parallel re-used this group's id, colliding with its lane
+        # clones and branches.
+        self._save_resume_snapshot(
+            system=state.system,
+            messages=conversation.to_wire(),
+            tool_calls=state.tool_calls,
+            next_iteration=iteration + 1,
+            root_task_id=state.root_task_id,
+            state=state,
+        )
         self._log(
             f"PARALLEL: dispatching group {group} "
             f"({len(lanes)} lane(s) across {len(segments)} task(s))"
