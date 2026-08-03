@@ -65,7 +65,8 @@ _STATUS_SGR = {
     "starting": "36",  # launching (pre-loop): in progress, lighter than running
     "running": "1;36",
     "waiting": "33",  # blocked on the operator (approval / question)
-    "stale": "2",
+    "stale": "31",  # a lost worker: red, like the TUI/web (a crash is not neutral)
+    "parked": "33",  # needs a resume to start: attention yellow, not a neutral done
     "passed": "32",
     "answered": "32",  # an ask that answered is terminal success
     "planned": "35",  # informational magenta (mauve on the TUI/web); not green, not red

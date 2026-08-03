@@ -72,3 +72,15 @@ def test_runs_list_marks_a_partial_cost(
     )
     assert _cmd_list() == 0
     assert "~$0.0123" in capsys.readouterr().out
+
+
+def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
+    """The CLI status colors mirror the TUI/web: a lost worker (stale) is red and
+    a parked submission (needs a resume) is yellow, not the old dim/uncolored that
+    let a dead or unstarted run read as neutral in `agent6 runs`."""
+    from agent6.ui.cli.runs_cmds import _styled_status  # pyright: ignore[reportPrivateUsage]
+
+    stale, _ = _styled_status("stale", "", color=True)
+    assert "\x1b[31m" in stale  # red, like the run header + web pill
+    parked, _ = _styled_status("parked", "resume to start", color=True)
+    assert "\x1b[33m" in parked  # yellow: attention, not a neutral done
