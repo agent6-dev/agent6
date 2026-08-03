@@ -85,9 +85,7 @@ class Action:
 # The single source of truth for every Config-page action.
 CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("search", "Filter", "Filter settings by name", key="/"),
-    Action(
-        "toggle_modified", "Modified only", "Show only settings changed from the default", key="m"
-    ),
+    Action("toggle_modified", "Modified only", "Show only settings a config layer set", key="m"),
     Action("edit", "Edit", "Edit the selected setting (dropdown for choices)", key="e"),
     Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form", key="a"),
     # `r` is a harmless Refresh here (re-read config), matching `r`=Refresh on

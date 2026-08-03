@@ -396,7 +396,12 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     printed as the merge sha and stamped into the manifest, so an unrelated
     commit made between the two merges was reported as the run's work and
     overwrote the real merge record -- which `sessions diff` then pointed at
-    after a prune."""
+    after a prune.
+
+    Worded "nothing left to merge" rather than "already merged": git also
+    stages nothing when the branch's CONTENT arrived by another route, and the
+    branch is then not an ancestor, so `prune` would call it unmerged in the
+    same minute."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
@@ -412,7 +417,7 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
 
     assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
     out = capsys.readouterr().out
-    assert "already merged" in out
+    assert "nothing left to merge" in out
     assert unrelated[:12] not in out
     # The real merge record survives; the operator's commit never replaces it.
     stamped = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]["sha"]
@@ -440,3 +445,40 @@ def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
     out = capsys.readouterr().out
     assert "made no commits" in out
     assert "human.txt" not in out
+
+
+def test_a_parked_run_does_not_claim_the_run_it_was_parked_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A parked run has mode="run" and no branch, so keying only on whether the
+    MODE can edit let it fall through to `base..HEAD` -- and parking happens
+    because another run holds the checkout, so those commits are that run's."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-PARK01", commits=[], run_branch=None)
+    (tmp_path / "other.txt").write_text("theirs\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "the other run's commit")
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-PARK01")
+    m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    m["mode"], m["parked_task"] = "run", "do the thing"
+    layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+    assert main(["sessions", "diff", "run-PARK01", "--stat"]) == 0
+    assert "parked before it started" in capsys.readouterr().out
+
+
+def test_commits_explains_a_plan_the_same_way_merge_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions commits` kept the claim its sibling `merge` was corrected for."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "plan-AAA055", commits=[], run_branch=None)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="plan-AAA055")
+    m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    m["mode"] = "plan"
+    layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
+
+    assert main(["sessions", "commits", "plan-AAA055"]) == 2
+    err = capsys.readouterr().err
+    assert "does not write to the repo" in err
+    assert "branch_per_run was off?" not in err

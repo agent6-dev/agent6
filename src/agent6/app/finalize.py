@@ -331,7 +331,7 @@ def finalize_auto_merge(  # noqa: PLR0912
                     f"remove with: git branch -D {run_branch})"
                 )
     elif outcome.status == "noop":
-        reporter.err(f"[agent6] {run_branch} is already merged into {base_branch}; nothing to do.")
+        reporter.err(f"[agent6] nothing left to merge from {run_branch} into {base_branch}.")
     elif outcome.status == "conflict":
         reporter.err(
             f"[agent6] auto_merge into {base_branch} hit conflicts "

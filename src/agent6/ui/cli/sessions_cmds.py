@@ -269,9 +269,14 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
 def _no_commits_reason(manifest: SessionManifest) -> str:
     """Why a branchless session made no commits, or "" when it legitimately
     committed onto the checked-out branch (a run with branch_per_run off)."""
+    if manifest.parked_task:
+        # A parked run never started, so `base..HEAD` is whatever the run that
+        # HELD the checkout committed -- the one it was parked behind.
+        return "this run was parked before it started, so it made no commits"
     kind = SESSION_KINDS.get(manifest.mode)
     if kind is not None and not kind.edits:
-        return f"a {manifest.mode} does not write to the repo, so it made no commits"
+        article = "an" if manifest.mode[:1] in "aeiou" else "a"
+        return f"{article} {manifest.mode} does not write to the repo, so it made no commits"
     return ""
 
 
@@ -373,10 +378,10 @@ def _cmd_commits(*, session_id: str) -> int:
     base_sha = manifest.base_sha
     run_branch = manifest.run_branch
     if not run_branch or not base_sha:
-        print(
-            "ERROR: this run has no branch/base recorded (branch_per_run was off?).",
-            file=sys.stderr,
+        why = _no_commits_reason(manifest) or (
+            "branch_per_run was off, so the work already landed on your current branch"
         )
+        print(f"ERROR: this session has no branch to list commits from ({why}).", file=sys.stderr)
         return 2
     pruned = _pruned_branch_note(cwd, manifest, run_branch)
     if pruned is not None:
@@ -537,7 +542,7 @@ def _cmd_merge(
         )
         return 1
     if outcome.status == "noop":
-        print(f"[agent6] {plan.run_branch} is already merged into {plan.target}; nothing to do.")
+        print(f"[agent6] nothing left to merge from {plan.run_branch} into {plan.target}.")
         return 0
     note = (
         f"\n  (merge record could not be written: {outcome.stamp_error};"

@@ -73,6 +73,8 @@ def load_machine(path: Path) -> MachineSpec:
         raise MachineError([f"not valid TOML ({path}): {exc}"]) from exc
     except UnicodeDecodeError as exc:
         raise MachineError([f"not valid UTF-8 ({path}): {exc}"]) from exc
+    except OSError as exc:
+        raise MachineError([f"cannot be read ({path}): {exc}"]) from exc
     precheck = _precheck(raw)
     if precheck:
         raise MachineError(precheck)

@@ -85,7 +85,11 @@ def _cmd_plan_show(session_id: str) -> int:
     if resolved is None:
         return 2
     plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
-    sys.stdout.write(plan.read_text(encoding="utf-8"))
+    try:
+        sys.stdout.write(plan.read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"ERROR: could not read {plan}: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

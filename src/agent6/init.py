@@ -148,7 +148,10 @@ def _update_gitignore(root: Path, *, ecosystem: str) -> str:
     content is never reordered or removed."""
     entries = (*_GITIGNORE_ENTRIES, *_ECOSYSTEM_GITIGNORE.get(ecosystem, ()))
     gi = root / ".gitignore"
-    existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
+    try:
+        existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
+    except (OSError, UnicodeDecodeError) as exc:
+        return f".gitignore could not be read ({exc}); leaving it alone"
     existing_lines = {line.strip() for line in existing_text.splitlines()}
     missing = [e for e in entries if e not in existing_lines]
     if not missing:

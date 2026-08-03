@@ -81,10 +81,10 @@ def _read_toml(path: Path) -> dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         # An unreadable config is the operator's file, not an agent6 defect: a
-        # root-owned one after a sudo run, a directory at the path. Reported as
-        # a crash it invited a bug report and exited 1.
+        # root-owned one after a sudo run, a directory at the path, a stray
+        # non-UTF-8 byte. Reported as a crash it invited a bug report.
         raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 
