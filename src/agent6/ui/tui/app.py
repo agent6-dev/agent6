@@ -263,7 +263,6 @@ class DashboardScreen(Screen[None]):
         self._log_filter: str | None = None
         self._last_log_count = 0
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
-        self._footer_finished = False  # last state.finished the footer bindings reflect
         # What each pane last rendered (strong refs; the fold's replace() keeps
         # untouched fields identical, so `is` says "nothing to redo"). Rebuilding
         # the tree/table/diff on every structural event was most of the burst cost.
@@ -520,12 +519,6 @@ class DashboardScreen(Screen[None]):
         task tree and tool table every heartbeat was most of the idle churn."""
         tui = self._tui
         s = tui.state
-        # The finished flag gates which run-control keys the footer shows; when it
-        # flips (run ends, or a resume un-finishes it), re-ask check_action and
-        # relabel the composer bar (steer <-> continue).
-        if s.finished != self._footer_finished:
-            self._footer_finished = s.finished
-            self.refresh_bindings()
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         self.query_one("#dash-input", SteerInput).set_mode(
@@ -586,6 +579,11 @@ class DashboardScreen(Screen[None]):
                 st.append(role.streamed_thinking[-1200:] + "\n", style="dim")
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
+        elif tui.dir_status[0] == "waiting":
+            # Blocked on an unanswered approval/question: "working…" here
+            # contradicted the top line's "waiting · needs answer" (the model
+            # is not working, it is waiting on the operator).
+            st.append("waiting for your answer (see the prompt)", style="bold yellow")
         elif active and role is not None:
             # No live deltas: the model is thinking, or a resume is rebuilding
             # context. A ticking heartbeat, never a stale "idle" or blank.

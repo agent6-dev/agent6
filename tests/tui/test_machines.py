@@ -625,3 +625,40 @@ def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: Path) -> None:
             assert "stopped" not in head
 
     asyncio.run(scenario())
+
+
+def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
+    """check_action("steer") reads _steerable(), but refresh_bindings only
+    fired on the _ended edge -- a killed worker (or an --exit-on-wait park)
+    kept the footer's Steer key lit for a machine nobody can steer. The poll
+    now refreshes bindings when steerability flips."""
+    import os
+
+    from agent6.machine import load_machine
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
+    (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
+
+    class _LiveHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _LiveHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert screen.check_action("steer", ()) is True  # live: the key is real
+            (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
+            for _ in range(4):  # let the 0.5s poll observe the flip
+                await pilot.pause(0.3)
+            assert screen.check_action("steer", ()) is False
+            assert screen._was_steerable is False  # pyright: ignore[reportPrivateUsage]
+
+    asyncio.run(scenario())

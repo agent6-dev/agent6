@@ -339,3 +339,29 @@ def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:
             assert "Enter resumes" in body
 
     asyncio.run(scenario())
+
+
+def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
+    """A run blocked on an unanswered prompt read "waiting · needs answer" on
+    the top line while the stream pane ticked a live "worker working…"
+    spinner beside it -- two lines, two claims. The pane now says what the
+    run is doing: waiting on the operator."""
+    d = tmp_path / "blocked-pane"
+    _mk_blocked(d, alive=True)
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            # Dismiss the prompt modal (Esc = deny writes only the bridge file;
+            # no answer EVENT lands, so the fold keeps the run "waiting").
+            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+            await pilot.press("escape")
+            await _open_dash(app, pilot)
+            await _wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
+            app._tick()
+            await pilot.pause()
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "waiting for your answer" in body
+            assert "working…" not in body
+
+    asyncio.run(scenario())

@@ -153,6 +153,7 @@ class MachineWatchScreen(Screen[None]):
         self._cursor = MachineWatchCursor()
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
+        self._was_steerable = True  # the footer's Steer key tracks _steerable() flips
         # Dedup prompts by (per-state dir, id): a new agent state resets its ids
         # to approval-1/question-1, so a bare-id set would mask the second state's.
         self._seen_prompt_keys: set[str] = set()
@@ -279,6 +280,13 @@ class MachineWatchScreen(Screen[None]):
     def _poll(self) -> None:
         if self._ended:
             return
+        # The footer's Steer key follows liveness, not just the _ended edge: a
+        # --exit-on-wait park or a killed worker flips _steerable() with no
+        # MachineEnd, and the lit key otherwise offered a steer nobody reads.
+        steerable = self._steerable()
+        if steerable != self._was_steerable:
+            self._was_steerable = steerable
+            self.refresh_bindings()
         try:
             ms = fold_machine(self._spec, self._journal.read())
         except JournalError as exc:
