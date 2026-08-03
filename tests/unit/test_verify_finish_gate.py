@@ -51,3 +51,20 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
 
 def test_require_verify_to_finish_defaults_off() -> None:
     assert Config().workflow.require_verify_to_finish is False
+
+
+def _verified(wf: Workflow, **state_kw: Any) -> str:
+    state = _LoopState(original_task="t", tool_calls=0, **state_kw)
+    return wf._verification(state)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_verification_carries_the_same_verdict_the_event_does() -> None:
+    """RunResult.verified is the app layer's copy of run.end.all_passed's
+    grounding, so exit code, auto-merge, and the notify hook read the verify
+    truth instead of `completed` (true for any deliberate finish)."""
+    assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=False) == "passed"
+    assert _verified(_wf(verify=True), last_verify_ok=False) == "failed"
+    # Green but edited since: stale, not verified.
+    assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=True) == "failed"
+    # Gateless: nothing ever gated this run, so there is no verdict to claim.
+    assert _verified(_wf(verify=False), last_verify_ok=None) == "not_applicable"

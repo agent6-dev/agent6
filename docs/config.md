@@ -206,7 +206,7 @@ The security boundary. Profiles and the network model are specified in
 | `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). Forced on for `run --parallel` lanes: each lane's work is imported by branch, so a lane without one has nothing to compare or merge. |
 | `branch_from` | `"current"` | Where the run branch is cut from when you are **not** on the base branch (e.g. still on a previous run's `agent6/*` branch): `current` cuts from HEAD, stacking on it (serial runs pile up); `base` cuts from the base line (the nearest non-run branch this branch descends from), so each run starts clean; `ask` prompts (base / stack / abort), non-interactive falling back to `base`. No effect when you are already on a base branch. |
 | `merge_strategy` | `"squash"` | Default strategy for `agent6 runs merge`: `squash` (one combined commit), `merge` (a --no-ff merge keeping the per-step history), or `ff` (fast-forward only). The per-step commits always happen on the run branch during the run; this only governs how they consolidate onto your branch. |
-| `auto_merge` | `false` | After a successful run, run `merge_strategy` automatically to land the run branch on its base (what `agent6 runs merge` does, for you). Requires `branch_per_run` (config refuses the pair otherwise: without a run branch there is nothing to merge). On conflict the run branch is left intact with instructions. With `auto_stash_pop`, the merge lands first, then your stashed pre-run changes. |
+| `auto_merge` | `false` | After a run that finished with nothing red (a red or stale verify is never auto-merged), run `merge_strategy` automatically to land the run branch on its base (what `agent6 runs merge` does, for you). Requires `branch_per_run` (config refuses the pair otherwise: without a run branch there is nothing to merge). On conflict the run branch is left intact with instructions. With `auto_stash_pop`, the merge lands first, then your stashed pre-run changes. |
 | `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (reachable-merged, i.e. `merge`/`ff` strategies). A squash-merged branch is unreachable, so it is reported with the `git branch -D` to remove it by hand, never force-deleted. Requires `auto_merge` (config refuses it otherwise). With both on, run branches stop accumulating. |
 | `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the host (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo, and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
 
@@ -384,6 +384,8 @@ like `verify_command`; `pattern`'s first capture group is parsed as a number.
 
 Hard stops; on hit the run ends (exit 3) and is resumable (`agent6 resume
 <run-id>` starts a fresh leg with a fresh budget, from the last checkpoint).
+The other codes: `0` finished with nothing red, `4` finished over a red or
+stale verify, `1` anything else, `130` interrupted.
 
 Every provider call is bounded in exactly ONE currency: a call the meter can
 price (provider-reported cost, else cached price x tokens, cache-aware) counts
@@ -444,9 +446,15 @@ channel (ntfy/Pushover/email/Telegram).
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or
 failure), outside the jail as your user, with `AGENT6_RUN_ID`,
-`AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_REASON` set. Same
+`AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_VERIFIED`
+(`passed`/`failed`/`not_applicable`), `AGENT6_RUN_REASON` set. Same
 minimal environment as `[machine.notify]`: PATH/HOME/locale/desktop-bus plus
 the `AGENT6_*` vars, never your full environment.
+
+`OK` and `VERIFIED` are different facts: `OK=1` means the agent stopped
+deliberately, `VERIFIED` is what the verify gate said. A finish over a red
+verify is `OK=1 VERIFIED=failed`, so a hook that wants "green" reads the
+second.
 
 | Field | Default | Meaning |
 |---|---|---|

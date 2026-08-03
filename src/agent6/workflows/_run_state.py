@@ -42,6 +42,14 @@ RunReason = Literal[
 ]
 
 
+# Whether the verify gate was green when the run ended, on its own axis: a
+# deliberate finish and a verified one are different facts, and collapsing them
+# into ``completed`` made a finish_run over a red verify exit 0 and auto-merge.
+# ``not_applicable`` covers both a gateless run (no verify_command) and a run
+# that stopped before any verdict existed.
+Verification = Literal["passed", "failed", "not_applicable"]
+
+
 @dataclass(frozen=True, slots=True)
 class RunResult:
     """Final state of a run.
@@ -83,6 +91,10 @@ class RunResult:
     iterations: int
     tool_calls: int
     finish_payload: dict[str, Any] | None = None
+    # The SAME fact `run.end.all_passed` carries, on the result the app layer
+    # reads: `completed` means the agent stopped deliberately, never that the
+    # work verified.
+    verified: Verification = "not_applicable"
 
 
 class ResumeError(Exception):

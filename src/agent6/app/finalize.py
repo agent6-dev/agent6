@@ -39,12 +39,20 @@ from agent6.workflows.loop import RunResult
 # the cap and `agent6 resume`" apart from a genuine failure. Documented in
 # CONFIG.md ([budget]); a budget-stopped run is resumable from its snapshot.
 _EXIT_BUDGET_EXHAUSTED = 3
+# The agent finished deliberately but the verify gate was red or stale. Its own
+# code so a script can tell "the work is not green" from "the run broke" (1)
+# without parsing the event log; `require_verify_to_finish` turns the same
+# condition into a refusal to finish at all.
+_EXIT_VERIFY_FAILED = 4
 
 
 def run_exit_code(result: RunResult) -> int:
-    """Map a finished run to its process exit code (0 ok / 3 budget / 1 else)."""
+    """Map a finished run to its process exit code.
+
+    0 finished (nothing to gate on, or the gate was green) / 3 budget /
+    4 finished over a RED verify / 1 else."""
     if result.completed:
-        return 0
+        return _EXIT_VERIFY_FAILED if result.verified == "failed" else 0
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
@@ -384,6 +392,7 @@ def fire_notify_hook(
     run_dir: Path,
     ok: bool,
     reason: str,
+    verified: str,
 ) -> None:
     """Run the operator-configured post-completion hook.
 
@@ -395,7 +404,11 @@ def fire_notify_hook(
         return
     env = hook_env(
         AGENT6_RUN_ID=run_id,
+        # OK = the agent stopped deliberately; VERIFIED = what the gate said
+        # (passed / failed / not_applicable). A hook that wants "green" reads
+        # the second: OK alone is true for a finish over a red verify.
         AGENT6_RUN_OK="1" if ok else "0",
+        AGENT6_RUN_VERIFIED=verified,
         AGENT6_RUN_REASON=reason,
         AGENT6_RUN_DIR=str(run_dir),
     )

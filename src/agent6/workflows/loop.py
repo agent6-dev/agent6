@@ -197,6 +197,7 @@ from agent6.workflows._run_state import (
     RunReason,
     RunResult,
     RunSnapshot,
+    Verification,
     load_run_snapshot,
 )
 from agent6.workflows._toolset import (
@@ -1465,6 +1466,7 @@ class Workflow:
                 )
                 return RunResult(
                     completed=True,
+                    verified=self._verification(state),
                     reason="interactive_stop",
                     summary=(
                         f"stopped interactively after iter {turn.iteration}"
@@ -2123,6 +2125,7 @@ class Workflow:
                 self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
                 return RunResult(
                     completed=True,
+                    verified=self._verification(state),
                     reason="verify_settled",
                     summary="verify passed and the worker stopped making changes",
                     iterations=turn.iteration,
@@ -2149,6 +2152,7 @@ class Workflow:
                 )
             return RunResult(
                 completed=True,
+                verified=self._verification(state),
                 reason="settled",
                 summary=summary,
                 iterations=turn.iteration,
@@ -2166,6 +2170,7 @@ class Workflow:
             )
             return RunResult(
                 completed=True,
+                verified=self._verification(state),
                 reason="metric_plateau",
                 summary=turn.metric_plateau_finish,
                 iterations=turn.iteration,
@@ -2224,6 +2229,7 @@ class Workflow:
                 self._emit_run_end_passed(reason=turn.finish_kind, iterations=turn.iteration)
             return RunResult(
                 completed=True,
+                verified=self._verification(state),
                 reason=turn.finish_kind,
                 summary=turn.finish_signal,
                 iterations=turn.iteration,
@@ -2532,6 +2538,7 @@ class Workflow:
             self._emit_run_end_passed(reason=reason, iterations=iteration)
         return RunResult(
             completed=True,
+            verified=self._verification(state),
             reason=reason,
             # In ask mode the final prose IS the answer the caller
             # prints, so keep it whole; run/plan only need a short
@@ -2811,6 +2818,13 @@ class Workflow:
                     break  # a curator write failure fails for every remaining node too
         if changed:
             self._emit_graph_snapshot()
+
+    def _verification(self, state: _LoopState) -> Verification:
+        """The verify verdict for the RunResult, from the same tri-state
+        `run.end.all_passed` is grounded on, so the result and the event can
+        never disagree."""
+        green = self._tree_is_verify_green(state)
+        return "not_applicable" if green is None else "passed" if green else "failed"
 
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
         """Emit a successful ``run.end``, first auto-passing any still-pending

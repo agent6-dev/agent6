@@ -26,6 +26,7 @@ def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
         run_dir=tmp_path,
         ok=True,
         reason="finish_run",
+        verified="passed",
     )
 
 
@@ -51,6 +52,7 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
         run_dir=tmp_path,
         ok=True,
         reason="finish_run",
+        verified="passed",
     )
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {
@@ -70,6 +72,7 @@ def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFix
         run_dir=tmp_path,
         ok=False,
         reason="budget_exhausted",
+        verified="passed",
     )
     captured = capsys.readouterr()
     assert "notify.on_complete failed" in captured.err
@@ -90,6 +93,7 @@ def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
         run_dir=tmp_path,
         ok=False,
         reason="provider_error",
+        verified="passed",
     )
     assert out.read_text(encoding="utf-8") == "0"
 
@@ -227,7 +231,9 @@ def test_notify_hook_env_carries_no_secrets(
         str(out),
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
-    fire_notify_hook(notify, run_id="r1", run_dir=tmp_path, ok=True, reason="finish_run")
+    fire_notify_hook(
+        notify, run_id="r1", run_dir=tmp_path, ok=True, reason="finish_run", verified="passed"
+    )
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {"key": None, "or_key": None, "path": True, "home": True, "id": "r1"}
 
@@ -254,3 +260,25 @@ def test_machine_notify_hook_env_carries_no_secrets(
     hook("notify", "poll", "msg", "info")
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload == {"key": None, "path": True, "id": "m1"}
+
+
+def test_hook_env_separates_deliberate_from_verified(tmp_path: Path) -> None:
+    """AGENT6_RUN_OK says the agent stopped deliberately; AGENT6_RUN_VERIFIED
+    says what the gate said. A finish over a red verify is OK=1 VERIFIED=failed
+    -- a hook that wants "green" reads the second, because the first is true
+    for a finish the verify never passed."""
+    script = tmp_path / "hook.sh"
+    out = tmp_path / "env.txt"
+    script.write_text(
+        f'#!/bin/sh\necho "$AGENT6_RUN_OK $AGENT6_RUN_VERIFIED" > {out}\n', encoding="utf-8"
+    )
+    script.chmod(0o755)
+    fire_notify_hook(
+        NotifyConfig(on_complete=(str(script),)),
+        run_id="r1",
+        run_dir=tmp_path,
+        ok=True,
+        reason="finish_run",
+        verified="failed",
+    )
+    assert out.read_text(encoding="utf-8").strip() == "1 failed"

@@ -627,7 +627,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Doing it here too would reap the broker pid, then the auto-merge
             # git subprocesses and the notify hook below could recycle it before
             # the outer close() signalled the pid again.
-            if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
+            if (
+                not interrupted
+                and result is not None
+                and result.completed
+                # Never auto-merge a red gate: `completed` means the agent
+                # stopped deliberately, not that the work verified.
+                and result.verified != "failed"
+                and cfg.git.auto_merge
+            ):
                 finalize_auto_merge(cwd, layout=layout, cfg=cfg)
             # Never leave root-owned run state in the user's repo (sudo case).
             chown_to_real_user(state_dir)
@@ -653,6 +661,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             run_dir=layout.run_dir,
             ok=result.completed,
             reason=result.reason,
+            verified=result.verified,
         )
         return run_exit_code(result)
     finally:
