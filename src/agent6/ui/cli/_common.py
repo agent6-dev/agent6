@@ -127,14 +127,30 @@ def _plans_dir(repo_root: Path) -> Path:
     return bucket_dir(_state_dir(repo_root), "plans")
 
 
+# What a fresh install is told when it has nothing yet. One string: the same
+# first contact whichever command the operator happened to type, and it names
+# the way out rather than the directory that is missing.
+NOTHING_YET = 'no sessions yet. Start one with `agent6 run "<task>"`.'
+
+
+def print_nothing_yet() -> None:
+    """Say there is nothing yet, and how to change that.
+
+    An empty state dir is not a fault, so it does not read as one: "ERROR: no
+    runs directory at <state>/sessions/runs" told a new operator their install
+    was broken, in vocabulary from before the rename.
+    """
+    print(NOTHING_YET, file=sys.stderr)
+
+
 def print_no_session_match(query: str, state: Path) -> None:
-    """The one missing-run error, shared by every command that resolves a run:
+    """The one missing-session error, shared by every command that resolves one:
     name the query and where it looked (never the bucket-layout internals), or
-    the same first-contact copy as `sessions` when there is nothing to show at all."""
+    the same first-contact copy as `sessions` when there is nothing at all."""
     if query:
         print(f"ERROR: no session matches {query!r} (looked under {state})", file=sys.stderr)
     else:
-        print('no sessions yet. Start one with `agent6 run "<task>"`.', file=sys.stderr)
+        print_nothing_yet()
 
 
 def session_bucket_dirs(repo_root: Path) -> list[Path]:

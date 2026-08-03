@@ -51,6 +51,7 @@ from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
     load_config_or_exit,
+    print_nothing_yet,
     resolve_or_newest_layout,
     resolve_session_layout,
     sgr,
@@ -272,12 +273,9 @@ def _resolve_session_manifest(
         # No id: the most recent RUN. These verbs are about a run's branch, and
         # a plan or an ask has none, so widening the default would answer a
         # question the operator did not ask.
-        if not runs_dir.is_dir():
-            print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-            return 2
-        latest = newest_session_dir([runs_dir])
+        latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
-            print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
+            print_nothing_yet()
             return 2
         layout = SessionLayout(state_dir=_state_dir(cwd), session_id=latest.name)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
@@ -316,7 +314,7 @@ def _cmd_stop(*, session_id: str) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        print("ERROR: no sessions to stop.", file=sys.stderr)
+        print_nothing_yet()
         return 2
     session_dir = layout.session_dir
     rid = session_dir.name
@@ -819,7 +817,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        print("ERROR: no sessions to remove.", file=sys.stderr)
+        print_nothing_yet()
         return 2
     if session_is_live(layout.session_dir):
         print(

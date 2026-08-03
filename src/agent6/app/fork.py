@@ -80,7 +80,7 @@ def _resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> Sessi
         # "most recent" means.
         latest = newest_session_dir(resumable_bucket_dirs(state_dir))
         if latest is None:
-            reporter.err(f"ERROR: nothing forkable under {state_dir}; nothing to fork.")
+            reporter.err('nothing to fork yet. Start a session with `agent6 run "<task>"`.')
             return None
         query = latest.name
         reporter.err(f"[agent6] forking most recent session: {query}")

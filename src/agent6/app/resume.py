@@ -256,7 +256,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         buckets = resumable_bucket_dirs(state_dir)
         latest = newest_session_dir(buckets)
         if latest is None:
-            reporter.err(f"ERROR: nothing resumable under {state_dir}; nothing to resume.")
+            reporter.err('nothing to resume yet. Start a session with `agent6 run "<task>"`.')
             return 2
         session_id = latest.name
         reporter.err(f"[agent6] resuming most recent session: {session_id}")

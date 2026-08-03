@@ -30,6 +30,7 @@ from agent6.ui.cli._common import (
     _plans_dir,
     _state_dir,
     print_no_session_match,
+    print_nothing_yet,
     resolve_or_newest_layout,
 )
 from agent6.ui.cli._console_view import ConsoleView
@@ -139,7 +140,7 @@ def _cmd_watch(session_id: str, *, tui: bool = False, since: int = 0, raw: bool 
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        print("ERROR: no runs found for this cwd.", file=sys.stderr)
+        print_nothing_yet()
         return 2
     target = layout.session_dir
     if not session_id:
