@@ -604,7 +604,7 @@ def test_set_config_leaves_returns_the_message_when_an_ancestor_is_headerless(
 
     err = set_config_leaves(repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True)
 
-    assert err is not None and "without a [table] header" in err
+    assert err is not None and "not a plain [table]" in err
     assert rcfg.read_text(encoding="utf-8") == before  # nothing partially written
 
 

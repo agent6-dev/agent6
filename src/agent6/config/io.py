@@ -196,8 +196,8 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             # TUI, connect, init and model cannot skip the check.
             if owner := undeclared_table_ancestor(path, dotted_key):
                 raise ValueError(
-                    f"{dotted_key} lives inside the value of {owner}, which is written"
-                    " without a [table] header (an inline table or a dotted key), so it"
+                    f"{dotted_key} lives inside {owner}, which is not a plain [table]"
+                    " (an inline table, a dotted key, or an array-of-tables), so it"
                     f" cannot be set on its own. Set {owner} as a whole, or edit {path}"
                     " by hand."
                 )
@@ -442,8 +442,8 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         # the leaf set.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
             raise ValueError(
-                f"{dotted_key} lives inside the value of {owner}, which is written"
-                " without a [table] header (an inline table or a dotted key), so it"
+                f"{dotted_key} lives inside {owner}, which is not a plain [table]"
+                " (an inline table, a dotted key, or an array-of-tables), so it"
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
                 " by hand."
             )
@@ -506,14 +506,11 @@ def read_toml_file(path: Path) -> dict[str, Any]:
 
 
 def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
-    """The outermost ancestor of *dotted_key* that holds a table but is written
-    WITHOUT a ``[header]`` -- an inline table or a dotted key -- else None.
-
-    The leaf surgery only knows ``[table]`` headers, so writing under such an
-    ancestor emits a header that collides with it ("Cannot declare ... twice").
-    `config show` and TAB still offer those leaves (the routing preset agent6
-    suggests writes an inline table), so the refusal should name the value that
-    actually owns the leaf rather than leak the parser's complaint.
+    """The outermost ancestor of *dotted_key* the leaf surgery can't write under
+    -- an inline table, a dotted key, or an array-of-tables (``[[x]]``) -- else
+    None. The surgery only knows ``[table]`` headers, so writing under one emits
+    a header that collides with it ("Cannot declare ... twice"); the caller names
+    the owning value instead of leaking the parser's complaint.
     """
     if not path.is_file():
         return None
@@ -526,7 +523,10 @@ def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     parts = dotted_key.split(".")
     for i in range(1, len(parts)):  # proper ancestors, outermost first
         prefix = ".".join(parts[:i])
-        if not isinstance(read_toml_leaf(data, prefix), dict):
+        val = read_toml_leaf(data, prefix)
+        if isinstance(val, list):
+            return prefix  # an array-of-tables: a leaf can't be set on it
+        if not isinstance(val, dict):
             continue
         if any(h == prefix or h.startswith(f"{prefix}.") for h in headers):
             continue  # a real [table] header declares it

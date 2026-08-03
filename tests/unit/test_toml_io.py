@@ -135,6 +135,15 @@ def test_remove_toml_leaf_top_level_key_never_touches_a_table_member(tmp_path: P
     assert tomllib.loads(path.read_text()) == {"review": {"trigger": "off"}}
 
 
+def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: Path) -> None:
+    """A leaf under an array-of-tables ([[x]]) can't be set on its own; refuse
+    with the friendly owner message, not the parser's cryptic 'declare twice'."""
+    p = tmp_path / "c.toml"
+    p.write_text('[svc]\nname = "s"\n[[svc.items]]\nk = 1\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="array-of-tables"):
+        upsert_toml_leaf(p, "svc.items.enabled", True)
+
+
 def test_upsert_toml_leaf_preserves_a_trailing_comment(tmp_path: Path) -> None:
     """Replacing a single-line leaf value keeps its trailing `# comment` -- the
     surgery is comment-preserving -- and a `#` inside the string is not one."""
@@ -383,7 +392,7 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
     body = 'sandbox = { protect_git = false, run_commands = "yes", memory_limit_mb = 8000 }\n'
     p.write_text(body, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="without a \\[table\\] header"):
+    with pytest.raises(ValueError, match="not a plain \\[table\\]"):
         upsert_toml_leaf(p, "sandbox.allow_urls", ["https://example.com"])
     assert p.read_text(encoding="utf-8") == body, "the operator's settings were deleted"
 
