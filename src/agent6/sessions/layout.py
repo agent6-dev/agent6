@@ -124,11 +124,10 @@ SESSIONS_ROOT = "sessions"
 # pins the two together). Defined beside SessionLayout.subdir because it is a
 # fact about the on-disk layout, not about any one front-end: both the CLI's id
 # resolution and the resume lifecycle need it.
-SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines", "agents")
-# What a hub lists as an ordinary session. Machine authoring is excluded (every
-# hub gives it its own card, keyed by the machine being authored) and so is
-# `agents`, whose states live inside a machine instance and never get a
-# directory here at all.
+SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
+# What a hub lists as an ordinary session. Machine authoring is excluded: every
+# hub gives it its own card, keyed by the machine being authored. (An `agent`
+# state has no bucket at all; its sessions live inside the machine instance.)
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 

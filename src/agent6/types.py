@@ -131,8 +131,13 @@ def session_bucket(name: str) -> str:
     sessions actually went (`machine` claimed "runs" while `machine create`
     wrote machine-drafts/). The buckets sit under one `sessions/` root, which
     is what leaves the state dir's own `machines/` to live machine INSTANCES.
+    An `agent` leg lives inside its machine instance's directory and has no
+    bucket.
     """
-    return f"{session_kind(name).name}s"
+    kind = session_kind(name)
+    if kind.name == "agent":
+        raise UnknownSessionKind("an agent leg lives under its machine instance, not sessions/")
+    return f"{kind.name}s"
 
 
 @dataclass(frozen=True, slots=True)

@@ -19,14 +19,13 @@ from agent6.types import SESSION_KINDS, UnknownSessionKind, session_bucket
 
 
 def test_a_bucket_is_the_mode_plus_s() -> None:
-    """The rule has no exceptions now, so the bucket is derived rather than
-    stored: a record cannot disagree with where its sessions actually go."""
-    assert [session_bucket(name) for name in ("run", "plan", "ask", "machine", "agent")] == [
+    """The bucket is derived rather than stored: a record cannot disagree
+    with where its sessions actually go."""
+    assert [session_bucket(name) for name in ("run", "plan", "ask", "machine")] == [
         "runs",
         "plans",
         "asks",
         "machines",
-        "agents",
     ]
 
 
@@ -35,10 +34,21 @@ def test_an_unknown_mode_has_no_bucket() -> None:
         session_bucket("nonsense")
 
 
+def test_an_agent_leg_has_no_sessions_bucket() -> None:
+    """A machine's agent states live inside their machine instance's own
+    directory. Answering "agents" here minted a bucket nothing writes, so a
+    misrouted session landed somewhere no listing scans instead of failing
+    loudly at the routing bug."""
+    with pytest.raises(UnknownSessionKind):
+        session_bucket("agent")
+
+
 def test_every_mode_has_a_scanned_bucket() -> None:
     """A mode whose bucket no listing scans writes a session dir nothing can
     find."""
     for name in SESSION_KINDS:
+        if name == "agent":
+            continue  # no directory of its own (see the refusal test)
         assert session_bucket(name) in SESSION_BUCKETS
 
 
@@ -55,10 +65,9 @@ def test_bucket_dir_is_the_one_owner_of_that_arithmetic() -> None:
 
 
 def test_hub_buckets_are_session_buckets_without_the_machine_ones() -> None:
-    """A hub lists ordinary sessions; machine authoring gets its own card, and
-    an agent state has no directory of its own at all."""
+    """A hub lists ordinary sessions; machine authoring gets its own card."""
     assert set(HUB_BUCKETS) < set(SESSION_BUCKETS)
-    assert set(SESSION_BUCKETS) - set(HUB_BUCKETS) == {"machines", "agents"}
+    assert set(SESSION_BUCKETS) - set(HUB_BUCKETS) == {"machines"}
 
 
 @pytest.mark.parametrize("bucket", ["runs", "plans", "asks"])
