@@ -208,6 +208,32 @@ def test_remove_toml_table_absent_returns_false(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "[budget]\nmax_usd = 1.0\n"
 
 
+def test_header_lookup_skips_a_header_shadowed_by_an_earlier_multiline_value(
+    tmp_path: Path,
+) -> None:
+    """The header-LOCATE scans (upsert/remove/undeclared-ancestor) must skip a
+    `[table]`-looking line inside an EARLIER key's triple-quoted value, or the
+    surgery matches the fake header first: an upsert writes into the wrong table
+    and a remove silently corrupts the operator's string (stays valid TOML, so
+    revalidation never rolls it back). The header-FIND sibling of the value-span
+    bug the region walkers already fixed."""
+    base = '[b]\ndoc = """\n[a]\nx = 1\n"""\nk = 0\n\n[a]\nreal = "yes"\nkeep = 1\n'
+    p = tmp_path / "c.toml"
+
+    p.write_text(base, encoding="utf-8")
+    upsert_toml_leaf(p, "a.new", 9)
+    data = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert data["a"] == {"real": "yes", "keep": 1, "new": 9}  # landed in the REAL [a]
+    assert "new" not in data["b"]  # not the shadowed fake
+    assert "[a]" in data["b"]["doc"]  # the triple-quoted string is intact
+
+    p.write_text(base, encoding="utf-8")
+    assert remove_toml_leaf(p, "a.real") is True  # found the real leaf, not "nothing to unset"
+    data = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert data["a"] == {"keep": 1}  # real removed from the REAL [a]
+    assert "[a]" in data["b"]["doc"]  # b.doc's string uncorrupted (fake header untouched)
+
+
 def test_remove_toml_table_survives_a_bracketed_multiline_interior(tmp_path: Path) -> None:
     """A `[table]` whose multi-line value has an interior line starting with `[`
     (a triple-quoted help string with a `[options]` line) must be dropped WHOLE.

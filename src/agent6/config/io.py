@@ -95,11 +95,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     with locked_file(path):
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         lines = text.splitlines()
-        start: int | None = None
-        for i, line in enumerate(lines):
-            if _header_name(line) == table:
-                start = i
-                break
+        start = _header_line(lines, table)
         if start is None:
             prefix = text if not text or text.endswith("\n") else text + "\n"
             sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
@@ -206,7 +202,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
                     " by hand."
                 )
             lines = _drop_top_region_key(lines, table.split(".", 1)[0])
-            start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
+            start = _header_line(lines, table)
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
                 sep = "\n" if text and not text.endswith("\n\n") else ""
@@ -314,6 +310,29 @@ def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int |
     return None
 
 
+def _iter_headers(lines: list[str]) -> list[tuple[int, str]]:
+    """``(index, name)`` for each real ``[table]`` header, skipping the INTERIOR
+    of every multi-line value so a ``[header]``-looking line inside a triple-
+    quoted string is never taken for a header. THE owner every header lookup
+    uses: a plain per-line ``_header_name`` scan matched a fake ``[table]`` inside
+    an earlier value's string and shadowed the real header, so the surgery wrote
+    into the wrong table (or a remove silently corrupted the operator's string).
+    """
+    out: list[tuple[int, str]] = []
+    j = 0
+    while j < len(lines):
+        name = _header_name(lines[j])
+        if name is not None:
+            out.append((j, name))
+        j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
+    return out
+
+
+def _header_line(lines: list[str], table: str) -> int | None:
+    """Index of the ``[table]`` header line, value-span-aware (see _iter_headers)."""
+    return next((i for i, name in _iter_headers(lines) if name == table), None)
+
+
 def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
     """*lines* without a bare top-level ``key = ...`` (multi-line value included).
 
@@ -401,7 +420,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
             )
         lines = path.read_text(encoding="utf-8").splitlines()
         if table:
-            start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
+            start = _header_line(lines, table)
             if start is None:
                 return False
             region = start + 1
@@ -474,7 +493,7 @@ def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         return None  # a file that does not parse is refused earlier, with its own message
-    headers = [name for line in text.splitlines() if (name := _header_name(line)) is not None]
+    headers = [name for _, name in _iter_headers(text.splitlines())]
     parts = dotted_key.split(".")
     for i in range(1, len(parts)):  # proper ancestors, outermost first
         prefix = ".".join(parts[:i])
