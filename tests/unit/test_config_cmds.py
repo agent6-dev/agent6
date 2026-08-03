@@ -903,3 +903,51 @@ def test_config_fix_removes_a_nan_entry_instead_of_claiming_valid(
     assert "bogus_entry" in out  # removed and named
     assert "bogus_entry" not in gpath.read_text(encoding="utf-8")
     assert main(["config", "show"]) == 0
+
+
+def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
+    from math import nan
+
+    assert cc._equal_tolerating_nan(nan, nan)  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan({"x": nan}, {"x": nan})  # pyright: ignore[reportPrivateUsage]
+    assert cc._equal_tolerating_nan([1.0, nan], [1.0, nan])  # pyright: ignore[reportPrivateUsage]
+    assert not cc._equal_tolerating_nan({"x": nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
+    assert not cc._equal_tolerating_nan([nan], [nan, nan])  # pyright: ignore[reportPrivateUsage]
+
+
+def test_entry_is_stale_is_false_for_a_still_present_nested_nan(tmp_path: Path) -> None:
+    """A nan nested in a table/list still equals itself structurally; the under-lock
+    staleness re-check must treat a still-present NESTED nan as UNCHANGED so
+    `config fix` removes it, not skip it forever as 'a concurrent writer replaced
+    it' (the scalar-only guard missed this and left it unfixable)."""
+    from math import nan
+
+    from agent6.config.layer import InvalidEntry
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[sandbox]\nallow_urls = [nan]\n", encoding="utf-8")
+    entry = InvalidEntry(
+        leaf="sandbox.allow_urls",
+        value=[nan],
+        layer="global",
+        path=cfg,
+        file_key="sandbox.allow_urls",
+    )
+    assert cc._entry_is_stale(entry) is False  # pyright: ignore[reportPrivateUsage]
+
+
+def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without the config lock a whole-file restore could clobber a concurrent
+    writer, so the machine path (like the layer writers) KEEPS the invalid write
+    and says the lock was missing, rather than rolling back over a snapshot that
+    predates the other writer's update."""
+    monkeypatch.setattr(cc, "load_effective_with_overlay", _noop_overlay)
+    target = tmp_path / "m.asm.toml"
+    target.write_text(_BAD, encoding="utf-8")
+
+    err = cc._revalidate_config(target, _GOOD, machine=target, held=False)  # pyright: ignore[reportPrivateUsage]
+
+    assert err is not None and "kept as written" in err
+    assert target.read_text(encoding="utf-8") == _BAD  # NOT rolled back

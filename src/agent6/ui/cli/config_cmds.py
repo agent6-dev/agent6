@@ -425,6 +425,11 @@ def _revalidate_config(
     except MachineError as exc:
         err = "; ".join(exc.problems)
     if err is not None:
+        if not held:
+            # Same rule as the layer writers: a whole-file restore without the
+            # lock could clobber a concurrent writer, so keep the write and
+            # surface the error (see layer._revalidate / _revalidate_layered).
+            return f"{err}\n{_KEPT_NO_LOCK}"
         _restore_file(target, prior_text)
         return err
     return None
@@ -640,17 +645,26 @@ def _entry_is_stale(entry: InvalidEntry) -> bool:
         data = read_toml_file(entry.path)
     except ConfigError:
         return True  # unreadable now: leave it to the loud paths
-    current = read_toml_leaf(data, entry.file_key)
-    # nan != nan: a still-present nan entry otherwise reads "replaced by a
-    # concurrent writer" on every pass and can never be removed.
-    if (
-        isinstance(current, float)
-        and isinstance(entry.value, float)
-        and math.isnan(current)
-        and math.isnan(entry.value)
-    ):
-        return False
-    return current != entry.value
+    # nan != nan by identity, so a still-present nan (scalar OR nested in a
+    # table/list) otherwise reads "replaced by a concurrent writer" on every
+    # pass and can never be removed -- `config fix` then loops to "changed under
+    # the lock" and the entry is unfixable forever. Compare NaN-tolerantly at
+    # every nesting depth.
+    return not _equal_tolerating_nan(read_toml_leaf(data, entry.file_key), entry.value)
+
+
+def _equal_tolerating_nan(a: object, b: object) -> bool:
+    """Structural equality that treats NaN == NaN (float NaN is the only value
+    unequal to itself), recursing through dict/list so a nested NaN matches."""
+    if isinstance(a, float) and isinstance(b, float):
+        return a == b or (math.isnan(a) and math.isnan(b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_equal_tolerating_nan(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(
+            _equal_tolerating_nan(x, y) for x, y in zip(a, b, strict=True)
+        )
+    return a == b
 
 
 def _cmd_config_fix(*, machine: Path | None) -> int:
