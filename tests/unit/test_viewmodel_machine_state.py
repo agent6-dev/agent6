@@ -113,6 +113,18 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) 
     assert machine_status_word(live, parked=False, alive=True) == "running"
     assert machine_status_word(live, parked=False, alive=False) == "stopped"
 
+    # A live worker blocked in a foreground `wait` state is "waiting", not
+    # "running" (the default `machine run` persists no PendingWait).
+    wf = tmp_path / "w.asm.toml"
+    wf.write_text(
+        'machine = "w"\nversion = 1\ninitial = "poll"\n[budget]\nmax_transitions = 10\n'
+        '[states.poll]\nkind = "wait"\nevery_secs = "3600"\non = { tick = "done", signal = "done" }\n'
+        '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "d"\n',
+        encoding="utf-8",
+    )
+    waiting = fold_machine(load_machine(wf), [])
+    assert machine_status_word(waiting, parked=False, alive=True) == "waiting"
+
 
 def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: Path) -> None:
     """The dir-level owner: the pure word fed the armed-wait and worker-pid

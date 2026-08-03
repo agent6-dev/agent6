@@ -120,8 +120,8 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A foreground `machine run` blocked in a wait writes no pending-wait record
-    # (that is --exit-on-wait's parked form); status must still say the machine
-    # is waiting and how to poke it, not a bare "running" (attach already knew).
+    # (that is --exit-on-wait's parked form), but a live worker in a wait state is
+    # "waiting", not "running", and the readout says how to poke it.
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
@@ -132,7 +132,7 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "status: running" in out
+    assert "status: waiting" in out
     assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
 
 

@@ -50,7 +50,6 @@ from agent6.runs.ipc import (
     request_steer,
     set_session_allow,
     unregister_frontend,
-    worker_is_alive,
     write_answer,
     write_question_answers,
     write_steer_answer,
@@ -228,11 +227,15 @@ class MachineWatchScreen(Screen[None]):
         return not (action in ("steer", "poke") and self._ended)
 
     def _steerable(self) -> bool:
-        """A steer only reaches an agent state while the machine's worker runs.
-        A parked or stopped machine has NOT ended, but its newest state dir is a
-        finished agent state nobody polls, so the marker is dropped in silence
-        (the web refuses this; a poke is what wakes a parked machine)."""
-        return not self._ended and worker_is_alive(self._root)
+        """A steer only reaches an agent state the worker is actively running. A
+        parked, stopped, foreground-waiting, or ended machine's newest state polls
+        no marker, so a poke -- not a steer -- wakes it. Gate on the shared status
+        word; an unreadable journal is not steerable."""
+        try:
+            ms = fold_machine(self._spec, self._journal.read())
+        except JournalError:
+            return False
+        return machine_word_for_dir(ms, self._root) == "running"
 
     def action_steer(self) -> None:
         """Steer the current agent state: drop a request marker + open the steer
