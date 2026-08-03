@@ -842,7 +842,7 @@ function paintRun(cards, s) {
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
-  add('task', s.user_task || '(none)');
+  add('task', s.user_task || s.fallback_task || '(none)');
   add('id', s.run_id || cards._id || ''); // older logs carry no run_id in run.start
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   // Where the run's work lives and where Merge lands: consecutive spawns chain

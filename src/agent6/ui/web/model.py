@@ -11,6 +11,7 @@ are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -247,11 +248,19 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
 
 def manifest_header(run_dir: Path) -> dict[str, Any]:
     """Manifest-derived run-header fields the event fold doesn't carry: branch
-    facts (run/base/merged) and the fan-out compare outcome (rank/winner/
-    rationale). Merged into the RunState snapshot by BOTH the one-shot
-    `/api/run/<id>` and the SSE stream, so the header the page paints from can
-    never drift between them. Empty for a run with no (readable) manifest."""
+    facts (run/base/merged), the fan-out compare outcome (rank/winner/
+    rationale), and ``fallback_task`` -- the fold sets user_task only from
+    run.start, so without it a parked/created/forked run's page said
+    "task: (none)" while the hub row showed the real work (the TUI's
+    fallback_task, on the wire). Merged into the RunState snapshot by BOTH the
+    one-shot `/api/run/<id>` and the SSE stream, so the header the page paints
+    from can never drift between them. Empty for a run with no (readable)
+    manifest."""
     header: dict[str, Any] = dict(manifest_branches(run_dir))
+    with contextlib.suppress(ManifestError):
+        task = read_manifest(run_dir).user_task
+        if task:
+            header["fallback_task"] = task
     compare = run_compare(run_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
