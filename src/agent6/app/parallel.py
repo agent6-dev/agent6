@@ -750,7 +750,7 @@ def _stamp_compare_outcomes(
     """Stamp the auto-compare outcome into EACH ranked lane's manifest, so every
     run view can show where a lane placed and why. ONE writer: only the fan-out's
     auto-compare stamps this (`sessions compare` stays stateless; the coordinator
-    never compares its lanes). The imported lanes sit at `<origin_state>/runs/<id>`
+    never compares its lanes). The imported lanes sit at `<origin_state>/sessions/runs/<id>`
     (import_run's contract); the same rationale and judge cost are recorded on
     every lane (both describe the judge's ranking of the whole group), the
     rationale truncated to bound the manifest and empty for a mechanical ranking.

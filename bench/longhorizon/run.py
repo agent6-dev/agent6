@@ -228,7 +228,7 @@ def _find_logs(state_home: Path, session_id: str) -> Path | None:
     exact = list(state_home.glob(f"agent6/*/sessions/runs/{session_id}/logs.jsonl"))
     if exact:
         return exact[0]
-    for cand in state_home.glob("agent6/*/runs/*/logs.jsonl"):
+    for cand in state_home.glob("agent6/*/sessions/*/*/logs.jsonl"):
         if session_id in cand.parent.name:
             return cand
     return None

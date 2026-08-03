@@ -211,7 +211,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _extract_metrics(state_home: Path) -> dict[str, Any]:
     """Pull run metrics from the single run's logs.jsonl under the isolated state."""
-    logs = list(state_home.glob("agent6/*/runs/*/logs.jsonl"))
+    logs = list(state_home.glob("agent6/*/sessions/*/*/logs.jsonl"))
     m: dict[str, Any] = {
         "run_found": bool(logs),
         "iterations": None,

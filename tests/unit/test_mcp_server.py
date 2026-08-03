@@ -250,7 +250,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
 def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
-    """A client-supplied session_id builds `state_dir/runs/<session_id>`; a `..` or
+    """A client-supplied session_id builds a path under the session buckets; a `..` or
     absolute id would read another repo's state (or anywhere). It must be
     rejected as a single-component id, like the web surface's guard."""
     server = _server(tmp_path)

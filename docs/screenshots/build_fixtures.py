@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build small, sanitized seed fixtures from real agent6 runs (dev tool).
 
-Run on a machine that has real runs under $XDG_STATE_HOME/agent6/. It copies a
+Run on a machine that has real sessions under $XDG_STATE_HOME/agent6/. It copies a
 curated set of runs into docs/screenshots/seed/runs/<id>/, trimming the
 token-delta bloat out of logs.jsonl (a 9 MB log is ~99% role.*_delta events)
 and keeping only the structural events plus a tail of reasoning, so the TUI hub
@@ -65,7 +65,7 @@ def scrub(text: str) -> str:
 
 
 def find_run(session_id: str) -> Path | None:
-    hits = sorted(STATE.glob(f"*/runs/{session_id}"))
+    hits = sorted(STATE.glob(f"*/sessions/*/{session_id}"))
     return hits[0] if hits else None
 
 

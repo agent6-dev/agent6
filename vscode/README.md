@@ -1,7 +1,7 @@
 # agent6: tail run
 
 Minimal VS Code extension that follows an agent6 run's structured event log
-(`<state base>/<repo-id>/runs/<run-id>/logs.jsonl`, out of the workspace) in
+(`<state base>/<repo-id>/sessions/runs/<id>/logs.jsonl`, out of the workspace) in
 a VS Code output channel.
 
 It is intentionally tiny:
@@ -23,7 +23,7 @@ dir. The extension mirrors the CLI's path logic (`src/agent6/paths.py`):
 - Repo id: `<folder>-<first 12 hex of sha256(canonical path)>`, keyed on the
   first workspace folder with symlinks resolved. agent6 keys state off the
   directory it is invoked in, so start runs from the workspace root.
-- Runs: `<state base>/<repo-id>/runs/<run-id>/logs.jsonl`.
+- Sessions: `<state base>/<repo-id>/sessions/<bucket>/<id>/logs.jsonl`.
 
 The global `[agent6].state_dir` config override is not read; set
 `AGENT6_STATE_HOME` to the same base if you use one.
