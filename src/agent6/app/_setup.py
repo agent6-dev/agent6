@@ -9,10 +9,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, replace
 
+from pydantic import ValidationError
+
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
+    ConfigError,
 )
 from agent6.events import EventSink
 from agent6.models.cache import list_models
@@ -54,10 +57,24 @@ class BudgetOverrides:
         )
 
     def apply(self, cfg: Config) -> Config:
-        return cfg.with_budget_overrides(
-            max_usd=self.max_usd,
-            max_tokens_fallback=self.max_tokens_fallback,
-        )
+        try:
+            return cfg.with_budget_overrides(
+                max_usd=self.max_usd,
+                max_tokens_fallback=self.max_tokens_fallback,
+            )
+        except ValidationError as exc:
+            # The schema speaks in config keys; the operator typed a flag. Name
+            # what they typed, and refuse the way `config set` refuses rather
+            # than escaping to the crash reporter.
+            raise ConfigError(self._flag_error(exc)) from exc
+
+    def _flag_error(self, exc: ValidationError) -> str:
+        flags = {"max_usd": "--max-usd", "max_tokens_fallback": "--max-tokens-fallback"}
+        parts: list[str] = []
+        for err in exc.errors():
+            field = str(err["loc"][-1]) if err["loc"] else ""
+            parts.append(f"{flags.get(field, field)}: {err['msg']}")
+        return "; ".join(parts) or str(exc)
 
 
 @dataclass(frozen=True, slots=True)

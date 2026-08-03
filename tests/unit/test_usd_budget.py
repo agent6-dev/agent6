@@ -110,3 +110,23 @@ def test_priced_models_are_silent(price_cache: Path, capsys: pytest.CaptureFixtu
 
     assert budget_preflight(_cfg(PRICED_MODEL, reviewer=CHEAP_MODEL)) is None
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [("--max-usd", -5.0), ("--max-usd", float("nan")), ("--max-tokens-fallback", -2)],
+)
+def test_a_bad_budget_flag_refuses_naming_the_flag(flag: str, value: float) -> None:
+    """A typo'd flag is the operator's, not a defect in agent6.
+
+    The override went straight into `Config.model_validate`, so its
+    `ValidationError` escaped to the last-resort handler: "unexpected
+    ValidationError", a crash log in /tmp, an invitation to file a bug, and exit
+    1 -- while `config set budget.max_usd -5` refuses cleanly at exit 2. The
+    message named `budget.max_usd`, a key the operator never typed."""
+    from agent6.app._setup import BudgetOverrides  # pyright: ignore[reportPrivateUsage]
+    from agent6.config import Config, ConfigError
+
+    kwargs = {"max_usd": value} if flag == "--max-usd" else {"max_tokens_fallback": int(value)}
+    with pytest.raises(ConfigError, match=flag):
+        BudgetOverrides(**kwargs).apply(Config())  # pyright: ignore[reportArgumentType]
