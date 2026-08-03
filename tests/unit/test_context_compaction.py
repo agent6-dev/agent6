@@ -344,7 +344,7 @@ def test_call_label_identities() -> None:
     )
     assert call_label("grep", {"pattern": "needle"}) == "grep pattern 'needle'"
     assert call_label("list_dir", {"path": "src"}) == "list_dir src"
-    assert call_label("find_definition", {"name": "Foo"}) == "find_definition Foo"
+    assert call_label("find_definition", {"symbol": "Foo"}) == "find_definition Foo"
     assert call_label("frobnicate", {"x": 1}) == "frobnicate"
     assert call_label("frobnicate", None) == "frobnicate"
     assert call_label("", None) == ""

@@ -50,7 +50,7 @@ def find_definition(
     root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
 ) -> DefinitionsResult:
     args = FindDefinitionInput.model_validate(raw)
-    defs = ensure_index().find_definition(args.name)
+    defs = ensure_index().find_definition(args.symbol)
     out: list[dict[str, Any]] = []
     for s in defs:
         try:
@@ -66,7 +66,7 @@ def find_references(
     root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
 ) -> ReferencesResult:
     args = FindReferencesInput.model_validate(raw)
-    refs = ensure_index().find_references(args.name)
+    refs = ensure_index().find_references(args.symbol)
     out: list[dict[str, Any]] = []
     for r in refs:
         try:

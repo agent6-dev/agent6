@@ -442,23 +442,23 @@ class FindDefinitionInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Find every declaration site of an identifier (function / class / "
         "struct / enum / type alias) across the project. Returns matches as "
-        "(file path, line, kind). Tree-sitter backed; matches by exact name "
-        "(not by type or scope). Common usage: locate where a symbol is "
+        "(file path, line, kind). Tree-sitter backed; matches by exact symbol "
+        "name (not by type or scope). Common usage: locate where a symbol is "
         "defined before reading its file. Cheaper than `grep 'def foo'` "
         "because it excludes occurrences in strings, comments, and other "
         "identifier-shaped tokens that happen to share the name."
     )
 
-    name: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
 
 
 class FindReferencesInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_references"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Find every identifier occurrence of `name` across the project, "
+        "Find every identifier occurrence of `symbol` across the project, "
         "including the definition site itself. Tree-sitter backed: matches "
         "inside strings and comments are excluded - vastly cleaner than "
-        "plain `grep <name>`. Use this to enumerate all call sites of a "
+        "plain `grep <symbol>`. Use this to enumerate all call sites of a "
         "function before renaming it or changing its signature. Caveat: "
         "this is text-level identifier matching, NOT semantic resolution. "
         "Unrelated `foo`s in unrelated scopes (e.g. a local var `foo` in "
@@ -466,7 +466,7 @@ class FindReferencesInput(_ToolInput):
         "be returned; disambiguate by inspecting the surrounding context."
     )
 
-    name: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
 
 
 class FindDefinitionLspInput(_ToolInput):

@@ -40,19 +40,19 @@
   {
     "name": "find_definition",
     "required": [
-      "name"
+      "symbol"
     ],
     "properties": {
-      "name": "string"
+      "symbol": "string"
     }
   },
   {
     "name": "find_references",
     "required": [
-      "name"
+      "symbol"
     ],
     "properties": {
-      "name": "string"
+      "symbol": "string"
     }
   },
   {

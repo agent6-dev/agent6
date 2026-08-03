@@ -1067,9 +1067,9 @@ def test_nav_tools_report_one_based_lines_matching_grep(tmp_path: Path) -> None:
     assert outline["Bar"]["line"] == 3
     assert outline["foo"]["line"] == 1
     assert outline["foo"]["col"] == 5  # "foo" starts at the 5th character of "def foo():"
-    defs = d.dispatch("find_definition", {"name": "Bar"}).to_wire()["definitions"]
+    defs = d.dispatch("find_definition", {"symbol": "Bar"}).to_wire()["definitions"]
     assert [x["line"] for x in defs] == [3]
-    refs = d.dispatch("find_references", {"name": "foo"}).to_wire()["references"]
+    refs = d.dispatch("find_references", {"symbol": "foo"}).to_wire()["references"]
     assert sorted(r["line"] for r in refs) == [1, 5]  # definition + call
 
 
@@ -1092,7 +1092,7 @@ def test_find_definition_returns_relative_paths(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def target():\n    pass\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("find_definition", {"name": "target"}).to_wire()
+    out = d.dispatch("find_definition", {"symbol": "target"}).to_wire()
     assert len(out["definitions"]) == 1
     assert out["definitions"][0]["path"] == "a.py"
     assert out["definitions"][0]["kind"] == "function"
@@ -1102,7 +1102,7 @@ def test_find_references_returns_relative_paths(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nfoo()\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("find_references", {"name": "foo"}).to_wire()
+    out = d.dispatch("find_references", {"symbol": "foo"}).to_wire()
     # Definition + call
     assert len(out["references"]) == 2
     assert all(r["path"] == "a.py" for r in out["references"])
@@ -1113,8 +1113,8 @@ def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     # Prime the index
-    assert d.dispatch("find_definition", {"name": "foo"}).to_wire()["definitions"]
-    assert d.dispatch("find_definition", {"name": "bar"}).to_wire()["definitions"] == []
+    assert d.dispatch("find_definition", {"symbol": "foo"}).to_wire()["definitions"]
+    assert d.dispatch("find_definition", {"symbol": "bar"}).to_wire()["definitions"] == []
     # Edit the file via the tool layer.
     d.dispatch(
         "apply_edit",
@@ -1129,8 +1129,8 @@ def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
             ],
         },
     )
-    assert d.dispatch("find_definition", {"name": "bar"}).to_wire()["definitions"]
-    assert d.dispatch("find_definition", {"name": "foo"}).to_wire()["definitions"] == []
+    assert d.dispatch("find_definition", {"symbol": "bar"}).to_wire()["definitions"]
+    assert d.dispatch("find_definition", {"symbol": "foo"}).to_wire()["definitions"] == []
 
 
 def test_new_index_tools_listed_in_available(tmp_path: Path) -> None:

@@ -72,7 +72,7 @@ def call_label(tool_name: str, tool_input: Any) -> str:
     elif tool_name in ("list_dir", "outline"):
         hint = str(tool_input.get("path", ""))
     elif tool_name in ("find_definition", "find_references"):
-        hint = str(tool_input.get("name", ""))
+        hint = str(tool_input.get("symbol", ""))
     if len(hint) > _ELISION_HINT_MAX_CHARS:
         hint = hint[:_ELISION_HINT_MAX_CHARS] + "..."
     return f"{tool_name} {hint}".rstrip()
