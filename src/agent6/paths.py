@@ -207,7 +207,11 @@ def state_base(user: RealUser | None = None) -> Path:
 # recognisable. The hash is what actually keeps two workspaces apart: `/a/b/c`
 # and `/a/b-c` flatten to the same string, and sharing state between them would
 # be far worse than an unreadable name.
-_ID_PATH_MAX = 100
+# The filesystem limit is 255 BYTES per component, and a path of CJK or emoji
+# runs 3-4 bytes per character -- capping characters produced 271-byte names
+# that failed to create with ENAMETOOLONG. Budget bytes, leaving room for the
+# hash and its separator.
+_ID_BYTES_MAX = 100
 _ID_HASH_LEN = 6
 
 
@@ -221,12 +225,30 @@ def repo_id(repo_root: Path) -> str:
     """
     real = repo_root.resolve()
     digest = hashlib.sha256(str(real).encode("utf-8")).hexdigest()[:_ID_HASH_LEN]
-    flat = str(real).strip("/").replace("/", "-")
-    if len(flat) > _ID_PATH_MAX:
-        head, tail = _ID_PATH_MAX // 3, _ID_PATH_MAX - _ID_PATH_MAX // 3 - 2
-        flat = f"{flat[:head]}--{flat[-tail:]}"
+    flat = str(real).strip("/").replace("/", "-").lstrip(".")
+    if len(flat.encode()) > _ID_BYTES_MAX:
+        head, tail = _ID_BYTES_MAX // 3, _ID_BYTES_MAX - _ID_BYTES_MAX // 3 - 2
+        flat = f"{_head_bytes(flat, head)}--{_tail_bytes(flat, tail)}"
     # A leading dot would hide the state dir from a plain `ls`.
-    return f"{flat.lstrip('.') or 'root'}-{digest}"
+    return f"{flat or 'root'}-{digest}"
+
+
+def _head_bytes(s: str, limit: int) -> str:
+    """The longest prefix of *s* fitting in *limit* bytes, never splitting a
+    character (a half-encoded one would not round-trip)."""
+    return s.encode()[:limit].decode(errors="ignore")
+
+
+def _tail_bytes(s: str, limit: int) -> str:
+    """The longest suffix of *s* fitting in *limit* bytes, never splitting a
+    character."""
+    raw = s.encode()[-limit:]
+    while raw:
+        try:
+            return raw.decode()
+        except UnicodeDecodeError:
+            raw = raw[1:]
+    return ""
 
 
 def state_dir(repo_root: Path, base_override: str | None = None) -> Path:

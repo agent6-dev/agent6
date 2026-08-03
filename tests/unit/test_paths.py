@@ -66,13 +66,24 @@ def test_repo_id_separates_paths_that_flatten_alike(tmp_path: Path) -> None:
     assert paths.repo_id(nested) != paths.repo_id(dashed)
 
 
-def test_repo_id_stays_a_usable_directory_name(tmp_path: Path) -> None:
-    """A deep workspace must not produce a name the filesystem refuses (255
-    bytes per component) or one `ls` hides."""
-    deep = tmp_path.joinpath(*[f"segment{i}" for i in range(30)])
+@pytest.mark.parametrize(
+    "segment",
+    [
+        "segment",  # ASCII, 1 byte per char
+        "日本語のディレクトリ名",  # 3 bytes per char
+        "🚀🚀🚀🚀🚀",  # 4 bytes per char
+        "ünïcödé-àccénts",  # 2 bytes per char
+    ],
+)
+def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> None:
+    """The filesystem limit is 255 BYTES per component. Capping CHARACTERS gave
+    a 271-byte name for a CJK path, and every state-dir command died with an
+    unhandled ENAMETOOLONG."""
+    deep = tmp_path.joinpath(*[f"{segment}{i}" for i in range(30)])
     deep.mkdir(parents=True)
     rid = paths.repo_id(deep)
     assert len(rid.encode()) < 255
+    assert rid == rid.encode().decode()  # no character was split in half
     (tmp_path / rid).mkdir()  # the real filesystem accepts it
 
 
