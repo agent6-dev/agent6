@@ -51,6 +51,7 @@ from agent6.prompts.revision import (
     PINS_NO_RESTATE_CLAUSE,
     PROMPT_REVISION_SYSTEM_PROMPT,
     context_restart_notice,
+    progress_summary_from_notice,
 )
 from agent6.providers import (
     Provider,
@@ -3319,9 +3320,25 @@ class Workflow:
         if state.pins:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
             pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
+        # The previous restart's summary rides at the HEAD of the post-restart
+        # history and the transcript above is tail-clipped, so it was dropped
+        # first: the new summary then started at the last restart while the
+        # preamble promised the worker everything was captured. Carry it
+        # out-of-band, like pins.
+        prior_req = ""
+        for turn in conversation.turns:
+            for item in getattr(turn, "items", ()):
+                if isinstance(item, Notice) and (prior := progress_summary_from_notice(item.text)):
+                    prior_req = (
+                        "\n\nThis conversation was ALREADY compacted; the summary from"
+                        " that restart follows, and the transcript below covers only what"
+                        " happened SINCE. Carry anything still relevant into the new"
+                        f" summary:\n{prior}"
+                    )
         user_msg = (
             "Summarise the following agent transcript for a context restart."
-            f"{checkoff_req}{focus_req}{pins_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
+            f"{checkoff_req}{focus_req}{pins_req}{prior_req}"
+            f"\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
         self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(conversation)} msgs)")
         self._emit("loop.compact.summarise.call", messages=len(conversation))

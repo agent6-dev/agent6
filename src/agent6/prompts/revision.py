@@ -117,6 +117,22 @@ PINS_NO_RESTATE_CLAUSE = (
 )
 
 
+def progress_summary_from_notice(text: str) -> str:
+    """The progress summary a restart notice carries, or "" if *text* is not one.
+
+    Parser beside the builder so the two cannot drift. Used to carry the prior
+    restart's summary into the NEXT summariser request out-of-band: it sits at
+    the head of the post-restart history, and the summariser's transcript is
+    tail-clipped, so it was the first thing dropped -- the second summary then
+    began at the first restart, while the preamble told the worker everything
+    it had done was captured below.
+    """
+    if not text.startswith(_CONTEXT_RESTART_HEAD[:40]):
+        return ""
+    _, sep, tail = text.partition("PROGRESS SUMMARY:\n")
+    return tail.strip() if sep else ""
+
+
 def context_restart_notice(
     mode: Literal["run", "plan", "ask", "machine", "agent"],
     pins: Sequence[str] = (),

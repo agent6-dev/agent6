@@ -5944,3 +5944,35 @@ def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: Path) 
     assert res is not None
     assert res.reason == "steer_abort"
     assert "worktree left dirty" in res.summary
+
+
+def test_a_second_restart_carries_the_first_summary_forward() -> None:
+    """The prior restart's summary rides at the HEAD of the post-restart history
+    and the summariser's transcript is tail-clipped, so it was the first thing
+    dropped: the second summary began at the first restart while the preamble
+    told the worker everything it had done was captured below. It must reach the
+    summariser out-of-band, like pins."""
+    from agent6.prompts.revision import context_restart_notice
+
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("second summary")
+    wf = _wf(
+        summariser_provider=summariser,
+        compact_drop_at_chars=10**9,
+        compact_summarise_at_chars=10**9,
+        compact_requested=lambda: "",
+    )
+    # A conversation that already carries one restart, then plenty of new work
+    # so the tail clip has something to prefer over the notice.
+    restart = context_restart_notice("run") + "SUMMARY-1: found the parser bug in a.md"
+    history: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]},
+        {"role": "user", "content": [{"type": "text", "text": restart}]},
+    ]
+    # Enough work since that restart to overflow the summariser's 60k tail
+    # clip -- which is exactly when the notice at the head gets dropped.
+    history += _long_history(120)[1:]
+
+    assert _compact_via_wire(wf, history) is True
+    sent = str(summariser.call.call_args)
+    assert "SUMMARY-1" in sent, "the first restart's summary never reached the summariser"
