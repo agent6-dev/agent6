@@ -442,3 +442,23 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     ok2, msg2 = actions.answer_question(tmp_path, "dead-run-A1", "q-1", ["yes"])
     assert ok2 is False and "not live" in msg2
     assert sorted(p.name for p in run_dir.iterdir()) == before, "nothing may be written"
+
+
+def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:
+    """The newest state dir of a parked or dead machine is a FINISHED agent state
+    whose loop has exited, so a marker written there is polled by nobody. steer
+    already refused; approve and answer reported {"ok": true, "answered"} and the
+    prompt box never cleared, so the operator had every reason to think it landed."""
+    from agent6.ui.web import actions
+
+    inst = resolved_state_dir(tmp_path) / "machines" / "dead"
+    (inst / "states" / "0001-work").mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text("machine = 'x'\n", encoding="utf-8")
+    (inst / "journal.jsonl").write_text("", encoding="utf-8")
+    (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
+    (inst / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
+
+    ok, msg = actions.machine_approve(tmp_path, "dead", "approval-1", True)
+    assert ok is False and "not running" in msg
+    ok, msg = actions.machine_answer(tmp_path, "dead", "q-1", ["yes"])
+    assert ok is False and "not running" in msg

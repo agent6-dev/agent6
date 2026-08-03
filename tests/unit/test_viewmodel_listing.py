@@ -14,6 +14,7 @@ from agent6.viewmodel import (
     is_run_husk,
     is_winner,
     run_compare,
+    run_is_live,
     run_mtime,
     summarize_run_dir,
     task_snippet,
@@ -238,6 +239,61 @@ def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Pat
     rd = _write_run(tmp_path, "runs", "r4", [{"type": "run.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     assert summarize_run_dir(rd, stale_after_s=0.0).status == "running"
+
+
+def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path) -> None:
+    """A finished run whose worker.pid survives into teardown is NOT live: the
+    loop has exited, so a steer/compact/answer marker written now is read by
+    nobody. run_is_live must fold the log facts; fed empty facts it degenerates
+    to worker_is_alive under a new name (the exact question it exists to
+    replace) and called this run "starting"."""
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert run_is_live(rd) is False
+
+
+def test_run_is_live_waiting_on_an_answer_is_live(tmp_path: Path) -> None:
+    # Blocked on an unanswered approval with a live worker: the answer WILL be
+    # read, so the prompt buttons and the composer stay live.
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
+        ],
+    )
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert run_is_live(rd) is True
+
+
+def test_run_is_live_dead_worker_is_not_live(tmp_path: Path) -> None:
+    rd = _write_run(tmp_path, "runs", "r1", [{"type": "run.start", "mode": "run"}])
+    (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max
+    assert run_is_live(rd) is False
+
+
+def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
+    # A parked submission or fork --no-run dir: nothing polls markers -> not
+    # live (resume is the offer). A launching worker (pid, no events yet) is.
+    rd = tmp_path / "runs" / "parked"
+    rd.mkdir(parents=True)
+    (rd / "manifest.json").write_text(
+        json.dumps({"version": 2, "parked_task": "queued work"}), encoding="utf-8"
+    )
+    assert run_is_live(rd) is False
+    live = _write_run(tmp_path, "runs", "launching", [])
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert run_is_live(live) is True
 
 
 def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:

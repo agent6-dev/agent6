@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.listing import (
+    LIVE_STATUS_WORDS,
     OPERATOR_PROMPT_EVENTS,
     LogScan,
     RunSummary,
@@ -36,6 +37,7 @@ from agent6.viewmodel.listing import (
     is_winner,
     newest_run_dir,
     run_compare,
+    run_is_live,
     run_mtime,
     scan_run_log,
     status_for_run_dir,
@@ -84,6 +86,7 @@ from agent6.viewmodel.transcript import (
 )
 
 __all__ = [
+    "LIVE_STATUS_WORDS",
     "MAX_LOG_TAIL",
     "OPERATOR_PROMPT_EVENTS",
     "ApprovalPrompt",
@@ -124,6 +127,7 @@ __all__ = [
     "notification_key",
     "read_complete_lines",
     "run_compare",
+    "run_is_live",
     "run_mtime",
     "run_state_as_dict",
     "run_status_label",

@@ -42,7 +42,7 @@ from agent6.ui.spawn import (
     spawn_detached_resume,
 )
 from agent6.ui.web import model
-from agent6.viewmodel import newest_state_log
+from agent6.viewmodel import newest_state_log, run_is_live
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
@@ -196,7 +196,7 @@ def approve(
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
         # The prompt box outlives the worker (it clears on the answer event,
         # which a dead run will never emit), so refuse like every sibling
         # action: nothing would consume the answer, and the next resume drops
@@ -215,7 +215,7 @@ def answer_question(
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
         return False, "run is not live"  # see approve()
     write_question_answers(run_dir, question_id, answers)
     return True, "answered"
@@ -228,7 +228,7 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
         # A crashed run folds as unfinished, so the composer still offers
         # steer; nothing would ever read the marker (and the next resume
         # deletes it), so refuse like the stop/compact siblings.
@@ -252,7 +252,7 @@ def resume_run(cwd: Path, run_id: str, text: str = "") -> tuple[bool, str]:
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if worker_is_alive(run_dir):
+    if run_is_live(run_dir):
         return False, "run is still live; steer it instead"
     err = spawn_detached_resume(cwd, run_dir.name, steer=text)
     return (err == ""), (err or "resuming")
@@ -265,7 +265,7 @@ def stop_after_step(cwd: Path, run_id: str) -> tuple[bool, str]:
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
         return False, "run is not live"
     request_stop(run_dir)
     return True, "stopping after the current step"
@@ -276,7 +276,7 @@ def compact_run(cwd: Path, run_id: str) -> tuple[bool, str]:
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
         return False, "run is not live"
     if not request_compact(run_dir):
         return False, "could not write the compaction request"
@@ -336,6 +336,15 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
     return True, "poked"
 
 
+def _machine_is_live(cwd: Path, name: str) -> bool:
+    """Whether a machine can still receive an answer: its instance dir has a live
+    worker. Mirrors machine_steer -- the newest state dir of a parked or stopped
+    machine is a FINISHED agent state whose loop has exited, so a marker written
+    there is polled by nobody."""
+    machine_dir = model.machine_dir_for(cwd, name)
+    return machine_dir is None or worker_is_alive(machine_dir)
+
+
 def machine_approve(
     cwd: Path, name: str, prompt_id: str, approved: bool, *, session: bool = False, state: str = ""
 ) -> tuple[bool, str]:
@@ -344,6 +353,8 @@ def machine_approve(
     run_command in that state."""
     if _machine_has_ended(cwd, name):
         return False, f"machine {name!r} has ended; the prompt is closed"
+    if not _machine_is_live(cwd, name):
+        return False, f"machine {name!r} is not running; poke it to wake a waiting machine"
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
@@ -360,6 +371,8 @@ def machine_answer(
     from (``state``; newest when absent). One answer per question, by index."""
     if _machine_has_ended(cwd, name):
         return False, f"machine {name!r} has ended; the prompt is closed"
+    if not _machine_is_live(cwd, name):
+        return False, f"machine {name!r} is not running; poke it to wake a waiting machine"
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
@@ -372,12 +385,7 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     absent). Same contract as a run steer."""
     if _machine_has_ended(cwd, name):
         return False, f"machine {name!r} has ended; there is no state to steer"
-    machine_dir = model.machine_dir_for(cwd, name)
-    if machine_dir is not None and not worker_is_alive(machine_dir):
-        # The newest state dir of a parked or stopped machine is a FINISHED
-        # agent state whose loop has exited, so nothing would ever poll the
-        # marker: refuse like the run steer does instead of reporting success
-        # and dropping the instruction. A parked machine takes `poke`.
+    if not _machine_is_live(cwd, name):
         return False, (
             f"machine {name!r} is not running, so no agent state would read a steer"
             " (poke it to wake a waiting machine)"

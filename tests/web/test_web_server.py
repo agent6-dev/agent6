@@ -427,7 +427,7 @@ def test_machine_answer_writes_to_per_state_dir(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    _inst, state = _make_machine_with_state(tmp_path, "asker", "0003-classify")
+    _inst, state = _make_machine_with_state(tmp_path, "asker", "0003-classify", running=True)
     status, body = _post(
         port, "/api/machine/asker/answer", {"id": "question-1", "answers": ["yes"]}
     )
@@ -1038,7 +1038,7 @@ def test_machine_answer_routes_to_named_state_not_newest(
     _srv, port = server
     # Two agent states, each with its own approval-1. The operator was shown the
     # OLDER state's prompt; the machine has since advanced to a newer state.
-    inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work")
+    inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work", running=True)
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
     (new_state / "logs.jsonl").write_text("", encoding="utf-8")
@@ -1057,7 +1057,7 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    inst, _old = _make_machine_with_state(tmp_path, "adv2", "0001-work")
+    inst, _old = _make_machine_with_state(tmp_path, "adv2", "0001-work", running=True)
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
     (new_state / "logs.jsonl").write_text("", encoding="utf-8")

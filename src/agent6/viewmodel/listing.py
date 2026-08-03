@@ -272,6 +272,31 @@ def died_without_end(status: str) -> bool:
     return status in _DIED_WITHOUT_END
 
 
+# Status words for a run that can still receive operator input over the file
+# bridge. Anything else (parked/created: never started, stale: worker gone, and
+# every end word) means a surface must offer resume instead -- a steer or answer
+# marker there is read by nobody.
+LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
+
+
+def run_is_live(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
+    """Whether the operator can still act on this run: THE affordance question.
+
+    Surfaces asked ``worker_is_alive`` instead, which answers "is a pid running",
+    not "will anything read what I write" -- so a parked run offered no controls
+    though it resumes, and a run whose worker died kept live-looking Approve /
+    Deny / Send buttons whose answers nobody would ever poll. Deriving it from
+    the status word means a surface cannot disagree with the label it is showing.
+
+    Folds the log for the same facts the listings feed the decision: fed empty
+    facts this degenerates to the pid probe it replaces, and a finished run
+    whose worker.pid lingers through teardown counted as "starting".
+    """
+    logs = run_dir / "logs.jsonl"
+    facts = scan_run_log(logs).status_facts() if logs.is_file() else StatusFacts()
+    return status_for_run_dir(run_dir, facts, stale_after_s=stale_after_s)[0] in LIVE_STATUS_WORDS
+
+
 @dataclass(frozen=True, slots=True)
 class LogScan:
     """One tolerant pass over a run's ``logs.jsonl``: the shared scan behind the

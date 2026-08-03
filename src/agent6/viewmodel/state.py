@@ -21,13 +21,12 @@ from typing import Any, Literal
 
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
-from agent6.viewmodel.listing import StatusFacts, status_for_run_dir, status_word
-
-# Status words for a run that can still receive operator input over the file
-# bridge. Anything else (parked/created: never started, stale: worker gone, and
-# every end word) means a surface must offer resume instead -- a steer or stop
-# marker there is read by nobody.
-LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
+from agent6.viewmodel.listing import (
+    LIVE_STATUS_WORDS,
+    StatusFacts,
+    status_for_run_dir,
+    status_word,
+)
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
