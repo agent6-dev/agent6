@@ -624,6 +624,13 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = "; ".join(parts)
         case "loop.compact.summarise.done":
             salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
+        case "loop.compact.summarise.failed" | "loop.compact.gist.failed":
+            # The reason is the load-bearing field, as on a failed role.result:
+            # without it a 429'd summariser reads as nothing having happened.
+            salient = str(event.get("error", ""))[:160]
+        case "loop.compact.requested":
+            focus = str(event.get("focus", ""))
+            salient = f"focus: {focus[:120]}" if focus else "no focus"
         case "loop.resume.start":
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":

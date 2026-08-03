@@ -22,6 +22,21 @@ from agent6.viewmodel.state import (
 )
 
 
+def test_format_log_line_keeps_the_compaction_reason() -> None:
+    """A failed compaction carries its reason in `error`; with no case for these
+    types the log view printed the bare event name and dropped it, so a 429'd
+    summariser read as nothing having happened. The operator's /compact focus
+    was invisible for the same reason."""
+    failed = format_log_line(
+        {"type": "loop.compact.summarise.failed", "error": "provider 429: rate limited"}
+    )
+    assert "429" in failed
+    gist = format_log_line({"type": "loop.compact.gist.failed", "error": "boom"})
+    assert "boom" in gist
+    requested = format_log_line({"type": "loop.compact.requested", "focus": "keep the auth work"})
+    assert "keep the auth work" in requested
+
+
 def test_format_log_line_tool_result_appends_output_tail() -> None:
     """An execution tool's tool.result line shows a one-line stderr/stdout hint
     (full tail is in the event), while a plain result stays summary-only."""
