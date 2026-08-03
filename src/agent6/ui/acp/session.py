@@ -101,7 +101,16 @@ class Sessions:
 
         session.turn_live = True
         session.thread = threading.Thread(target=_work, name=f"acp-{session.id}", daemon=True)
-        session.thread.start()
+        try:
+            session.thread.start()
+        except RuntimeError:
+            # Set before starting on purpose (the worker clears it), so a
+            # thread that never ran left the session refusing every later
+            # prompt as busy -- and EOF joining an unstarted thread raised out
+            # of the read loop.
+            session.turn_live = False
+            session.thread = None
+            raise
 
     def wait_for_turns(self, *, timeout_s: float) -> None:
         """Let live turns finish before the process goes.

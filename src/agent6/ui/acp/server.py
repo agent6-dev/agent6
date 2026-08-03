@@ -205,6 +205,11 @@ class ACPServer:
     def _deliver(self, req_id: object, message: dict[str, Any]) -> bool:
         """Hand a client response to whoever is waiting for it. True if it was
         ours."""
+        if "result" not in message and "error" not in message:
+            # A JSON-RPC response carries one or the other. Without this, any
+            # malformed frame that happened to carry an outstanding id became
+            # that approval's answer -- and an unreadable answer denies.
+            return False
         with self._pending_lock:
             slot = self._pending.pop(req_id, None)
         if slot is None:

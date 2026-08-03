@@ -26,7 +26,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from agent6.app.reporter import Reporter
 from agent6.app.run import FrontendCapabilities, run_task
@@ -113,6 +113,20 @@ def stop_reason(code: int) -> StopReason:
     return "end_turn" if code == 0 else "refusal"
 
 
+def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
+    """The option the editor chose, or None for no usable answer.
+
+    Only an option we offered: a cancel, a timeout and an echoed string are all
+    "no answer", and an unknown string could otherwise become an "allow" by
+    prefix.
+    """
+    outcome = answer.get("outcome")
+    if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
+        return None
+    chosen = outcome.get("optionId")
+    return chosen if isinstance(chosen, str) and chosen in options else None
+
+
 @dataclass
 class RunBridge:
     """Runs prompts for one ACP connection."""
@@ -163,13 +177,26 @@ class RunBridge:
             },
             timeout_s=PERMISSION_TIMEOUT_S,
         )
-        outcome = answer.get("outcome")
-        if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
-            return None  # cancelled, timed out, or an answer we cannot read
-        chosen = outcome.get("optionId")
-        # Only an option we offered. An editor that echoes something else is
-        # not choosing, and an unknown string could become an "allow" by prefix.
-        return chosen if isinstance(chosen, str) and chosen in options else None
+        chosen = _selected(answer, options)
+        # `toolCall` is required on a permission request, so the ask announces
+        # one -- and an entity ACP models as having a lifecycle needs its end.
+        # Without this an editor kept one pending tool call per approval, for
+        # the life of the session.
+        self.server.notify_raw(
+            {
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session.id,
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": tool_call_id,
+                        "status": "completed" if chosen else "failed",
+                    },
+                },
+            }
+        )
+        return chosen
 
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to say anything of its own."""

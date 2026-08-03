@@ -212,3 +212,19 @@ def test_a_tool_still_running_is_not_reported_finished() -> None:
     live = TranscriptItem(kind="tool", name="run_command", arg="sleep 60", ok=None)
     _call, outcome = updates_for(live, session_id="s")
     assert outcome["params"]["update"]["status"] == "in_progress"
+
+
+def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
+    """Unlike the CLI, the renderer here is a THIRD PARTY, so agent6 does not
+    get to assume it treats an escape as inert. The fold strips CSI from
+    `detail`/`tail` only -- OSC (the title / clipboard / hyperlink family)
+    survived and `body` was never scrubbed at all. Newlines and tabs are real
+    content and stay."""
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    hostile = "hi\x1b]0;pwned\x07 there\x1b[2J\nsecond\tline"
+    (update,) = updates_for(TranscriptItem(kind="text", body=hostile), session_id="s")
+    text = update["params"]["update"]["content"]["text"]
+    assert "\x1b" not in text and "\x07" not in text
+    assert "\nsecond\tline" in text, "real whitespace is content, not an escape"

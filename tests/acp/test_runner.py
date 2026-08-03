@@ -432,3 +432,40 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
     assert sent == [], "an unanswerable prompt was still shown"
     assert bridge.ask(session, "Theme?", ("dark", "light"), None) is None
     assert len(sent) == 1, "a question WITH options still goes out"
+
+
+def test_an_approval_closes_the_tool_call_it_announced() -> None:
+    """`toolCall` is required on a permission request, so an ask announces one.
+    ACP models a tool call as an entity with a lifecycle, so an editor kept one
+    PENDING entry per approval for the life of the session."""
+    sent: list[dict[str, Any]] = []
+    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "allow"}})
+    bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    session = session_mod.Session(id="s", cwd=Path("/x"))
+    assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
+    closes = [m for m in sent if m["params"]["update"]["sessionUpdate"] == "tool_call_update"]
+    assert len(closes) == 1 and closes[0]["params"]["update"]["status"] == "completed"
+
+
+def test_a_malformed_frame_cannot_answer_an_outstanding_approval() -> None:
+    """`_deliver` keyed on "has an id and no method", so any junk carrying an
+    outstanding id became that approval's answer -- and an unreadable answer
+    denies, so a stray frame could silently refuse a command."""
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    answered: list[dict[str, Any]] = []
+    asking = threading.Thread(
+        target=lambda: answered.append(
+            server.request("session/request_permission", {}, timeout_s=3)
+        ),
+        daemon=True,
+    )
+    asking.start()
+    for _ in range(100):
+        if server._pending:  # pyright: ignore[reportPrivateUsage]
+            break
+        threading.Event().wait(0.01)
+    req_id = next(iter(server._pending))  # pyright: ignore[reportPrivateUsage]
+    assert server._deliver(req_id, {"id": req_id}) is False  # pyright: ignore[reportPrivateUsage]
+    assert server._pending, "the slot was consumed by a non-response"  # pyright: ignore[reportPrivateUsage]
+    server.abandon_pending()
+    asking.join(timeout=5.0)
