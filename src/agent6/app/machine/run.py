@@ -136,6 +136,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     path: Path,
     frontend: MachineFrontend,
     *,
+    config_path: Path | None = None,
     exit_on_wait: bool = False,
     disable_sandbox: bool = False,
     auto_approve: bool = False,
@@ -194,7 +195,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # snapshot_keep never slips through to a pure machine. The agent/tool block
     # below adds the provider/sandbox checks only those state kinds need.
     try:
-        cfg = load_effective_with_overlay(cwd, spec.config).config
+        cfg = load_effective_with_overlay(cwd, spec.config, explicit_path=config_path).config
     except ConfigError as exc:
         reporter.err(f"ERROR: {exc}")
         return 2

@@ -640,10 +640,12 @@ Rules (all enforced at `machine check`):
 
 A machine file may carry an optional top-level `[config]` table: an
 ordinary agent6 config fragment that layers on top of the effective
-repo/global/default config for the duration of the machine run. It is
-the highest-precedence config layer (`machine[config]` < `--config`
-is *not* applicable here; the machine overlay wins over repo and
-global), and every knob `agent6 config show` lists is valid inside it.
+config for the duration of the machine run. The full stack is
+defaults < global < repo < `--config FILE` < the machine `[config]`
+overlay, so the overlay is the highest-precedence layer and the global
+`agent6 --config FILE machine run ...` flag layers under it like any
+other config file. Every knob `agent6 config show` lists is valid inside
+the overlay.
 
 ```toml
 [config.workflow]

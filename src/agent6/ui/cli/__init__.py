@@ -523,6 +523,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "run":
         return _cmd_machine_run(
             args.file,
+            config_path=args.config,
             exit_on_wait=args.exit_on_wait,
             disable_sandbox=args.dangerously_disable_sandbox,
             auto_approve=args.auto_approve,
