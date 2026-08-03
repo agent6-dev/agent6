@@ -341,16 +341,18 @@ def _revalidate_config(
     return None
 
 
-def _cmd_config_get(key: str, *, machine: Path | None) -> int:
+def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None) -> int:
     """Print a leaf's effective value + the layer that set it."""
     try:
         if machine is not None:
             overlay = read_toml_file(machine).get("config", {})
             eff = load_effective_with_overlay(
-                Path.cwd(), overlay if isinstance(overlay, dict) else {}
+                Path.cwd(),
+                overlay if isinstance(overlay, dict) else {},
+                explicit_path=config_path,
             )
         else:
-            eff = load_effective(Path.cwd(), None)
+            eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2

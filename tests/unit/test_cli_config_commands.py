@@ -309,3 +309,23 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     assert "cannot be unset on its own" in capsys.readouterr().err
     # The file is untouched: nothing was silently dropped or rewritten.
     assert cfg.read_text(encoding="utf-8") == "sandbox.protect_git = false\n"
+
+
+def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`--config FILE` reaches `config get`, not just `config show`.
+
+    `get` answered from the default/global stack while `show` reported the
+    flag layer, so the two config readers disagreed about the same leaf."""
+    explicit = iso / "x.toml"
+    explicit.write_text("[review]\nperiod = 77\n", encoding="utf-8")
+    assert _run(["--config", str(explicit), "config", "get", "review.period"]) == 0
+    out = capsys.readouterr().out
+    assert "review.period = 77" in out
+    assert "[flag]" in out
+
+
+def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
+    """A `--config` file that does not exist is refused, as `config show`
+    refuses it: answering from the defaults reports a value the named file
+    never set."""
+    assert _run(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2

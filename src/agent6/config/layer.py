@@ -520,15 +520,20 @@ def load_effective(
     return _effective_from_layers(layers, source="(merged config layers)")
 
 
-def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> EffectiveConfig:
+def load_effective_with_overlay(
+    repo_root: Path, overlay: dict[str, Any], *, explicit_path: Path | None = None
+) -> EffectiveConfig:
     """Like :func:`load_effective` but with *overlay* as the highest layer.
 
     Used by `agent6 machine run` to apply a machine file's ``[config]``
     table on top of the repo/global/default layers. The overlay is merged
     and validated exactly like a config file; its leaves are labelled
     ``machine`` in the provenance map (``config show`` style).
+
+    ``explicit_path`` is the global ``--config FILE`` layer, which sits under
+    the overlay like any other config file.
     """
-    layers = discover_layers(repo_root, None)
+    layers = discover_layers(repo_root, explicit_path)
     if overlay:
         _forbid_repo_state_dir("machine overlay", overlay)
         _forbid_layer_preset("machine overlay", overlay)
