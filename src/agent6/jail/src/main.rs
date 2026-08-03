@@ -288,12 +288,20 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 Some(""),
             )
             .map_err(io_err)?;
-            // Remount read-only.
+            // Remount read-only, with the same nosuid/nodev floor every other
+            // bind here carries: these are the mounts most likely to HOLD a
+            // setuid binary or a device node, so leaving them out made the
+            // "unconditional floor" the comments claim conditional.
             mount(
                 Some(""),
                 &dst,
                 Some(""),
-                MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY | MsFlags::MS_REC,
+                MsFlags::MS_BIND
+                    | MsFlags::MS_REMOUNT
+                    | MsFlags::MS_RDONLY
+                    | MsFlags::MS_NOSUID
+                    | MsFlags::MS_NODEV
+                    | MsFlags::MS_REC,
                 Some(""),
             )
             .map_err(io_err)?;
@@ -304,11 +312,15 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     // several hundred MB for stdlib artifacts -- at 64m `go test` died ENOSPC
     // and models burned budgets fighting the sandbox. 1g is a hard ceiling on
     // RAM-backed pages, not an allocation; a run that needs none uses none.
+    // nosuid/nodev, the floor the binds carry. NOT noexec: HOME lives here, so
+    // toolchains legitimately place and run helpers under it, and a child that
+    // can already execute from the workspace gains nothing from being stopped
+    // here -- that would be theatre, at the cost of real builds.
     mount(
         Some(""),
         &new_root.join("tmp"),
         Some("tmpfs"),
-        MsFlags::empty(),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Some("size=1g"),
     )
     .map_err(io_err)?;
@@ -352,7 +364,10 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         )
         .is_err()
         {
-            let _ = umount2(&dst, MntFlags::MNT_DETACH);
+            // If it can be neither made read-only nor dropped, the invariant
+            // cannot hold: refuse the run rather than proceed with a writable
+            // host tool dir inside the jail.
+            umount2(&dst, MntFlags::MNT_DETACH).map_err(io_err)?;
         }
     }
     // /proc — bind from host /proc (it's still our PID namespace's view from outside,
@@ -994,6 +1009,13 @@ fn apply_seccomp() -> io::Result<()> {
     const SYS_KEXEC_FILE_LOAD: i64 = 294;
     #[cfg(not(target_arch = "aarch64"))]
     const SYS_KEXEC_FILE_LOAD: i64 = libc::SYS_kexec_file_load;
+    // libc exposes the legacy umount as `umount` on some targets and not at all
+    // on others (aarch64 never had it), so name it: 22 on x86_64, absent
+    // elsewhere -- denying a number the arch does not implement costs nothing.
+    #[cfg(target_arch = "x86_64")]
+    const SYS_UMOUNT: i64 = 22;
+    #[cfg(not(target_arch = "x86_64"))]
+    const SYS_UMOUNT: i64 = libc::SYS_umount2; // no legacy umount on this arch
 
     let denied: &[i64] = &[
         libc::SYS_ptrace,
@@ -1001,7 +1023,10 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_process_vm_writev,
         libc::SYS_kcmp,
         libc::SYS_mount,
+        // Both spellings: syscall 22 is still `umount` on x86_64, and denying
+        // only the newer name left the older one reaching the same teardown.
         libc::SYS_umount2,
+        SYS_UMOUNT,
         libc::SYS_pivot_root,
         // Modern mount API (new_mount_api, Linux 5.2+). A strict jailed child
         // is userns-root with CAP_SYS_ADMIN over its own mount namespace and
