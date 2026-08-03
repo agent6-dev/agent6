@@ -73,6 +73,11 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
     The /dev nodes are the one exception, and by necessity: `nodev` means "do
     not interpret device special files", so a device node mounted nodev is
     unusable. They carry nosuid and noexec instead.
+
+    A bind inherits its SOURCE mount's flags, so on a host whose /tmp is already
+    nosuid this cannot distinguish an explicit floor from an inherited one. The
+    launcher sets the flags explicitly for that reason; probed on ext4, the
+    tool_paths mount came back `ro,relatime` without them.
     """
     from agent6.sandbox.jail import run_in_jail
     from agent6.types import JailPolicy
@@ -82,8 +87,22 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
         "    f = l.split(' - ')[0].split()\n"
         "    print(f[4], f[5])\n"
     )
+    # WITH the operator grants: a bare policy mounts none of them, and checking
+    # only what a bare policy mounts is how tool_paths and extra_ro_paths kept
+    # their gap through the sweep that was meant to close this class.
+    tool_dir, ro_dir = tmp_path / "tools", tmp_path / "ro"
+    tool_dir.mkdir()
+    ro_dir.mkdir()
+    (ro_dir / "f.txt").write_text("x", encoding="utf-8")
     res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("python3", "-c", probe),
+            isolation="strict",
+            tool_paths=(tool_dir,),
+            extra_ro_paths=(ro_dir,),
+            timeout_s=20.0,
+        )
     )
     rows = [ln.split() for ln in (res.stdout or "").strip().splitlines() if ln.split()]
     if not rows:

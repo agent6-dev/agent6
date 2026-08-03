@@ -360,6 +360,8 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             MsFlags::MS_BIND
                 | MsFlags::MS_REMOUNT
                 | MsFlags::MS_RDONLY
+                | MsFlags::MS_NOSUID
+                | MsFlags::MS_NODEV
                 | MsFlags::MS_REC
                 | carried_mount_flags(&dst),
             Some(""),
@@ -539,6 +541,8 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             MsFlags::MS_BIND
                 | MsFlags::MS_REMOUNT
                 | MsFlags::MS_RDONLY
+                | MsFlags::MS_NOSUID
+                | MsFlags::MS_NODEV
                 | MsFlags::MS_REC
                 | carried_mount_flags(&dst),
             Some(""),
