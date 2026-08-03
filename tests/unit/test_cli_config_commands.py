@@ -320,6 +320,21 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     assert cfg.read_text(encoding="utf-8") == "sandbox.protect_git = false\n"
 
 
+def test_add_rejects_a_value_masked_by_a_higher_layer(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config add` writes the whole new list through the same standalone value
+    check as `config set`: a repo overlay masking the leaf must not let a bad
+    global element land, to explode only once the mask is gone."""
+    assert _run(["config", "set", "--repo", "sandbox.fetch_hosts", '["ok.example"]']) == 0
+    capsys.readouterr()
+    rc = _refuse(["config", "add", "sandbox.fetch_hosts", "5"])
+    assert rc == 2
+    assert "fetch_hosts" in capsys.readouterr().err
+    gcfg = iso / "g" / "config.toml"
+    assert not gcfg.is_file() or "5" not in gcfg.read_text(encoding="utf-8")
+
+
 def test_set_warns_when_another_layer_is_still_broken(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

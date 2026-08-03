@@ -150,7 +150,9 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
             member.model_validate({"api_format": fmt, leaf: value})
             return None
         except ValidationError as exc:
-            leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] == (leaf,)]
+            # An error at the leaf OR anywhere inside its value (a bad list
+            # element reports at ("token_command", 0), a child loc) counts.
+            leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] and e["loc"][0] == leaf]
             if not leaf_errs:
                 return None
             errors.append(leaf_errs[0])
@@ -191,7 +193,9 @@ def written_value_error(key: str, value: object) -> str | None:
     identically. Rejects only when the error sits exactly at *key*, or at a
     parent of it for the schema's extra_forbidden (an unknown key or section),
     so a partial dynamic entry (a provider filled in over several sets) is not
-    falsely reverted."""
+    falsely reverted. An error UNDER *key* (a container's per-element loc,
+    ``sandbox.fetch_hosts.0``) is the written value's own and rejects too --
+    except a missing child, which only means the container is partial."""
     if key == "presets" or key.startswith("presets."):
         # [presets.*] is meta-config the loader strips BEFORE validation
         # (_apply_preset), so the Config schema forbids it by design; the
@@ -218,7 +222,12 @@ def written_value_error(key: str, value: object) -> str | None:
                 # loc), not the leaf; both deserve the same friendly message,
                 # not pydantic-speak or the merged-layer dump.
                 return unknown_key_error(key)
-            if loc == key:
+            if loc == key or loc.startswith(key + "."):
+                if err["type"] == "missing":
+                    # A missing child means the written container is PARTIAL;
+                    # another layer may complete it, and the merged
+                    # re-validation still catches a genuinely absent field.
+                    continue
                 msg = err["msg"]
                 if err["type"] == "bool_parsing":
                     msg = f"expected true or false, got {value!r}"

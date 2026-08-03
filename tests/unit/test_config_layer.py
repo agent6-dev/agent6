@@ -242,6 +242,19 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path)
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad base_url rolled back
 
 
+def test_written_value_error_catches_an_invalid_container_element() -> None:
+    """A container's per-element error sits UNDER the key
+    (`sandbox.fetch_hosts.0`), not at it: an error anywhere inside the written
+    value is the written value's own, else a masked bad list lands and explodes
+    only once the mask is gone."""
+    from agent6.config.write import written_value_error
+
+    assert written_value_error("sandbox.fetch_hosts", [5]) is not None
+    assert written_value_error("providers.x.token_command", [1]) is not None
+    assert written_value_error("sandbox.fetch_hosts", ["ok.example"]) is None
+    assert written_value_error("providers.x.token_command", ["gcloud"]) is None
+
+
 def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     """set_config_table writes a whole [table]; it must validate each LEAF, not the
     table dict as one. written_value_error only flags an error at loc == key, so a
