@@ -121,7 +121,7 @@ Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `R
 
 Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
-**MachineSpec** &mdash; A validated `.asm.toml` machine definition: budget, typed `schemas`, the named `states` graph, and an optional agent6 `[config]` overlay whose operator-only security tables (providers/sandbox/profiles) are refused so an untrusted machine file cannot weaken the sandbox.
+**MachineSpec** &mdash; A validated `.asm.toml` machine definition: budget, typed `schemas`, the named `states` graph, and an optional agent6 `[config]` overlay whose operator-only security policy is refused (see PROTECTED_OVERLAY_*) so an untrusted machine file cannot weaken the sandbox.
 
 | field | type | default |
 | --- | --- | --- |
