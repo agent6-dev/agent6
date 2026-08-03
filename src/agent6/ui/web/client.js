@@ -552,11 +552,11 @@ function makeComposer(id) {
     ta.disabled = busy;
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished) {
-      ta.placeholder = 'continue the run…';
-      hint.textContent = 'Enter resumes this run with the instruction (empty = just resume) · Shift+Enter newline';
+      ta.placeholder = 'continue this session…';
+      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline';
     } else {
-      ta.placeholder = 'steer the run… (/pin pins an instruction, /compact [focus] compacts)';
-      hint.textContent = 'Enter sends the instruction at the run’s next safe boundary · Shift+Enter newline';
+      ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Shift+Enter newline';
     }
   };
   const resume = async (text) => {
@@ -665,7 +665,7 @@ async function renderRun(id, opts, gen) {
   const prompts = el('div', 'page-pad'); app.appendChild(prompts); // approval/question boxes surface here
   const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
   const drawer = el('div', 'grid drawer');
-  const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; c.appendChild(el('h2', null, title)); const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
+  const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
   // Controls at the TOP so Stop stays reachable without scrolling; the Details
   // toggle folds the drawer away (persisted; default open on wide screens).
@@ -707,7 +707,9 @@ async function renderRun(id, opts, gen) {
   }
   app.appendChild(actions);
 
-  mk('head', opts.title || 'Run', ''); // status/summary leads the drawer
+  // The heading is where the MODE belongs; paintRun fills it in from the
+  // snapshot. A fixed word was right one time in three.
+  mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
@@ -871,6 +873,9 @@ function paintRun(cards, s) {
   }
   if (cards._composer) cards._composer.setState(s);
   // header
+  // The panel's own heading states the MODE, which is the fact that tells an
+  // operator what they are looking at -- and the one the fixed word denied.
+  if (cards._head_title && s.mode) cards._head_title.textContent = s.mode;
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };

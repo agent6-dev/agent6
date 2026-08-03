@@ -758,9 +758,14 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # client cannot show a different answer.
         d["policy"] = session_policy(session_dir).line()
         d["session_id"] = d["session_id"] or session_dir.name
-        if not d["user_task"]:
-            with contextlib.suppress(ManifestError):
-                d["user_task"] = read_manifest(session_dir).user_task
+        # The MODE is dir-backed identity too: without it a client cannot say
+        # WHAT it is showing, and the web session view headed every session
+        # "Run" -- right one time in three.
+        d["mode"] = d.get("mode") or ""
+        with contextlib.suppress(ManifestError):
+            manifest = read_manifest(session_dir)
+            d["user_task"] = d["user_task"] or manifest.user_task
+            d["mode"] = d["mode"] or manifest.mode
     else:
         # A genuinely dir-less stream (the machine reasoning snapshot): the fold
         # reads every unfinished state as "running"; only a run dir knows

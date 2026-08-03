@@ -249,9 +249,9 @@ def manifest_branches(session_dir: Path) -> dict[str, str]:
 
 
 def manifest_header(session_dir: Path) -> dict[str, Any]:
-    """Manifest-derived run-header fields the event fold doesn't carry: branch
-    facts (run/base/merged) and the fan-out compare outcome (rank/winner/
-    rationale). Merged into the SessionState snapshot by BOTH the one-shot
+    """Manifest-derived session-header fields the event fold doesn't carry:
+    branch facts (run/base/merged) and the fan-out compare outcome
+    (rank/winner/rationale). Merged into the SessionState snapshot by BOTH the one-shot
     `/api/session/<id>` and the SSE stream, so the header the page paints from can
     never drift between them. Empty for a run with no (readable) manifest."""
     header: dict[str, Any] = dict(manifest_branches(session_dir))
