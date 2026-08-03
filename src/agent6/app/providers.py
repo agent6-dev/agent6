@@ -338,13 +338,7 @@ def review_panel_configured(cfg: Config) -> bool:
     is set, we keep the legacy gating critic so a pre-panel before_finish/periodic
     config is not silently downgraded to the advisory panel."""
     rv = cfg.review
-    return (
-        bool(rv.seats)
-        or rv.panel_size != 1
-        or rv.decision != "advisory"
-        or bool(rv.personas)
-        or rv.tier != "diff"
-    )
+    return bool(rv.seats) or rv.decision != "advisory" or rv.tier != "diff"
 
 
 def build_review_seats(

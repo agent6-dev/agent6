@@ -240,21 +240,19 @@ The in-loop critic trigger plus the adversarial review panel (below).
 |---|---|---|
 | `trigger` | `"off"` | Trigger for the in-loop **adversarial review panel**: `off` / `on_verify_fail` / `before_finish` / `periodic`. |
 | `period` | `10` | Iterations between reviews when `trigger = "periodic"`. |
-| `panel_size` | `1` | Number of reviewer seats (personas cycled). |
-| `personas` | `[]` | Per-seat stances, e.g. `["security","correctness","tests"]`; empty = a built-in set. |
 | `decision` | `"advisory"` | `advisory` (inject findings, never blocks) / `veto` / `quorum` / `all`. Only gates in-loop. |
 | `quorum` | `2` | K for `quorum` (counts **distinct models**, so same-model seats can't fake a quorum). |
 | `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer that reads the broader repo to catch cross-file impact). |
 | `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
 | `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory (anti-stall). |
 | `budget_fraction` | `0.25` | Budget floor: skip the in-loop panel once the run's remaining budget falls below this fraction (reviewing costs most when budget is scarce); `0.25` = no in-loop reviews in the last quarter. |
-| `seats` | `[]` | Explicit `"persona@provider/model"` seats → **distinct models per seat** (overrides size/personas). A bare `"persona"` routes via `[models.reviewer]`. |
+| `seats` | `[]` | THE panel roster: `"persona"` seats route via `[models.reviewer]`; `"persona@provider/model"` pins a distinct model per seat. `agent6 review --reviewers N [--personas a,b,c]` synthesizes an in-memory equivalent. |
 
 ### Adversarial review panel
 
 When `trigger != "off"`, the in-loop second opinion is a **grounded review panel**:
-`panel_size` reviewers (the `reviewer` model, or distinct models via
-`seats`) each scrutinize the run's diff (+ the last verify result) and
+the `seats` roster (the `reviewer` model per bare persona, or distinct
+models per seat) each scrutinize the run's diff (+ the last verify result) and
 return structured findings. The same panel runs post-hoc, read-only, via
 `agent6 review --reviewers N [--personas a,b,c]`.
 
@@ -367,7 +365,6 @@ profile = "myteam"
 
 [profiles.myteam.review]
 trigger = "before_finish"
-panel_size = 3
 decision = "veto"
 seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]
 ```

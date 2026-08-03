@@ -193,11 +193,10 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     "ultra": {
         "review": {
             "trigger": "before_finish",
-            "panel_size": 3,
             # veto, not quorum: the 3 seats share one model (the gate counts one
             # block per DISTINCT model, so quorum>1 would be unreachable here).
             "decision": "veto",
-            "personas": ["security", "correctness", "tests"],
+            "seats": ["security", "correctness", "tests"],
             "concurrency": 3,  # seats in parallel: panel latency = slowest seat
         },
     },
@@ -205,10 +204,9 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     "paranoid": {
         "review": {
             "trigger": "before_finish",
-            "panel_size": 5,
             "decision": "veto",
             "tier": "explore",
-            "personas": [
+            "seats": [
                 "security",
                 "correctness",
                 "tests",

@@ -116,11 +116,11 @@ def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
     text = global_config_path().read_text(encoding="utf-8")
     assert "[sandbox]" not in text
     assert "[git]" in text  # untouched sibling section survives
-    _run(["config", "set", "git.auto_stash_pop", "true"])
+    _run(["config", "set", "git.run_repo_hooks", "true"])
     assert _run(["config", "unset", "git.auto_stash"]) == 0
     text = global_config_path().read_text(encoding="utf-8")
-    assert "[git]" in text  # still holds auto_stash_pop
-    assert "auto_stash_pop" in text and "auto_stash =" not in text
+    assert "[git]" in text  # still holds run_repo_hooks
+    assert "run_repo_hooks" in text and "auto_stash" not in text
 
 
 def test_set_preserves_sibling_keys(iso: Path) -> None:
@@ -209,7 +209,7 @@ def test_config_profiles_lists_builtins_and_user(
 ) -> None:
     (iso / "g").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "config.toml").write_text(
-        'profile = "ultra"\n\n[profiles.myteam.review]\npanel_size = 2\n', encoding="utf-8"
+        'profile = "ultra"\n\n[profiles.myteam.review]\nconcurrency = 2\n', encoding="utf-8"
     )
     assert _run(["config", "profiles"]) == 0
     out = capsys.readouterr().out
@@ -217,9 +217,9 @@ def test_config_profiles_lists_builtins_and_user(
         assert builtin in out
     assert "selected" in out  # ultra marked as the selection, with its source
     assert "global" in out
-    assert "review.panel_size = 3" in out  # ultra's contents are shown
+    assert "review.concurrency = 3" in out  # ultra's contents are shown
     assert "myteam" in out  # user profile listed with its contents
-    assert "review.panel_size = 2" in out
+    assert "review.concurrency = 2" in out
 
 
 def test_config_profiles_none_selected(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -236,12 +236,12 @@ def test_config_profiles_user_shadow_replaces_builtin(
     # show the user's contents (not the dead built-in's) and say so.
     (iso / "g").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "config.toml").write_text(
-        "[profiles.ultra.review]\npanel_size = 9\n", encoding="utf-8"
+        "[profiles.ultra.review]\nconcurrency = 9\n", encoding="utf-8"
     )
     assert _run(["config", "profiles"]) == 0
     out = capsys.readouterr().out
-    assert "review.panel_size = 9" in out
-    assert "review.panel_size = 3" not in out  # the built-in body is dead, not shown
+    assert "review.concurrency = 9" in out
+    assert "review.concurrency = 3" not in out  # the built-in body is dead, not shown
     assert "replaces the built-in" in out
 
 

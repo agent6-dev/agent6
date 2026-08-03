@@ -631,8 +631,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg,
                 transcript_sink=transcript_sink,
                 budget=budget,
-                n=cfg.review.panel_size,
-                personas=cfg.review.personas,
+                n=1,
             )
             if cfg.review.trigger != "off" and review_panel_configured(cfg)
             else []

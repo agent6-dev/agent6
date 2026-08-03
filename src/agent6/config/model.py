@@ -787,15 +787,12 @@ class ReviewConfig(BaseModel):
     # ``[models.reviewer]`` (same one ``agent6 review`` uses).
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
     period: int = Field(ge=1, default=10)
-    # Adversarial review panel (opt-in). Shared by `agent6 review --reviewers N`
-    # and, once validated, the in-loop critic trigger. ``decision`` is only
-    # a GATE in-loop; "advisory" (default) just injects findings as guidance and
-    # never blocks. ``seats`` (flat "persona@provider/model" strings, e.g.
-    # "security@openrouter/moonshotai/kimi-k2") overrides size/personas for
-    # distinct models per seat; empty = ``panel_size`` seats on the
-    # ``reviewer`` model with ``personas`` cycled across them.
-    panel_size: int = Field(ge=1, default=1)
-    personas: tuple[str, ...] = ()
+    # Adversarial review panel (opt-in). ``seats`` is THE roster: flat
+    # "persona[@provider/model]" strings (e.g. "security" routes via
+    # [models.reviewer]; "security@openrouter/moonshotai/kimi-k2" pins a
+    # model). The `agent6 review --reviewers N`/`--personas` flags synthesize
+    # an in-memory equivalent. ``decision`` is only a GATE in-loop; "advisory"
+    # (default) just injects findings as guidance and never blocks.
     decision: Literal["advisory", "veto", "quorum", "all"] = "advisory"
     quorum: int = Field(ge=1, default=2)
     # Per-run cap on total panel blocks before the gate auto-downgrades to
