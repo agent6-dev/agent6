@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import functools
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import (
@@ -21,7 +24,6 @@ from agent6.config.write import PROVIDER_DEFAULTS
 from agent6.ui.cli._common import (
     _machines_dir,
     _plans_dir,
-    _runs_dir,
     _state_dir,
     session_bucket_dirs,
 )
@@ -29,22 +31,45 @@ from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 
 
+def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
+    """Suggestions or nothing -- never an exception.
+
+    argcomplete calls these on Tab, inside the operator's shell, where an
+    exception is a traceback dumped over the command line. Every completer that
+    touches the config or the filesystem wears this, instead of each growing
+    its own try/except and several never growing one.
+    """
+
+    @functools.wraps(fn)
+    def guarded(*args: Any, **kwargs: Any) -> list[str]:
+        try:
+            return fn(*args, **kwargs)
+        except (OSError, ConfigError, ValueError):
+            return []
+
+    return guarded
+
+
+@_never_raises
 def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: connected provider names + known presets."""
     names = set(_connected_providers(None)) | set(PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
 
 
+@_never_raises
 def _complete_presets(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: built-in presets + configured [presets.*] names."""
     return [n for n in available_preset_names(Path.cwd()) if n.startswith(prefix)]
 
 
+@_never_raises
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: installed + extra_dirs skill names."""
     return [n for n in resolved_skill_names_for_completion(Path.cwd()) if n.startswith(prefix)]
 
 
+@_never_raises
 def _complete_models(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
@@ -69,6 +94,7 @@ def _all_parallel_model_names() -> list[str]:
     return sorted(set(_models_for(None, worker.provider)))
 
 
+@_never_raises
 def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
     """argcomplete for `run --parallel`: the worker provider's model ids,
     completing the token after the last comma so a `m1,m2,...` list completes
@@ -108,6 +134,7 @@ def _user_preset_names() -> list[str]:
         return []
 
 
+@_never_raises
 def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: known dotted config leaf paths (effective + enum keys).
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
@@ -133,6 +160,7 @@ _EXTRA_BODY_RECIPES: tuple[str, ...] = (
 )
 
 
+@_never_raises
 def _complete_config_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
@@ -146,6 +174,7 @@ def _complete_config_values(
     return [v for v in choices if v.startswith(prefix)]
 
 
+@_never_raises
 def _complete_model_provider(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
@@ -162,6 +191,7 @@ def _complete_model_provider(
     return _complete_providers(prefix)
 
 
+@_never_raises
 def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: ids across every session bucket (runs, asks, machine
     drafts). Offers exactly what `--from` accepts, so the two cannot drift."""
@@ -173,6 +203,7 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     return sorted(out)
 
 
+@_never_raises
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: ids `resume`/`fork` can actually pick up.
 
@@ -188,43 +219,29 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     return sorted(out)
 
 
-def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids (directory names under the per-repo run-state dir)."""
-    try:
-        runs = _runs_dir(Path.cwd())
-        if not runs.is_dir():
-            return []
-        return sorted(p.name for p in runs.iterdir() if p.is_dir() and p.name.startswith(prefix))
-    except (OSError, ConfigError):
-        return []
-
-
+@_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: plan ids (for --from-plan / plan show/edit)."""
-    try:
-        plans = _plans_dir(Path.cwd())
-        if not plans.is_dir():
-            return []
-        return sorted(
-            p.name
-            for p in plans.iterdir()
-            if p.is_dir() and p.name.startswith(prefix) and (p / "plan.md").is_file()
-        )
-    except (OSError, ConfigError):
+    plans = _plans_dir(Path.cwd())
+    if not plans.is_dir():
         return []
+    return sorted(
+        p.name
+        for p in plans.iterdir()
+        if p.is_dir() and p.name.startswith(prefix) and (p / "plan.md").is_file()
+    )
 
 
+@_never_raises
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
-    try:
-        base = _machines_dir(Path.cwd())
-        if not base.is_dir():
-            return []
-        return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
-    except (OSError, ConfigError):
+    base = _machines_dir(Path.cwd())
+    if not base.is_dir():
         return []
+    return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
 
 
+@_never_raises
 def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: every session id plus every machine id -- what `attach`
     accepts. It resolves a session across all buckets, so offering only the
@@ -232,13 +249,11 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
     return sorted(set(_complete_session_ids(prefix) + _complete_machine_ids(prefix)))
 
 
+@_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: machine ``*.asm.toml`` files under cwd and the machines dir."""
     out: set[str] = set()
-    try:
-        for base in (Path.cwd(), _machines_dir(Path.cwd())):
-            if base.is_dir():
-                out.update(str(p) for p in base.rglob("*.asm.toml"))
-    except OSError:
-        return []
+    for base in (Path.cwd(), _machines_dir(Path.cwd())):
+        if base.is_dir():
+            out.update(str(p) for p in base.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))
