@@ -10,7 +10,11 @@ import argparse
 from pathlib import Path
 
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
-from agent6.ui.cli.completers import _complete_plan_run_ids, _complete_presets, _complete_run_ids
+from agent6.ui.cli.completers import (
+    _complete_plan_run_ids,
+    _complete_presets,
+    _complete_session_ids,
+)
 
 
 def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -108,21 +112,21 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help="Explicit config file (layered over global + repo configs).",
     )
     ask_run = ask_query.add_argument(
-        "--run",
+        "--from",
         dest="ask_run",
         default="",
-        metavar="RUN_ID",
+        metavar="SESSION_ID",
         help=(
-            "Ask about a prior run: seed its task, outcome, diff, and key events"
-            " from the run dir (exact id or unambiguous prefix)."
+            "Seed from another session -- a run, a plan or an ask: its task,"
+            " outcome, diff and key events (exact id or unambiguous prefix)."
         ),
     )
-    ask_run.completer = _complete_run_ids  # type: ignore[attr-defined]
+    ask_run.completer = _complete_session_ids  # type: ignore[attr-defined]
     ask_query.add_argument(
-        "--run-latest",
+        "--from-latest",
         dest="ask_run_latest",
         action="store_true",
-        help="Like --run, but seed the most recent run.",
+        help="Like --from, but seed the most recent session.",
     )
     ask_query.add_argument(
         "--file",

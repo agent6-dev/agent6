@@ -14,15 +14,11 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
-from agent6.runs.id import (
-    RunIdError,
-    resolve_run_id,
-)
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import RunLayout, session_layout
 from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.ui.cli._common import (
-    _runs_dir,
     _state_dir,
+    run_bucket_dirs,
 )
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import first_task_line, newest_run_dir, run_mtime
@@ -164,25 +160,26 @@ def _diff_via_merge_stamp(
 
 
 def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
-    """Markdown digest of a prior run to seed an `ask`, or None (after printing
-    an error) when the run can't be resolved."""
-    runs_dir = _runs_dir(cwd)
-    if not runs_dir.is_dir():
-        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-        return None
+    """Markdown digest of a prior SESSION to seed a new one, or None (after
+    printing an error) when it can't be resolved.
+
+    Any session kind seeds any other: a run, a plan and an ask all record the
+    same shape, and the useful direction is whichever way the operator is
+    working -- an ask that worked something out, then a run to do it.
+    """
+    state_dir = _state_dir(cwd)
     if latest:
-        newest = newest_run_dir([runs_dir])
+        newest = newest_run_dir(run_bucket_dirs(cwd))
         if newest is None:
-            print(f"ERROR: --run-latest: no runs under {runs_dir}", file=sys.stderr)
+            print(f"ERROR: --from-latest: no sessions under {state_dir}", file=sys.stderr)
             return None
-        target = newest.name
+        found = session_layout(state_dir, newest.name)
     else:
-        try:
-            target = resolve_run_id(runs_dir, run_id)
-        except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return None
-    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target)
+        found = session_layout(state_dir, run_id)
+    if found is None:
+        print(f"ERROR: no session {run_id!r} in this project", file=sys.stderr)
+        return None
+    layout, target = found, found.run_id
     if not layout.manifest_path.is_file():
         print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
         return None
