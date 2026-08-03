@@ -330,6 +330,11 @@ fn live_submounts(raw: &[u8], dir: &Path) -> Vec<PathBuf> {
 /// in and then makes only its TOP mount read-only. Probed: a tmpfs nested inside
 /// a read-only grant arrived `rw,relatime` and a jailed command wrote a file
 /// that was still on the host afterwards.
+///
+/// Hand-written on purpose, not a missing mount_setattr(AT_RECURSIVE) call:
+/// mount_setattr is Linux 5.12+, and `strict` admits Landlock-less kernels
+/// older than that, where these binds are the ONLY filesystem boundary. The
+/// loop must work exactly on the kernels the syscall is absent from.
 fn floor_submounts(dst: &Path, flags: MsFlags) -> io::Result<()> {
     for mp in submounts_under(dst)? {
         mount(
