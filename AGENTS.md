@@ -260,7 +260,10 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass.
+All five must pass. Run the gate with its exit status checked directly
+(capture to a file and test `$?`, or `set -o pipefail`); never bare-pipe it
+through `tail`/`head`/`grep`, which replaces the gate's exit code with the
+filter's.
 
 ### Self-review
 
