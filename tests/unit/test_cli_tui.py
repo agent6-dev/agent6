@@ -302,6 +302,31 @@ def test_spawned_away_default_sets_wait_from_env(
     assert away_mode(tmp_path) == "wait"
 
 
+def test_spawned_away_default_approve_reuses_session_allow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AGENT6_DETACHED_AWAY=approve maps to the session-allow marker, like the
+    interactive detach prompt. Writing "approve" into away.mode put it outside
+    the file's deny|wait vocabulary, so the reader fell into the wait branch and
+    the spawn BLOCKED on every approval instead of approving."""
+    from agent6.app.run import apply_spawned_away_default
+    from agent6.runs.ipc import away_mode, session_allow_set
+
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
+    apply_spawned_away_default(tmp_path)
+    assert session_allow_set(tmp_path) is True
+    assert away_mode(tmp_path) == ""  # approve is never stored in away.mode
+
+
+def test_set_away_mode_rejects_values_outside_its_vocabulary(tmp_path: Path) -> None:
+    # away.mode's contract is deny|wait; anything else must fail loudly at the
+    # writer, never land on disk for readers to misinterpret.
+    from agent6.runs.ipc import set_away_mode
+
+    with pytest.raises(ValueError, match="deny"):
+        set_away_mode(tmp_path, "approve")
+
+
 def test_spawned_away_default_is_noop_without_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

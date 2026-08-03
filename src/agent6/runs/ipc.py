@@ -339,6 +339,10 @@ AWAY_MODE_FILE = "away.mode"
 
 def set_away_mode(run_dir: Path, mode: str) -> None:
     """Record the detach 'while away' choice ("deny" | "wait")."""
+    if mode not in ("deny", "wait"):
+        raise ValueError(
+            f"away.mode is 'deny' or 'wait', got {mode!r} (approve-all reuses session.allow)"
+        )
     d = approvals_dir(run_dir)
     d.mkdir(parents=True, exist_ok=True)
     _write_answer_atomic(d / AWAY_MODE_FILE, mode)

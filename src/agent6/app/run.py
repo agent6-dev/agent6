@@ -100,6 +100,7 @@ from agent6.runs.ipc import (
     request_steer,
     session_allow_set,
     set_away_mode,
+    set_session_allow,
     stop_request_pending,
     write_steer_answer,
     write_worker_pid,
@@ -152,7 +153,13 @@ def apply_spawned_away_default(run_dir: Path) -> None:
     silently upgraded a chosen 'deny' to 'wait', so the run blocked on an
     approval nobody was there to give instead of denying and carrying on."""
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
-    if away in ("wait", "approve", "deny") and not away_mode(run_dir):
+    if not away or away_mode(run_dir):
+        return
+    if away == "approve":
+        # approve is never stored in away.mode (deny|wait): like the interactive
+        # detach prompt, approve-all reuses the session-allow marker.
+        set_session_allow(run_dir)
+    elif away in ("wait", "deny"):
         set_away_mode(run_dir, away)
 
 
