@@ -325,6 +325,8 @@ def finalize_auto_merge(
                     f"[agent6] auto_prune kept {run_branch} (squash-merged, unreachable; "
                     f"remove with: git branch -D {run_branch})"
                 )
+    elif outcome.status == "noop":
+        reporter.err(f"[agent6] {run_branch} is already merged into {base_branch}; nothing to do.")
     elif outcome.status == "conflict":
         reporter.err(
             f"[agent6] auto_merge into {base_branch} hit conflicts "

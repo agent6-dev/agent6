@@ -520,6 +520,9 @@ def _cmd_merge(
             file=sys.stderr,
         )
         return 1
+    if outcome.status == "noop":
+        print(f"[agent6] {plan.run_branch} is already merged into {plan.target}; nothing to do.")
+        return 0
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.strategy}) -> {outcome.merged_sha[:12]}"

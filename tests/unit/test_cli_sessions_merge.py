@@ -384,3 +384,36 @@ def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
     assert rc == 0
     assert "fast-forward is impossible" not in capsys.readouterr().err
     assert _git(tmp_path, "rev-parse", "main") == before  # no-op, nothing rewound
+
+
+def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A second `sessions merge` of the same run is a no-op, and says so.
+
+    `git merge --squash` on an up-to-date branch stages nothing and leaves HEAD
+    alone, so the merge helpers return the TARGET'S CURRENT HEAD. That was
+    printed as the merge sha and stamped into the manifest, so an unrelated
+    commit made between the two merges was reported as the run's work and
+    overwrote the real merge record -- which `sessions diff` then pointed at
+    after a prune."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-AAAA77")
+    real_sha = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]["sha"]
+    capsys.readouterr()
+
+    # The operator commits something of their own on top.
+    (tmp_path / "human.txt").write_text("mine\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "human: totally unrelated")
+    unrelated = _git(tmp_path, "rev-parse", "HEAD")
+
+    assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
+    out = capsys.readouterr().out
+    assert "already merged" in out
+    assert unrelated[:12] not in out
+    # The real merge record survives; the operator's commit never replaces it.
+    stamped = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]["sha"]
+    assert stamped == real_sha

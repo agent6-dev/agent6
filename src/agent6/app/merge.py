@@ -37,10 +37,13 @@ from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest,
 
 @dataclass(frozen=True, slots=True)
 class MergeOutcome:
-    """Result of execute_merge. `status` is merged / conflict / error; the other
-    fields carry that status's detail."""
+    """Result of execute_merge. `status` is merged / noop / conflict / error; the
+    other fields carry that status's detail.
 
-    status: Literal["merged", "conflict", "error"]
+    `noop` is an already-merged branch: git stages nothing and leaves the target
+    where it was, so there is no merge sha to report or record."""
+
+    status: Literal["merged", "noop", "conflict", "error"]
     merged_sha: str = ""
     conflicts: tuple[str, ...] = ()
     error: str = ""
@@ -116,7 +119,7 @@ def dispatch_merge(
     )
 
 
-def execute_merge(
+def execute_merge(  # noqa: PLR0911
     cwd: Path,
     *,
     layout: SessionLayout,
@@ -169,6 +172,10 @@ def execute_merge(
     # tree no longer matches the target. Land on the target instead; that is
     # where the work now lives.
     land_on = target if original == run_branch else original
+    # Where the target stood before we touched it. Every strategy that merges
+    # something moves it (squash commits, merge commits, a fast-forward), so an
+    # unmoved target means git had nothing to merge.
+    target_tip_before = branch_tip_sha(cwd, target) or ""
     try:
         result = dispatch_merge(
             cwd, strategy, run_branch, base_sha, manifest, message, cfg, identity
@@ -179,6 +186,11 @@ def execute_merge(
     restore_checkout(cwd, land_on, target)
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
+    if result.merged_sha and result.merged_sha == target_tip_before:
+        # Nothing merged. Reporting the target's own tip as the merge sha
+        # credits the run with whatever was committed there since, and stamping
+        # it destroys the record of the merge that did happen.
+        return MergeOutcome("noop", merged_sha=result.merged_sha)
     record_merge_in_manifest(
         layout,
         merged_into=target,
