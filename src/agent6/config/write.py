@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from agent6.config.io import (
     ConfigLeafValue,
@@ -41,11 +41,10 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.config.model import (
-    AnthropicProviderEntry,
     Config,
     ConfigError,
     Deployment,
-    OpenAIProviderEntry,
+    ProviderEntry,
 )
 from agent6.errors import read_operator_file
 from agent6.paths import chown_to_real_user, global_config_path, mkdir_for_real_user
@@ -123,7 +122,9 @@ def keep_or_rollback(target: Path, prior: str | None, err: str, *, held: bool) -
     return err
 
 
-PROVIDER_MEMBERS = (AnthropicProviderEntry, OpenAIProviderEntry)
+# Every member of the ProviderEntry union, derived: a hand-listed copy meant
+# a new entry type was validated by nothing.
+PROVIDER_MEMBERS: tuple[type[BaseModel], ...] = get_args(get_args(ProviderEntry)[0])
 
 
 def provider_field_error(key: str, leaf: str, value: object) -> str | None:
@@ -334,7 +335,7 @@ def provider_choices() -> dict[str, list[str]]:
     they never drift: the api_format discriminator (per provider subclass) and
     the deployment presets."""
     formats: list[str] = []
-    for model in (AnthropicProviderEntry, OpenAIProviderEntry):
+    for model in PROVIDER_MEMBERS:
         formats.extend(get_args(model.model_fields["api_format"].annotation))
     return {"api_format": formats, "deployment": list(get_args(Deployment))}
 

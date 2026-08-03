@@ -727,3 +727,16 @@ def test_load_config_wraps_an_unreadable_file(tmp_path: Path) -> None:
             load_config(p)
     finally:
         p.chmod(0o600)
+
+
+def test_provider_members_are_derived_from_the_union() -> None:
+    """A hand-listed member tuple drifts silently: a new provider entry type
+    would be validated by nothing, so a bad leaf on it would land."""
+    from typing import get_args
+
+    from agent6.config.model import ProviderEntry
+    from agent6.config.write import PROVIDER_MEMBERS
+
+    declared = get_args(get_args(ProviderEntry)[0])
+    assert set(PROVIDER_MEMBERS) == set(declared)
+    assert len(PROVIDER_MEMBERS) == len(declared) >= 2
