@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import (
     ConfigError,
 )
@@ -21,6 +22,7 @@ from agent6.ui.cli._common import (
     _machines_dir,
     _plans_dir,
     _runs_dir,
+    _state_dir,
     session_bucket_dirs,
 )
 from agent6.ui.cli.model import _connected_providers, _models_for
@@ -171,6 +173,21 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     return sorted(out)
 
 
+def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: ids `resume`/`fork` can actually pick up.
+
+    Every bucket whose mode is resumable, so a plan and an ask are offered --
+    but not a `machine create` draft, which resume refuses. Offering what a
+    verb accepts, no less and no more.
+    """
+    out: list[str] = []
+    for bucket in resumable_bucket_dirs(_state_dir(Path.cwd())):
+        if not bucket.is_dir():
+            continue
+        out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
+    return sorted(out)
+
+
 def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: run ids (directory names under the per-repo run-state dir)."""
     try:
@@ -209,8 +226,10 @@ def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids and machine ids -- everything `agent6 attach` accepts."""
-    return sorted(set(_complete_run_ids(prefix) + _complete_machine_ids(prefix)))
+    """argcomplete: every session id plus every machine id -- what `attach`
+    accepts. It resolves a session across all buckets, so offering only the
+    runs bucket hid the plans and asks it opens happily."""
+    return sorted(set(_complete_session_ids(prefix) + _complete_machine_ids(prefix)))
 
 
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:

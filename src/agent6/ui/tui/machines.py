@@ -459,7 +459,10 @@ def _machine_row(path: Path) -> tuple[str, str, str]:
     try:
         spec = load_machine(path)
     except (MachineError, OSError):
-        return (path.stem, "-", "invalid")
+        # No name to show: the file did not parse, so its declared `machine` is
+        # unknown, and `path.stem` on `<name>.asm.toml` renders half a filename
+        # that is neither. The `file` column already says which file it was.
+        return ("-", "-", "invalid")
     problems = validate_semantics(spec)
     return (
         spec.machine,

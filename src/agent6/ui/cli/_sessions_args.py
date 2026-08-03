@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 
 from agent6.ui.cli._common import _sub
-from agent6.ui.cli.completers import _complete_run_ids
+from agent6.ui.cli.completers import _complete_session_ids
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -44,7 +44,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (omit for the most recent).",
     )
-    sessions_show_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_show_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_show.add_argument(
         "--json",
         action="store_true",
@@ -62,7 +62,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (or unique prefix). Omit to diff the most recent.",
     )
-    sessions_diff_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_diff_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_diff.add_argument(
         "--stat",
         action="store_true",
@@ -88,7 +88,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (or unique prefix). Omit to merge the most recent.",
     )
-    sessions_merge_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_merge_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_merge.add_argument(
         "--strategy",
         choices=("squash", "merge", "ff"),
@@ -123,7 +123,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         metavar="SESSION_ID",
         help="2 or more session ids (or unique prefixes) to compare.",
     )
-    sessions_compare_ids.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_compare_ids.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     sessions_commits = _sub(
         sessions_sub,
@@ -136,7 +136,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (or unique prefix). Omit for the most recent.",
     )
-    sessions_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_commits_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     sessions_stop = _sub(
         sessions_sub,
@@ -149,7 +149,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id or unique prefix; omit for the most recent.",
     )
-    sessions_stop_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_stop_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     _sub(
         sessions_sub,
@@ -168,7 +168,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id or unique prefix; omit for the most recent.",
     )
-    sessions_rm_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_rm_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_rm.add_argument(
         "--asks",
         action="store_true",
@@ -202,7 +202,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (or unambiguous prefix). Defaults to the most recent.",
     )
-    sessions_tr_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_tr_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_tr.add_argument(
         "--json",
         dest="as_json",
@@ -235,4 +235,4 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help="Session id (or unambiguous prefix). Defaults to the most recent.",
     )
-    sessions_graph_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    sessions_graph_id.completer = _complete_session_ids  # type: ignore[attr-defined]

@@ -19,7 +19,7 @@ The same UI on a phone (single column, bottom nav):
 
 ```bash
 agent6 web            # serve the hub on http://127.0.0.1:7658
-agent6 web <session-id>   # open a run on load
+agent6 web <session-id>   # open a session on load
 agent6 web <machine>  # open a machine instance on load
 ```
 
@@ -31,11 +31,11 @@ invocation. Stop it with Ctrl-C.
 Every page docks its text entry at the bottom, like a chat: type, Enter sends,
 Shift+Enter inserts a newline.
 
-- **Runs page**: every run (mode, status, last activity, cost); the docked
+- **Sessions page**: every session (mode, status, last activity, cost); the docked
   composer starts new work (run / plan / ask); prune merged run branches.
 - **Machines page**: machine instances and `machine create` drafts, cards that
   run an authored machine file, and a docked composer that creates a new one.
-- **Run view** (live over SSE): the conversation IS the page — the same folded
+- **Session view** (live over SSE): the conversation IS the page — the same folded
   transcript the CLI stream and the TUI render (reasoning, every tool call with
   its result, commits, the verdict), with the in-progress turn streaming
   underneath. A detail toggle cycles collapsed / expanded / hidden, and any

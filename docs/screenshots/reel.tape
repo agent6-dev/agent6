@@ -1,4 +1,4 @@
-# One agent6 tui session for the tour.webm reel: hub -> open a run (the
+# One agent6 tui session for the tour.webm reel: hub -> open a session (the
 # conversation, the run app's primary view) -> dashboard (Ctrl+D) -> back to
 # hub -> event log (l) -> config -> search -> help -> quit. The whole tour
 # stays inside the TUI (a run is opened with Enter, not a new shell command).

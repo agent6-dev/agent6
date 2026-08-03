@@ -9,6 +9,7 @@
 //!   - seccomp-bpf deny-list (default-allow, EPERM on the dangerous syscalls)
 //!   - PR_SET_NO_NEW_PRIVS
 //!   - RLIMIT_DATA memory cap on the child (policy `memory_limit_mb`)
+//!
 //! Then forks + execs the child, captures stdout/stderr, prints one JSON result line.
 //!
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
@@ -190,9 +191,9 @@ fn setup_namespaces(allow_network: bool) -> io::Result<()> {
     // (required to mount, but capabilities are still confined to this namespace).
     fs::write("/proc/self/setgroups", "deny").ok();
     fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("uid_map: {e}")))?;
+        .map_err(|e| io::Error::other(format!("uid_map: {e}")))?;
     fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("gid_map: {e}")))?;
+        .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
 
     // Make all existing mounts private so our changes don't propagate.
     mount(
@@ -453,14 +454,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
         )
         .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "protect bind {} -> {}: {e}",
-                    canon_src.display(),
-                    target.display()
-                ),
-            )
+            io::Error::other(format!(
+                "protect bind {} -> {}: {e}",
+                canon_src.display(),
+                target.display()
+            ))
         })?;
         mount(
             Some(""),
@@ -483,12 +481,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 | carried_mount_flags(&target),
             Some(""),
         )
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("protect remount-ro {}: {e}", target.display()),
-            )
-        })?;
+        .map_err(|e| io::Error::other(format!("protect remount-ro {}: {e}", target.display())))?;
     }
     // Extra RO paths, at their REAL locations (matching tool_paths and the
     // hardened, and the documented contract: a granted toolchain works
@@ -535,13 +528,10 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             continue;
         }
         if under_system_bind(src) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "extra_rw path {} sits under a read-only system mount",
-                    src.display()
-                ),
-            ));
+            return Err(io::Error::other(format!(
+                "extra_rw path {} sits under a read-only system mount",
+                src.display()
+            )));
         }
         let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
         fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
@@ -626,14 +616,14 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     let access_read_exec = access_read | AccessFs::Execute;
     let ruleset = Ruleset::default()
         .handle_access(access_all)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("handle_access: {e}")))?
+        .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
         .create()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("create ruleset: {e}")))?;
+        .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
     if let Ok(fd) = PathFd::new("/workspace") {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_all))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /workspace: {e}")))?;
+            .map_err(|e| io::Error::other(format!("rule /workspace: {e}")))?;
     }
     // /tmp is a fresh private tmpfs in this jail's own mount namespace (mounted
     // in setup_rootfs), discarded when the jail exits. Grant it RW so toolchain
@@ -643,7 +633,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     if let Ok(fd) = PathFd::new("/tmp") {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_all))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /tmp: {e}")))?;
+            .map_err(|e| io::Error::other(format!("rule /tmp: {e}")))?;
     }
     // /proc is the jail's OWN freshly-mounted procfs (private PID namespace,
     // see setup_rootfs), so reading it reveals only jail-local processes and
@@ -656,13 +646,13 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     if let Ok(fd) = PathFd::new("/proc") {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_read))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /proc: {e}")))?;
+            .map_err(|e| io::Error::other(format!("rule /proc: {e}")))?;
     }
     for ro in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"] {
         if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {ro}: {e}")))?;
+                .map_err(|e| io::Error::other(format!("rule {ro}: {e}")))?;
         }
     }
     // Operator tool dirs (mounted at real locations in setup_rootfs): read+exec.
@@ -670,7 +660,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(tp) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule tool: {e}")))?;
+                .map_err(|e| io::Error::other(format!("rule tool: {e}")))?;
         }
     }
     // Grant WriteFile on the harmless sink devices. /dev/null and /dev/full
@@ -684,7 +674,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(&p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, AccessFs::WriteFile))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+                .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
     // Extra paths are bind-mounted by setup_rootfs at their REAL locations.
@@ -698,24 +688,14 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule ro {}: {e}", ro.display()),
-                    )
-                })?;
+                .map_err(|e| io::Error::other(format!("rule ro {}: {e}", ro.display())))?;
         }
     }
     for rw in &policy.extra_rw_paths {
         if let Ok(fd) = PathFd::new(rw) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_all))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule rw {}: {e}", rw.display()),
-                    )
-                })?;
+                .map_err(|e| io::Error::other(format!("rule rw {}: {e}", rw.display())))?;
         }
     }
     // Deliberately no NotEnforced check (contrast apply_landlock_hardened):
@@ -727,7 +707,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // output.
     ruleset
         .restrict_self()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("restrict_self: {e}")))?;
+        .map_err(|e| io::Error::other(format!("restrict_self: {e}")))?;
     Ok(())
 }
 
@@ -804,12 +784,7 @@ fn grant_rw_carved(
         if let Ok(fd) = PathFd::new(&p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_all))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule rw {}: {e}", p.display()),
-                    )
-                })?;
+                .map_err(|e| io::Error::other(format!("rule rw {}: {e}", p.display())))?;
         }
     }
     Ok(ruleset)
@@ -832,9 +807,9 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     let access_read_exec = access_read | AccessFs::Execute;
     let ruleset = Ruleset::default()
         .handle_access(access_all)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("handle_access: {e}")))?
+        .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
         .create()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("create ruleset: {e}")))?;
+        .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
 
     // protect_paths: in hardened we cannot do a bind-remount-RO (no mount
@@ -869,10 +844,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read))
                 .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule r cwd {}: {e}", policy.cwd.display()),
-                    )
+                    io::Error::other(format!("rule r cwd {}: {e}", policy.cwd.display()))
                 })?;
         }
         // RW only on non-protected top-level entries.
@@ -887,10 +859,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_all))
                 .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule rw cwd {}: {e}", policy.cwd.display()),
-                    )
+                    io::Error::other(format!("rule rw cwd {}: {e}", policy.cwd.display()))
                 })?;
         }
     }
@@ -917,12 +886,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_all))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule rw {}: {e}", p.display()),
-                    )
-                })?;
+                .map_err(|e| io::Error::other(format!("rule rw {}: {e}", p.display())))?;
         }
     }
 
@@ -948,12 +912,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
-                .map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule ro {}: {e}", p.display()),
-                    )
-                })?;
+                .map_err(|e| io::Error::other(format!("rule ro {}: {e}", p.display())))?;
         }
     }
     // Same sink-device carve-out as strict; see comment there.
@@ -962,7 +921,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         if let Ok(fd) = PathFd::new(&p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, AccessFs::WriteFile))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+                .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
 
@@ -976,10 +935,9 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // is the launcher's own boundary check, not a substitute for it.
     let status = ruleset
         .restrict_self()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("restrict_self: {e}")))?;
+        .map_err(|e| io::Error::other(format!("restrict_self: {e}")))?;
     if status.ruleset == RulesetStatus::NotEnforced {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             "hardened isolation requires Landlock, but the kernel enforced no \
              ruleset (Landlock unavailable); refusing to run unconfined",
         ));
@@ -1086,10 +1044,8 @@ fn apply_seccomp() -> io::Result<()> {
                     seccompiler::SeccompCmpOp::MaskedEq(bit),
                     bit,
                 )
-                .map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("seccomp cond: {e}"))
-                })?])
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp rule: {e}")))?,
+                .map_err(|e| io::Error::other(format!("seccomp cond: {e}")))?])
+                .map_err(|e| io::Error::other(format!("seccomp rule: {e}")))?,
             );
         }
         rules.insert(syscall, per_bit);
@@ -1117,10 +1073,8 @@ fn apply_seccomp() -> io::Result<()> {
                     seccompiler::SeccompCmpOp::MaskedEq(libc::S_IFMT as u64),
                     kind,
                 )
-                .map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("seccomp cond: {e}"))
-                })?])
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp rule: {e}")))?,
+                .map_err(|e| io::Error::other(format!("seccomp cond: {e}")))?])
+                .map_err(|e| io::Error::other(format!("seccomp rule: {e}")))?,
             );
         }
         rules.insert(syscall, per_type);
@@ -1131,12 +1085,12 @@ fn apply_seccomp() -> io::Result<()> {
         SeccompAction::Errno(libc::EPERM as u32), // matched (denied)
         arch,
     )
-    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp build: {e}")))?;
+    .map_err(|e| io::Error::other(format!("seccomp build: {e}")))?;
     let program: BpfProgram = filter
         .try_into()
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp compile: {e}")))?;
+        .map_err(|e| io::Error::other(format!("seccomp compile: {e}")))?;
     seccompiler::apply_filter(&program)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp apply: {e}")))?;
+        .map_err(|e| io::Error::other(format!("seccomp apply: {e}")))?;
     Ok(())
 }
 
@@ -1239,19 +1193,15 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     let child_wait = Pid::from_raw(child_pid);
     let wait_flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
     let mut timed_out = false;
-    loop {
-        match waitid(Id::Pid(child_wait), wait_flags) {
-            Ok(WaitStatus::StillAlive) => {
-                if start.elapsed() > timeout {
-                    timed_out = true;
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            // Exited/Signaled (peeked, not reaped) or an unexpected wait error:
-            // proceed to the unified teardown + real reap below.
-            _ => break,
+    // Anything but StillAlive leaves the loop: Exited/Signaled (peeked, not
+    // reaped) or an unexpected wait error both proceed to the unified teardown
+    // + real reap below.
+    while let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(child_wait), wait_flags) {
+        if start.elapsed() > timeout {
+            timed_out = true;
+            break;
         }
+        std::thread::sleep(Duration::from_millis(50));
     }
     // Kill the whole process group BEFORE reaping — one path for both normal
     // exit and timeout. The direct child is still an unreaped zombie (normal
@@ -1292,7 +1242,7 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
 }
 
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("{e}"))
+    io::Error::other(format!("{e}"))
 }
 
 // Retained-output cap per stream: head + tail, middle dropped with a marker.

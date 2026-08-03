@@ -13,7 +13,7 @@ from agent6.ui.cli.completers import (
     _complete_parallel_models,
     _complete_plan_session_ids,
     _complete_presets,
-    _complete_run_ids,
+    _complete_resumable_ids,
     _complete_session_ids,
     _complete_skills,
 )
@@ -148,7 +148,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         help="Session id under the per-repo state dir (omit for the most recent).",
     )
-    resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]
+    resume_run.completer = _complete_resumable_ids  # type: ignore[attr-defined]
     resume_p.add_argument(
         "--config",
         type=Path,
@@ -199,7 +199,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         default="",
         help="Source run id or unambiguous prefix to fork from (omit for the most recent run).",
     )
-    fork_src.completer = _complete_run_ids  # type: ignore[attr-defined]
+    fork_src.completer = _complete_resumable_ids  # type: ignore[attr-defined]
     fork_p.add_argument(
         "--at-turn",
         type=int,
