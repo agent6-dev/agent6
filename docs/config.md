@@ -39,7 +39,8 @@ table below), so a repo needs nothing repo-specific to run.
   erasing a concurrent edit -- the write is kept and the error says "kept as
   written", pointing at `agent6 config fix`. Publishes are atomic, so a torn
   file is impossible; the worst case is one lost update.
-- `agent6 config fill [--repo]`: materialize every resolved value into one file.
+- `agent6 config fill`: materialize every resolved value (defaults plus
+  global, never the repo layer) into the global config file.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values left by a
   schema change) from the global and repo config, printing each and whether it was
   global or repo. Use `--machine-file FILE` to repair a machine `[config]` overlay

@@ -129,8 +129,11 @@ def _open_target(target: Path) -> None:
     mkdir_for_real_user(target.parent)
 
 
-def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) -> int:
-    target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
+def _cmd_config_fill(config_path: Path | None, *, force: bool) -> int:
+    """Materialize defaults plus global into the global config file. Never the
+    repo layer: a filled repo config would explicitly set everything, shadowing
+    the global file permanently, future edits included."""
+    target = global_config_path()
     _open_target(target)
     # Load the effective config, existence-check, and publish all under the
     # target's lock and via atomic_write: reading the merged config BEFORE the
@@ -147,7 +150,7 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
             return 2
         atomic_write(
             target,
-            materialize(eff.config, for_repo=to_repo, keep_presets_from=target),
+            materialize(eff.config, keep_presets_from=target),
         )
     print(f"Wrote fully-resolved config to {target}")
     return 0

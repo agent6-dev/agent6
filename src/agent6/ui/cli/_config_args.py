@@ -53,14 +53,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "fill",
         help=(
             "Write the fully-resolved config (every effective value, explicit)"
-            " to a file: the global config by default, or the repo config with"
-            " --repo. Handy before tightening defaults or for an audit snapshot."
+            " to the global config file. Handy before tightening defaults or"
+            " for an audit snapshot."
         ),
-    )
-    config_fill.add_argument(
-        "--repo",
-        action="store_true",
-        help="Write the per-repo config instead of the global config.",
     )
     config_fill.add_argument(
         "--force", action="store_true", help="Overwrite the target file if it already exists."

@@ -254,6 +254,16 @@ def test_machine_overlay_rejects_providers(iso: Path) -> None:
 # --- egress endpoint wiring -------------------------------------------------
 
 
+def test_config_fill_has_no_repo_flag(iso: Path) -> None:
+    """Filling the repo layer makes it explicitly set everything, shadowing the
+    global config permanently -- future edits included -- which defeats the
+    layering `config show` exists to explain. The flag stays gone; the global
+    fill keeps resolving defaults plus global, never the repo layer."""
+    with pytest.raises(SystemExit) as exc:
+        _run(["config", "fill", "--repo"])
+    assert exc.value.code == 2
+
+
 def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
     """`config fill` read the effective config, then published it with an
     unlocked, non-atomic write_text; a `config set` landing between the read
