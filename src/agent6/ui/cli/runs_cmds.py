@@ -45,7 +45,14 @@ from agent6.ui.cli._common import (
     sgr,
 )
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
-from agent6.viewmodel import is_run_husk, is_winner, newest_run_dir, summarize_run_dir, task_snippet
+from agent6.viewmodel import (
+    died_without_end,
+    is_run_husk,
+    is_winner,
+    newest_run_dir,
+    summarize_run_dir,
+    task_snippet,
+)
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
 
@@ -664,10 +671,18 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     cfg = eff.config
 
     candidates: list[CandidateBrief] = []
+    unfinished: list[tuple[str, str]] = []
     for layout, manifest in resolved:
         base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
         summary = summarize_run_dir(layout.run_dir)
+        # A run that never reached run.end has no verdict to compare and a
+        # truncated (lowest) spend, so ranking floated it to first place and
+        # offered it for merge. The fan-out excludes such lanes; say which run
+        # was dropped rather than silently shrinking the table.
+        if died_without_end(summary.status):
+            unfinished.append((layout.run_id, summary.status))
+            continue
         candidates.append(
             CandidateBrief(
                 run_id=layout.run_id,
@@ -677,6 +692,11 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
                 cost_usd=summary.cost_usd,
             )
         )
+    for run_id, status in unfinished:
+        print(f"note: {run_id} never finished ({status}); excluded from the ranking")
+    if not candidates:
+        print("ERROR: no comparable runs; every run given never finished.", file=sys.stderr)
+        return 2
 
     reviewer = cfg.models.resolve("reviewer")
     # `runs compare` is advisory and stateless: it ranks + prints but never stamps

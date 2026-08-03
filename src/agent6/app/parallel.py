@@ -54,7 +54,7 @@ from agent6.models.validate import refusal_message, validate_spec_models, warnin
 from agent6.paths import cache_dir, state_dir
 from agent6.runs.ipc import request_stop, steer_answer_is_abort, worker_is_alive
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
-from agent6.viewmodel import summarize_run_dir
+from agent6.viewmodel import died_without_end, summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -290,18 +290,6 @@ def bridge_spawner(
 # ---------------------------------------------------------------------------
 
 
-# Status words for a lane that reached terminal WITHOUT its own run.end: the
-# worker died (stale) or never started (created/parked/?). The awaiting gate
-# deliberately accepts them so the await cannot hang, but they are not results:
-# a crashed lane must never rank as a candidate, win a compare, or join a
-# coordinator's branch as a successful lane.
-_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
-
-
-def _lane_died(status: str) -> bool:
-    return status in _DIED_WITHOUT_END
-
-
 def _lane_terminal(run_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
     """Terminal gate for an awaited lane: the fold left "running" AND the worker
     pid is cleared/dead. run.end lands in logs.jsonl before the lane's teardown
@@ -454,7 +442,7 @@ def run_lane_to_completion(
     # _cleanup succeeds only for whichever lane empties it last.
     _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
     status = summarize_run_dir(dest).status
-    if _lane_died(status):
+    if died_without_end(status):
         # The branch is imported (nothing lost), but the lane never finished:
         # joining it into the coordinator as a success told the model "joined
         # at <sha>" for half-done work.
@@ -868,7 +856,7 @@ def _import_lanes(
                 f" lineage stamp failed: {stamp_err}"
             )
         summary = summarize_run_dir(dest)
-        if _lane_died(summary.status):
+        if died_without_end(summary.status):
             # Imported (its branch is safe in the origin) but NOT a candidate:
             # verify_ok reads a crash as the same tri-state as a clean unverified
             # finish, so ranking by cost floated the earliest-crashing lane to

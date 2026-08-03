@@ -216,6 +216,43 @@ def test_compare_rows_and_total_format_cost_the_same_way(
     assert "total: candidates $1.52" in out
 
 
+def test_compare_excludes_a_run_that_never_finished(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that died without reaching run.end has no verdict to compare, and
+    its truncated spend is the LOWEST, so mechanical ranking (verify-pass first,
+    then cheapest) floated it to first place and told the operator to merge it.
+    The fan-out already excludes such lanes; the hand-picked path must too, and
+    must say which run it dropped rather than silently shrinking the table."""
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-EEEE55",
+        base_sha=base,
+        commits=[("e.txt", "e\n", "add e")],
+        status="failed",  # a real verdict, and the more expensive run
+        cost=0.09,
+    )
+    _setup_run(
+        repo,
+        "run-FFFF66",
+        base_sha=base,
+        commits=[("f.txt", "f\n", "add f")],
+        status="crashed",  # no run.end
+        cost=0.01,
+    )
+    # A recorded-but-dead worker pid is what makes an unfinished run read "stale".
+    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id="run-FFFF66")
+    (layout.run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+
+    assert main(["runs", "compare", "run-EEEE55", "run-FFFF66"]) == 0
+    out = capsys.readouterr().out
+    assert "1. run-EEEE55" in out
+    assert "1. run-FFFF66" not in out
+    assert "agent6 runs merge run-FFFF66" not in out
+    assert "run-FFFF66" in out and "stale" in out  # named as excluded, not hidden
+
+
 def test_compare_is_read_only(repo: Path) -> None:
     """Never merges, never writes to the run's own branch/manifest."""
     base = _init_repo(repo)

@@ -256,6 +256,21 @@ def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
     return (time.time() - run_mtime(run_dir)) > stale_after_s
 
 
+# Status words for a run that reached terminal WITHOUT its own run.end: the
+# worker died (stale) or never started (created/parked/?). The fan-out's
+# awaiting gate deliberately accepts them so an await cannot hang, but they are
+# not results: such a run must never rank as a candidate, win a compare, or join
+# a coordinator's branch as a successful lane. Its verify reads the same
+# tri-state None as a clean unverified finish and its spend is truncated to the
+# lowest, so ranking floats it to first place unless this gate stops it.
+_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
+
+
+def died_without_end(status: str) -> bool:
+    """Whether *status* is a run that never reached its own ``run.end``."""
+    return status in _DIED_WITHOUT_END
+
+
 @dataclass(frozen=True, slots=True)
 class LogScan:
     """One tolerant pass over a run's ``logs.jsonl``: the shared scan behind the
