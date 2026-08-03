@@ -380,3 +380,30 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> 
     assert "sk-DECOY" not in text, "the agent followed the command's symlink"
     assert "mine" in text, "the real output must still be readable"
     assert os.path.realpath(log) == str(secret / "secrets.toml")  # the swap did happen
+
+
+def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
+    """A `/btw` ask and a `/parallel` lane are OUR children in their own
+    session, which is exactly what an escapee looks like. BackgroundJob
+    snapshots its exclusion set at START, so anything spawned later was
+    SIGKILLed at the next teardown -- destroying model work already paid for."""
+    import subprocess
+
+    from agent6.sandbox.jail import (
+        _kill_escapees,  # pyright: ignore[reportPrivateUsage]
+        keep_out_of_the_sweep,
+    )
+
+    ours = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    stranger = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        keep_out_of_the_sweep(ours.pid)
+        _kill_escapees(frozenset())
+        assert ours.poll() is None, "the sweep killed a session the agent opened"
+        assert stranger.poll() is not None, "a real escapee must still be swept"
+    finally:
+        for p in (ours, stranger):
+            with contextlib.suppress(OSError):
+                p.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                p.wait(timeout=5)

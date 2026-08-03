@@ -277,6 +277,13 @@ _PR_SET_CHILD_SUBREAPER = 36
 _SWEEP_DEADLINE_S = 5.0
 _sweep_lock = threading.Lock()
 _live_launchers: set[int] = set()
+# Children agent6 started ON PURPOSE in their own session: a `/btw` ask, a
+# `/parallel` lane. They look exactly like an escapee -- our child, different
+# session -- so without this the first background command's teardown SIGKILLs
+# them, destroying model work the operator has already paid for. Every detached
+# spawn from this process must register here; `agent6.ui.spawn` is the one
+# place that does it.
+_own_detached: set[int] = set()
 
 
 @functools.cache
@@ -289,6 +296,16 @@ def _become_subreaper() -> None:
             f"prctl(PR_SET_CHILD_SUBREAPER) failed: {os.strerror(err)}."
             " Without it a sandboxed command could leave a process running after it returns."
         )
+
+
+def keep_out_of_the_sweep(pid: int) -> None:
+    """Mark *pid* as a child agent6 started deliberately, not an escapee.
+
+    Called right after a detached spawn. Never cleared: a pid this process
+    started stays ours for its lifetime, and the set is bounded by how many
+    sessions one run opens.
+    """
+    _own_detached.add(pid)
 
 
 def _own_children() -> dict[int, int]:
@@ -339,7 +356,10 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             escapees = {
                 pid
                 for pid, session in _own_children().items()
-                if session != our_session and pid not in exclude and pid not in _live_launchers
+                if session != our_session
+                and pid not in exclude
+                and pid not in _live_launchers
+                and pid not in _own_detached
             }
             if not escapees:
                 return frozenset()

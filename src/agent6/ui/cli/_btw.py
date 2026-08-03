@@ -19,6 +19,7 @@ from threading import Thread
 
 from agent6.app.btw import BtwLaunch, BtwSession, btw_answer, render_btw, start_btw
 from agent6.events import EventSink
+from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.ui.spawn import agent6_exe
 
 # How often the watcher looks for the answer. A btw is a short question, and
@@ -34,7 +35,7 @@ def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
     for a `/parallel` lane.
     """
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [agent6_exe(), *argv],
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
@@ -45,6 +46,9 @@ def direct_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
         )
     except OSError as exc:
         return f"could not start the btw: {exc}"
+    # Our child, its own session: the escapee sweep would SIGKILL it at the
+    # next background command's teardown otherwise.
+    keep_out_of_the_sweep(proc.pid)
     return ""
 
 

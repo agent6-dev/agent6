@@ -20,6 +20,11 @@ def test_spawn_and_locate_finds_new_log_dir(
     base.mkdir()
 
     class _Proc:
+        pid = 424242
+        # A detached child is registered with the escapee sweep by pid, so a
+        # stub without one no longer models a real spawn.
+        pid = 424242
+
         def __init__(self) -> None:
             # The "child" produces a new dir with a logs.jsonl the moment it starts.
             (base / "new").mkdir()
@@ -52,6 +57,7 @@ def test_spawn_and_locate_ignores_preexisting_dirs(
     before = {base / "old"}
 
     class _Proc:
+        pid = 424242
         returncode = 0
 
         def poll(self) -> int:
@@ -129,10 +135,13 @@ def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
 def test_spawn_detached_resume_argv_and_stream_env(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 
-    def _popen(argv: list[str], **kw: object) -> object:
+    class _Proc:
+        pid = 424242
+
+    def _popen(argv: list[str], **kw: object) -> _Proc:
         seen["argv"] = argv
         seen["kw"] = kw
-        return object()
+        return _Proc()
 
     monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
     monkeypatch.setattr(spawn, "agent6_exe", lambda: "/opt/agent6")

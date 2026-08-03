@@ -17,6 +17,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.sandbox.jail import keep_out_of_the_sweep
+
 
 def agent6_exe() -> str:
     """The agent6 executable that launched this TUI (so a spawned child uses the
@@ -47,7 +49,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
     if steer:
         argv.append(f"--steer={steer}")
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             argv,
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
@@ -58,6 +60,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
         )
     except OSError as exc:
         return f"could not spawn background resume: {exc}"
+    keep_out_of_the_sweep(proc.pid)
     return ""
 
 
@@ -141,6 +144,7 @@ def spawn_and_confirm(
             )
         except OSError as exc:
             return f"failed to start agent6 {label}: {exc}"
+        keep_out_of_the_sweep(proc.pid)
 
         def err_tail() -> str:
             err.flush()
@@ -208,6 +212,7 @@ def spawn_and_locate(
             )
         except OSError as exc:
             return None, f"failed to start agent6 {label}: {exc}"
+        keep_out_of_the_sweep(proc.pid)
 
         def err_tail() -> str:
             err.flush()

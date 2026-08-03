@@ -255,6 +255,7 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     captured: list[list[str]] = []
 
     class _FakeProc:
+        pid = 424242
         returncode = 0
 
         def poll(self) -> int:
@@ -292,6 +293,7 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
     captured: list[list[str]] = []
 
     class _FakeProc:
+        pid = 424242
         returncode = 0
 
         def poll(self) -> int:
@@ -455,6 +457,7 @@ def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> No
     captured_env: dict[str, str] = {}
 
     class _FakeProc:
+        pid = 424242
         returncode = 0
 
         def poll(self) -> int:
@@ -486,6 +489,7 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
     captured: list[list[str]] = []
 
     class _Proc:
+        pid = 424242
         returncode = 0
         stdout = "[agent6] merged agent6/r1 into main (squash) -> abcdef123456\n"
         stderr = ""
