@@ -28,8 +28,8 @@ class MetricSample:
     stdout_tail: str = ""
     stderr_tail: str = ""
     # Comparison thresholds parsed from the metric command output (e.g.
-    # ``assert cycles() < 1487`` lines). Used to point the worker at the
-    # next unmet target rather than a vague "go faster". See
+    # ``assert cycles() < 1487`` lines); they point the worker at the next
+    # unmet target rather than a vague "go faster". See
     # ``extract_metric_targets``.
     targets: tuple[float, ...] = ()
     # True when the grader reported the score as a maxed-out fraction

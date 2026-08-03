@@ -119,8 +119,8 @@ class MergeStamp(BaseModel):
 
 
 class CompareStamp(BaseModel):
-    """A fan-out lane's auto-compare placement. The fan-out id itself lives in the
-    top-level ``parallel_id``; this stamp no longer duplicates it as ``group``."""
+    """A fan-out lane's auto-compare placement. The fan-out id itself lives in
+    the top-level ``parallel_id``, not here."""
 
     model_config = _MODEL_CONFIG
 

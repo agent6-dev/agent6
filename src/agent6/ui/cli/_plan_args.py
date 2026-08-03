@@ -113,7 +113,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    # One seed, named one way: passing both silently ignored --from.
+    # One seed, named one way: the two spellings are mutually exclusive.
     seed = ask_query.add_mutually_exclusive_group()
     ask_session = seed.add_argument(
         "--from",

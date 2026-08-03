@@ -276,9 +276,9 @@ def _await_answer(
     Returns None when the front-end registered on *live* stays dead for
     *dead_grace_s* consecutive seconds (see FRONTEND_DEAD_GRACE_S) or when
     *timeout_s* elapses. A file that vanishes between polls is not-yet-answered,
-    never an error. A final consume runs before either None verdict: an answer
-    landing between the round's read and the verdict was silently ignored (the
-    prompt denied) with the completed answer file left on disk."""
+    never an error. A final consume runs before either None verdict, so an answer landing
+    between the round's read and the verdict is honoured rather than denied
+    with its file left on disk."""
     deadline = time.monotonic() + timeout_s
     dead_since: float | None = None
     while time.monotonic() < deadline:

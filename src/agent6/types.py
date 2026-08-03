@@ -33,11 +33,10 @@ ResumableMode = Literal["run", "plan", "ask"]
 class SessionKind:
     """What a mode MEANS, in one record.
 
-    "Is this session allowed to X" used to be answered in a dozen places, each
-    re-deriving it from a bare string -- and two of them disagreed: the
-    manifest refused to load a "machine" session while the tool surface was
-    happy to build one. The string stays the key and stays what is PERSISTED;
-    this is derived from it at read time, never written. A future agent6 that
+    One owner for "is this session allowed to X", so no surface re-derives it
+    from a bare string and disagrees with another. The string stays the key
+    and stays what is PERSISTED; this is derived from it at read time, never
+    written. A future agent6 that
     changes what "plan" may do must reinterpret old sessions correctly, which
     storing the capabilities would prevent.
     """
@@ -127,9 +126,8 @@ def session_kind(name: str) -> SessionKind:
 def session_bucket(name: str) -> str:
     """The bucket a session of mode *name* gets its own directory in.
 
-    Derived, never stored: a stored field let the record disagree with where
-    sessions actually went (`machine` claimed "runs" while `machine create`
-    wrote machine-drafts/). The buckets sit under one `sessions/` root, which
+    Derived, never stored, so a record cannot disagree with where its sessions
+    actually go. The buckets sit under one `sessions/` root, which
     is what leaves the state dir's own `machines/` to live machine INSTANCES.
     An `agent` leg lives inside its machine instance's directory and has no
     bucket.

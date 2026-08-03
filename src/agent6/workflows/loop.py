@@ -570,9 +570,8 @@ class Workflow:
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
     # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
     # OpenRouter 502, brief socket timeouts. Such a disconnect can flap for a
-    # few seconds, so a single retry (the previous default) was too weak: one
-    # bad blip aborted a long, expensive run that is otherwise fully
-    # resumable. With exponential backoff (2s/4s/8s/16s, full-jittered, capped
+    # few seconds, and a long, expensive run must not abort on one blip.
+    # With exponential backoff (2s/4s/8s/16s, full-jittered, capped
     # at provider_retry_max_delay_s) four retries ride out a multi-second flap;
     # permanent statuses (401/402/403/404/422) and BudgetExceeded still fail
     # fast. Set to 0 to disable retrying.
@@ -1344,8 +1343,8 @@ class Workflow:
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
         state.last_verify_ok = rc == 0
         if state.baseline_ok is None and self._judged_the_base_commit(state, result):
-            # This verify judged the run's BASE commit, so it is the baseline:
-            # the same answer a second gate run in the teardown used to cost.
+            # This verify judged the run's BASE commit, so it IS the
+            # baseline: no second gate run is needed to learn the same answer.
             state.baseline_ok = rc == 0
             self._emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
             if rc != 0:

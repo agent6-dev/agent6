@@ -60,9 +60,8 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
-# The hub re-asks on this cadence (the web hub's poll rate): it was the one TUI
-# screen that never refreshed, so a run that died while you watched kept its
-# last word -- bold-cyan "running" -- until a keypress.
+# The hub re-asks on this cadence (matching the web hub's poll rate), so a
+# session that ends while you watch stops reading as running.
 _HUB_POLL_S = 4.0
 # The new-work preset dropdown's first entry: "" => no --preset, so the run
 # uses the top-level `preset` from config (or the plain defaults).

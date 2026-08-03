@@ -258,9 +258,8 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
     skills = skill_menu_table()
-    # A surface that cannot spawn a sibling session never offers `/btw`: it
-    # used to be listed everywhere and answer "needs a live run" only once the
-    # operator had typed it.
+    # A surface that cannot spawn a sibling session never offers `/btw`: an
+    # offered command that answers "needs a live run" is not offered.
     offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
         if menu_capable():

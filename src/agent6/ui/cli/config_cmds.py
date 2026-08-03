@@ -95,9 +95,9 @@ def _cmd_config_path() -> int:
 def _cmd_config_presets(config_path: Path | None = None) -> int:
     """List every known preset with the overrides it applies; mark the selection.
 
-    Honours the global ``--config`` like every other config subcommand: without
-    it, a `[presets.*]` table in an explicit file was silently absent from the
-    listing that exists to show which presets are available."""
+    Honours the global ``--config`` like every other config subcommand, so a
+    `[presets.*]` table in an explicit file is listed by the command that
+    exists to show which presets are available."""
     cat = preset_catalog(Path.cwd(), config_path)
     if cat.selected:
         print(f"preset = {cat.selected}  [{cat.source}]")

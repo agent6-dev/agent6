@@ -84,7 +84,7 @@ def _read_toml(path: Path) -> dict[str, Any]:
     except (OSError, UnicodeDecodeError) as exc:
         # An unreadable config is the operator's file, not an agent6 defect: a
         # root-owned one after a sudo run, a directory at the path, a stray
-        # non-UTF-8 byte. Reported as a crash it invited a bug report.
+        # non-UTF-8 byte. It refuses, never crash-reports.
         raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 

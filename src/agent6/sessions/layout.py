@@ -132,9 +132,8 @@ HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 
 def bucket_dir(state_dir: Path, bucket: str) -> Path:
-    """The directory holding sessions of one bucket. The one owner of that
-    arithmetic: ~30 call sites used to spell it out and each had to be found
-    again whenever the layout moved."""
+    """The directory holding sessions of one bucket: the one owner of that
+    arithmetic, so a layout change lands in one place."""
     return state_dir / SESSIONS_ROOT / bucket
 
 

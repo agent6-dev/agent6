@@ -385,9 +385,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     if (not preset and manifest.workflow.preset_from_flag)
                     else None
                 ),
-                # Hand --steer through: the bridge files seeded above are
-                # wiped by run_task's own stale-state clear, so a parked
-                # resume's follow-up was silently lost.
+                # Hand --steer through: run_task's stale-state clear wipes
+                # the bridge files seeded above, so a parked resume's follow-up
+                # only survives as an argument.
                 initial_steer=steer,
                 reporter=reporter,
             )
