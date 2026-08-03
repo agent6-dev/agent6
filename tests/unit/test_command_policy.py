@@ -97,3 +97,24 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
     assert (err is not None) is refused
     if err is not None:
         assert "--auto-approve" in err and "--no-commands" in err
+
+
+def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> None:
+    """The asymmetry that matters: "no" to THIS command is not "no commands".
+    Only deny-for-session, `run_commands = "no"` and `--no-commands` withdraw
+    the tools; a single answer -- either way -- decides a single call."""
+    from agent6.runs.ipc import session_deny_set
+
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
+    )
+    d = ToolDispatcher(root=tmp_path, config=cfg, run_dir=tmp_path)
+
+    answers = iter(["no", "no", "yes"])
+    d._approver = lambda _p: next(answers) == "yes"  # pyright: ignore[reportPrivateUsage]
+    for _ in range(2):
+        with pytest.raises(Exception, match="not approved"):
+            d.dispatch("run_command", {"argv": ["true"]})
+        assert not session_deny_set(tmp_path)
+        assert d.command_policy() == "ask"
+        assert set(d.available_tool_names()) >= _COMMAND_TOOLS
