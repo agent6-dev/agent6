@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -167,10 +168,42 @@ def _parallel_joined_body(event: dict[str, Any]) -> str:
     return "\n".join([head, *rows])
 
 
-def _parallel_failed_body(event: dict[str, Any]) -> str:
-    """A `/parallel` dispatch failure (nothing was joined): name the group + error."""
+def _parallel_failed_body(event: dict[str, Any]) -> str | None:
+    """A `/parallel` dispatch failure (nothing was joined): name the group + error.
+
+    Two shapes: a dispatch failure carries `error`; a post-join failure carries
+    only `lanes` -- a subset of the joined event, which already showed each
+    lane's status, so it renders nothing rather than a redundant marker.
+    """
     error = str(event.get("error", "")).strip()
+    if not error:
+        return None
     return f"{_parallel_group_label(event)} dispatch failed: {error}"
+
+
+def _mcp_unavailable_body(event: dict[str, Any]) -> str:
+    """A configured MCP server that did not start: why, and what it costs.
+
+    The tools it would have carried are simply absent, so without this the run
+    looks normal and quietly cannot do what the operator configured it for. The
+    error already names the server (every startup-path MCPError does), so the
+    line adds only the consequence.
+    """
+    error = str(event.get("error", "")).strip()
+    if not error:
+        server = str(event.get("server", "")).strip() or "(unnamed)"
+        return f"MCP server {server!r} is unavailable; its tools are missing"
+    return f"{error}; its tools are missing"
+
+
+# Events that render as a marker BETWEEN turns, each composing its own body.
+# A builder returning None renders nothing.
+_MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
+    "mcp.server_unavailable": _mcp_unavailable_body,
+    "loop.parallel.dispatched": _parallel_dispatched_body,
+    "loop.parallel.joined": _parallel_joined_body,
+    "loop.parallel.failed": _parallel_failed_body,
+}
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
@@ -233,23 +266,13 @@ class TranscriptFold:
             self._commits += 1
             n = len(str(event.get("patch", "")).splitlines())
             return [TranscriptItem("commit", detail=f"{n} lines")]
-        if etype == "loop.parallel.dispatched":
-            out = self._flush_message()  # a turn's prose precedes the dispatch marker
-            out.append(TranscriptItem("marker", body=_parallel_dispatched_body(event)))
-            return out
-        if etype == "loop.parallel.joined":
-            out = self._flush_message()
-            out.append(TranscriptItem("marker", body=_parallel_joined_body(event)))
-            return out
-        if etype == "loop.parallel.failed":
-            # Two shapes: a dispatch failure carries `error` (no join happened, so
-            # render it); a post-join failure carries only `lanes` (a subset of the
-            # joined event, which already showed each lane's status -- skip it, no
-            # redundant marker).
-            if not str(event.get("error", "")).strip():
+        build = _MARKER_BODIES.get(etype)
+        if build is not None:
+            body = build(event)
+            if body is None:
                 return []
-            out = self._flush_message()
-            out.append(TranscriptItem("marker", body=_parallel_failed_body(event)))
+            out = self._flush_message()  # a turn's prose precedes the marker
+            out.append(TranscriptItem("marker", body=body))
             return out
         aside = _BETWEEN_TURNS.get(etype)
         if aside is not None:

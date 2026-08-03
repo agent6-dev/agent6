@@ -530,6 +530,12 @@ agent6 mcp list
 
 It leaves `mcp.enabled` alone: that master switch stays your decision.
 
+A server that does not start is skipped, never fatal -- the run simply does not
+see its tools. It says so in the conversation (an `mcp.server_unavailable`
+journal event, so every surface shows it, editors included) rather than only on
+stderr, where a run under an editor looks normal while quietly missing the tools
+you configured. `agent6 check` reports the same reason.
+
 A spawned server runs as you, with your whole filesystem, until you say
 otherwise. A `[sandbox]` block is how:
 

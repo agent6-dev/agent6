@@ -14,6 +14,7 @@ from agent6.config import (
     AnthropicProviderEntry,
     Config,
 )
+from agent6.events import EventSink
 from agent6.models.cache import list_models
 from agent6.sandbox import landlock_abi, strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
@@ -130,12 +131,17 @@ def check_provider_keys(cfg: Config) -> str | None:
 
 
 def start_mcp_manager_if_enabled(
-    cfg: Config, *, reporter: Reporter = STDIO_REPORTER
+    cfg: Config, *, reporter: Reporter = STDIO_REPORTER, events: EventSink | None = None
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
-    teardown entirely). Each server's startup failure is logged and
-    silently skipped; one bad server doesn't poison the run.
+    teardown entirely). One bad server doesn't poison the run: it is skipped,
+    and the run simply does not see its tools.
+
+    A skipped server also becomes an ``mcp.server_unavailable`` journal event
+    when *events* is given. Stderr is only visible from a terminal -- under an
+    editor it is a log pane, and the operator sees a run quietly missing the
+    tools they configured.
     """
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
@@ -166,7 +172,11 @@ def start_mcp_manager_if_enabled(
     if not configs:
         return None
     _warn_unconfinable(cfg, reporter=reporter)
-    return MCPManager.start(configs, logger=reporter.err)
+    manager = MCPManager.start(configs, logger=reporter.err)
+    if events is not None:
+        for failure in manager.failures:
+            events.emit("mcp.server_unavailable", server=failure.name, error=failure.error)
+    return manager
 
 
 def _warn_unconfinable(cfg: Config, *, reporter: Reporter) -> None:

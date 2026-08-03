@@ -105,6 +105,16 @@ class MCPToolDescriptor:
 
 
 @dataclass(frozen=True, slots=True)
+class MCPStartFailure:
+    """A configured server that is not there. Recorded rather than only logged:
+    a log line goes wherever the front-end's stderr goes, which under an editor
+    is a pane nobody is watching."""
+
+    name: str
+    error: str
+
+
+@dataclass(frozen=True, slots=True)
 class MCPConfinement:
     """What confining one spawned MCP server means, in one record.
 
@@ -518,6 +528,8 @@ class MCPManager:
     """
 
     _servers: dict[str, _MCPServer] = field(default_factory=dict)
+    # Configured servers that did not start, in configuration order.
+    failures: tuple[MCPStartFailure, ...] = ()
 
     @classmethod
     def start(
@@ -527,6 +539,7 @@ class MCPManager:
         logger: Callable[[str], None] | None = None,
     ) -> MCPManager:
         mgr = cls()
+        failures: list[MCPStartFailure] = []
         for spec in configs:
             name = spec.name
             if name in mgr._servers:
@@ -543,9 +556,11 @@ class MCPManager:
             try:
                 srv.start()
             except MCPError as exc:
-                # One bad server shouldn't take the whole agent down;
-                # we log and skip. The agent will simply not see this
-                # server's tools.
+                # One bad server shouldn't take the whole agent down; it is
+                # recorded and skipped, and the run simply does not see its
+                # tools. The caller turns the record into a journal event, so
+                # the absence reaches the conversation and not only a log.
+                failures.append(MCPStartFailure(name=name, error=str(exc)))
                 if logger is not None:
                     logger(f"[mcp] failed to start {name!r}: {exc}")
                 srv.close()
@@ -553,6 +568,7 @@ class MCPManager:
             mgr._servers[name] = srv
             if logger is not None:
                 logger(f"[mcp] started {name!r} ({len(srv.tools)} tools)")
+        mgr.failures = tuple(failures)
         return mgr
 
     def descriptors(self) -> tuple[MCPToolDescriptor, ...]:

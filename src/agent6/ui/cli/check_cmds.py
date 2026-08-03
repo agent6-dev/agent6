@@ -277,10 +277,17 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         for d in descriptors:
             by_server.setdefault(d.server_name, []).append(d.tool_name)
         configured = {name for name, srv in cfg.mcp.servers.items() if srv.enabled}
+        why_missing = {f.name: f.error for f in manager.failures}
         for name in sorted(configured):
             tools = by_server.get(name, [])
             ok = bool(tools)
-            detail = f"{len(tools)} tool(s)" if ok else "started but exposed no tools"
+            # A server that never started is not one that "exposed no tools":
+            # the reason the operator needs is the spawn error, not a symptom.
+            detail = (
+                f"{len(tools)} tool(s)"
+                if ok
+                else why_missing.get(name, "started but exposed no tools")
+            )
             print(f"[{'PASS' if ok else 'FAIL'}] mcp.{name}: {detail}")
             out.append(
                 _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
