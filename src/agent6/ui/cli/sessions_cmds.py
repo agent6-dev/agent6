@@ -49,6 +49,7 @@ from agent6.sessions.manifest import (
 )
 from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
+    NOTHING_YET,
     _runs_dir,
     _state_dir,
     print_nothing_yet,
@@ -114,7 +115,7 @@ def _cmd_list() -> int:
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     if not dirs:
-        print('no sessions yet. Start one with `agent6 run "<task>"`.')
+        print(NOTHING_YET)  # the listing's empty state is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
     summaries = sorted(

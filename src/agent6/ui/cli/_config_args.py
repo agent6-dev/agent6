@@ -80,7 +80,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     # `get` reads effective leaves, and `[presets.*]` are stripped before
     # validation, so offering them would propose an input it refuses.
     config_get_key.completer = partial(  # type: ignore[attr-defined]
-        _complete_config_keys, include_presets=False
+        _complete_config_keys, settable=False
     )
     config_get_machine = config_get.add_argument(
         "--machine-file",

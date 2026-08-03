@@ -44,7 +44,7 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
     def guarded(*args: Any, **kwargs: Any) -> list[str]:
         try:
             return fn(*args, **kwargs)
-        except (OSError, ConfigError, ValueError):
+        except Exception:
             return []
 
     return guarded
@@ -135,24 +135,23 @@ def _user_preset_names() -> list[str]:
 
 
 @_never_raises
-def _complete_config_keys(prefix: str, *, include_presets: bool = True, **_kw: object) -> list[str]:
+def _complete_config_keys(prefix: str, *, settable: bool = True, **_kw: object) -> list[str]:
     """argcomplete: known dotted config leaf paths (effective + enum keys).
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already).
 
-    ``include_presets=False`` for `config get`, which reads EFFECTIVE leaves:
-    `[presets.*]` tables are stripped before validation, so it rejects them as
-    "not a config leaf". A completer must offer what its command accepts -- which
-    is also why the enum keys, offered so `config set` can reach a leaf no layer
-    has set yet, are withheld from it: `get` rejects those for the same reason.
+    ``settable=False`` for `config get`, which reads EFFECTIVE leaves only:
+    both the enum keys (offered so `config set` can reach a leaf no layer has
+    set yet) and `[presets.*]` paths (stripped before validation) are inputs
+    `get` rejects, and a completer must offer what its command accepts.
     """
     try:
         keys = set(leaf_keys(load_effective(Path.cwd(), None)))
     except ConfigError:
         keys = set()
-    if include_presets:
+    if settable:
         keys |= set(_CONFIG_ENUM_CHOICES)
-    if include_presets and prefix.startswith("preset"):
+    if settable and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
         keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
     return sorted(k for k in keys if k.startswith(prefix))

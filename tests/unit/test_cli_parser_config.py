@@ -88,7 +88,7 @@ def test_config_get_does_not_offer_keys_it_rejects(
     monkeypatch.chdir(tmp_path)
 
     for_set = _complete_config_keys("presets.")
-    for_get = _complete_config_keys("presets.", include_presets=False)
+    for_get = _complete_config_keys("presets.", settable=False)
 
     assert any(k.startswith("presets.mine.") for k in for_set), "the write verbs still offer them"
     assert not any(k.startswith("presets.") for k in for_get), f"get offered: {for_get[:3]}"
@@ -131,5 +131,5 @@ def test_get_completion_offers_no_key_get_rejects(
         _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
     )
 
-    for key in _complete_config_keys("models.", include_presets=False):
+    for key in _complete_config_keys("models.", settable=False):
         assert main(["config", "get", key]) == 0, f"completion offered {key!r}, which get rejects"

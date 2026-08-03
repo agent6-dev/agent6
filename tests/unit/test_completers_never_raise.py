@@ -46,3 +46,16 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
 
     result = fn("", parsed_args=None)  # pyright: ignore[reportCallIssue, reportGeneralTypeIssues]
     assert isinstance(result, list), f"{name} returned {result!r}"
+
+
+def test_any_completer_bug_yields_no_suggestions_not_a_traceback() -> None:
+    """The decorator's promise is its name: never an exception, not "never
+    the three exception types someone predicted". A KeyError from a bug is a
+    traceback over the command line all the same."""
+    from agent6.ui.cli.completers import _never_raises  # pyright: ignore[reportPrivateUsage]
+
+    @_never_raises
+    def boom(prefix: str, **_kw: object) -> list[str]:
+        raise KeyError("bug")
+
+    assert boom("") == []
