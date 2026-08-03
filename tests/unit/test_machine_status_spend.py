@@ -162,3 +162,29 @@ def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: Path) -
     assert spend.input_tokens == 40_000
     assert spend.output_tokens == 8_000
     assert spend.partial is True  # an unpriced slice keeps its lower-bound flag
+
+
+def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Path) -> None:
+    """An UNPRICED slice reports usd 0.0 with usd_partial True. Guarding the end
+    event's fold on `event.usd` being truthy skipped it entirely, so the tokens
+    and the sticky lower-bound flag went with it: the ledger claimed an EXACT
+    $0.0000 (in=0 tok) for a state that burned 48k tokens."""
+    from agent6.machine.journal import MachineEnd
+
+    root = tmp_path / "inst"
+    root.mkdir()
+    end = MachineEnd(
+        ts="2026-07-28T00:00:00+00:00",
+        status="failed",
+        reason="state 'judge': record has no field 'note'",
+        state="judge",
+        transitions=0,
+        usd=0.0,
+        usd_partial=True,
+        input_tokens=40_000,
+        output_tokens=8_000,
+    )
+    spend, _inflight = machine_spend([end], root, alive=False)
+    assert spend.input_tokens == 40_000
+    assert spend.output_tokens == 8_000
+    assert spend.partial is True, "the '~' lower-bound marker was dropped"
