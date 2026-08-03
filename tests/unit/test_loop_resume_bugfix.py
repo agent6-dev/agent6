@@ -962,3 +962,67 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     assert restored and restored[0]["pins"] == ["keep this"]  # only the fitting one
     refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
     assert len(refused) == 3  # the empty, the over-cap, and the blank
+
+
+def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) -> None:
+    """The system prompt is the RUN's, frozen at its start. Config that gains a
+    verify command between legs swaps what judges the work while the
+    instructions still name the old gate, so the worker runs one command and is
+    graded on another. Silence there is the worst case: it looks like it worked."""
+    from agent6.workflows._run_state import RunSnapshot as _Snap
+
+    run_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    run_dir.mkdir(parents=True)
+    snap_path = run_dir / "loop_state.json"
+    snap_path.write_text(
+        _Snap(
+            system="s",
+            messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=("pytest", "-q"),
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("make", "check"),  # the operator pinned one since
+            metric=SimpleNamespace(goal="maximize"),
+        ),
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "done"}}
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    ev = _EventCapture(path=run_dir / "logs.jsonl")
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        resume_state_path=snap_path,
+    )
+    wf.resume()
+
+    (swap,) = [e for e in ev.events if e["type"] == "loop.verify_swapped"]
+    assert swap["was"] == ["pytest", "-q"] and swap["now"] == ["make", "check"]
+    sent = provider.call.call_args.kwargs["messages"]
+    told = json.dumps(sent)
+    assert "was `pytest -q`" in told and "now `make check`" in told

@@ -533,9 +533,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
         # Re-pin for this leg: config outranks the pin, the pin outranks a
         # re-inference, and the manifest has to say which one this leg used.
-        pinned_origin = ""
+        pinned_origin, pinned_gate = "", ()
         with contextlib.suppress(ManifestError, OSError):
-            pinned_origin = read_manifest(layout.run_dir).workflow.verify_origin
+            pinned = read_manifest(layout.run_dir).workflow
+            pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
+        if leg_configured and pinned_gate and tuple(pinned_gate) != cfg.workflow.verify_command:
+            reporter.err(
+                f"[agent6] config replaces this run's verify gate: was"
+                f" {' '.join(pinned_gate)}, now {' '.join(cfg.workflow.verify_command)}"
+            )
         pin_gate(
             layout.run_dir,
             cfg.workflow.verify_command,

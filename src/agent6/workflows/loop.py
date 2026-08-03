@@ -833,6 +833,21 @@ class Workflow:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
             self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
 
+        # The system prompt is the run's, frozen: config that gained (or lost) a
+        # verify command between legs swaps what judges the work while the
+        # instructions still name the old gate. Say so rather than let the
+        # worker run a command nothing checks.
+        gate = tuple(self.config.workflow.verify_command)
+        if gate != snapshot.verify_command:
+            was = " ".join(snapshot.verify_command) or "none"
+            now = " ".join(gate) or "none"
+            conversation.notice(
+                f"[harness] This run's verify gate changed between legs: it was `{was}`,"
+                f" it is now `{now}`. The instructions above still name the old one."
+            )
+            self._log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
+            self._emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
+
         # Honour self.mode: resuming a plan run must not hand the worker the
         # mutating run-mode tools (run() builds its list the same way).
         tools = tool_definitions(self.dispatcher, mode=self.mode)
