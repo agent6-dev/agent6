@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -92,7 +93,7 @@ def test_no_terminal_ends_the_session_as_before(
         return 0
 
     monkeypatch.setattr(prompt_mod, "end_of_session_prompt", spy)
-    assert _prompt_for_the_next_input(None, 0) == 0
+    assert _prompt_for_the_next_input(None, 0, "any-session") == 0
     assert not called
 
 

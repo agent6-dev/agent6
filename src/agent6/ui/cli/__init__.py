@@ -19,8 +19,11 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
 )
+from agent6.config.layer import resolved_state_dir
 from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
+from agent6.sessions.id import unused_session_id
+from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
     build_ask_session_digest,
@@ -228,10 +231,11 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         task = _from_plan_task(plan_md, last_plan)
     else:
         task = args.task
+    session_id = _minted_session_id(args.session_id, "run")
     rc = _cmd_run(
         args.config,
         task,
-        session_id=args.session_id,
+        session_id=session_id,
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
@@ -247,20 +251,38 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
     # so neither hands the terminal back to a prompt.
     if getattr(args, "parallel", "") or args.tui:
         return rc
-    return _prompt_for_the_next_input(args.config, rc)
+    return _prompt_for_the_next_input(args.config, rc, session_id)
 
 
-def _prompt_for_the_next_input(config_path: Path | None, rc: int) -> int:
+def _minted_session_id(explicit: str, mode: str) -> str:
+    """This invocation's session id, minted here when the operator named none.
+
+    Through the same owner ACP mints with, and BEFORE the run: the dispatcher
+    then knows which session it created, so the end-of-session prompt offers
+    that one rather than whatever the repo's newest happens to be. Minting
+    reserves nothing on disk, so a run that refuses leaves no session behind.
+    """
+    if explicit:
+        return explicit
+    return unused_session_id(resolved_state_dir(Path.cwd()), session_bucket(mode))
+
+
+def _prompt_for_the_next_input(config_path: Path | None, rc: int, session_id: str) -> int:
     """Ask for the next input instead of ending, when someone is there to type.
 
     `run` and `plan` sessions end this way; `ask` does not (a one-shot question
     that becomes a conversation is a different feature). Without a terminal the
     session ends as it always did, with the resume line already printed.
+
+    Only ever THIS invocation's session, and only once it exists on disk: the
+    refusal paths above return before any session is created, and resolving the
+    repo's newest one instead offered to continue -- then continued -- a
+    session this run had nothing to do with.
     """
     if not prompting_is_possible():
         return rc
-    layout = resolve_or_newest_layout(Path.cwd(), "")
-    if layout is None:
+    layout = resolve_or_newest_layout(Path.cwd(), session_id)
+    if layout is None or not layout.session_dir.is_dir():
         return rc
     return end_of_session_prompt(
         rc=rc, session_id=layout.session_id, ask=input, config_path=config_path
@@ -278,16 +300,17 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    session_id = _minted_session_id(args.session_id, "plan")
     rc = _cmd_run(
         args.config,
         args.task,
-        session_id=args.session_id,
+        session_id=session_id,
         mode="plan",
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
     )
-    return _prompt_for_the_next_input(args.config, rc)
+    return _prompt_for_the_next_input(args.config, rc, session_id)
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
