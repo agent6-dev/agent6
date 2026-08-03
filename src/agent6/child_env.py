@@ -14,11 +14,10 @@ from __future__ import annotations
 
 import os
 
-# Enough to execute a program (PATH, HOME, locale, user identity) and to reach
-# the desktop bus (notify-send needs DISPLAY/DBUS). Never the whole
-# environment: it carries the provider API keys resolved via
-# `[providers.*].api_key_env`, and a child that logs or forwards its env -- a
-# shell wrapper, a webhook poster, an MCP server -- would carry the key with it.
+# Enough to execute a program. Never the whole environment: it carries the
+# provider API keys resolved via `[providers.*].api_key_env`, and a child that
+# logs or forwards its env -- a shell wrapper, a webhook poster, an MCP server
+# -- would carry the key with it.
 _KEEP = (
     "PATH",
     "HOME",
@@ -28,6 +27,16 @@ _KEEP = (
     "LC_ALL",
     "TERM",
     "TMPDIR",
+)
+
+# How to reach the operator's desktop session. A notify hook needs these --
+# `notify-send` talks to the session bus. A CONFINED child must not have them:
+# the session bus reaches `systemd --user`, which is NOT confined and will
+# gladly run a command on the caller's behalf. Landlock gates filesystem
+# paths, not `connect()` to a unix socket, so a server denied `/etc/passwd`
+# directly could still have systemd read it and write the result anywhere.
+# Proved end to end before this split existed.
+_DESKTOP = (
     "DISPLAY",
     "WAYLAND_DISPLAY",
     "DBUS_SESSION_BUS_ADDRESS",
@@ -36,7 +45,10 @@ _KEEP = (
 
 
 def curated_env(
-    *, passthrough: tuple[str, ...] = (), extra: dict[str, str] | None = None
+    *,
+    passthrough: tuple[str, ...] = (),
+    extra: dict[str, str] | None = None,
+    desktop: bool = True,
 ) -> dict[str, str]:
     """The base environment, plus *passthrough* names and *extra* values.
 
@@ -44,8 +56,13 @@ def curated_env(
     needs (an MCP server's API token). Named one at a time in config, because
     naming each one is the point: a provider key is never among them, since
     nobody would write it down.
+
+    ``desktop=False`` also drops the session-bus and display addresses. Pass it
+    for a child that is meant to be CONFINED: those addresses reach processes
+    that are not, and delegating to one walks straight out of any sandbox.
     """
-    env = {k: v for k in _KEEP if (v := os.environ.get(k)) is not None}
+    keep = (*_KEEP, *_DESKTOP) if desktop else _KEEP
+    env = {k: v for k in keep if (v := os.environ.get(k)) is not None}
     env.update({k: v for k in passthrough if (v := os.environ.get(k)) is not None})
     env.update(extra or {})
     return env

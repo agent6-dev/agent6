@@ -210,7 +210,11 @@ class _MCPServer:
                 # provider API keys, and an MCP server is third-party code that
                 # may log or forward what it was given. A server that needs a
                 # token names it in `pass_env`.
-                env=curated_env(passthrough=self.pass_env),
+                # A confined server loses the desktop addresses too: the
+                # session bus reaches an UNCONFINED `systemd --user` that runs
+                # commands on request, which is a way out of any Landlock
+                # domain we just built.
+                env=curated_env(passthrough=self.pass_env, desktop=self.confine is None),
                 # Its own session: a terminal Ctrl-C signals the foreground
                 # process group, and an MCP server that dies with it breaks its
                 # tools for the rest of the run.

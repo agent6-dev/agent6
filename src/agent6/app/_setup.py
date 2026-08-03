@@ -15,7 +15,7 @@ from agent6.config import (
     Config,
 )
 from agent6.models.cache import list_models
-from agent6.sandbox import strict_namespaces_work
+from agent6.sandbox import landlock_abi, strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
@@ -160,4 +160,24 @@ def start_mcp_manager_if_enabled(
     ]
     if not configs:
         return None
+    _warn_unconfinable(cfg, reporter=reporter)
     return MCPManager.start(configs, logger=reporter.err)
+
+
+def _warn_unconfinable(cfg: Config, *, reporter: Reporter) -> None:
+    """Say so when a server asked to be confined cannot be, on this kernel.
+
+    Decided HERE, not in the shim: the shim's stderr goes to /dev/null (a
+    chatty server would otherwise spam every run), so a warning printed there
+    is a warning nobody reads -- and the manager's next line says the server
+    started, which reads as success.
+    """
+    if landlock_abi() > 0:
+        return
+    for name, srv in sorted(cfg.mcp.servers.items()):
+        if srv.enabled and srv.sandbox is not None and not srv.sandbox.require:
+            reporter.err(
+                f"[agent6] WARNING: MCP server {name!r} asked to be confined, but this"
+                " kernel has no Landlock: it is running with your full filesystem."
+                " Set its sandbox.require = true to refuse instead."
+            )

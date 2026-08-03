@@ -542,10 +542,20 @@ read_paths  = ["/usr", "/etc", "~/notes"]
 write_paths = ["~/notes"]
 ```
 
+**What this bounds, and what it does not.** Landlock gates filesystem paths.
+It does not gate `connect()` to a unix socket, so a confined server that could
+still reach your session bus would simply ask the *unconfined* `systemd --user`
+to act for it -- proved, before the fix. A confined spawn therefore also loses
+`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY` and `WAYLAND_DISPLAY`.
+Anything else that reaches an unconfined process (a listening daemon the server
+can talk to, a path you granted that holds one) is still a way out: name the
+narrowest paths that work.
+
 Filesystem only, for now. Namespace-level knobs (network, pivot_root, seccomp)
 need the jail launcher, which captures stdio and so cannot host a live MCP
 pipe; they are refused rather than accepted and ignored. A `url` server is your
-own process -- confine it where you start it.
+own process -- confine it where you start it. On a kernel with no Landlock the
+block degrades with a warning at run start; `require = true` refuses instead.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -554,8 +564,8 @@ own process -- confine it where you start it.
 | `servers.<name>.url` | `""` | An http(s) endpoint of a server the OPERATOR runs -- their container, their sandbox, their credentials -- which agent6 only connects to. Exactly one of this or `command`. Connecting means agent6 owns none of that server's environment, lifetime or confinement, which is how anyone actually runs a server that wants a browser or a device. |
 | `servers.<name>.token_env` | `""` | For a `url` server: the env var holding the bearer token. Named, never inlined -- a secret in a config file is a secret in a backup. Never logged, never in an error. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
-| `servers.<name>.sandbox.read_paths` | `[]` | Paths a SPAWNED server may read and execute (`~` expands). Naming any path opts the server into a Landlock domain it and everything it spawns inherit. **Absent means unconfined** -- it runs as you, with your whole filesystem -- because agent6 cannot know what a given server needs and a guess that breaks it is worse than none. |
-| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. A `[sandbox]` block naming neither is refused: it would read as protection while granting everything. |
+| `servers.<name>.sandbox.read_paths` | *(required in a block)* | Paths a SPAWNED server may read and execute (absolute, or `~`). Naming any path opts the server into a Landlock domain it and everything it spawns inherit, and drops its desktop-session addresses. **Absent block means unconfined** -- it runs as you, with your whole filesystem -- because agent6 cannot know what a given server needs and a guess that breaks it is worse than none. Required inside a block because Landlock grants read and execute together: a server that cannot read its own interpreter dies on startup with an import error that says nothing about the sandbox. |
+| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. |
 | `servers.<name>.sandbox.require` | `false` | Refuse to start the server at all on a kernel with no Landlock, instead of running it unconfined with a warning. |
 | `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |

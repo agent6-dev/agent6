@@ -106,7 +106,10 @@ def cmd_mcp_connect(
 
     print(f"\n{name}: {len(tools)} tool{'' if len(tools) == 1 else 's'}")
     for tool in tools:
-        summary = " ".join(tool.description.split())[:80]
+        # The server chose this text. Collapsing whitespace stops a forged
+        # extra line; dropping the other control characters stops ESC
+        # sequences repainting the operator's terminal.
+        summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
         print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
 
     # Values, not TOML text: `format_toml_value` serializes each one, so a

@@ -959,11 +959,24 @@ class MCPSandbox(BaseModel):
 
     @model_validator(mode="after")
     def _reachable(self) -> MCPSandbox:
-        if not (self.read_paths or self.write_paths):
+        if not self.read_paths:
+            # Landlock grants READ and EXECUTE together, so a server with no
+            # read path cannot reach its own interpreter and dies on startup
+            # with an import error that says nothing about the sandbox. A
+            # write-only block is never what the operator meant.
             raise ValueError(
-                "a [sandbox] block with no read_paths or write_paths confines"
-                " nothing; drop the block, or name what the server may reach"
+                "read_paths is required: a server needs to READ its own runtime"
+                " to start at all (its interpreter, its libraries). Name those"
+                " plus whatever data it reads; write_paths is separate."
             )
+        for group in (self.read_paths, self.write_paths):
+            for raw in group:
+                if not Path(raw).expanduser().is_absolute():
+                    raise ValueError(
+                        f"sandbox paths must be absolute (or start with ~): {raw!r}."
+                        " A relative one would be resolved against whatever"
+                        " directory agent6 happened to start in."
+                    )
         return self
 
 
@@ -1031,11 +1044,6 @@ class MCPServerEntry(BaseModel):
             # Nothing is spawned, so there is no environment to pass. Refusing
             # loudly beats accepting a setting that can never take effect.
             raise ValueError("pass_env is for spawned servers; a `url` one uses token_env")
-        if self.sandbox is not None and self.url:
-            raise ValueError(
-                "a [sandbox] block confines a server agent6 SPAWNS; a `url` one"
-                " is your own process, so confine it where you start it"
-            )
         if self.token_env and self.url.startswith("http://") and not _is_loopback(self.url):
             raise ValueError(
                 "a token over plain http would cross the network in cleartext;"
