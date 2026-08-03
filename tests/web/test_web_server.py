@@ -1196,3 +1196,26 @@ def test_steer_compact_directive_routes_to_compact_request(
     assert (run_dir / "compact.request").read_text(encoding="utf-8") == "keep the auth decisions"
     assert not (run_dir / "steer.answer").exists()
     assert not (run_dir / "steer.request").exists()
+
+
+def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A client vanishing mid-request is routine (a browser sends RST on
+    navigate-away, reload, or an abandoned body), and it surfaces at the
+    request-line read, outside every handler try. The stdlib handle_error
+    printed a full traceback to stderr for each one; real handler errors
+    keep their report."""
+    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    try:
+        for quiet_exc in (ConnectionResetError(104, "reset by peer"), BrokenPipeError()):
+            try:
+                raise quiet_exc
+            except OSError:
+                srv.handle_error(None, ("127.0.0.1", 12345))
+        assert capsys.readouterr().err == ""
+        try:
+            raise ValueError("a real handler bug")
+        except ValueError:
+            srv.handle_error(None, ("127.0.0.1", 12345))
+        assert "ValueError" in capsys.readouterr().err
+    finally:
+        srv.server_close()

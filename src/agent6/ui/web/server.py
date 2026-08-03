@@ -151,6 +151,15 @@ class WebServer(ThreadingHTTPServer):
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
 
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        # A client vanishing mid-request (navigate-away, reload, an abandoned
+        # body) raises at the request-line read, outside every handler try;
+        # the stdlib default printed a traceback for each. Real errors keep it.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
     def claim_run(self, run_dir: Path) -> None:
         """A browser opened this run's stream: register as an answer front-end
         so its approval/question/steer prompts bridge here. Reference-counted
@@ -228,7 +237,7 @@ class _Handler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         try:
             self._route(path)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
         except Exception as exc:  # never take the whole server down for one bad request
             self._send_json({"error": str(exc)}, status=500)
@@ -262,7 +271,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": f"body larger than {_MAX_BODY_BYTES} bytes"}, status=413)
                 return
             self._route_post(path)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             pass
         except ValidationError as exc:
             # The body was read (validation runs on the parsed body), so the
