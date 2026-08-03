@@ -117,6 +117,13 @@ def _discrete_log_line(evt: dict[str, object]) -> Text | None:
     return None
 
 
+# Answer submitted after the machine stopped mid-modal: the state's loop has
+# exited, so the per-state answer file has no reader; a poke wakes a waiting one.
+_ANSWER_LOST = (
+    "machine is not running; the answer reached nothing (poke it to wake a waiting machine)"
+)
+
+
 class MachineWatchScreen(Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
@@ -314,6 +321,10 @@ class MachineWatchScreen(Screen[None]):
         if ms.ended is not None and not self._ended:
             self._ended = True
             self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
+        # Liveness for the render + prompt gate, recomputed AFTER the _ended
+        # flip above (the line-286 `steerable` is for the footer edge and is
+        # stale-True on the poll that first observes the end).
+        live = self._steerable()
 
         log = self.query_one("#mw-log", RichLog)
         # New transitions.
@@ -327,11 +338,11 @@ class MachineWatchScreen(Screen[None]):
             self._flush_pending()
             if newest is not None:
                 log.write(Text(f"-- agent state: {newest.parent.name} --", style="cyan bold"))
-        self._render_log_lines(log)
+        self._render_log_lines(log, live=live)
         self._flush_pending()  # show partial reasoning each tick
 
         self._dispatch_notifications(ms)
-        self._dispatch_prompts()
+        self._dispatch_prompts(live=live)
 
     def _dispatch_notifications(self, ms: MachineState) -> None:
         """Pop an in-app + desktop notification for each new machine.notify, and
@@ -354,9 +365,17 @@ class MachineWatchScreen(Screen[None]):
             )
             desktop_notify(f"agent6: {ms.machine} {ended.status}", ended.reason)
 
-    def _dispatch_prompts(self) -> None:
+    def _dispatch_prompts(self, *, live: bool) -> None:
         """Pop approval/question modals for the current agent state's pending
-        prompts, writing answers back to that state's per-state dir."""
+        prompts, writing answers back to that state's per-state dir.
+
+        Only while the machine is RUNNING: a parked/stopped/ended instance's
+        newest agent state is finished, so the fold still carries an unanswered
+        prompt but nothing would poll the answer -- popping live-looking
+        Allow/Deny (a destructive-command approval among them) over a dead
+        machine is the machine twin of the run-modal gate."""
+        if not live:
+            return
         state_dir = self._state_dir()
         if state_dir is None:
             return
@@ -379,6 +398,11 @@ class MachineWatchScreen(Screen[None]):
 
     def _on_approval(self, state_dir: Path, prompt_id: str) -> Callable[[str | None], None]:
         def cb(answer: str | None) -> None:
+            # The machine can stop while the modal is open; say the answer went
+            # nowhere instead of writing a file the dead state will never read.
+            if not self._steerable():
+                self.app.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
+                return
             if answer == "session":  # allow every later run_command in this agent state
                 set_session_allow(state_dir)
             write_answer(state_dir, prompt_id, approved=answer in ("yes", "session"))
@@ -389,11 +413,14 @@ class MachineWatchScreen(Screen[None]):
         self, state_dir: Path, question_id: str
     ) -> Callable[[tuple[str, ...] | None], None]:
         def cb(answers: tuple[str, ...] | None) -> None:
+            if not self._steerable():
+                self.app.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
+                return
             write_question_answers(state_dir, question_id, answers or ())
 
         return cb
 
-    def _render_log_lines(self, log: RichLog) -> None:
+    def _render_log_lines(self, log: RichLog, *, live: bool) -> None:
         """Render new complete lines of the current state log: accumulate
         thinking/answer text in self._pending, write discrete events (tool
         calls) inline. The byte-offset cursor (partial trailing lines stay
@@ -409,8 +436,11 @@ class MachineWatchScreen(Screen[None]):
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._pending += str(evt.get("text", ""))
                 continue
-            if self._ended and etype == "role.call":
-                continue  # a terminal instance isn't "thinking…"; drop the phantom
+            if not live and etype == "role.call":
+                # A stopped/parked/ended instance isn't "thinking…"; drop the
+                # phantom (was gated on `_ended` only, so a killed worker or a
+                # parked machine still ticked a live role.call line).
+                continue
             discrete = _discrete_log_line(evt)
             if discrete is not None:
                 self._flush_pending()

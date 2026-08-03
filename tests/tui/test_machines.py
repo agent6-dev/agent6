@@ -662,3 +662,83 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: Path) -> None:
             assert screen._was_steerable is False  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
+
+
+def _blocked_machine(tmp_path: Path, *, alive: bool) -> tuple[Path, object]:
+    """A machine instance whose newest agent state is blocked on an unanswered
+    approval, with a live or dead worker."""
+    import json
+    import os
+
+    from agent6.machine import load_machine
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    state = instance / "states" / "0000-route"
+    state.mkdir(parents=True)
+    instance.joinpath("journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
+    instance.joinpath("worker.pid").write_text(
+        str(os.getpid()) if alive else "999999999", encoding="utf-8"
+    )
+    (state / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "approval.prompt", "id": "ap1", "prompt": "Allow rm -rf"})
+        + "\n",
+        encoding="utf-8",
+    )
+    return instance, spec
+
+
+def test_watch_screen_does_not_pop_prompts_on_a_dead_machine(tmp_path: Path) -> None:
+    """The fold keeps an unanswered prompt in the newest agent state past a
+    worker death, so the watch screen popped live-looking Allow/Deny (a
+    destructive-command approval among them) over a machine nobody can answer
+    and wrote the answer into a per-state dir whose loop has exited. The
+    machine twin of the run-modal gate."""
+    from textual.widgets import Static
+
+    from agent6.ui.tui.modals import ApprovalModal
+
+    instance, spec = _blocked_machine(tmp_path, alive=False)
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(4):  # let several polls run
+                await pilot.pause()
+            assert not isinstance(app.screen, ApprovalModal), "popped a modal on a dead machine"
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert "stopped" in str(screen.query_one("#mw-head", Static).render())
+
+    asyncio.run(scenario())
+
+
+def test_watch_screen_pops_prompts_on_a_live_machine(tmp_path: Path) -> None:
+    # The converse: gating on liveness must not cost a RUNNING machine its modal.
+    from agent6.ui.tui.modals import ApprovalModal
+
+    instance, spec = _blocked_machine(tmp_path, alive=True)
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            deadline = 0
+            while not isinstance(app.screen, ApprovalModal) and deadline < 80:
+                await pilot.pause(0.05)
+                deadline += 1
+            assert isinstance(app.screen, ApprovalModal), "a live machine must still pop the modal"
+
+    asyncio.run(scenario())
