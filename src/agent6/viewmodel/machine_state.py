@@ -22,8 +22,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from agent6.machine.journal import MachineEnd, MachineNotify, StepEvent
+from agent6.machine.journal import (
+    JournalError,
+    MachineEnd,
+    MachineJournal,
+    MachineNotify,
+    StepEvent,
+)
 from agent6.machine.model import MachineSpec
+from agent6.runs.ipc import worker_is_alive
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
@@ -146,6 +153,27 @@ def machine_status_word(ms: MachineState, *, parked: bool, alive: bool) -> str:
     if alive:
         return "running"
     return "stopped"
+
+
+def machine_is_parked(machine_dir: Path) -> bool:
+    """True when the instance is parked in an armed wait (a PendingWait is
+    persisted). Under --exit-on-wait scheduling a parked machine legitimately
+    has no live process, so liveness probes must not read "dead pid" as
+    "crashed" while this holds. A corrupt wait file counts as parked: better
+    to keep streaming than to close on a guess."""
+    try:
+        return MachineJournal(machine_dir).read_pending_wait() is not None
+    except JournalError:
+        return True
+
+
+def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
+    """THE status word for a machine instance with a dir on disk:
+    :func:`machine_status_word` fed the two dir probes (armed wait, worker
+    pid), so surfaces cannot pair the probes differently."""
+    return machine_status_word(
+        ms, parked=machine_is_parked(machine_dir), alive=worker_is_alive(machine_dir)
+    )
 
 
 def notification_key(n: NotificationView) -> tuple[str, str, str]:

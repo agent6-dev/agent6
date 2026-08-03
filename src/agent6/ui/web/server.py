@@ -51,6 +51,7 @@ from agent6.ui.web.page import (
 from agent6.viewmodel import (
     apply_event,
     initial_state,
+    machine_is_parked,
     run_state_as_dict,
     summarize_run_dir,
     tail_events,
@@ -725,7 +726,7 @@ class _Handler(BaseHTTPRequestHandler):
             if (
                 read_worker_pid(machine_dir) is not None
                 and not worker_is_alive(machine_dir)
-                and not model.machine_is_parked(machine_dir)
+                and not machine_is_parked(machine_dir)
             ):
                 # Synthesize a truthful terminal before closing: m.ended is the
                 # client's only terminate signal (same auto-retry story as the

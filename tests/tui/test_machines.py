@@ -589,3 +589,39 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
             assert not (state / "steer.request").exists()
 
     asyncio.run(scenario())
+
+
+def test_watch_header_reads_a_corrupt_wait_as_waiting(tmp_path: Path) -> None:
+    """A corrupt pending-wait file counts as parked (the rule machine_is_parked
+    documents: never read "dead pid" as "crashed" while a wait may be armed),
+    so the watch header says "waiting", not "stopped"."""
+    from textual.widgets import Static
+
+    from agent6.machine import load_machine
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    spec = load_machine(f)
+    instance = tmp_path / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
+    (instance / "wait.json").write_text("{ not json", encoding="utf-8")
+    (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
+
+    class _WaitHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WaitHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            head = str(screen.query_one("#mw-head", Static).render())
+            assert "waiting" in head
+            assert "stopped" not in head
+
+    asyncio.run(scenario())

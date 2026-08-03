@@ -4,15 +4,25 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from agent6.machine import load_machine
-from agent6.machine.journal import BranchFact, MachineEnd, MachineNotify, StepEvent
+from agent6.machine.journal import (
+    BranchFact,
+    MachineEnd,
+    MachineJournal,
+    MachineNotify,
+    PendingWait,
+    StepEvent,
+)
 from agent6.viewmodel.machine_state import (
     _NOTIFY_KEEP,  # pyright: ignore[reportPrivateUsage]
     NotificationView,
     fold_machine,
+    machine_is_parked,
     machine_status_word,
+    machine_word_for_dir,
     newest_state_log,
     notification_key,
 )
@@ -101,6 +111,37 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) 
     assert machine_status_word(live, parked=True, alive=True) == "waiting"
     assert machine_status_word(live, parked=False, alive=True) == "running"
     assert machine_status_word(live, parked=False, alive=False) == "stopped"
+
+
+def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: Path) -> None:
+    """The dir-level owner: the pure word fed the armed-wait and worker-pid
+    probes, so surfaces cannot pair them differently."""
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    assert machine_word_for_dir(live, d) == "stopped"  # no wait, no worker
+    MachineJournal(d).write_pending_wait(PendingWait(state="w", wake_epoch=None))
+    assert machine_word_for_dir(live, d) == "waiting"  # armed wait, no worker
+    MachineJournal(d).clear_pending_wait()
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert machine_word_for_dir(live, d) == "running"
+    ended = fold_machine(
+        spec, [MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1)]
+    )
+    assert machine_word_for_dir(ended, d) == "ok"  # the end outranks the probes
+
+
+def test_a_corrupt_wait_file_counts_as_parked(tmp_path: Path) -> None:
+    # Better to render "waiting" than to guess "stopped"/close the stream over
+    # an unreadable wait record; the one rule every surface shares.
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "wait.json").write_text("{ not json", encoding="utf-8")
+    assert machine_is_parked(d) is True
+    assert machine_word_for_dir(live, d) == "waiting"
 
 
 def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:

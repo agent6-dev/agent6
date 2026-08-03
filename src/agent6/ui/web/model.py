@@ -17,10 +17,9 @@ from typing import Any
 
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
+from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
-from agent6.runs.ipc import worker_is_alive
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
@@ -30,7 +29,7 @@ from agent6.viewmodel import (
     is_run_husk,
     is_winner,
     machine_state_as_dict,
-    machine_status_word,
+    machine_word_for_dir,
     newest_state_log,
     run_compare,
     run_state_as_dict,
@@ -177,9 +176,7 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
             entry["current"] = ms.current
             # Distinguish waiting (a parked --exit-on-wait instance, no live
             # worker) from running, so a paused machine never renders as busy.
-            entry["status"] = machine_status_word(
-                ms, parked=machine_is_parked(d), alive=worker_is_alive(d)
-            )
+            entry["status"] = machine_word_for_dir(ms, d)
         out.append(entry)
     out.sort(key=lambda e: e["mtime"], reverse=True)
     return out
@@ -316,18 +313,6 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     spec = load_machine(machine_dir / "machine.asm.toml")
     ms = fold_machine(spec, MachineJournal(machine_dir).read())
     return machine_state_as_dict(ms)
-
-
-def machine_is_parked(machine_dir: Path) -> bool:
-    """True when the instance is parked in an armed wait (a PendingWait is
-    persisted). Under --exit-on-wait scheduling a parked machine legitimately
-    has no live process, so liveness probes must not read "dead pid" as
-    "crashed" while this holds. A corrupt wait file counts as parked: better
-    to keep streaming than to close on a guess."""
-    try:
-        return MachineJournal(machine_dir).read_pending_wait() is not None
-    except JournalError:
-        return True
 
 
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:

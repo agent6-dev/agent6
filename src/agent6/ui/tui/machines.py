@@ -12,7 +12,6 @@ validation, and graph -- which is why ui depends on agent6.machine for this page
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 import json
 import os
@@ -73,7 +72,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     fold_machine,
     fold_run,
-    machine_status_word,
+    machine_word_for_dir,
     newest_state_log,
     tail_events,
 )
@@ -293,11 +292,7 @@ class MachineWatchScreen(Screen[None]):
         if ms.ended is not None:
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
-            parked = False
-            with contextlib.suppress(JournalError):
-                parked = self._journal.read_pending_wait() is not None
-            word = machine_status_word(ms, parked=parked, alive=worker_is_alive(self._root))
-            status = f"{word} · {ms.current}"
+            status = f"{machine_word_for_dir(ms, self._root)} · {ms.current}"
         self.query_one("#mw-head", Static).update(
             Text(f"machine: {ms.machine}   {status}   transitions: {len(ms.transitions)}")
         )

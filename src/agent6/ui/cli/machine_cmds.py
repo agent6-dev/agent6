@@ -70,7 +70,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
-    machine_status_word,
+    machine_word_for_dir,
 )
 from agent6.viewmodel.format import format_cost
 
@@ -443,13 +443,12 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
         # The same word the watch screen, the TUI header, and the web pill show
-        # for this dir, via machine_status_word (the one owner of the
+        # for this dir, via machine_word_for_dir (the one owner of the
         # running/waiting/stopped distinction): a parked --exit-on-wait wait is
         # "waiting", a terminal end its ok/failed, a crashed instance (dead pid,
         # no end, no wait) "stopped" -- never the engine's raw "incomplete".
         ms = fold_machine(spec, events)
-        status = machine_status_word(ms, parked=pending is not None, alive=False)
-        print(f"  status: {status}")
+        print(f"  status: {machine_word_for_dir(ms, root)}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(
@@ -536,16 +535,13 @@ def _render_overview(ms: MachineState) -> str:
     return "\n".join(lines)
 
 
-def _watch_liveness_exit(
-    journal: MachineJournal, root: Path, machine_id: str, ms: MachineState
-) -> int | None:
+def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int | None:
     """Watch's exit code when nothing will ever append to the journal: parked
     (an armed --exit-on-wait wait, no worker) or crashed (stale worker.pid, no
     end, no wait). None while a live worker may still write. Routed through
-    machine_status_word, the one owner of the running/waiting/stopped
+    machine_word_for_dir, the one owner of the running/waiting/stopped
     distinction, so watch agrees with status/TUI/web."""
-    parked = journal.read_pending_wait() is not None
-    word = machine_status_word(ms, parked=parked, alive=worker_is_alive(root))
+    word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
     if word == "waiting":
         print(
@@ -587,7 +583,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     if ms.ended is not None:
         print(f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} ({ms.ended.reason})")
         return 0 if ms.ended.status == "ok" else 1
-    code = _watch_liveness_exit(journal, root, machine_id, ms)
+    code = _watch_liveness_exit(root, machine_id, ms)
     if code is not None:
         return code
 
@@ -628,7 +624,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
                     f" {ms.ended.transitions} transitions ({ms.ended.reason})"
                 )
                 return 0 if ms.ended.status == "ok" else 1
-            code = _watch_liveness_exit(journal, root, machine_id, ms)
+            code = _watch_liveness_exit(root, machine_id, ms)
             if code is not None:
                 return code
             time.sleep(0.5)
