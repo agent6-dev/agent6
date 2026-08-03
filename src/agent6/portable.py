@@ -219,6 +219,38 @@ def atomic_write(path: Path, data: str | bytes) -> None:
     fsync_dir(path.parent)
 
 
+_TOML_BASIC_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
+def toml_basic_string(value: str) -> str:
+    """*value* as a TOML basic (double-quoted) string literal, quotes included.
+
+    Escapes backslash, quote, the named control escapes, and ``\\uXXXX`` for any
+    other control char. TOML basic strings forbid literal control chars, so an
+    unescaped one (a newline in a pasted key, say) writes a file that fails to
+    parse on read while the write reported success. The single owner of this
+    escaping: config serialization, ``config fill``, and secrets all share it so
+    none can drift back to escaping only ``\\`` and ``"``.
+    """
+    out: list[str] = []
+    for ch in value:
+        if ch in _TOML_BASIC_ESCAPES:
+            out.append(_TOML_BASIC_ESCAPES[ch])
+        elif ord(ch) < 0x20 or ch == "\x7f":
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
 def _ensure_parent_dirs(parent: Path) -> None:
     missing: list[Path] = []
     cur = parent

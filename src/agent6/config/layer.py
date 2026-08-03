@@ -59,7 +59,7 @@ from agent6.paths import (
     repo_config_path,
     state_dir,
 )
-from agent6.portable import atomic_write, locked_file
+from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 LayerName = Literal["default", "profile", "global", "repo", "flag", "machine"]
 
@@ -705,11 +705,6 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
 # ---------------------------------------------------------------------------
 
 
-def _toml_str(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
 def _toml_key(key: str) -> str:
     """A TOML key: bare when it matches the bare-key grammar, else quoted.
 
@@ -719,14 +714,14 @@ def _toml_key(key: str) -> str:
     `[providers.openrouter.free]` (silently re-nested), and `config fill
     --force` then replaced the operator's working config with the broken
     output."""
-    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml_str(key)
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else toml_basic_string(key)
 
 
 def _toml_scalar(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, str):
-        return _toml_str(value)
+        return toml_basic_string(value)
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_toml_scalar(v) for v in value) + "]"
     return str(value)

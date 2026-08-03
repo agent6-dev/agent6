@@ -35,6 +35,17 @@ def test_save_secret_preserves_other_providers(gcfg: Path) -> None:
     assert secrets.resolve_api_key("openrouter", None) == "sk-or-2"
 
 
+def test_save_secret_escapes_control_chars(gcfg: Path) -> None:
+    # A control char in a pasted key must not write unparseable secrets.toml.
+    # A raw newline/\x01 in a basic string is illegal TOML, so the whole file
+    # fails to parse and EVERY provider's key reads back missing -- while the
+    # save reported success.
+    secrets.save_secret("openrouter", "sk-or-clean")
+    secrets.save_secret("anthropic", "sk-\x01\nbroken")
+    assert secrets.resolve_api_key("anthropic", None) == "sk-\x01\nbroken"
+    assert secrets.resolve_api_key("openrouter", None) == "sk-or-clean"
+
+
 def test_env_takes_precedence_over_secrets(gcfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     secrets.save_secret("anthropic", "from-secrets")
     monkeypatch.setenv("MY_KEY", "from-env")

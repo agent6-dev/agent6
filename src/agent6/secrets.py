@@ -38,15 +38,11 @@ from agent6.paths import (
     mkdir_for_real_user,
     secrets_path,
 )
-from agent6.portable import atomic_write, locked_file
+from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 
 class SecretsError(Exception):
     """Raised when the secrets file is malformed or has unsafe permissions."""
-
-
-def _toml_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _require_safe_perms(path: Path, user: RealUser) -> None:
@@ -175,6 +171,6 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
             for field in sorted(entry):
                 value = entry[field]
                 if isinstance(value, str):
-                    lines.append(f'{field} = "{_toml_escape(value)}"')
+                    lines.append(f"{field} = {toml_basic_string(value)}")
             lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"

@@ -17,6 +17,17 @@ from agent6 import portable
 from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
 
 
+def test_toml_basic_string_round_trips_including_control_chars() -> None:
+    # The rendered literal must be a complete, parseable TOML basic string that
+    # round-trips to the input. Control chars are illegal raw in a basic string,
+    # so an unescaped one writes a file that fails to parse on the next read.
+    import tomllib
+
+    for raw in ["plain", 'has "quotes"', "back\\slash", "tab\tnew\nline\r", "ctrl\x01\x1f\x7f"]:
+        rendered = portable.toml_basic_string(raw)
+        assert tomllib.loads(f"k = {rendered}")["k"] == raw
+
+
 def test_exclusive_lock_blocks_second_holder(tmp_path: Path) -> None:
     lock_path = tmp_path / "x.lock"
     fd1 = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)

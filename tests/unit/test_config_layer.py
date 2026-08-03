@@ -359,6 +359,20 @@ def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
     assert reloaded.skills.state == {"org.some.skill": "enabled"}
 
 
+def test_materialize_escapes_control_chars_in_values(repo: Path, tmp_path: Path) -> None:
+    """A control char in a config string value must serialize to valid TOML.
+    The old escape (backslash + quote only) emitted the raw char, so the file
+    failed to parse on the next read while `config fill` reported success."""
+    from agent6.config import Config, load_config
+    from agent6.config.layer import materialize
+
+    cfg = Config.model_validate({"workflow": {"verify_command": ["echo", "a\x01b\nc"]}})
+    out = tmp_path / "materialized.toml"
+    out.write_text(materialize(cfg), encoding="utf-8")
+    reloaded = load_config(out)
+    assert list(reloaded.workflow.verify_command) == ["echo", "a\x01b\nc"]
+
+
 def test_concurrent_rollback_does_not_erase_a_valid_write(
     repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
