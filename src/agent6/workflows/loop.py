@@ -70,6 +70,7 @@ from agent6.tools.dispatch import (
     ToolDispatcher,
     ToolError,
 )
+from agent6.tools.mcp_client import MCP_TOOL_PREFIX
 from agent6.tools.results import ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     FinishPlanningInput,
@@ -1262,6 +1263,22 @@ class Workflow:
             state.verify_fail_streak = 1
             state.no_progress_nudges_used = 0
 
+    def _left_the_tree_dirty(self, name: str) -> bool:
+        """Did a child-process tool leave uncommitted changes behind?
+
+        Only `run_command` and MCP tools are asked: `run_verify_command` and
+        `run_metric_command` are the operator's own gates, and the caches they
+        drop must not invalidate the pass they just produced. Git answers the
+        question, so a read-only probe (`ls`, `grep`) costs its pass nothing --
+        and gitignored build artifacts never count as a change.
+        """
+        if name != "run_command" and not name.startswith(MCP_TOOL_PREFIX):
+            return False
+        try:
+            return bool(dirty_paths(self.root, limit=1))
+        except GitError:
+            return False  # no repo (ask mode) or git unreadable: nothing to ground on
+
     def _note_tool_effects(
         self, state: _LoopState, turn: _TurnState, name: str, result: ToolResult
     ) -> None:
@@ -1292,6 +1309,14 @@ class Workflow:
             state.ever_edited = True
             # Invalidate a same-turn earlier verify pass: the commit
             # gate must not label this edited tree "verify passed".
+            turn.edit_since_verify_pass = True
+            state.edited_since_verify = True
+        elif self._left_the_tree_dirty(name):
+            # A command (or an MCP tool) can change the tree just as an edit
+            # tool can, and a green verify must not survive it: the tree the
+            # gate approved is no longer the tree we have. Asked of git rather
+            # than assumed from the tool name, so a read-only `ls` or `grep`
+            # through run_command keeps the pass it had.
             turn.edit_since_verify_pass = True
             state.edited_since_verify = True
         if name in DAG_MUTATING_TOOLS:

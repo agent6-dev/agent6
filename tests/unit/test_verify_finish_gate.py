@@ -17,10 +17,10 @@ from agent6.workflows.loop import (
 )
 
 
-def _wf(*, verify: bool, mode: str = "run") -> Workflow:
+def _wf(*, verify: bool, mode: str = "run", root: Path = Path("/tmp")) -> Workflow:
     data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}
     return Workflow(
-        root=Path("/tmp"),
+        root=root,
         config=Config.model_validate(data),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -80,3 +80,32 @@ def test_plan_and_ask_are_never_gated_on_verify() -> None:
     for mode in ("plan", "ask"):
         assert _verified(_wf(verify=True, mode=mode), last_verify_ok=None) == "not_applicable"
         assert _verified(_wf(verify=True, mode=mode), last_verify_ok=False) == "not_applicable"
+
+
+def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: Path) -> None:
+    """A green verify must not survive a run_command that changed the tree:
+    edited_since_verify was set only by apply_edit/apply_patch, so a model
+    could verify green, then mutate through run_command (or an MCP tool) and
+    still finish reporting verified="passed" -- defeating exit 4,
+    require_verify_to_finish, and the auto-merge gate together. Grounded on
+    git, so a read-only command keeps the pass it had."""
+    import subprocess as sp
+
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    sp.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    sp.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
+    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
+
+    dirty = _wf(verify=True, root=tmp_path)._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
+
+    assert dirty("run_command") is False  # clean tree: a read-only probe costs nothing
+    assert dirty("grep") is False  # never asked of in-process read tools
+    (tmp_path / "a.txt").write_text("mutated\n", encoding="utf-8")
+    assert dirty("run_command") is True
+    assert dirty("mcp__srv__write") is True
+    # verify/metric are the operator's own gates; their caches must not
+    # invalidate the pass they just produced.
+    assert dirty("run_verify_command") is False
+    assert dirty("run_metric_command") is False
