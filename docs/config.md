@@ -45,8 +45,13 @@ table below), so a repo needs nothing repo-specific to run.
   erasing a concurrent edit -- the write is kept and the error says "kept as
   written", pointing at `agent6 config fix`. Publishes are atomic, so a torn
   file is impossible; the worst case is one lost update.
-- `agent6 config fill`: materialize every resolved value (defaults plus
-  global, never the repo layer) into the global config file.
+- `agent6 config fill`: materialize defaults plus your global config into the
+  global config file, so every value is explicit. The repo layer is not read
+  (its overrides belong to one repo; baking them into the global file would
+  follow you everywhere), and a selected preset is neither applied nor
+  dropped: the `preset = "..."` line and any `[presets.*]` tables you authored
+  survive, so the preset keeps applying over the filled values at runtime and
+  stays editable.
 - A config file that is a **symlink** (dotfiles) stays one: edits follow the
   link and rewrite its target, provided that target is yours. A symlink to a
   file another user owns is refused, naming both paths, so `sudo agent6 config

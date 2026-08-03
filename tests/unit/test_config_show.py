@@ -99,9 +99,12 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     assert main(["config", "fill", "--force"]) == 0
 
     after = load_effective(tmp_path)
-    assert after.config.sandbox.run_commands == "yes", "the preset's leaf did not survive"
+    assert after.config.sandbox.run_commands == "yes", "the preset stopped applying"
     text = (cfg_home / "config.toml").read_text(encoding="utf-8")
     assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
-    # The SELECTOR still goes: every leaf it chose is explicit now, so keeping it
-    # would apply the preset a second time on top of the snapshot.
-    assert "\npreset = " not in text and not text.startswith("preset = ")
+    # The SELECTOR survives, and the preset's EFFECT is not baked: the filled
+    # leaf is the default, with the preset still applying over it at runtime.
+    # Baking it froze the old values while the selector -- what the operator
+    # edits -- was dropped, so later preset edits did nothing.
+    assert 'preset = "myfast"' in text
+    assert 'run_commands = "ask"' in text, f"the preset's effect was baked in:\n{text}"

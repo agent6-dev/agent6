@@ -27,6 +27,7 @@ from agent6.config.layer import (
     flatten_leaves,
     load_effective,
     load_effective_with_overlay,
+    load_global_only,
     materialize,
     preset_catalog,
     repo_config_path_for,
@@ -129,9 +130,9 @@ def _open_target(target: Path) -> None:
     mkdir_for_real_user(target.parent)
 
 
-def _cmd_config_fill(config_path: Path | None, *, force: bool) -> int:
+def _cmd_config_fill(*, force: bool) -> int:
     """Materialize defaults plus global into the global config file, never
-    the repo layer."""
+    the repo layer and never a preset's effects."""
     target = global_config_path()
     _open_target(target)
     # Load the effective config, existence-check, and publish all under the
@@ -140,7 +141,7 @@ def _cmd_config_fill(config_path: Path | None, *, force: bool) -> int:
     # write_text then overwrote it with the stale snapshot (lost update) and
     # could tear on a crash.
     with writing_config(target):
-        eff = load_effective(Path.cwd(), config_path)
+        eff = load_global_only()
         if target.is_file() and not force:
             print(
                 f"ERROR: {target} already exists. Re-run with --force to overwrite.",
@@ -149,7 +150,7 @@ def _cmd_config_fill(config_path: Path | None, *, force: bool) -> int:
             return 2
         atomic_write(
             target,
-            materialize(eff.config, keep_presets_from=target),
+            materialize(eff.config, keep_presets_from=target, keep_preset_selector=True),
         )
     print(f"Wrote fully-resolved config to {target}")
     return 0

@@ -280,16 +280,16 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
 
     fill_holds_lock = threading.Event()
     release_fill = threading.Event()
-    real_load = config_cmds.load_effective
+    real_load = config_cmds.load_global_only
     results: dict[str, object] = {}
 
-    def gated_load(root: Path, cfg: Path | None) -> object:
+    def gated_load() -> object:
         fill_holds_lock.set()  # reached inside `with locked_file(target)`
         release_fill.wait(timeout=5)
-        return real_load(root, cfg)
+        return real_load()
 
     def run_fill() -> None:
-        with mock.patch.object(config_cmds, "load_effective", gated_load):
+        with mock.patch.object(config_cmds, "load_global_only", gated_load):
             results["fill"] = _run(["config", "fill", "--force"])
 
     def run_set() -> None:
@@ -530,3 +530,45 @@ def test_setting_one_threshold_names_the_command_that_works(
     err = capsys.readouterr().err
     assert "config set context '{ drop_at_chars =" in err
     assert "summarise_at_chars =" in err
+
+
+def _fill_and_read(iso: Path) -> dict[str, object]:
+    assert _run(["config", "fill", "--force"]) == 0
+    return _global_toml(iso)
+
+
+def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: Path) -> None:
+    """fill writes the GLOBAL file; loading the full merge baked this repo's
+    overrides into it, so a value set for one repo followed the operator
+    everywhere."""
+    assert _run(["config", "set", "--repo", "sandbox.memory_limit_mb", "4321"]) == 0
+    filled = _fill_and_read(iso)
+    sandbox = filled["sandbox"]
+    assert isinstance(sandbox, dict)
+    assert sandbox["memory_limit_mb"] != 4321, "the repo layer leaked into the global config"
+
+
+def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: Path) -> None:
+    """A selected preset stays selected: baking its effects and dropping the
+    selector froze the old values and made later preset edits do nothing."""
+    assert _run(["config", "set", "preset", "quick"]) == 0
+    filled = _fill_and_read(iso)
+    assert filled.get("preset") == "quick", "the selector was dropped"
+    review = filled["review"]
+    assert isinstance(review, dict)
+    # `quick` sets review.trigger = "off"; the filled value must be the
+    # DEFAULT, with the preset still applying over it at runtime.
+    from agent6.config import Config
+
+    assert review["trigger"] == Config().review.trigger
+
+
+def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "config.toml").write_text(
+        "[presets.myteam.review]\nconcurrency = 2\n", encoding="utf-8"
+    )
+    filled = _fill_and_read(iso)
+    presets = filled["presets"]
+    assert isinstance(presets, dict)
+    assert "myteam" in presets

@@ -481,6 +481,23 @@ def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Lay
     return out
 
 
+def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
+    """The layers without their ``[presets.*]`` tables, plus those tables merged.
+
+    Presets are meta-config the Config schema forbids, so every path that
+    validates a layer strips them first, whether or not one is applied.
+    """
+    cleaned: list[Layer] = []
+    user_presets: dict[str, Any] = {}
+    for layer in layers:
+        data = dict(layer.data)
+        prof = data.pop("presets", None)
+        if isinstance(prof, dict):
+            user_presets = _deep_merge(user_presets, prof)
+        cleaned.append(Layer(layer.name, layer.path, data))
+    return cleaned, user_presets
+
+
 def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
     """Strip ``[presets]`` tables out of the user layers (they are meta-config,
     not part of the validated Config) and inject the selected preset
@@ -496,15 +513,7 @@ def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
     [preset if repo-selected] < [preset if --flag] < flag(``--config FILE``) <
     machine-overlay.
     """
-    cleaned: list[Layer] = []
-    user_presets: dict[str, Any] = {}
-    for layer in layers:
-        data = dict(layer.data)
-        prof = data.pop("presets", None)
-        if isinstance(prof, dict):
-            user_presets = _deep_merge(user_presets, prof)
-        cleaned.append(Layer(layer.name, layer.path, data))
-
+    cleaned, user_presets = _strip_presets(layers)
     name, source = _select_preset(cleaned, preset_override)
     overrides = resolve_preset(name, user_presets)
     if not overrides:
@@ -523,6 +532,21 @@ def load_effective(
     layers = discover_layers(repo_root, explicit_path)
     layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)")
+
+
+def load_global_only() -> EffectiveConfig:
+    """Defaults plus the global config, with no repo layer and no preset
+    applied: what ``agent6 config fill`` materializes.
+
+    A fill writes the GLOBAL file, so baking the repo layer into it would
+    follow the operator to every other repo, and baking a selected preset's
+    effects would freeze them as explicit values while the selector -- which
+    keeps applying at runtime -- is what the operator edits.
+    """
+    gpath = global_config_path()
+    layers = [Layer("global", gpath, _read_toml(gpath))] if gpath.is_file() else []
+    cleaned, _ = _strip_presets(layers)
+    return _effective_from_layers(cleaned, source="(global config)")
 
 
 def load_effective_with_overlay(
@@ -765,7 +789,11 @@ def _is_table_array(value: Any) -> bool:
 
 
 def materialize(
-    config: Config, *, for_repo: bool = False, keep_presets_from: Path | None = None
+    config: Config,
+    *,
+    for_repo: bool = False,
+    keep_presets_from: Path | None = None,
+    keep_preset_selector: bool = False,
 ) -> str:
     """Render the fully-resolved config as a complete TOML document.
 
@@ -782,14 +810,12 @@ def materialize(
     data = config.model_dump(mode="python")
     if for_repo and isinstance(data.get("agent6"), dict):
         data["agent6"].pop("state_dir", None)
-    # `preset` SELECTS other leaves rather than being one. Every leaf it chose is
-    # explicit in this document already, so re-emitting the selector is
-    # redundant -- and for a named preset it would apply twice. Emitting it also
-    # made the output unloadable: the layer refuses a top-level `preset` from an
-    # explicit `--config` file, so `config fill` wrote a file `--config` rejected
-    # and every `--parallel` lane (whose config is materialized the same way)
-    # died before it started.
-    data.pop("preset", None)
+    # A `--config FILE` layer refuses a top-level `preset`, so a document
+    # destined for one (a `--parallel` lane's snapshot) must not carry the
+    # selector. `config fill` writes the GLOBAL config, which does accept it,
+    # and there the selector is what the operator keeps editing -- dropping it
+    # would silently deselect the preset and freeze today's values.
+    data = data if keep_preset_selector else {k: v for k, v in data.items() if k != "preset"}
     lines: list[str] = [
         "# agent6 effective config, materialized by `agent6 config fill`.",
         "# Every value below is explicit; edit freely.",
