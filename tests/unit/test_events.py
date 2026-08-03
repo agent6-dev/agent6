@@ -37,16 +37,17 @@ def test_emit_creates_parent_dir(tmp_path: Path) -> None:
     assert target.is_file()
 
 
-def test_emit_drops_non_serializable_fields(tmp_path: Path) -> None:
+def test_emit_reprs_non_serializable_fields(tmp_path: Path) -> None:
+    """The sink never DROPS a field: _json_default reprs any unknown object
+    (circular refs included), so the event lands whole; without that fallback
+    the encoder would raise and the WHOLE event would be discarded."""
     sink = EventSink(tmp_path / "logs.jsonl")
 
-    # Path is handled via default; an object with a circular ref should be skipped.
     class Bad:
         pass
 
     bad = Bad()
     bad.self_ref = bad  # type: ignore[attr-defined]
-    # repr() handles it via _json_default fallback; ensure no exception escapes.
     sink.emit("ok", x=1, p=tmp_path / "a", weird=bad)
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 1
@@ -54,6 +55,8 @@ def test_emit_drops_non_serializable_fields(tmp_path: Path) -> None:
     p_value = lines[0]["p"]
     assert isinstance(p_value, str)
     assert p_value.endswith("/a")
+    weird = lines[0]["weird"]
+    assert isinstance(weird, str) and "Bad" in weird  # repr'd, not dropped
 
 
 def test_emit_swallows_oserror(tmp_path: Path) -> None:

@@ -3701,6 +3701,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: Path) -> None:
         '"verify_command": []}',
         encoding="utf-8",
     )
+    seeded_mtime_ns = snap_path.stat().st_mtime_ns
 
     provider = MagicMock()
     provider.call.return_value = _resp("all done")  # no tool_uses -> silent_finish
@@ -3715,8 +3716,8 @@ def test_resume_drives_loop_from_snapshot(tmp_path: Path) -> None:
     assert result.reason == "silent_finish"
     assert result.iterations == 5, "must resume at snapshot's next_iteration"
     assert result.tool_calls == 2, "must carry forward snapshot's tool_calls"
-    # Snapshot was rewritten before the (single) call this run made.
-    assert snap_path.is_file()
+    # The pre-call save REWROTE the seeded snapshot (not merely left it there).
+    assert snap_path.stat().st_mtime_ns > seeded_mtime_ns
 
 
 def test_resume_restores_root_task_id_on_dispatcher(tmp_path: Path) -> None:

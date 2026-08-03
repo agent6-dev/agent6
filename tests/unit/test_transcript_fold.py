@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import TranscriptItem, fold_transcript, salient_arg
+from agent6.viewmodel import fold_transcript, salient_arg
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -135,7 +135,6 @@ def test_salient_arg_prefers_a_primary_key() -> None:
     assert salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
     assert salient_arg({}) == ""
     assert salient_arg({"n": 3}) == "n=3"
-    assert isinstance(TranscriptItem("marker", body="reset"), TranscriptItem)
 
 
 def test_salient_arg_renders_argv_as_a_shell_line() -> None:
@@ -209,8 +208,9 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     """The app layer emits run.end reason="interrupted" on KeyboardInterrupt;
-    the value must live in RunReason (the wire vocabulary of run.end.reason)
-    and carry a friendly done-line label, not fall through as a raw token."""
+    the value must live in RunReason (the wire vocabulary of run.end.reason).
+    The raw token IS the accepted done-line rendering (it reads fine; the
+    label map exists only for unfriendly tokens like steer_abort)."""
     from typing import get_args
 
     from agent6.workflows._run_state import RunReason

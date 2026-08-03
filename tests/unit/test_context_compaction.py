@@ -113,13 +113,13 @@ def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
 
 
 def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
-    # Eliding a tool_result already smaller than the 263-char placeholder would
+    # Eliding a tool_result already smaller than the placeholder would
     # GROW cumulative size, not shrink it. Such blocks must be left intact.
     from agent6.workflows._compaction import (
         ELISION_PLACEHOLDER as PLACEHOLDER,
     )
 
-    tiny = "x" * 50  # < len(placeholder) == 263
+    tiny = "x" * 50  # smaller than the placeholder, so eliding it would grow the context
     big = "y" * 5000
     # Oldest-first; keep_recent=2 keeps the last two, and the final results
     # turn is exempt, so the eligible blocks are the two in the first turn.
@@ -132,7 +132,7 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # its eligible sibling is elided as normal.
     assert contents[0] == tiny
     assert "elided" in contents[1]
-    assert len(PLACEHOLDER) == 267
+    assert len(tiny) < len(PLACEHOLDER)  # the premise the skip guards
 
 
 def test_compact_noop_when_under_threshold() -> None:

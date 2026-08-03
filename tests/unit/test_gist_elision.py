@@ -258,8 +258,9 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     assert text.startswith(ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)
-    bare = ident.search(elision_placeholder("read_file", {"path": "a.py", "start_line": 100}))
+    full_input = {"path": "a.py", "start_line": 100, "limit": 500}
+    bare = ident.search(elision_placeholder("read_file", full_input))
     assert got is not None and bare is not None
-    label = call_label("read_file", {"path": "a.py", "start_line": 100, "limit": 500})
-    assert got.group(1) == label
+    assert got.group(1) == bare.group(1)  # gist and bare marker share ONE identity
+    assert got.group(1) == call_label("read_file", full_input)
     assert "start_line=100" in got.group(1)  # the range is part of the identity
