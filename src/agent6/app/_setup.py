@@ -25,8 +25,8 @@ def detect_env() -> Environment:
     """`detect()` with an authoritative userns re-check via the jail binary.
 
     `detect.probe_userns_supported` uses `unshare -U -r true`, which
-    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a isolation
-    grants the *agent6-jail* binary userns but not `/usr/bin/unshare`. When the
+    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where an AppArmor
+    profile grants the *agent6-jail* binary userns but not `/usr/bin/unshare`. When the
     cheap probe says "no" on a Linux host, confirm with the real jail binary so
     a correctly-profiled host gets `strict` instead of silently dropping to
     `hardened`. Every CLI isolation-selection path uses this instead of `detect()`.

@@ -17,7 +17,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.app.egress import check_network_profile
+from agent6.app.egress import check_network_support
 from agent6.app.finalize import hook_env
 from agent6.app.machine._bundle import is_inside
 from agent6.config import Config
@@ -30,7 +30,7 @@ def machine_network_refusal(
 ) -> str | None:
     """A refusal message if this machine's tool-network needs can't be honored.
 
-    Layers machine-specific rules on top of `check_network_profile` (which
+    Layers machine-specific rules on top of `check_network_support` (which
     handles agent_network=local / tool_network=only_explicit_states on
     `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
     rather than silently mis-confine, whenever isolation is *required*: by the
@@ -39,7 +39,7 @@ def machine_network_refusal(
     tool network) is a config conflict and is refused on any isolation. Returns
     None when fine.
     """
-    net_err = check_network_profile(cfg, isolation)
+    net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         return net_err
     tn = cfg.sandbox.tool_network

@@ -15,7 +15,7 @@ from typing import Literal
 from agent6.app._setup import detect_env
 from agent6.app.egress import (
     EgressGuard,
-    check_network_profile,
+    check_network_support,
     maybe_apply_agent_landlock,
     maybe_start_egress,
     resolve_strict_egress_viability,
@@ -76,7 +76,7 @@ def select_isolation(
     if not confirm_unconfined(selected, cfg):
         reporter.err("[agent6] aborted.")
         raise SessionRefused(1)
-    net_err = check_network_profile(cfg, selected)
+    net_err = check_network_support(cfg, selected)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         raise SessionRefused(2)

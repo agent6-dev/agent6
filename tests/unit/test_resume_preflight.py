@@ -348,7 +348,7 @@ def test_plan_resume_builds_the_planner_provider(
     monkeypatch.setattr(session_mod, "detect_env", object)
     monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
-    monkeypatch.setattr(session_mod, "check_network_profile", _none)
+    monkeypatch.setattr(session_mod, "check_network_support", _none)
     monkeypatch.setattr(session_mod, "resolve_strict_egress_viability", _strict_viable)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)

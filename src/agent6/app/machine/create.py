@@ -18,7 +18,7 @@ from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.egress import (
-    check_network_profile,
+    check_network_support,
     resolve_strict_egress_viability,
     warn_sandbox_gaps,
 )
@@ -143,7 +143,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if egress_err is not None:
         reporter.err(egress_err)
         return 2
-    net_err = check_network_profile(cfg, isolation)
+    net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return 2

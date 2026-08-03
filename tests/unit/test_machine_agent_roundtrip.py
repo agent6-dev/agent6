@@ -41,7 +41,7 @@ def _round_trip(tmp_path: Path, req: MachineAgentRequest) -> tuple[int, AgentExe
 
 def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
     # agent_network='local' on the 'hardened' isolation is an unenforceable combo:
-    # check_network_profile refuses before any provider call. No key/network.
+    # check_network_support refuses before any provider call. No key/network.
     cwd = tmp_path / "repo"
     cwd.mkdir()
     req = MachineAgentRequest(

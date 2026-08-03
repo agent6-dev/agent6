@@ -15,7 +15,7 @@ from agent6.app import machine_agent
 from agent6.app.egress import (
     EgressGuard,
     _is_loopback,  # pyright: ignore[reportPrivateUsage]
-    check_network_profile,
+    check_network_support,
     maybe_start_egress,
 )
 from agent6.app.machine import (
@@ -47,23 +47,23 @@ def test_is_loopback() -> None:
     assert not _is_loopback("127.foo.example.com")
 
 
-# --- check_network_profile (isolation compatibility) ------------------------
+# --- check_network_support (isolation compatibility) ------------------------
 
 
 @pytest.mark.parametrize("isolation", ["strict", "none"])
-def test_check_network_profile_allows_off_hardened(isolation: IsolationLevel) -> None:
+def test_check_network_support_allows_off_hardened(isolation: IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_profile(_cfg("local", "block"), isolation) is None
-    assert check_network_profile(_cfg("open", "only_explicit_states"), isolation) is None
+    assert check_network_support(_cfg("local", "block"), isolation) is None
+    assert check_network_support(_cfg("open", "only_explicit_states"), isolation) is None
 
 
-def test_check_network_profile_refuses_local_on_hardened() -> None:
-    assert "local" in (check_network_profile(_cfg("local", "block"), "hardened") or "")
+def test_check_network_support_refuses_local_on_hardened() -> None:
+    assert "local" in (check_network_support(_cfg("local", "block"), "hardened") or "")
 
 
-def test_check_network_profile_refuses_only_explicit_states_on_hardened() -> None:
-    msg = check_network_profile(_cfg("open", "only_explicit_states"), "hardened")
+def test_check_network_support_refuses_only_explicit_states_on_hardened() -> None:
+    msg = check_network_support(_cfg("open", "only_explicit_states"), "hardened")
     assert msg is not None and "only_explicit_states" in msg
 
 

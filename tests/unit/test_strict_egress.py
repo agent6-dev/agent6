@@ -70,7 +70,7 @@ def test_explicit_strict_refuses_with_guidance(monkeypatch: pytest.MonkeyPatch) 
 def test_local_refuses_rather_than_downgrade(monkeypatch: pytest.MonkeyPatch) -> None:
     # agent_network='local' needs the broker and has no hardened fallback, so it
     # must refuse (even for auto) -- NOT silently downgrade to hardened, which
-    # would bypass check_network_profile's local-on-hardened refusal.
+    # would bypass check_network_support's local-on-hardened refusal.
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
     isolation, err = egress.resolve_strict_egress_viability(_cfg("auto", "local"), "strict")
     assert isolation == "strict" and err is not None

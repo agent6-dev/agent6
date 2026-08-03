@@ -40,7 +40,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6.app.egress import (
-    check_network_profile,
+    check_network_support,
     maybe_apply_agent_landlock,
     maybe_start_egress,
     stop_egress,
@@ -316,7 +316,7 @@ def run_one(
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.
-    net_err = check_network_profile(cfg, isolation)
+    net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return _result("error", None, None)

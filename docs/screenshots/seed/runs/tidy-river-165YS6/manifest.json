@@ -21,6 +21,6 @@
   "workflow": {
     "critic": "off",
     "revise_prompt": "off",
-    "profile": ""
+    "preset": ""
   }
 }

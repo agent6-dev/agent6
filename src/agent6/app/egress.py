@@ -106,7 +106,7 @@ def warn_sandbox_gaps(
     `tool_network = "auto"` DEGRADES on a netns-less isolation: with no per-child
     network namespace, a jailed run_command shares the (agent-scoped) host
     network instead of being offline, so say so once per run. Explicit `block`
-    never reaches here (check_network_profile refused it on hardened).
+    never reaches here (check_network_support refused it on hardened).
     """
     if isolation == "none":
         reporter.err(
@@ -148,7 +148,7 @@ def _is_loopback(host: str) -> bool:
     return is_loopback_host(host) or host == "0.0.0.0"  # noqa: S104
 
 
-def check_network_profile(cfg: Config, isolation: IsolationLevel) -> str | None:
+def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     """A refusal message if the network config EXPLICITLY enforces something
     this isolation can't provide.
 
@@ -232,10 +232,10 @@ def resolve_strict_egress_viability(
     # Downgrade to hardened ONLY when the config can actually run there. An
     # explicit isolation='strict' must not be silently downgraded; and a config
     # that itself requires strict (agent_network='local', tool_network=
-    # 'only_explicit_states') has no hardened fallback. check_network_profile is
+    # 'only_explicit_states') has no hardened fallback. check_network_support is
     # the authority on what hardened refuses, so reusing it also covers future
     # strict-only knobs.
-    hardened_blocker = check_network_profile(cfg, "hardened")
+    hardened_blocker = check_network_support(cfg, "hardened")
     if hardened_blocker is not None:
         return isolation, (
             f"REFUSING: {core} That config also requires strict on hardened"

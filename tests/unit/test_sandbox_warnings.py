@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.app.egress import check_network_profile, warn_sandbox_gaps
+from agent6.app.egress import check_network_support, warn_sandbox_gaps
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import Environment, KernelInfo
 
@@ -71,10 +71,10 @@ def test_explicit_block_refuses_on_hardened() -> None:
     """tool_network='block' is an ENFORCE setting: it needs a netns only strict
     provides, so on hardened we refuse (name what's unsupported + the fix)
     rather than run silently under-confined. 'auto' degrades instead."""
-    err = check_network_profile(_cfg("block"), "hardened")
+    err = check_network_support(_cfg("block"), "hardened")
     assert err is not None
     assert "tool_network = 'block'" in err and "auto" in err and "strict" in err
     # auto is NOT refused (it degrades with a warning) -> None.
-    assert check_network_profile(_cfg("auto"), "hardened") is None
+    assert check_network_support(_cfg("auto"), "hardened") is None
     # On strict, block is enforceable -> no refusal.
-    assert check_network_profile(_cfg("block"), "strict") is None
+    assert check_network_support(_cfg("block"), "strict") is None

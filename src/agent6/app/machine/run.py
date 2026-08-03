@@ -160,7 +160,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except MachineError as exc:
         return _fail(reporter, path, list(exc.problems))
     # Re-validate the script bundle before executing anything: `load_machine`
-    # does not, and on a isolation that can't RO-bind the bundle a `scripts/`
+    # does not, and on an isolation level that cannot RO-bind the bundle a `scripts/`
     # symlink escaping it (which `machine check` rejects) would otherwise be read
     # by a tool. Security boundary, so run enforces it too, not just check.
     bundle_problems = validate_bundle(spec, path)
@@ -224,14 +224,14 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         except IsolationUnavailableError as exc:
             reporter.err(f"REFUSING: {exc}")
             return 2
-        agent_profile = isolation
+        agent_isolation = isolation
         if has_agent_state:
             # Same as run/resume: a strict that can't run the egress broker on
             # this process (surgical AppArmor isolation) downgrades to hardened or
-            # refuses, so the per-state agent subprocess gets a isolation it can
+            # refuses, so the per-state agent subprocess gets an isolation level it can
             # actually use. Tool states keep `isolation`: the jail launcher itself
             # can still run strict and give each tool its own namespace.
-            agent_profile, egress_err = resolve_strict_egress_viability(
+            agent_isolation, egress_err = resolve_strict_egress_viability(
                 cfg, isolation, reporter=reporter
             )
             if egress_err is not None:
@@ -279,7 +279,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             agent_runner = build_machine_agent_runner(
                 spec.config,
                 cwd,
-                agent_profile,
+                agent_isolation,
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,

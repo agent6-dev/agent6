@@ -220,7 +220,7 @@ def strict_namespaces_work() -> bool:
 
     The cheap ``unshare -U -r true`` probe in ``detect.probe_userns_supported``
     under-reports on an AppArmor-restricted host (Ubuntu 24.04+ with
-    ``kernel.apparmor_restrict_unprivileged_userns=1``) where a isolation grants
+    ``kernel.apparmor_restrict_unprivileged_userns=1``) where an AppArmor profile grants
     the *agent6-jail* binary userns but not ``/usr/bin/unshare``. This runs the
     real jail binary with a trivial `strict` policy to get the authoritative
     answer. Cached for the process lifetime; the kernel/isolation state does not
