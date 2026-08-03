@@ -261,7 +261,7 @@ def jail_policy(
     # create/remove rights grants them over `.git` too. That cost every
     # top-level write (`touch newfile`, `mkdir build`), which is too much to
     # pay for a protection the operator can have properly by using strict.
-    # The in-process edit tools refuse `.git` writes at every level regardless.
+    # The in-process edit tools refuse `.git` writes on both isolation levels.
     if config.sandbox.protect_git and isolation == "strict":
         protect_paths.append((root / ".git").resolve())
     protect_paths.extend(extra_protect_paths)

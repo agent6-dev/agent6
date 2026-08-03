@@ -203,37 +203,38 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     return GrepResult(hits=tuple(hits), truncated=False)
 
 
-def _has_component(path: Path, dir_name: str) -> bool:
-    """The one protected-directory membership test, shared by the raw and the
-    resolved checks so they can never disagree: any component equal to
-    *dir_name*, at any depth. Exact match only (``.github`` never matches
-    ``.git``)."""
-    return dir_name in path.parts
+def _under_project_dir(path: Path, dir_name: str) -> bool:
+    """The one protected-directory test, shared by the raw and the resolved
+    checks so they can never disagree: the workspace-relative *path* IS the
+    top-level *dir_name*, or lies under it. Exact match only (``.github`` never
+    matches ``.git``)."""
+    return path.parts[:1] == (dir_name,)
 
 
 def _refuse_protected_write(
     candidate: str, dir_name: str, *, why: str, resolved: SafePath | None = None
 ) -> None:
-    """Refuse an in-process ``apply_edit`` / ``apply_patch`` whose path has a
-    ``dir_name`` component at any depth.
+    """Refuse an in-process ``apply_edit`` / ``apply_patch`` into the
+    workspace's own top-level ``dir_name``.
 
     ``.git`` (when ``protect_git``): the edit tools write **in-process, outside
     the jail**, so without this an LLM could create or rewrite ``.git/hooks/*``
     or ``.git/config`` (e.g. ``core.fsmonitor``) and get code executed outside
     the sandbox on the next ``git`` invocation, or corrupt git history --
     defeating ``protect_git`` entirely (the strict jail's RO bind of ``.git``
-    never covers these in-process writes). A NESTED ``.git`` (vendored repo,
-    submodule gitlink) counts: host tools read that metadata just as
-    automatically. Reads stay allowed. (Run state lives out of the workspace,
-    so it is unreachable by edits and needs no guard.)
+    never covers these in-process writes). The scope is the project's own
+    repository, the one agent6 commits to each turn; a nested ``.git``
+    (vendored repo, submodule gitlink) is content, like any other file. Reads
+    stay allowed. (Run state lives out of the workspace, so it is unreachable
+    by edits and needs no guard.)
 
     Checks both the raw candidate string AND the post-symlink-resolution
     relative path, so a symlink ``./decoy -> .git`` can't launder a write past
     the raw check.
     """
-    if _has_component(Path(candidate), dir_name):
+    if _under_project_dir(Path(candidate), dir_name):
         raise ToolError(f"Refusing to write under {dir_name}/ ({why}): {candidate!r}")
-    if resolved is not None and _has_component(resolved.rel_path, dir_name):
+    if resolved is not None and _under_project_dir(resolved.rel_path, dir_name):
         raise ToolError(
             f"Refusing to write under {dir_name}/ ({why}) via symlink: {candidate!r} "
             f"resolves to {resolved.rel_path!s}"
