@@ -153,9 +153,29 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 
 def _is_reasoning_model(model: str) -> bool:
     """True if ``model`` looks like a reasoning model that emits
-    ``reasoning_content`` separately from ``content``."""
+    ``reasoning_content`` separately from ``content``. Gates the effort DEFAULT
+    (reasoning_effort="low"), a measured behaviour change -- so it stays the
+    measured family set, NOT the broader floor set below."""
     lowered = model.lower()
     return any(hint in lowered for hint in _REASONING_MODEL_HINTS)
+
+
+# The max_tokens FLOOR matches more broadly than the effort default: raising the
+# token ceiling only avoids a truncated reply, it never changes model behaviour,
+# so it is safe to catch aliases the measured effort set does not. `kimi-latest`
+# (Moonshot's rolling alias) emits reasoning_content and starves at the 16k
+# default, but the `kimi-k` family match misses it -- and adding it to
+# `_REASONING_MODEL_HINTS` would also pin it to the UNMEASURED effort="low"
+# default for whatever it currently resolves to. Floor only.
+_REASONING_FLOOR_ONLY_HINTS: tuple[str, ...] = ("kimi-latest",)
+
+
+def _needs_reasoning_headroom(model: str) -> bool:
+    """True if ``model`` needs the max_tokens floor: any reasoning model, plus
+    reasoning aliases (kimi-latest) not in the effort set. Safe to match broadly
+    -- the floor raises a ceiling, it does not change behaviour."""
+    lowered = model.lower()
+    return _is_reasoning_model(model) or any(h in lowered for h in _REASONING_FLOOR_ONLY_HINTS)
 
 
 # OpenAI's OWN reasoning families (o-series + gpt-5). On the api.openai.com
@@ -314,7 +334,7 @@ class OpenAIProvider:
         # REASONING_MODEL_MIN_MAX_TOKENS for the rationale.
         effective_max_tokens = max_tokens
         if (
-            _is_reasoning_model(self.model)
+            _needs_reasoning_headroom(self.model)
             and effective_max_tokens < REASONING_MODEL_MIN_MAX_TOKENS
         ):
             effective_max_tokens = REASONING_MODEL_MIN_MAX_TOKENS

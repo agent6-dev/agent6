@@ -308,6 +308,24 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
     assert not _is_reasoning_model("llama-3-70b")
 
 
+def test_reasoning_floor_covers_kimi_latest_without_the_effort_default() -> None:
+    """The max_tokens FLOOR and the effort DEFAULT are split: `kimi-latest`
+    (Moonshot's rolling alias) emits reasoning_content and needs the headroom, but
+    the `kimi-k` family match misses it -- and adding it to the effort set would
+    pin it to an UNMEASURED reasoning_effort="low" for whatever it resolves to. It
+    gets the floor only; the floor set is a superset of the effort set."""
+    from agent6.providers import openai as oai
+
+    needs_headroom = oai._needs_reasoning_headroom  # pyright: ignore[reportPrivateUsage]
+    is_reasoning = oai._is_reasoning_model  # pyright: ignore[reportPrivateUsage]
+
+    assert needs_headroom("moonshotai/kimi-latest")  # floored
+    assert not is_reasoning("moonshotai/kimi-latest")  # but NOT effort="low"-defaulted
+    # every effort-set model still needs headroom (superset), non-reasoners none.
+    assert needs_headroom("moonshotai/kimi-k3") and is_reasoning("moonshotai/kimi-k3")
+    assert not needs_headroom("gpt-4o")
+
+
 def test_call_bumps_max_tokens_for_reasoning_models() -> None:
     """Kimi-K2-Thinking should get >=32768 max_tokens even if caller asks
     for 16384 - reasoning_content shares the budget with content + tool
