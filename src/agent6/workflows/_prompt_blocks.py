@@ -45,6 +45,26 @@ MEMORY_ENTRY_MAX_CHARS = 1200
 MEMORIES_MAX_CHARS = 12000
 
 
+def notes_block(notes: str) -> str:
+    """The <notes> block: the agent's own scratchpad, verbatim.
+
+    Verbatim because the agent curates it -- clipping would silently drop the
+    end of its own document, and the store already refuses anything over the
+    cap so the size is bounded before it reaches here. Empty renders nothing.
+    """
+    body = notes.strip()
+    if not body:
+        return ""
+    return (
+        "<notes>\n"
+        "Your durable scratchpad for this repository, which you wrote. Rewrite it"
+        " with write_notes: reorganize, delete what is resolved, merge what"
+        " repeats. Keep it a working document, not a log.\n\n"
+        f"{body}\n"
+        "</notes>"
+    )
+
+
 def memories_block(  # noqa: PLR0912 (one cap-then-render pass; splitting it hides the budget)
     entries: tuple[MemoryEntry, ...],
     *,
@@ -226,6 +246,7 @@ def build_system_prompt(
     repo: RepoSummary,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
     memories: tuple[MemoryEntry, ...] = (),
+    notes: str = "",
     skills: ResolvedSkills | None = None,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
@@ -347,6 +368,10 @@ def build_system_prompt(
     memories_part = memories_block(memories, mode=mode)
     if memories_part:
         parts.append(memories_part)
+
+    # The agent's own scratchpad, beside the memories it complements.
+    if notes_part := notes_block(notes):
+        parts.append(notes_part)
 
     # Operator-installed skills, last: `always` full texts + the on-demand
     # index. The caller resolves discovery + [skills.state]; None or an empty

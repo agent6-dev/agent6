@@ -44,7 +44,13 @@ from agent6.skills import (
 from agent6.tools._control_tools import ask_user, finish_planning, finish_session
 from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, grep, list_dir, read_file
-from agent6.tools._memory_tools import add_memory, invalidate_memory, use_skill
+from agent6.tools._memory_tools import (
+    add_memory,
+    invalidate_memory,
+    read_notes,
+    use_skill,
+    write_notes,
+)
 from agent6.tools._nav_tools import (
     find_definition,
     find_definition_lsp,
@@ -97,6 +103,7 @@ from agent6.tools.schema import (
     OutlineInput,
     ReadBackgroundInput,
     ReadFileInput,
+    ReadNotesInput,
     ReadSessionInput,
     RunBackgroundInput,
     RunCommandInput,
@@ -105,6 +112,7 @@ from agent6.tools.schema import (
     StopBackgroundInput,
     UserQuestion,
     UseSkillInput,
+    WriteNotesInput,
     mode_tools,
 )
 from agent6.tools.sessions import conversation, roster
@@ -394,6 +402,8 @@ class ToolDispatcher:
             # state_dir was wired.
             AddMemoryInput.TOOL_NAME: self._add_memory,
             InvalidateMemoryInput.TOOL_NAME: self._invalidate_memory,
+            ReadNotesInput.TOOL_NAME: self._read_notes,
+            WriteNotesInput.TOOL_NAME: self._write_notes,
             # Operator-installed skills; resolved lazily from config + the
             # data dir on first use (see _resolved_skills).
             UseSkillInput.TOOL_NAME: self._use_skill,
@@ -886,6 +896,12 @@ class ToolDispatcher:
     # (agent6.memory) to fixed markdown files under <state_dir>/memories/,
     # outside the workspace and the jail; the LLM controls only the scope
     # (schema-validated literal) and the note text, which is inert data.
+
+    def _read_notes(self, raw: dict[str, Any]) -> ToolResult:
+        return read_notes(self._state_dir, raw)
+
+    def _write_notes(self, raw: dict[str, Any]) -> ToolResult:
+        return write_notes(self._state_dir, raw)
 
     def _add_memory(self, raw: dict[str, Any]) -> ToolResult:
         return add_memory(self._state_dir, raw)

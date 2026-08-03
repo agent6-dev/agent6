@@ -167,6 +167,17 @@ Notes:
   verify never failed. `agent6 memory pin <id>` exempts a load-bearing
   entry from the block's newest-win trim (never from the byte bound:
   pins over the cap elide oldest-first, and `memory list` warns).
+- **Notes scratchpad.** One durable rewritable document per repo
+  (`<state-dir>/<repo-id>/notes.md`, 16000 chars), injected verbatim as
+  `<notes>` and rewritten whole with `write_notes`; `read_notes` re-reads it
+  mid-session. Where memories are append-only so an invalidation keeps its
+  audit trail, notes are restructured freely -- resolved items deleted,
+  duplicates merged -- which is what keeps a working document readable past
+  twenty sessions. Whole-file replace, not patch. Over the cap the write is
+  refused, not truncated: dropping the tail loses the newest thinking, and
+  the refusal is what forces a prune. Never in the workspace, so never in a
+  diff and never mounted into the jail. Same mode rule as memories: machine
+  and agent modes see none.
 - **Skills.** At run start the loop resolves operator-installed SKILL.md
   packs (`<data-dir>/skills/`, plus `[skills].extra_dirs`) through the
   dispatcher's single resolution, so the `<skills>` system-prompt index and
@@ -521,6 +532,7 @@ graph`).
 | Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
+| Notes scratchpad                 | [src/agent6/notes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/notes.py) (store), `<state-dir>/<repo-id>/notes.md` (data) |
 | Session state on disk            | `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` (out of the workspace)    |
 
 ## Pre-1.0 stability

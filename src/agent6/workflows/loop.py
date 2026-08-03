@@ -43,6 +43,7 @@ from agent6.graph.models import (
 )
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
+from agent6.notes import read_notes as notes_read
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -721,6 +722,7 @@ class Workflow:
             repo=repo,
             mode=self.mode,
             memories=self._load_memories(),
+            notes=self._load_notes(),
             skills=self._load_skills(),
         )
 
@@ -3038,6 +3040,17 @@ class Workflow:
         # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
         disp = self.dispatcher if self.config.prompt.structural_priors else None
         return load_repo_summary(self.root, dispatcher=disp)
+
+    def _load_notes(self) -> str:
+        """The agent's scratchpad for the system prompt.
+
+        "" when no state_dir is wired, and for machine/agent modes (whose
+        prompt assembly drops repo context). The store already degrades an
+        unreadable file to "": notes are context, not correctness.
+        """
+        if self.state_dir is None or self.mode in ("machine", "agent"):
+            return ""
+        return notes_read(self.state_dir)
 
     def _load_memories(self) -> tuple[MemoryEntry, ...]:
         """Active cross-run memories for the system prompt.

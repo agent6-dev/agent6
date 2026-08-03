@@ -97,6 +97,11 @@
     }
   },
   {
+    "name": "read_notes",
+    "required": [],
+    "properties": {}
+  },
+  {
     "name": "run_metric_command",
     "required": [],
     "properties": {}
@@ -128,6 +133,15 @@
     "properties": {
       "file": "anyOf[null,string]",
       "name": "string"
+    }
+  },
+  {
+    "name": "write_notes",
+    "required": [
+      "content"
+    ],
+    "properties": {
+      "content": "string"
     }
   }
 ]

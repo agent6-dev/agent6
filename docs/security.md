@@ -315,16 +315,25 @@ syscall for hardened), never guessed from the kernel version.
     - No `shell`, no `write_file` (writes go through `apply_edit`, which refuses
       paths outside cwd), no `web_fetch`, no `eval`.
     - Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
-- **The memory notepad is a prompt-injection persistence channel.**
+- **The memory notepad and notes scratchpad are prompt-injection persistence
+  channels.**
     - `add_memory`/`invalidate_memory` (run mode) write fixed markdown under
       `<state-dir>/<repo-id>/memories/` (code picks the path; the model supplies
       only a schema-validated scope + text); active notes join later runs' system
-      prompt on the same repo.
-    - Mitigated: notes are inert data (never executed), the injected block is
-      size-capped and framed as untrusted, and the store is operator-auditable
-      (`agent6 memory list --all`, `agent6 memory invalidate` keeps the trail).
-    - It weakens no boundary here: sandbox/egress/git policy come from config, not
-      prompt content.
+      prompt on the same repo. `write_notes` replaces one fixed file,
+      `<state-dir>/<repo-id>/notes.md`, on the same terms: code owns the path,
+      the model supplies only a length-bounded string.
+    - Mitigated: both are inert data (never executed), the injected blocks are
+      size-capped and framed as untrusted, and both stores are operator-auditable
+      (`agent6 memory list --all`, `agent6 memory invalidate` keeps the trail;
+      notes are one readable markdown file). Neither is ever mounted into the
+      jail, so a jailed command cannot reach or rewrite them.
+    - Notes are whole-file replace, so a hostile write can erase earlier notes.
+      That is the same authority the agent already has over its own context and
+      costs nothing outside it; memories, which carry the audit trail, stay
+      append-only precisely because they must survive this.
+    - Neither weakens a boundary here: sandbox/egress/git policy come from config,
+      not prompt content.
 
 ### 5. Git invariants
 

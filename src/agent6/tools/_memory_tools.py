@@ -17,13 +17,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from agent6 import notes
 from agent6.memory import MemoryStoreError
 from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
 from agent6.skills import ResolvedSkills
 from agent6.tools.errors import ToolError
-from agent6.tools.results import AddMemoryResult, InvalidateMemoryResult, SkillResult
-from agent6.tools.schema import AddMemoryInput, InvalidateMemoryInput, UseSkillInput
+from agent6.tools.results import AddMemoryResult, InvalidateMemoryResult, NotesResult, SkillResult
+from agent6.tools.schema import (
+    AddMemoryInput,
+    InvalidateMemoryInput,
+    UseSkillInput,
+    WriteNotesInput,
+)
 
 
 def add_memory(state_dir: Path | None, raw: dict[str, Any]) -> AddMemoryResult:
@@ -75,3 +81,21 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
         raise ToolError(f"use_skill: {args.file!r} exceeds the 256 KiB cap")
     content = target.read_text(encoding="utf-8", errors="replace")
     return SkillResult(skill=skill.name, file=args.file, content=content)
+
+
+def read_notes(state_dir: Path | None, _raw: dict[str, Any]) -> NotesResult:
+    if state_dir is None:
+        raise ToolError("read_notes: no state dir wired for this session")
+    content = notes.read_notes(state_dir)
+    return NotesResult(content=content, chars=len(content))
+
+
+def write_notes(state_dir: Path | None, raw: dict[str, Any]) -> NotesResult:
+    if state_dir is None:
+        raise ToolError("write_notes: no state dir wired for this session")
+    content = WriteNotesInput.model_validate(raw).content
+    try:
+        written = notes.write_notes(state_dir, content)
+    except notes.NotesError as exc:
+        raise ToolError(f"write_notes: {exc}") from exc
+    return NotesResult(content=content, chars=written)

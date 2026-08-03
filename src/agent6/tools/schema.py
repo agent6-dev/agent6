@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent6.graph.models import NodeStatus
+from agent6.notes import NOTES_MAX_CHARS
 from agent6.types import session_kind
 
 # Derived from the NodeStatus Literal so the task-status vocabulary has ONE
@@ -468,6 +469,30 @@ class AddMemoryInput(_ToolInput):
     body: str = Field(min_length=1, max_length=2000)
 
 
+class ReadNotesInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "read_notes"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Read your durable scratchpad for this repository -- the same text that"
+        " appears in the <notes> block of your system prompt. Use it before"
+        " write_notes so you rewrite the current content rather than replacing"
+        " it blind. Returns the notes, or empty when you have written none."
+    )
+
+
+class WriteNotesInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "write_notes"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "REPLACE your durable scratchpad with `content`, which future sessions"
+        " on this repository will see in their <notes> block. Unlike add_memory"
+        " (append-only, one fact per entry) this is one document you rewrite:"
+        " reorganize it, delete what is resolved, merge what repeats. Read it"
+        " first. Keep it a working document, not a log -- oversized notes are"
+        " REFUSED so you prune rather than let them crowd out the task."
+    )
+
+    content: str = Field(max_length=NOTES_MAX_CHARS)
+
+
 class InvalidateMemoryInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "invalidate_memory"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -660,6 +685,8 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddDependencyInput,
     AddMemoryInput,
     InvalidateMemoryInput,
+    ReadNotesInput,
+    WriteNotesInput,
     # Operator-installed skills (hidden by the dispatcher when none are
     # installed or [skills].enabled is off).
     UseSkillInput,

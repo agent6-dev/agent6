@@ -92,13 +92,13 @@ How a session ends and how it resumes: the SessionResult the workflow returns, t
 
 ## ToolResult family
 
-[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 28 frozen result types
+[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 29 frozen result types
 
 Typed tool-handler results: every handler returns one of these frozen values instead of a bare dict, each owning its two representations -- the exact model-facing `to_wire()` dict and the one-line human `summary()`.
 
 **ToolResult** &mdash; One tool handler's typed result: it owns the model-facing `to_wire()` dict and its one-line `summary()`.
 
-Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `GrepResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `SetCursorResult`, `AddDependencyResult`, `ListTasksResult`, `AddMemoryResult`, `InvalidateMemoryResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
+Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `GrepResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `SetCursorResult`, `AddDependencyResult`, `ListTasksResult`, `NotesResult`, `AddMemoryResult`, `InvalidateMemoryResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _memory_tools, _nav_tools}
 - **Read by:** tools/{dispatch}, workflows/{_review, _toolset, loop}

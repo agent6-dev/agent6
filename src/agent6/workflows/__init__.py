@@ -10,6 +10,7 @@ from typing import Literal
 from agent6.config import Config
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
+from agent6.notes import read_notes
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.workflows._context import load_repo_summary
@@ -42,31 +43,33 @@ def system_prompt_for(
     AGENTS.md + recent commits + hot symbols + co-change + symbol outline) -- the
     same view the run loop sees, so prompt show matches reality.
 
-    Recorded memories and installed skills are loaded on the loop's own rules
-    (no memories in machine/agent modes, skills in run mode only): omitting them
-    printed "(none recorded yet)" for an operator checking what future runs
-    would actually receive. *state_dir* is the per-repo state dir the memories
-    live under, injected by the caller exactly as the loop's is."""
+    Recorded memories, the notes scratchpad and installed skills are loaded on
+    the loop's own rules (none of the first two in machine/agent modes, skills
+    in run mode only): omitting them printed "(none recorded yet)" for an
+    operator checking what future runs would actually receive. *state_dir* is
+    the per-repo state dir those live under, injected by the caller exactly as
+    the loop's is."""
     dispatcher = (
         ToolDispatcher(root=root, config=config) if config.prompt.structural_priors else None
     )
     repo = load_repo_summary(root, dispatcher=dispatcher)
+    # Machine and agent modes assemble without repo context, so neither half of
+    # per-repo recall applies: one gate, not one per block.
+    recall = None if mode in ("machine", "agent") else state_dir
     return build_system_prompt(
         config=config,
         repo=repo,
         mode=mode,
-        memories=_active_memories(state_dir, mode),
+        memories=_active_memories(recall),
+        notes=read_notes(recall) if recall else "",
         skills=_installed_skills(root, config, mode),
     )
 
 
-def _active_memories(
-    state_dir: Path | None, mode: Literal["run", "plan", "ask", "machine", "agent"]
-) -> tuple[MemoryEntry, ...]:
-    """The loop's ``_load_memories`` rules: none without a state dir or in
-    machine/agent modes, and an unreadable store degrades to none (memory is
-    context, not correctness)."""
-    if state_dir is None or mode in ("machine", "agent"):
+def _active_memories(state_dir: Path | None) -> tuple[MemoryEntry, ...]:
+    """The loop's ``_load_memories`` rule: an unreadable store degrades to none
+    (memory is context, not correctness)."""
+    if state_dir is None:
         return ()
     try:
         entries = memory_list_entries(state_dir)

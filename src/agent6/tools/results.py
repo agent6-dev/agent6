@@ -446,6 +446,23 @@ class ListTasksResult(ToolResult):
 
 
 @dataclass(frozen=True, slots=True)
+class NotesResult(ToolResult):
+    """The scratchpad after a read or a write. `chars` is what a caller needs to
+    see it approaching the cap without counting the body itself."""
+
+    content: str
+    chars: int
+
+    def summary(self) -> str:
+        """The SIZE, not the body: the notes are already in the prompt, so
+        echoing them into the transcript spends the context twice."""
+        return f"{self.chars} chars"
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"content": self.content, "chars": self.chars}
+
+
+@dataclass(frozen=True, slots=True)
 class AddMemoryResult(ToolResult):
     id: str
     scope: str

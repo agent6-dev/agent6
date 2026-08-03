@@ -43,6 +43,7 @@ from agent6.tools.results import (
     ListDirResult,
     ListTasksResult,
     MetricResult,
+    NotesResult,
     OutlineResult,
     PatchResult,
     PreviewResult,
@@ -192,6 +193,7 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ("add_dependency", AddDependencyResult(id="01A", title="t", depends_on=("01B",)), "ok"),
     ("list_tasks", ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
     # operator knowledge
+    ("read_notes", NotesResult(content="# open\n- x\n", chars=10), "10 chars"),
     ("add_memory", AddMemoryResult(id="01M", scope="facts", created_at="2026"), "ok"),
     ("invalidate_memory", InvalidateMemoryResult(id="01M", invalidated_at="2026"), "ok"),
     (
