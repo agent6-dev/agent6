@@ -44,11 +44,16 @@ from pydantic import (
     model_validator,
 )
 
+from agent6.errors import OperatorError
 from agent6.types import RoleName
 
 
-class ConfigError(Exception):
-    """Raised when the config file is missing, malformed, or fails validation."""
+class ConfigError(OperatorError):
+    """Raised when the config file is missing, malformed, or fails validation.
+
+    An OperatorError: the config is the operator's file, so ``cli_main``
+    presents it as a refusal, never a crash report.
+    """
 
 
 _BASE_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)

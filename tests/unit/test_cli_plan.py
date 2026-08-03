@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.ui.cli import main
+from agent6.errors import OperatorError
+from agent6.ui.cli import cli_main, main
 
 
 def _seed_plan(tmp_path: Path, session_id: str, body: str) -> Path:
@@ -172,15 +173,38 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
 ) -> None:
     """A file-permission problem is the operator's, not an agent6 defect.
 
-    `--from-plan` read the plan with a bare `read_text`, so a PermissionError
-    escaped to the crash reporter -- "unexpected PermissionError", a traceback
-    saved to /tmp, "please report this", exit 1 -- while the most-recent-plan
-    fallback five lines below already refuses cleanly at exit 2."""
+    The reader raises OperatorError (no bespoke except arm at the call site);
+    cli_main is the one place that turns it into `ERROR:` + exit 2."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     plan = _seed_plan(tmp_path, "quiet-fox-abcd", "# Plan: do it\n")
     plan.chmod(0o000)
     try:
-        assert main(["run", "--from-plan", "quiet-fox-abcd"]) == 2
-        assert "could not read" in capsys.readouterr().err
+        with pytest.raises(OperatorError, match="could not read"):
+            main(["run", "--from-plan", "quiet-fox-abcd"])
+        assert cli_main(["run", "--from-plan", "quiet-fox-abcd"]) == 2
+        err = capsys.readouterr().err
+        assert "could not read" in err
+        assert str(plan) in err
+        assert "report this" not in err
+        assert "full traceback" not in err
+    finally:
+        plan.chmod(0o600)
+
+
+def test_an_unreadable_plan_refuses_in_plan_show_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`plan show` reads the same operator file `--from-plan` does; the same
+    refusal, from the same shared reader."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    plan = _seed_plan(tmp_path, "quiet-owl-abcd", "# Plan: do it\n")
+    plan.chmod(0o000)
+    try:
+        assert cli_main(["plan", "show", "quiet-owl-abcd"]) == 2
+        err = capsys.readouterr().err
+        assert "could not read" in err
+        assert "report this" not in err
     finally:
         plan.chmod(0o600)

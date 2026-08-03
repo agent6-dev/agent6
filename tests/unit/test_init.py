@@ -41,11 +41,11 @@ def test_cmd_init_reports_invalid_config_cleanly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A pre-existing INVALID (but TOML-parseable) config makes `agent6 init` exit
-    2 with a CONFIG ERROR, not crash through the generic "unexpected ... please
-    report this" handler. init loads the effective config to infer a verify
-    command; it is the user's setup to fix, and init is the repair command, so it
-    must surface the validation error the way every other command does."""
-    from agent6.ui.cli.init_cmds import _cmd_init  # pyright: ignore[reportPrivateUsage]
+    2 with a clean ERROR plus init's own repair pointer, not a crash through the
+    generic "unexpected ... please report this" handler. init loads the effective
+    config to infer a verify command; it is the user's setup to fix, and init is
+    the repair command."""
+    from agent6.ui.cli import cli_main
 
     repo = _repo(tmp_path)
     # Valid global with a configured provider, so the cross-field validator has a
@@ -65,11 +65,14 @@ def test_cmd_init_reports_invalid_config_cleanly(
     cfgp.write_text('[models.worker]\nprovider = "typoprovider"\nmodel = "x/y"\n', encoding="utf-8")
 
     monkeypatch.chdir(repo)
-    rc = _cmd_init(ecosystem="", assume_yes=True)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    rc = cli_main(["init", "--yes"])
     assert rc == 2
     err = capsys.readouterr().err
-    assert "CONFIG ERROR" in err
+    assert err.startswith("ERROR: ")
     assert "typoprovider" in err  # the precise validation reason is surfaced
+    assert "Fix or delete" in err  # init's own repair pointer survives
+    assert "report this" not in err
 
 
 def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:

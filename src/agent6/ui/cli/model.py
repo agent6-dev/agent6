@@ -20,7 +20,6 @@ from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.models.cache import list_models
 from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
-from agent6.ui.cli._common import load_config_or_exit
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -100,9 +99,7 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
 
 def _show_assignments(config_path: Path | None) -> int:
     """Print the three role assignments with their config origin."""
-    eff = load_config_or_exit(Path.cwd(), config_path)
-    if isinstance(eff, int):
-        return eff
+    eff = load_effective(Path.cwd(), config_path)
     print("Role assignments (planner/reviewer fall back to worker when unset):\n")
     show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
     for r in show_roles:

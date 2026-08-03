@@ -368,7 +368,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
 ) -> None:
     # B10: a pure wait/terminal machine has no agent/tool state, but its [config]
     # overlay must still be validated (and [machine] snapshot_keep honored). A
-    # bogus overlay key now fails the run with CONFIG ERROR instead of being
+    # bogus overlay key fails the run with a config refusal instead of being
     # silently ignored.
     from agent6.ui.cli import main
 

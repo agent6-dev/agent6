@@ -17,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.config import Config, ConfigError, mcp_server_name_refusal
+from agent6.config import Config, mcp_server_name_refusal
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
@@ -159,11 +159,7 @@ def cmd_mcp_list() -> int:
     """The configured servers and how each is reached. Reads config only: it
     never starts anything, so it answers instantly and says nothing about
     whether a server currently works (`agent6 check mcp` does that)."""
-    try:
-        cfg = load_effective(Path.cwd()).config
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    cfg = load_effective(Path.cwd()).config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
         return 0

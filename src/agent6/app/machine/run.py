@@ -196,7 +196,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     try:
         cfg = load_effective_with_overlay(cwd, spec.config).config
     except ConfigError as exc:
-        reporter.err(f"CONFIG ERROR:\n{exc}")
+        reporter.err(f"ERROR: {exc}")
         return 2
     cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve)
     if has_run_agent and cfg.sandbox.run_commands == "ask":
@@ -217,7 +217,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             if has_agent_state:
                 cfg.require_runnable("worker")
         except ConfigError as exc:
-            reporter.err(f"CONFIG ERROR:\n{exc}")
+            reporter.err(f"ERROR: {exc}")
             return 2
         try:
             isolation = resolve_isolation(cfg.sandbox.isolation, env)

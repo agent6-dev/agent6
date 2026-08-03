@@ -12,7 +12,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agent6.config import WebConfig, is_loopback_host
-from agent6.ui.cli._common import load_config_or_exit
+from agent6.config.layer import load_effective
 from agent6.ui.web import run_web
 
 
@@ -30,9 +30,7 @@ def _cmd_web(
     (refused at config load) or `--host` (refused here): both need the opt-in,
     either `--allow-non-loopback` or `[web].allow_non_loopback = true`. Prefer
     `tailscale serve` in front of a loopback bind over any raw non-loopback bind."""
-    eff = load_config_or_exit(Path.cwd(), config_path)
-    if isinstance(eff, int):
-        return eff
+    eff = load_effective(Path.cwd(), config_path)
     web = eff.config.web
     eff_host = host if host is not None else web.host
     eff_port = port if port is not None else web.port

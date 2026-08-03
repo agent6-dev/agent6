@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The guarded console-script entry point `cli_main`."""
+"""The guarded console-script entry point `cli_main`: the boundary that sorts
+failures by fault. An OperatorError refuses at exit 2 with no traceback;
+anything else is a bug and crash-reports at exit 1."""
 
 from __future__ import annotations
 
@@ -9,19 +11,25 @@ from pathlib import Path
 import pytest
 
 from agent6.config import ConfigError
+from agent6.errors import OperatorError
 from agent6.ui import cli
 from agent6.ui.cli import cli_main
 
+_CRASH_MARKERS = ("unexpected", "full traceback", "report this")
+
 
 def test_cli_main_passes_through_return_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli, "main", lambda: 3)
+    def _ok(_argv: list[str] | None = None) -> int:
+        return 3
+
+    monkeypatch.setattr(cli, "main", _ok)
     assert cli_main() == 3
 
 
 def test_cli_main_converts_unexpected_exception_to_friendly_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _boom() -> int:
+    def _boom(_argv: list[str] | None = None) -> int:
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(cli, "main", _boom)
@@ -38,30 +46,84 @@ def test_cli_main_converts_unexpected_exception_to_friendly_error(
     tb_path.unlink()
 
 
-def test_cli_main_reports_a_bad_config_as_a_config_error(
+def test_an_operator_error_refuses_without_a_crash_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A malformed config is the operator's, not a bug in agent6. Every `--repo`
-    config write resolved the repo path (which reads the global config to locate
-    the state dir) before `load_config_or_exit` ran, so `agent6 config set --repo
-    ...` on a broken global config asked the operator to file a bug report and
-    exited 1, while `config show` printed CONFIG ERROR and exited 2."""
+    """The whole contract: a bad value or unreadable file from the operator
+    raises OperatorError; cli_main turns that into `ERROR:` + exit 2, and
+    everything else into a crash report."""
 
-    def _bad() -> int:
+    def _bad(_argv: list[str] | None = None) -> int:
+        raise OperatorError("no such machine file: overlay.toml")
+
+    monkeypatch.setattr(cli, "main", _bad)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    assert cli_main() == 2
+    captured = capsys.readouterr()
+    assert captured.err == "ERROR: no such machine file: overlay.toml\n"
+
+
+def test_a_config_error_is_an_operator_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed config is the operator's, not a bug in agent6: ConfigError
+    subclasses OperatorError, so every reader that raises it gets the refusal
+    surface without its own except arm."""
+
+    def _bad(_argv: list[str] | None = None) -> int:
         raise ConfigError("Config file is not valid TOML (/x/config.toml): line 1")
 
     monkeypatch.setattr(cli, "main", _bad)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert cli_main() == 2
     err = capsys.readouterr().err
-    assert err.startswith("CONFIG ERROR:\n")
+    assert err.startswith("ERROR: ")
     assert "not valid TOML" in err
-    assert "report this" not in err  # not a bug report
-    assert "full traceback" not in err
+    assert not any(marker in err for marker in _CRASH_MARKERS)
+
+
+def test_an_unreadable_config_file_refuses_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Root-owned after a sudo run, or plain chmod 000: the named file and the
+    OS reason reach the operator, with no crash-report language anywhere."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "s"))
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    bad = tmp_path / "c.toml"
+    bad.write_text("x = 1\n", encoding="utf-8")
+    bad.chmod(0o000)
+    try:
+        rc = cli_main(["--config", str(bad), "config", "show"])
+    finally:
+        bad.chmod(0o600)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: ")
+    assert "c.toml" in err
+    assert not any(marker in err for marker in _CRASH_MARKERS)
+
+
+def test_a_bad_budget_flag_refuses_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run --max-usd inf` names the flag it refuses, at exit 2, not a saved
+    ValidationError traceback and an invitation to file a bug."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "s"))
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    rc = cli_main(["run", "task", "--max-usd", "inf"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: ")
+    assert "--max-usd" in err
+    assert not any(marker in err for marker in _CRASH_MARKERS)
 
 
 def test_cli_main_reraises_under_debug(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom() -> int:
+    def _boom(_argv: list[str] | None = None) -> int:
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(cli, "main", _boom)
@@ -73,7 +135,7 @@ def test_cli_main_reraises_under_debug(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cli_main_handles_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _interrupt() -> int:
+    def _interrupt(_argv: list[str] | None = None) -> int:
         raise KeyboardInterrupt
 
     monkeypatch.setattr(cli, "main", _interrupt)

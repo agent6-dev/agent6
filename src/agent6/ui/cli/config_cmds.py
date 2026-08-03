@@ -32,6 +32,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.config.write import target_unparseable, written_value_error
+from agent6.errors import OperatorError
 from agent6.machine import (
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
@@ -47,14 +48,11 @@ from agent6.paths import (
     secrets_path,
 )
 from agent6.portable import atomic_write, locked_file
-from agent6.ui.cli._common import load_config_or_exit
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
 def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") -> int:
-    eff = load_config_or_exit(Path.cwd(), config_path)
-    if isinstance(eff, int):
-        return eff
+    eff = load_effective(Path.cwd(), config_path)
     resolved = models_registry.resolved_adaptive_values(eff.config)
     if key:
         # `config show <key>`: one leaf (or a whole section prefix), untruncated
@@ -92,11 +90,7 @@ def _cmd_config_presets(config_path: Path | None = None) -> int:
     Honours the global ``--config`` like every other config subcommand: without
     it, a `[presets.*]` table in an explicit file was silently absent from the
     listing that exists to show which presets are available."""
-    try:
-        cat = preset_catalog(Path.cwd(), config_path)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    cat = preset_catalog(Path.cwd(), config_path)
     if cat.selected:
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
@@ -138,9 +132,7 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
     # could tear on a crash.
     try:
         with locked_file(target):
-            eff = load_config_or_exit(Path.cwd(), config_path)
-            if isinstance(eff, int):
-                return eff
+            eff = load_effective(Path.cwd(), config_path)
             if target.is_file() and not force:
                 print(
                     f"ERROR: {target} already exists. Re-run with --force to overwrite.",
@@ -345,23 +337,18 @@ def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None)
     """Print a leaf's effective value + the layer that set it."""
     if machine is not None and not machine.is_file():
         # read_toml_file answers {} for a missing path, so a typo'd machine file
-        # read as "an empty overlay" and the answer came confidently from the
+        # would read as "an empty overlay" and answer confidently from the
         # stack below it.
-        print(f"ERROR: no such machine file: {machine}", file=sys.stderr)
-        return 2
-    try:
-        if machine is not None:
-            overlay = read_toml_file(machine).get("config", {})
-            eff = load_effective_with_overlay(
-                Path.cwd(),
-                overlay if isinstance(overlay, dict) else {},
-                explicit_path=config_path,
-            )
-        else:
-            eff = load_effective(Path.cwd(), config_path)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+        raise OperatorError(f"no such machine file: {machine}")
+    if machine is not None:
+        overlay = read_toml_file(machine).get("config", {})
+        eff = load_effective_with_overlay(
+            Path.cwd(),
+            overlay if isinstance(overlay, dict) else {},
+            explicit_path=config_path,
+        )
+    else:
+        eff = load_effective(Path.cwd(), config_path)
     found = effective_leaf(eff, key)
     if found is None:
         print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)

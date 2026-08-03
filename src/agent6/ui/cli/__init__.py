@@ -19,7 +19,7 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
 )
-from agent6.config import ConfigError
+from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
@@ -129,27 +129,25 @@ def _from_plan_task(plan_md: str, session_id: str) -> str:
     return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
 
 
-def cli_main() -> int:
-    """Console-script entry point: a top-level guard around ``main``.
+def cli_main(argv: list[str] | None = None) -> int:
+    """Console-script entry point: the boundary that sorts failures by fault.
 
-    An unexpected exception surfaces as a one-line ``ERROR:`` plus a pointer to
-    a saved traceback, not a raw Python stack dumped at the user. Set
-    ``AGENT6_DEBUG=1`` to re-raise the full traceback inline (for bug reports).
-    ``main`` itself is left unguarded so tests and ``python -m`` see real
-    tracebacks. argparse's ``SystemExit`` (bad args / --help) is not an
-    ``Exception`` and passes through untouched.
-
-    A ``ConfigError`` is the operator's config, not a bug: it reports as
-    ``CONFIG ERROR`` / exit 2, matching ``load_config_or_exit`` for the commands
-    that hit a bad config before they get to load it.
+    An ``OperatorError`` (a bad flag value, an unreadable operator file, an
+    invalid config) prints as an ``ERROR:`` refusal at exit 2, no traceback.
+    Anything else is a bug in agent6: a one-line ``ERROR: unexpected ...`` plus
+    a pointer to a saved traceback, exit 1. Set ``AGENT6_DEBUG=1`` to re-raise
+    the full traceback inline (for bug reports). ``main`` itself is left
+    unguarded so tests and ``python -m`` see real tracebacks. argparse's
+    ``SystemExit`` (bad args / --help) is not an ``Exception`` and passes
+    through untouched.
     """
     try:
-        return main()
+        return main(argv)
     except KeyboardInterrupt:
         print("\nagent6: interrupted.", file=sys.stderr)
         return 130
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+    except OperatorError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
         if os.environ.get("AGENT6_DEBUG") == "1":
@@ -169,7 +167,7 @@ def cli_main() -> int:
         return 1
 
 
-def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
+def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if getattr(args, "parallel", "") and (args.interactive or args.tui):
         print(
             "ERROR: --parallel cannot combine with -i or --tui"
@@ -193,12 +191,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         resolved = _resolve_plan_session_id(args.from_plan)
         if resolved is None:
             return 2
-        plan_path = _plans_dir(Path.cwd()) / resolved / "plan.md"
-        try:
-            plan_md = plan_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            print(f"ERROR: could not read {plan_path}: {exc}", file=sys.stderr)
-            return 2
+        plan_md = read_operator_file(_plans_dir(Path.cwd()) / resolved / "plan.md")
         task = _from_plan_task(plan_md, resolved)
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
@@ -212,12 +205,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
                 file=sys.stderr,
             )
             return 2
-        plan_path = _plans_dir(Path.cwd()) / last_plan / "plan.md"
-        try:
-            plan_md = plan_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            print(f"ERROR: could not read {plan_path}: {exc}", file=sys.stderr)
-            return 2
+        plan_md = read_operator_file(_plans_dir(Path.cwd()) / last_plan / "plan.md")
         title = _first_markdown_line(plan_md)
         if not sys.stdin.isatty():
             print(

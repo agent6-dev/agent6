@@ -26,6 +26,14 @@ def _run(args: list[str]) -> int:
     return main(args)
 
 
+def _refuse(args: list[str]) -> int:
+    """Run through the guarded entry point: operator errors present as
+    `ERROR:` + exit 2 there, while `main` raises them."""
+    from agent6.ui.cli import cli_main
+
+    return cli_main(args)
+
+
 def _global_toml(tmp_path: Path) -> dict[str, object]:
     return tomllib.loads((tmp_path / "g" / "config.toml").read_text(encoding="utf-8"))
 
@@ -54,13 +62,14 @@ def test_get_unknown_key_errors(iso: Path) -> None:
 def test_machine_get_on_malformed_toml_is_clean_error(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A malformed --machine-file must produce a clean CONFIG ERROR (exit 2),
+    # A malformed --machine-file must produce a clean ERROR (exit 2),
     # not an uncaught TOMLDecodeError traceback.
     bad = tmp_path / "broken.asm.toml"
     bad.write_text("this is = not valid [[[\n", encoding="utf-8")
-    assert _run(["config", "get", "git.merge_strategy", "--machine-file", str(bad)]) == 2
+    assert _refuse(["config", "get", "git.merge_strategy", "--machine-file", str(bad)]) == 2
     err = capsys.readouterr().err
     assert "invalid TOML" in err
+    assert "report this" not in err
 
 
 def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -261,7 +270,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
 
     fill_holds_lock = threading.Event()
     release_fill = threading.Event()
-    real_load = config_cmds.load_config_or_exit
+    real_load = config_cmds.load_effective
     results: dict[str, object] = {}
 
     def gated_load(root: Path, cfg: Path | None) -> object:
@@ -270,7 +279,7 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
         return real_load(root, cfg)
 
     def run_fill() -> None:
-        with mock.patch.object(config_cmds, "load_config_or_exit", gated_load):
+        with mock.patch.object(config_cmds, "load_effective", gated_load):
             results["fill"] = _run(["config", "fill", "--force"])
 
     def run_set() -> None:
@@ -328,15 +337,19 @@ def test_get_refuses_a_missing_global_config_file(iso: Path) -> None:
     """A `--config` file that does not exist is refused, as `config show`
     refuses it: answering from the defaults reports a value the named file
     never set."""
-    assert _run(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2
+    assert _refuse(["--config", str(iso / "nope.toml"), "config", "get", "review.period"]) == 2
 
 
-def test_get_refuses_a_machine_file_that_does_not_exist(iso: Path) -> None:
+def test_get_refuses_a_machine_file_that_does_not_exist(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A missing overlay path read as an EMPTY overlay, so a typo'd
     --machine-file answered confidently from the stack below it at exit 0."""
     assert (
-        _run(["config", "get", "--machine-file", str(iso / "nope.asm.toml"), "review.period"]) == 2
+        _refuse(["config", "get", "--machine-file", str(iso / "nope.asm.toml"), "review.period"])
+        == 2
     )
+    assert "no such machine file" in capsys.readouterr().err
 
 
 def test_a_provider_leaf_error_names_every_valid_value(
@@ -363,6 +376,6 @@ def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
     cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
     cfg.chmod(0o000)
     try:
-        assert _run(["config", "show"]) == 2
+        assert _refuse(["config", "show"]) == 2
     finally:
         cfg.chmod(0o600)

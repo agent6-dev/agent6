@@ -14,7 +14,6 @@ from agent6.app.providers import build_review_seats, build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
     Config,
-    ConfigError,
 )
 from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
@@ -192,12 +191,8 @@ def _cmd_review(  # noqa: PLR0911
     """Print a code review of a diff to stdout. Read-only; no jail. With
     ``reviewers >= 1``, runs the grounded adversarial review PANEL instead of the
     single freeform review."""
-    try:
-        cfg = load_effective(Path.cwd(), config_path).config
-        cfg.require_runnable("reviewer")
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    cfg = load_effective(Path.cwd(), config_path).config
+    cfg.require_runnable("reviewer")
 
     err = check_provider_keys(cfg)
     if err is not None:

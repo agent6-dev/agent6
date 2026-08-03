@@ -352,7 +352,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     cfg = sandbox_overrides.apply(cfg)
                 cfg.require_runnable(role)
             except ConfigError as exc:
-                reporter.err(f"CONFIG ERROR:\n{exc}")
+                reporter.err(f"ERROR: {exc}")
                 return 2
             reporter.err(
                 f"[agent6] run {session_id!r} was parked at submission (the checkout was"
@@ -471,7 +471,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg = session_config(cfg, mode, sandbox_overrides)
             cfg.require_runnable(role)
         except ConfigError as exc:
-            reporter.err(f"CONFIG ERROR:\n{exc}")
+            reporter.err(f"ERROR: {exc}")
             return 2
 
         try:

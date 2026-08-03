@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The two shared _common glue helpers: resolve_or_newest_layout (a run by id,
-or the latest across every bucket) and load_config_or_exit (config or a printed
-CONFIG ERROR + exit code 2)."""
+"""The shared _common glue helper resolve_or_newest_layout (a run by id, or
+the latest across every bucket)."""
 
 from __future__ import annotations
 
@@ -11,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import EffectiveConfig, resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.id import SessionIdError
-from agent6.ui.cli._common import load_config_or_exit, resolve_or_newest_layout
+from agent6.ui.cli._common import resolve_or_newest_layout
 
 
 def _session_dir(state: Path, bucket: str, session_id: str, *, log_mtime: float) -> Path:
@@ -66,29 +65,3 @@ def test_bad_explicit_id_raises(tmp_path: Path) -> None:
     (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
     with pytest.raises(SessionIdError):
         resolve_or_newest_layout(repo, "nope")
-
-
-# --- load_config_or_exit ------------------------------------------------------
-
-
-def test_load_config_returns_the_effective_config(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    eff = load_config_or_exit(repo, None)
-    assert isinstance(eff, EffectiveConfig)
-    assert eff.config.sandbox.protect_git is True  # a real, defaulted leaf
-
-
-def test_load_config_prints_config_error_and_returns_2(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    bad = tmp_path / "bad.toml"
-    bad.write_text("[models\n", encoding="utf-8")  # invalid TOML
-
-    rc = load_config_or_exit(repo, bad)
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert err.startswith("CONFIG ERROR:\n")
-    assert "bad.toml" in err

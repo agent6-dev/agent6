@@ -298,7 +298,7 @@ def create_fork(  # noqa: PLR0911
         # run never uses.
         cfg = load_effective(cwd, config_path, preset=sm.workflow.replay_preset).config
     except ConfigError as exc:
-        reporter.err(f"CONFIG ERROR:\n{exc}")
+        reporter.err(f"ERROR: {exc}")
         return "", 2
 
     # Stamp the child's preset like the run/resume paths (`preset or cfg.preset`):

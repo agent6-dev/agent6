@@ -77,6 +77,7 @@ depends_on = [
   "agent6.types",
   "agent6.providers", "agent6", "agent6.tools",
   "agent6.tools.schema",
+  "agent6.errors",
   "agent6.memory",
   "agent6.directive",
   "agent6.budget",
@@ -289,7 +290,9 @@ depends_on = ["agent6.config.model"]
 path = "agent6.config.model"
 # RoleName and the session-mode vocabulary: shared value types, so they live
 # at the leaf rather than in whichever model declared one first.
-depends_on = ["agent6.types"]
+# agent6.errors: ConfigError subclasses OperatorError, so a bad config presents
+# as the operator's mistake at the CLI boundary.
+depends_on = ["agent6.types", "agent6.errors"]
 
 [[modules]]
 # The environment a process spawned OUTSIDE the jail inherits. A leaf because
@@ -344,6 +347,13 @@ depends_on = ["agent6.sandbox.landlock", "agent6.types"]
 
 [[modules]]
 path = "agent6.types"
+depends_on = []
+
+[[modules]]
+# The operator-error boundary: OperatorError + the operator-file reader.
+# A leaf so both the trust-boundary models (config) and the front-ends can
+# raise/catch the one type.
+path = "agent6.errors"
 depends_on = []
 
 [[modules]]

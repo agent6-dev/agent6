@@ -128,7 +128,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         cfg = load_effective(cwd, None).config
         cfg.require_runnable("worker")
     except ConfigError as exc:
-        reporter.err(f"CONFIG ERROR:\n{exc}")
+        reporter.err(f"ERROR: {exc}")
         return 2
     missing = check_provider_keys(cfg)
     if missing is not None:

@@ -21,7 +21,6 @@ from agent6.app.preflight import (
 from agent6.app.run import FrontendCapabilities, SessionFrontend, run_task
 from agent6.config import (
     Config,
-    ConfigError,
     RoleName,
 )
 from agent6.config.layer import (
@@ -268,20 +267,14 @@ def _cmd_run(  # noqa: PLR0911
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
     the flag overrides, resolve skills and @file refs, route ``--parallel``,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
-    try:
-        effective = load_effective(Path.cwd(), config_path, preset=preset)
-        cfg, explicit_leaves = effective.config, frozenset(effective.sources)
-        if budget_overrides is not None:
-            cfg = budget_overrides.apply(cfg)
-        if sandbox_overrides is not None:
-            cfg = sandbox_overrides.apply(cfg)
-        if decompose:  # --decompose: plan-first for this run (overrides config)
-            cfg = cfg.model_copy(
-                update={"prompt": cfg.prompt.model_copy(update={"decompose": "on"})}
-            )
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    effective = load_effective(Path.cwd(), config_path, preset=preset)
+    cfg, explicit_leaves = effective.config, frozenset(effective.sources)
+    if budget_overrides is not None:
+        cfg = budget_overrides.apply(cfg)
+    if sandbox_overrides is not None:
+        cfg = sandbox_overrides.apply(cfg)
+    if decompose:  # --decompose: plan-first for this run (overrides config)
+        cfg = cfg.model_copy(update={"prompt": cfg.prompt.model_copy(update={"decompose": "on"})})
     task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
     if compose_err:
         print(f"ERROR: {compose_err}", file=sys.stderr)
@@ -294,11 +287,7 @@ def _cmd_run(  # noqa: PLR0911
     if mode != "ask" and not require_git_repo(Path.cwd()):
         return 2
     role = session_kind(mode).role
-    try:
-        cfg.require_runnable(role)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    cfg.require_runnable(role)
 
     # Resolve @path references in the task string before the
     # workflow ever sees it. Lets the user write "fix the bug in @src/x.py

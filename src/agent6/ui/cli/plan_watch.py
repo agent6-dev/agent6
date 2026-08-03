@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+from agent6.errors import read_operator_file
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
     pid_alive,
@@ -84,12 +85,7 @@ def _cmd_plan_show(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
-    try:
-        sys.stdout.write(plan.read_text(encoding="utf-8"))
-    except OSError as exc:
-        print(f"ERROR: could not read {plan}: {exc}", file=sys.stderr)
-        return 2
+    sys.stdout.write(read_operator_file(_plans_dir(Path.cwd()) / resolved / "plan.md"))
     return 0
 
 

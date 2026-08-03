@@ -51,7 +51,6 @@ from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
-    load_config_or_exit,
     print_nothing_yet,
     resolve_or_newest_layout,
     resolve_session_layout,
@@ -766,10 +765,7 @@ def _cmd_compare(*, session_ids: tuple[str, ...]) -> int:
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
-    eff = load_config_or_exit(cwd, None)
-    if isinstance(eff, int):
-        return eff
-    cfg = eff.config
+    cfg = load_effective(cwd, None).config
 
     candidates, notes = _screen_candidates(cwd, resolved)
     for note in notes:
