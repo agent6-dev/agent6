@@ -171,11 +171,17 @@ _REASONING_FLOOR_ONLY_HINTS: tuple[str, ...] = ("kimi-latest",)
 
 
 def _needs_reasoning_headroom(model: str) -> bool:
-    """True if ``model`` needs the max_tokens floor: any reasoning model, plus
-    reasoning aliases (kimi-latest) not in the effort set. Safe to match broadly
-    -- the floor raises a ceiling, it does not change behaviour."""
+    """True if ``model`` needs the max_tokens floor: any reasoning model, OpenAI's
+    own o-series / gpt-5 (which reason and starve just as hard, but are matched
+    narrowly only for the direct-host param rename), plus reasoning aliases
+    (kimi-latest) not in the effort set. Safe to match broadly -- the floor raises
+    a ceiling, it does not change behaviour, so a false positive costs nothing."""
     lowered = model.lower()
-    return _is_reasoning_model(model) or any(h in lowered for h in _REASONING_FLOOR_ONLY_HINTS)
+    return (
+        _is_reasoning_model(model)
+        or _is_openai_direct_reasoning_model(model)
+        or any(h in lowered for h in _REASONING_FLOOR_ONLY_HINTS)
+    )
 
 
 # OpenAI's OWN reasoning families (o-series + gpt-5). On the api.openai.com

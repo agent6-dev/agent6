@@ -324,6 +324,10 @@ def test_reasoning_floor_covers_kimi_latest_without_the_effort_default() -> None
     # every effort-set model still needs headroom (superset), non-reasoners none.
     assert needs_headroom("moonshotai/kimi-k3") and is_reasoning("moonshotai/kimi-k3")
     assert not needs_headroom("gpt-4o")
+    # OpenAI's own o-series / gpt-5 reason and starve too, but are matched
+    # narrowly (for the direct-host rename); they still need the floor.
+    assert needs_headroom("gpt-5") and needs_headroom("o1") and needs_headroom("o3-mini")
+    assert not needs_headroom("gpt-4o-mini")  # non-reasoning openai model stays out
 
 
 def test_call_bumps_max_tokens_for_reasoning_models() -> None:
