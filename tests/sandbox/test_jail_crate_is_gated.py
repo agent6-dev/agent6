@@ -44,6 +44,14 @@ def test_the_crate_has_no_clippy_warnings() -> None:
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+def test_the_crate_tests_pass() -> None:
+    """The crate's #[cfg(test)] suite (mountinfo filtering, stream capping)
+    runs nowhere else: the gate checked format and lints but never executed
+    the boundary binary's own tests."""
+    done = _cargo("test")
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
 @pytest.mark.parametrize("target", ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"])
 def test_the_crate_compiles_for_every_target_the_release_builds(target: str) -> None:
     """The wheels bundle a static musl binary per arch, and only the HOST target
