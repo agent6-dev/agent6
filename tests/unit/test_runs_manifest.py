@@ -218,18 +218,54 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
     assert read_manifest(tmp_path) == m
 
 
-def test_stamp_rewrite_restamps_version_to_the_shape_written(tmp_path: Path) -> None:
-    # A manifest written by a NEWER agent6 (version 3, unknown keys) that this
-    # binary stamp-rewrites loses the keys it doesn't know (extra="ignore"), so
-    # the write path must re-stamp version: the on-disk claim matches the shape
-    # actually written, never the shape that was lost.
+def test_rewriting_a_newer_manifest_is_refused(tmp_path: Path) -> None:
+    """Reads stay tolerant so every historical run keeps rendering, but a
+    REWRITE of a manifest a newer agent6 wrote is refused: extra="ignore" drops
+    the keys this binary doesn't know, and a merge/compare stamp would silently
+    downgrade the record it was only supposed to annotate."""
+    from agent6.app.manifest import write_manifest
+
+    _write(tmp_path, {"version": 3, "run_id": "r-1", "future_key": {"x": 1}})
+    m = read_manifest(tmp_path)  # reading it is fine
+    assert m.run_id == "r-1"
+    with pytest.raises(ManifestError, match="version 3"):
+        write_manifest(tmp_path / "manifest.json", m)
+    # Untouched on disk: the newer record keeps its version AND its keys.
+    on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert on_disk["version"] == 3
+    assert on_disk["future_key"] == {"x": 1}
+
+
+def test_rewriting_an_older_manifest_upgrades_it(tmp_path: Path) -> None:
+    """An OLDER manifest has no keys this binary can lose, so a stamp rewrite
+    upgrades the version claim to the shape it actually wrote."""
     from agent6.app.manifest import write_manifest
     from agent6.runs.manifest import MANIFEST_VERSION
 
-    _write(tmp_path, {"version": 3, "run_id": "r-1", "future_key": {"x": 1}})
-    m = read_manifest(tmp_path)
-    write_manifest(tmp_path / "manifest.json", m)
+    _write(tmp_path, {"version": 1, "run_id": "r-old"})
+    write_manifest(tmp_path / "manifest.json", read_manifest(tmp_path))
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["version"] == MANIFEST_VERSION
-    assert "future_key" not in on_disk
-    assert on_disk["run_id"] == "r-1"
+    assert on_disk["run_id"] == "r-old"
+
+
+def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
+    """Both rewrite paths degrade instead of crashing on a manifest they may not
+    rewrite: the merge already happened and the lane import already stands, so
+    each leaves the newer record untouched and (for the lane) reports it."""
+    from agent6.app.merge import record_merge_in_manifest
+    from agent6.app.parallel import _stamp  # pyright: ignore[reportPrivateUsage]
+    from agent6.runs.layout import RunLayout
+
+    run_dir = tmp_path / "runs" / "r-newer"
+    run_dir.mkdir(parents=True)
+    payload = {"version": 3, "run_id": "r-newer", "future_key": 1}
+    _write(run_dir, payload)
+
+    layout = RunLayout(state_dir=tmp_path, run_id="r-newer")
+    record_merge_in_manifest(layout, merged_into="main", merged_sha="abc123")
+    assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload
+
+    err = _stamp(run_dir, lane=2)
+    assert err is not None and "version 3" in err
+    assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload

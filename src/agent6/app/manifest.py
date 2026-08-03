@@ -15,6 +15,7 @@ from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import (
     MANIFEST_VERSION,
+    ManifestError,
     ModelBrief,
     ModelsBrief,
     RunManifest,
@@ -37,10 +38,17 @@ def write_manifest(path: Path, m: RunManifest) -> None:
     format lives in one spot. Durable temp+replace: the TUI hub and `runs show`
     poll this file on live runs, and resume/fork need it after a crash.
 
-    Re-stamps ``version``: a stamp-rewrite of a manifest written by a NEWER
-    agent6 drops keys this version doesn't know (extra="ignore" on read), so
-    the written file must claim the shape it actually has, not the one it lost.
+    Refuses to rewrite a NEWER manifest (``ManifestError``): reading one is
+    lenient so every run dir keeps rendering, but ``extra="ignore"`` drops the
+    keys this binary doesn't know, so a stamp would silently downgrade the
+    record it was only meant to annotate. An OLDER manifest carries nothing to
+    lose, so it is upgraded to the shape actually written.
     """
+    if m.version > MANIFEST_VERSION:
+        raise ManifestError(
+            f"refusing to rewrite {path}: it is version {m.version}, newer than this agent6 "
+            f"understands (version {MANIFEST_VERSION}). Upgrade agent6 to stamp this run."
+        )
     if m.version != MANIFEST_VERSION:
         m = m.model_copy(update={"version": MANIFEST_VERSION})
     atomic_write(path, m.model_dump_json(indent=2) + "\n")

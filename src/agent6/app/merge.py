@@ -68,7 +68,9 @@ def record_merge_in_manifest(
             )
         }
     )
-    with contextlib.suppress(OSError):
+    # Also ManifestError: a manifest newer than this binary can rewrite is left
+    # alone rather than downgraded, and the merge it records already happened.
+    with contextlib.suppress(OSError, ManifestError):
         write_manifest(layout.manifest_path, stamped)
 
 

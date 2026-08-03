@@ -766,9 +766,10 @@ def _stamp(run_dir: Path, **updates: object) -> str | None:
         return f"could not read {mpath}: {exc}"
     try:
         write_manifest(mpath, m.model_copy(update=updates))
-    except OSError as exc:
-        # Disk full / read-only mount: the import already stands, so report the
-        # degradation and let the loop keep importing/stamping the remaining lanes.
+    except (OSError, ManifestError) as exc:
+        # Disk full / read-only mount, or a manifest newer than this binary can
+        # rewrite: the import already stands, so report the degradation and let
+        # the loop keep importing/stamping the remaining lanes.
         return f"could not write {mpath}: {exc}"
     return None
 
