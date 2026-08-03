@@ -574,9 +574,18 @@ class ConversationScreen(Screen[None]):
         if wrote:
             self._flush_tail()
         else:
-            self._tail_widget().update(
-                Text("(no conversation yet; it appears as the run streams)", style="dim italic")
+            # Past tense only when the host POSITIVELY knows the session ended.
+            # `_host_live`'s event-derived fallback is False before the first
+            # event, so using it here would promise nothing to a run that has
+            # simply not started streaming yet -- the same lie, inverted.
+            live_fn = getattr(self.app, "session_controllable", None)
+            ended = callable(live_fn) and not live_fn()
+            empty = (
+                "this run made no conversation"
+                if ended
+                else "(no conversation yet; it appears as the run streams)"
             )
+            self._tail_widget().update(Text(empty, style="dim italic"))
         self._render_live()
         self._sync_input()
         self._scroll().scroll_end(animate=False)

@@ -415,3 +415,23 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:
 
     shown_dead, _ = asyncio.run(scenario(False))
     assert not shown_dead, "a dead worker has no in-progress turn to show"
+
+
+def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: Path) -> None:
+    """The conversation pane is the first thing a run opens on, and it promised
+    a dead run's output "appears as the run streams". The web already gates the
+    tense on liveness; the TUI did not."""
+
+    class _Dead(_Host):
+        def session_controllable(self) -> bool:
+            return False
+
+    async def scenario() -> None:
+        app = _Dead(tmp_path / "missing.jsonl")
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            body = _body_text(app)
+            assert "made no conversation" in body
+            assert "as the run streams" not in body
+
+    asyncio.run(scenario())
