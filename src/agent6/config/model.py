@@ -1028,7 +1028,6 @@ class MCPServerEntry(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    name: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     command: tuple[str, ...] = Field(min_length=1)
     enabled: bool = True
     # Time budget for the initialize + tools/list handshake. If the
@@ -1038,30 +1037,38 @@ class MCPServerEntry(BaseModel):
     # failure (ToolError) if exceeded.
     call_timeout_s: float = Field(gt=0.0, default=60.0)
 
-    @field_validator("name")
-    @classmethod
-    def _no_double_underscore(cls, v: str) -> str:
-        # The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing
-        # recovers the server by splitting on the FIRST ``__`` after the prefix.
-        # A ``__`` inside the server name makes that split ambiguous and routes
-        # to the wrong (or no) server. (pydantic v2 patterns use a regex engine
-        # without lookahead, so this is a validator rather than a pattern.)
-        if "__" in v:
-            raise ValueError(
-                f"[mcp] server name must not contain '__' (it separates server"
-                f" from tool in mcp__<server>__<tool>): {v!r}"
-            )
-        return v
-
 
 class MCPConfig(BaseModel):
     """``[mcp]`` section. Empty / absent / ``enabled = false`` means no
-    MCP servers are spawned and the LLM sees zero ``mcp__*`` tools."""
+    MCP servers are spawned and the LLM sees zero ``mcp__*`` tools.
+
+    ``servers`` is a name-keyed map (``[mcp.servers.<name>]``), like
+    ``[providers.<name>]``: duplicates are unrepresentable, a repo overlay can
+    flip one server without restating the rest, and ``config set`` reaches the
+    leaves."""
 
     model_config = _BASE_MODEL_CONFIG
 
     enabled: bool = False
-    servers: tuple[MCPServerEntry, ...] = ()
+    servers: dict[str, MCPServerEntry] = Field(default_factory=dict)
+
+    @field_validator("servers")
+    @classmethod
+    def _valid_server_names(cls, v: dict[str, MCPServerEntry]) -> dict[str, MCPServerEntry]:
+        # The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing
+        # recovers the server by splitting on the FIRST ``__`` after the
+        # prefix, so the key must be identifier-shaped and ``__``-free.
+        for name in v:
+            if not name or not all(c.isalnum() or c in "_-" for c in name):
+                raise ValueError(
+                    f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}"
+                )
+            if "__" in name:
+                raise ValueError(
+                    f"[mcp] server name must not contain '__' (it separates server"
+                    f" from tool in mcp__<server>__<tool>): {name!r}"
+                )
+        return v
 
 
 class ParallelConfig(BaseModel):

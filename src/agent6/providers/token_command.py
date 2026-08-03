@@ -10,7 +10,7 @@ caches the result for ``token_command_ttl_s`` seconds, and re-runs it on demand
 so the provider stays authenticated without a human re-pasting a key.
 
 The command runs in agent6's own process, outside any run sandbox, with the
-operator's environment, the same trust level as a ``[[mcp.servers]]`` command.
+operator's environment, the same trust level as an ``[mcp.servers.<name>]`` command.
 It is therefore an operator-controlled config knob, never something a run can
 set, and the token it prints is sent as ``Authorization: Bearer <token>``.
 """

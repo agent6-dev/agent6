@@ -277,7 +277,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         by_server: dict[str, list[str]] = {}
         for d in descriptors:
             by_server.setdefault(d.server_name, []).append(d.tool_name)
-        configured = {srv.name for srv in cfg.mcp.servers if srv.enabled}
+        configured = {name for name, srv in cfg.mcp.servers.items() if srv.enabled}
         for name in sorted(configured):
             tools = by_server.get(name, [])
             ok = bool(tools)

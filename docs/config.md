@@ -159,7 +159,7 @@ self-heals. It works for either `api_format` (the Deployments examples above use
 it for Vertex). `token_command` takes precedence over `api_key_env`.
 
 The command runs in agent6's own process (outside any run sandbox) with your
-environment, the same trust level as an `[[mcp.servers]]` command, so it is an
+environment, the same trust level as an `[mcp.servers.<name>]` command, so it is an
 operator-only knob. Whatever it prints to stdout is sent as the auth header
 (`Authorization: Bearer <token>` for `auth_style = "bearer"`); a non-zero exit,
 a timeout, or empty output surfaces as a
@@ -496,7 +496,7 @@ Dispatch is depth 1: a lane can never itself fan out or dispatch. When the
 front-end does not wire a dispatcher (headless, plan/ask), `/parallel` answers
 "not available" and the run continues.
 
-## `[mcp]` + `[[mcp.servers]]` (optional)
+## `[mcp]` + `[mcp.servers.<name>]` (optional)
 
 Spawn Model Context Protocol servers at run start; their tools appear to the LLM
 as `mcp__<name>__<tool>`. Each server runs as your user, outside the jail
@@ -504,14 +504,17 @@ as `mcp__<name>__<tool>`. Each server runs as your user, outside the jail
 influence the arguments it passes, so audit each server like a `run_command`
 allow-list.
 
+Servers are a name-keyed map like `[providers.<name>]`: the table key is the
+tool prefix (`mcp__<name>__<tool>`), duplicates cannot exist, and a repo
+overlay can flip one server without restating the rest.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |
-| `servers[].name` | *(required)* | Tool prefix (`mcp__<name>__<tool>`). |
-| `servers[].command` | *(required)* | argv for the stdio JSON-RPC server. |
-| `servers[].enabled` | `true` | Per-server toggle. |
-| `servers[].startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
-| `servers[].call_timeout_s` | `60.0` | Per `tools/call` timeout. |
+| `servers.<name>.command` | *(required)* | argv for the stdio JSON-RPC server. |
+| `servers.<name>.enabled` | `true` | Per-server toggle. |
+| `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
+| `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
 
 ---
 

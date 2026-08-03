@@ -135,8 +135,8 @@ def start_mcp_manager_if_enabled(
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
     configs = [
-        (srv.name, srv.command, srv.startup_timeout_s, srv.call_timeout_s)
-        for srv in cfg.mcp.servers
+        (name, srv.command, srv.startup_timeout_s, srv.call_timeout_s)
+        for name, srv in cfg.mcp.servers.items()
         if srv.enabled
     ]
     if not configs:
