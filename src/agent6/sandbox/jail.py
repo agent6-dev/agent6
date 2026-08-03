@@ -733,11 +733,22 @@ class JailSession:
         *,
         env: tuple[tuple[str, str], ...] = (),
         timeout_s: float = 600.0,
+        background: bool = False,
     ) -> CommandResult:
-        """Run one command in this session's namespaces."""
+        """Run one command in this session's namespaces.
+
+        ``background`` answers as soon as the command starts and leaves it
+        running for later commands to reach. Strict only: the PID namespace is
+        what keeps it from outliving the run, and hardened has none.
+        """
         assert self._proc.stdin is not None and self._proc.stdout is not None
         start = time.monotonic()
-        request = {"argv": list(argv), "env": [list(p) for p in env], "timeout_s": timeout_s}
+        request = {
+            "argv": list(argv),
+            "env": [list(p) for p in env],
+            "timeout_s": timeout_s,
+            "background": background,
+        }
         self._proc.stdin.write((json.dumps(request) + "\n").encode())
         self._proc.stdin.flush()
         line = self._proc.stdout.readline()

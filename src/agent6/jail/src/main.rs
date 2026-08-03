@@ -104,6 +104,12 @@ struct Request {
     timeout_s: f64,
     #[serde(default = "default_memory_limit_mb")]
     memory_limit_mb: u64,
+    /// Start the command and answer at once, leaving it running in this
+    /// session's namespaces. STRICT only: the PID namespace is what bounds it,
+    /// and hardened has none, so there a backgrounded process would outlive
+    /// the run.
+    #[serde(default)]
+    background: bool,
 }
 
 impl Request {
@@ -186,7 +192,7 @@ fn run_strict(policy: &Policy) -> ! {
                 die(format!("seccomp failed: {e}"));
             }
             if policy.mode == "serve" {
-                serve(Path::new("/workspace"));
+                serve(Path::new("/workspace"), true);
             }
             if let Err(e) = run_child(&policy.child_spec(), Path::new("/workspace")) {
                 die(format!("child execution failed: {e}"));
@@ -210,7 +216,7 @@ fn run_hardened(policy: &Policy) -> ! {
         die(format!("seccomp failed: {e}"));
     }
     if policy.mode == "serve" {
-        serve(&policy.cwd);
+        serve(&policy.cwd, false);
     }
     if let Err(e) = run_child(&policy.child_spec(), &policy.cwd) {
         die(format!("child execution failed: {e}"));
@@ -222,7 +228,7 @@ fn run_hardened(policy: &Policy) -> ! {
 /// answering each with the same single-line JSON result the one-shot mode
 /// prints. Exits when stdin closes, which takes the PID namespace (and any
 /// backgrounded server in it) down with it.
-fn serve(cwd: &Path) -> ! {
+fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
     let stdin = io::stdin();
     let mut line = String::new();
     loop {
@@ -239,7 +245,15 @@ fn serve(cwd: &Path) -> ! {
             Ok(r) => r,
             Err(e) => die(format!("serve: invalid request JSON: {e}")),
         };
-        if let Err(e) = run_child(&request.child_spec(), cwd) {
+        if request.background && !pid_namespaced {
+            die("serve: background requests need the PID namespace (strict)");
+        }
+        let outcome = if request.background {
+            spawn_detached(&request.child_spec(), cwd)
+        } else {
+            run_child(&request.child_spec(), cwd)
+        };
+        if let Err(e) = outcome {
             die(format!("serve: child execution failed: {e}"));
         }
     }
@@ -1525,6 +1539,45 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     });
     let mut out = io::stdout().lock();
     writeln!(out, "{result}")?;
+    Ok(())
+}
+
+/// Start a command and answer at once, leaving it running in this session's
+/// namespaces: no wait, and no process-group kill, so a server survives the
+/// request that started it. The PID namespace remains the bound -- when the
+/// session's stdin closes, everything in it dies with the namespace.
+fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+    if spec.argv.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
+    }
+    let mut cmd = Command::new(&spec.argv[0]);
+    cmd.args(&spec.argv[1..]);
+    cmd.env_clear();
+    for (k, v) in spec.env {
+        cmd.env(k, v);
+    }
+    if !spec.env.iter().any(|(k, _)| k == "PATH") {
+        cmd.env("PATH", "/usr/bin:/bin");
+    }
+    if !spec.env.iter().any(|(k, _)| k == "HOME") {
+        cmd.env("HOME", "/home");
+    }
+    // The caller redirects its own output (as the background tool does), so
+    // nothing here holds a pipe open across requests.
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
+    cmd.current_dir(cwd);
+    cmd.process_group(0);
+    let child = cmd.spawn()?;
+    let result = serde_json::json!({
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "pid": child.id(),
+    });
+    println!("{result}");
+    io::stdout().flush()?;
     Ok(())
 }
 

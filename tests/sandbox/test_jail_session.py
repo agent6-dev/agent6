@@ -46,6 +46,40 @@ def test_commands_in_one_session_share_a_tmp(tmp_path: Path) -> None:
         session.close()
 
 
+def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
+    """The point of one process per run: a server one command starts is
+    reachable by the next. A per-command launcher put each in its own empty
+    netns, and the escapee killpg took the server down with its command."""
+    session = _session(tmp_path)
+    try:
+        listener = (
+            "import socket;s=socket.socket();"
+            "s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+            "s.bind(('127.0.0.1',8731));s.listen(1);"
+            "c,_=s.accept();c.sendall(b'alive');c.close()"
+        )
+        started = session.run(("python3", "-c", listener), background=True, timeout_s=30.0)
+        assert started.returncode == 0, started.stderr
+        probe = session.run(
+            (
+                "python3",
+                "-c",
+                "import socket,time\n"
+                "for _ in range(50):\n"
+                "    try:\n"
+                "        s=socket.create_connection(('127.0.0.1',8731),timeout=5)\n"
+                "        print(s.recv(16).decode());break\n"
+                "    except OSError:\n"
+                "        time.sleep(0.1)\n",
+            ),
+            timeout_s=30.0,
+        )
+        assert probe.returncode == 0, probe.stderr + probe.stdout
+        assert "alive" in probe.stdout
+    finally:
+        session.close()
+
+
 def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
     """Nothing a run started outlives it: closing the request channel ends the
     PID namespace, and everything inside it goes."""
