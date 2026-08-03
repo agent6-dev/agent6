@@ -28,8 +28,8 @@ open-ended agent loop.
   `fork`), a session can read this project's other sessions, and `/btw <question>`
   asks a one-off question beside a live run without interrupting it -- the answer
   prints whole at the next turn boundary and stays resumable as the ask it is
-- Long jobs do not hold a turn open: `run_background` starts a dev server or a slow
-  build, `read_background` polls it, `/shells` lists what a run started and how each
+- Long jobs do not hold a turn open: `run_background` starts a slow build or a
+  watcher, `read_background` polls it, `/shells` lists what a run started and how each
   one ended, and nothing a run started outlives it
 - Transparent, steerable context compaction: every surface shows what left the
   model's context, and the conversation view shows the summary a restart

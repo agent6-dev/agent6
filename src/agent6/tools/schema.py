@@ -236,13 +236,15 @@ class ReadSessionInput(_ToolInput):
 class RunBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Start a long-running command in the sandbox WITHOUT waiting for it: a dev server, a"
-        " long build, a file watcher. Same sandbox, PATH and approval as run_command; argv must"
+        "Start a long-running command in the sandbox WITHOUT waiting for it: a long build, a"
+        " test suite, a file watcher. Same sandbox, PATH and approval as run_command; argv must"
         " be an array of strings (no shell). Returns the new command's id and the state of every"
         " background command this run started. Its output goes to a log you read with"
-        " read_background -- nothing here ever blocks, so poll instead of waiting. Every"
-        " background command is killed when the run ends, so never use this for work whose"
-        " result you need after the run."
+        " read_background -- nothing here ever blocks, so poll instead of waiting. Each command"
+        " gets its own sandbox instance, so what one starts serving no other command can reach"
+        " unless the operator has opened the sandbox network: use this for a command whose"
+        " OUTPUT you want. Every background command is killed when the run ends, so never use"
+        " this for work whose result you need after the run."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)
