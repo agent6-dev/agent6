@@ -50,6 +50,7 @@ from agent6.viewmodel import (
     is_run_husk,
     is_winner,
     newest_run_dir,
+    run_is_live,
     summarize_run_dir,
     task_snippet,
 )
@@ -286,7 +287,10 @@ def _cmd_stop(*, run_id: str) -> int:
         return 2
     run_dir = layout.run_dir
     rid = run_dir.name
-    if not worker_is_alive(run_dir):
+    if not run_is_live(run_dir):
+        # The liveness owner, not the pid: a finished run's worker.pid lingers
+        # through teardown, and "it ends after the current step" would promise
+        # a stop the exited loop will never read.
         print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
         return 0
     request_stop(run_dir)
@@ -369,9 +373,10 @@ def _plan_merge(  # noqa: PLR0911
     # clean for the whole duration of every provider call, so every guard below
     # passes mid-run -- and execute_merge would then switch the checkout to the
     # base branch under the worker, whose next auto-commit lands mid-run WIP
-    # directly on it. Liveness is the gate, matching stop/resume/compact. The
-    # run's own end-of-run finalize_auto_merge is unaffected (it calls
-    # execute_merge directly, not this planner).
+    # directly on it. The gate is the raw pid, NOT run_is_live: this is a
+    # checkout mutex, and after run.end the worker's finalizer may still be
+    # switching branches. The run's own end-of-run finalize_auto_merge is
+    # unaffected (it calls execute_merge directly, not this planner).
     if worker_is_alive(layout.run_dir):
         print(
             f"REFUSING: run {run_id!r} is still live; merging now would switch the"

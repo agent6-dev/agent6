@@ -87,7 +87,7 @@ from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.viewmodel import run_compare
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost, status_label
-from agent6.viewmodel.listing import status_for_run_dir
+from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_run_dir
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     SESSION_START_EVENTS,
@@ -1124,7 +1124,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         the dir status is a live word. Parked/created (never started), stale
         (worker gone), and every end word route the composer to resume -- the
         one action that will actually be read."""
-        return self.dir_status[0] in ("running", "starting", "waiting")
+        return self.dir_status[0] in LIVE_STATUS_WORDS
 
     def action_toggle_dashboard(self) -> None:
         """Flip between the conversation (the primary view) and the dashboard

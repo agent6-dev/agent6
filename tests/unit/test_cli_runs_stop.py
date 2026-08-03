@@ -36,6 +36,25 @@ def test_runs_stop_requests_stop_for_a_live_run(
     assert "requested stop" in capsys.readouterr().out
 
 
+def test_runs_stop_on_a_finished_run_with_lingering_pid_is_a_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """run.end lands before teardown clears worker.pid; in that window the loop
+    has exited, so "requested stop ... it ends after the current step" was a
+    promise nobody would keep. The gate is the liveness owner, not the pid."""
+    monkeypatch.chdir(tmp_path)
+    rd = _run_dir(tmp_path, "done-run-CCC333")
+    (rd / "logs.jsonl").write_text(
+        '{"type": "run.start", "mode": "run"}\n'
+        '{"type": "run.end", "all_passed": true, "reason": "finish_run"}\n',
+        encoding="utf-8",
+    )
+    write_worker_pid(rd, os.getpid())  # teardown not finished yet
+    assert main(["runs", "stop", "done-run-CCC333"]) == 0
+    assert not stop_request_pending(rd)
+    assert "not running" in capsys.readouterr().err
+
+
 def test_runs_stop_on_a_dead_run_is_a_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
