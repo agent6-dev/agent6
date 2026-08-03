@@ -14,7 +14,7 @@ from agent6.app import egress
 from agent6.config import Config
 
 
-def _cfg(profile: str, agent_network: str, tool_network: str = "block") -> Config:
+def _cfg(profile: str, agent_network: str, tool_network: str = "auto") -> Config:
     return cast(
         Config,
         SimpleNamespace(
@@ -73,6 +73,20 @@ def test_local_refuses_rather_than_downgrade(monkeypatch: pytest.MonkeyPatch) ->
     profile, err = egress.resolve_strict_egress_viability(_cfg("auto", "local"), "strict")
     assert profile == "strict" and err is not None
     assert "REFUSING" in err and "local" in err
+
+
+def test_explicit_tool_network_block_blocks_the_hardened_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An EXPLICIT tool_network='block' can't be honored on hardened (no netns),
+    # so auto must NOT silently downgrade to hardened -- it refuses, naming the
+    # gap. The secure default 'auto' would degrade there with a warning instead.
+    monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
+    profile, err = egress.resolve_strict_egress_viability(
+        _cfg("auto", "providers", tool_network="block"), "strict"
+    )
+    assert profile == "strict" and err is not None
+    assert "REFUSING" in err and "block" in err
 
 
 def test_only_explicit_states_refuses_rather_than_downgrade(

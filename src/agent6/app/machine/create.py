@@ -148,7 +148,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return 2
-    warn_sandbox_gaps(profile, env, reporter=reporter)
+    warn_sandbox_gaps(profile, env, cfg, reporter=reporter)
 
     scratch = resolved_state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)

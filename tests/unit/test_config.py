@@ -123,7 +123,10 @@ def test_network_defaults_are_secure(tmp_path: Path) -> None:
     body = _VALID_TOML.replace('agent_network = "providers"\n', "")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.agent_network == "providers"  # confined to providers
-    assert cfg.sandbox.tool_network == "block"  # no jailed-command network
+    # auto: no jailed-command network where the env can enforce it (strict
+    # netns), degraded with a warning where it can't (hardened) -- the secure
+    # default that still runs everywhere.
+    assert cfg.sandbox.tool_network == "auto"
 
 
 def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:

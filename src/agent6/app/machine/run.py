@@ -284,7 +284,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 protect_paths,
                 commit_identity,
             )
-    warn_sandbox_gaps(profile, env, reporter=reporter)
+    warn_sandbox_gaps(profile, env, cfg, reporter=reporter)
     root = resolved_state_dir(cwd) / "machines" / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).

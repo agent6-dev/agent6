@@ -818,10 +818,17 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // single ruleset, so if no rule grants W on a path, writes to it are
     // denied — that's what gives us the read-only carve-out.
     //
-    // Limitation: new top-level entries created by the child at the root
-    // of cwd are not in any RW rule and will be read-only. Anything
-    // inside an existing top-level dir (src/, tests/, …) gets the full
-    // recursive RW rule and behaves normally.
+    // Limitation (deliberate, secure side of the tradeoff): a directory the
+    // walk had to DESCEND into because it CONTAINS a protect path gets RW rules
+    // on its non-protected children but NOT on the directory itself, so
+    // creating/unlinking a NEW entry directly in it is denied (overwriting an
+    // existing child still works). Granting the dir its own create/remove
+    // rights would, under Landlock's recursive rules, also grant them over the
+    // protected subtree -- reopening a delete-then-recreate bypass of the
+    // protected file -- so we keep it denied. A machine writing an output
+    // beside its bundle therefore fails on hardened but works on strict (which
+    // re-binds each protect path RO instead of carving). Same for new
+    // top-level entries at the root of cwd.
     let has_protect = !policy.extra_protect_paths.is_empty();
     let protect_set: std::collections::HashSet<PathBuf> = policy
         .extra_protect_paths

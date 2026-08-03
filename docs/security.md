@@ -450,30 +450,39 @@ effective profile decides what's enforceable. "offline" = no egress.
 | `open` | unconfined | unconfined | unconfined ⚠ |
 
 **Jailed-command egress** (`run_command`, machine `tool`) by `tool_network`
-(cells = `strict`):
+(cells = `strict`, where a per-child netns makes "offline" real):
 
-| jailed command | `block` *(def)* | `only_explicit_states` | `allow` |
-|---|---|---|---|
-| `run_command` | offline | offline | host network |
-| `tool`, `allow_network` `auto`(def)/`block` | offline | offline | offline |
-| `tool`, `allow_network = allow` | ⛔ refuse | host network | host network |
+| jailed command | `auto` *(def)* | `block` | `only_explicit_states` | `allow` |
+|---|---|---|---|---|
+| `run_command` | offline | offline | offline | host network |
+| `tool`, `allow_network` `auto`(def)/`block` | offline | offline | offline | offline |
+| `tool`, `allow_network = allow` | ⛔ refuse | ⛔ refuse | host network | host network |
+
+`auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
+default, degrade or refuse"): on `strict` it is `offline` above; on `hardened`
+(no netns) it cannot be offline, so a jailed child inherits the agent process's
+network (`agent_network`-scoped) and a once-per-run warning says so. `block` is
+the ENFORCE form — it refuses on `hardened`/`none` rather than run
+under-confined.
 
 **Refusals** (fail-closed):
 
 | Configuration | When |
 |---|---|
 | `tool_network = allow` without `agent_network = open` | config load ¹ |
-| a `tool` sets `allow_network = allow` under `tool_network = block` | machine start |
-| `agent_network = local` or `tool_network = only_explicit_states` | run start, `hardened` ² |
-| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network = block` | machine start, `hardened` ² |
+| a `tool` sets `allow_network = allow` under `tool_network` `auto`/`block` | machine start |
+| `agent_network = local`, `tool_network = only_explicit_states`, or explicit `tool_network = block` | run start, `hardened` ² |
+| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`block` | machine start, `hardened` ² |
 
-- ⚠ `none` (non-Linux) is unsandboxed: nothing enforced, nothing refused, loud
-  warning.
+- ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
+  nothing refused, loud warning.
 - ¹ `run_command` runs in the agent process, so it can't reach the network while
   the agent is confined.
-- ² per-command isolation needs a netns, so it's `strict`-only; on `hardened` a
-  jailed child inherits the agent's Landlock and the cases needing real isolation
-  are refused.
+- ² per-command isolation needs a netns, so it's `strict`-only. On `hardened` a
+  jailed child inherits the agent's Landlock (host-agnostic, per provider port;
+  UDP unconfined). The secure default `auto` degrades there with a warning; an
+  EXPLICIT enforce (`block`, `only_explicit_states`, `agent_network = local`)
+  refuses rather than run silently under-confined.
 
 More fail-closed properties:
 

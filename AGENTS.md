@@ -110,10 +110,20 @@ and the principles the Zen doesn't cover:
     pyright allows importing `_name` only from a `_`-prefixed module; a symbol
     shared across a non-private boundary goes public.
   - One module decomposed per commit.
-- **Secure by default.** Every new knob ships with the safe value as its
-  default and stays visible through `agent6 config show`. Widening a security
-  boundary is opt-in and carries a security review note. The operator can
-  loosen everything; the agent can never loosen its own sandbox.
+- **Secure by default, degrade or refuse.** Every new knob ships with the safe
+  value as its default and stays visible through `agent6 config show`. Widening
+  a security boundary is opt-in and carries a security review note. The operator
+  can loosen everything; the agent can never loosen its own sandbox. Two
+  corollaries, applied uniformly:
+  - No security theatre, no enumerating badness. Never add a trivially-bypassed
+    partial mitigation to look secure (e.g. confining TCP while UDP stays open).
+    Default-deny beats blocklisting badness.
+  - The default value (`auto`) uses the most secure option available in the
+    environment and DEGRADES WITH A WARNING when the strongest isn't there
+    (still runs, never silently ineffective). Only an EXPLICIT enforce value
+    (`profile = "strict"`, `tool_network = "block"`) refuses to run when the
+    environment can't honor it, naming what is unsupported and how to change it.
+    A knob with no such value gets an `auto` that is the default.
 
 ### Architecture
 
@@ -280,7 +290,7 @@ these are the invariants a change must preserve.
   `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
-  (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
+  (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "auto"`,
   `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`,
   `git.allow_* = false`). Every leaf is auditable via `agent6 config show`;
   `Config` stays `extra="forbid", frozen=True`. Loosening a security default

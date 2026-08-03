@@ -436,7 +436,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except ProfileUnavailableError as exc:
             reporter.err(f"REFUSING: {exc}")
             return 2
-        warn_sandbox_gaps(selected_profile, env, reporter=reporter)
+        warn_sandbox_gaps(selected_profile, env, cfg, reporter=reporter)
         if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
             reporter.err("[agent6] aborted.")
             return 1

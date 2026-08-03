@@ -7,7 +7,7 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "block"``,
+(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "auto"``,
 ``sandbox.run_commands = "ask"``,
 ``sandbox.protect_git = true``, ``git.allow_push/force/history_rewrite =
 false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
@@ -373,15 +373,23 @@ class SandboxConfig(BaseModel):
     # Whether JAILED commands (`run_command`, `verify`, `metric`, and machine
     # `tool` states) may reach the network. A jailed child can never out-reach
     # the process that launches it, so:
-    #  - `block`: no jailed command gets the network.
+    #  - `auto` (default): no tool network, enforced where the environment can
+    #    and DEGRADED WITH A WARNING where it cannot. On `strict` the per-child
+    #    network namespace makes it truly offline; on `hardened`/`none` there is
+    #    no netns, so the child shares the (agent-scoped) host network and a
+    #    once-per-run warning says so. The secure-by-default option that still
+    #    runs everywhere (see AGENTS.md "Secure by default, degrade or refuse").
+    #  - `block`: ENFORCE no tool network. Refuses to run on a profile that
+    #    cannot provide it (`hardened`/`none`, no netns), naming what is
+    #    unsupported and how to change it -- never silently ineffective.
     #  - `only_explicit_states`: blocked, EXCEPT machine `tool` states that opt
     #    in with `allow_network = "allow"` (audited, deterministic commands);
-    #    `run_command` stays blocked. `strict`-only, singling one tool out needs
-    #    a per-child network namespace, which only `strict` provides.
+    #    `run_command` stays blocked. `strict`-only (per-child netns), refused
+    #    elsewhere.
     #  - `allow`: `run_command` reaches the network too. Because `run_command`
     #    runs inside the (possibly confined) agent process, this requires
     #    `agent_network = "open"`.
-    tool_network: Literal["block", "only_explicit_states", "allow"] = "block"
+    tool_network: Literal["auto", "block", "only_explicit_states", "allow"] = "auto"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot

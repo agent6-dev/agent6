@@ -37,16 +37,18 @@ def machine_network_refusal(
     `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
     rather than silently mis-confine, whenever isolation is *required*: by the
     operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
-    A networked state under `tool_network = "block"` is a config conflict and is
-    refused on any profile. Returns None when fine.
+    A networked state under `tool_network` in {"block", "auto"} (both intend no
+    tool network) is a config conflict and is refused on any profile. Returns
+    None when fine.
     """
     net_err = check_network_profile(cfg, profile)
     if net_err is not None:
         return net_err
     tn = cfg.sandbox.tool_network
+    no_tool_net = tn in ("block", "auto")  # both intend the tool has no network
     has_allow = any(s.allow_network == "allow" for s in tool_states)
     has_block = any(s.allow_network == "block" for s in tool_states)
-    if has_allow and tn == "block":
+    if has_allow and no_tool_net:
         if profile == "hardened":
             return (
                 'a tool state sets allow_network = "allow" but sandbox.tool_network ='

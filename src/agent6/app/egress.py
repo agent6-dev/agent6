@@ -82,7 +82,11 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
 
 
 def warn_sandbox_gaps(
-    selected_profile: SandboxProfile, env: Environment, *, reporter: Reporter = STDIO_REPORTER
+    selected_profile: SandboxProfile,
+    env: Environment,
+    cfg: Config,
+    *,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print a prominent warning when the profile confines less than it promises.
 
@@ -98,6 +102,11 @@ def warn_sandbox_gaps(
     That is a documented layer going missing, so it is loud too -- here, once
     per run, not in the launcher: a per-spawn stderr warning would land in
     every tool result and prompt the model to fight the sandbox.
+
+    `tool_network = "auto"` DEGRADES on a netns-less profile: with no per-child
+    network namespace, a jailed run_command shares the (agent-scoped) host
+    network instead of being offline, so say so once per run. Explicit `block`
+    never reaches here (check_network_profile refused it on hardened).
     """
     if selected_profile == "none":
         reporter.err(
@@ -116,6 +125,14 @@ def warn_sandbox_gaps(
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
         )
+    if selected_profile == "hardened" and cfg.sandbox.tool_network == "auto":
+        reporter.err(
+            "[agent6] WARNING: 'hardened' has no network namespace, so "
+            "sandbox.tool_network = 'auto' cannot make a jailed run_command "
+            "offline: it shares this process's (provider-scoped) host network. "
+            "Run on 'strict' for a truly network-free tool sandbox, or set "
+            "sandbox.tool_network = 'block' to refuse rather than run here."
+        )
 
 
 def _is_loopback(host: str) -> bool:
@@ -131,13 +148,16 @@ def _is_loopback(host: str) -> bool:
 
 
 def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:
-    """A refusal message if the network config can't be enforced on this profile.
+    """A refusal message if the network config EXPLICITLY enforces something
+    this profile can't provide.
 
-    ``agent_network = "local"`` (loopback-pinning) and ``tool_network =
-    "only_explicit_states"`` (singling one tool out) both need a network
-    namespace, which only the ``strict`` profile provides. On ``hardened`` (a
-    real sandbox that can't provide them) we refuse rather than silently
-    under-confine; on ``none`` (no sandbox at all) the unsandboxed warning
+    ``agent_network = "local"`` (loopback-pinning), ``tool_network =
+    "only_explicit_states"`` (singling one tool out), and ``tool_network =
+    "block"`` (no jailed-command network) all need a network namespace, which
+    only the ``strict`` profile provides. On ``hardened`` (a real sandbox that
+    can't provide it) we refuse rather than silently under-confine, naming what
+    is unsupported and the fix; ``tool_network = "auto"`` is the secure default
+    that DEGRADES with a warning instead. On ``none`` the unsandboxed warning
     already covers it and we run. Returns None when fine.
     """
     if selected_profile != "hardened":
@@ -153,7 +173,21 @@ def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str 
         return (
             "sandbox.tool_network = 'only_explicit_states' requires the strict"
             " profile (a per-tool network namespace singles one tool out), but"
-            " this host supports only 'hardened'. Use 'block' or 'allow'."
+            " this host supports only 'hardened'. Use 'auto' or 'allow'."
+        )
+    if sb.tool_network == "block":
+        # EXPLICIT enforce: block promises no jailed command reaches the
+        # network, which needs a per-child netns that only strict provides.
+        # Refuse rather than run silently under-confined; `auto` is the option
+        # that degrades with a warning instead (see the tool_network docs and
+        # AGENTS.md "Secure by default, degrade or refuse").
+        return (
+            "sandbox.tool_network = 'block' cannot be enforced on the 'hardened'"
+            " profile: blocking a jailed command's network needs a per-child"
+            " network namespace, which only 'strict' provides. Use"
+            " sandbox.tool_network = 'auto' (no tool network on strict, degraded"
+            " with a warning here), or run on a host that supports strict"
+            " (unprivileged user namespaces)."
         )
     return None
 
