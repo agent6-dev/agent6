@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One authoritative writer per run dir: the `worker.lock` flock.
+"""One authoritative writer per session dir: the `worker.lock` flock.
 
 `agent6 run`/`resume`/`fork` drive one run's shared state (loop_state.json,
 checkpoints, the curator DAG, the run branch). The run-level flock (the
@@ -17,9 +17,9 @@ from agent6.portable import lock_exclusive, unlock
 
 
 def acquire_single_writer(session_dir: Path) -> int | None:
-    """Take a non-blocking exclusive lock on ``<run-dir>/worker.lock``.
+    """Take a non-blocking exclusive lock on ``<session-dir>/worker.lock``.
 
-    One run's shared state (``loop_state.json``, ``checkpoints/``, the curator
+    One session's shared state (``loop_state.json``, ``checkpoints/``, the curator
     DAG, the run branch) has exactly one authoritative writer. A second
     ``agent6 run``/``resume``/``fork`` targeting the SAME run dir would spawn a
     second curator whose independent in-memory cache silently clobbers the
@@ -94,7 +94,7 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
 
 
 def repo_writer_holder(state_dir: Path) -> str:
-    """The run id the current ``repo.lock`` holder stamped, or "" unknown.
+    """The session id the current ``repo.lock`` holder stamped, or "" unknown.
     Advisory (for refusal messages); the flock is the boundary."""
     try:
         return (state_dir / "repo.lock").read_text(encoding="utf-8").strip()

@@ -27,9 +27,9 @@ The loop-owned conversation: typed turns over the provider wire.
 
 [`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 6 nested models
 
-Read a run's manifest.json into the typed SessionManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
+Read a session's manifest.json into the typed SessionManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
 
-**SessionManifest** &mdash; The typed manifest.json a run starts with (and later stamps).
+**SessionManifest** &mdash; The typed manifest.json a session starts with (and later stamps).
 
 | field | type | default |
 | --- | --- | --- |

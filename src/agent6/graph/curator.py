@@ -21,7 +21,7 @@ not merge their in-memory state: each instance caches the graph at
 construction, so a second live instance would still lose updates. One curator
 per run is the invariant; the lock only bounds the damage if it is broken. The
 CLI upholds the invariant with a run-level single-writer flock
-(``sessions.lock.acquire_single_writer`` on ``<run-dir>/worker.lock``, the analogue
+(``sessions.lock.acquire_single_writer`` on ``<session-dir>/worker.lock``, the analogue
 of ``machine_lock``): a second ``agent6 run``/``resume``/``fork`` on the same
 run dir refuses rather than constructing a second curator.
 

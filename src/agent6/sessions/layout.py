@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Filesystem layout of one run's state directory.
+"""Filesystem layout of one session's state directory.
 
-A leaf: pure path arithmetic over the resolved run-state base, imported by
+A leaf: pure path arithmetic over the resolved state base, imported by
 the graph storage/curator stack, the CLI, and the MCP server without pulling
 in any of them.
 """

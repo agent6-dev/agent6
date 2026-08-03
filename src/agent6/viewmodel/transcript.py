@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Fold a run's event stream into an ordered conversation of `TranscriptItem`s.
+"""Fold a session's event stream into an ordered conversation of `TranscriptItem`s.
 
 The medium-agnostic half of live conversation rendering. `TranscriptFold` walks
 `logs.jsonl` events in emission order and yields the things worth showing -- a

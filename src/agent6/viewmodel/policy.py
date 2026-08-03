@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run's policy facts, folded from its dir.
+"""The session's policy facts, folded from its dir.
 
 The few things an operator wants to see without opening config or interrupting
 the run: which model is driving it, whether commands ask, how it is sandboxed,
@@ -20,7 +20,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 
 @dataclass(frozen=True, slots=True)
 class SessionPolicy:
-    """What a run was launched under. Empty strings where the dir says nothing."""
+    """What a session was launched under. Empty strings where the dir says nothing."""
 
     model: str
     run_commands: str

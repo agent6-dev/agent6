@@ -225,7 +225,7 @@ def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
 
 
 def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # noqa: PLR0911, PLR0912, PLR0915
-    """Fold one event into the run state. Pure function.
+    """Fold one event into the session state. Pure function.
 
     The event is parsed once (`events.parse_event`) into a typed family; each arm
     reads typed fields instead of sniffing the dict. The log line and the session_id
@@ -697,7 +697,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
 
 
 def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
-    """Reduce a run's whole event stream to one SessionState (apply_event from the
+    """Reduce a session's whole event stream to one SessionState (apply_event from the
     initial state). The snapshot a one-shot viewer or the JSON wire form builds
     on; the TUI folds incrementally and a CLI tail renders line-by-line instead."""
     state = initial_state()

@@ -156,7 +156,7 @@ def _proc_start_time(pid: int) -> str:
 
 
 def write_worker_pid(session_dir: Path, pid: int) -> None:
-    """Record the run's worker pid so `agent6 sessions show` can probe liveness even
+    """Record the session's worker pid so `agent6 sessions show` can probe liveness even
     while the worker is blocked in a long provider call (no events emitted).
     The start-time identity rides along after the pid (/proc ticks on Linux,
     `ps` lstart text elsewhere) so a recycled pid -- same number, different
@@ -525,7 +525,7 @@ STEER_REQUEST_FILE = "steer.request"
 
 
 def request_steer(session_dir: Path) -> None:
-    """TUI-initiated steer: drop a marker the run polls at its next boundary."""
+    """TUI-initiated steer: drop a marker the session polls at its next boundary."""
     with contextlib.suppress(OSError):
         (session_dir / STEER_REQUEST_FILE).write_text("", encoding="utf-8")
 
@@ -543,7 +543,7 @@ STOP_REQUEST_FILE = "stop.request"
 
 
 def request_stop(session_dir: Path) -> None:
-    """Front-end "stop after this step": drop a marker the run polls at each
+    """Front-end "stop after this step": drop a marker the session polls at each
     completed-iteration boundary and honors by ending the run cleanly there
     (the finished step's tool results and auto-commit land first). The
     immediate stop stays the steer "abort" answer, which interrupts mid-turn."""
@@ -564,7 +564,7 @@ COMPACT_REQUEST_FILE = "compact.request"
 
 
 def request_compact(session_dir: Path, focus: str = "") -> bool:
-    """Front-end-initiated manual compaction: drop a marker the run polls at its
+    """Front-end-initiated manual compaction: drop a marker the session polls at its
     next safe boundary and honors by forcing a context compaction (mirrors
     steer). The marker body is the operator's optional summary *focus*
     (`/compact <focus>`); "" is a plain compact. Published atomically: the run

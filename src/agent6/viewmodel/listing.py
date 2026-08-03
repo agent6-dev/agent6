@@ -24,7 +24,7 @@ STALE_AFTER_S = 600.0
 
 
 def session_mtime(session_dir: Path) -> float:
-    """Last-activity time of a run: the mtime of its ``logs.jsonl`` (when the run
+    """Last-activity time of a session: the mtime of its ``logs.jsonl`` (when the run
     last appended an event), falling back to the dir mtime before the log exists.
 
     NOT the run-directory mtime: a viewer writes its ``frontends/`` claim / ``approvals/``
@@ -40,7 +40,7 @@ def session_mtime(session_dir: Path) -> float:
 
 
 def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
-    """The most recently active run dir (by logs.jsonl mtime, not dir mtime: a
+    """The most recently active session dir (by logs.jsonl mtime, not dir mtime: a
     viewer's front-end claim must not float a run to latest) across the given
     bucket dirs.
 
@@ -103,7 +103,7 @@ def task_snippet(text: str, max_chars: int | None = None) -> str:
 
 
 def is_session_husk(session_dir: Path) -> bool:
-    """True for a run dir that never really started: neither manifest.json nor
+    """True for a session dir that never really started: neither manifest.json nor
     logs.jsonl (a preflight refused it, or a crash orphaned it). Listings skip
     husks -- "(no logs)" forever is noise, not a run -- and id lookups must not
     let one shadow a real run of the same id in another bucket (runs/ vs asks/).
@@ -219,7 +219,7 @@ class StatusFacts:
 def status_for_session_dir(
     session_dir: Path, facts: StatusFacts, *, stale_after_s: float = STALE_AFTER_S
 ) -> tuple[str, str]:
-    """THE ``(word, reason)`` for a run that has a dir on disk.
+    """THE ``(word, reason)`` for a session that has a dir on disk.
 
     Every listing and header feeds this the event facts and lets the DIR
     supply what events cannot: a parked submission (manifest), worker
@@ -274,7 +274,7 @@ _DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
 
 
 def died_without_end(status: str) -> bool:
-    """Whether *status* is a run that never reached its own ``session.end``."""
+    """Whether *status* is a session that never reached its own ``session.end``."""
     return status in _DIED_WITHOUT_END
 
 
@@ -286,7 +286,7 @@ LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 
 def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> bool:
-    """Whether the operator can still act on this run: THE affordance question,
+    """Whether the operator can still act on this session: THE affordance question,
     "will anything read what I write", not ``worker_is_alive``'s "is a pid
     running" (a parked run resumes; a dead worker's buttons reach nobody).
 
@@ -303,7 +303,7 @@ def session_is_live(session_dir: Path, *, stale_after_s: float = STALE_AFTER_S) 
 
 @dataclass(frozen=True, slots=True)
 class LogScan:
-    """One tolerant pass over a run's ``logs.jsonl``: the shared scan behind the
+    """One tolerant pass over a session's ``logs.jsonl``: the shared scan behind the
     hub listing and ``sessions show``. One owner, because the resume rules (bank
     cost legs, un-finish) and the torn-line tolerances drifted when each
     consumer scanned for itself.

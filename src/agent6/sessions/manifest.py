@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read a run's manifest.json into the typed :class:`SessionManifest`. The single
+"""Read a session's manifest.json into the typed :class:`SessionManifest`. The single
 reader + the on-disk shape; the writer is ``app.manifest``.
 
 A leaf beside ``layout.py``: pydantic + path arithmetic, no agent6 imports, so
@@ -31,7 +31,7 @@ _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
 
 class ManifestError(Exception):
-    """A run's manifest.json is missing, unreadable, corrupt, not a JSON object,
+    """A session's manifest.json is missing, unreadable, corrupt, not a JSON object,
     does not validate, or (via ``session_mode``) records an unknown privilege
     mode. Carries the underlying cause as its message, so a caller that wants to
     surface a detail can render it."""
@@ -143,7 +143,7 @@ MANIFEST_VERSION = 3
 
 
 class SessionManifest(BaseModel):
-    """The typed manifest.json a run starts with (and later stamps).
+    """The typed manifest.json a session starts with (and later stamps).
 
     Every field defaults so ANY historical run dir on disk still parses (old
     ``version: 1`` dirs, dirs missing later-added fields). ``extra="ignore"`` on

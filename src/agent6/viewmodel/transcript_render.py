@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Render a run's per-call provider transcripts into a readable conversation.
+"""Render a session's per-call provider transcripts into a readable conversation.
 
 agent6 writes one JSON file per LLM round-trip under ``<run>/transcripts/`` --
 the full, lossless ``{request, response}`` (secrets redacted). Each request
@@ -61,7 +61,7 @@ CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
-    """Every transcript JSON object under a run's transcripts/ dir, in seq
+    """Every transcript JSON object under a session's transcripts/ dir, in seq
     order -- ALL seats. The raw list is `sessions transcript --json`'s output, the
     one CLI surface for a side-call's actual request/response; the conversation
     fold filters for itself (`conversation_transcripts`)."""
