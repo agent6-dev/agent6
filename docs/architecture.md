@@ -41,7 +41,13 @@ almost always a sign of the wrong design.
   `$XDG_STATE_HOME/agent6/<repo-id>/`; the base is settable via the
   global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var. The
   id is keyed on the PROJECT (the nearest enclosing `.git`), so running from
-  a subdirectory reaches the same runs, memories and config.
+  a subdirectory reaches the same runs, memories and config. Every config
+  edit, from any surface, goes through
+  [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py):
+  one lock-held cycle that validates the written value standalone,
+  revalidates the merged config, and rolls back -- or keeps the write with a
+  "kept as written" error when the fail-open lock was not held
+  (docs/config.md).
   Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.

@@ -32,7 +32,13 @@ table below), so a repo needs nothing repo-specific to run.
 - `agent6 config show`: every effective value and which layer set it.
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
   (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay). Every edit is
-  re-validated and rolled back if it would produce an invalid config.
+  re-validated and rolled back if it would produce an invalid config. Edits
+  serialize on a sibling `config.toml.lock` (removed on release) that FAILS
+  OPEN: when it cannot be taken (a stale root-owned lock a killed `sudo` write
+  left), the edit still runs, and a rollback is skipped rather than risk
+  erasing a concurrent edit -- the write is kept and the error says "kept as
+  written", pointing at `agent6 config fix`. Publishes are atomic, so a torn
+  file is impossible; the worst case is one lost update.
 - `agent6 config fill [--repo]`: materialize every resolved value into one file.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values left by a
   schema change) from the global and repo config, printing each and whether it was

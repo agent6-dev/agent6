@@ -452,6 +452,13 @@ syscall for hardened), never guessed from the kernel version.
 - **The session directory is safe because of its location, not any single writer.**
     - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with
       `[agent6].state_dir`), outside the cwd jailed commands run on.
+- **The config write lock is a concurrency optimization, not a boundary.**
+    - Publishes are atomic, so a torn config is impossible with or without it;
+      the lock only serializes read-modify-write cycles. It FAILS OPEN by
+      design (a planted symlink is refused `O_NOFOLLOW`; a stale root-owned
+      lock is ignored), so it is never a way to block or redirect a write.
+      Without the lock a rollback could erase a concurrent writer's update, so
+      the write is kept and the error says "kept as written" (docs/config.md).
 
 ### 6b. Parallel lanes (fan-out / coordinator dispatch)
 
