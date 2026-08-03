@@ -868,7 +868,7 @@ function paintRun(cards, s) {
     if (c.ranked_by) {
       // Same spelling as the CLI/TUI headline: judge ($0.0102), ~ = lower bound.
       const judged = c.judge_cost_usd > 0 || c.judge_cost_partial;
-      bits.push(c.ranked_by + (judged ? ' (' + (c.judge_cost_partial ? '~' : '') + fmtUsd(c.judge_cost_usd) + ')' : ''));
+      bits.push(c.ranked_by + (judged ? ' (' + fmtUsd(c.judge_cost_usd, c.judge_cost_partial) + ')' : ''));
     }
     add('compare', 'rank ' + c.rank + '/' + c.of + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
   }
@@ -892,7 +892,7 @@ function paintRun(cards, s) {
   };
   cards.budget.appendChild(barRow('input tokens', inFrac, b.input_total||0, b.input_cap||0));
   cards.budget.appendChild(barRow('output tokens', outFrac, b.output_total||0, b.output_cap||0));
-  cards.budget.appendChild(el('div', 'sub muted', 'cost: ' + fmtUsd(b.usd_total) + (b.usd_partial ? ' (partial)' : '')));
+  cards.budget.appendChild(el('div', 'sub muted', 'cost: ' + fmtUsd(b.usd_total, b.usd_partial)));
 
   // task tree
   cards.tasks.innerHTML = '';
@@ -915,7 +915,9 @@ function paintRun(cards, s) {
   cards._conv.setLive(s);
   cards._conv.poke();
   hbState = {
-    active: !notLive(s) && !!s.last_role && !streaming,
+    // a "waiting" run is LIVE but blocked on the operator, not working: the
+    // conversation shows its own waiting line, so the heartbeat must go quiet.
+    active: !notLive(s) && !!s.last_role && !streaming && s.status !== 'waiting',
     role: (s.last_role && s.last_role.role) || 'worker',
     last: Date.now(),
     spin: 0,
@@ -1005,7 +1007,8 @@ async function renderConversation(id, gen) {
     cc.conv.setLive(s);
     cc.conv.poke();
     hbState = {
-      active: !notLive(s) && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text),
+      // see paintRun: a "waiting" run is live but blocked, not working.
+      active: !notLive(s) && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text) && s.status !== 'waiting',
       role: (s.last_role && s.last_role.role) || 'worker',
       last: Date.now(),
       spin: hbState.spin + 1,

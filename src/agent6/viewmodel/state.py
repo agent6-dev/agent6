@@ -729,11 +729,21 @@ def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str,
     payload keeps the fold-only label -- correct only for a genuinely dir-less
     stream."""
     d = asdict(state)
-    d["status_label"] = run_status_label(state)
     if run_dir is not None:
         word, reason = status_for_run_dir(run_dir, status_facts(state))
-        d["status_label"] = status_label(word, reason)
         d["live"] = word in LIVE_STATUS_WORDS
+    else:
+        # A genuinely dir-less stream (attach --json): the fold reads every
+        # unfinished state as "running"; only a run dir knows parked/starting/
+        # stale/waiting (run_status_label's contract).
+        word, reason = status_word(
+            finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
+        )
+    # The raw status WORD, not only the human label, so a client can branch on it
+    # -- e.g. render the waiting line instead of the "working" heartbeat when the
+    # run is blocked on the operator (a "waiting" run is still LIVE).
+    d["status"] = word
+    d["status_label"] = status_label(word, reason)
     # log_tail is LogLine objects now; the wire form stays a flat list of strings
     # (web + `watch --json` consumers render lines verbatim). task_id filtering is
     # a TUI-local concern that reads the RunState directly.

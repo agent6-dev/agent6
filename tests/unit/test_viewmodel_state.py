@@ -409,6 +409,12 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
     assert run_status_label(end("provider_error", False)) == "failed · provider error"
     # and the computed label rides along on the wire dict for the web client
     assert run_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+    # the raw status WORD rides along too, so a client can branch on it (the web
+    # heartbeat goes quiet on "waiting" instead of painting "working" over a run
+    # blocked on the operator).
+    assert run_state_as_dict(initial_state())["status"] == "running"
+    assert run_state_as_dict(end("steer_abort", False))["status"] == "stopped"
+    assert run_state_as_dict(end("finish_run", True))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
