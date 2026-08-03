@@ -132,3 +132,27 @@ def test_init_gitignore_preserves_existing(tmp_path: Path) -> None:
     init_workspace(repo)
     gi = (repo / ".gitignore").read_text(encoding="utf-8")
     assert "# pre-existing" in gi and "my-secret-file" in gi and "secrets/" in gi
+
+
+def test_init_never_rewrites_an_agents_md_it_cannot_decode(tmp_path: Path) -> None:
+    """The append read the file with errors="replace" and wrote that back, so
+    every non-ASCII byte in a non-UTF-8 AGENTS.md became U+FFFD, silently."""
+    from agent6.init import _setup_agents_md  # pyright: ignore[reportPrivateUsage]
+
+    p = tmp_path / "AGENTS.md"
+    original = "# Notes pour l'\xe9quipe\n".encode("latin-1")
+    p.write_bytes(original)
+    _setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
+    assert p.read_bytes() == original
+
+
+def test_init_still_appends_to_a_utf8_agents_md(tmp_path: Path) -> None:
+    """The converse: a legitimate file keeps its accents and gains the section."""
+    from agent6.init import _setup_agents_md  # pyright: ignore[reportPrivateUsage]
+
+    p = tmp_path / "AGENTS.md"
+    p.write_text("# Team notes\n\nCafé.\n", encoding="utf-8")
+    _setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
+    text = p.read_text(encoding="utf-8")
+    assert "Verify command" in text
+    assert "Café" in text

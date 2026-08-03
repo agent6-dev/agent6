@@ -208,7 +208,14 @@ def _setup_agents_md(root: Path, *, ecosystem: str, ask: _Ask) -> None:
         else:
             print("  skipped AGENTS.md")
         return
-    text = agents.read_text(encoding="utf-8", errors="replace")
+    try:
+        # NOT errors="replace": this text is written back, so a lossy decode
+        # rewrites every non-ASCII byte as U+FFFD. The inference read above may
+        # be lossy because it only scans.
+        text = agents.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"  AGENTS.md could not be read ({exc}); leaving it alone.")
+        return
     if _VERIFY_HEADING.search(text):
         print("  AGENTS.md already documents a verify command; leaving it.")
         return
