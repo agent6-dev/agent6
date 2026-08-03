@@ -544,3 +544,52 @@ def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
     assert "WROTE SIBLING" in res.stdout, f"the carve-out over-denied: {res.stdout!r}"
     assert asm.read_text(encoding="utf-8").startswith("machine =")
     assert step.read_text(encoding="utf-8").startswith("print('original')")
+
+
+def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
+    jail_bin: Path, tmp_path: Path
+) -> None:
+    """A symlink whose target resolves AT OR BELOW a protect path must not open
+    a write channel to the protected inode. The carve-out compared each entry to
+    the protect set by EQUALITY, so `ops/link -> scripts/step.py` (canon
+    ops/scripts/step.py, a strict descendant of the protected ops/scripts) was
+    not skipped; PathFd::new followed the symlink and granted RW on step.py's own
+    inode, so the child could rewrite it by its direct path."""
+    ws = tmp_path / "ws"
+    (ws / "ops" / "scripts").mkdir(parents=True)
+    step = ws / "ops" / "scripts" / "step.py"
+    step.write_text("print('original')\n", encoding="utf-8")
+    sibling = ws / "ops" / "notes.md"  # a non-protected sibling stays writable
+    sibling.write_text("notes\n", encoding="utf-8")
+    (ws / "ops" / "link").symlink_to("scripts/step.py")  # canon -> under a protect path
+
+    targets = (
+        f"(({str(step)!r}, 'STEP'), ({str(ws / 'ops' / 'link')!r}, 'LINK'),"
+        f" ({str(sibling)!r}, 'SIBLING'))"
+    )
+    script = (
+        "import pathlib\n"
+        f"for p, tag in {targets}:\n"
+        "    try:\n"
+        "        pathlib.Path(p).write_text('PWNED-' + tag)\n"
+        "        print('WROTE', tag)\n"
+        "    except OSError:\n"
+        "        print('DENIED', tag)\n"
+    )
+    try:
+        res = run_in_jail(
+            JailPolicy(
+                cwd=ws,
+                argv=("/usr/bin/python3", "-c", script),
+                profile="hardened",
+                extra_protect_paths=(ws / "ops" / "scripts",),
+                timeout_s=20.0,
+            )
+        )
+    except JailUnavailableError:
+        pytest.skip("jail unavailable")
+
+    assert "DENIED STEP" in res.stdout, f"protected file writable directly: {res.stdout!r}"
+    assert "DENIED LINK" in res.stdout, f"protected file writable via symlink: {res.stdout!r}"
+    assert "WROTE SIBLING" in res.stdout, f"the carve-out over-denied: {res.stdout!r}"
+    assert step.read_text(encoding="utf-8").startswith("print('original')")

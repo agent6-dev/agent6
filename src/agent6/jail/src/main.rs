@@ -729,16 +729,31 @@ fn grant_rw_carved(
     let entries = match fs::read_dir(dir) {
         Ok(it) => it,
         Err(e) => {
-            return Err(io::Error::new(
-                e.kind(),
-                format!("read_dir {}: {e}", dir.display()),
-            ));
+            // Fail CLOSED, don't fail the launch: a directory we cannot
+            // enumerate simply gets no RW grants for its children (they stay
+            // read-only), matching the skip-and-warn of the outside-cwd path
+            // below. Propagating the error made one unreadable directory
+            // anywhere below cwd abort every jailed command.
+            eprintln!(
+                "agent6-jail: hardened: no rw grants under {} (read_dir: {e})",
+                dir.display()
+            );
+            return Ok(ruleset);
         }
     };
     for entry in entries.flatten() {
         let p = entry.path();
         let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
-        if protect_set.contains(&canon) || protect_set.contains(&p) {
+        // Skip an entry that IS a protect path, or (via a symlink) resolves AT
+        // OR BELOW one. `PathFd::new` follows symlinks and Landlock attaches to
+        // the resolved inode, so granting RW on such an entry would make the
+        // protected file writable by its own direct path -- the exact bypass a
+        // `ops/link -> scripts/step.py` symlink gave. `starts_with` covers the
+        // protect path itself (equality) and the descendant case; the ANCESTOR
+        // direction -- this entry CONTAINS a protect path -- is the descent
+        // below. `contains(&p)` keeps the pre-canonicalize form for an entry
+        // that could not be canonicalized.
+        if protect_set.contains(&p) || protect_set.iter().any(|prot| canon.starts_with(prot)) {
             continue;
         }
         // A top-level symlink whose real target escapes cwd would otherwise
@@ -755,8 +770,9 @@ fn grant_rw_carved(
             );
             continue;
         }
-        // Only strict descendants reach here (equality was handled above), so a
-        // hit means this directory CONTAINS something protected.
+        // The skip above dropped every entry at or below a protect path, so a
+        // hit here means this directory CONTAINS a protect path (is an ancestor
+        // of one) -- descend and grant its non-protected children.
         if canon.is_dir() && protect_set.iter().any(|prot| prot.starts_with(&canon)) {
             ruleset = grant_rw_carved(ruleset, &p, protect_set, canon_cwd, access_all)?;
             continue;
