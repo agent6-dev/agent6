@@ -6,6 +6,7 @@ reader and the on-disk shape (:class:`RunManifest`) live in ``runs.manifest``.""
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from agent6.runs.manifest import (
     ModelsBrief,
     RunManifest,
     WorkflowStamp,
+    read_manifest,
 )
 
 
@@ -66,6 +68,7 @@ def write_run_manifest(
     mode: str = "run",
     effective_preset: str = "",
     preset_from_flag: bool = False,
+    verify_origin: str = "",
     parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -111,6 +114,8 @@ def write_run_manifest(
             # replayed as an override on resume (see WorkflowStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
+            verify_command=tuple(cfg.workflow.verify_command),
+            verify_origin=verify_origin,
         ),
         parked_task=parked_task,
         parent_run_id=parent_run_id,
@@ -118,3 +123,17 @@ def write_run_manifest(
         forked_from_sha=forked_from_sha,
     )
     write_manifest(layout.manifest_path, m)
+
+
+def stamp_verify_gate(run_dir: Path, argv: Sequence[str], origin: str) -> None:
+    """Pin the gate this run is judged by, and where it came from.
+
+    Written after resolution rather than at run start because inference runs
+    later; from here on the pair is the run's, so a mid-run edit to AGENTS.md
+    cannot move the gate under it, on this leg or a resumed one.
+    """
+    m = read_manifest(run_dir)
+    workflow = m.workflow.model_copy(
+        update={"verify_command": tuple(argv), "verify_origin": origin}
+    )
+    write_manifest(run_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))

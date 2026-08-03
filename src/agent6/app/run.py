@@ -47,6 +47,7 @@ from agent6.app.finalize import (
     stash_recovery_hint,
 )
 from agent6.app.manifest import (
+    stamp_verify_gate,
     write_run_manifest,
 )
 from agent6.app.preflight import (
@@ -562,9 +563,15 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
         # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
+        gate_origin = "configured" if cfg.workflow.verify_command else ""
         cfg = infer_verify_if_unset(
             cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
         )
+        if not gate_origin and cfg.workflow.verify_command:
+            gate_origin = "inferred"
+        # Pin it: from here the run is judged by THIS gate, whatever the file it
+        # was inferred from says later.
+        stamp_verify_gate(layout.run_dir, cfg.workflow.verify_command, gate_origin)
 
         # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
         # console view's heartbeat spinner is suspended for the prompt so its

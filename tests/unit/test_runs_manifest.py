@@ -323,3 +323,21 @@ def test_a_plan_manifest_still_gates_as_plan(tmp_path: Path) -> None:
     for mode in ("run", "plan"):
         _write(tmp_path, {"version": 3, "mode": mode})
         assert read_manifest(tmp_path).validated_mode() == mode
+
+
+def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
+    """A run records the verify gate it is judged by AND its origin, so a later
+    edit to the file an inferred gate came from cannot move it, and any surface
+    can say whether an operator or the repo chose it."""
+    from agent6.app.manifest import stamp_verify_gate
+
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "run", "run_id": "r"}), encoding="utf-8"
+    )
+    assert read_manifest(tmp_path).workflow.verify_origin == ""  # gateless until pinned
+    stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
+    wf = read_manifest(tmp_path).workflow
+    assert wf.verify_command == ("uv", "run", "pytest")
+    assert wf.verify_origin == "inferred"
+    # Re-stamping is what adoption does; it must not disturb the rest.
+    assert read_manifest(tmp_path).mode == "run"

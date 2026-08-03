@@ -19,6 +19,8 @@
     "critic": "on",
     "revise_prompt": "off",
     "preset": "",
+    "verify_command": [],
+    "verify_origin": "",
     "preset_from_flag": false
   },
   "parked_task": "",

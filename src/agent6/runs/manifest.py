@@ -61,6 +61,14 @@ class WorkflowStamp(BaseModel):
     critic: str = ""
     revise_prompt: str = ""
     preset: str = ""
+    # The verify gate this run is pinned to, and where it came from:
+    # "configured" (a config file, which the model cannot write), "inferred"
+    # (repo signals / AGENTS.md, which it can), "adopted" (gained mid-run by a
+    # run that started gateless), or "" for no gate at all. Pinned so a mid-run
+    # edit to the source cannot move the gate under the run -- including on a
+    # resumed leg, where only operator config outranks what is recorded here.
+    verify_command: tuple[str, ...] = ()
+    verify_origin: str = ""
     # Whether `preset` was chosen by --preset rather than by a config file.
     # The name alone is half the fact: replaying a config-selected one as a flag
     # splices it ABOVE the repo config it originally lost to (see replay_preset).
