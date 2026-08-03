@@ -36,6 +36,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["status"] == "passed"
     assert s["usd"] == 0.0123
     assert s["usd_partial"] is False
+    assert s["label"] == "passed"  # the one shared human label, rendered verbatim
 
 
 def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:

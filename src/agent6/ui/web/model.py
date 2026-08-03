@@ -39,6 +39,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
+from agent6.viewmodel.format import status_label
 from agent6.viewmodel.transcript_style import item_lines
 
 RUN_SUBDIRS = ("runs", "asks")
@@ -134,6 +135,9 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
         "task": task_snippet(s.task, max_chars=100),
         "status": s.status,
         "reason": s.reason,
+        # The one shared human label; the client renders it verbatim instead
+        # of keeping a JS copy of status_label's formatting.
+        "label": status_label(s.status, s.reason),
         "mtime": s.mtime,
         "usd": s.cost_usd,
         "usd_partial": s.usd_partial,

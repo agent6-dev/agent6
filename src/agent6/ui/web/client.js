@@ -12,6 +12,7 @@ let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
 function notLive(s) { return typeof s.live === 'boolean' ? !s.live : !!s.finished; }
 let hbTimer = null;
 let hubTimer = null; // the hub's list refresh, cleared by closeLive()
+let hubVisWake = null; // the hub's visibilitychange repaint, cleared with it
 const HUB_POLL_MS = 4000;
 const HB_FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 function hbTick() {
@@ -85,6 +86,7 @@ function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {
   if (live) { live.close(); live = null; }
   if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }
+  if (hubVisWake) { document.removeEventListener('visibilitychange', hubVisWake); hubVisWake = null; }
   if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
   hbState.active = false;
 }
@@ -280,7 +282,7 @@ function runsCard(runs) {
     it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
     g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
     g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd, r.usd_partial)}`));
-    it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
+    it.appendChild(pill(r.status, r.label || r.status)); // the server's one shared label
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
   prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
@@ -351,7 +353,7 @@ async function renderHub(focus, gen) {
   // crashed kept its "running" pill until a manual reload -- and clicking the
   // already-active tab does not re-enter route(). Refresh the LISTS only: a
   // whole-view repaint would discard text typed into the dock's composer.
-  hubTimer = setInterval(async () => {
+  const refreshLists = async () => {
     if (document.hidden) return; // a background tab has nobody to mislead
     if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
     try {
@@ -361,7 +363,12 @@ async function renderHub(focus, gen) {
       lists.replaceWith(fresh);
       lists = fresh;
     } catch (_) { /* transient: keep the last good paint */ }
-  }, HUB_POLL_MS);
+  };
+  hubTimer = setInterval(refreshLists, HUB_POLL_MS);
+  // Re-focusing the tab otherwise showed the pre-blur pills (the interval
+  // skips hidden ticks) for up to a full poll period.
+  hubVisWake = () => { refreshLists(); };
+  document.addEventListener('visibilitychange', hubVisWake);
 }
 
 // --- conversation ------------------------------------------------------------
@@ -965,7 +972,7 @@ function renderDiff(text) {
 // re-fetches on it (debounced) and the stream closes once the run finishes.
 async function renderConversation(id, gen) {
   const base = '/api/run/' + encodeURIComponent(id);
-  await getJSON(base); // existence probe: throws -> route() shows the error
+  const snap = await getJSON(base); // existence probe: throws -> route() shows the error
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   setCrumb('conversation ' + id);
   view.innerHTML = '';
@@ -980,6 +987,12 @@ async function renderConversation(id, gen) {
   composer.classList.add('dock');
   app.appendChild(composer);
   view.appendChild(app);
+  // Seed from the snapshot BEFORE any stream frame (renderRun's order): the
+  // discarded snapshot left a dead run's composer in steer mode (Enter a
+  // silent no-op) and the empty note in the future tense -- and a parked or
+  // created run gets no SSE frame to ever correct either.
+  composer.setState(snap);
+  cc.conv.setLive(snap);
   await cc.conv.refresh();
   if (gen !== undefined && gen !== routeGen) return; // the refresh reopened the window
   cc.box.scrollTop = cc.box.scrollHeight; // open at the tail, like the TUI

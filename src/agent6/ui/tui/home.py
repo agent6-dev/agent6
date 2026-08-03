@@ -117,7 +117,10 @@ _STATUS_STYLE = {
     "starting": "cyan",  # launching (pre-loop): in progress, lighter than running
     "running": "bold cyan",
     "waiting": "yellow",  # blocked on the operator (approval / question)
-    "stale": "dim",
+    # The run header and the web pill flag a crashed run red; "dim" here made
+    # it the one hub row that faded into the background.
+    "stale": "red",
+    "parked": "yellow",  # needs a resume to start: attention, not a neutral done
     "passed": "green",
     "answered": "green",  # an ask that answered is terminal success
     "planned": "#b48ead",  # informational mauve (matches the web pill); not green, not red

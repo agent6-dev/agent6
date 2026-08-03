@@ -101,6 +101,9 @@ main { padding: 0; }
    in-progress, so the accent hue -- the word says it has not started work yet. */
 .pill.starting, .pill.running { color: var(--accent); border-color: var(--accent); }
 .pill.waiting { color: var(--warn); border-color: var(--warn); }
+/* A parked submission needs a resume to ever start: attention, never the same
+   neutral chrome as a clean finish. */
+.pill.parked { color: var(--warn); border-color: var(--warn); }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
 
