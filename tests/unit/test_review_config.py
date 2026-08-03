@@ -47,11 +47,10 @@ def test_panel_configured_distinguishes_bare_critic_from_panel() -> None:
     assert review_panel_configured(bare) is False
     # Any explicit panel opt-in -> panel.
     for rv in (
-        {"panel_size": 3},
         {"decision": "veto"},
-        {"personas": ["security"]},
         {"tier": "explore"},
         {"seats": ["security@p/m"]},
+        {"seats": ["security"]},
     ):
         cfg = Config.model_validate({"review": {"trigger": "before_finish", **rv}})
         assert review_panel_configured(cfg) is True

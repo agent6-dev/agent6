@@ -48,7 +48,7 @@ def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
     assert parsed["tool"] == "read_file"
     assert parsed["total_chars"] == len(raw)
     assert parsed["shown_chars"] <= _TOOL_RESULT_CHAR_CAP
-    assert "offset" in parsed["guidance"]
+    assert "start_line" in parsed["guidance"]
     assert "limit" in parsed["guidance"]
     # Head should be a prefix of the original raw payload so the model
     # can see what it did get.
