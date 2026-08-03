@@ -25,7 +25,7 @@ from agent6.workflows._run_state import RunResult
 
 
 def _layout(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> SessionLayout:
-    rd = tmp_path / "runs" / session_id
+    rd = tmp_path / "sessions" / "runs" / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return SessionLayout(state_dir=tmp_path, session_id=session_id)

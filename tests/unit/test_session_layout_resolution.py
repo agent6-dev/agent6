@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""resolve_session_layout finds a run under runs/, asks/, or machine-drafts/ (so
+"""resolve_session_layout finds a session in any bucket under sessions/ (so
 anything a listing shows -- an ask, a `machine create` draft -- is inspectable
 and watchable by id too)."""
 
@@ -24,8 +24,8 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     state = resolved_state_dir(repo)
-    (state / "runs" / "run-abc").mkdir(parents=True)
-    (state / "asks" / "ask-xyz").mkdir(parents=True)
+    (state / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
 
     session_layout = resolve_session_layout(repo, "run-abc")
     assert session_layout.subdir == "runs" and session_layout.session_id == "run-abc"
@@ -33,7 +33,7 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
     ask_layout = resolve_session_layout(repo, "ask-xyz")
     assert ask_layout.subdir == "asks" and ask_layout.session_id == "ask-xyz"
     # The layout points at the ask's own directory (where its graph now lives).
-    assert ask_layout.session_dir == state / "asks" / "ask-xyz"
+    assert ask_layout.session_dir == state / "sessions" / "asks" / "ask-xyz"
 
     # Unique-prefix resolution works too.
     assert resolve_session_layout(repo, "ask-").session_id == "ask-xyz"
@@ -44,19 +44,19 @@ def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     state = resolved_state_dir(repo)
-    (state / "machine-drafts" / "blue-meadow-X1").mkdir(parents=True)
+    (state / "sessions" / "machines" / "blue-meadow-X1").mkdir(parents=True)
 
     layout = resolve_session_layout(repo, "blue-")
-    assert layout.subdir == "machine-drafts"
-    assert layout.session_dir == state / "machine-drafts" / "blue-meadow-X1"
+    assert layout.subdir == "machines"
+    assert layout.session_dir == state / "sessions" / "machines" / "blue-meadow-X1"
 
 
 def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     state = resolved_state_dir(repo)
-    (state / "runs" / "same-run").mkdir(parents=True)
-    (state / "asks" / "same-ask").mkdir(parents=True)
+    (state / "sessions" / "runs" / "same-run").mkdir(parents=True)
+    (state / "sessions" / "asks" / "same-ask").mkdir(parents=True)
 
     with pytest.raises(SessionIdError) as exc:
         resolve_session_layout(repo, "same-")
@@ -69,8 +69,8 @@ def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     state = resolved_state_dir(repo)
-    (state / "runs" / "run").mkdir(parents=True)
-    (state / "asks" / "run-question").mkdir(parents=True)
+    (state / "sessions" / "runs" / "run").mkdir(parents=True)
+    (state / "sessions" / "asks" / "run-question").mkdir(parents=True)
 
     layout = resolve_session_layout(repo, "run")
     assert layout.subdir == "runs"
@@ -80,7 +80,7 @@ def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
 def test_empty_query_is_invalid(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (resolved_state_dir(repo) / "runs" / "run-abc").mkdir(parents=True)
+    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
 
     with pytest.raises(SessionIdError, match="empty run id"):
         resolve_session_layout(repo, "")
@@ -89,6 +89,6 @@ def test_empty_query_is_invalid(tmp_path: Path) -> None:
 def test_raises_when_no_match(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (resolved_state_dir(repo) / "runs" / "run-abc").mkdir(parents=True)
+    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
     with pytest.raises(SessionIdError):
         resolve_session_layout(repo, "nope")

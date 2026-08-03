@@ -71,8 +71,8 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
     # Seed a run dir so list_sessions has something to enumerate.
-    (resolved_state_dir(tmp_path) / "runs" / "demo").mkdir(parents=True)
-    (resolved_state_dir(tmp_path) / "runs" / "demo" / "manifest.json").write_text(
+    (resolved_state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"user_task": "demo-task"}), encoding="utf-8"
     )
 

@@ -20,7 +20,7 @@ from agent6.paths import (
     root_optin_enabled,
 )
 from agent6.sessions.id import SessionIdError, list_session_ids
-from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout
+from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir
 from agent6.viewmodel import newest_session_dir, session_mtime
 
 
@@ -119,12 +119,12 @@ def _state_dir(repo_root: Path) -> Path:
 
 def _runs_dir(repo_root: Path) -> Path:
     """The ``runs/`` directory under the per-repo state dir."""
-    return _state_dir(repo_root) / "runs"
+    return bucket_dir(_state_dir(repo_root), "runs")
 
 
 def _plans_dir(repo_root: Path) -> Path:
     """The ``plans/`` directory under the per-repo state dir."""
-    return _state_dir(repo_root) / "plans"
+    return bucket_dir(_state_dir(repo_root), "plans")
 
 
 def print_no_session_match(query: str, state: Path) -> None:
@@ -138,16 +138,16 @@ def print_no_session_match(query: str, state: Path) -> None:
 
 
 def session_bucket_dirs(repo_root: Path) -> list[Path]:
-    """The run-style bucket dirs (runs/, asks/, machine-drafts/) under the state
+    """The session bucket dirs under `sessions/` in the state
     dir, the cross-bucket scope for latest-run resolution and history. A missing
     bucket is still listed; iterators skip non-dirs."""
     state = _state_dir(repo_root)
-    return [state / subdir for subdir in SESSION_BUCKETS]
+    return [bucket_dir(state, subdir) for subdir in SESSION_BUCKETS]
 
 
 def all_session_dirs(repo_root: Path) -> list[Path]:
     """Every run directory across all SESSION_BUCKETS. So latest-run resolution and
-    history search cover asks and machine-drafts, not just runs/ (a bare `attach`
+    history search cover every bucket, not just runs/ (a bare `attach`
     or `history search` right after an `ask` must find that ask)."""
     dirs: list[Path] = []
     for bucket in session_bucket_dirs(repo_root):
@@ -163,11 +163,11 @@ def _machines_dir(repo_root: Path) -> Path:
 
 def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
     """Resolve a run id (or unique prefix) across every run-style bucket --
-    ``runs/``, ``asks/``, and ``machine-drafts/`` -- returning a ``SessionLayout``
+    one per mode under ``sessions/`` -- returning a ``SessionLayout``
     with the matching subdir.
 
     `agent6 run`/`plan` live under ``runs/``, `agent6 ask` under ``asks/``, and
-    `machine create` authoring logs under ``machine-drafts/``; read-only
+    `machine create` authoring logs under ``sessions/machines/``; read-only
     commands (``sessions show``/``watch``/``history search``) use this so anything
     a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
     matches in any bucket.
@@ -178,7 +178,7 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
     exact: list[tuple[str, str]] = []
     prefix: list[tuple[str, str]] = []
     for subdir in SESSION_BUCKETS:
-        d = state / subdir
+        d = bucket_dir(state, subdir)
         if not d.is_dir():
             continue
         for rid in list_session_ids(d):

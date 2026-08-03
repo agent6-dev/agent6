@@ -197,7 +197,7 @@ def test_list_runs_empty(tmp_path: Path) -> None:
 def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     import os
 
-    runs = resolved_state_dir(tmp_path) / "runs"
+    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
     (runs / "run-a" / "manifest.json").write_text(
@@ -490,8 +490,8 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
 
     from agent6.ui.mcp_server import _most_recent_session_id  # pyright: ignore[reportPrivateUsage]
 
-    runs = tmp_path / "runs"
-    runs.mkdir()
+    runs = tmp_path / "sessions" / "runs"
+    runs.mkdir(parents=True)
     older = runs / "zzz-older-AAA111"  # alphabetically last
     newer = runs / "aaa-newer-BBB222"  # alphabetically first
     older.mkdir()

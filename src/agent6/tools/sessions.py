@@ -18,7 +18,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
 
 # What a reader needs from another session: who said what, and from which
@@ -75,7 +75,7 @@ def session_briefs(state_dir: Path) -> list[SessionBrief]:
     """Every session in this project, newest first."""
     found: list[tuple[float, SessionBrief]] = []
     for bucket in SESSION_BUCKETS:
-        root = state_dir / bucket
+        root = bucket_dir(state_dir, bucket)
         if not root.is_dir():
             continue
         for d in root.iterdir():
@@ -153,7 +153,7 @@ def roster(state_dir: Path, query: str) -> Roster:
         if len(hits) > ROSTER_MAX:
             break  # one past the cap: enough to know there are more
         if needle in brief.task.lower() or _file_contains(
-            state_dir / brief.bucket / brief.id / LOGS_NAME, needle
+            bucket_dir(state_dir, brief.bucket) / brief.id / LOGS_NAME, needle
         ):
             hits.append(brief)
     return Roster(briefs=tuple(hits[:ROSTER_MAX]), more=len(hits) > ROSTER_MAX)

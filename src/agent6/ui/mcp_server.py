@@ -40,6 +40,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
+    bucket_dir,
     is_safe_session_id,
     session_layout,
 )
@@ -111,8 +112,8 @@ def _session_dirs(agent6_dir: Path) -> list[Path]:
     return [
         d
         for bucket in SESSION_BUCKETS
-        if (agent6_dir / bucket).is_dir()
-        for d in (agent6_dir / bucket).iterdir()
+        if bucket_dir(agent6_dir, bucket).is_dir()
+        for d in bucket_dir(agent6_dir, bucket).iterdir()
         if d.is_dir()
     ]
 

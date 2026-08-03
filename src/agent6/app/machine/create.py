@@ -43,7 +43,8 @@ from agent6.machine import (
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.id import new_friendly_id
 from agent6.sessions.ipc import write_worker_pid
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, bucket_dir
+from agent6.types import session_bucket
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -145,7 +146,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
 
-    scratch = resolved_state_dir(cwd) / "machine-drafts" / new_friendly_id()
+    scratch = bucket_dir(resolved_state_dir(cwd), session_bucket("machine")) / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
     # Persist the natural-language task that drove this draft, so the draft dir is
     # self-describing (the agent_transcripts/ embed it inside the authoring prompt,

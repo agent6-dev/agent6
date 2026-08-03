@@ -4,7 +4,7 @@
 // Where agent6 keeps run state, mirrored from src/agent6/paths.py.
 //
 // Runs live out of the workspace, under the per-repo state dir
-// `<state base>/<repo-id>/runs/<session-id>/`. Keep this in lockstep with
+// `<state base>/<repo-id>/sessions/runs/<session-id>/`. Keep this in lockstep with
 // paths.state_base and paths.repo_id: the extension is a viewer and must
 // find exactly the runs the CLI writes. No `vscode` import, so the module
 // also loads under plain node for sanity checks.
@@ -60,7 +60,7 @@ export function repoId(repoRoot: string): string {
   return `${path.basename(real)}-${digest.slice(0, 12)}`;
 }
 
-/** The runs/ directory for a workspace root: `<state base>/<repo-id>/runs`. */
+/** The runs bucket for a workspace root: `<state base>/<repo-id>/sessions/runs`. */
 export function runsDirFor(workspaceRoot: string): string {
-  return path.join(stateBase(), repoId(workspaceRoot), "runs");
+  return path.join(stateBase(), repoId(workspaceRoot), "sessions", "runs");
 }

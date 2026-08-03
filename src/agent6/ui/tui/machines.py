@@ -54,7 +54,7 @@ from agent6.sessions.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.ui.notify import desktop_notify
 from agent6.ui.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -91,7 +91,7 @@ def find_machine_files(repo_cwd: Path) -> list[Path]:
 def _list_drafts(agent6_dir: Path) -> list[Path]:
     """Machine-create draft dirs (newest first). Each holds the watchable
     logs.jsonl + prompt.txt + the authored candidate."""
-    drafts = agent6_dir / "machine-drafts"
+    drafts = bucket_dir(agent6_dir, "machines")
     if not drafts.is_dir():
         return []
     out = [p for p in drafts.iterdir() if p.is_dir()]

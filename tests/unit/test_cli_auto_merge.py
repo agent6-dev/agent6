@@ -83,7 +83,9 @@ def test_auto_merge_squashes_and_lands_on_base(
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # ends on base
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"  # one squash commit
     m = json.loads(
-        (resolved_state_dir(tmp_path) / "runs" / "run-AM1111" / "manifest.json").read_text()
+        (
+            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-AM1111" / "manifest.json"
+        ).read_text()
     )
     assert m["merged"]["into"] == "main"
     assert m["merged"]["sha"]
@@ -164,7 +166,9 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     )
     assert _git(tmp_path, "branch", "--list", "main") == ""  # base NOT fabricated
     manifest = json.loads(
-        (resolved_state_dir(tmp_path) / "runs" / "run-GONE11" / "manifest.json").read_text()
+        (
+            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-GONE11" / "manifest.json"
+        ).read_text()
     )
     assert manifest.get("merged") is None  # no phantom merge recorded
     assert "failed" in capsys.readouterr().err.lower()

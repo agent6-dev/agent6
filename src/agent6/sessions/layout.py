@@ -16,7 +16,7 @@ from pathlib import Path
 def is_safe_session_id(session_id: str) -> bool:
     """True iff *session_id* is a single path component (no separator, not `.`/`..`).
 
-    ``SessionLayout.session_dir`` is ``state_dir / subdir / session_id``: an unchecked id
+    ``SessionLayout.session_dir`` is ``<state>/sessions/<bucket>/<id>``: an unchecked id
     with ``/`` or ``..`` traverses out of the runs dir, and pathlib treats an
     absolute right operand as a replacement, so an externally supplied id must
     be validated at every trust boundary before it reaches a layout."""
@@ -51,7 +51,7 @@ class SessionLayout:
 
     @property
     def session_dir(self) -> Path:
-        return self.state_dir / self.subdir / self.session_id
+        return bucket_dir(self.state_dir, self.subdir) / self.session_id
 
     @property
     def manifest_path(self) -> Path:
@@ -116,16 +116,27 @@ class SessionLayout:
         return self.checkpoints_dir / f"{turn:04d}.json"
 
 
-# One bucket per session mode, named after it (`SessionKind.bucket`; a test pins
-# the two together). `machine create` authoring drafts are the one bucket not
-# named for its mode: machines/ already holds live machine instances.
-# Defined beside SessionLayout.subdir because it is a fact about the on-disk
-# layout, not about any one front-end: both the CLI's id resolution and the
-# resume lifecycle need it.
-SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machine-drafts")
-# What a hub lists as an ordinary session. `machine create` drafts are excluded:
-# every hub gives them their own card, keyed by the machine being authored.
+# Every session directory lives under this one root, so the state dir's own
+# `machines/` stays the live machine INSTANCES and a machine-authoring session
+# can still be named for its mode (`sessions/machines/`).
+SESSIONS_ROOT = "sessions"
+# One bucket per session mode, named after it (`types.session_bucket`; a test
+# pins the two together). Defined beside SessionLayout.subdir because it is a
+# fact about the on-disk layout, not about any one front-end: both the CLI's id
+# resolution and the resume lifecycle need it.
+SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines", "agents")
+# What a hub lists as an ordinary session. Machine authoring is excluded (every
+# hub gives it its own card, keyed by the machine being authored) and so is
+# `agents`, whose states live inside a machine instance and never get a
+# directory here at all.
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
+
+
+def bucket_dir(state_dir: Path, bucket: str) -> Path:
+    """The directory holding sessions of one bucket. The one owner of that
+    arithmetic: ~30 call sites used to spell it out and each had to be found
+    again whenever the layout moved."""
+    return state_dir / SESSIONS_ROOT / bucket
 
 
 def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
@@ -139,7 +150,7 @@ def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
     exact: list[SessionLayout] = []
     prefix: list[SessionLayout] = []
     for subdir in SESSION_BUCKETS:
-        bucket = state_dir / subdir
+        bucket = bucket_dir(state_dir, subdir)
         if not bucket.is_dir():
             continue
         for entry in sorted(bucket.iterdir()):

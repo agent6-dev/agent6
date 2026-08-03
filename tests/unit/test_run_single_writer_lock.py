@@ -20,7 +20,7 @@ from agent6.sessions.lock import acquire_single_writer, release_single_writer
 
 
 def test_second_acquire_on_same_dir_is_refused(tmp_path: Path) -> None:
-    session_dir = tmp_path / "runs" / "R"
+    session_dir = tmp_path / "sessions" / "runs" / "R"
     session_dir.mkdir(parents=True)
     fd = acquire_single_writer(session_dir)
     assert fd is not None
@@ -32,8 +32,8 @@ def test_second_acquire_on_same_dir_is_refused(tmp_path: Path) -> None:
 
 
 def test_distinct_run_dirs_are_independent(tmp_path: Path) -> None:
-    a = tmp_path / "runs" / "A"
-    b = tmp_path / "runs" / "B"
+    a = tmp_path / "sessions" / "runs" / "A"
+    b = tmp_path / "sessions" / "runs" / "B"
     a.mkdir(parents=True)
     b.mkdir(parents=True)
     fd_a = acquire_single_writer(a)
@@ -48,7 +48,7 @@ def test_distinct_run_dirs_are_independent(tmp_path: Path) -> None:
 def test_reacquire_after_release_succeeds(tmp_path: Path) -> None:
     # Sequential resume-after-exit: once the first writer releases, the next
     # acquires cleanly (the lock must not stay stuck).
-    session_dir = tmp_path / "runs" / "R"
+    session_dir = tmp_path / "sessions" / "runs" / "R"
     session_dir.mkdir(parents=True)
     fd1 = acquire_single_writer(session_dir)
     assert fd1 is not None
@@ -72,7 +72,7 @@ def _hold_lock(session_dir: str, ready: EventType, done: EventType) -> None:
 
 
 def test_cross_process_contention_and_release_on_death(tmp_path: Path) -> None:
-    session_dir = tmp_path / "runs" / "R"
+    session_dir = tmp_path / "sessions" / "runs" / "R"
     session_dir.mkdir(parents=True)
     ctx = multiprocessing.get_context("spawn")
     ready = ctx.Event()

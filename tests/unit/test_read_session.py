@@ -16,7 +16,7 @@ from agent6.tools.sessions import ROSTER_MAX, conversation, roster, session_brie
 
 
 def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: list[str]) -> Path:
-    d = state / bucket / sid
+    d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps(
@@ -95,7 +95,7 @@ def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
 
 
 def test_a_session_with_no_conversation_says_so(tmp_path: Path) -> None:
-    d = tmp_path / "runs" / "empty-BBBBBB"
+    d = tmp_path / "sessions" / "runs" / "empty-BBBBBB"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}), encoding="utf-8")
     layout = session_layout(tmp_path, "empty-BBBBBB")
@@ -193,7 +193,7 @@ def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path)
     from agent6.events import EventSink
     from agent6.sessions.layout import session_layout
 
-    d = tmp_path / "asks" / "quiet-fox-AAAAAA"
+    d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),

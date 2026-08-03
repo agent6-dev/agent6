@@ -338,7 +338,7 @@ def test_status_missing_id_and_empty_state_speak_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # A bad id names itself and where it looked, without leaking the
-    # (runs|asks|machine-drafts) layout alternation; an empty state dir gets
+    # bucket alternation under sessions/; an empty state dir gets
     # the same first-contact copy as `runs`.
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -346,7 +346,7 @@ def test_status_missing_id_and_empty_state_speak_human(
     monkeypatch.chdir(repo)
     assert _cmd_status("zzz", as_json=False) == 2
     err = capsys.readouterr().err
-    assert "no run matches 'zzz'" in err and "machine-drafts" not in err
+    assert "no run matches 'zzz'" in err and "machines" not in err
     assert _cmd_status("", as_json=False) == 2
     assert 'no sessions yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
 

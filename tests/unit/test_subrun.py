@@ -66,14 +66,14 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: Path) -> None:
     (lane_repo / "feature.txt").write_text("new stuff\n", encoding="utf-8")
     commit_all(lane_repo, "lane change")
 
-    lane_session_dir = tmp_path / "lane-state" / "runs" / "01ABC"
+    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     origin_state = tmp_path / "origin-state"
 
     imported = import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
 
-    assert imported == origin_state / "runs" / "01ABC"
+    assert imported == origin_state / "sessions" / "runs" / "01ABC"
     assert (imported / "manifest.json").read_text(encoding="utf-8") == "{}\n"
     assert not lane_session_dir.exists()
     assert branch_exists(origin, branch)
@@ -88,7 +88,7 @@ def test_import_run_refuses_existing_branch(tmp_path: Path) -> None:
 
     lane_repo = tmp_path / "lane-1"
     clone_workspace(origin, lane_repo)
-    lane_session_dir = tmp_path / "lane-state" / "runs" / "01ABC"
+    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     origin_state = tmp_path / "origin-state"
@@ -97,7 +97,7 @@ def test_import_run_refuses_existing_branch(tmp_path: Path) -> None:
         import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
     # Refused before moving anything.
     assert lane_session_dir.exists()
-    assert not (origin_state / "runs" / "01ABC").exists()
+    assert not (origin_state / "sessions" / "runs" / "01ABC").exists()
 
 
 def test_import_run_refuses_existing_run_dir(tmp_path: Path) -> None:
@@ -110,11 +110,11 @@ def test_import_run_refuses_existing_run_dir(tmp_path: Path) -> None:
     (lane_repo / "feature.txt").write_text("new stuff\n", encoding="utf-8")
     commit_all(lane_repo, "lane change")
 
-    lane_session_dir = tmp_path / "lane-state" / "runs" / "01ABC"
+    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     origin_state = tmp_path / "origin-state"
-    (origin_state / "runs" / "01ABC").mkdir(parents=True)  # already imported
+    (origin_state / "sessions" / "runs" / "01ABC").mkdir(parents=True)  # already imported
 
     with pytest.raises(SubrunError):
         import_run(origin, lane_repo, branch, lane_session_dir, origin_state)

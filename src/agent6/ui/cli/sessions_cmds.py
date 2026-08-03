@@ -36,7 +36,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop, worker_is_alive
-from agent6.sessions.layout import HUB_BUCKETS, SessionLayout
+from agent6.sessions.layout import HUB_BUCKETS, SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
@@ -95,7 +95,7 @@ def _cmd_list() -> int:
     cwd = Path.cwd()
     dirs: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = _state_dir(cwd) / sub
+        d = bucket_dir(_state_dir(cwd), sub)
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     if not dirs:
@@ -785,7 +785,7 @@ def _cmd_sessions_dir() -> int:
     """Print the per-repo state dir: where this repo's run history lives.
 
     One bare line so it composes (`ls "$(agent6 sessions dir)"`, or delete a bucket
-    outright). The buckets under it are runs/, asks/, and machine-drafts/."""
+    outright). Sessions live under sessions/<bucket>/, one bucket per mode."""
     print(_state_dir(Path.cwd()))
     return 0
 
@@ -802,7 +802,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         if session_id:
             print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
             return 2
-        bucket = _state_dir(cwd) / "asks"
+        bucket = bucket_dir(_state_dir(cwd), "asks")
         gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
         shutil.rmtree(bucket, ignore_errors=True)
         print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")

@@ -85,9 +85,9 @@ Notes:
   conversation. The in-loop critic and the adversarial review panel
   are opt-in (`[review]` config) and layer onto this same history.
 - **Snapshot before every LLM call.** `loop_state.json` is rewritten
-  in the session directory (`<state-dir>/<repo-id>/<bucket>/<session-id>/`,
+  in the session directory (`<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/`,
   out of the workspace) before each provider request, with a per-turn
-  copy under `checkpoints/<NNNN>.json` (see "Run state on disk").
+  copy under `checkpoints/<NNNN>.json` (see "Session state on disk").
   `agent6 resume <session-id>` rehydrates from `loop_state.json`,
   `agent6 fork --at-turn N` from the matching checkpoint;
   combined with the per-tool transcripts under `transcripts/`, any
@@ -226,7 +226,7 @@ primitive is pure git plumbing in
 
 - `clone_workspace(origin, dest)`: plain `git clone` of a disposable lane workspace.
 - `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the
-  lane's branch into *origin* and moves its session dir under `<origin_state>/runs/`;
+  lane's branch into *origin* and moves its session dir under `<origin_state>/sessions/runs/`;
   refuses to overwrite an existing branch or session dir.
 - `join_branch(workspace, branch)`: merges a branch into the current branch;
   returns the merged sha, or `None` after an aborted conflict.
@@ -246,7 +246,7 @@ pipelines composed over the engine, never importing `agent6.ui`.
   `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary
   detached `agent6 run` (its own jail, egress broker, `run_commands` policy --
   see [security.md](security.md)), symlinks each lane's live session dir into
-  `<origin_state>/runs/` as soon as it is located, and polls until every lane
+  `<origin_state>/sessions/runs/` as soon as it is located, and polls until every lane
   is terminal. Every hub (`agent6 sessions`, the TUI, the web hub) resolves that
   symlink like any other session dir, so a fan-out is visible live, not just at
   the end. On completion each lane is imported (`import_run`) and the symlink
@@ -286,7 +286,7 @@ pipelines composed over the engine, never importing `agent6.ui`.
   HEAD only), expands each segment into its lanes (`spec` -> one model per lane),
   then clones + spawns + awaits + imports every lane and joins each branch into
   the run branch sequentially in dispatch order (`join_branch`). Like the
-  fan-out, each lane's session dir is symlinked into `<origin_state>/runs/` while it
+  fan-out, each lane's session dir is symlinked into `<origin_state>/sessions/runs/` while it
   runs, so coordinator lanes appear in the hubs like fan-out lanes and their
   approvals/asks are answered there. Each SEGMENT (task) gets one DAG node
   stamped `passed` (with the last joined sha; its note names every lane) or
@@ -387,11 +387,11 @@ hands it to the live run as an isolated lane. Plan/ask expose no edit tools and 
 freely; `--parallel` lanes work in isolated workdirs under the coordinator's
 one lock.
 
-## Run state on disk
+## Session state on disk
 
-Each session's directory `<state-dir>/<repo-id>/<bucket>/<session-id>/` holds
-(the bucket is named for the mode: `runs/`, `plans/`, `asks/`, and
-`machine-drafts/` for `machine create` authoring):
+Each session's directory `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` holds
+(the bucket is the mode plus `s`: `runs/`, `plans/`, `asks/`, `machines/`
+for `machine create` authoring):
 
 - `graph.jsonl`: append-only journal of every task-graph mutation
   (curator-owned).
@@ -521,7 +521,7 @@ graph`).
 | Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
-| Session state on disk            | `<state-dir>/<repo-id>/<bucket>/<session-id>/` (out of the workspace)    |
+| Session state on disk            | `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` (out of the workspace)    |
 
 ## Pre-1.0 stability
 

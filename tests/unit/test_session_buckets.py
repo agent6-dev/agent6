@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One bucket per mode, and every list of buckets agreeing with the record."""
+"""One bucket per mode, named after it, under one `sessions/` root."""
 
 from __future__ import annotations
 
@@ -8,38 +8,57 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sessions.layout import HUB_BUCKETS, SESSION_BUCKETS
-from agent6.types import SESSION_KINDS, session_kind
+from agent6.sessions.layout import (
+    HUB_BUCKETS,
+    SESSION_BUCKETS,
+    SESSIONS_ROOT,
+    SessionLayout,
+    bucket_dir,
+)
+from agent6.types import SESSION_KINDS, UnknownSessionKind, session_bucket
 
 
-def test_every_mode_bucket_is_a_known_bucket() -> None:
-    """A mode whose bucket no listing scans is invisible: it writes a session dir
-    nothing can find. `agent` alone has none -- its state lives inside a machine
-    instance."""
-    for kind in SESSION_KINDS.values():
-        if kind.bucket is None:
-            assert kind.name == "agent", f"{kind.name} silently has no bucket"
-            continue
-        assert kind.bucket in SESSION_BUCKETS, f"{kind.name} writes to an unlisted bucket"
+def test_a_bucket_is_the_mode_plus_s() -> None:
+    """The rule has no exceptions now, so the bucket is derived rather than
+    stored: a record cannot disagree with where its sessions actually go."""
+    assert [session_bucket(name) for name in ("run", "plan", "ask", "machine", "agent")] == [
+        "runs",
+        "plans",
+        "asks",
+        "machines",
+        "agents",
+    ]
 
 
-def test_a_plan_does_not_live_in_the_runs_bucket() -> None:
-    """Bucket == mode. A plan sharing runs/ was the one session whose directory
-    disagreed with its own manifest."""
-    assert session_kind("plan").bucket == "plans"
-    assert session_kind("run").bucket == "runs"
-    assert session_kind("ask").bucket == "asks"
+def test_an_unknown_mode_has_no_bucket() -> None:
+    with pytest.raises(UnknownSessionKind):
+        session_bucket("nonsense")
 
 
-def test_machine_authoring_names_the_bucket_it_actually_writes() -> None:
-    """`machine create` writes machine-drafts/; the record said runs/. It never
-    broke only because machine sessions do not reach the run lifecycle."""
-    assert session_kind("machine").bucket == "machine-drafts"
+def test_every_mode_has_a_scanned_bucket() -> None:
+    """A mode whose bucket no listing scans writes a session dir nothing can
+    find."""
+    for name in SESSION_KINDS:
+        assert session_bucket(name) in SESSION_BUCKETS
 
 
-def test_hub_buckets_are_session_buckets_without_the_drafts() -> None:
+def test_session_dirs_live_under_the_sessions_root() -> None:
+    """Nesting the buckets is what frees `machines/` at the top level for live
+    machine INSTANCES, so the authoring sessions can be named for their mode."""
+    layout = SessionLayout(state_dir=Path("/s"), session_id="brave-oak-AAAAAA", subdir="machines")
+    assert layout.session_dir == Path("/s") / SESSIONS_ROOT / "machines" / "brave-oak-AAAAAA"
+    assert layout.session_dir != Path("/s") / "machines" / "brave-oak-AAAAAA"
+
+
+def test_bucket_dir_is_the_one_owner_of_that_arithmetic() -> None:
+    assert bucket_dir(Path("/s"), "runs") == Path("/s") / SESSIONS_ROOT / "runs"
+
+
+def test_hub_buckets_are_session_buckets_without_the_machine_ones() -> None:
+    """A hub lists ordinary sessions; machine authoring gets its own card, and
+    an agent state has no directory of its own at all."""
     assert set(HUB_BUCKETS) < set(SESSION_BUCKETS)
-    assert set(SESSION_BUCKETS) - set(HUB_BUCKETS) == {"machine-drafts"}
+    assert set(SESSION_BUCKETS) - set(HUB_BUCKETS) == {"machines", "agents"}
 
 
 @pytest.mark.parametrize("bucket", ["runs", "plans", "asks"])
@@ -52,10 +71,10 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
     from agent6.app.resume import resumable_bucket_dirs
     from agent6.viewmodel import newest_session_dir
 
-    session = tmp_path / bucket / "brave-oak-AAAAAA"
+    session = bucket_dir(tmp_path, bucket) / "brave-oak-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
-    (tmp_path / "machine-drafts" / "quiet-fox-BBBBBB").mkdir(parents=True)
+    (bucket_dir(tmp_path, "machines") / "quiet-fox-BBBBBB").mkdir(parents=True)
 
     found = newest_session_dir(resumable_bucket_dirs(tmp_path))
     assert found == session
@@ -78,7 +97,7 @@ def test_every_hub_lists_every_hub_bucket(
 
     monkeypatch.chdir(tmp_path)
     state = resolved_state_dir(tmp_path)
-    session = state / bucket / "brave-oak-AAAAAA"
+    session = bucket_dir(state, bucket) / "brave-oak-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n', encoding="utf-8"
@@ -88,3 +107,13 @@ def test_every_hub_lists_every_hub_bucket(
     assert "brave-oak-AAAAAA" in capsys.readouterr().out
     assert [p.name for p in tui_list(state)] == ["brave-oak-AAAAAA"]
     assert [s["id"] for s in web_model.hub_payload(tmp_path)["sessions"]] == ["brave-oak-AAAAAA"]
+
+
+def test_a_machine_draft_does_not_collide_with_a_machine_instance(tmp_path: Path) -> None:
+    """The reason for the nesting: `machine create` authoring sessions are named
+    for their mode without landing in the directory holding live instances."""
+    draft = bucket_dir(tmp_path, session_bucket("machine")) / "same-name"
+    instance = tmp_path / "machines" / "same-name"
+    draft.mkdir(parents=True)
+    instance.mkdir(parents=True)
+    assert draft != instance

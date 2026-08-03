@@ -84,7 +84,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import SessionLayout, session_layout, session_matches
+from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout, session_matches
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -94,7 +94,7 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import SESSION_KINDS, IsolationLevel, session_kind
+from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows._run_state import RunReason, load_run_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
@@ -108,9 +108,9 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
     the bare form.
     """
     return [
-        state_dir / kind.bucket
+        bucket_dir(state_dir, session_bucket(kind.name))
         for kind in SESSION_KINDS.values()
-        if kind.resumable and kind.bucket is not None
+        if kind.resumable
     ]
 
 

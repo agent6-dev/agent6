@@ -135,7 +135,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
     from agent6.budget import BudgetTracker
     from agent6.workflows._run_state import RunResult
 
-    rd = tmp_path / "runs" / "r1"
+    rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
         json.dumps({"type": "session.end", "reason": "finish_run", "all_passed": False}) + "\n",

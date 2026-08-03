@@ -105,7 +105,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "older-run-AAAA11")
     _seed_tree(tmp_path, "newer-run-BBBB22")
-    runs = resolved_state_dir(tmp_path) / "runs"
+    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
     for name in ("older-run-AAAA11", "newer-run-BBBB22"):
         (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))

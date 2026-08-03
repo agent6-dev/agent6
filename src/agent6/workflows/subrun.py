@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch, merge_branch
+from agent6.sessions.layout import bucket_dir
 
 
 class SubrunError(Exception):
@@ -108,7 +109,7 @@ def import_run(
     """
     if branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
-    dest_session_dir = origin_state / "runs" / lane_session_dir.name
+    dest_session_dir = bucket_dir(origin_state, "runs") / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"run dir already exists: {dest_session_dir}")
     try:

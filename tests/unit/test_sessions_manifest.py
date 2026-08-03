@@ -259,7 +259,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
     from agent6.app.parallel import _stamp  # pyright: ignore[reportPrivateUsage]
     from agent6.sessions.layout import SessionLayout
 
-    session_dir = tmp_path / "runs" / "r-newer"
+    session_dir = tmp_path / "sessions" / "runs" / "r-newer"
     session_dir.mkdir(parents=True)
     payload = {"version": 4, "session_id": "r-newer", "future_key": 1}
     _write(session_dir, payload)

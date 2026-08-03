@@ -41,7 +41,7 @@ reason = "routed"
 
 
 def _make_run(tmp_path: Path, session_id: str, events: list[dict[str, object]]) -> None:
-    runs = resolved_state_dir(tmp_path) / "runs" / session_id
+    runs = resolved_state_dir(tmp_path) / "sessions" / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
@@ -128,7 +128,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
         ],
     )
     monkeypatch.chdir(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run"
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "dead-run"
     (session_dir / "worker.pid").write_text("999999", encoding="utf-8")
 
     def _no_prompt(*a: object, **k: object) -> None:
@@ -153,7 +153,7 @@ def test_attach_names_a_parked_run_instead_of_a_filesystem_error(
     logs.jsonl in <path>" and exited 2, so the operator who clicked through from
     a listing got a path instead of the state and the way out."""
     monkeypatch.chdir(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "runs" / "parked-run-77"
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "parked-run-77"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -188,7 +188,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
     running, not resumable: telling the operator to `resume` would refuse or fork
     a second worker, so attach says it is starting instead."""
     monkeypatch.chdir(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "runs" / "launching-run-88"
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "launching-run-88"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(

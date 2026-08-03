@@ -357,7 +357,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _state_dir(repo) / "runs"
+    runs = _state_dir(repo) / "sessions" / "runs"
     live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
     for d in (live, dead):
         d.mkdir(parents=True)
@@ -385,7 +385,7 @@ def test_runs_rm_asks_clears_the_bucket(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    asks = _state_dir(repo) / "asks"
+    asks = _state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
     assert main(["sessions", "rm", "some-id", "--asks"]) == 2

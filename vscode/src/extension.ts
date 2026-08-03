@@ -4,7 +4,7 @@
 // agent6: tail run
 //
 // Minimal VS Code extension that tails an agent6 run's structured log
-// (`<state base>/<repo-id>/runs/<session-id>/logs.jsonl`, in the per-repo state
+// (`<state base>/<repo-id>/sessions/runs/<session-id>/logs.jsonl`, in the per-repo state
 // dir, out of the workspace; see src/paths.ts) in an output channel.
 // Read-only.
 //

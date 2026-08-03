@@ -28,7 +28,7 @@ from agent6.ui.tui.home import _list_sessions, session_mtime
 def _write_run(
     agent6_dir: Path, sub: str, session_id: str, events: list[dict[str, object]]
 ) -> Path:
-    rd = agent6_dir / sub / session_id
+    rd = agent6_dir / "sessions" / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
@@ -68,7 +68,7 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
 def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
     import os
 
-    rd = tmp_path / "runs" / "fresh"
+    rd = tmp_path / "sessions" / "runs" / "fresh"
     rd.mkdir(parents=True)
     os.utime(rd, (2000, 2000))
     assert session_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime

@@ -42,7 +42,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = _state_dir(repo) / "runs" / "parked-AAAA11"
+    session_dir = _state_dir(repo) / "sessions" / "runs" / "parked-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -138,7 +138,9 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-BBBB22", preset="strict", from_flag=True)
+    _park_manifest(
+        _state_dir(repo) / "sessions" / "runs" / "parked-BBBB22", preset="strict", from_flag=True
+    )
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
     assert _cmd_resume(None, "parked-BBBB22", force=False) == 0
@@ -154,7 +156,9 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-CCCC33", preset="strict", from_flag=True)
+    _park_manifest(
+        _state_dir(repo) / "sessions" / "runs" / "parked-CCCC33", preset="strict", from_flag=True
+    )
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
     assert _cmd_resume(None, "parked-CCCC33", force=False, preset="none") == 0
@@ -174,7 +178,9 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    _park_manifest(_state_dir(repo) / "runs" / "parked-DDDD44", preset="hardened", from_flag=False)
+    _park_manifest(
+        _state_dir(repo) / "sessions" / "runs" / "parked-DDDD44", preset="hardened", from_flag=False
+    )
     captured = _stub_start_of_run(resume_mod, monkeypatch)
 
     assert _cmd_resume(None, "parked-DDDD44", force=False) == 0
@@ -186,7 +192,7 @@ class _Stop(Exception):
 
 
 def _plan_session_dir(repo: Path, session_id: str) -> None:
-    session_dir = _state_dir(repo) / "runs" / session_id
+    session_dir = _state_dir(repo) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": session_id, "mode": "plan", "user_task": "t"}),
@@ -341,7 +347,7 @@ def test_plan_resume_builds_the_planner_provider(
 
 
 def _session_dir(state: Path, bucket: str, sid: str, mode: str) -> Path:
-    d = state / bucket / sid
+    d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"version": 3, "session_id": sid, "mode": mode, "user_task": "t"}),
@@ -382,7 +388,7 @@ def test_a_session_resume_cannot_continue_is_left_untouched(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     state = _state_dir(repo)
-    draft = _session_dir(state, "machine-drafts", "brave-elk-CCCCCC", "machine")
+    draft = _session_dir(state, "machines", "brave-elk-CCCCCC", "machine")
     (draft / "worker.pid").write_text("4242\n", encoding="utf-8")
     (draft / "answer_1.json").write_text("{}", encoding="utf-8")
 

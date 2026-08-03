@@ -38,7 +38,7 @@ from agent6.viewmodel import (
 
 
 def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
-    """Resolve *target* against the run-style buckets (runs/asks/machine-drafts).
+    """Resolve *target* against the run-style buckets (sessions/runs, /plans, /asks, /machines).
     Returns (is_run, ambiguity_error): (True, None) it resolves; (False, None) no
     match, so the caller may try a machine; (False, msg) it is an ambiguous
     prefix, a run-intent error the caller should surface rather than fall

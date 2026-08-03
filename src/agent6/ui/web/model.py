@@ -21,7 +21,7 @@ from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
 from agent6.secrets import resolve_api_key
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
@@ -51,11 +51,11 @@ def state_dir_for(cwd: Path) -> Path:
 
 
 def runs_root(cwd: Path) -> Path:
-    return state_dir_for(cwd) / "runs"
+    return bucket_dir(state_dir_for(cwd), "runs")
 
 
 def asks_root(cwd: Path) -> Path:
-    return state_dir_for(cwd) / "asks"
+    return bucket_dir(state_dir_for(cwd), "asks")
 
 
 def machines_root(cwd: Path) -> Path:
@@ -79,7 +79,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     if not _safe_component(session_id):
         return None
     for sub in HUB_BUCKETS:
-        d = state_dir_for(cwd) / sub / session_id
+        d = bucket_dir(state_dir_for(cwd), sub) / session_id
         if d.is_dir() and not is_session_husk(d):
             return d
     return None
@@ -97,7 +97,7 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
     the authoring agent, so it is watched through the run endpoints."""
     if not _safe_component(name):
         return None
-    d = state_dir_for(cwd) / "machine-drafts" / name
+    d = bucket_dir(state_dir_for(cwd), "machines") / name
     return d if d.is_dir() else None
 
 
@@ -105,7 +105,7 @@ def session_dir_paths(cwd: Path) -> list[Path]:
     """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
     out: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = state_dir_for(cwd) / sub
+        d = bucket_dir(state_dir_for(cwd), sub)
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir())
     return out
@@ -113,7 +113,7 @@ def session_dir_paths(cwd: Path) -> list[Path]:
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
     """Every machine-create draft directory (where `machine create` writes)."""
-    d = state_dir_for(cwd) / "machine-drafts"
+    d = bucket_dir(state_dir_for(cwd), "machines")
     return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
 
@@ -147,7 +147,7 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     dirs: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = state_dir_for(cwd) / sub
+        d = bucket_dir(state_dir_for(cwd), sub)
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     summaries = [_session_summary(p) for p in dirs]

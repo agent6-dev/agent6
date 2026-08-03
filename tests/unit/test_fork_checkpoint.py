@@ -139,7 +139,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
     """A run dir with no checkpoints/ dir lists no turns (old-run detection)."""
     layout = SessionLayout(state_dir=tmp_path, session_id="old")
-    (tmp_path / "runs" / "old").mkdir(parents=True)
+    (tmp_path / "sessions" / "runs" / "old").mkdir(parents=True)
     assert list_checkpoint_turns(layout) == []
 
 
@@ -257,7 +257,7 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     # runs/ bucket the default layout would have put it in.
     dst = SessionLayout(state_dir=state_dir, session_id="plan-fork-BBBB22", subdir="plans")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
-    assert not (state_dir / "runs" / "plan-fork-BBBB22").exists()
+    assert not (state_dir / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -593,7 +593,7 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
     assert rc == 2
-    assert not (state_dir / "runs" / "kid-DDDD44").exists()
+    assert not (state_dir / "sessions" / "runs" / "kid-DDDD44").exists()
 
 
 def test_fork_pre_checkpoint_run_degrades_gracefully(

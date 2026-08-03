@@ -24,7 +24,7 @@ def test_a_generated_id_skips_a_taken_directory(
 
     minted = iter(["taken-one-AAAAAA", "free-two-BBBBBB"])
     monkeypatch.setattr(run_mod, "new_friendly_id", lambda: next(minted))
-    (tmp_path / "runs" / "taken-one-AAAAAA").mkdir(parents=True)
+    (tmp_path / "sessions" / "runs" / "taken-one-AAAAAA").mkdir(parents=True)
 
     assert _unused_session_id(tmp_path, "runs") == "free-two-BBBBBB"
 
@@ -44,7 +44,7 @@ def test_it_gives_up_loudly_rather_than_reusing_a_directory(
     from agent6.app import run as run_mod
 
     monkeypatch.setattr(run_mod, "new_friendly_id", lambda: "taken-one-AAAAAA")
-    (tmp_path / "runs" / "taken-one-AAAAAA").mkdir(parents=True)
+    (tmp_path / "sessions" / "runs" / "taken-one-AAAAAA").mkdir(parents=True)
 
     with pytest.raises(RuntimeError, match="could not mint"):
         _unused_session_id(tmp_path, "runs")
@@ -56,6 +56,6 @@ def test_the_bucket_is_respected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     from agent6.app import run as run_mod
 
     monkeypatch.setattr(run_mod, "new_friendly_id", lambda: "same-name-AAAAAA")
-    (tmp_path / "runs" / "same-name-AAAAAA").mkdir(parents=True)
+    (tmp_path / "sessions" / "runs" / "same-name-AAAAAA").mkdir(parents=True)
 
     assert _unused_session_id(tmp_path, "plans") == "same-name-AAAAAA"

@@ -14,7 +14,7 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
-from agent6.sessions.layout import SessionLayout, session_layout
+from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _state_dir,
@@ -41,7 +41,7 @@ def ask_question_snippet(transcript: str) -> str:
 
 def cmd_ask_list() -> int:
     """`agent6 ask list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
-    asks_dir = _state_dir(Path.cwd()) / "asks"
+    asks_dir = bucket_dir(_state_dir(Path.cwd()), "asks")
     if not asks_dir.is_dir():
         print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
         return 0
@@ -177,7 +177,7 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
         # runs/ and asks/ only: a machine draft is an authoring log, not a
         # session with a task and an outcome, and picking the newest one made
         # `--from-latest` fail on a project that had just written a machine.
-        newest = newest_session_dir([state_dir / "runs", state_dir / "asks"])
+        newest = newest_session_dir([bucket_dir(state_dir, "runs"), bucket_dir(state_dir, "asks")])
         if newest is None:
             print(f"ERROR: --from-latest: no run or ask under {state_dir}", file=sys.stderr)
             return None

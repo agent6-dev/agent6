@@ -34,6 +34,7 @@ from agent6.models.validate import (
     warning_message,
 )
 from agent6.paths import data_dir
+from agent6.sessions.layout import bucket_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.types import session_kind
 from agent6.ui.cli._ask import (
@@ -94,6 +95,15 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     )
 
 
+def _asks_dir(session_dir: Path) -> Path:
+    """The asks bucket beside *session_dir*'s own, for `/btw`'s roster.
+
+    Derived from the running session's dir rather than re-resolving the state
+    base: the two must agree even when `[agent6].state_dir` is overridden.
+    """
+    return bucket_dir(session_dir.parent.parent.parent, "asks")
+
+
 def session_frontend() -> SessionFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view cell is run-scoped). The console
@@ -147,8 +157,8 @@ def session_frontend() -> SessionFrontend:
                 session_dir.name,
                 launch=direct_launch,
                 list_asks=lambda: (
-                    [d for d in (session_dir.parent.parent / "asks").iterdir() if d.is_dir()]
-                    if (session_dir.parent.parent / "asks").is_dir()
+                    [d for d in _asks_dir(session_dir).iterdir() if d.is_dir()]
+                    if _asks_dir(session_dir).is_dir()
                     else []
                 ),
                 events=events,

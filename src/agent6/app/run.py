@@ -91,7 +91,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -253,9 +253,9 @@ def _unused_session_id(state_dir: Path, bucket: str) -> str:
     """
     for _ in range(8):
         candidate = new_friendly_id()
-        if not (state_dir / bucket / candidate).exists():
+        if not (bucket_dir(state_dir, bucket) / candidate).exists():
             return candidate
-    raise RuntimeError(f"could not mint an unused session id under {state_dir / bucket}")
+    raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
 
 
 def run_task(  # noqa: PLR0911, PLR0912, PLR0915

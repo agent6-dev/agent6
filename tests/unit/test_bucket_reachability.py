@@ -18,7 +18,7 @@ from agent6.config.layer import resolved_state_dir
 
 
 def _seed(state: Path, bucket: str, session_id: str, *, mode: str, marker: str = "") -> Path:
-    d = state / bucket / session_id
+    d = state / "sessions" / bucket / session_id
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": mode, "user_task": "t"}) + "\n",

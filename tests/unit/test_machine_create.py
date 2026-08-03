@@ -246,7 +246,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
 
-    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
     # The runner was pointed at that same log (so the subprocess appends to it).
     assert captured_log and str(captured_log[0]) == str(logs[0])
@@ -287,7 +287,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
         ],
     )
     assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
-    logs = next((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     budgets = [e for e in events if e["type"] == "budget.update"]
     assert budgets, "no cumulative budget.update emitted"
@@ -309,7 +309,7 @@ def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )
     code = main(["machine", "create", "Greet the user warmly"])
     assert code == 0
-    prompts = list((tmp_path / "state").glob("**/machine-drafts/*/prompt.txt"))
+    prompts = list((tmp_path / "state").glob("**/sessions/machines/*/prompt.txt"))
     assert len(prompts) == 1
     assert prompts[0].read_text(encoding="utf-8") == "Greet the user warmly"
 
@@ -377,7 +377,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     )
     assert main(["machine", "create", "Greet the user"]) == 1
     capsys.readouterr()
-    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
@@ -413,7 +413,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     out = capsys.readouterr()
     assert "could not write" in out.err
     assert out.out.startswith('machine = "greeter"')  # the draft is not lost
-    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
@@ -872,7 +872,7 @@ def test_create_failure_end_reason_names_the_failure(
     )
     assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
 
-    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
@@ -898,6 +898,6 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     )
     assert main(["machine", "create", "Greet the user"]) == 0
 
-    pids = list((tmp_path / "state").glob("**/machine-drafts/*/worker.pid"))
+    pids = list((tmp_path / "state").glob("**/sessions/machines/*/worker.pid"))
     assert pids, "the draft recorded no liveness marker"
     assert pids[0].read_text(encoding="utf-8").split()[0] == str(os.getpid())

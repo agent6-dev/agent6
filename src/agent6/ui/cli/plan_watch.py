@@ -165,7 +165,7 @@ def _resolve_session_dir(repo_root: Path, session_id: str) -> Path | None:
     """Resolve a run id (or the most-recent run when empty) to its run dir.
 
     An explicit id resolves across every run-style bucket (runs/, asks/,
-    machine-drafts/): anything `agent6 sessions` lists must also be inspectable
+    sessions/machines/): anything `agent6 sessions` lists must also be inspectable
     by id. The empty (most-recent) case also spans every bucket, so a bare
     `attach` right after an `ask` finds that ask."""
     try:

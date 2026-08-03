@@ -428,7 +428,7 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     the answer and reported success with no worker left to consume it -- the
     same shape as the typed steer that used to reach a corpse. Every sibling
     action already refuses "run is not live"."""
-    session_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run-A1"
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"

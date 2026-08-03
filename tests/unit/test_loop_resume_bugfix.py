@@ -408,7 +408,7 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
     patching its own copy."""
     from agent6.workflows._run_state import RunSnapshot as _Snap
 
-    session_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
@@ -964,7 +964,7 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     graded on another. Silence there is the worst case: it looks like it worked."""
     from agent6.workflows._run_state import RunSnapshot as _Snap
 
-    session_dir = tmp_path / "runs" / "tidy-otter-AB12CD"
+    session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(

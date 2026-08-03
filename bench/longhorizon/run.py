@@ -225,7 +225,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _find_logs(state_home: Path, session_id: str) -> Path | None:
-    exact = list(state_home.glob(f"agent6/*/runs/{session_id}/logs.jsonl"))
+    exact = list(state_home.glob(f"agent6/*/sessions/runs/{session_id}/logs.jsonl"))
     if exact:
         return exact[0]
     for cand in state_home.glob("agent6/*/runs/*/logs.jsonl"):

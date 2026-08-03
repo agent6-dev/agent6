@@ -15,7 +15,7 @@ from agent6.sessions.manifest import ManifestError, SessionManifest, read_manife
 
 
 def _session(state: Path, bucket: str, sid: str, mode: str) -> Path:
-    d = state / bucket / sid
+    d = state / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": mode, "session_id": sid}), encoding="utf-8"
@@ -91,7 +91,7 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
     from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    ask = resolved_state_dir(tmp_path) / "asks" / "quiet-fox-AAAAAA"
+    ask = resolved_state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
     ask.mkdir(parents=True)
     (ask / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),

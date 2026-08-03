@@ -97,7 +97,7 @@ def test_format_compare_headline_and_rationale() -> None:
 def _write_run(base: Path, sub: str, session_id: str, events: list[dict[str, object]]) -> Path:
     import json
 
-    rd = base / sub / session_id
+    rd = base / "sessions" / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
@@ -312,7 +312,7 @@ def test_run_is_live_dead_worker_is_not_live(tmp_path: Path) -> None:
 def test_run_is_live_unstarted_dirs(tmp_path: Path) -> None:
     # A parked submission or fork --no-run dir: nothing polls markers -> not
     # live (resume is the offer). A launching worker (pid, no events yet) is.
-    rd = tmp_path / "runs" / "parked"
+    rd = tmp_path / "sessions" / "runs" / "parked"
     rd.mkdir(parents=True)
     (rd / "manifest.json").write_text(
         json.dumps({"version": 2, "parked_task": "queued work"}), encoding="utf-8"
@@ -341,7 +341,7 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
 
 
 def test_summary_no_logs(tmp_path: Path) -> None:
-    rd = tmp_path / "runs" / "empty"
+    rd = tmp_path / "sessions" / "runs" / "empty"
     rd.mkdir(parents=True)
     s = summarize_session_dir(rd)
     assert (s.status, s.task) == ("created", "(no logs)")
@@ -377,7 +377,7 @@ def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
 def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
     # A `fork --no-run` fork has a manifest (mode + task) but no logs yet; the
     # listing must show them, not a blank "? ? (no logs)".
-    rd = tmp_path / "runs" / "child"
+    rd = tmp_path / "sessions" / "runs" / "child"
     rd.mkdir(parents=True)
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
@@ -465,7 +465,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     # A valid-JSON line that isn't an object (a torn or adversarial writer) must
     # not crash the listing fold -- one bad line otherwise took down the whole
     # hub / `sessions list` / TUI home. It's skipped like an unparseable line.
-    rd = tmp_path / "runs" / "weird"
+    rd = tmp_path / "sessions" / "runs" / "weird"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "do a thing"})
@@ -486,7 +486,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
     # leave usd_total non-numeric; the scan keeps the last good figure instead
     # of aborting the whole listing (same degradation the typed fold applies).
     # Falsy junk ('', False) counts: an `or 0.0` fallback silently reset it.
-    rd = tmp_path / "runs" / "torn-usd"
+    rd = tmp_path / "sessions" / "runs" / "torn-usd"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t"})
@@ -553,8 +553,8 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> Non
     could miss a live run whose log was quiet during a long provider call."""
     from agent6.viewmodel.listing import newest_session_dir
 
-    bucket = tmp_path / "runs"
-    bucket.mkdir()
+    bucket = tmp_path / "sessions" / "runs"
+    bucket.mkdir(parents=True)
     real = bucket / "real-run-0001"
     real.mkdir()
     (real / "logs.jsonl").write_text(
@@ -616,7 +616,7 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: Path) -> None:
     attach, the web hub and the TUI all showed a dead run as "running" for ten
     minutes. (A SIGKILLed run leaves its pid file, which is why that case
     always read stale at once.)"""
-    session_dir = tmp_path / "runs" / "gone"
+    session_dir = tmp_path / "sessions" / "runs" / "gone"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})

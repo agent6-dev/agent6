@@ -41,8 +41,8 @@ def _ask_dir(root: Path, name: str, *, events: list[dict[str, object]]) -> Path:
 def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     """The run must not wait on it: start_btw returns the moment the session
     is on disk, not when it has an answer."""
-    asks = tmp_path / "asks"
-    asks.mkdir()
+    asks = tmp_path / "sessions" / "asks"
+    asks.mkdir(parents=True)
     launched: list[list[str]] = []
     envs: list[dict[str, str]] = []
 
@@ -140,7 +140,7 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
     poll and stop looking, while the btw ran on and answered."""
     from agent6.app.btw import BtwSession, btw_answer
 
-    d = tmp_path / "asks" / "quiet-fox-AAAAAA"
+    d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
     session = BtwSession(id=d.name, dir=d, question="why h265")
 

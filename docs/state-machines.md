@@ -849,7 +849,7 @@ land in `scripts/` next to the machine file. Status, spend, and notes go
 to stderr.
 
 Each attempt runs in a draft directory under the per-repo state dir
-(`machine-drafts/<id>/`) holding the `prompt.txt` (the operator's task),
+(`sessions/machines/<id>/`) holding the `prompt.txt` (the operator's task),
 the candidate `.asm.toml`, the agent transcript, and a `logs.jsonl`
 event stream. On a TTY the drafting agent's reasoning streams to stderr;
 the event log makes it watchable from the TUI too: the Machines page's

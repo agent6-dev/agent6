@@ -43,13 +43,6 @@ class SessionKind:
     """
 
     name: str
-    # Which top-level bucket of the state dir a session of this mode gets its own
-    # directory in, named after the mode. `machine` is the exception: its
-    # authoring drafts land in machine-drafts/ because machines/ already holds
-    # live machine instances. None for `agent`, whose state lives INSIDE its
-    # machine instance dir and never gets a bucket of its own -- it used to
-    # claim "runs", a directory nothing ever wrote it to.
-    bucket: str | None
     role: RoleName
     # May mutate the workspace in-process (apply_edit / apply_patch), and owns
     # a background command's lifetime.
@@ -68,7 +61,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
     for kind in (
         SessionKind(
             name="run",
-            bucket="runs",
             role="worker",
             edits=True,
             runs_commands=True,
@@ -77,7 +69,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
         ),
         SessionKind(
             name="plan",
-            bucket="plans",
             role="planner",
             edits=False,
             runs_commands=True,
@@ -88,7 +79,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
         # with approval-gated commands and answers, it does not change things.
         SessionKind(
             name="ask",
-            bucket="asks",
             role="worker",
             edits=False,
             runs_commands=True,
@@ -100,7 +90,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
         # weak model into spelunking.
         SessionKind(
             name="machine",
-            bucket="machine-drafts",
             role="worker",
             edits=False,
             runs_commands=False,
@@ -109,7 +98,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
         ),
         SessionKind(
             name="agent",
-            bucket=None,
             role="worker",
             edits=False,
             runs_commands=False,
@@ -139,15 +127,12 @@ def session_kind(name: str) -> SessionKind:
 def session_bucket(name: str) -> str:
     """The bucket a session of mode *name* gets its own directory in.
 
-    Refusing rather than defaulting: the machine-driven modes have no bucket,
-    and a lifecycle that reached here with one would write a session dir under
-    whatever bucket happened to be the default -- which is how `machine`
-    claiming "runs" went unnoticed.
+    Derived, never stored: a stored field let the record disagree with where
+    sessions actually went (`machine` claimed "runs" while `machine create`
+    wrote machine-drafts/). The buckets sit under one `sessions/` root, which
+    is what leaves the state dir's own `machines/` to live machine INSTANCES.
     """
-    bucket = session_kind(name).bucket
-    if bucket is None:
-        raise UnknownSessionKind(f"session mode {name!r} has no bucket of its own")
-    return bucket
+    return f"{session_kind(name).name}s"
 
 
 @dataclass(frozen=True, slots=True)

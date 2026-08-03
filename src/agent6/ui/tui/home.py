@@ -40,7 +40,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.models.validate import known_models, refusal_message, validate_spec_models
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -144,7 +144,7 @@ def _list_sessions(agent6_dir: Path) -> list[Path]:
     Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     out: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = agent6_dir / sub
+        d = bucket_dir(agent6_dir, sub)
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     out.sort(key=session_mtime, reverse=True)

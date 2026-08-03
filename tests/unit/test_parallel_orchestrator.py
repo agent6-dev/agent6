@@ -110,7 +110,7 @@ class _FakeSpawner:
         branch = f"agent6/{spec.session_id}"
         if spec.lane > 1:  # observe the previous lane's live symlink
             prefix = spec.session_id.rsplit("-l", 1)[0]
-            prior = self.origin_state / "runs" / f"{prefix}-l{spec.lane - 1}"
+            prior = self.origin_state / "sessions" / "runs" / f"{prefix}-l{spec.lane - 1}"
             self.prior_link_was_symlink[spec.lane] = prior.is_symlink()
         if spec.lane in self.fail:
             return LaneResult(
@@ -120,7 +120,7 @@ class _FakeSpawner:
         create_branch(spec.workdir, branch)
         (spec.workdir / f"lane{spec.lane}.txt").write_text(f"lane {spec.lane}\n", encoding="utf-8")
         commit_all(spec.workdir, f"lane {spec.lane} work")
-        session_dir = self.state_root / f"lane{spec.lane}" / "runs" / spec.session_id
+        session_dir = self.state_root / f"lane{spec.lane}" / "sessions" / "runs" / spec.session_id
         _write_fake_run(
             session_dir,
             task,
@@ -620,7 +620,7 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     assert branch_exists(origin, "agent6/fan-l1")
     assert branch_exists(origin, "agent6/fan-l2")
     # The live symlink was replaced by the real imported dir.
-    imported = origin_state / "runs" / "fan-l1"
+    imported = origin_state / "sessions" / "runs" / "fan-l1"
     assert imported.is_dir() and not imported.is_symlink()
     # Lineage was stamped post-import.
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
@@ -628,7 +628,9 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     assert manifest["lane"] == 1
     assert (
         json.loads(
-            (origin_state / "runs" / "fan-l2" / "manifest.json").read_text(encoding="utf-8")
+            (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text(
+                encoding="utf-8"
+            )
         )["lane"]
         == 2
     )
@@ -683,8 +685,12 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
         runtime=runtime, spawner=spawner, fanout_id="fan",
     )  # fmt: skip
 
-    m1 = json.loads((origin_state / "runs" / "fan-l1" / "manifest.json").read_text("utf-8"))
-    m2 = json.loads((origin_state / "runs" / "fan-l2" / "manifest.json").read_text("utf-8"))
+    m1 = json.loads(
+        (origin_state / "sessions" / "runs" / "fan-l1" / "manifest.json").read_text("utf-8")
+    )
+    m2 = json.loads(
+        (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
+    )
     assert m2["compare"] == {
         "rank": 1, "of": 2, "winner": True,
         "ranked_by": "mechanical", "rationale": "", "judge_cost_usd": 0.0,
@@ -723,8 +729,12 @@ def test_compare_stamp_records_judge_rationale_truncated(
         runtime=runtime, spawner=spawner, fanout_id="fan",
     )  # fmt: skip
 
-    m1 = json.loads((origin_state / "runs" / "fan-l1" / "manifest.json").read_text("utf-8"))
-    m2 = json.loads((origin_state / "runs" / "fan-l2" / "manifest.json").read_text("utf-8"))
+    m1 = json.loads(
+        (origin_state / "sessions" / "runs" / "fan-l1" / "manifest.json").read_text("utf-8")
+    )
+    m2 = json.loads(
+        (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
+    )
     assert m1["compare"]["ranked_by"] == "judge" and m1["compare"]["winner"] is True
     assert m1["compare"]["rank"] == 1 and m2["compare"]["rank"] == 2
     assert len(m1["compare"]["rationale"]) == 2000  # truncated ~2000
@@ -758,7 +768,7 @@ def test_run_parallel_symlink_appears_before_import(
     assert spawner.prior_link_was_symlink[2] is True
     # ...and after completion every lane is a real dir, no symlink left behind.
     for i in (1, 2):
-        link = origin_state / "runs" / f"fan-l{i}"
+        link = origin_state / "sessions" / "runs" / f"fan-l{i}"
         assert link.is_dir() and not link.is_symlink()
 
 
@@ -787,8 +797,8 @@ def test_failed_lane_does_not_stop_others(
     assert branch_exists(origin, "agent6/fan-l1")
     assert branch_exists(origin, "agent6/fan-l3")
     assert not branch_exists(origin, "agent6/fan-l2")
-    assert (origin_state / "runs" / "fan-l1").is_dir()
-    assert not (origin_state / "runs" / "fan-l2").exists()
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
+    assert not (origin_state / "sessions" / "runs" / "fan-l2").exists()
 
 
 def test_report_ranks_passing_lane_first(
@@ -885,8 +895,8 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     assert rc == 0  # both lanes still imported despite the stamp failure
     assert branch_exists(origin, "agent6/fan-l1")
     assert branch_exists(origin, "agent6/fan-l2")
-    assert (origin_state / "runs" / "fan-l1").is_dir()
-    assert (origin_state / "runs" / "fan-l2").is_dir()
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
+    assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
     err = capsys.readouterr().err
     assert "lineage" in err and "disk full" in err
 
@@ -929,7 +939,7 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
     assert rc == 130
     # Lane 1 (started before the interrupt) was stopped + imported...
     assert branch_exists(origin, "agent6/fan-l1")
-    assert (origin_state / "runs" / "fan-l1").is_dir()
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     # ...lanes 2 and 3 never produced a candidate.
     assert not branch_exists(origin, "agent6/fan-l2")
     assert not branch_exists(origin, "agent6/fan-l3")
@@ -989,7 +999,7 @@ def test_await_waits_for_worker_pid_to_clear(
     assert rc == 0
     assert polls["n"] >= 2  # the gate really held through the live-pid poll
     assert branch_exists(origin, "agent6/fan-l1")
-    imported = origin_state / "runs" / "fan-l1"
+    imported = origin_state / "sessions" / "runs" / "fan-l1"
     assert imported.is_dir() and not imported.is_symlink()
     assert "failed lanes" not in capsys.readouterr().out
 
@@ -1025,11 +1035,11 @@ def test_cleanup_preserves_unimported_lane(
     # Lane 1 kept: clone (with its branch), fabricated run state, live symlink.
     assert lanes[0].workdir.is_dir()
     assert branch_exists(lanes[0].workdir, "agent6/fan-l1")
-    assert (tmp_path / "lane-state" / "lane1" / "runs" / "fan-l1").is_dir()
-    assert (origin_state / "runs" / "fan-l1").is_symlink()
+    assert (tmp_path / "lane-state" / "lane1" / "sessions" / "runs" / "fan-l1").is_dir()
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_symlink()
     # Lane 2 imported and cleaned: real dir in origin state, clone gone.
-    assert (origin_state / "runs" / "fan-l2").is_dir()
-    assert not (origin_state / "runs" / "fan-l2").is_symlink()
+    assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
+    assert not (origin_state / "sessions" / "runs" / "fan-l2").is_symlink()
     assert not lanes[1].workdir.exists()
     # The report names the kept clone so the operator can act on it.
     out = capsys.readouterr().out
@@ -1071,7 +1081,7 @@ def test_await_uses_real_run_dir_not_symlink(
 
     assert rc == 0
     assert branch_exists(origin, "agent6/fan-l1")
-    assert (origin_state / "runs" / "fan-l1").is_dir()
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     # The lane's real terminal status was observed (not the missing-link "?").
     assert "lane 1 [fan-l1]: passed" in capsys.readouterr().err
 
@@ -1099,7 +1109,7 @@ def test_run_lane_to_completion_imports_and_stamps(
 
     # The await polls summarize_session_dir; observe the origin link state then -- it
     # must be a live symlink while the lane is still running.
-    link = origin_state / "runs" / "co-p1-l1"
+    link = origin_state / "sessions" / "runs" / "co-p1-l1"
     real_summarize = parallel.summarize_session_dir
     seen: dict[str, bool] = {}
 
@@ -1124,7 +1134,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     assert res.ok
     assert seen["symlink_during_life"] is True  # a hub could see + answer the lane
     assert branch_exists(origin, "agent6/co-p1-l1")
-    imported = origin_state / "runs" / "co-p1-l1"
+    imported = origin_state / "sessions" / "runs" / "co-p1-l1"
     assert imported.is_dir() and not imported.is_symlink()  # replaced by the real dir
     assert res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
@@ -1430,11 +1440,15 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     out = "".join(capsys.readouterr())
     # The crashed lane never wins, and the surface says it crashed.
     crashed = json.loads(
-        (origin_state / "runs" / "crsh-l1" / "manifest.json").read_text(encoding="utf-8")
+        (origin_state / "sessions" / "runs" / "crsh-l1" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert (crashed.get("compare") or {}).get("winner") is not True
     survivor = json.loads(
-        (origin_state / "runs" / "crsh-l2" / "manifest.json").read_text(encoding="utf-8")
+        (origin_state / "sessions" / "runs" / "crsh-l2" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert survivor["compare"]["winner"] is True
     assert "crsh-l1" in out and "crashed" in out

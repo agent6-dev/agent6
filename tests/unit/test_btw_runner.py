@@ -41,8 +41,8 @@ def _answered_ask(root: Path, name: str, answer: str) -> Path:
 def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -> None:
     """The point of asking beside a run: `/btw` returns immediately, and the
     answer lands at the next turn boundary."""
-    asks = tmp_path / "asks"
-    asks.mkdir()
+    asks = tmp_path / "sessions" / "asks"
+    asks.mkdir(parents=True)
     out = io.StringIO()
     view = ConsoleView(out, color=False)
     events = EventSink(tmp_path / "logs.jsonl")
@@ -80,8 +80,8 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: Path) -> No
     surface reads, and it outlives the process."""
     import json as _json
 
-    asks = tmp_path / "asks"
-    asks.mkdir()
+    asks = tmp_path / "sessions" / "asks"
+    asks.mkdir(parents=True)
     events = EventSink(tmp_path / "logs.jsonl")
 
     def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:

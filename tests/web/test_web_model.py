@@ -246,7 +246,7 @@ def test_hub_payload_shape(tmp_path: Path) -> None:
 
 
 def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
-    draft = model.state_dir_for(tmp_path) / "machine-drafts" / "breezy-fern-AB12CD"
+    draft = model.state_dir_for(tmp_path) / "sessions" / "machines" / "breezy-fern-AB12CD"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "author a triage machine"})

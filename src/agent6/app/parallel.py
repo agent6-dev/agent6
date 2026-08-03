@@ -52,7 +52,7 @@ from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel import died_without_end, summarize_session_dir
 from agent6.viewmodel.format import format_cost
@@ -212,7 +212,7 @@ def bridge_spawner(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
     config_path = _write_lane_config(cfg, spec)
-    lane_runs = state_dir(spec.workdir, cfg.agent6.state_dir) / "runs"
+    lane_runs = bucket_dir(state_dir(spec.workdir, cfg.agent6.state_dir), "runs")
 
     def list_dirs() -> list[Path]:
         if not lane_runs.is_dir():
@@ -482,9 +482,9 @@ def build_lane_spawner(
             )
             for i, lane in enumerate(lanes, start=1)
         ]
-        (origin_state / "runs").mkdir(parents=True, exist_ok=True)
+        bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
         import_lock = threading.Lock()
-        coord_dir = origin_state / "runs" / coordinator_session_id
+        coord_dir = bucket_dir(origin_state, "runs") / coordinator_session_id
         hard_stop = threading.Event()
 
         def should_stop() -> bool:
@@ -585,7 +585,7 @@ def build_coordinator_spawner(
 
 
 def _lane_link(origin_state: Path, session_id: str) -> Path:
-    return origin_state / "runs" / session_id
+    return bucket_dir(origin_state, "runs") / session_id
 
 
 def _symlink_lane(origin_state: Path, res: LaneResult) -> None:
@@ -938,7 +938,7 @@ def run_parallel(
         reporter.err(f"ERROR: {exc}")
         return 2
 
-    (origin_state / "runs").mkdir(parents=True, exist_ok=True)
+    bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
     reporter.err(f"[agent6] parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
         reporter.err(
