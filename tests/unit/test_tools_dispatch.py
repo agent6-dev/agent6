@@ -12,6 +12,7 @@ import pytest
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.schema import UserQuestion
+from agent6.types import IsolationLevel
 
 _VALID_TOML = """
 [agent6]
@@ -1573,7 +1574,7 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_git_is_protected_at_every_isolation_level(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: IsolationLevel
 ) -> None:
     """`.git` reaches the jail as a protect path on hardened too.
 

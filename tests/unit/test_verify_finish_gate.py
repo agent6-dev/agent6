@@ -7,7 +7,7 @@ opt-in hard gate. Both ground on _tree_is_verify_green."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock
 
 from agent6.config import Config
@@ -17,7 +17,12 @@ from agent6.workflows.loop import (
 )
 
 
-def _wf(*, verify: bool, mode: str = "run", root: Path = Path("/tmp")) -> Workflow:
+def _wf(
+    *,
+    verify: bool,
+    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    root: Path = Path("/tmp"),
+) -> Workflow:
     data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}
     return Workflow(
         root=root,

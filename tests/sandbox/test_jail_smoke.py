@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sandbox.jail import JailUnavailableError, _own_children, run_in_jail
-from agent6.types import JailPolicy
+from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.types import IsolationLevel, JailPolicy
 
 
 def _userns_available() -> bool:
@@ -719,7 +719,7 @@ def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_no_command_leaves_a_process_running(
-    jail_bin: Path, tmp_path: Path, isolation: str
+    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
 ) -> None:
     """A command must not outlive its own call ("no persistence after the run").
 
@@ -757,12 +757,12 @@ def test_no_command_leaves_a_process_running(
     assert later == at_return, f"{isolation}: a process survived the command ({later!r})"
 
 
-def test_a_hostile_process_name_cannot_break_the_sweep(tmp_path: Path) -> None:
+def test_a_hostile_process_name_cannot_break_the_sweep(jail_bin: Path, tmp_path: Path) -> None:
     """`/proc/<pid>/stat` carries comm verbatim, so a process can name itself
-    something that is not valid UTF-8. Decoding the scan made ONE such process
-    anywhere on the host -- the scan reads every pid, not just ours -- raise out
-    of every later jailed command, evading the sweep and killing run_command
-    with it."""
+    something that is not valid UTF-8. Decoding the sweep's scan made ONE such
+    process anywhere on the host -- the scan reads every pid, not just ours --
+    raise out of every later jailed command, evading the sweep and killing
+    run_command with it."""
     code = "import ctypes,time; ctypes.CDLL(None).prctl(15, b'x\\xffy'); time.sleep(30)"
     proc = subprocess.Popen([sys.executable, "-c", code])
     try:
@@ -771,7 +771,10 @@ def test_a_hostile_process_name_cannot_break_the_sweep(tmp_path: Path) -> None:
             if time.monotonic() > deadline:
                 pytest.skip("child never renamed itself")
             time.sleep(0.05)
-        assert proc.pid in _own_children()
+        res = run_in_jail(
+            JailPolicy(cwd=tmp_path, argv=("/bin/true",), isolation="hardened", timeout_s=10.0)
+        )
+        assert res.returncode == 0
     finally:
         proc.kill()
         proc.wait()

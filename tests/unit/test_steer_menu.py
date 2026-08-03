@@ -400,7 +400,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
 
     printed: list[str] = []
     monkeypatch.setattr(_steer, "tty_message", printed.append)
-    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)
+    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
 
     facts = RunFacts(
         spend_usd=1.42,
