@@ -370,8 +370,9 @@ class SandboxConfig(BaseModel):
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any
     #    `allow_urls`. On `strict` this is structural, a trusted broker (see
     #    agent6.sandbox.broker) confines the agent to an empty netns whose only
-    #    routes are per-endpoint unix sockets; on `hardened` it is Landlock
-    #    TCP-port confinement to the provider ports.
+    #    routes are per-endpoint unix sockets. `hardened` has no network
+    #    namespace and CANNOT provide it: egress is unconfined there (Landlock
+    #    filters by port, not host, which bounds nothing an exfiltrator needs).
     #  - `local`: only loopback providers (local models, e.g. Ollama). `strict`-
     #    only; refused if a configured provider is non-local or `allow_urls` is
     #    set (there is nothing external to allow-list when offline).

@@ -129,9 +129,10 @@ def warn_sandbox_gaps(
         reporter.err(
             "[agent6] WARNING: 'hardened' has no network namespace, so "
             "sandbox.tool_network = 'auto' cannot make a jailed run_command "
-            "offline: it shares this process's (provider-scoped) host network. "
-            "Run on 'strict' for a truly network-free tool sandbox, or set "
-            "sandbox.tool_network = 'block' to refuse rather than run here."
+            "offline: it shares this process's host network, which hardened "
+            "does not confine. Run on 'strict' for a network-free tool sandbox "
+            "and provider-only agent egress, or set sandbox.tool_network = "
+            "'block' to refuse rather than run here."
         )
 
 
@@ -257,10 +258,10 @@ def maybe_start_egress(
     Returns ``(guard, error)``. ``error`` non-None ⇒ the caller must refuse the
     run. Only acts on the ``strict`` isolation under
     ``agent_network ∈ {providers, local}``, on ``open`` nothing is confined,
-    and on ``hardened`` the agent-process Landlock (see
-    :func:`maybe_apply_agent_landlock`) provides port-level confinement
-    instead. ``local`` restricts to loopback provider endpoints and refuses any
-    non-local provider.
+    and on ``hardened`` egress is NOT confined (Landlock can only filter by
+    port, which bounds nothing worth bounding -- see
+    :func:`maybe_apply_agent_landlock`). ``local`` restricts to loopback
+    provider endpoints and refuses any non-local provider.
 
     ``detach_exe`` (run/resume, the agent6 exe path) also pre-forks the host
     spawner on that exe so a later detach can launch the background resume
@@ -497,34 +498,23 @@ def maybe_apply_agent_landlock(
         *extra_read,
     )
     write_paths = (cwd, state, tmp, *dev_files, *proc_paths)
-    # Hardened can't run the broker, so we fall back to Landlock TCP-connect
-    # rules: under `providers` confine to the provider ports (host-level, weaker
-    # than the broker but the best hardened offers); under `open` impose no TCP
-    # restriction. (`local` is refused on hardened by `check_network_profile`.)
-    ports: tuple[int, ...] = (
-        ()
-        if cfg.sandbox.agent_network == "open"
-        else tuple(sorted({ep.port for ep in _provider_endpoints(cfg)}))
-    )
+    # Filesystem only. Hardened cannot run the broker, and Landlock filters
+    # connects by PORT, so the one rule available here was "any host on the
+    # provider ports" -- no barrier to exfiltration (one HTTPS endpoint is
+    # enough, and every host offers one) but a real obstacle to a legitimate
+    # tool on another port. Egress is bounded on `strict`, structurally; it is
+    # not bounded on hardened, and no longer claims to be.
     try:
-        report = apply_agent_landlock(
-            read_paths=read_paths,
-            write_paths=write_paths,
-            tcp_connect_ports=ports,
-        )
+        report = apply_agent_landlock(read_paths=read_paths, write_paths=write_paths)
     except (LandlockNotSupportedError, OSError) as exc:
         # Fail closed: hardened's only filesystem boundary is Landlock, so a
         # kernel that cannot apply it refuses the run. (LandlockNotSupported
         # is a can't-happen safety net here -- isolation resolution already
         # probed the ABI before selecting hardened.)
         return f"could not apply agent Landlock confinement: {exc}"
-    tcp_note = (
-        f", tcp connect ports {report.tcp_connect_ports}"
-        if report.tcp_supported
-        else " (kernel too old for Landlock TCP rules)"
-    )
+    bind_note = "" if report.tcp_bind_denied else " (kernel too old to deny TCP bind)"
     reporter.err(
         f"[agent6] agent-process Landlock: ABI {report.abi}, "
-        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots{tcp_note}"
+        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots{bind_note}"
     )
     return None

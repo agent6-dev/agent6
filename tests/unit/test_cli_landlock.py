@@ -33,8 +33,7 @@ def _report() -> LandlockReport:
         abi=4,
         fs_read=(Path("/"),),
         fs_write=(Path("/"),),
-        tcp_connect_ports=(443,),
-        tcp_supported=True,
+        tcp_bind_denied=True,
     )
 
 
@@ -49,9 +48,10 @@ def test_agent_landlock_applied_on_hardened(monkeypatch: pytest.MonkeyPatch) -> 
     err = cli.maybe_apply_agent_landlock(_cfg(), "hardened")
     assert err is None
     assert len(calls) == 1
-    # Ports are derived from the configured providers (default 443 here),
-    # not blanket-allowed.
-    assert calls[0]["tcp_connect_ports"] == (443,)
+    # Filesystem only: hardened cannot bound egress, and the port allow-list it
+    # used to pass bounded nothing an exfiltrator needs (any host on 443) while
+    # breaking legitimate tools on other ports.
+    assert "tcp_connect_ports" not in calls[0]
 
 
 def test_agent_landlock_read_roots_include_python_install(
@@ -102,21 +102,6 @@ def test_agent_landlock_read_roots_include_jail_child_exec_dirs(
     for d in ("/bin", "/sbin", "/lib", "/lib64", "/dev"):
         if Path(d).exists():
             assert Path(d) in reads, f"agent read roots must include {d} (jail child exec)"
-
-
-def test_agent_landlock_open_network_imposes_no_tcp_rule(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, Any]] = []
-
-    def _rec(**kwargs: Any) -> LandlockReport:
-        calls.append(kwargs)
-        return _report()
-
-    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    err = cli.maybe_apply_agent_landlock(_cfg(agent_network="open"), "hardened")
-    assert err is None
-    # FS Landlock still applies on hardened, but agent_network="open" imposes
-    # no TCP-connect restriction.
-    assert calls[0]["tcp_connect_ports"] == ()
 
 
 def test_agent_landlock_skipped_on_strict(monkeypatch: pytest.MonkeyPatch) -> None:

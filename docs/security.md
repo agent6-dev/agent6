@@ -36,8 +36,10 @@ Under that adversary, agent6 aims to hold:
       so installed toolchains resolve.
     - `hardened` also exposes `$HOME` + `/run` (Landlock can't carve them out);
       `sandbox.extra_read_paths` adds more.
-3. **No agent egress except the configured providers** (+ `sandbox.allow_urls`),
-   under `sandbox.agent_network = "providers"` (default; §1b).
+3. **No agent egress except the configured providers** (+ `sandbox.allow_urls`)
+   under `sandbox.agent_network = "providers"` (default) ON `strict`, where the
+   broker + empty netns make it structural (§1b). `hardened` cannot provide it
+   and does not claim it.
     - Jailed commands are governed separately by `sandbox.tool_network`
       (default `block`; §8).
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
@@ -59,7 +61,7 @@ process irrevocably, inherited by every child:
 |---|---|
 | FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, `/bin` `/sbin` `/lib` `/lib64` `/dev`, `/run` + `/proc` when present |
 | FS write | cwd, `/tmp`, the `/dev` char devices, `/proc` when present |
-| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers (each `base_url` port, default `443`) |
+| TCP bind/listen (kernel ≥ 6.7) | nothing: the agent process gets no inbound socket |
 
 - **`strict` skips this layer.**
     - Its per-command namespaces + broker (§1b) are stronger, and this would
@@ -67,11 +69,17 @@ process irrevocably, inherited by every child:
 - **The read+exec set mirrors the jail child's roots.**
     - The launcher opens each from here to grant the child, so a missing one
       (e.g. `/dev` on merged-`/usr`) makes the child's execve fail EACCES.
-- **The network rule filters by port, not host.**
-    - It blocks other ports but can't pin egress to a host; use
-      `agent_network = "providers"` (§1b) for that.
-- **Kernels < 6.7 get FS-only Landlock, with a warning.**
-    - Don't run there if the host UID can read exfiltratable credentials.
+- **`hardened` does not bound egress. It says so rather than pretending.**
+    - Landlock filters connects by PORT, not host, so the only rule available
+      here was "any host on the provider ports". That stops nothing worth
+      stopping -- an exfiltrating agent needs one HTTPS endpoint, and every host
+      offers one -- while breaking a legitimate tool on another port. It was
+      removed: a security claim nobody can rely on is worse than no claim.
+    - Egress confinement is `strict`'s broker + empty netns (§1b), which is
+      structural. Choose `strict` if the host UID can read exfiltratable
+      credentials.
+    - Bind/listen stays denied: it costs agent6 nothing and removes an inbound
+      surface.
 
 ### 1b. Provider-only egress broker (`agent_network = "providers"`, default)
 

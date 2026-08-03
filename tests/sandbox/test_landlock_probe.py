@@ -31,14 +31,15 @@ def test_landlock_abi_reports_the_kernel_version() -> None:
         assert abi >= 1, "kernel reports Landlock but the probe returned 0"
 
 
-def test_empty_connect_ports_does_not_handle_connect_tcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Regression: with an EMPTY tcp_connect_ports allow-list (agent_network='open'
-    on a hardened host), CONNECT_TCP must NOT be in the handled set. Handling it
-    with zero allow rules would deny EVERY outbound connect() by Landlock's
-    deny-unless-allowed semantics, so the agent could not reach its provider --
-    the opposite of the documented "open imposes no TCP restriction". BIND_TCP
-    stays handled (no agent-owned listen surface); a NON-empty port list re-arms
-    CONNECT_TCP so it confines to those ports.
+def test_bind_is_denied_and_connect_is_not_restricted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The agent ruleset denies TCP bind/listen and does NOT touch connect.
+
+    Landlock filters connects by PORT, not host, so the only rule available on
+    a hardened host was "any host on the provider ports" -- which stops no
+    exfiltration (one HTTPS endpoint suffices, and every host offers one) while
+    breaking legitimate tools on other ports. Egress is bounded on `strict`,
+    where the broker + empty netns make it structural. Bind denial stays: it
+    costs agent6 nothing and removes an inbound surface.
 
     Stubs the syscall layer so it runs on any kernel (ABI forced to 8)."""
     captured: dict[str, int] = {}
@@ -47,24 +48,18 @@ def test_empty_connect_ports_does_not_handle_connect_tcp(monkeypatch: pytest.Mon
         captured["net"] = handled_net
         return os.open(os.devnull, os.O_RDONLY)  # a real, closeable fd
 
-    def noop_tcp(ruleset_fd: int, port: int, allowed_net: int) -> None:
-        pass
-
     def noop_restrict(ruleset_fd: int) -> None:
         pass
 
     monkeypatch.setattr(ll, "landlock_abi", lambda: 8)
     monkeypatch.setattr(ll, "_set_no_new_privs", lambda: None)
     monkeypatch.setattr(ll, "_create_ruleset", fake_create)
-    monkeypatch.setattr(ll, "_add_tcp_rule", noop_tcp)
     monkeypatch.setattr(ll, "_restrict_self", noop_restrict)
 
-    ll.apply_agent_landlock(read_paths=(), write_paths=(), tcp_connect_ports=())
-    assert captured["net"] & _BIND_TCP  # bind/listen still denied
-    assert not (captured["net"] & _CONNECT_TCP)  # connects NOT restricted ("open")
-
-    ll.apply_agent_landlock(read_paths=(), write_paths=(), tcp_connect_ports=(443,))
-    assert captured["net"] & _CONNECT_TCP  # a real allow-list re-arms connect confinement
+    report = ll.apply_agent_landlock(read_paths=(), write_paths=())
+    assert captured["net"] & _BIND_TCP  # bind/listen denied
+    assert not (captured["net"] & _CONNECT_TCP)  # connects unrestricted
+    assert report.tcp_bind_denied is True
 
 
 _TRUNCATE = 1 << 14  # _LANDLOCK_ACCESS_FS_TRUNCATE (ABI v3)
@@ -100,7 +95,7 @@ def test_handled_fs_masks_truncate_below_abi3(
     monkeypatch.setattr(ll, "_add_path_rule", fake_add_path)
     monkeypatch.setattr(ll, "_restrict_self", noop_restrict)
 
-    ll.apply_agent_landlock(read_paths=(), write_paths=(tmp_path,), tcp_connect_ports=())
+    ll.apply_agent_landlock(read_paths=(), write_paths=(tmp_path,))
     assert bool(captured["fs"] & _TRUNCATE) is expect_truncate
     # The per-path rule bits intersect with handled_fs, so the mask propagates.
     assert all(bool(bits & _TRUNCATE) is expect_truncate for bits in rule_bits)

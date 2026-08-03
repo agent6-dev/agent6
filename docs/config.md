@@ -188,7 +188,7 @@ The security boundary. Profiles and the network model are specified in
 | Field | Default | Meaning |
 |---|---|---|
 | `isolation` | `"auto"` | `auto` picks the strongest isolation the host supports (`strict`, else `hardened`), falling to `none` with a loud warning only when the host offers no confinement mechanism at all; explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED (self-authorizing, loud warning); the per-invocation forms are `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. See SECURITY §3. |
-| `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open` (SECURITY §1b). |
+| `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open`. Enforced on `strict` (broker + empty netns); `hardened` has no network namespace and does not bound egress at all (SECURITY §1, §1b). |
 | `tool_network` | `"auto"` | Jailed-command egress. `auto`: no tool network, enforced on `strict` (per-child netns), degraded with a warning on `hardened`/`none`; `block`: enforced, refuses isolation levels that cannot provide it; `only_explicit_states`: strict-only, machine `tool` states may opt in; `allow`: open (requires `agent_network = "open"`). SECURITY §8. |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
 | `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` (auto-approve; also `--auto-approve`) / `no` (withheld) / `ask` (prompt each call). `yes` skips approval; confinement still depends on `sandbox.isolation`. |

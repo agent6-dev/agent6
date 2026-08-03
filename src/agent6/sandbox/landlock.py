@@ -53,7 +53,6 @@ _LANDLOCK_ACCESS_FS_IOCTL_DEV = 1 << 15  # ABI v5
 
 # net access bits (ABI v4+)
 _LANDLOCK_ACCESS_NET_BIND_TCP = 1 << 0
-_LANDLOCK_ACCESS_NET_CONNECT_TCP = 1 << 1
 
 _FS_READ_BITS = (
     _LANDLOCK_ACCESS_FS_READ_FILE | _LANDLOCK_ACCESS_FS_READ_DIR | _LANDLOCK_ACCESS_FS_EXECUTE
@@ -178,19 +177,6 @@ def _add_path_rule(ruleset_fd: int, fd: int, allowed_fs: int) -> None:
     )
 
 
-def _add_tcp_rule(ruleset_fd: int, port: int, allowed_net: int) -> None:
-    # struct landlock_net_port_attr { __u64 allowed_access; __u64 port; }
-    attr = struct.pack("=QQ", allowed_net, port)
-    buf = ctypes.create_string_buffer(attr, len(attr))
-    _syscall(
-        _SYS_landlock_add_rule,
-        ruleset_fd,
-        2,  # LANDLOCK_RULE_NET_PORT
-        ctypes.addressof(buf),
-        0,
-    )
-
-
 def _restrict_self(ruleset_fd: int) -> None:
     _syscall(_SYS_landlock_restrict_self, ruleset_fd, 0)
 
@@ -200,20 +186,19 @@ class LandlockReport:
     abi: int
     fs_read: tuple[Path, ...]
     fs_write: tuple[Path, ...]
-    tcp_connect_ports: tuple[int, ...]
-    tcp_supported: bool
+    # Landlock denied the agent process TCP bind/listen (needs ABI >= 4).
+    tcp_bind_denied: bool
 
 
 def apply_agent_landlock(
     *,
     read_paths: tuple[Path, ...],
     write_paths: tuple[Path, ...],
-    tcp_connect_ports: tuple[int, ...],
 ) -> LandlockReport:
     """Apply Landlock to the *current process*. Irrevocable.
 
     Silently degrades:
-    - If ABI < 4, TCP rules are not applied (no kernel support).
+    - If ABI < 4, the TCP bind denial is not applied (no kernel support).
     - If ABI == 0, raises LandlockNotSupportedError.
     """
     abi = landlock_abi()
@@ -226,23 +211,18 @@ def apply_agent_landlock(
         # its ABI, and pre-ABI-3 truncation is governed by WRITE_FILE anyway,
         # so masking it loses no enforcement. Mirrors the net gating below.
         handled_fs &= ~_LANDLOCK_ACCESS_FS_TRUNCATE
-    # NET_BIND_TCP is declared "handled" but NEVER granted below (only CONNECT
-    # rules are added). That is deliberate, not an omission: marking it handled
-    # makes Landlock DENY all TCP bind()/listen() for the agent process, which
-    # is exactly "no agent-owned network surface" (SECURITY.md §7). Removing it
-    # from the handled set would instead leave bind UNrestricted.
+    # NET_BIND_TCP is declared "handled" but NEVER granted below, which makes
+    # Landlock DENY all TCP bind()/listen() for the agent process: no
+    # agent-owned inbound surface, at no cost to anything agent6 does.
     #
-    # CONNECT_TCP, by contrast, is handled ONLY when there is a connect
-    # allow-list to enforce. An empty tcp_connect_ports means "no connect
-    # restriction" (the documented `agent_network = "open"` fallback on hardened
-    # hosts): handling CONNECT_TCP with zero allow rules would deny EVERY
-    # outbound connect() by the same deny-unless-allowed mechanism, so the agent
-    # could not reach its provider at all. Leave it unhandled there.
-    handled_net = 0
-    if abi >= 4:
-        handled_net = _LANDLOCK_ACCESS_NET_BIND_TCP
-        if tcp_connect_ports:
-            handled_net |= _LANDLOCK_ACCESS_NET_CONNECT_TCP
+    # CONNECT is deliberately NOT handled. Landlock filters connects by PORT,
+    # not by host, so the only enforceable rule here was "any host on the
+    # provider ports" -- which stops nothing that matters (an exfiltrating
+    # agent needs one HTTPS endpoint and every host offers one) while breaking
+    # legitimate tools on other ports. Egress is bounded on `strict`, where
+    # the broker + empty netns make it structural; `hardened` does not bound
+    # it and no longer pretends to.
+    handled_net = _LANDLOCK_ACCESS_NET_BIND_TCP if abi >= 4 else 0
 
     _set_no_new_privs()
     ruleset_fd = _create_ruleset(handled_fs, handled_net, abi)
@@ -267,9 +247,6 @@ def apply_agent_landlock(
                 _add_path_rule(ruleset_fd, fd, _mask_for(path, _FS_ALL_BITS & handled_fs))
             finally:
                 os.close(fd)
-        if abi >= 4:
-            for port in tcp_connect_ports:
-                _add_tcp_rule(ruleset_fd, port, _LANDLOCK_ACCESS_NET_CONNECT_TCP)
         _restrict_self(ruleset_fd)
     finally:
         os.close(ruleset_fd)
@@ -278,6 +255,5 @@ def apply_agent_landlock(
         abi=abi,
         fs_read=tuple(read_paths),
         fs_write=tuple(write_paths),
-        tcp_connect_ports=tuple(tcp_connect_ports) if abi >= 4 else (),
-        tcp_supported=abi >= 4,
+        tcp_bind_denied=abi >= 4,
     )
