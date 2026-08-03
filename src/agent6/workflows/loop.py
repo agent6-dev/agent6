@@ -43,6 +43,7 @@ from agent6.graph.models import (
 )
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
+from agent6.notes import NotesError
 from agent6.notes import read_notes as notes_read
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
@@ -3045,12 +3046,19 @@ class Workflow:
         """The agent's scratchpad for the system prompt.
 
         "" when no state_dir is wired, and for machine/agent modes (whose
-        prompt assembly drops repo context). The store already degrades an
-        unreadable file to "": notes are context, not correctness.
+        prompt assembly drops repo context). An unreadable scratchpad degrades
+        to no block and says so: notes are context, not correctness, but a
+        silently missing block reads as "there are no notes" -- and the answer
+        to that is a write that would destroy them.
         """
         if self.state_dir is None or self.mode in ("machine", "agent"):
             return ""
-        return notes_read(self.state_dir)
+        try:
+            return notes_read(self.state_dir)
+        except NotesError as exc:
+            self._log(f"LOOP: WARNING: notes unavailable: {exc}")
+            self._emit("loop.notes.unavailable", error=str(exc))
+            return ""
 
     def _load_memories(self) -> tuple[MemoryEntry, ...]:
         """Active cross-run memories for the system prompt.

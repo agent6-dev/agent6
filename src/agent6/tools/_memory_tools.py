@@ -86,7 +86,10 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
 def read_notes(state_dir: Path | None, _raw: dict[str, Any]) -> NotesResult:
     if state_dir is None:
         raise ToolError("read_notes: no state dir wired for this session")
-    content = notes.read_notes(state_dir)
+    try:
+        content = notes.read_notes(state_dir)
+    except notes.NotesError as exc:
+        raise ToolError(f"read_notes: {exc}") from exc
     return NotesResult(content=content, chars=len(content))
 
 

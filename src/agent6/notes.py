@@ -63,13 +63,19 @@ def read_notes(state_dir: Path) -> str:
     """The current notes, or "" when there are none.
 
     A missing file is the ordinary first-session case. An unreadable one (hand
-    mangled, wrong encoding) is the operator's business and must not take the
-    session down, so it reads as empty -- the agent writes fresh notes over it.
+    mangled, wrong encoding, permissions) raises: "" means "no notes yet", and
+    the documented answer to that is to write fresh ones -- over a file whose
+    contents were only unreadable, which is not recoverable from anywhere. The
+    prompt builders degrade an unreadable store to no block, with a warning,
+    like the memory store beside it.
     """
-    try:
-        return notes_path(state_dir).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    path = notes_path(state_dir)
+    if not path.is_file():
         return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise NotesError(f"cannot read {path}: {exc}") from exc
 
 
 def write_notes(state_dir: Path, content: str) -> int:
@@ -85,5 +91,9 @@ def write_notes(state_dir: Path, content: str) -> int:
             " prune them (drop what is resolved, merge what repeats) and write again"
         )
     with _lock_notes(state_dir):
+        # A whole-file replace over notes nobody could read destroys them, and
+        # they live outside git. Read under the lock, so the check and the write
+        # cannot straddle another writer.
+        read_notes(state_dir)
         atomic_write(notes_path(state_dir), content)
     return len(content)

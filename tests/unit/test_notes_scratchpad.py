@@ -75,10 +75,22 @@ def test_a_hand_written_notes_file_cannot_swamp_the_prompt(tmp_path: Path) -> No
     assert "read_notes" in block, "the model must be told the rest exists"
 
 
-def test_unreadable_notes_do_not_take_the_run_down(tmp_path: Path) -> None:
-    """A hand-mangled file is the operator's business; the session continues."""
+def test_unreadable_notes_do_not_take_the_run_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hand-mangled file is the operator's business; the session continues.
+
+    The store itself refuses (an unreadable file is not an empty one, and the
+    answer to "empty" is a write that would destroy it). The prompt assembly is
+    where that degrades to no block, like the memory store beside it."""
+    from agent6.config import Config
+    from agent6.workflows import system_prompt_for
+
+    monkeypatch.chdir(tmp_path)
     notes_path(tmp_path).write_bytes(b"\xff\xfe not utf-8")
-    assert read_notes(tmp_path) == ""
+
+    shown = system_prompt_for(Config(), tmp_path, "run", state_dir=tmp_path)
+    assert "<notes>" not in shown
 
 
 def test_the_notes_reach_a_later_session_s_prompt(tmp_path: Path) -> None:
@@ -127,3 +139,42 @@ def test_prompt_show_reports_the_notes_a_session_would_receive(
 
     shown = system_prompt_for(Config(), tmp_path, "run", state_dir=tmp_path)
     assert "mishandles CRLF" in shown, "prompt show under-reports the session's prompt"
+
+
+@pytest.mark.parametrize(
+    ("label", "content"),
+    [("not utf-8", b"# notes\n\xff\xfe\n"), ("unreadable", b"# notes\n")],
+)
+def test_notes_that_cannot_be_read_are_not_reported_as_absent(
+    tmp_path: Path, label: str, content: bytes
+) -> None:
+    """An unreadable notes file raises rather than reading as "".
+
+    "" means "no notes yet", and the documented response to that is to write
+    fresh ones -- over a file whose contents were merely unreadable. The memory
+    store, the same read-modify-write shape, refuses the mutation instead."""
+    p = notes_path(tmp_path)
+    p.write_bytes(content)
+    if label == "unreadable":
+        p.chmod(0o000)
+    try:
+        with pytest.raises(NotesError, match="cannot read"):
+            read_notes(tmp_path)
+    finally:
+        p.chmod(0o600)
+
+
+def test_writing_over_notes_that_cannot_be_read_is_refused(tmp_path: Path) -> None:
+    """The write is what destroys them, so the write is what refuses."""
+    p = notes_path(tmp_path)
+    p.write_bytes(b"# six months of curation\n\xff\xfe\n")
+    before = p.read_bytes()
+    with pytest.raises(NotesError, match="cannot read"):
+        write_notes(tmp_path, "# fresh\n")
+    assert p.read_bytes() == before
+
+
+def test_absent_notes_still_read_as_empty(tmp_path: Path) -> None:
+    """The ordinary first-session case is not an error."""
+    assert read_notes(tmp_path) == ""
+    assert write_notes(tmp_path, "# first\n") == len("# first\n")

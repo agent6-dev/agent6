@@ -10,7 +10,7 @@ from typing import Literal
 from agent6.config import Config
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
-from agent6.notes import read_notes
+from agent6.notes import NotesError, read_notes
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.workflows._context import load_repo_summary
@@ -61,9 +61,20 @@ def system_prompt_for(
         repo=repo,
         mode=mode,
         memories=_active_memories(recall),
-        notes=read_notes(recall) if recall else "",
+        notes=_notes(recall),
         skills=_installed_skills(root, config, mode),
     )
+
+
+def _notes(state_dir: Path | None) -> str:
+    """The loop's ``_load_notes`` rule: an unreadable scratchpad degrades to no
+    block (notes are context, not correctness)."""
+    if state_dir is None:
+        return ""
+    try:
+        return read_notes(state_dir)
+    except NotesError:
+        return ""
 
 
 def _active_memories(state_dir: Path | None) -> tuple[MemoryEntry, ...]:
