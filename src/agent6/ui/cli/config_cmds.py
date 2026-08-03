@@ -636,11 +636,18 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
             with locked_file(entry.path):
                 if _entry_is_stale(entry):
                     continue
-                ok = (
-                    remove_toml_table(entry.path, entry.file_key)
-                    if entry.is_table
-                    else remove_toml_leaf(entry.path, entry.file_key)
-                )
+                try:
+                    ok = (
+                        remove_toml_table(entry.path, entry.file_key)
+                        if entry.is_table
+                        else remove_toml_leaf(entry.path, entry.file_key)
+                    )
+                except ValueError:
+                    # A leaf inside an inline table / dotted key: the surgery
+                    # cannot carve it out, so it is stuck (fix has always
+                    # reported this shape as stuck; the owner now refuses
+                    # loudly instead of returning "not found").
+                    ok = False
             if not ok:
                 stuck.append(entry)
                 continue

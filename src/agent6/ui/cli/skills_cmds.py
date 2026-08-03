@@ -442,16 +442,23 @@ def _cmd_skills_enable(name: str, *, always: bool, repo: bool) -> int:
         return 2
     target = _state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if always:
-        upsert_toml_leaf(target, f"skills.state.{name}", "always")
-        print(f'Set skills.state.{name} = "always" in {target}')
-    # Absent means enabled; removing the key reverts to the default and
-    # keeps the config free of no-op entries.
-    elif remove_toml_leaf(target, f"skills.state.{name}") if target.is_file() else False:
-        print(f"Unset skills.state.{name} in {target} (enabled is the default)")
-    else:
-        print(f"{name} is already enabled (no state entry in {target})")
-    chown_to_real_user(target)
+    try:
+        if always:
+            upsert_toml_leaf(target, f"skills.state.{name}", "always")
+            print(f'Set skills.state.{name} = "always" in {target}')
+        # Absent means enabled; removing the key reverts to the default and
+        # keeps the config free of no-op entries.
+        elif remove_toml_leaf(target, f"skills.state.{name}") if target.is_file() else False:
+            print(f"Unset skills.state.{name} in {target} (enabled is the default)")
+        else:
+            print(f"{name} is already enabled (no state entry in {target})")
+    except ValueError as exc:
+        # A hand-written inline [skills] state table: the surgery refuses
+        # rather than deleting siblings or claiming an unset that didn't land.
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        chown_to_real_user(target)
     return 0
 
 

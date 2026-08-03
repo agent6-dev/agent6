@@ -445,3 +445,20 @@ def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
     sandbox = _global_toml(iso)["sandbox"]
     assert isinstance(sandbox, dict)
     assert sandbox["memory_limit_mb"] == 1234  # the set survived
+
+
+def test_unset_refuses_a_leaf_inside_an_undeclared_table(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sandbox.protect_git = false` written as a dotted top-level key: unset
+    said "nothing to unset" rc=0 while `config get` showed the leaf set -- the
+    one write surface that lied about this shape (set refuses it, fix reports
+    it stuck)."""
+    (iso / "g").mkdir(parents=True, exist_ok=True)
+    cfg = iso / "g" / "config.toml"
+    cfg.write_text("sandbox.protect_git = false\n", encoding="utf-8")
+    rc = _run(["config", "unset", "sandbox.protect_git"])
+    assert rc == 2
+    assert "cannot be unset on its own" in capsys.readouterr().err
+    # The file is untouched: nothing was silently dropped or rewritten.
+    assert cfg.read_text(encoding="utf-8") == "sandbox.protect_git = false\n"

@@ -313,3 +313,21 @@ def test_no_writer_deletes_a_top_level_inline_table(tmp_path: Path) -> None:
     upsert_toml_leaf(p, "profile.nested", 1)
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
     assert parsed["profile"] == {"nested": 1}
+
+
+def test_remove_toml_leaf_refuses_an_undeclared_table_ancestor(tmp_path: Path) -> None:
+    """The surgery only knows [table] headers; a leaf inside an inline table /
+    dotted key read as "not found" (False), which callers translate to
+    "nothing to unset" while `config get` shows the leaf set. Refuse like
+    upsert_toml_leaf, so every removal surface (CLI unset, the layer path the
+    TUI uses, skills state) reports it instead of claiming success."""
+    p = tmp_path / "c.toml"
+    p.write_text('sandbox = { protect_git = false, run_commands = "yes" }\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="cannot be unset on its own"):
+        remove_toml_leaf(p, "sandbox.protect_git")
+    p.write_text("sandbox.protect_git = false\n", encoding="utf-8")  # the dotted-key shape
+    with pytest.raises(ValueError, match="cannot be unset on its own"):
+        remove_toml_leaf(p, "sandbox.protect_git")
+    # A genuinely absent leaf under a DECLARED header keeps the quiet False.
+    p.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    assert remove_toml_leaf(p, "sandbox.protect_git") is False

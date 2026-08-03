@@ -329,6 +329,18 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     with locked_file(path):
         if not path.is_file():
             return False
+        # The removal twin of upsert_toml_leaf's refusal: the surgery only
+        # knows `[table]` headers, so a leaf living inside an inline table or
+        # a dotted top-level key would read "not found" here -- and callers
+        # translate False into "nothing to unset" while `config get` shows
+        # the leaf set.
+        if table and (owner := undeclared_table_ancestor(path, dotted_key)):
+            raise ValueError(
+                f"{dotted_key} lives inside the value of {owner}, which is written"
+                " without a [table] header (an inline table or a dotted key), so it"
+                f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
+                " by hand."
+            )
         lines = path.read_text(encoding="utf-8").splitlines()
         if table:
             start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
