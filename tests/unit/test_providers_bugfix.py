@@ -113,7 +113,44 @@ def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    # Pin the CARRIED status, not just "not in the set" -- a dropped (None) status
+    # also satisfies `not in`, so the weaker assertion passed on the pre-fix code.
+    assert ei.value.status_code == 503
     assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
+
+
+def test_envelope_status_classifies_permanent_string_codes() -> None:
+    """String error codes/types (OpenAI `code`, Anthropic `type`) that are
+    permanent map to their terminal HTTP status so a budgeted run fails fast;
+    transient strings and numerics behave as before. The numeric-only map left
+    every string code None (retryable), retrying a quota/auth error every turn."""
+    from agent6.providers._transport import envelope_status
+    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+
+    permanent = [
+        ({"code": "insufficient_quota"}, 402),
+        ({"code": "invalid_api_key"}, 401),
+        ({"code": "model_not_found"}, 404),
+        ({"type": "authentication_error"}, 401),
+        ({"type": "permission_error"}, 403),
+        ({"type": "not_found_error"}, 404),
+        ({"type": "invalid_request_error"}, 400),
+    ]
+    for err, status in permanent:
+        assert envelope_status(err) == status, err
+        assert status in NON_RETRYABLE_HTTP_STATUSES
+    # Transient string codes/types stay retryable (None), never guessed permanent.
+    for err in (
+        {"code": "rate_limit_exceeded"},
+        {"type": "overloaded_error"},
+        {"type": "api_error"},
+    ):
+        assert envelope_status(err) is None, err
+    # Numeric codes and the empty/non-dict cases are unchanged.
+    assert envelope_status({"code": 402}) == 402
+    assert envelope_status({"code": 502}) == 502
+    assert envelope_status({"code": 200}) is None  # a 2xx code is not an error status
+    assert envelope_status({}) is None and envelope_status("nope") is None
 
 
 def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None:
@@ -179,6 +216,7 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 502  # carried, not dropped to None
     assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # 502 -> retryable
     assert "502" in str(ei.value) and "Provider returned error" in str(ei.value)
     assert "usage" not in str(ei.value)  # names the upstream, not the accounting

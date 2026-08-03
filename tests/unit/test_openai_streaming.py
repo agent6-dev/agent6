@@ -271,27 +271,42 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
 
 
 def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
-    """OpenRouter/OpenAI deliver an upstream 5xx as a mid-stream `error` frame
-    then end the stream. It must surface as a (retryable) ProviderError, not be
-    swallowed and returned as a truncated silent_finish."""
+    """OpenRouter/OpenAI deliver an upstream error as a mid-stream `error` frame
+    then end the stream. It must surface as a ProviderError (not be swallowed) AND
+    carry the upstream status like the non-streaming 2xx-envelope path -- streaming
+    is the default, so a permanent code delivered mid-stream would otherwise be
+    retried every turn. A 502 stays retryable; insufficient_quota is permanent."""
+    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
-    lines = _chunk(
-        {"choices": [{"index": 0, "delta": {"content": "partial"}, "finish_reason": None}]}
-    )
-    lines += _chunk({"error": {"code": 502, "message": "upstream gateway error"}})
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=lines)
+    def _run(err: dict[str, Any]) -> ProviderError:
+        lines = _chunk(
+            {"choices": [{"index": 0, "delta": {"content": "partial"}, "finish_reason": None}]}
+        ) + _chunk({"error": err})
 
-    with (
-        mock.patch("httpx2.stream", side_effect=fake_stream),
-        pytest.raises(ProviderError, match="stream error: 502"),
-    ):
-        provider.call(
-            system="sys",
-            messages=[{"role": "user", "content": "x"}],
-            text_delta_callback=lambda _p: None,
-        )
+        def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+            return _FakeStreamResponse(status_code=200, lines=lines)
+
+        with (
+            mock.patch("httpx2.stream", side_effect=fake_stream),
+            pytest.raises(ProviderError) as ei,
+        ):
+            provider.call(
+                system="sys",
+                messages=[{"role": "user", "content": "x"}],
+                text_delta_callback=lambda _p: None,
+            )
+        return ei.value
+
+    transient = _run({"code": 502, "message": "upstream gateway error"})
+    assert "stream error: 502" in str(transient)
+    assert transient.status_code == 502  # carried, not dropped to None
+    assert transient.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
+
+    permanent = _run({"code": "insufficient_quota", "message": "no credits"})
+    assert permanent.status_code == 402  # permanent string code classified
+    assert permanent.status_code in NON_RETRYABLE_HTTP_STATUSES  # not retried
 
 
 def test_streaming_premature_end_without_done_or_finish_raises() -> None:

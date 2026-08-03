@@ -59,7 +59,7 @@ from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers._openai_parse import parse_response
 from agent6.providers._stream import SseCall, StreamClock
-from agent6.providers._transport import ProviderCall
+from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
     ProviderError,
@@ -630,15 +630,18 @@ class OpenAIProvider:
                 except json.JSONDecodeError:
                     continue
                 # Mid-stream error frame (OpenRouter/OpenAI/LiteLLM deliver an
-                # upstream 5xx/429 this way, then end the stream). Surface it
+                # upstream 5xx/429/4xx this way, then end the stream). Surface it
                 # instead of silently returning the partial turn, mirroring the
-                # Anthropic `error` event. No status_code -> retryable, so
-                # _call_with_retry re-issues the request.
+                # Anthropic `error` event. Carry the upstream status like the
+                # non-streaming 2xx-envelope path -- streaming is the default, so
+                # a permanent code (402/insufficient_quota) delivered mid-stream
+                # would otherwise be retried every turn and lose its hint.
                 err = evt.get("error")
                 if isinstance(err, dict):
                     call.record(status=0, response=data_str[:8192])
                     raise ProviderError(
-                        f"OpenAI stream error: {err.get('code')}: {err.get('message')}"
+                        f"OpenAI stream error: {err.get('code')}: {err.get('message')}",
+                        status_code=envelope_status(err),
                     )
                 evt_usage = evt.get("usage")
                 if isinstance(evt_usage, dict):

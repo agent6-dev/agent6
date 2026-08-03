@@ -48,20 +48,49 @@ def _has_assistant_output(data: dict[str, Any]) -> bool:
     return isinstance(data.get("content"), list) and bool(data.get("content"))
 
 
-def _envelope_status(err: object) -> int | None:
-    """The upstream HTTP status carried in an error envelope's ``code`` (int or
-    all-digit string), if it is a real 4xx/5xx; else None (retryable). Threading
-    it into ``ProviderError.status_code`` lets ``NON_RETRYABLE_HTTP_STATUSES``
-    classify a 402 as permanent while a 429/5xx stays retryable."""
+# STRING error codes/types that are PERMANENT: retrying one wastes the whole
+# budget (a quota/auth/not-found failure never clears mid-run). Map each to the
+# terminal HTTP status NON_RETRYABLE_HTTP_STATUSES already treats as permanent.
+# Transient strings (rate_limit_exceeded/_error, server_error, api_error,
+# overloaded_error) are deliberately absent -> None -> retryable, the safe
+# default. Covers both wire families: OpenAI's ``code`` and Anthropic's ``type``.
+_PERMANENT_ERROR_CODE_STATUS: dict[str, int] = {
+    # OpenAI-family `code`
+    "insufficient_quota": 402,
+    "invalid_api_key": 401,
+    "model_not_found": 404,
+    # Anthropic `type`
+    "invalid_request_error": 400,
+    "authentication_error": 401,
+    "permission_error": 403,
+    "not_found_error": 404,
+}
+
+
+def envelope_status(err: object) -> int | None:
+    """The upstream HTTP status carried in an error envelope, if it is a real
+    4xx/5xx; else None (retryable). Threading it into ``ProviderError.status_code``
+    lets ``NON_RETRYABLE_HTTP_STATUSES`` classify a 402 as permanent while a
+    429/5xx stays retryable.
+
+    Reads a numeric ``code`` (int or all-digit string) directly, and maps a
+    known-permanent STRING ``code``/``type`` (``insufficient_quota``, ...) to its
+    terminal status -- a gateway that reports a quota/auth failure as a 200 body
+    with a string code would otherwise be retried every turn (a metered run's
+    ``require_metered`` used to catch this as a permanent 422; the 2xx-envelope
+    path took over that duty and must classify the same failures)."""
     if not isinstance(err, dict):
         return None
     code = err.get("code")
     if isinstance(code, bool):
-        return None
+        code = None
     if isinstance(code, int):
         return code if 400 <= code <= 599 else None
     if isinstance(code, str) and code.isdigit() and 400 <= int(code) <= 599:
         return int(code)
+    for label in (code, err.get("type")):
+        if isinstance(label, str) and label in _PERMANENT_ERROR_CODE_STATUS:
+            return _PERMANENT_ERROR_CODE_STATUS[label]
     return None
 
 
@@ -213,10 +242,10 @@ class ProviderCall:
         # is still an envelope -- and carry the upstream code as the status so
         # NON_RETRYABLE_HTTP_STATUSES makes 4xx permanent, 429/5xx retryable.
         err = data.get("error")
-        if err is not None and not _has_assistant_output(data):
+        if err and not _has_assistant_output(data):
             raise ProviderError(
                 f"{self.api_label} error in 2xx body: {_envelope_detail(err)}",
-                status_code=_envelope_status(err),
+                status_code=envelope_status(err),
             )
         if self.budget is not None:
             self.require_metered(data)

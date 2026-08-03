@@ -22,7 +22,7 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._stream import SseCall, StreamClock
-from agent6.providers._transport import ProviderCall
+from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
@@ -607,10 +607,14 @@ class AnthropicProvider:
                     err = evt.get("error", {}) or {}
                     # Record the frame before raising so the upstream failure
                     # is auditable in the transcript (parity with the OpenAI
-                    # provider's mid-stream error handling).
+                    # provider's mid-stream error handling). Carry the upstream
+                    # status like the non-streaming 2xx-envelope path, so a
+                    # permanent error delivered mid-stream fails fast instead of
+                    # retrying every turn (streaming is the default path).
                     call.record(status=0, response=data_str[:8192])
                     raise ProviderError(
-                        f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
+                        f"Anthropic stream error: {err.get('type')}: {err.get('message')}",
+                        status_code=envelope_status(err),
                     )
 
         call.run(consume)
