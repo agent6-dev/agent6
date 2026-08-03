@@ -379,7 +379,9 @@ def _cmd_tui() -> int:
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = Path.cwd()
-    agent6_dir = _plans_dir(cwd).parent
+    # The STATE dir: every bucket lookup below it goes through `bucket_dir`,
+    # which appends `sessions/` itself.
+    agent6_dir = _state_dir(cwd)
     while True:
         session_dir = run_home(agent6_dir, cwd)
         if session_dir is None:

@@ -656,3 +656,29 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
     assert _cost_cell(0.0, partial=True) == "~$0.0000"
     assert _cost_cell(0.0, partial=False) == ""
     assert _cost_cell(0.0123, partial=False) == "$0.0123"
+
+
+def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`agent6 tui` hands `run_home` the STATE dir, the base every bucket lookup
+    is relative to.
+
+    Handing it `<state>/sessions` made `bucket_dir` append `sessions/` a second
+    time, so the hub listed nothing while the CLI and the web listed every
+    session, and the TUI's machine watch read the authoring bucket instead of
+    the instance dir. Every other test calls `_list_sessions` directly, so
+    nothing covered the argument."""
+    from agent6.ui.cli import plan_watch
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.tui import home
+
+    monkeypatch.chdir(tmp_path)
+    seen: list[Path] = []
+
+    def _capture(base: Path, _cwd: Path) -> None:
+        seen.append(base)
+
+    monkeypatch.setattr(home, "run_home", _capture)
+    assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
+    assert seen == [_state_dir(tmp_path)]
