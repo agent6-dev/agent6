@@ -27,22 +27,9 @@ TIMEOUT_S="${AGENT6_SB_TIMEOUT:-1500}"
 WHL="/mnt/wheel/${AGENT6_SB_WHEEL:-$(basename "$(ls /mnt/wheel/*.whl | sort -V | tail -1)")}"
 
 # agent6 prices Anthropic via its OpenRouter alias (models/pricing.py), so
-# best_effort_usd_limit is the real enforcer for every model here; the token
-# caps below are LOOSE BACKSTOPS against a pricing regression only. They were
-# once an 85/15 budget split, which starved a thinking model's output at 10k
-# tokens before its first commit (observed: sonnet-5, 2 empty predictions);
-# each cap now independently allows roughly the whole budget in that currency.
-case "$MODEL" in
-  claude-opus-*)    IN_PRICE=5 ; OUT_PRICE=25 ;;
-  claude-sonnet-*)  IN_PRICE=3 ; OUT_PRICE=15 ;;
-  moonshotai/kimi*) IN_PRICE=0.66 ; OUT_PRICE=3.41 ;;
-  z-ai/glm*)        IN_PRICE=0.98 ; OUT_PRICE=3.08 ;;
-  qwen/*)           IN_PRICE=0.29 ; OUT_PRICE=3.17 ;;
-  deepseek/*)       IN_PRICE=0.09 ; OUT_PRICE=0.18 ;;
-  *)                IN_PRICE=1 ; OUT_PRICE=5 ;;
-esac
-MAX_IN=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(50000,int($MAX_USD*2.0/$IN_PRICE*1e6)))")
-MAX_OUT=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(8000,int($MAX_USD*1.0/$OUT_PRICE*1e6)))")
+# every model here is METERED: max_usd is the bound. max_tokens_fallback only
+# binds calls the meter cannot price (a pricing regression), so it is a loose
+# backstop, not a per-model computation.
 
 uv python install 3.14 >/dev/null 2>&1
 uv tool install --python 3.14 "$WHL" >/dev/null 2>&1
@@ -138,9 +125,6 @@ extra_read_paths = ["/opt/miniconda3"]
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = false
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 $VERIFY_TOML
@@ -152,9 +136,8 @@ structural_priors = ${AGENT6_SB_STRUCTURAL_PRIORS:-true}
 $REVIEW_LINES
 
 [budget]
-max_input_tokens = $MAX_IN
-max_output_tokens = $MAX_OUT
-best_effort_usd_limit = $MAX_USD
+max_usd = $MAX_USD
+max_tokens_fallback = 2000000
 EOF
 
 cd /testbed

@@ -47,8 +47,8 @@ require_clean_worktree = true
 branch_per_run = true
 
 [budget]
+max_usd = 10.0
 max_tokens_fallback = 2000000
-best_effort_usd_limit = 10.0
 
 [workflow]
 verify_command = ["uv", "run", "pytest", "-x"]

@@ -45,6 +45,10 @@ $3/$15) verified against the API docs.
 
 ## Issue 1 — USD-budget enforcement is a no-op for unpriced providers
 
+> Historical record (dev-0.0.12). Superseded: `[budget]` is now `max_usd`
+> (metered spend) + `max_tokens_fallback` (unmetered calls only), and the
+> USD→token conversion described below no longer exists.
+
 `best_effort_usd_limit` converts to token ceilings via the worker's price
 (`config.py:_apply_usd_budget_override`). Anthropic publishes **no pricing**, so
 the conversion returns `None` and the limit silently does nothing — only the
