@@ -104,7 +104,13 @@ def _cmd_list() -> int:
     for s in summaries:
         when = time.strftime("%m-%d %H:%M", time.localtime(s.mtime))
         styled, plain = _styled_status(s.status, s.reason, color=color)
-        cost = "" if s.cost_usd <= 0 else format_cost(s.cost_usd)
+        # An all-unpriced run's ~$0.0000 is information (spend happened, price
+        # unknown); only a genuinely clean $0 stays blank.
+        cost = (
+            ""
+            if s.cost_usd <= 0 and not s.usd_partial
+            else format_cost(s.cost_usd, partial=s.usd_partial)
+        )
         # A winner lane gets a ★ suffix on its id (folded into the width math, so
         # the columns stay aligned); a non-disruptive marker the hub/home mirror.
         run_id = f"{s.run_id} {WINNER_GLYPH}" if s.run_id in winners else s.run_id

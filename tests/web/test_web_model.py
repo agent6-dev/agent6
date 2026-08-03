@@ -35,6 +35,22 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["task"] == "the task"
     assert s["status"] == "passed"
     assert s["usd"] == 0.0123
+    assert s["usd_partial"] is False
+
+
+def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
+    # The hub row renders the same lower-bound marker as the run page.
+    _run(
+        tmp_path,
+        "r1p",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
+            {"type": "run.end", "all_passed": True},
+        ],
+    )
+    (s,) = model.hub_payload(tmp_path)["runs"]
+    assert s["usd_partial"] is True
 
 
 def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:

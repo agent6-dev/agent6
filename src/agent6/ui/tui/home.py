@@ -131,8 +131,11 @@ def _status_cell(summary: RunSummary) -> Text:
     return Text(label, style=_STATUS_STYLE.get(summary.status, ""))
 
 
-def _cost_cell(cost_usd: float) -> str:
-    return "" if cost_usd <= 0 else format_cost(cost_usd)
+def _cost_cell(cost_usd: float, *, partial: bool) -> str:
+    # An all-unpriced run's ~$0.0000 is information; a clean $0 stays blank.
+    if cost_usd <= 0 and not partial:
+        return ""
+    return format_cost(cost_usd, partial=partial)
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:
@@ -455,7 +458,7 @@ class HomeScreen(Screen[None]):
                 when,
                 s.mode,
                 _status_cell(s),
-                _cost_cell(s.cost_usd),
+                _cost_cell(s.cost_usd, partial=s.usd_partial),
                 Text(run_id),
                 Text(task_snippet(s.task, max_chars=60)),
             )

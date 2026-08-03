@@ -73,7 +73,13 @@ async function postJSON(url, body) {
 }
 function toast(msg, bad) { const t = el('div', 'toast' + (bad ? ' bad' : ''), msg); document.body.appendChild(t); setTimeout(() => t.remove(), 4000); }
 // Mirrors viewmodel/format.py format_cost precision (cents >= $1, else 4dp); keep in sync.
-function fmtUsd(u) { if (!u) return '$0'; return u >= 0.995 ? '$' + Number(u).toFixed(2) : '$' + Number(u).toFixed(4); }
+// partial: the figure is a known lower bound (unpriced spend) -> '~' prefix,
+// and ~$0.0000 is information where a clean $0 stays terse (format_cost's rule).
+function fmtUsd(u, partial) {
+  if (!u && !partial) return '$0';
+  const p = partial ? '~' : '';
+  return (u || 0) >= 0.995 ? p + '$' + Number(u || 0).toFixed(2) : p + '$' + Number(u || 0).toFixed(4);
+}
 function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {
@@ -273,7 +279,7 @@ function runsCard(runs) {
   const card = listCard('Runs', runs, 'no runs yet', (r, it, g) => {
     it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
     g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
-    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
+    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd, r.usd_partial)}`));
     it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';

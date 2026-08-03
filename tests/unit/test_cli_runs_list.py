@@ -46,3 +46,29 @@ def test_runs_list_marks_the_fan_out_winner(
     out = capsys.readouterr().out
     assert "fan-l2 ★" in out  # the winner id carries the ★
     assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-lanes do not
+
+
+def test_runs_list_marks_a_partial_cost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A cost the scanner knows is a lower bound (unpriced model in some leg)
+    renders with the '~' marker in the listing, matching `runs show`."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _runs_dir(repo)
+    d = runs / "unpriced"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": 0.0123, "usd_partial": True})
+        + "\n"
+        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert _cmd_list() == 0
+    assert "~$0.0123" in capsys.readouterr().out

@@ -241,6 +241,33 @@ def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Pat
     assert summarize_run_dir(rd, stale_after_s=0.0).status == "running"
 
 
+def test_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
+    """LogScan's sticky usd_partial must reach RunSummary: listings printed an
+    exact $0.0123 while the run page printed ~$0.0123 for the same run."""
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    assert summarize_run_dir(rd).usd_partial is True
+    clean = _write_run(
+        tmp_path,
+        "runs",
+        "r2",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.0123},
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    assert summarize_run_dir(clean).usd_partial is False
+
+
 def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: Path) -> None:
     """A finished run whose worker.pid survives into teardown is NOT live: the
     loop has exited, so a steer/compact/answer marker written now is read by

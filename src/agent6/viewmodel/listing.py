@@ -147,6 +147,7 @@ class RunSummary:
     status: str
     reason: str  # detail: the end reason when "failed", "needs answer" when "waiting", else ""
     cost_usd: float
+    usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some leg)
     mtime: float
 
 
@@ -497,5 +498,6 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
         status=word,
         reason=reason,
         cost_usd=scan.cost_usd or 0.0,
+        usd_partial=scan.usd_partial,
         mtime=run_mtime(run_dir),
     )

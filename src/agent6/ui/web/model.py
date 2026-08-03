@@ -135,6 +135,7 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
         "reason": s.reason,
         "mtime": s.mtime,
         "usd": s.cost_usd,
+        "usd_partial": s.usd_partial,
         "winner": is_winner(run_dir),  # fan-out compare winner: a ★ on the hub row
     }
 
