@@ -142,7 +142,9 @@ process irrevocably, inherited by every child:
 ### 2. `agent6-jail` (Rust), for every child command
 
 `apply_edit` is in-process; every `run_verify_command`/`run_command` runs in
-`agent6-jail`. Under `strict` it:
+`agent6-jail`, as does every `run_background` (same policy, same launcher; the
+only difference is that nothing waits on it, so the run's teardown kills it).
+Under `strict` it:
 
 - Forks a new user/mount/PID/IPC/UTS/net namespace.
 - `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd + private
@@ -201,9 +203,11 @@ can't expand it.
   (blocked), mirror network (provider-only egress), and `/usr`/`/var` writes
   (denied).
 - **Compiling and running host-installed toolchains works.**
-    - `run_verify_command` and (when `run_commands` permits) `run_command` run
-      jailed; they just can't install new tools, and a networked build step needs
-      `tool_network` loosened.
+    - `run_verify_command` and (when `run_commands` permits) `run_command` and
+      `run_background` run jailed; they just can't install new tools, and a
+      networked build step needs `tool_network` loosened.
+    - `run_background` answers to the same `run_commands` knob and the same
+      per-command approval: it is `run_command`'s power without the wait.
 - **Provisioning is operator-first.** Install toolchains, venvs, and deps
   yourself before/outside agent6; widen access via config, never sudo
   (`extra_read_paths`, `tool_network`, `[providers.*].base_url`, all in
