@@ -43,6 +43,26 @@ def _jail_binary() -> Path | None:
     return None
 
 
+def _require_fresh(bin_path: Path) -> None:
+    """Fail loudly when the built binary predates the Rust sources.
+
+    Every jail security test below runs against this binary, so a stale one
+    means the whole Landlock/seccomp/protect-path suite greens against code
+    that is no longer in the tree.
+    """
+    src = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail"
+    newest = max(
+        (p.stat().st_mtime for p in [*src.glob("src/*.rs"), src / "Cargo.toml"] if p.is_file()),
+        default=0.0,
+    )
+    if newest > bin_path.stat().st_mtime:
+        raise AssertionError(
+            f"{bin_path} is older than the jail sources: rebuild with "
+            "`cargo build --release --manifest-path src/agent6/jail/Cargo.toml` "
+            "(these tests are meaningless against a stale binary)"
+        )
+
+
 pytestmark = pytest.mark.needs_namespaces
 
 
@@ -65,6 +85,7 @@ def jail_bin() -> Path:
         )
         bin_path = _jail_binary()
         assert bin_path is not None
+    _require_fresh(bin_path)
     os.environ["AGENT6_JAIL_BIN"] = str(bin_path)
     return bin_path
 
@@ -75,35 +96,78 @@ def test_jail_runs_true(jail_bin: Path, tmp_path: Path) -> None:
 
 
 def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> None:
-    res = run_in_jail(
-        JailPolicy(
-            cwd=tmp_path,
-            argv=("/usr/bin/getent", "hosts", "example.com"),
-            allow_network=False,
-            timeout_s=10.0,
-        )
+    """A connect() to a REAL host listener is denied without allow_network and
+    succeeds with it. The positive control is the point: a DNS probe fails in
+    the jail (no /etc/resolv.conf) and on any offline host either way, so it
+    passed whether or not confinement existed."""
+    import socket
+    import threading
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(2)
+    port = srv.getsockname()[1]
+    threading.Thread(target=lambda: [srv.accept() for _ in range(2)], daemon=True).start()
+    probe = (
+        "import socket,sys;s=socket.socket();"
+        f"sys.exit(0 if s.connect_ex(('127.0.0.1',{port}))==0 else 1)"
     )
-    # nonzero return means resolution failed, which is what we want.
-    assert res.returncode != 0
+
+    def _rc(*, allow: bool) -> int:
+        return run_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=("/usr/bin/python3", "-c", probe),
+                allow_network=allow,
+                timeout_s=10.0,
+            )
+        ).returncode
+
+    try:
+        assert _rc(allow=False) != 0, "connect succeeded with allow_network=False"
+        assert _rc(allow=True) == 0, "the probe cannot connect even when allowed"
+    finally:
+        srv.close()
 
 
-def test_jail_blocks_write_outside_workspace(jail_bin: Path, tmp_path: Path) -> None:
+def test_jail_denies_write_outside_the_workspace(jail_bin: Path, tmp_path: Path) -> None:
+    """Writes outside the workspace are DENIED (nonzero rc), not merely
+    redirected. /tmp alone proves nothing: the in-jail /tmp is a fresh tmpfs,
+    so the write there SUCCEEDS and only fails to reach the host -- an
+    assertion about remapping, not confinement."""
+    for target in ("/dev/shm/agent6-jail-escape", str(Path.home() / "agent6-jail-escape")):
+        try:
+            res = run_in_jail(
+                JailPolicy(
+                    cwd=tmp_path,
+                    argv=("/bin/sh", "-c", f"echo escape > {target}"),
+                    timeout_s=10.0,
+                )
+            )
+        except JailUnavailableError:
+            pytest.skip("jail unavailable")
+        assert res.returncode != 0, f"jailed child wrote {target}"
+        assert not Path(target).exists()
+
+
+def test_jail_tmp_is_a_private_tmpfs(jail_bin: Path, tmp_path: Path) -> None:
+    # /tmp is remapped, so a write there lands in the jail's own tmpfs and
+    # never on the host (distinct from the denial the sibling test pins).
     marker = Path("/tmp/agent6-jail-host-escape-marker")
     if marker.exists():
         marker.unlink()
     try:
-        run_in_jail(
+        res = run_in_jail(
             JailPolicy(
                 cwd=tmp_path,
-                argv=("/bin/sh", "-c", f"echo escape > {marker} || true"),
+                argv=("/bin/sh", "-c", f"echo escape > {marker}"),
                 timeout_s=10.0,
             )
         )
     except JailUnavailableError:
         pytest.skip("jail unavailable")
-    # The file system inside the jail is bind-mounted onto /tmp; the host /tmp marker
-    # should NOT exist because the in-jail /tmp is a fresh tmpfs.
-    assert not marker.exists()
+    assert res.returncode == 0  # it writes -- into the private tmpfs
+    assert not marker.exists()  # ...and the host copy never appears
 
 
 def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: Path) -> None:
