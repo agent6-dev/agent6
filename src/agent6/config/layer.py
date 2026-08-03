@@ -27,14 +27,15 @@ stack. See :func:`_apply_profile`.
 from __future__ import annotations
 
 import contextlib
+import difflib
 import re
 import tomllib
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from agent6.config.io import (
     parse_cli_value,
@@ -879,8 +880,119 @@ def config_is_valid(repo_root: Path) -> bool:
     return True
 
 
+# Appended to a validation error when the config lock FAILED OPEN (a stale
+# root-owned .lock): a snapshot restore without the lock could erase a
+# concurrent writer's update, so the write is kept and the operator undoes it.
+_KEPT_NO_LOCK = (
+    "(kept as written: the config lock could not be taken, so an automatic"
+    " rollback might erase a concurrent edit; undo by hand or run `agent6 config fix`)"
+)
+
+PROVIDER_MEMBERS = (AnthropicProviderEntry, OpenAIProviderEntry)
+
+
+def provider_field_error(key: str, leaf: str, value: object) -> str | None:
+    """Validate a ``providers.<name>.<leaf>`` write against the union members
+    directly. The standalone minimal dict cannot carry the entry's
+    discriminator, so union validation lands every error at the PARENT with
+    pydantic-speak; the member models themselves give exact answers: a leaf on
+    no member is an unknown key (with the members' own field pool as the
+    did-you-mean universe), and a value every owning member rejects is invalid.
+    None when some member accepts it (partial entries stay writable)."""
+    fields = sorted({f for m in PROVIDER_MEMBERS for f in m.model_fields})
+    if leaf not in fields:
+        close = difflib.get_close_matches(leaf, fields, n=2)
+        hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
+        return f"unknown provider key {key!r}{hint} (see `agent6 config show`)"
+    errors: list[str] = []
+    for member in PROVIDER_MEMBERS:
+        info = member.model_fields.get(leaf)
+        if info is None:
+            continue
+        try:
+            # rebuild_annotation carries the Field constraints (gt, pattern,
+            # ...); the model's @field_validators do not travel with it, so
+            # validator-only rejections still fall to the merged-dump path.
+            TypeAdapter(info.rebuild_annotation()).validate_python(value)
+            return None  # a member accepts it: the write stands
+        except ValidationError as exc:
+            errors.append(exc.errors()[0]["msg"])
+    return f"{key}: {errors[0]}" if errors else None
+
+
+def unknown_key_error(key: str) -> str:
+    """A human message for a key the schema forbids, with a did-you-mean.
+
+    The pool is usually the SCHEMA defaults: this runs after the unknown key
+    was already written, so the merged config no longer loads and the live
+    branch (which would add real provider tables) only survives when a higher
+    layer masks the write."""
+    try:
+        pool = leaf_keys(load_effective(Path.cwd(), None))
+    except ConfigError:
+        pool = sorted(flatten_leaves(Config().model_dump(mode="python")))
+    close = difflib.get_close_matches(key, pool, n=2)
+    hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
+    return f"unknown config key {key!r}{hint} (see `agent6 config show`)"
+
+
+def written_value_error(key: str, value: object) -> str | None:
+    """Validate the just-written ``key = value`` against the Config model on its
+    own (a minimal dict, defaults for the rest), independent of the layer merge.
+    A write of an invalid value into a layer that a HIGHER layer masks (e.g. a
+    global set the repo overlay shadows) would otherwise validate the merged
+    config -- where the value is hidden -- and land the bad value in the file,
+    only to explode later where the mask is absent. THE one owner every writer
+    uses (`config set` and the engine-level set_config_* the TUI, web, init and
+    connect drive), so all of them validate the written value identically.
+    Rejects only when the error sits exactly at *key*, or at a parent of it for
+    the schema's extra_forbidden (an unknown key or section), so a partial
+    dynamic entry (a provider filled in over several sets) is not falsely
+    reverted."""
+    if key == "profiles" or key.startswith("profiles."):
+        # [profiles.*] is meta-config the loader strips BEFORE validation
+        # (_apply_profile), so the Config schema forbids it by design; the
+        # standalone check would falsely reject every legitimate profile write.
+        # The merged re-validation still catches a profile body that breaks.
+        return None
+    parts = key.split(".")
+    if parts[0] == "providers" and len(parts) == 3:
+        return provider_field_error(key, parts[2], value)
+    nested: dict[str, object] = {}
+    cur = nested
+    for part in parts[:-1]:
+        child: dict[str, object] = {}
+        cur[part] = child
+        cur = child
+    cur[parts[-1]] = value
+    try:
+        Config.model_validate(nested)
+    except ValidationError as exc:
+        for err in exc.errors():
+            loc = ".".join(str(x) for x in err["loc"])
+            if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
+                # An unknown top-level section errors at the SECTION (a parent
+                # loc), not the leaf; both deserve the same friendly message,
+                # not pydantic-speak or the merged-layer dump.
+                return unknown_key_error(key)
+            if loc == key:
+                msg = err["msg"]
+                if err["type"] == "bool_parsing":
+                    msg = f"expected true or false, got {value!r}"
+                return f"{key}: {msg}"
+    except ConfigError as exc:
+        return str(exc)
+    return None
+
+
 def _revalidate(
-    repo_root: Path, target: Path, prior: str | None, *, was_valid: bool, held: bool = True
+    repo_root: Path,
+    target: Path,
+    prior: str | None,
+    *,
+    was_valid: bool,
+    held: bool = True,
+    written: Sequence[tuple[str, object]] = (),
 ) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
     freshly-created file) and return the error string if THIS edit broke it.
@@ -899,7 +1011,28 @@ def _revalidate(
     every write, and `agent6 connect` saves the API key before writing the
     provider block -- so it stored a key with no stanza to use it. The
     pre-existing error still surfaces: every command reports it on the next
-    run, and `agent6 config fix` removes it."""
+    run, and `agent6 config fix` removes it.
+
+    *written* is the ``(key, value)`` pairs this edit wrote. Each is validated
+    against the model STANDALONE via :func:`written_value_error` so an invalid
+    value a higher layer masks in the merge is caught here rather than lurking
+    until the mask is gone -- the guard `config set` had, now on every writer."""
+
+    def _rollback(err: str) -> str:
+        # A snapshot restore without the lock (held False) could erase a
+        # concurrent writer's update, so keep the write and say so instead.
+        if not held:
+            return f"{err}\n{_KEPT_NO_LOCK}"
+        if prior is None:
+            target.unlink(missing_ok=True)
+        else:
+            atomic_write(target, prior)
+        return err
+
+    for wkey, wvalue in written:
+        value_err = written_value_error(wkey, wvalue)
+        if value_err is not None:
+            return _rollback(value_err)
     try:
         load_effective(repo_root, None)
     except ConfigError as exc:
@@ -910,17 +1043,7 @@ def _revalidate(
         # provider block to an unparseable file and reported success.
         if not was_valid and not target_unparseable(target):
             return None  # broken before this edit; not ours to refuse
-        if not held:
-            return (
-                f"{exc}\n(kept as written: the config lock could not be taken, so an"
-                " automatic rollback might erase a concurrent edit; undo by hand or"
-                " run `agent6 config fix`)"
-            )
-        if prior is None:
-            target.unlink(missing_ok=True)
-        else:
-            atomic_write(target, prior)
-        return str(exc)
+        return _rollback(str(exc))
     return None
 
 
@@ -938,11 +1061,14 @@ def set_config_value(
     with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = config_is_valid(repo_root)
+        parsed = parse_cli_value(raw_value)
         try:
-            upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
+            upsert_toml_leaf(target, dotted_key, parsed)
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
+        return _revalidate(
+            repo_root, target, prior, was_valid=was_valid, held=held, written=[(dotted_key, parsed)]
+        )
 
 
 def set_config_table(
@@ -964,7 +1090,14 @@ def set_config_table(
             upsert_toml_table(target, table, fields)
         except ValueError as exc:
             return str(exc)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
+        return _revalidate(
+            repo_root,
+            target,
+            prior,
+            was_valid=was_valid,
+            held=held,
+            written=[(table, {k: v for k, v in fields.items() if v is not None})],
+        )
 
 
 def provider_choices() -> dict[str, list[str]]:
@@ -1022,7 +1155,14 @@ def set_config_leaves(
             if prior is not None:
                 atomic_write(target, prior)
             return str(exc)
-        return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
+        return _revalidate(
+            repo_root,
+            target,
+            prior,
+            was_valid=was_valid,
+            held=held,
+            written=[(f"{table}.{k}", v) for k, v in fields.items() if v is not None],
+        )
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:

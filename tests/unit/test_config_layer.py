@@ -207,6 +207,23 @@ def test_set_config_value_invalid_rolls_back(repo: Path) -> None:
     assert load_effective(repo).config.sandbox.run_commands == "yes"
 
 
+def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -> None:
+    """An engine writer (set_config_*) must reject a value that is invalid on its
+    own even when a HIGHER layer masks it in the merge -- else it lands the bad
+    value and the config explodes once the mask is gone. The repo layer sets
+    sandbox.run_commands="yes", so a GLOBAL write of a bad enum merges valid; only
+    the standalone written-value check catches it. Shares the CLI's guard now, so
+    the TUI/web/init/connect writers validate identically (the promised contract)."""
+    gpath = repo.parent / "g" / "config.toml"
+    before = gpath.read_text(encoding="utf-8")
+
+    err = set_config_value(repo, "sandbox.run_commands", "garbage_not_an_enum", to_repo=False)
+
+    assert err is not None and "sandbox.run_commands" in err
+    assert gpath.read_text(encoding="utf-8") == before  # the masked bad value rolled back
+    assert load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
+
+
 def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
     flag = tmp_path / "flag.toml"
     flag.write_text('[sandbox]\nrun_commands = "no"\n', encoding="utf-8")
