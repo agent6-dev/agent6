@@ -4,8 +4,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import time
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from agent6.runs.ipc import (
     approvals_dir,
@@ -24,6 +30,13 @@ def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, o
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
+
+
+async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < deadline, f"timed out waiting for {what}"
+        await pilot.pause(0.05)
 
 
 def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
@@ -551,5 +564,78 @@ def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
             await pilot.press("enter")
             await pilot.pause()
         assert app.return_value == rd  # opened the selected run
+
+    asyncio.run(scenario())
+
+
+def test_hub_repaints_a_dying_run_without_a_keypress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hub was the one TUI screen with no poll: a run that died while
+    listed kept its last-computed word (bold-cyan "running") until a keypress
+    or a screen change."""
+    from textual.widgets import DataTable
+
+    import agent6.ui.tui.home as home_mod
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2, raising=False)
+    a6 = tmp_path / ".agent6"
+    rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run"}])
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+
+            def status_cell() -> str:
+                table = app.screen.query_one("#runs", DataTable)
+                if table.row_count == 0:
+                    return ""
+                return str(table.get_row_at(0)[2])
+
+            await _wait_for(pilot, lambda: "running" in status_cell(), "the running row")
+            (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
+            # No keypress, no screen change: the poll alone must repaint.
+            await _wait_for(pilot, lambda: "stale" in status_cell(), "the stale repaint")
+
+    asyncio.run(scenario())
+
+
+def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The poll rebuilds the table; the operator's selection must follow the
+    run it was on (by id), not snap back to whatever lands in that row index."""
+    from textual.widgets import DataTable
+
+    import agent6.ui.tui.home as home_mod
+    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+
+    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0, raising=False)  # manual refresh only
+    a6 = tmp_path / ".agent6"
+    for name, ts in (("r1", 1000), ("r2", 2000), ("r3", 3000)):
+        rd = _write_run(a6, "runs", name, [{"type": "run.start", "mode": "run"}])
+        os.utime(rd / "logs.jsonl", (ts, ts))
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+
+            def table() -> DataTable[Any]:  # newest first: r3, r2, r1
+                return app.screen.query_one("#runs", DataTable)
+
+            await _wait_for(pilot, lambda: table().row_count == 3, "the three rows")
+            await pilot.press("down")  # cursor onto r2
+            scr = app.screen
+            assert isinstance(scr, HomeScreen)
+            runs = scr._runs  # pyright: ignore[reportPrivateUsage]
+            assert runs[table().cursor_row].name == "r2"
+            # r1 gets fresh activity and jumps to the top: order becomes r1, r3, r2.
+            os.utime(runs[2] / "logs.jsonl", (9000, 9000))
+            await pilot.press("r")
+            await pilot.pause()
+            runs = scr._runs  # pyright: ignore[reportPrivateUsage]
+            assert runs[table().cursor_row].name == "r2"
 
     asyncio.run(scenario())

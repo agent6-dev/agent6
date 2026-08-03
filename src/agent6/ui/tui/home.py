@@ -61,6 +61,11 @@ from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
+
+# The hub re-asks on this cadence (the web hub's poll rate): it was the one TUI
+# screen that never refreshed, so a run that died while you watched kept its
+# last word -- bold-cyan "running" -- until a keypress.
+_HUB_POLL_S = 4.0
 # The new-work profile dropdown's first entry: "" => no --profile, so the run
 # uses [workflow].profile from config (or the plain defaults).
 _DEFAULT_PROFILE_LABEL = "(config default)"
@@ -409,6 +414,7 @@ class HomeScreen(Screen[None]):
         table.add_columns("when", "mode", "status", "cost", "id", "task")
         self.action_refresh()
         table.focus()
+        self.set_interval(_HUB_POLL_S, self._poll)
 
     def on_screen_resume(self) -> None:
         # Returning from a pushed screen (e.g. config) doesn't re-run on_mount, so
@@ -416,8 +422,20 @@ class HomeScreen(Screen[None]):
         # to "config · …" (otherwise the hub keeps showing "agent6 — config").
         self.action_refresh()
 
+    def _poll(self) -> None:
+        # Only while the hub is the top screen: a pushed screen refreshes on
+        # resume anyway, and a rebuild under an open modal would shift the rows
+        # out from under it.
+        if self.app.screen is self:
+            self.action_refresh()
+
     def action_refresh(self) -> None:
         table = self.query_one("#runs", DataTable)
+        # The poll rebuilds the whole table; keep the operator's selection by
+        # run id, not row index -- new activity reorders the rows.
+        selected = ""
+        if self._runs and 0 <= table.cursor_row < len(self._runs):
+            selected = self._runs[table.cursor_row].name
         table.clear()
         # Keep self._runs 1:1 with the table rows: a run dir that vanished between
         # the listing and its stat() must be dropped from BOTH, or every
@@ -443,6 +461,10 @@ class HomeScreen(Screen[None]):
             )
             survivors.append(rd)
         self._runs = survivors
+        if selected:
+            row = next((i for i, rd in enumerate(survivors) if rd.name == selected), None)
+            if row is not None:
+                table.move_cursor(row=row)
         # Useful context in the header sub-title rather than a duplicate hint bar.
         self.app.sub_title = f"{self.repo_cwd} · {len(self._runs)} runs"
         # An empty table shouldn't paint a full-height focus cursor over its body.
