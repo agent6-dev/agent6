@@ -178,3 +178,15 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 - **Written by:** graph/{curator, storage}
 - **Read by:** tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, _parallel_dispatch, loop}
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (8 test files exercise it)
+
+## Run/machine wire snapshot
+
+[`agent6.viewmodel.state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) &middot; mutable container + 11 frozen turn types
+
+Pure event-fold: list[event_dict] -> RunState.
+
+**run_state_as_dict** &mdash; The JSON-able wire form of a RunState, stable field names: what `agent6 attach --json` and a web client serialize.
+
+- **Written by:** viewmodel/{machine_state, state}
+- **Read by:** ui/cli/{_steer_menu, plan_watch}, ui/tui/{app, conversation, logview, modals}, viewmodel/{__init__}
+- **Guarded by:** [golden_run_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (5 test files exercise it)

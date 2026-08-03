@@ -140,9 +140,7 @@ def test_dispatch_invalidate_memory_roundtrip(tmp_path: Path) -> None:
     state = tmp_path / "state"
     e = add(state, "decisions", "use tabs")
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=state)
-    out = d.dispatch(
-        "invalidate_memory", {"id": e.id, "reason": "operator uses spaces"}
-    ).to_wire()
+    out = d.dispatch("invalidate_memory", {"id": e.id, "reason": "operator uses spaces"}).to_wire()
     assert out["id"] == e.id
     assert out["invalidated_at"]
     assert not list_entries(state, "decisions")[0].is_active

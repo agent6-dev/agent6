@@ -3,8 +3,8 @@
 # Copyright 2026 Eric Lesiuta
 """Derive the data-contract reference from the source tree (dev tool, not CI).
 
-The eight typed contracts that own facts which used to travel as ``dict[str,
-Any]`` each get a card: name, home module, kind, invariant, who writes it, who
+Each registered contract (typed shapes, plus the run/machine wire snapshot
+builders) gets a card: name, home module, kind, invariant, who writes it, who
 reads it, what pins guard it. The cards are DERIVED, not hand-curated -- the
 invariant prose is lifted from the module and class docstrings, the kind and
 type counts from the AST, the reader set from an import scan of ``src/agent6``,
@@ -148,6 +148,15 @@ CONTRACTS: tuple[Contract, ...] = (
         writers=("graph/curator.py", "graph/storage.py"),
         pins=("tests/unit/test_graph_storage.py",),
     ),
+    Contract(
+        title="Run/machine wire snapshot",
+        module="agent6.viewmodel.state",
+        # The dict these builders return IS the payload `attach --json`, the web
+        # page, and the SSE stream serialize; their docstrings state the contract.
+        primary=("run_state_as_dict",),
+        writers=("viewmodel/state.py", "viewmodel/machine_state.py"),
+        pins=("tests/unit/data/golden_run_state.json", "tests/unit/test_viewmodel_state.py"),
+    ),
 )
 
 # The module graph's column families, leftmost first: a tach module lands in the
@@ -278,6 +287,11 @@ def _module_facts(dotted: str) -> ModuleFacts:
     unions: dict[str, tuple[str, ...]] = {}
     class_fields: dict[str, tuple[tuple[str, str, str], ...]] = {}
     for node in tree.body:
+        if isinstance(node, ast.FunctionDef):
+            # A wire-form BUILDER (run_state_as_dict) can be a primary too: its
+            # docstring states the payload contract a class cannot (the dict it
+            # returns IS the frozen shape).
+            class_docs[node.name] = ast.get_docstring(node)
         if isinstance(node, ast.ClassDef):
             class_docs[node.name] = ast.get_docstring(node)
             class_fields[node.name] = _class_fields(node)

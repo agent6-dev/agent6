@@ -1060,9 +1060,7 @@ class MCPConfig(BaseModel):
         # prefix, so the key must be identifier-shaped and ``__``-free.
         for name in v:
             if not name or not all(c.isalnum() or c in "_-" for c in name):
-                raise ValueError(
-                    f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}"
-                )
+                raise ValueError(f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}")
             if "__" in name:
                 raise ValueError(
                     f"[mcp] server name must not contain '__' (it separates server"
