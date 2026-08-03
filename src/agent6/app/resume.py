@@ -61,6 +61,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
     ConfigError,
+    role_for_mode,
 )
 from agent6.config.layer import (
     load_effective,
@@ -308,6 +309,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except ManifestError as exc:
             reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
             return 2
+        role = role_for_mode(mode)
 
         if manifest.parked_task:
             # Parked at submission (the checkout was busy): nothing ever ran, so
@@ -328,7 +330,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     cfg = budget_overrides.apply(cfg)
                 if sandbox_overrides is not None:
                     cfg = sandbox_overrides.apply(cfg)
-                cfg.require_runnable("worker")
+                cfg.require_runnable(role)
             except ConfigError as exc:
                 reporter.err(f"CONFIG ERROR:\n{exc}")
                 return 2
@@ -436,7 +438,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = budget_overrides.apply(cfg)
             if sandbox_overrides is not None:
                 cfg = sandbox_overrides.apply(cfg)
-            cfg.require_runnable("worker")
+            cfg.require_runnable(role)
         except ConfigError as exc:
             reporter.err(f"CONFIG ERROR:\n{exc}")
             return 2
@@ -527,9 +529,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
 
         worker_inner = build_role_provider(
-            cfg, "worker", transcript_sink=transcript_sink, budget=budget
+            cfg, role, transcript_sink=transcript_sink, budget=budget
         )
-        rm_worker = cfg.models.resolve("worker")
+        rm_worker = cfg.models.resolve(role)
         assert rm_worker is not None  # require_runnable validated this
         warn_if_prompt_override_incomplete(cfg)
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
@@ -539,7 +541,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             frontend.attach_console_view(events)
         provider: Provider = InstrumentedProvider(
             inner=worker_inner,
-            role="worker",
+            role=role,
             model=rm_worker.model,
             provider_name=rm_worker.provider,
             events=events,
@@ -674,7 +676,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 review_budget_fraction=cfg.review.budget_fraction,
                 review_concurrency=cfg.review.concurrency,
                 base_sha=resume_base_sha,
-                temperature=role_temperature(cfg, "worker"),
+                temperature=role_temperature(cfg, role),
                 critic_temperature=role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
                 compact_drop_at_chars=compact_drop,

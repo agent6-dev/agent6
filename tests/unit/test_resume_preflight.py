@@ -206,3 +206,163 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
 
     assert _cmd_resume(None, "parked-DDDD44", force=False) == 0
     assert captured["profile_stamp"] is None  # re-derives, not the stale manifest name
+
+
+class _Stop(Exception):
+    """Sentinel: the resume path reached the seam past the assertion point."""
+
+
+def _plan_run_dir(repo: Path, run_id: str) -> None:
+    run_dir = _state_dir(repo) / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "run_id": run_id, "mode": "plan", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (run_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+_PROVIDER_TOML = """
+[agent6]
+config_version = 1
+
+[providers.anthropic]
+api_format = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[models.reviewer]
+provider = "anthropic"
+model = "planner-model"
+"""
+
+_PLANNER_ONLY = (
+    _PROVIDER_TOML
+    + """
+[models.planner]
+provider = "anthropic"
+model = "planner-model"
+"""
+)
+
+_PLANNER_AND_WORKER = (
+    _PLANNER_ONLY
+    + """
+[models.worker]
+provider = "anthropic"
+model = "worker-model"
+"""
+)
+
+
+def _stub_load_effective(monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: Path) -> None:
+    from agent6.config import load_config
+
+    cfg_path = tmp / "cfg.toml"
+    cfg_path.write_text(toml_body, encoding="utf-8")
+    cfg = load_config(cfg_path)
+
+    class _Loaded:
+        config = cfg
+
+    def _load(*_a: object, **_k: object) -> _Loaded:
+        return _Loaded()
+
+    monkeypatch.setattr(resume_mod, "load_effective", _load)
+
+
+def test_plan_resume_requires_the_planner_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan run resumes under the planner role. Resume hard-coded "worker" at
+    its readiness gate, so a planner-only config could START a plan (fresh
+    preflight passes require_runnable("planner")) but never resume it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_run_dir(repo, "plan-AAAA11")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+
+    def _stop(*_a: object, **_k: object) -> object:
+        raise _Stop()
+
+    # Reaching detect_env means the readiness gate accepted the planner-only
+    # config; the old hard-coded require_runnable("worker") returned 2 first.
+    monkeypatch.setattr(resume_mod, "detect_env", _stop)
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-AAAA11", force=False)
+
+
+def test_plan_resume_builds_the_planner_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resumed leg's DRIVING provider is the planner route: with both roles
+    configured, the old path silently switched a plan run to the worker model
+    on its second leg (and stamped the transcript seat "worker")."""
+    import dataclasses
+
+    import agent6.ui.cli.resume as cli_resume_mod
+    from agent6.ui.cli.run import run_frontend
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_run_dir(repo, "plan-BBBB22")
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+
+    def _yes(*_a: object) -> bool:
+        return True
+
+    def _frontend() -> object:
+        return dataclasses.replace(run_frontend(), confirm_unconfined_autorun=_yes)
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _strict_viable(*_a: object, **_k: object) -> tuple[str, None]:
+        return ("strict", None)
+
+    def _no_egress(*_a: object, **_k: object) -> tuple[object, None]:
+        return (resume_mod.EgressGuard(), None)
+
+    monkeypatch.setattr(cli_resume_mod, "run_frontend", _frontend)
+    monkeypatch.setattr(resume_mod, "detect_env", object)
+    monkeypatch.setattr(resume_mod, "select_profile", _strict)
+    monkeypatch.setattr(resume_mod, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(resume_mod, "check_network_profile", _none)
+    monkeypatch.setattr(resume_mod, "resolve_strict_egress_viability", _strict_viable)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(resume_mod, "budget_preflight", _none)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(resume_mod, "maybe_start_egress", _no_egress)
+    monkeypatch.setattr(resume_mod, "maybe_apply_agent_landlock", _none)
+    monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
+
+    captured: list[str] = []
+
+    def _capture_role(_cfg: object, role: str, **_k: object) -> object:
+        captured.append(role)
+        raise _Stop()
+
+    monkeypatch.setattr(resume_mod, "build_role_provider", _capture_role)
+    with pytest.raises(_Stop):
+        _cmd_resume(None, "plan-BBBB22", force=False)
+    assert captured == ["planner"]

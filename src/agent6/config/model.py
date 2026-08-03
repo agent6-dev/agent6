@@ -54,6 +54,15 @@ ApiFormat = Literal["anthropic", "openai"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 RoleName = Literal["worker", "reviewer", "planner"]
+
+
+def role_for_mode(mode: str) -> RoleName:
+    """The model role that drives a workflow mode: ``plan`` is driven by the
+    planner (``ModelsConfig.resolve`` falls back to the worker); every other
+    mode by the worker. The one rule for fresh, resume, and preflight paths."""
+    return "planner" if mode == "plan" else "worker"
+
+
 ThinkingLevel = Literal["off", "low", "medium", "high"]
 # The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
 # vocabulary has one owner.

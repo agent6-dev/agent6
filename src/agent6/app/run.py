@@ -69,7 +69,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import Config, RoleName
+from agent6.config import Config, role_for_mode
 from agent6.config.layer import resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import (
@@ -267,7 +267,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     ``<run-dir>/plan.md`` and is consumed by ``agent6 run --from-plan``.
     The ``planner`` model role drives plan mode (falls back to ``worker``).
     """
-    role: RoleName = "planner" if mode == "plan" else "worker"
+    role = role_for_mode(mode)
 
     env = detect_env()
     try:

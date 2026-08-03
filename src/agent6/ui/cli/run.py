@@ -23,6 +23,7 @@ from agent6.config import (
     Config,
     ConfigError,
     RoleName,
+    role_for_mode,
 )
 from agent6.config.layer import (
     load_effective,
@@ -226,7 +227,7 @@ def _cmd_run(  # noqa: PLR0911
     # which already checks git before require_runnable.
     if mode != "ask" and not require_git_repo(Path.cwd()):
         return 2
-    role: RoleName = "planner" if mode == "plan" else "worker"
+    role = role_for_mode(mode)
     try:
         cfg.require_runnable(role)
     except ConfigError as exc:
