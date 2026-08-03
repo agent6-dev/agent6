@@ -103,7 +103,13 @@ def acp_frontend(
         """
         if isolation != "none" or cfg.sandbox.run_commands != "yes":
             return True
-        return _approve("Run commands UNSANDBOXED on this host, with no per-command prompt?")
+        # standing=False: docs/security.md documents this as a ONE-TIME gate,
+        # and ACP's `allow_always` is exactly the button that would let one
+        # click silence it for every later session.
+        return _approve(
+            "Run commands UNSANDBOXED on this host, with no per-command prompt?",
+            standing=False,
+        )
 
     def _branch_choice(cfg: Config, _cwd: Path, base: str) -> BranchChoice:
         """`git.branch_from`, honoured rather than discarded.

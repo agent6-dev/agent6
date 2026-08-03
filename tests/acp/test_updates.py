@@ -228,3 +228,18 @@ def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
     text = update["params"]["update"]["content"]["text"]
     assert "\x1b" not in text and "\x07" not in text
     assert "\nsecond\tline" in text, "real whitespace is content, not an escape"
+
+
+def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
+    """`title` is `salient_arg` -- the model's own argv, path or pattern -- and
+    it is not a ContentBlock, so it went round the scrub the sibling `content`
+    field on the very next notification already had."""
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    hostile = "sh -c '\x1b]0;PWNED\x07'"
+    call, _outcome = updates_for(
+        TranscriptItem(kind="tool", name="run_command", arg=hostile, ok=True), session_id="s"
+    )
+    assert "\x1b" not in call["params"]["update"]["title"]
+    assert "\x07" not in call["params"]["update"]["title"]

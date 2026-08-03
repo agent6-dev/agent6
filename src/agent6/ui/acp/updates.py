@@ -129,6 +129,18 @@ def _update(session_id: str, update: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def printable(text: str) -> str:
+    """Model-authored text, with control characters dropped.
+
+    Every string this front-end puts on the wire that the MODEL had a hand in
+    goes through here. Applying it only to ContentBlocks left two ways past
+    it: a tool call's `title` (the model's own argv, via `salient_arg`) and a
+    permission request's title and option names -- the latter being the one
+    surface an operator MUST read before granting a command.
+    """
+    return "".join(c for c in text if c.isprintable() or c in "\n\t")
+
+
 def _text(text: str) -> dict[str, Any]:
     """A ContentBlock, with control characters dropped.
 
@@ -140,7 +152,7 @@ def _text(text: str) -> dict[str, Any]:
     is false for every C0/C1 control, so a sequence loses its ESC and becomes
     the literal text it was pretending not to be.
     """
-    return {"type": "text", "text": "".join(c for c in text if c.isprintable() or c in "\n\t")}
+    return {"type": "text", "text": printable(text)}
 
 
 def _tool_status(item: TranscriptItem) -> str:
@@ -187,7 +199,9 @@ def _tool_id(item: TranscriptItem, run_id: str) -> str:
 
 
 def _tool_call(item: TranscriptItem, run_id: str) -> dict[str, Any]:
-    title = f"{item.name} {item.arg}".strip()
+    # The model wrote `arg` (its own argv / path / pattern), so it is scrubbed
+    # like any other model text; `content` next door already was.
+    title = printable(f"{item.name} {item.arg}".strip())
     return {
         "toolCallId": _tool_id(item, run_id),
         "title": title,

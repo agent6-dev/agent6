@@ -53,8 +53,6 @@ class SessionKind:
     runs_commands: bool
     # Forces approval even where config says "yes".
     clamps_commands: bool
-    # Has a verify gate to be judged by.
-    verify: bool
     # `agent6 resume` can pick this up. A machine's states are driven by the
     # machine agent, not by the run lifecycle.
     resumable: bool
@@ -70,7 +68,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
             edits=True,
             runs_commands=True,
             clamps_commands=False,
-            verify=True,
             resumable=True,
         ),
         SessionKind(
@@ -80,7 +77,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
             edits=False,
             runs_commands=True,
             clamps_commands=False,
-            verify=False,
             resumable=True,
         ),
         # Read-only Q&A, kept out of the run history: `agent6 ask` investigates
@@ -92,7 +88,6 @@ SESSION_KINDS: dict[str, SessionKind] = {
             edits=False,
             runs_commands=True,
             clamps_commands=True,
-            verify=False,
             resumable=True,
         ),
         # Authoring a machine file, and one state of one running machine. The
@@ -104,8 +99,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             role="worker",
             edits=False,
             runs_commands=False,
-            clamps_commands=True,
-            verify=False,
+            clamps_commands=False,
             resumable=False,
         ),
         SessionKind(
@@ -114,8 +108,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             role="worker",
             edits=False,
             runs_commands=False,
-            clamps_commands=True,
-            verify=False,
+            clamps_commands=False,
             resumable=False,
         ),
     )

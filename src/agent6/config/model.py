@@ -25,6 +25,7 @@ is unset (see :mod:`agent6.verify_infer`), else run gateless.
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import tomllib
 from collections.abc import Callable
@@ -1049,7 +1050,16 @@ def _is_loopback(url: str) -> bool:
     server is the normal case for `url`, and the only one where plain http
     with a token is not a cleartext secret on the wire."""
     host = (urlsplit(url).hostname or "").lower()
-    return host in {"localhost", "127.0.0.1", "::1", "[::1]"} or host.startswith("127.")
+    if host == "localhost":
+        return True
+    try:
+        # Parsed, never prefix-matched: `127.evil.com` and `127.0.0.1.nip.io`
+        # both start with "127." and both resolve wherever their owner points
+        # them, so a string test sent the bearer token across the network in
+        # cleartext while claiming it never left the machine.
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 class MCPConfig(BaseModel):

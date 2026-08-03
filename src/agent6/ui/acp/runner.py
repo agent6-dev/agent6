@@ -36,7 +36,7 @@ from agent6.runs.layout import RunLayout
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import Session, Sessions, StopReason
-from agent6.ui.acp.updates import message_update, updates_for
+from agent6.ui.acp.updates import message_update, printable, updates_for
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import TranscriptFold
@@ -116,15 +116,18 @@ def stop_reason(code: int) -> StopReason:
 def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
     """The option the editor chose, or None for no usable answer.
 
-    Only an option we offered: a cancel, a timeout and an echoed string are all
-    "no answer", and an unknown string could otherwise become an "allow" by
-    prefix.
+    A cancel, a timeout and an id we did not issue are all "no answer" -- and
+    the answer has to be one we offered, or an unknown string could become an
+    "allow" by prefix.
     """
     outcome = answer.get("outcome")
     if not isinstance(outcome, dict) or outcome.get("outcome") != "selected":
         return None
     chosen = outcome.get("optionId")
-    return chosen if isinstance(chosen, str) and chosen in options else None
+    if not isinstance(chosen, str) or not chosen.isdigit():
+        return None
+    index = int(chosen)
+    return options[index] if index < len(options) else None
 
 
 @dataclass
@@ -166,13 +169,22 @@ class RunBridge:
                 "sessionId": session.id,
                 "toolCall": {
                     "toolCallId": tool_call_id,
-                    "title": prompt,
+                    "title": printable(prompt),
                     "kind": "other",
                     "status": "pending",
                 },
                 "options": [
-                    {"optionId": text, "name": text, "kind": option_kind(text, standing)}
-                    for text in options
+                    {
+                        # An INDEX, not the option text: the text can be
+                        # model-written (a UserQuestion's options are), and an
+                        # identifier is not a place for model input. It also
+                        # makes "only an option we offered" structural rather
+                        # than a string comparison.
+                        "optionId": str(index),
+                        "name": printable(text),
+                        "kind": option_kind(text, standing),
+                    }
+                    for index, text in enumerate(options)
                 ],
             },
             timeout_s=PERMISSION_TIMEOUT_S,

@@ -218,6 +218,26 @@ def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.Mo
         wire.close()
 
 
+def _acp_front(*, reply: str | None):
+    """The real ACP frontend, with the ask seam captured."""
+    from agent6.app.run import FrontendCapabilities
+    from agent6.ui.acp.frontend import acp_frontend
+
+    asked: list[tuple[str, tuple[str, ...], bool | None]] = []
+
+    def _ask(prompt: str, options: tuple[str, ...], standing: bool | None) -> str | None:
+        asked.append((prompt, options, standing))
+        return reply
+
+    front = acp_frontend(
+        ask=_ask,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid: "",
+    )
+    return front, asked
+
+
 def _bridge(answer: dict[str, Any]) -> RunBridge:
     bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 
@@ -229,7 +249,7 @@ def _bridge(answer: dict[str, Any]) -> RunBridge:
 
 
 def test_an_approval_round_trips_through_the_editor() -> None:
-    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "allow"}})
+    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     session = session_mod.Session(id="s", cwd=Path("/x"))
     assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
 
@@ -239,7 +259,7 @@ def test_an_approval_round_trips_through_the_editor() -> None:
     [
         {"outcome": {"outcome": "cancelled"}},
         {},
-        {"outcome": {"outcome": "selected", "optionId": "allow-everything"}},
+        {"outcome": {"outcome": "selected", "optionId": "99"}},
         {"outcome": {"outcome": "selected"}},
     ],
 )
@@ -439,7 +459,7 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     ACP models a tool call as an entity with a lifecycle, so an editor kept one
     PENDING entry per approval for the life of the session."""
     sent: list[dict[str, Any]] = []
-    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "allow"}})
+    bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     session = session_mod.Session(id="s", cwd=Path("/x"))
     assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
@@ -469,3 +489,49 @@ def test_a_malformed_frame_cannot_answer_an_outstanding_approval() -> None:
     assert server._pending, "the slot was consumed by a non-response"  # pyright: ignore[reportPrivateUsage]
     server.abandon_pending()
     asking.join(timeout=5.0)
+
+
+def test_the_approval_dialog_is_scrubbed_too() -> None:
+    """The one surface an operator MUST read before granting a command, and it
+    never went through the scrub: the prompt embeds the model's own argv, and
+    a `UserQuestion`'s option strings are model-written outright."""
+    sent: list[dict[str, Any]] = []
+    bridge = _bridge({"outcome": {"outcome": "cancelled"}})
+
+    def _record(_method: str, params: dict[str, Any], **_kw: object) -> dict[str, Any]:
+        sent.append(params)
+        return {}
+
+    bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
+    session = session_mod.Session(id="s", cwd=Path("/x"))
+    bridge.ask(session, "Allow run_command: \x1b]0;PWNED\x07ls", ("allow\x1b[2J", "deny"), True)
+    wire = json.dumps(sent[0])
+    assert "\\u001b" not in wire and "\\u0007" not in wire, wire
+
+
+def test_the_unsandboxed_gate_is_never_offered_as_remember_me() -> None:
+    """docs/security.md documents it as a ONE-TIME gate. ACP's `allow_always`
+    is exactly the button that would let one click silence it forever."""
+    from agent6.config import Config
+
+    front, asked = _acp_front(reply="allow once")
+    dangerous = Config.model_validate({"sandbox": {"isolation": "none", "run_commands": "yes"}})
+    assert front.confirm_unconfined_autorun("none", dangerous) is True
+    assert asked[-1][2] is False, "the sandbox-off gate must not be a standing approval"
+
+
+def test_a_cwd_that_does_not_exist_is_refused_by_name(tmp_path: Path) -> None:
+    """A stale workspace path is the ordinary editor mistake. Asking git first
+    meant `subprocess` could not chdir into it, and the FileNotFoundError
+    surfaced as `{"code": -32603, "message": "FileNotFoundError"}` -- an
+    internal error where a named refusal belongs."""
+    wire = _Wire()
+    try:
+        wire.send(id=1, method="initialize", params={"clientCapabilities": {}})
+        wire.recv()
+        wire.send(id=2, method="session/new", params={"cwd": str(tmp_path / "gone")})
+        error = wire.recv()["error"]
+        assert error["code"] != -32603, error
+        assert "not a directory" in error["message"]
+    finally:
+        wire.close()

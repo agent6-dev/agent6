@@ -114,6 +114,12 @@ def git_repo_refusal(cwd: Path) -> str | None:
 
     Returns the message, or None when *cwd* is usable.
     """
+    if not cwd.is_dir():
+        # Asked git first, `subprocess` could not chdir into a missing
+        # directory and the FileNotFoundError surfaced as an opaque
+        # internal error. A stale workspace path is the ordinary editor
+        # mistake, and it deserves the same named refusal as a wrong one.
+        return f"{cwd} is not a directory."
     if is_git_repo(cwd):
         return None
     return (

@@ -465,6 +465,9 @@ def fire_notify_hook(
     try:
         subprocess.run(
             list(notify.on_complete),
+            # Never the parent's stdout: under `agent6 acp` that is the
+            # JSON-RPC stream, and one printed line desynchronises it.
+            stdout=subprocess.DEVNULL,
             env=env,
             timeout=notify.timeout_s,
             check=False,
