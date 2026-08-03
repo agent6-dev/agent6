@@ -42,6 +42,7 @@ from agent6.ui.cli._ask import (
     run_ask_repl,
     save_ask_transcript,
 )
+from agent6.ui.cli._btw import direct_launch, make_btw_runner
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
     build_approver,
@@ -127,7 +128,23 @@ def run_frontend() -> RunFrontend:
         build_approver=lambda run_dir, events: build_approver(run_dir, events, console_cell[0]),
         build_questioner=lambda run_dir, events: build_questioner(run_dir, events, console_cell[0]),
         make_steer_state=lambda events, run_dir, facts: make_steer_state(
-            events, run_dir, console_cell[0], facts
+            events,
+            run_dir,
+            console_cell[0],
+            facts,
+            # `/btw` spawns beside the run. `direct_launch` is right here: the
+            # CLI process is the one with a terminal, so it is not the confined
+            # coordinator a `/parallel` lane has to escape from.
+            make_btw_runner(
+                run_dir.name,
+                launch=direct_launch,
+                list_asks=lambda: (
+                    [d for d in (run_dir.parent.parent / "asks").iterdir() if d.is_dir()]
+                    if (run_dir.parent.parent / "asks").is_dir()
+                    else []
+                ),
+                console_view=lambda: console_cell[0],
+            ),
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,

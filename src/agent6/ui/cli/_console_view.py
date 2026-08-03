@@ -87,6 +87,10 @@ class ConsoleView:
         # an operator sees the model, the command setting, the sandbox and the
         # gate without interrupting. "" when the caller has no run dir.
         self._policy = policy
+        # Finished /btw answers waiting for a clean break. A btw completes while
+        # the run is streaming; printing it then would cut the transcript in
+        # half, so it waits for a turn boundary and lands whole.
+        self._btw: list[str] = []
         self._out = out if out is not None else sys.stderr
         self._color = self._out.isatty() if color is None else color
         self._fold = TranscriptFold()
@@ -114,6 +118,19 @@ class ConsoleView:
     def __call__(self, event: dict[str, Any]) -> None:
         self.feed(event)
 
+    def queue_btw(self, block: str) -> None:
+        """Hand a finished /btw answer to the view. Called from the watcher
+        thread; printed whole at the next turn boundary, never mid-stream."""
+        with self._lock:
+            self._btw.append(block)
+
+    def _drain_btw(self) -> None:
+        """Print any finished btw answers. Caller holds the lock and has just
+        closed the open block, so this lands between turns."""
+        for block in self._btw:
+            self._line(block)
+        self._btw.clear()
+
     def feed(self, event: dict[str, Any]) -> None:
         etype = event.get("type", "")
         with self._lock:
@@ -131,6 +148,7 @@ class ConsoleView:
                 return
             if etype in ("role.call", "role.result"):
                 self._end_block()  # a provider call boundary closes any open prose
+                self._drain_btw()
                 return
             if etype == "run.steer_requested":
                 # A Ctrl-C pause message is about to print to the same terminal;

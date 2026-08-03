@@ -47,6 +47,7 @@ ALLOWED = {
     "tools/lsp.py",
     "tools/mcp_client.py",
     "ui/cli/_ask.py",
+    "ui/cli/_btw.py",
     "ui/cli/_live.py",
     "ui/cli/_steer.py",
     "ui/cli/completions_cmd.py",

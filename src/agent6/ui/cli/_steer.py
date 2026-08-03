@@ -33,7 +33,7 @@ from agent6.runs.ipc import (
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable
-from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu
+from agent6.ui.cli._steer_menu import BtwRunner, normalize_steer_choice, pause_menu
 from agent6.viewmodel.format import format_cost
 
 
@@ -250,6 +250,7 @@ def install_steer_sigint(
     run_dir: Path,
     console_view: ConsoleView | None = None,
     run_facts: Callable[[], RunFacts] | None = None,
+    btw_runner: BtwRunner | None = None,
 ) -> SteerState:
     """Install a SIGINT handler with escalating stages.
 
@@ -343,7 +344,7 @@ def install_steer_sigint(
                 if menu_capable():
                     # The interactive pause menu: line editing, history, and a
                     # fish-style Tab preview of the slash commands.
-                    return pause_menu(run_dir)
+                    return pause_menu(run_dir, btw_runner=btw_runner)
                 return normalize_steer_choice(
                     tty_prompt(
                         "[agent6] paused: [enter] continue · type to steer · q stop · d detach: "
@@ -409,6 +410,7 @@ def make_steer_state(
     run_dir: Path,
     console_view: ConsoleView | None = None,
     run_facts: Callable[[], RunFacts] | None = None,
+    btw_runner: BtwRunner | None = None,
 ) -> SteerState:
     """Install the steer SIGINT handler when a controlling terminal exists
     (covers run/plan/ask with or without the TUI); else steer purely over the
@@ -418,4 +420,4 @@ def make_steer_state(
             pass
     except OSError:
         return file_bridge_steer(run_dir)
-    return install_steer_sigint(events, run_dir, console_view, run_facts)
+    return install_steer_sigint(events, run_dir, console_view, run_facts, btw_runner)

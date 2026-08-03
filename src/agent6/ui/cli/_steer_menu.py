@@ -36,6 +36,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.config.layer import load_effective
+from agent6.directive import parse_btw
 from agent6.models.registry import context_window
 from agent6.paths import data_dir
 from agent6.runs.ipc import request_compact
@@ -54,6 +55,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/tasks": "the task graph with statuses",
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
+    "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
     "/detach": "keep the run going in the background",
@@ -186,11 +188,26 @@ def _print_help() -> None:
     print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
 
 
+# Starts a btw and delivers the finished answer to the console view. The menu
+# owns the grammar; the CLI owns the spawn and the delivery. None (headless,
+# tests) makes `/btw` say so rather than fail obscurely.
+BtwRunner = Callable[[str, Path], str]
+
+
+def _start_btw(cmd: str, run_dir: Path, runner: BtwRunner | None) -> str:
+    question = parse_btw(cmd)
+    if not question:
+        return "[agent6] ask something: `/btw <question>`"
+    if runner is None:
+        return "[agent6] /btw needs a live run with a terminal"
+    return runner(question, run_dir)
+
+
 # Commands that end the menu, mapped to the canonical steer action.
 _ACTIONS: dict[str, str] = {"/continue": "", "/stop": "abort", "/detach": "detach"}
 
 
-def _run_info_command(cmd: str, run_dir: Path) -> None:
+def _run_info_command(cmd: str, run_dir: Path, btw_runner: BtwRunner | None = None) -> None:
     """Run a print-and-re-prompt command (everything not in ``_ACTIONS``)."""
     if cmd == "/help":
         _print_help()
@@ -205,10 +222,15 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
             print("[agent6] compaction requested; applies before the next model call")
         else:
             print("[agent6] could not write the compaction request; nothing was requested")
+    elif cmd.startswith("/btw"):
+        print(_start_btw(cmd, run_dir, btw_runner))
 
 
 def pause_menu(  # noqa: PLR0911, PLR0912
-    run_dir: Path, *, input_fn: Callable[[str], str] | None = None
+    run_dir: Path,
+    *,
+    input_fn: Callable[[str], str] | None = None,
+    btw_runner: BtwRunner | None = None,
 ) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
     continue, 'abort' stop now, 'detach' background, else the instruction sent
@@ -271,4 +293,4 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         elif matches[0] in skills:
             return skill_steer_payload(matches[0][1:], skills[matches[0]][1], "")
         else:
-            _run_info_command(matches[0], run_dir)
+            _run_info_command(matches[0], run_dir, btw_runner)

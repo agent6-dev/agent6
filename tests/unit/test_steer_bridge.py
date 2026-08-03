@@ -163,7 +163,7 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
-    def fake_menu(run_dir: Path) -> str | None:
+    def fake_menu(run_dir: Path, **_kw: object) -> str | None:
         calls.append("prompt")
         return "steer text"
 

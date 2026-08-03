@@ -251,6 +251,11 @@ fixed argv depending only on operator input, never LLM output.
 - `runs/ipc.py`: `ps -p <pid> -o lstart=` on hosts without /proc (macOS) for
   the worker.pid start-time identity; fixed argv over a pid agent6 itself
   recorded.
+- `ui/cli/_btw.py`: spawns `agent6 ask` detached for `/btw`, so the side
+  question keeps provider egress when the run itself is confined. argv is the
+  agent6 exe plus the question the OPERATOR typed at the pause menu -- never
+  LLM output -- with `--` before it so a question starting with a dash cannot
+  read as a flag.
 - `ui/spawn.py`: the shared front-end spawn helper; spawns the agent6 CLI
   detached for run/machine launches and captures `runs merge`/`prune`/
   `config set`; argv is the agent6 exe plus operator-chosen args.
