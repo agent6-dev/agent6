@@ -278,7 +278,15 @@ class MachineWatchCursor:
         return lines
 
 
-def machine_state_as_dict(ms: MachineState) -> dict[str, Any]:
+def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> dict[str, Any]:
     """The JSON-able wire form of a MachineState, stable field names: what
-    `agent6 attach --json` and a web client serialize."""
-    return asdict(ms)
+    `agent6 attach --json` and a web client serialize.
+
+    Pass *machine_dir* whenever the caller has one: ``status`` is then THE
+    dir-aware word (:func:`machine_word_for_dir`), so a client can tell a
+    parked "waiting" instance from a running one. Without it a client's only
+    liveness signal is ``ended``, and Steer on a parked machine looked live."""
+    d = asdict(ms)
+    if machine_dir is not None:
+        d["status"] = machine_word_for_dir(ms, machine_dir)
+    return d

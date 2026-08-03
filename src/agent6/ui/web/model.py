@@ -312,7 +312,7 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     `agent6 attach <name> --json`."""
     spec = load_machine(machine_dir / "machine.asm.toml")
     ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    return machine_state_as_dict(ms)
+    return machine_state_as_dict(ms, machine_dir)
 
 
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:

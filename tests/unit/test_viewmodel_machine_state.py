@@ -21,6 +21,7 @@ from agent6.viewmodel.machine_state import (
     NotificationView,
     fold_machine,
     machine_is_parked,
+    machine_state_as_dict,
     machine_status_word,
     machine_word_for_dir,
     newest_state_log,
@@ -130,6 +131,18 @@ def test_machine_word_for_dir_pairs_the_dir_probes(tmp_path: Path) -> None:
         spec, [MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1)]
     )
     assert machine_word_for_dir(ended, d) == "ok"  # the end outranks the probes
+
+
+def test_machine_state_as_dict_stamps_the_dir_word(tmp_path: Path) -> None:
+    # With a dir in hand the wire form carries the dir-aware word; a genuinely
+    # dir-less stream keeps the bare fold (no fabricated liveness claim).
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    MachineJournal(d).write_pending_wait(PendingWait(state="w", wake_epoch=None))
+    assert machine_state_as_dict(live, d)["status"] == "waiting"
+    assert "status" not in machine_state_as_dict(live)
 
 
 def test_a_corrupt_wait_file_counts_as_parked(tmp_path: Path) -> None:

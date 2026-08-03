@@ -74,7 +74,7 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
     ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    print(json.dumps(machine_state_as_dict(ms)))
+    print(json.dumps(machine_state_as_dict(ms, machine_dir)))
     return 0
 
 

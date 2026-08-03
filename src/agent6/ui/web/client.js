@@ -1107,9 +1107,12 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // Track which per-state dir this frame rendered so prompt answers + steer route
   // to that exact state (ids reset per state; the machine may advance meanwhile).
   cards._state = (data.reasoning || {}).state_dir || '';
-  // An ended machine takes no input: painting {} reconciles any existing
-  // approval/question boxes away, matching the Steer/Message disable below.
-  paintPrompts(cards, m.ended ? {} : (data.reasoning || {}));
+  // A machine that is not running takes no input: ended, parked (waiting) and
+  // stopped instances all have a finished agent state whose loop polls no
+  // marker, so painting {} reconciles any approval/question boxes away,
+  // matching the Steer disable below (the server refuses the POST anyway).
+  const notRunning = !!m.ended || (m.status ? m.status !== 'running' : false);
+  paintPrompts(cards, notRunning ? {} : (data.reasoning || {}));
   machineNotify(ctx, m);
   if (m.ended && !ctx.endedNotified) {
     ctx.endedNotified = true;
@@ -1120,7 +1123,9 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
   }
   structBody.innerHTML = '';
-  structBody.appendChild(el('div', 'sub muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}`));
+  const word = m.status || (m.ended ? m.ended.status : '');
+  structBody.appendChild(el('div', 'sub muted',
+    `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}`));
   const tree = el('div', 'tree');
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
@@ -1140,11 +1145,14 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no
   // run.end, which would leave a live "thinking..." marker up forever. Steer
-  // additionally needs an agent state to inject into.
+  // additionally needs a RUNNING worker (a parked or stopped machine's newest
+  // state is finished; nothing polls the marker) and an agent state to inject
+  // into. A poke is the exception: waking a waiting machine is its purpose.
   const ended = !!m.ended;
   if (cards._steer_btn) {
-    cards._steer_btn.disabled = ended || !cards._state;
+    cards._steer_btn.disabled = notRunning || !cards._state;
     cards._steer_btn.title = ended ? 'the machine has ended'
+      : notRunning ? 'machine is not running; poke it to wake a waiting machine'
       : !cards._state ? 'no agent state is active to steer'
       : 'inject into the current agent state at its next safe boundary';
   }

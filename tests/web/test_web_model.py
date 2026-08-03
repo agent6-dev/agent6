@@ -125,6 +125,38 @@ def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> N
     }
 
 
+TINY_MACHINE = """
+machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[states.route]
+kind = "branch"
+when = [{ else = true, goto = "done" }]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+"""
+
+
+def test_machine_snapshot_carries_the_dir_status_word(tmp_path: Path) -> None:
+    """The machine wire payload stamps `status` (machine_word_for_dir), so a
+    client can gate Steer and the prompt boxes on liveness -- with only
+    `ended` it cannot tell a parked machine from a running one."""
+    md = model.machines_root(tmp_path) / "m3"
+    md.mkdir(parents=True)
+    (md / "machine.asm.toml").write_text(TINY_MACHINE, encoding="utf-8")
+    (md / "journal.jsonl").write_text("", encoding="utf-8")
+    assert model.machine_snapshot(md)["status"] == "stopped"  # no wait, no worker
+    (md / "wait.json").write_text('{"state":"route","wake_epoch":9999999999.0}\n', encoding="utf-8")
+    assert model.machine_snapshot(md)["status"] == "waiting"  # parked
+
+
 def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
     # A machine dir with no states/ subtree has no agent reasoning to fold.
     md = model.machines_root(tmp_path) / "m1"
