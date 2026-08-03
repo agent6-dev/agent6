@@ -470,7 +470,10 @@ class HomeScreen(Screen[None]):
             if row is not None:
                 table.move_cursor(row=row)
         # Useful context in the header sub-title rather than a duplicate hint bar.
-        self.app.sub_title = f"{self.repo_cwd} · {len(self._runs)} runs"
+        # "sessions", not "runs": this hub lists every bucket, so a hub of one
+        # run, one plan and one ask announced "3 runs".
+        count = len(self._runs)
+        self.app.sub_title = f"{self.repo_cwd} · {count} session{'' if count == 1 else 's'}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
 
