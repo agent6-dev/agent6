@@ -42,7 +42,6 @@ ALLOWED = {
     "providers/token_command.py",
     "runs/ipc.py",
     "sandbox/detect.py",
-    "sandbox/host_spawn.py",
     "sandbox/jail.py",
     "tools/lsp.py",
     "tools/mcp_client.py",

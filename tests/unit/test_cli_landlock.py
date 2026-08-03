@@ -14,17 +14,17 @@ from typing import Any
 
 import pytest
 
-from agent6.app import egress as cli  # maybe_apply_agent_landlock lives here now
+from agent6.app import confine as cli  # maybe_apply_agent_landlock lives here now
 from agent6.sandbox import LandlockNotSupportedError
 from agent6.sandbox.landlock import LandlockReport
 
 
-def _cfg(agent_network: str = "providers", extra_read_paths: tuple[str, ...] = ()) -> Any:
+def _cfg(extra_read_paths: tuple[str, ...] = ()) -> Any:
     # Minimal stand-in: one OpenAI-compatible provider on the default port.
     entry = SimpleNamespace(base_url="https://openrouter.ai/api/v1")
     return SimpleNamespace(
         providers=SimpleNamespace(values=lambda: [entry]),
-        sandbox=SimpleNamespace(agent_network=agent_network, extra_read_paths=extra_read_paths),
+        sandbox=SimpleNamespace(extra_read_paths=extra_read_paths),
     )
 
 

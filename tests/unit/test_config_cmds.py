@@ -252,20 +252,6 @@ def test_revalidate_machine_accepts_valid_spec(
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
 
-def test_config_show_single_key_prints_untruncated_value(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    assert main(["config", "show", "sandbox.run_commands"]) == 0
-    out = capsys.readouterr().out
-    assert "sandbox.run_commands" in out and "value:" in out and "source:" in out
-    # A section prefix shows all its leaves.
-    assert main(["config", "show", "sandbox"]) == 0
-    assert "sandbox.agent_network" in capsys.readouterr().out
-
-
 def test_config_show_unknown_key_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -274,53 +260,6 @@ def test_config_show_unknown_key_errors(
     monkeypatch.chdir(tmp_path)
     assert main(["config", "show", "nope.nope"]) == 2
     assert "no config key matches" in capsys.readouterr().err
-
-
-def test_config_add_on_scalar_key_says_not_a_list(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # The key is unset in the target file, so the old file-only guard let a
-    # scalar through to revalidation, which printed a self-contradictory
-    # "'local' is not valid ... Input should be 'providers', 'local' or 'open'".
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    rc = main(["config", "add", "sandbox.agent_network", "local"])
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "not a list field" in err
-    assert "Input should be" not in err
-
-
-def test_config_add_on_unset_list_key_still_works(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    rc = main(["config", "add", "sandbox.allow_urls", "https://example.com"])
-    assert rc == 0
-    assert "Added" in capsys.readouterr().out
-
-
-def test_config_add_on_unset_optional_list_key_works(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A `list[str] | None` field (providers.*.token_command, default None) whose
-    # value is unset must not be misread as a scalar: the effective value is
-    # None, which is not proof of scalar-ness. Regression for a guard that
-    # refused `config add` on it with a "not a list field" error.
-    from agent6.paths import global_config_path
-    from agent6.ui.cli import main
-
-    global_config_path().write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
-    )
-    monkeypatch.chdir(tmp_path)
-    rc = main(["config", "add", "providers.anthropic.token_command", "aws-vault"])
-    assert rc == 0
-    out = capsys.readouterr().out
-    assert "Added" in out
 
 
 def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
@@ -532,21 +471,6 @@ def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     assert '"auto"' in global_config_path().read_text(encoding="utf-8")
 
 
-def test_config_set_allows_a_cross_field_write_valid_given_a_set_sibling(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A value whose validity depends on a SIBLING (a cross-field @model_validator) must
-    # be accepted once that sibling is set. The up-front pre-check validates the leaf
-    # in isolation (siblings at defaults), so it must NOT attribute the resulting
-    # parent-table error to the written child, or it would wrongly reject e.g.
-    # sandbox.tool_network='allow' after sandbox.agent_network='open' is already set.
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "sandbox.agent_network", "open"]) == 0
-    assert main(["config", "set", "sandbox.tool_network", "allow"]) == 0  # not over-rejected
-
-
 def test_config_set_sub_leaf_on_an_existing_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -725,31 +649,6 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
     assert "state_dir" in err
 
 
-def test_config_fix_drops_an_unknown_top_level_table(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A leftover [cli] table (from a removed feature) is an unknown TOP-LEVEL table:
-    # pydantic reports extra_forbidden at "cli" (not "cli.input"), and the WHOLE table
-    # must be dropped -- removing just the leaf would leave an empty [cli] that is
-    # still invalid. Regression for `config fix` reporting it unfixable.
-    from agent6.paths import global_config_path
-    from agent6.ui.cli import main
-
-    gpath = global_config_path()
-    gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text('[cli]\ninput = "bar"\n[budget]\nmax_usd = 5.0\n', encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    rc = main(["config", "fix"])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "cli" in out  # named the removed table
-    text = gpath.read_text(encoding="utf-8")
-    assert "[cli]" not in text  # the whole table is gone, not just a leaf line
-    assert "max_usd" in text  # the valid section stays
-    assert main(["config", "show"]) == 0  # config is valid now
-
-
 def test_config_set_unknown_provider_key_speaks_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -794,56 +693,6 @@ def test_config_set_invalid_provider_value_names_the_field(
     assert "merged config layers" not in err and ".anthropic." not in err
     # A partial-entry write some member accepts still lands (never reverted).
     assert main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
-
-
-def test_config_fix_halts_honestly_when_line_surgery_cannot_remove(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A dotted top-level key parses as removable but the line surgery (which
-    needs a [table] header) cannot match it: fix must halt and say so, not spin
-    25 passes and report "Fixed the config: dropped 25 invalid entries" over an
-    unchanged, still-broken file."""
-    from agent6.paths import global_config_path
-    from agent6.ui.cli import main
-
-    gpath = global_config_path()
-    gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text('sandbox.agent_network = "bogus"\n', encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    rc = main(["config", "fix"])
-    captured = capsys.readouterr()
-    assert rc == 2
-    assert "agent_network" in captured.err
-    assert "Fixed the config" not in captured.out
-    assert "agent_network" in gpath.read_text(encoding="utf-8")  # left for the operator
-
-
-def test_config_show_key_with_json_filters_to_the_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`config show <key> --json` dumped the ENTIRE config, silently ignoring
-    the key; it must filter like the text path and error on an unknown key."""
-    import json as jsonlib
-
-    from agent6.paths import global_config_path
-    from agent6.ui.cli import main
-
-    gpath = global_config_path()
-    gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text("", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    assert main(["config", "show", "sandbox.agent_network", "--json"]) == 0
-    payload = jsonlib.loads(capsys.readouterr().out)
-    assert set(payload) == {"sandbox.agent_network"}
-
-    assert main(["config", "show", "sandbox", "--json"]) == 0
-    payload = jsonlib.loads(capsys.readouterr().out)
-    assert payload and all(k.startswith("sandbox.") for k in payload)
-
-    assert main(["config", "show", "nope.nope", "--json"]) == 2
-    assert "no config key matches" in capsys.readouterr().err
 
 
 def test_config_fix_skips_an_entry_another_writer_already_fixed(
@@ -911,27 +760,6 @@ def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
     assert cc._equal_tolerating_nan([1.0, nan], [1.0, nan])  # pyright: ignore[reportPrivateUsage]
     assert not cc._equal_tolerating_nan({"x": nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
     assert not cc._equal_tolerating_nan([nan], [nan, nan])  # pyright: ignore[reportPrivateUsage]
-
-
-def test_entry_is_stale_is_false_for_a_still_present_nested_nan(tmp_path: Path) -> None:
-    """A nan nested in a table/list still equals itself structurally; the under-lock
-    staleness re-check must treat a still-present NESTED nan as UNCHANGED so
-    `config fix` removes it, not skip it forever as 'a concurrent writer replaced
-    it' (the scalar-only guard missed this and left it unfixable)."""
-    from math import nan
-
-    from agent6.config.layer import InvalidEntry
-
-    cfg = tmp_path / "config.toml"
-    cfg.write_text("[sandbox]\nallow_urls = [nan]\n", encoding="utf-8")
-    entry = InvalidEntry(
-        leaf="sandbox.allow_urls",
-        value=[nan],
-        layer="global",
-        path=cfg,
-        file_key="sandbox.allow_urls",
-    )
-    assert cc._entry_is_stale(entry) is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(

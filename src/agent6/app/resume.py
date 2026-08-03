@@ -26,12 +26,6 @@ from agent6.app._setup import (
     check_provider_keys,
     start_mcp_manager_if_enabled,
 )
-from agent6.app.egress import (
-    EgressGuard,
-    lane_launcher,
-    spawn_detached,
-    stop_egress,
-)
 from agent6.app.finalize import (
     finalize_auto_merge,
     fire_notify_hook,
@@ -294,7 +288,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
-    guard = EgressGuard()  # replaced at egress start; the finally tears it down
     repo_lock_fd: int | None = None
     try:
         # The original run's manifest drives resume: `mode` (a plan run resumes
@@ -477,9 +470,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         try:
-            guard = start_isolation(
-                cfg, isolation, agent6_exe=frontend.agent6_exe, reporter=reporter
-            )
+            start_isolation(cfg, isolation, reporter=reporter)
         except SessionRefused as refusal:
             return refusal.rc
 
@@ -625,7 +616,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     run_id,
                     budget_overrides.max_usd if budget_overrides is not None else None,
                     sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
-                    lane_launcher(guard),
                 ),
                 budget=budget,
                 resume_state_path=snapshot_path,
@@ -742,14 +732,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # path, refusals and Ctrl-C during verify inference included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        stop_egress(guard)
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
-            err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
+            err = frontend.spawn_detached_resume(cwd, layout.run_id)
             if err:
                 reporter.err(f"[agent6] {err}")
-        if guard.detach_spawner is not None:
-            guard.detach_spawner.close()

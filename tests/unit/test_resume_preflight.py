@@ -28,36 +28,6 @@ def _git_repo(path: Path) -> None:
     sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
 
 
-def test_v1_snapshot_resume_refuses_before_starting_egress(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git_repo(repo)
-    monkeypatch.chdir(repo)
-    state_dir = _state_dir(repo)
-    run_dir = state_dir / "runs" / "old-run-AAAA11"
-    run_dir.mkdir(parents=True)
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "run_id": "old-run-AAAA11", "mode": "run", "user_task": "t"}),
-        encoding="utf-8",
-    )
-    # A pre-format-change (v1) snapshot: load_run_snapshot refuses it.
-    (run_dir / "loop_state.json").write_text(json.dumps({"version": 1}), encoding="utf-8")
-
-    def _no_egress_allowed(*_a: object, **_k: object) -> object:
-        pytest.fail("maybe_start_egress must not run before the snapshot refusal")
-
-    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress_allowed)
-
-    rc = _cmd_resume(None, "old-run-AAAA11", force=False)
-
-    assert rc == 1
-    err = capsys.readouterr().err
-    assert "predates a state-format change" in err
-    assert "provider-only egress" not in err  # no broker preamble printed
-
-
 def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -341,22 +311,14 @@ def test_plan_resume_builds_the_planner_provider(
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"
 
-    def _strict_viable(*_a: object, **_k: object) -> tuple[str, None]:
-        return ("strict", None)
-
-    def _no_egress(*_a: object, **_k: object) -> tuple[object, None]:
-        return (session_mod.EgressGuard(), None)
-
     monkeypatch.setattr(cli_resume_mod, "run_frontend", _frontend)
     monkeypatch.setattr(session_mod, "detect_env", object)
     monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
     monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(session_mod, "check_network_support", _none)
-    monkeypatch.setattr(session_mod, "resolve_strict_egress_viability", _strict_viable)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress)
     monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _none)
     monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
 

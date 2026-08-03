@@ -862,8 +862,8 @@ class ToolDispatcher:
         like a foreground one: same protect paths, same env, same tool mounts.
         """
         # run_command reaches the network only under tool_network = "allow"
-        # (which the config validator pins to agent_network = "open", so this
-        # process is in the host netns and the child inherits it).
+        # (the jailed child then shares the host network instead of getting an
+        # empty namespace of its own).
         allow_network = self._config.sandbox.tool_network == "allow"
         # Resolve symlinks so the launcher's strip_prefix(cwd) check sees
         # canonical paths; the Rust side canonicalizes too as a backstop.

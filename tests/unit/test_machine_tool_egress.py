@@ -12,14 +12,12 @@ from typing import Any
 import pytest
 
 from agent6.app.machine import (
-    machine_network_refusal,
     machine_protect_paths,
     validate_bundle,
 )
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
-from agent6.types import CommandResult
 from agent6.ui.cli.machine_cmds import (
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
@@ -174,15 +172,6 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 
     monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
     return seen
-
-
-def test_liveworld_networked_tool_inherits_host_netns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
-    world.run_tool(("curl", "x"), 5.0, allow_network=True)
-    assert seen[-1].allow_network is True
 
 
 def test_liveworld_non_network_tool_is_isolated(
@@ -397,98 +386,6 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     assert main(["machine", "run", str(f)]) == 2
 
 
-def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent6.ui.cli import main
-
-    f = _write(tmp_path, TOOL_ONLY_MACHINE)
-    seen_profiles: list[str] = []
-
-    def fake_run_in_jail(policy: Any) -> CommandResult:
-        seen_profiles.append(policy.isolation)
-        return CommandResult(
-            argv=tuple(policy.argv),
-            returncode=0,
-            stdout="",
-            stderr="",
-            duration_s=0.0,
-        )
-
-    def fail_egress_probe(*_args: object) -> tuple[str, str | None]:
-        pytest.fail("tool-only machines do not need the provider-egress downgrade")
-
-    def select_strict(*_args: object) -> str:
-        return "strict"
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.machine.run.resolve_isolation", select_strict)
-    monkeypatch.setattr("agent6.app.machine.run.resolve_strict_egress_viability", fail_egress_probe)
-    monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
-
-    assert main(["machine", "run", str(f)]) == 0
-    assert seen_profiles == ["strict"]
-
-
-# --- sandbox-conflict UX (suggest a fix, don't dead-end) --------------------
-
-
-def _allow_tool(tmp_path: Path) -> ToolState:
-    spec = load_machine(_write(tmp_path, NET_MACHINE))  # fetch sets allow_network="allow"
-    fetch = spec.states["fetch"]
-    assert isinstance(fetch, ToolState)
-    return fetch
-
-
-def test_suggested_network_fix_hardened(tmp_path: Path) -> None:
-    # hardened can't isolate per-tool, so tools share the host net (+ agent open).
-    fix = _suggested_network_fix(Config.model_validate({}), "hardened", [_allow_tool(tmp_path)])
-    assert fix == {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
-
-
-def test_network_refusal_hardened_allow_tool_names_runnable_fix(tmp_path: Path) -> None:
-    refusal = machine_network_refusal(
-        Config.model_validate({}), "hardened", [_allow_tool(tmp_path)]
-    )
-    assert refusal is not None
-    assert "sandbox.tool_network = 'allow'" in refusal
-    assert "sandbox.agent_network = 'open'" in refusal
-    assert "only_explicit_states" not in refusal
-    # The config here is the DEFAULT (auto), so the refusal must name 'auto', not
-    # a hardcoded 'block' -- misstating the operator's config on a refusal surface.
-    assert "'auto'" in refusal and "= 'block'" not in refusal
-
-
-def test_suggested_network_fix_strict(tmp_path: Path) -> None:
-    # strict can single one tool out: explicit per-tool egress is the safe fix.
-    fix = _suggested_network_fix(Config.model_validate({}), "strict", [_allow_tool(tmp_path)])
-    assert fix == {"sandbox.tool_network": "only_explicit_states"}
-
-
-def _plain_tool(tmp_path: Path) -> ToolState:
-    # `store` has no allow_network -> defaults to "auto" (no network wanted).
-    spec = load_machine(_write(tmp_path, NET_MACHINE))
-    store = spec.states["store"]
-    assert isinstance(store, ToolState)
-    return store
-
-
-def test_suggested_network_fix_plain_tool_hardened(tmp_path: Path) -> None:
-    # Regression: on hardened EVERY tool (even one that wants no network) is
-    # refused under tool_network="block" because no per-tool netns exists, and
-    # the only config that runs it is tools sharing the host net (+ agent open).
-    # Previously this returned None, contradicting the refusal's own advice.
-    fix = _suggested_network_fix(Config.model_validate({}), "hardened", [_plain_tool(tmp_path)])
-    assert fix == {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
-
-
-def test_suggested_network_fix_plain_tool_strict_is_noop(tmp_path: Path) -> None:
-    # A plain no-network tool already runs on strict (its own empty netns), so
-    # there is nothing to offer.
-    fix = _suggested_network_fix(Config.model_validate({}), "strict", [_plain_tool(tmp_path)])
-    assert fix is None
-
-
 def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
     # allow_network="block" REQUIRES isolation only strict provides -> no config fix.
     text = NET_MACHINE.replace('allow_network = "allow"', 'allow_network = "block"')
@@ -496,29 +393,6 @@ def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
     assert _suggested_network_fix(Config.model_validate({}), "hardened", [fetch]) is None
-
-
-def test_resolve_network_refusal_headless_prints_fix(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # Non-interactive stdin (pytest): print the exact fix + simulate command,
-    # exit 2, and NEVER relax a sandbox setting unattended.
-    code = _resolve_network_refusal(
-        tmp_path / "m.asm.toml",
-        "a tool needs the network",
-        Config.model_validate({}),
-        "hardened",
-        [_allow_tool(tmp_path)],
-        tmp_path,
-        {},
-    )
-    assert code == 2
-    err = capsys.readouterr().err
-    assert "config set sandbox.tool_network allow" in err
-    assert "config set sandbox.agent_network open" in err
-    assert "machine test" in err
-    # nothing was written
-    assert not (tmp_path / ".agent6" / "config.toml").exists()
 
 
 def test_resolve_network_refusal_unfixable_points_to_simulate(

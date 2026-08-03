@@ -42,7 +42,6 @@ from agent6.app.compare import (
     rank,
     verify_ok,
 )
-from agent6.app.egress import HostLaneLaunch
 from agent6.app.manifest import write_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
@@ -183,33 +182,6 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
     return config_path
 
 
-def _host_spawn_and_locate(
-    launch: HostLaneLaunch,
-    argv: list[str],
-    cwd: Path,
-    *,
-    env_extra: dict[str, str],
-    list_dirs: Callable[[], list[Path]],
-    timeout_s: float = 25.0,
-) -> tuple[Path | None, str]:
-    """Launch a lane's `agent6 run` OUTSIDE the coordinator's egress netns via the
-    pre-forked host spawner (the same escape a detached resume uses), then poll for
-    its new run dir. Mirrors `ui.spawn.spawn_and_locate`'s locate loop; the helper
-    spawns detached with no stderr to capture, so an early lane exit surfaces as
-    the timeout rather than a stderr tail. *cwd* is a fresh clone, so any run dir
-    with a `logs.jsonl` is the lane's (no `before` set needed)."""
-    err = launch(cwd, argv, env_extra)
-    if err:
-        return None, err
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        for d in list_dirs():
-            if (d / "logs.jsonl").exists():
-                return d, ""
-        time.sleep(0.2)
-    return None, f"timed out waiting for lane {cwd.name} to start"
-
-
 def bridge_spawner(
     spec: LaneSpec,
     task: str,
@@ -220,7 +192,6 @@ def bridge_spawner(
     max_usd: float | None,
     auto_approve: bool = False,
     runtime: LaneRuntime,
-    host_lane_launch: HostLaneLaunch | None = None,
 ) -> LaneResult:
     """Clone the origin, spawn a detached `agent6 run` in the clone, and return a
     LaneResult once its run dir is located (the run keeps going in the
@@ -273,18 +244,9 @@ def bridge_spawner(
         "AGENT6_DETACHED_AWAY": "wait",
         "AGENT6_SUBRUN": "1",
     }
-    if host_lane_launch is not None:
-        # Only the agent6 markers ride along; the host spawner supplies its own
-        # isolation-free base env. os.environ here carries AGENT6_NETNS_ISOLATED
-        # (set by enter_network_isolation), which must NOT reach the lane or it
-        # would refuse thinking it inherited the empty namespace.
-        run_dir, err = _host_spawn_and_locate(
-            host_lane_launch, argv, spec.workdir, env_extra=markers, list_dirs=list_dirs
-        )
-    else:
-        run_dir, err = runtime.spawn(
-            argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
-        )
+    run_dir, err = runtime.spawn(
+        argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
+    )
     if run_dir is None:
         return LaneResult(
             spec=spec, run_dir=lane_runs / spec.run_id, branch=branch, ok=False, error=err
@@ -365,7 +327,6 @@ def run_lane_to_completion(
     max_usd: float | None = None,
     auto_approve: bool = False,
     spawner: LaneSpawner | None = None,
-    host_lane_launch: HostLaneLaunch | None = None,
     import_lock: threading.Lock | None = None,
     poll_interval_s: float = _POLL_INTERVAL_S,
     reporter: Reporter = STDIO_REPORTER,
@@ -399,7 +360,6 @@ def run_lane_to_completion(
             max_usd=max_usd,
             auto_approve=auto_approve,
             runtime=runtime,
-            host_lane_launch=host_lane_launch,
         )
     res = spawner(spec, task)
     if not res.ok:
@@ -474,7 +434,6 @@ def build_lane_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
-    host_lane_launch: HostLaneLaunch | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner:
     """Build the coordinator's group dispatcher: the `GroupLaneSpawner` the loop
@@ -546,7 +505,6 @@ def build_lane_spawner(
                 runtime=runtime,
                 max_usd=max_usd,
                 auto_approve=auto_approve,
-                host_lane_launch=host_lane_launch,
                 import_lock=import_lock,
                 reporter=reporter,
                 should_stop=should_stop,
@@ -594,7 +552,6 @@ def build_coordinator_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
-    host_lane_launch: HostLaneLaunch | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner | None:
     """The `/parallel` group dispatcher to wire into a run's loop, or None when
@@ -615,7 +572,6 @@ def build_coordinator_spawner(
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,
-        host_lane_launch=host_lane_launch,
         reporter=reporter,
     )
 

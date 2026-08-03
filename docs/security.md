@@ -36,12 +36,17 @@ Under that adversary, agent6 aims to hold:
       so installed toolchains resolve.
     - `hardened` also exposes `$HOME` + `/run` (Landlock can't carve them out);
       `sandbox.extra_read_paths` adds more.
-3. **No agent egress except the configured providers** (+ `sandbox.allow_urls`)
-   under `sandbox.agent_network = "providers"` (default) ON `strict`, where the
-   broker + empty netns make it structural (§1b). `hardened` cannot provide it
-   and does not claim it.
-    - Jailed commands are governed separately by `sandbox.tool_network`
-      (default `block`; §8).
+3. **The agent process's own egress is NOT bounded.** agent6 talks to the
+   configured providers; nothing stops the PROCESS reaching elsewhere.
+    - There was once an empty netns plus a broker proxying provider calls. It was
+      deleted: under `strict` the agent process has no filesystem confinement, so
+      code execution there could write `~/.ssh/authorized_keys` or a cron entry
+      and exfiltrate on its own schedule. Blocking the socket while leaving that
+      open is a partial mitigation that reads as a guarantee, and it cost four
+      special cases plus a finding of its own.
+    - What IS bounded is what a COMMAND reaches: `sandbox.tool_network`
+      (default `auto`; §8). That boundary is per-jailed-child and unchanged.
+
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
    --hard`s** (§5).
     - This does NOT bind a `git` the model runs via `run_command`; that path is
@@ -81,81 +86,20 @@ process irrevocably, inherited by every child:
 | FS write | cwd, `/tmp`, the `/dev` char devices, `/proc` when present |
 
 - **`strict` skips this layer.**
-    - Its per-command namespaces + broker (§1b) are stronger, and this would
+    - Its per-command namespaces are stronger, and this would
       break the jail's `pivot_root`/`mount` at Landlock ABI ≥ 7.
 - **The read+exec set mirrors the jail child's roots.**
     - The launcher opens each from here to grant the child, so a missing one
       (e.g. `/dev` on merged-`/usr`) makes the child's execve fail EACCES.
-- **`hardened` does not bound egress. It says so rather than pretending.**
+- **Neither level bounds the AGENT's egress. Both say so rather than pretending.**
     - Landlock filters connects by PORT, not host, so the only rule available
       here was "any host on the provider ports". That stops nothing worth
       stopping -- an exfiltrating agent needs one HTTPS endpoint, and every host
       offers one -- while breaking a legitimate tool on another port. It was
       removed: a security claim nobody can rely on is worse than no claim.
-    - Egress confinement is `strict`'s broker + empty netns (§1b), which is
-      structural. Choose `strict` if the host UID can read exfiltratable
-      credentials.
     - Bind/listen is not denied either. Blocking inbound while outbound stays
       open is the same non-claim, and it cost a dev server the model runs its
       listening socket. Nothing it binds outlives the command (§5).
-
-### 1b. Provider-only egress broker (`agent_network = "providers"`, default)
-
-- **The agent's only path off-host is one hard-wired unix socket per allowed
-  provider; the LLM never chooses a destination.**
-    - Setup, `strict`-only (needs user namespaces): in the host netns and
-      single-threaded, the agent binds one `AF_UNIX` socket per provider
-      `host:port` and forks a **broker** that stays in the host netns.
-    - The agent then `unshare(CLONE_NEWUSER|CLONE_NEWNET)`s into an empty netns
-      (loopback only). Off-host is only those sockets.
-    - Per connection the broker dials that socket's fixed `host:port` (resolved
-      per-connect, robust to CDN IP churn). TLS is end-to-end, so it sees only
-      ciphertext.
-    - The allowed set derives uniformly from each provider's effective
-      `base_url` host (every `api_format` and `deployment` carries the dialled
-      host there; the deployment profile only appends path/model), unioned with
-      `sandbox.allow_urls` (`app/egress.py`).
-- **Fail-closed: the netns is the boundary, not a filter.**
-    - A missing route is no connectivity, never a silent leak; the allow-list is
-      fixed at bind time, so the agent can't widen it.
-    - Hosts that only support `hardened` refuse rather than run unconfined.
-- **`local` pins to loopback providers; `open` skips the broker.**
-    - `local` refuses a non-local provider. `machine run` applies the same setup
-      per `agent`-state subprocess.
-- **A detached resume is spawned from the host, not the empty netns.**
-    - **Host spawner** (`sandbox/host_spawn.py`): a helper forked beside the
-      broker before isolation spawns `agent6 resume <run_id>` from the host, on
-      request over a close-on-exec pipe, exec'ing only the agent6 binary captured
-      at fork. Neither argv nor pipe is reachable from LLM output.
-    - **Inherited-namespace refusal**: `AGENT6_NETNS_ISOLATED=1` makes a child
-      that sees it refuse with the cause, not burn provider retries.
-- **`sandbox.allow_urls` widens the allow-list; only the operator can.**
-    - Each entry (`host` / `host:port` / URL) gets its own broker socket, same
-      properties. Default empty, validated at load, honored only under
-      `providers`, agent path only. Last-overlay-wins, so `config show` is
-      authoritative.
-- **The broker's sockets are placed where no jail can name them.**
-    - `AF_UNIX` PATHNAME sockets are not namespaced by the network namespace, so
-      the jail's MOUNT namespace is the only barrier -- and a read-only bind
-      still permits `connect()`. The socket dir therefore goes in the user
-      runtime dir (`$XDG_RUNTIME_DIR`, else `/run/user/<uid>`, else `/tmp`),
-      never via `tempfile`'s `$TMPDIR`-honouring default: a `$TMPDIR` inside the
-      workspace put live provider tunnels in the one directory every jail
-      bind-mounts read-write.
-    - A run is REFUSED when the chosen dir would still be reachable -- inside the
-      workspace, or inside an `extra_read_paths` grant -- rather than started
-      with a tunnel a `run_command` could dial.
-- **`read_session` exposes this project's other sessions, and nothing else.**
-    - A run, a plan and an ask all keep their journal under the project's state
-      dir; the tool lists them and reads one, so a session can pick up what an
-      earlier one worked out instead of the operator copying it by hand.
-    - The model names a session by ID, never a path: resolution matches real
-      directory names in this project's buckets, so traversal cannot resolve
-      and no path from the model reaches the filesystem.
-    - Read-only, same-project only. Journals carry conversations, not
-      credentials -- secrets are never written to a transcript (§5b).
-- **MCP servers get no outbound network under `providers`** (a deliberate limit;
-  local `AF_UNIX` helpers are unaffected).
 
 ### 2. `agent6-jail` (Rust), for every child command
 
@@ -249,10 +193,7 @@ fixed argv depending only on operator input, never LLM output.
 - `git_ops.py`: agent6's own git operations (§5).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher itself.
-- `sandbox/host_spawn.py`: the pre-forked detach helper; spawns
-  `agent6 resume <run_id>` in the host namespaces, argv built from the agent6
-  exe captured at fork time, requests only from the trusted parent over a
-  close-on-exec pipe.
+
 - `tools/lsp.py`: the `ty` language server, exe resolved from PATH.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
@@ -417,7 +358,7 @@ syscall for hardened), never guessed from the kernel version.
     - It only prompts locally (`getpass`) and writes config/secrets. It makes one
       read-only `GET` to the provider's key endpoint to confirm auth (status only;
       `--no-verify` to skip).
-    - During a run agent6 opens no listening socket (MCP is stdio, the broker is a
+    - During a run agent6 opens no listening socket (MCP is stdio, the web UI is
       private unix socket); the only accept-side socket is opt-in `agent6 web` (§7).
 - **Running as root is refused without an explicit opt-in.**
     - `--allow-root` / `AGENT6_ALLOW_ROOT=1` (+ a banner). Under `sudo`, agent6
@@ -443,8 +384,8 @@ steer directive (§ [architecture.md](architecture.md#parallel-runs-fan-out-and-
 each spawn subordinate work. Nothing here loosens the sandbox:
 
 - **Every lane is an ordinary run.** A lane is a plain detached `agent6 run` on
-  its own clone: its own jail per `sandbox.isolation`, its own egress broker
-  (§1b), its own `run_commands` policy. Nothing shares a sandbox or a broker
+  its own clone: its own jail per `sandbox.isolation`, its own `run_commands`
+  policy. Nothing shares a sandbox
   socket across lanes or with the parent run.
 - **Recursion is blocked by an env guard, not policy.** Every spawned lane
   carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's
@@ -499,24 +440,18 @@ each spawn subordinate work. Nothing here loosens the sandbox:
 
 ### 8. State-machine egress + script bundles
 
-- **`machine run` is a supervisor in the host netns that makes no network calls.**
-    - Each `agent` state confines its own egress per `agent_network` (the broker,
-      §1b); each `tool` state is jailed, so a per-tool `allow_network` sets its
-      netns independently.
+- **`machine run` is a supervisor that makes no network calls.**
+    - Each `tool` state is jailed, so a per-tool `allow_network` sets its netns
+      independently.
     - This lets a machine keep agents on the provider API while one reviewed,
       fixed-argv `tool` reaches the network: unlike `run_command` (LLM-chosen
       argv), a `tool` isn't a free exfil channel.
 
-Egress = `agent_network` × `tool_network` × per-tool `allow_network`; the
+Egress = `tool_network` × per-tool `allow_network`; the
 effective isolation level decides what's enforceable. "offline" = no egress.
 
-**Agent egress** by `agent_network`:
-
-| `agent_network` | `strict` | `hardened` | `none` |
-|---|---|---|---|
-| `providers` *(def)* | providers + `allow_urls`, broker-pinned | provider *ports* only (Landlock) | unconfined ⚠ |
-| `local` | loopback providers only, broker-pinned | ⛔ refuse | unconfined ⚠ |
-| `open` | unconfined | unconfined | unconfined ⚠ |
+**Agent egress is unconfined at every isolation level** (claim 3). Only jailed
+commands have a network boundary.
 
 **Jailed-command egress** (`run_command`, machine `tool`) by `tool_network`
 (cells = `strict`, where a per-child netns makes "offline" real):
@@ -530,7 +465,7 @@ effective isolation level decides what's enforceable. "offline" = no egress.
 `auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
 default, degrade or refuse"): on `strict` it is `offline` above; on `hardened`
 (no netns) it cannot be offline, so a jailed child inherits the agent process's
-network (`agent_network`-scoped) and a once-per-run warning says so. `block` is
+network and a once-per-run warning says so. `block` is
 the ENFORCE form — it refuses on `hardened` rather than run under-confined. (On
 `none` nothing is enforced or refused: it is the explicit unsandboxed opt-out
 with its own loud warning, below.)
@@ -539,24 +474,22 @@ with its own loud warning, below.)
 
 | Configuration | When |
 |---|---|
-| `tool_network = allow` without `agent_network = open` | config load ¹ |
 | a `tool` sets `allow_network = allow` under `tool_network` `auto`/`block` | machine start |
-| `agent_network = local`, `tool_network = only_explicit_states`, or explicit `tool_network = block` | run start, `hardened` ² |
-| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`block` | machine start, `hardened` ² |
+| `tool_network = only_explicit_states`, or explicit `tool_network = block` | run start, `hardened` ¹ |
+| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`block` | machine start, `hardened` ¹ |
 
 - ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
   nothing refused, loud warning.
-- ¹ `run_command` runs in the agent process, so it can't reach the network while
-  the agent is confined.
-- ² per-command isolation needs a netns, so it's `strict`-only. On `hardened` a
+
+- ¹ per-command isolation needs a netns, so it's `strict`-only. On `hardened` a
   jailed child inherits the agent's Landlock (host-agnostic, per provider port;
   UDP unconfined). The secure default `auto` degrades there with a warning; an
-  EXPLICIT enforce (`block`, `only_explicit_states`, `agent_network = local`)
+  EXPLICIT enforce (`block`, `only_explicit_states`)
   refuses rather than run silently under-confined.
 
 More fail-closed properties:
 
-- **Operator-gated policy.** `agent_network`/`tool_network` are read only from the
+- **Operator-gated policy.** `tool_network` is read only from the
   operator's config; a machine's `[config]` overlay is rejected at load if it
   declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, or `git.run_repo_hooks`.
     - Otherwise a strategy preset or a host `[machine.notify]` argv could splice
@@ -614,10 +547,7 @@ regressions.
 - **AppArmor userns (Ubuntu 24.04+)** blocks unprivileged userns without a profile.
     - agent6 ships one scoped to the launcher (`agent6 system apparmor install`);
       with it, per-command jailing is `strict`, without it `hardened`.
-    - Caveat: the egress broker needs the *agent process* to make a userns, which
-      the launcher-only AppArmor profile doesn't grant, so a default run downgrades to
-      `hardened` (Landlock egress) unless you set the sysctl to 0 host-wide or use
-      `agent_network = "open"`.
+
 - **seccomp is required;** kernels that block it from unprivileged callers make the
   jail fail closed.
 - **Devcontainers get `hardened`;** the container is the FS blast radius, network

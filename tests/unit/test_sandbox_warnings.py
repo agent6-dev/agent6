@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.app.egress import check_network_support, warn_sandbox_gaps
+from agent6.app.confine import check_network_support, warn_sandbox_gaps
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import Environment, KernelInfo
 
@@ -24,10 +24,8 @@ def _env(landlock_abi: int) -> Environment:
 
 
 def _cfg(tool_network: str = "auto") -> Config:
-    # tool_network="allow" requires agent_network="open" (the validator pins it).
-    agent_network = "open" if tool_network == "allow" else "providers"
     return Config(
-        sandbox=SandboxConfig(tool_network=tool_network, agent_network=agent_network)  # type: ignore[arg-type]
+        sandbox=SandboxConfig(tool_network=tool_network)  # type: ignore[arg-type]
     )
 
 

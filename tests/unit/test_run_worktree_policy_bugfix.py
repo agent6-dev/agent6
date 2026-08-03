@@ -29,7 +29,6 @@ from agent6.config import (
     RoleModel,
 )
 from agent6.git_ops import status as git_status
-from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -68,12 +67,6 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     def _noop(*a: object, **k: object) -> None:
         return None
 
-    # The branch cut is now the LAST preflight step (after egress/landlock), so
-    # the environment-dependent steps between the stash guard and the cut must
-    # pass cleanly for the cut-time assertions below to be reached.
-    def _no_egress(*a: object, **k: object) -> tuple[object, None]:
-        return app_run_mod.EgressGuard(), None
-
     # The fake worker model ("kimi") isn't in the real on-disk model cache, so
     # the new configured-model preflight would refuse it before the dirty-tree
     # logic under test. Bypass it here (its own validation is covered separately).
@@ -86,7 +79,6 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
-    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress)
     monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _noop)
 
 
@@ -148,72 +140,3 @@ def test_dirty_tree_auto_stashed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         ["git", "-C", str(repo), "stash", "list"], check=True, capture_output=True, text=True
     ).stdout
     assert "agent6 auto-stash before run" in stash_list
-
-
-def test_post_guard_refusal_leaves_checkout_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A refusal AFTER the clean-tree guard (egress here) must leave the
-    # checkout untouched -- the branch cut is the LAST preflight step -- and
-    # leave no manifest'd "(no logs)" run dir behind.
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _init_repo(repo)
-    monkeypatch.chdir(repo)
-    branch_before = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-
-    cfg = _runnable_cfg(GitConfig())
-    _patch_common(monkeypatch, cfg)
-
-    def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
-        return app_run_mod.EgressGuard(), "no egress today"
-
-    monkeypatch.setattr(session_mod, "maybe_start_egress", _refuse_egress)
-
-    rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
-
-    assert rc == 2
-    assert "REFUSING: no egress today" in capsys.readouterr().err
-    after = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert after == branch_before
-    cut = subprocess.run(
-        ["git", "-C", str(repo), "branch", "--list", "agent6/*"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert cut == ""  # the run branch was never cut
-
-
-def test_egress_refusal_leaves_no_husk_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Every refusal discards its run dir; the egress one used to return without
-    doing so, leaving a husk with worker.lock/checkpoints/graph but no manifest
-    and no logs -- a run that produced nothing, on disk forever."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _init_repo(repo)
-    monkeypatch.chdir(repo)
-    cfg = _runnable_cfg(GitConfig())
-    _patch_common(monkeypatch, cfg)
-
-    def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
-        return session_mod.EgressGuard(), "no egress today"
-
-    monkeypatch.setattr(session_mod, "maybe_start_egress", _refuse_egress)
-
-    assert run_mod._cmd_run(None, "do a thing") == 2  # pyright: ignore[reportPrivateUsage]
-    assert "REFUSING: no egress today" in capsys.readouterr().err
-    runs = _state_dir(repo) / "runs"
-    assert not runs.exists() or not any(runs.iterdir())

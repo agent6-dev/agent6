@@ -31,13 +31,6 @@ from agent6.app._setup import (
     SandboxOverrides,
     start_mcp_manager_if_enabled,
 )
-from agent6.app.egress import (
-    EgressGuard,
-    HostLaneLaunch,
-    lane_launcher,
-    spawn_detached,
-    stop_egress,
-)
 from agent6.app.finalize import (
     finalize_auto_merge,
     finalize_auto_stash,
@@ -201,16 +194,13 @@ class RunFrontend:
     ]
     run_ask_repl: Callable[[Workflow, BudgetTracker, RunLayout, str], RunResult]
     save_ask_transcript: Callable[[RunLayout, str, str], None]
-    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner). The
-    # trailing `HostLaneLaunch | None` lets lanes escape the coordinator's egress
-    # netns through the pre-forked host spawner (None when unconfined).
+    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner).
     build_coordinator_spawner: Callable[
-        [Config, Path, Path, str, str, float | None, bool, HostLaneLaunch | None],
+        [Config, Path, Path, str, str, float | None, bool],
         GroupLaneSpawner | None,
     ]
     # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
-    # LaneRuntime's injected spawner): the agent6 exe path the egress detach host
-    # spawner pre-forks, and the plain detached-resume launch used off isolation.
+    # LaneRuntime's injected spawner).
     agent6_exe: Callable[[], str]
     spawn_detached_resume: Callable[[Path, str], str]
 
@@ -474,7 +464,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     run_branch: str | None = None
     branch_start_point: str | None = None
     detach_requested = False
-    guard = EgressGuard()  # replaced at egress start; the finally tears it down
     try:
         # A fresh branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 runs diff <id>`, or just delete the branch to
@@ -502,9 +491,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         try:
-            guard = start_isolation(
-                cfg, isolation, agent6_exe=frontend.agent6_exe, reporter=reporter
-            )
+            start_isolation(cfg, isolation, reporter=reporter)
         except SessionRefused as refusal:
             # Nothing ran, so leave no run dir behind: every other refusal
             # discards its husk, and one that survives is listed forever as a
@@ -667,9 +654,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan/ask, and inside a lane -- depth 1). Under a strict
-                # egress netns, lane_launcher(guard) hands lanes the host-spawner
-                # escape a detached resume uses; None (unconfined) keeps plain spawn.
+                # (None in plan/ask, and inside a lane -- depth 1).
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -678,7 +663,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     effective_run_id,
                     budget_overrides.max_usd if budget_overrides is not None else None,
                     sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
-                    lane_launcher(guard),
                 ),
                 budget=budget,
                 state_dir=state_dir,
@@ -819,7 +803,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # verify inference, and setup-window crashes included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        stop_egress(guard)
         if stashed:
             if detach_requested:
                 # The run is NOT over: the detached resume needs the checkout
@@ -858,8 +841,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # the detached `resume` acquires it.
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
-            err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
+            err = frontend.spawn_detached_resume(cwd, layout.run_id)
             if err:
                 reporter.err(f"[agent6] {err}")
-        if guard.detach_spawner is not None:
-            guard.detach_spawner.close()

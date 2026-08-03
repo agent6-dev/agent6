@@ -73,13 +73,12 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
 
 # Dotted config leaves whose type is a Literal/enum, with their allowed values.
 # Used by the `config set/add/remove` value completer so TAB offers the exact
-# valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
+# valid choices (e.g. `config set sandbox.tool_network <TAB>` -> auto/block/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     # `sandbox.isolation` also accepts "none" (the unsandboxed opt-out, see
     # config.Config.preset), deliberately omitted here: TAB should not put
     # "disable the sandbox" one keystroke away. Type it explicitly to set it.
     "sandbox.isolation": ("auto", "strict", "hardened"),
-    "sandbox.agent_network": ("providers", "local", "open"),
     "sandbox.tool_network": ("auto", "block", "only_explicit_states", "allow"),
     "sandbox.run_commands": ("yes", "no", "ask"),
     "git.merge_strategy": ("squash", "merge", "ff"),

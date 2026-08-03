@@ -79,7 +79,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         config_sub, "get", help="Print a leaf's effective value and which layer set it."
     )
     config_get_key = config_get.add_argument(
-        "key", help="Dotted leaf path, e.g. sandbox.agent_network."
+        "key", help="Dotted leaf path, e.g. sandbox.tool_network."
     )
     config_get_key.completer = _complete_config_keys  # type: ignore[attr-defined]
     config_get_machine = config_get.add_argument(
@@ -94,11 +94,11 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     for verb, blurb in (
         ("set", "Set a leaf to a scalar value (global by default)."),
         ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
-        ("add", "Append a value to a list field (e.g. sandbox.allow_urls)."),
+        ("add", "Append a value to a list field (e.g. sandbox.extra_read_paths)."),
         ("remove", "Remove a value from a list field."),
     ):
         p = _sub(config_sub, verb, help=blurb)
-        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.agent_network.")
+        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.tool_network.")
         key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
         if verb != "unset":
             val_arg = p.add_argument("value", help="Value (TOML-typed; bare text is a string).")

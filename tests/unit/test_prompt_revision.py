@@ -30,7 +30,6 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
-agent_network = "open"
 run_commands = "no"
 protect_git = true
 [git]

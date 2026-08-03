@@ -163,7 +163,7 @@ def run_frontend() -> RunFrontend:
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
-            lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve, host_lane_launch: (
+            lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve: (
                 build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -172,7 +172,6 @@ def run_frontend() -> RunFrontend:
                     run_id=run_id,
                     max_usd=max_usd,
                     auto_approve=auto_approve,
-                    host_lane_launch=host_lane_launch,
                 )
             )
         ),

@@ -131,22 +131,6 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
     assert "api-key" not in captured["headers"]
 
 
-def test_egress_allowlist_derives_from_anthropic_base_url() -> None:
-    # Security: the egress allow-list must follow a provider's effective base_url
-    # host (now configurable for anthropic too), not a hardcoded api.anthropic.com.
-    from agent6.app.egress import _provider_endpoints  # pyright: ignore[reportPrivateUsage]
-    from agent6.config import AnthropicProviderEntry
-
-    entry = AnthropicProviderEntry(
-        api_format="anthropic", deployment="vertex", base_url=_VERTEX_ANTHROPIC, auth_style="bearer"
-    )
-    cfg = mock.Mock()
-    cfg.providers = {"v": entry}
-    hosts = {e.host for e in _provider_endpoints(cfg)}
-    assert hosts == {"us-east5-aiplatform.googleapis.com"}
-    assert "api.anthropic.com" not in hosts
-
-
 def test_api_key_header_is_redacted_in_transcripts() -> None:
     from agent6.providers.types import _redact_headers  # pyright: ignore[reportPrivateUsage]
 

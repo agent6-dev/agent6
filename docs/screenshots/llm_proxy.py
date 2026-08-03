@@ -2,7 +2,7 @@
 """Record/replay LLM proxy: a fake "local model" for deterministic demos + tests.
 
 agent6 already talks to local models over plain HTTP (`base_url =
-http://127.0.0.1:PORT`, `sandbox.agent_network = "local"`). This is such an
+http://127.0.0.1:PORT`). This is such an
 endpoint, with two modes:
 
   record   forward each request to the real upstream (relaying the caller's auth

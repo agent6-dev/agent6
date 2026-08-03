@@ -30,7 +30,6 @@ model = "claude-x"
 
 [sandbox]
 isolation = "auto"
-agent_network = "providers"
 run_commands = "ask"
 protect_git = true
 
@@ -116,82 +115,11 @@ def test_auto_prune_requires_auto_merge(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_network_defaults_are_secure(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace('agent_network = "providers"\n', "")
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.sandbox.agent_network == "providers"  # confined to providers
-    # auto: no jailed-command network where the env can enforce it (strict
-    # netns), degraded with a warning where it can't (hardened) -- the secure
-    # default that still runs everywhere.
-    assert cfg.sandbox.tool_network == "auto"
-
-
-def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:
-    # run_command runs inside the agent process; it can't reach the network
-    # while the agent is confined, so allow requires agent_network=open.
-    body = _VALID_TOML.replace(
-        'agent_network = "providers"', 'agent_network = "providers"\ntool_network = "allow"'
-    )
-    with pytest.raises(ConfigError, match="tool_network = 'allow'"):
-        load_config(_write(tmp_path, body))
-
-
 def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
     # `__` separates server from tool in the LLM-visible mcp__<server>__<tool>;
     # a server name containing it would break routing, so it's rejected at load.
     body = _VALID_TOML + ('\n[mcp.servers.bad__name]\ncommand = ["true"]\n')
     with pytest.raises(ConfigError, match="__"):
-        load_config(_write(tmp_path, body))
-
-
-def test_agent_network_local_refuses_allow_urls(tmp_path: Path) -> None:
-    # The docstring promises `local` refuses allow_urls; it must be enforced,
-    # not silently ignored (there is nothing external to allow-list offline).
-    body = _VALID_TOML.replace(
-        'agent_network = "providers"',
-        'agent_network = "local"\nallow_urls = ["example.com:443"]',
-    )
-    with pytest.raises(ConfigError, match="agent_network = 'local'"):
-        load_config(_write(tmp_path, body))
-
-
-def test_tool_network_explicit_states_ok_with_confined_agent(tmp_path: Path) -> None:
-    # only_explicit_states is exempt: machine tool states are jailed by the
-    # host-netns engine, not the confined agent.
-    body = _VALID_TOML.replace(
-        'agent_network = "providers"',
-        'agent_network = "providers"\ntool_network = "only_explicit_states"',
-    )
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.sandbox.tool_network == "only_explicit_states"
-
-
-def test_allow_urls_defaults_empty(tmp_path: Path) -> None:
-    # Secure default: no extra egress destinations beyond the providers.
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.sandbox.allow_urls == ()
-
-
-def test_allow_urls_accepts_host_hostport_and_url(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace(
-        "protect_git = true",
-        'protect_git = true\nallow_urls = ["example.com", "h.com:8443", "https://api.x.com/v1"]',
-    )
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.sandbox.allow_urls == ("example.com", "h.com:8443", "https://api.x.com/v1")
-
-
-def test_allow_urls_rejects_portless_garbage(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace("protect_git = true", 'protect_git = true\nallow_urls = [""]')
-    with pytest.raises(ConfigError, match=r"allow_urls"):
-        load_config(_write(tmp_path, body))
-
-
-def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace(
-        "protect_git = true", 'protect_git = true\nallow_urls = ["h.com:99999"]'
-    )
-    with pytest.raises(ConfigError, match=r"allow_urls"):
         load_config(_write(tmp_path, body))
 
 
@@ -496,7 +424,6 @@ model = "claude-x"
 
 [sandbox]
 isolation = "auto"
-agent_network = "providers"
 run_commands = "ask"
 protect_git = true
 

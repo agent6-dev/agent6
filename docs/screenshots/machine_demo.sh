@@ -43,10 +43,8 @@ export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$AGENT6_CONFIG_HOME"
 
 # The agent state inherits the worker model, which points at the proxy. open
-# agent_network so the jailed agent reaches the loopback proxy; tools blocked.
 cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
 [sandbox]
-agent_network = "open"
 tool_network = "block"
 run_commands = "yes"
 protect_git = true

@@ -448,7 +448,7 @@ def _schema_says_not_a_list(key: str) -> bool:
 
     Guards `config add/remove` on keys the target file does not set yet: the
     effective (defaults-included) value reveals the leaf's shape, so a scalar
-    like sandbox.agent_network fails with "not a list field" instead of a
+    like sandbox.tool_network fails with "not a list field" instead of a
     contradictory revalidation error. Unknown keys and unloadable configs
     return False; revalidation still rejects those."""
     try:

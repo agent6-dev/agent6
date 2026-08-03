@@ -39,12 +39,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.app.egress import (
-    check_network_support,
-    maybe_apply_agent_landlock,
-    maybe_start_egress,
-    stop_egress,
-)
+from agent6.app.confine import check_network_support, maybe_apply_agent_landlock
 from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider,
@@ -320,86 +315,79 @@ def run_one(
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return _result("error", None, None)
-    egress_guard, egress_err = maybe_start_egress(cfg, isolation)
-    if egress_err is not None:
-        reporter.err(f"REFUSING: {egress_err}")
-        return _result("error", None, None)
     budget: BudgetTracker | None = None
-    try:
-        landlock_err = maybe_apply_agent_landlock(cfg, isolation)
-        if landlock_err is not None:
-            reporter.err(f"REFUSING: {landlock_err}")
-            return _result("error", None, None)
-        budget = BudgetTracker(
-            max_usd=cfg.budget.max_usd,
-            max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        )
-        provider, summariser_provider, events_sink = _build_agent_providers(
-            cfg, req, budget=budget, attach_console=attach_console
-        )
-        # Re-confirm the cwd-containment invariant at the subprocess boundary
-        # (defense in depth, the engine already filtered these).
-        root_r = req.root.resolve()
-        protect = tuple(rp for p in req.protect_paths if (rp := p.resolve()).is_relative_to(root_r))
-        # "machine" (the `machine create` authoring agent) and "agent" (a
-        # running machine's `agent` state, unless it opted into mode="run") are
-        # read-only structured-output loops: the dispatcher refuses edits AND
-        # run_command/run_verify (defense in depth alongside the read-only tool
-        # list) and the loop uses a finish_run-focused prompt.
-        mode = r.mode
-        read_only = mode in ("machine", "agent")
-        # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
-        # watching this machine: answers land in the per-state dir, the liveness
-        # gate probes the instance dir where the front-end registers its claim.
-        # Needs a per-state log (events_sink) for the front-end to see the prompt.
-        bridges: _MachineBridges | None = None
-        if events_sink is not None and req.events_log is not None:
-            state_dir = req.events_log.parent
-            instance_dir = req.transcript_dir.parent
-            bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
-        dispatcher = ToolDispatcher(
-            root=req.root,
-            config=cfg,
-            isolation=isolation,
-            approver=bridges.approve if bridges is not None else None,
-            questioner=bridges.ask if bridges is not None else None,
-            events=events_sink,
-            curator=None,
-            run_root_node_id=None,
-            mcp_manager=None,
-            extra_protect_paths=protect,
-            mode="machine" if read_only else "run",
-            # The REPO's state dir (not this state's per-state dir above): a
-            # mode="run" agent state participates in cross-run memory like any
-            # other run; for read-only states the dispatcher mode guard and
-            # the machine/agent prompt assembly keep it inert.
-            state_dir=resolved_state_dir(req.root),
-        )
-        rm = cfg.models.resolve("worker")
-        compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
-        cfg = resolve_decompose(cfg, rm, log=reporter.err)
-        wf = Workflow(
-            root=req.root,
-            config=cfg,
-            provider=provider,
-            summariser_provider=summariser_provider,
-            dispatcher=dispatcher,
-            logger=reporter.err,
-            mode=mode if mode in ("machine", "agent") else "run",
-            state_dir=resolved_state_dir(req.root),
-            compact_drop_at_chars=compact_drop,
-            compact_summarise_at_chars=compact_summarise,
-            context_summary_max_tokens=cfg.context.summary_max_tokens,
-            compact_elision_gists=cfg.context.elision_gists,
-            steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
-            steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
-            steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
-        )
-        result = wf.run(r.prompt)
-        payload = result.finish_payload if result.reason == "finish_run" else None
-        return _result(result.reason, payload, budget)
-    finally:
-        stop_egress(egress_guard)
+    landlock_err = maybe_apply_agent_landlock(cfg, isolation)
+    if landlock_err is not None:
+        reporter.err(f"REFUSING: {landlock_err}")
+        return _result("error", None, None)
+    budget = BudgetTracker(
+        max_usd=cfg.budget.max_usd,
+        max_tokens_fallback=cfg.budget.max_tokens_fallback,
+    )
+    provider, summariser_provider, events_sink = _build_agent_providers(
+        cfg, req, budget=budget, attach_console=attach_console
+    )
+    # Re-confirm the cwd-containment invariant at the subprocess boundary
+    # (defense in depth, the engine already filtered these).
+    root_r = req.root.resolve()
+    protect = tuple(rp for p in req.protect_paths if (rp := p.resolve()).is_relative_to(root_r))
+    # "machine" (the `machine create` authoring agent) and "agent" (a
+    # running machine's `agent` state, unless it opted into mode="run") are
+    # read-only structured-output loops: the dispatcher refuses edits AND
+    # run_command/run_verify (defense in depth alongside the read-only tool
+    # list) and the loop uses a finish_run-focused prompt.
+    mode = r.mode
+    read_only = mode in ("machine", "agent")
+    # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
+    # watching this machine: answers land in the per-state dir, the liveness
+    # gate probes the instance dir where the front-end registers its claim.
+    # Needs a per-state log (events_sink) for the front-end to see the prompt.
+    bridges: _MachineBridges | None = None
+    if events_sink is not None and req.events_log is not None:
+        state_dir = req.events_log.parent
+        instance_dir = req.transcript_dir.parent
+        bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
+    dispatcher = ToolDispatcher(
+        root=req.root,
+        config=cfg,
+        isolation=isolation,
+        approver=bridges.approve if bridges is not None else None,
+        questioner=bridges.ask if bridges is not None else None,
+        events=events_sink,
+        curator=None,
+        run_root_node_id=None,
+        mcp_manager=None,
+        extra_protect_paths=protect,
+        mode="machine" if read_only else "run",
+        # The REPO's state dir (not this state's per-state dir above): a
+        # mode="run" agent state participates in cross-run memory like any
+        # other run; for read-only states the dispatcher mode guard and
+        # the machine/agent prompt assembly keep it inert.
+        state_dir=resolved_state_dir(req.root),
+    )
+    rm = cfg.models.resolve("worker")
+    compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
+    cfg = resolve_decompose(cfg, rm, log=reporter.err)
+    wf = Workflow(
+        root=req.root,
+        config=cfg,
+        provider=provider,
+        summariser_provider=summariser_provider,
+        dispatcher=dispatcher,
+        logger=reporter.err,
+        mode=mode if mode in ("machine", "agent") else "run",
+        state_dir=resolved_state_dir(req.root),
+        compact_drop_at_chars=compact_drop,
+        compact_summarise_at_chars=compact_summarise,
+        context_summary_max_tokens=cfg.context.summary_max_tokens,
+        compact_elision_gists=cfg.context.elision_gists,
+        steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
+        steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
+        steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
+    )
+    result = wf.run(r.prompt)
+    payload = result.finish_payload if result.reason == "finish_run" else None
+    return _result(result.reason, payload, budget)
 
 
 def build_machine_agent_runner(

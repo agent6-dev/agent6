@@ -234,7 +234,6 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     print(f"  Landlock ABI: {abi_str}")
     print(
         f"  sandbox.isolation = {cfg.sandbox.isolation}"
-        f"  agent_network = {cfg.sandbox.agent_network}"
         f"  tool_network = {cfg.sandbox.tool_network}"
         f"  run_commands = {cfg.sandbox.run_commands}"
     )

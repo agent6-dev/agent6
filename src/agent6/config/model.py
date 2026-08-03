@@ -7,7 +7,7 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "auto"``,
+(``sandbox.tool_network = "auto"``,
 ``sandbox.run_commands = "ask"``, ``sandbox.protect_git = true``; git push,
 ``--force``, and history rewrites are refused unconditionally by ``git_ops``,
 with no config override at all). This means a config can be layered (global ``$XDG_CONFIG_HOME``
@@ -72,7 +72,7 @@ ReviewTier = Literal["diff", "explore"]
 def validate_base_url(url: str) -> None:
     """Reject a ``[providers.*].base_url`` that is not an http(s) URL with a host.
 
-    Unlike ``sandbox.allow_urls`` (which accepts a bare ``host``), a provider's
+    A provider's
     ``base_url`` is the host+path prefix the HTTP client posts to (the
     deployment profile appends ``/chat/completions``, ``/messages``, etc.), so
     it must carry an explicit
@@ -91,29 +91,6 @@ def validate_base_url(url: str) -> None:
         raise ValueError(f"base_url {url!r} has no host")
     if port is not None and not (1 <= port <= 65535):
         raise ValueError(f"base_url {url!r} has an invalid port")
-
-
-def _validate_allow_url(entry: str) -> None:
-    """Reject a `sandbox.allow_urls` entry that has no usable host:port.
-
-    Accepts a bare ``host``, ``host:port``, or full URL; a missing scheme
-    implies ``https://``. Only the host:port is meaningful for the egress
-    broker, so the body/path is ignored. Kept in lock-step with the egress
-    folding in ``cli._allow_url_endpoints``, both prepend ``https://`` when
-    the entry omits a scheme, then parse with ``urlsplit``.
-    """
-    if not entry or not entry.strip():
-        raise ValueError("sandbox.allow_urls entries must be non-empty")
-    normalized = entry if "://" in entry else f"https://{entry}"
-    try:
-        parts = urlsplit(normalized)
-        port = parts.port  # urlsplit raises ValueError on an out-of-range port
-    except ValueError as exc:
-        raise ValueError(f"invalid sandbox.allow_urls entry {entry!r}: {exc}") from exc
-    if not parts.hostname:
-        raise ValueError(f"sandbox.allow_urls entry {entry!r} has no host")
-    if port is not None and not (1 <= port <= 65535):
-        raise ValueError(f"sandbox.allow_urls entry {entry!r} has an invalid port")
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -366,18 +343,6 @@ class SandboxConfig(BaseModel):
     # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
     # with neither userns nor Landlock) -- see detect.resolve_isolation.
     isolation: Literal["auto", "strict", "hardened", "none"] = "auto"
-    # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
-    #  - `providers`: only the configured `[providers.*]` endpoints, plus any
-    #    `allow_urls`. On `strict` this is structural, a trusted broker (see
-    #    agent6.sandbox.broker) confines the agent to an empty netns whose only
-    #    routes are per-endpoint unix sockets. `hardened` has no network
-    #    namespace and CANNOT provide it: egress is unconfined there (Landlock
-    #    filters by port, not host, which bounds nothing an exfiltrator needs).
-    #  - `local`: only loopback providers (local models, e.g. Ollama). `strict`-
-    #    only; refused if a configured provider is non-local or `allow_urls` is
-    #    set (there is nothing external to allow-list when offline).
-    #  - `open`: unconfined egress.
-    agent_network: Literal["providers", "local", "open"] = "providers"
     # Whether JAILED commands (`run_command`, `verify`, `metric`, and machine
     # `tool` states) may reach the network. A jailed child can never out-reach
     # the process that launches it, so:
@@ -394,9 +359,9 @@ class SandboxConfig(BaseModel):
     #    in with `allow_network = "allow"` (audited, deterministic commands);
     #    `run_command` stays blocked. `strict`-only (per-child netns), refused
     #    elsewhere.
-    #  - `allow`: `run_command` reaches the network too. Because `run_command`
-    #    runs inside the (possibly confined) agent process, this requires
-    #    `agent_network = "open"`.
+    #  - `allow`: `run_command` reaches the network too (a dev server, a
+    #    package install). The jailed child simply shares the host network
+    #    instead of getting an empty namespace.
     tool_network: Literal["auto", "block", "only_explicit_states", "allow"] = "auto"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Make `.git/` read-only from the child's view so a worker that gains
@@ -424,18 +389,6 @@ class SandboxConfig(BaseModel):
     # Raise it when a legitimate build or test suite needs more than 4 GiB in
     # one process.
     memory_limit_mb: int = Field(default=4096, ge=0)
-    # Extra egress destinations the AGENT process may reach under
-    # `agent_network = "providers"`, on top of the configured provider
-    # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing
-    # scheme implies https / port 443); only the host:port is used to open a
-    # broker socket. Secure default empty, no destination beyond the
-    # providers is reachable. MERGE: last-overlay-wins (the most-specific tier
-    # that sets the key replaces it wholesale, like every other list field);
-    # provider endpoints always UNION in regardless of tier. Effective egress
-    # = union(provider endpoints) + allow_urls(winning tier). Only meaningful
-    # under `agent_network = "providers"`; ignored under `local`/`open`. It
-    # widens only the agent path, never a jailed `tool`/`run_command`.
-    allow_urls: tuple[str, ...] = ()
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
     # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
     # For projects whose toolchain or interpreter lives outside the repo — a
@@ -445,13 +398,6 @@ class SandboxConfig(BaseModel):
     # can read more of the host), so list only what the build/test actually
     # needs. Empty by default. Has no effect under the `none` profile.
     extra_read_paths: tuple[str, ...] = ()
-
-    @field_validator("allow_urls")
-    @classmethod
-    def _check_allow_urls(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        for entry in v:
-            _validate_allow_url(entry)
-        return v
 
     @field_validator("extra_read_paths")
     @classmethod
@@ -465,29 +411,6 @@ class SandboxConfig(BaseModel):
             if ".." in Path(p).parts:
                 raise ValueError(f"sandbox.extra_read_paths must not contain '..': {p!r}")
         return v
-
-    @model_validator(mode="after")
-    def _check_network_combo(self) -> SandboxConfig:
-        # A jailed child can never out-reach the process that launches it, and
-        # `run_command` runs inside the agent process. So letting `run_command`
-        # reach the network (`tool_network = "allow"`) requires the agent to be
-        # unconfined. `only_explicit_states` is exempt: machine `tool` states are
-        # jailed by the host-netns engine, not the (possibly confined) agent.
-        if self.tool_network == "allow" and self.agent_network != "open":
-            raise ValueError(
-                "sandbox.tool_network = 'allow' requires sandbox.agent_network"
-                " = 'open': run_command runs inside the confined agent process."
-                " Use 'only_explicit_states' for audited per-tool egress, or set"
-                " agent_network = 'open'."
-            )
-        if self.agent_network == "local" and self.allow_urls:
-            raise ValueError(
-                "sandbox.agent_network = 'local' (loopback providers only) cannot"
-                " be combined with sandbox.allow_urls: offline has nothing"
-                " external to allow-list. Remove allow_urls, or use"
-                " agent_network = 'providers'."
-            )
-        return self
 
 
 class GitCommitConfig(BaseModel):

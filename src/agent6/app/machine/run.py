@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.egress import resolve_strict_egress_viability, warn_sandbox_gaps
+from agent6.app.confine import warn_sandbox_gaps
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
@@ -224,19 +224,6 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         except IsolationUnavailableError as exc:
             reporter.err(f"REFUSING: {exc}")
             return 2
-        agent_isolation = isolation
-        if has_agent_state:
-            # Same as run/resume: a strict that can't run the egress broker on
-            # this process (surgical AppArmor isolation) downgrades to hardened or
-            # refuses, so the per-state agent subprocess gets an isolation level it can
-            # actually use. Tool states keep `isolation`: the jail launcher itself
-            # can still run strict and give each tool its own namespace.
-            agent_isolation, egress_err = resolve_strict_egress_viability(
-                cfg, isolation, reporter=reporter
-            )
-            if egress_err is not None:
-                reporter.err(egress_err)
-                return 2
         snapshot_keep = cfg.machine.snapshot_keep
         refusal = machine_network_refusal(cfg, isolation, tool_states)
         if refusal is not None:
@@ -279,7 +266,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             agent_runner = build_machine_agent_runner(
                 spec.config,
                 cwd,
-                agent_isolation,
+                isolation,
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,

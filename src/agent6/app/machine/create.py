@@ -17,9 +17,8 @@ import shutil
 from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.egress import (
+from agent6.app.confine import (
     check_network_support,
-    resolve_strict_egress_viability,
     warn_sandbox_gaps,
 )
 from agent6.app.machine._bundle import validate_bundle
@@ -138,10 +137,6 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         isolation = resolve_isolation(cfg.sandbox.isolation, env)
     except IsolationUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
-        return 2
-    isolation, egress_err = resolve_strict_egress_viability(cfg, isolation, reporter=reporter)
-    if egress_err is not None:
-        reporter.err(egress_err)
         return 2
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:

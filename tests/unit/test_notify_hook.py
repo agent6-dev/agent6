@@ -185,7 +185,6 @@ model = "claude-opus-4-5"
 
 [sandbox]
 isolation = "auto"
-agent_network = "providers"
 run_commands = "ask"
 protect_git = true
 

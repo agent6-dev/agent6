@@ -139,7 +139,7 @@ def parse_cli_value(value: str) -> object:
     ``true``/``false`` become bools, numbers become int/float, quoted or
     bracketed text parses as a TOML string/array, and anything else (e.g. a
     bare enum like ``provider_only`` or a model id) is taken verbatim as a
-    string. This keeps ``config set sandbox.agent_network providers`` ergonomic
+    string. This keeps ``config set sandbox.tool_network auto`` ergonomic
     while still allowing ``config set sandbox.protect_git false``.
     """
     try:
@@ -149,7 +149,7 @@ def parse_cli_value(value: str) -> object:
 
 
 def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
-    """Split ``sandbox.agent_network`` into ``("sandbox", "agent_network")``.
+    """Split ``sandbox.tool_network`` into ``("sandbox", "tool_network")``.
 
     A single-segment key (the top-level ``profile``) splits to table ``""``:
     the surgery below targets the file's bare top region, before any

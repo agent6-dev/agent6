@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Process-wide egress routing for provider HTTP calls.
 
-When ``[sandbox] agent_network = "providers"`` is active the agent process
+The agent process
 runs inside a fresh, empty network namespace (see
 ``agent6.sandbox.broker``). It has **zero** IP connectivity of its own;
 the only way out is a set of ``AF_UNIX`` sockets, one per allow-listed

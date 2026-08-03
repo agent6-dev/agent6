@@ -13,13 +13,9 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app._setup import detect_env
-from agent6.app.egress import (
-    EgressGuard,
+from agent6.app.confine import (
     check_network_support,
     maybe_apply_agent_landlock,
-    maybe_start_egress,
-    resolve_strict_egress_viability,
-    stop_egress,
     warn_sandbox_gaps,
 )
 from agent6.app.preflight import budget_preflight, warn_if_prompt_override_incomplete
@@ -80,13 +76,6 @@ def select_isolation(
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         raise SessionRefused(2)
-    # strict can be selected because the jail launcher has userns, yet this
-    # process can't create one for the egress broker (surgical AppArmor
-    # isolation). Downgrade auto->hardened, or refuse an explicit strict.
-    selected, egress_err = resolve_strict_egress_viability(cfg, selected, reporter=reporter)
-    if egress_err is not None:
-        reporter.err(egress_err)
-        raise SessionRefused(2)
     budget_err = budget_preflight(cfg)
     if budget_err is not None:
         reporter.err(f"REFUSING: {budget_err}")
@@ -98,29 +87,18 @@ def start_isolation(
     cfg: Config,
     isolation: IsolationLevel,
     *,
-    agent6_exe: Callable[[], str],
     reporter: Reporter,
-) -> EgressGuard:
-    """Start the egress broker and apply the agent Landlock. On refusal the
-    partially-started guard is torn down HERE (the caller never received it,
-    so its finally holds only the empty pre-start guard) and
-    :class:`SessionRefused` is raised."""
-    guard, egress_err = maybe_start_egress(cfg, isolation, detach_exe=agent6_exe())
-    if egress_err is not None:
-        reporter.err(f"REFUSING: {egress_err}")
-        stop_egress(guard)
-        raise SessionRefused(2)
-    if guard.broker is not None:
-        reporter.err(
-            f"[agent6] provider-only egress: confined to host network "
-            f"namespace via broker pid {guard.broker.pid}"
-        )
+) -> None:
+    """Apply the agent-process Landlock, or refuse.
+
+    Only `hardened` has a layer here; `strict` confines each COMMAND instead
+    (its own namespaces per jailed child), which is what actually bounds
+    untrusted work.
+    """
     landlock_err = maybe_apply_agent_landlock(cfg, isolation, reporter=reporter)
     if landlock_err is not None:
         reporter.err(f"REFUSING: {landlock_err}")
-        stop_egress(guard)
         raise SessionRefused(2)
-    return guard
 
 
 @dataclass(frozen=True, slots=True)

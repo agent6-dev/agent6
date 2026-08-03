@@ -317,23 +317,23 @@ whatever audited command the operator names.
 `"block"` (no network, *required*; refuses to run on `hardened`, which can't
 isolate a single tool). A tool reaches the network only when it sets `allow_network =
 "allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
-state confines itself in its own subprocess; see §9), an opt-in `tool` can reach
-the host network even while the agents stay confined to the provider API. A
+state runs in its own subprocess; see §9), an opt-in `tool` can reach the host
+network while every other jailed command stays offline. A
 `tool` command is fixed and operator-reviewed, so it is not a free exfiltration
 channel the way a networked `run_command` would be. Whether the opt-in is
 honored is the operator's call via `sandbox.tool_network` (read from the
 global/repo config, never the machine overlay):
 
-| `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network="allow"` |
-|---|---|---|---|
-| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | ⛔ refuse to run |
-| `providers` | `only_explicit_states` | providers + `allow_urls` | **host network** |
-| `local` | `only_explicit_states` | loopback providers only | **host network** |
-| `open` | `allow` | unconfined | host network (and `run_command`) |
+| `sandbox.tool_network` | jailed commands | `tool` w/ `allow_network="allow"` |
+|---|---|---|
+| `auto` *(def)* | offline on `strict` | ⛔ refuse to run |
+| `block` | offline (refuses on `hardened`) | ⛔ refuse to run |
+| `only_explicit_states` | offline | **host network** |
+| `allow` | host network | host network (and `run_command`) |
 
-So the headline setup (confined agents + one operator-reviewed networked tool) is
-`sandbox.agent_network = "providers"`, `sandbox.tool_network =
-"only_explicit_states"`, and `allow_network = "allow"` on that one state.
+So the headline setup (offline commands + one operator-reviewed networked tool)
+is `sandbox.tool_network = "only_explicit_states"` and `allow_network = "allow"`
+on that one state.
 `only_explicit_states` (and `local`) need `strict` isolation; a networked tool
 under `sandbox.tool_network = "block"`, or a tool-network config the isolation level
 can't honor, refuses to run at startup naming the state.
@@ -663,7 +663,7 @@ states what it wants to change. Two hard rules:
   `[config.providers.*]`, `[config.sandbox.*]`, or `[config.presets.*]` block,
   or `git.run_repo_hooks`, is a *load-time* error. Provider endpoints, api-key
   env names, and secret values live in the global config / secrets store;
-  sandbox policy (network egress incl. `allow_urls`, `run_commands`, `.git`
+  sandbox policy (`tool_network`, `run_commands`, `.git`
   protection), the strategy presets that define it, and honoring the repo's
   `.git/hooks` (host code run outside the jail on a `mode="run"` commit) are
   operator decisions in the global/repo config. A machine file may be

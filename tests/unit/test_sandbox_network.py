@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""agent_network / tool_network: isolation compatibility, machine refusals, and
+"""tool_network: isolation compatibility, machine refusals, and
 the supervisor subprocess that runs a machine `agent` state self-confined."""
 
 from __future__ import annotations
@@ -12,11 +12,8 @@ from typing import Any
 import pytest
 
 from agent6.app import machine_agent
-from agent6.app.egress import (
-    EgressGuard,
-    _is_loopback,  # pyright: ignore[reportPrivateUsage]
+from agent6.app.confine import (
     check_network_support,
-    maybe_start_egress,
 )
 from agent6.app.machine import (
     machine_network_refusal,
@@ -28,23 +25,11 @@ from agent6.machine.model import ToolState
 from agent6.types import IsolationLevel
 
 
-def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Config:
-    return validate_config(
-        {"sandbox": {"agent_network": agent_network, "tool_network": tool_network}}
-    )
+def _cfg(tool_network: str = "block") -> Config:
+    return validate_config({"sandbox": {"tool_network": tool_network}})
 
 
 # --- _is_loopback ----------------------------------------------------------
-
-
-def test_is_loopback() -> None:
-    assert _is_loopback("127.0.0.1") and _is_loopback("localhost") and _is_loopback("::1")
-    assert _is_loopback("127.8.4.2")  # anywhere in 127.0.0.0/8
-    assert _is_loopback("0.0.0.0")  # client-connect wildcard reaches loopback
-    assert not _is_loopback("api.anthropic.com")
-    # Regression: a routable NAME that merely starts with "127." must not slip
-    # past the agent_network='local' loopback-only gate.
-    assert not _is_loopback("127.foo.example.com")
 
 
 # --- check_network_support (isolation compatibility) ------------------------
@@ -54,16 +39,12 @@ def test_is_loopback() -> None:
 def test_check_network_support_allows_off_hardened(isolation: IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_support(_cfg("local", "block"), isolation) is None
-    assert check_network_support(_cfg("open", "only_explicit_states"), isolation) is None
-
-
-def test_check_network_support_refuses_local_on_hardened() -> None:
-    assert "local" in (check_network_support(_cfg("local", "block"), "hardened") or "")
+    assert check_network_support(_cfg("block"), isolation) is None
+    assert check_network_support(_cfg("only_explicit_states"), isolation) is None
 
 
 def test_check_network_support_refuses_only_explicit_states_on_hardened() -> None:
-    msg = check_network_support(_cfg("open", "only_explicit_states"), "hardened")
+    msg = check_network_support(_cfg("only_explicit_states"), "hardened")
     assert msg is not None and "only_explicit_states" in msg
 
 
@@ -79,27 +60,24 @@ _BLOCK_TOOL = ToolState(
 
 
 def test_refusal_networked_tool_under_block() -> None:
-    msg = machine_network_refusal(_cfg("providers", "block"), "strict", [_NET_TOOL])
+    msg = machine_network_refusal(_cfg("block"), "strict", [_NET_TOOL])
     assert msg is not None and "allow_network" in msg
 
 
 def test_refusal_providers_explicit_states_strict_ok() -> None:
     # The headline combo: confined agent + audited networked tool, on strict.
-    assert (
-        machine_network_refusal(_cfg("providers", "only_explicit_states"), "strict", [_NET_TOOL])
-        is None
-    )
+    assert machine_network_refusal(_cfg("only_explicit_states"), "strict", [_NET_TOOL]) is None
 
 
 def test_refusal_block_tools_on_hardened() -> None:
-    msg = machine_network_refusal(_cfg("providers", "block"), "hardened", [_TOOL])
+    msg = machine_network_refusal(_cfg("block"), "hardened", [_TOOL])
     assert msg is not None and "strict" in msg
 
 
 def test_refusal_explicit_block_state_on_hardened() -> None:
     # tool_network=allow runs auto/allow tools on hardened, but an explicit
     # allow_network="block" demand can't be honored there -> refuse.
-    msg = machine_network_refusal(_cfg("open", "allow"), "hardened", [_BLOCK_TOOL])
+    msg = machine_network_refusal(_cfg("allow"), "hardened", [_BLOCK_TOOL])
     assert msg is not None and "block" in msg
 
 
@@ -109,78 +87,13 @@ def test_refusal_networked_tool_under_the_auto_default() -> None:
     message names the ACTUAL value. Every other case here pins block/allow/
     only_explicit_states, leaving the default path unexercised."""
     for isolation in ("strict", "hardened"):
-        msg = machine_network_refusal(_cfg("providers", "auto"), isolation, [_NET_TOOL])
+        msg = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
         assert msg is not None and "allow_network" in msg
         assert "'auto'" in msg  # not a hardcoded "block"
 
 
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
-    assert machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
-
-
-# --- maybe_start_egress (local / open / non-strict short-circuits) --------
-
-
-def test_egress_open_does_nothing() -> None:
-    assert maybe_start_egress(_cfg("open", "block"), "strict") == (EgressGuard(), None)
-
-
-def test_egress_non_strict_defers_to_landlock() -> None:
-    assert maybe_start_egress(_cfg("providers", "block"), "hardened") == (EgressGuard(), None)
-
-
-def test_egress_refuses_inherited_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A child spawned from inside enter_network_isolation() can never reach a
-    # provider; it must refuse with the cause, not die later as provider_error.
-    monkeypatch.setenv("AGENT6_NETNS_ISOLATED", "1")
-    guard, err = maybe_start_egress(_cfg("providers", "block"), "strict")
-    assert guard == EgressGuard()
-    assert err is not None and "inherited" in err
-    # Even the unconfined mode refuses: the namespace has no routes at all.
-    guard, err = maybe_start_egress(_cfg("open", "block"), "strict")
-    assert err is not None and "inherited" in err
-
-
-def test_egress_local_refuses_non_local_provider() -> None:
-    cfg = validate_config(
-        {
-            "providers": {
-                "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"}
-            },
-            "sandbox": {"agent_network": "local"},
-        }
-    )
-    guard, err = maybe_start_egress(cfg, "strict")
-    assert guard == EgressGuard()
-    assert err is not None and "loopback" in err and "openrouter.ai" in err
-
-
-def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    # If enter_network_isolation() fails AFTER the broker child is forked, the
-    # broker must be reaped (not leaked) and the run refused.
-    from agent6.app import egress as eg
-
-    closed = {"n": 0}
-
-    class _FakeBroker:
-        def close(self) -> None:
-            closed["n"] += 1
-
-        def uds_for(self, _h: str, _p: int) -> None:
-            return None
-
-    def _fake_start(endpoints: object, *, sock_dir: object) -> _FakeBroker:
-        return _FakeBroker()
-
-    def _boom() -> None:
-        raise OSError("isolation failed")
-
-    monkeypatch.setattr(eg, "start_egress_broker", _fake_start)
-    monkeypatch.setattr(eg, "enter_network_isolation", _boom)
-    guard, err = maybe_start_egress(_cfg("providers", "block"), "strict")
-    assert guard == EgressGuard()
-    assert err is not None and "confinement" in err
-    assert closed["n"] == 1  # the forked broker was closed, not leaked
+    assert machine_network_refusal(_cfg("allow"), "hardened", [_TOOL]) is None
 
 
 # --- supervisor subprocess: machine_agent.run_one -------------------------
@@ -230,7 +143,7 @@ def test_run_one_returns_finish_payload(
         cwd=iso,
         root=iso,
         overlay={},
-        isolation="none",  # no real sandbox: egress/landlock are no-ops
+        isolation="none",  # no real sandbox: landlock is a no-op
         transcript_dir=tmp_path / "t",
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
     )
@@ -323,54 +236,3 @@ def test_run_one_exports_commit_identity(
     assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"
     assert os.environ["GIT_AUTHOR_EMAIL"] == "bot@example.com"
     assert os.environ["GIT_COMMITTER_EMAIL"] == "bot@example.com"
-
-
-def test_egress_fails_closed_and_cleans_up_on_socket_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import agent6.app.egress as eg
-
-    sock = tmp_path / "egress-sock"
-
-    def _fake_mkdtemp(**_k: object) -> str:
-        sock.mkdir()
-        return str(sock)
-
-    def _boom(*_a: object, **_k: object) -> object:
-        raise OSError("too many open files")
-
-    monkeypatch.setattr(eg.tempfile, "mkdtemp", _fake_mkdtemp)
-    monkeypatch.setattr(eg, "start_egress_broker", _boom)
-    cfg = validate_config(
-        {
-            "providers": {"anthropic": {"api_format": "anthropic"}},
-            "sandbox": {"agent_network": "providers"},
-        }
-    )
-    guard, err = maybe_start_egress(cfg, "strict")
-    assert guard == EgressGuard()
-    assert err is not None and "too many open files" in err
-    assert not sock.exists()  # the socket dir was cleaned up, not leaked
-
-
-def test_egress_fails_closed_when_sock_dir_creation_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # mkdtemp itself failing (full/read-only /tmp) must produce the same
-    # documented graceful refusal as every later setup failure, not escape as
-    # an uncaught OSError that crashes the run.
-    import agent6.app.egress as eg
-
-    def _boom_mkdtemp(**_k: object) -> str:
-        raise OSError("No space left on device")
-
-    monkeypatch.setattr(eg.tempfile, "mkdtemp", _boom_mkdtemp)
-    cfg = validate_config(
-        {
-            "providers": {"anthropic": {"api_format": "anthropic"}},
-            "sandbox": {"agent_network": "providers"},
-        }
-    )
-    guard, err = maybe_start_egress(cfg, "strict")
-    assert guard == EgressGuard()
-    assert err is not None and "confinement" in err and "No space left" in err

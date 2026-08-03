@@ -47,11 +47,9 @@ export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$AGENT6_CONFIG_HOME"
 
 # Provider points at the proxy; the demo never reaches a real model in replay.
-# agent_network = "open" so the jailed agent shares the host net namespace and
 # can reach the loopback proxy. tool_network stays blocked.
 cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
 [sandbox]
-agent_network = "open"
 tool_network = "block"
 run_commands = "yes"
 protect_git = true

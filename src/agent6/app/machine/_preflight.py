@@ -17,7 +17,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.app.egress import check_network_support
+from agent6.app.confine import check_network_support
 from agent6.app.finalize import hook_env
 from agent6.app.machine._bundle import is_inside
 from agent6.config import Config

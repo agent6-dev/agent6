@@ -292,7 +292,7 @@ these are the invariants a change must preserve.
   `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
-  (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "auto"`,
+  (`sandbox.tool_network = "auto"`,
   `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; push, force,
   and history rewrites have NO config knob at all -- `git_ops` refuses them
   unconditionally). Every leaf is auditable via `agent6 config show`;
@@ -304,12 +304,11 @@ these are the invariants a change must preserve.
   never executes anything a remote returns (OAuth/paste only).
 - Running as root requires explicit opt-in (`--allow-root` /
   `AGENT6_ALLOW_ROOT=1`); the jail, not the uid, is the boundary.
-- Agent egress is bounded to the hosts derived from configured
-  `[providers.*]` `base_url`s, unioned with operator-set `sandbox.allow_urls`
-  (default empty); see `app/egress.py`. Never add a code path that dials a
-  host not derived from them. Operator-initiated CLI fetches before any agent
-  runs (`agent6 connect` OAuth, `agent6 skills install <url>`) are the
-  operator dialling a host they typed, outside that boundary.
+- The AGENT process's egress is not bounded, and the docs say so. What is
+  bounded is what a jailed COMMAND reaches (`sandbox.tool_network`). The
+  netns+broker that once confined the agent process was deleted: under
+  `strict` that process has no filesystem confinement, so code execution
+  there could persist and exfiltrate out-of-band regardless.
 - The `agent6-jail` Rust binary is part of the security boundary. Changes to
   `src/agent6/jail/src/main.rs` need at minimum a review note covering: mount
   points changed, Landlock rules changed, seccomp syscalls added or removed,
