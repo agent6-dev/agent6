@@ -11,13 +11,17 @@ opts in via `cwd-only-mode`, otherwise raises JailUnavailableError. This keeps
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import functools
 import json
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -240,6 +244,85 @@ def strict_namespaces_work() -> bool:
     return res.returncode == 0
 
 
+# --- escapee reaping ---------------------------------------------------------
+# `strict` confines the child in a PID namespace, so nothing outlives it. In
+# `hardened` there is no namespace: a child that calls setsid() leaves the
+# launcher's process group, survives the launcher's killpg, and reparents to
+# init. PR_SET_CHILD_SUBREAPER makes it reparent to the agent instead, so
+# run_in_jail can find and kill it once the command returns.
+#
+# Security review note: this closes a break of the "no persistence after the
+# run" guarantee (docs/security.md) on `hardened`. The launcher cannot do it
+# itself, and must not: its own Landlock ruleset denies /proc, and granting
+# /proc there would hand every jailed child the agent's environ (API keys).
+#
+# The sweep kills every child that appears while a command is in flight, which
+# is sound because nothing else spawns during one: a process that runs jailed
+# commands does so from one thread, and the egress broker, host spawner and
+# `/parallel` lanes all predate the call, so they are in `before`. Deliberate
+# children must keep predating the calls that follow them.
+_PR_SET_CHILD_SUBREAPER = 36
+_SWEEP_ROUNDS = 5
+_sweep_lock = threading.Lock()
+_live_launchers: set[int] = set()
+
+
+@functools.cache
+def _become_subreaper() -> None:
+    if sys.platform != "linux":
+        return
+    libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+    libc.prctl.restype = ctypes.c_int
+    if libc.prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        err = ctypes.get_errno()
+        raise JailUnavailableError(
+            f"prctl(PR_SET_CHILD_SUBREAPER) failed: {os.strerror(err)}."
+            " Without it a sandboxed command could leave a process running after it returns."
+        )
+
+
+def _own_children() -> frozenset[int]:
+    """Pids the kernel currently reports as children of this process."""
+    me = str(os.getpid())
+    found: set[int] = set()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text()
+        except OSError:
+            continue  # exited mid-scan
+        # Field 4 is the ppid; the comm field before it may itself contain spaces.
+        fields = stat[stat.rfind(")") + 1 :].split()
+        if len(fields) > 1 and fields[1] == me:
+            found.add(int(entry.name))
+    return frozenset(found)
+
+
+def _kill_escapees(before: frozenset[int]) -> None:
+    """Kill anything the command left behind that has reparented to us."""
+    own_group = os.getpgrp()
+    with _sweep_lock:
+        # Killing one layer orphans the next, which lands here in turn; a
+        # daemon that re-daemonises as its parent dies needs another round.
+        for _ in range(_SWEEP_ROUNDS):
+            escapees = _own_children() - before - _live_launchers
+            if not escapees:
+                return
+            for pid in escapees:
+                try:
+                    group = os.getpgid(pid)
+                    # setsid() left it leading its own group: take the group so
+                    # its children go too. Never our own group.
+                    if group != own_group:
+                        os.killpg(group, signal.SIGKILL)
+                    else:
+                        os.kill(pid, signal.SIGKILL)
+                    os.waitpid(pid, 0)
+                except OSError:
+                    continue
+
+
 def run_in_jail(policy: JailPolicy) -> CommandResult:
     """Run `policy.argv` inside the sandbox.
 
@@ -269,18 +352,39 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         )
     spec = _policy_to_json(policy)
     start = time.monotonic()
-    # Launch the launcher in its own session (group leader) so that, if it ever
-    # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
-    # timeout — we can kill its whole process group and reap any orphaned
-    # pidns-init/grandchild, not just the launcher itself. Use Popen (not
-    # subprocess.run) so we keep the pid to target os.killpg.
-    launcher = subprocess.Popen(
-        [str(binary)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
+    _become_subreaper()
+    # Snapshot first: anything that is our child afterwards but was not before
+    # escaped the command. A concurrent caller's launcher is excluded by pid.
+    before = _own_children()
+    with _sweep_lock:
+        # Launch the launcher in its own session (group leader) so that, if it ever
+        # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
+        # timeout — we can kill its whole process group and reap any orphaned
+        # pidns-init/grandchild, not just the launcher itself. Use Popen (not
+        # subprocess.run) so we keep the pid to target os.killpg.
+        launcher = subprocess.Popen(
+            [str(binary)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        _live_launchers.add(launcher.pid)
+    try:
+        return _launcher_result(launcher, policy, spec, start, binary)
+    finally:
+        with _sweep_lock:
+            _live_launchers.discard(launcher.pid)
+        _kill_escapees(before)
+
+
+def _launcher_result(
+    launcher: subprocess.Popen[bytes],
+    policy: JailPolicy,
+    spec: str,
+    start: float,
+    binary: Path,
+) -> CommandResult:
     try:
         raw_out, raw_err = launcher.communicate(input=spec.encode(), timeout=policy.timeout_s + 5.0)
     except subprocess.TimeoutExpired as exc:

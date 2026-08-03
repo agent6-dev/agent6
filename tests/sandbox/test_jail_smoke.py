@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -713,3 +714,31 @@ def test_hardened_protects_git_from_the_filter_escape(jail_bin: Path, tmp_path: 
     )
     assert "filter" not in res.stdout
     assert "filter" not in (git_dir / "config").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_no_command_leaves_a_process_running(
+    jail_bin: Path, tmp_path: Path, isolation: str
+) -> None:
+    """A command must not outlive its own call ("no persistence after the run").
+
+    strict confines the child in a PID namespace, so its whole tree dies with
+    it. hardened has no namespace: `setsid` leaves the launcher's process group,
+    so the launcher's killpg misses it and it reparents away. It has to reparent
+    to the agent (PR_SET_CHILD_SUBREAPER) and be killed here instead.
+    """
+    beat = tmp_path / "beat"
+    daemon = f"for i in 1 2 3 4 5 6; do echo x >> {beat}; sleep 1; done"
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", f"setsid /bin/sh -c {daemon!r} </dev/null >/dev/null 2>&1 &"),
+            isolation=isolation,
+            timeout_s=10.0,
+        )
+    )
+    assert res.returncode == 0
+    at_return = beat.read_text(encoding="utf-8") if beat.exists() else ""
+    time.sleep(2.5)
+    later = beat.read_text(encoding="utf-8") if beat.exists() else ""
+    assert later == at_return, f"{isolation}: a process survived the command ({later!r})"
