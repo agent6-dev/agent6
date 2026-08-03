@@ -99,3 +99,16 @@ def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     with pytest.raises(SystemExit) as exc:
         main(["run", "--continue"])
     assert exc.value.code == 2
+
+
+def test_parallel_refuses_an_explicit_run_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Each lane mints its own run id; the flag was silently dropped (never
+    # forwarded to dispatch_parallel), so refuse it like -i/--tui.
+    monkeypatch.chdir(tmp_path)
+    rc = main(["run", "--parallel", "2", "--run-id", "myid", "task"])
+    assert rc == 2
+    assert "--run-id" in capsys.readouterr().err

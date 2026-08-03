@@ -172,6 +172,12 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
+    if getattr(args, "parallel", "") and args.run_id:
+        print(
+            "ERROR: --parallel cannot combine with --run-id (each lane mints its own run id).",
+            file=sys.stderr,
+        )
+        return 2
     if args.from_plan:
         if args.task:
             print(
