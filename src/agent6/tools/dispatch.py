@@ -41,7 +41,6 @@ from agent6.skills import (
 from agent6.tools._control_tools import ask_user, finish_planning, finish_run
 from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, grep, list_dir, read_file
-from agent6.tools._git_guard import refuse_mutating_git_command
 from agent6.tools._memory_tools import add_memory, invalidate_memory, use_skill
 from agent6.tools._nav_tools import (
     find_definition,
@@ -608,7 +607,6 @@ class ToolDispatcher:
 
     def _run_command(self, raw: dict[str, Any]) -> ExecResult:
         args = RunCommandInput.model_validate(raw)
-        refuse_mutating_git_command(args.argv)
         if self._config.sandbox.run_commands == "ask":
             # A shell-style command line, not a Python tuple repr: the operator
             # is approving a command, so show it the way they would type it.

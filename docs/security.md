@@ -313,10 +313,15 @@ syscall for hardened), never guessed from the kernel version.
       `filter-branch`/`filter-repo`, `branch -D`/`--force`, and any `--force`/`-f`
       on a destructive verb.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
-  list.**
+  list, and its argv is NOT screened.**
     - On `strict`, `protect_git` read-only-binds `.git`, so a rewrite fails and
       `push` has no egress. On `hardened`, `.git` is writable, so the container is
       the boundary.
+    - agent6 used to refuse mutating git subcommands (plus the `-c alias.*`
+      injection that dodged them) in `run_command` argv. Removed: a blocklist
+      enumerates badness, and a model that writes a shell script and runs it
+      walks past it, so it bought complexity and a false sense of a boundary
+      the jail already owns.
 - **git_ops neutralizes repo-controlled host code in a poisoned `.git/config`.**
     - `core.fsmonitor` and `diff.external` are always off; `.git/hooks/*` run only
       under `git.run_repo_hooks = true` (default false; `core.hooksPath` points

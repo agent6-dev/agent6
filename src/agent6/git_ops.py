@@ -472,10 +472,8 @@ def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
     This is the operator's explicit `runs prune --delete-squashed` opt-in, only
     for a branch the manifest CONFIRMS was squash-merged into an existing base
     (its content is in that base commit; the individual per-step commits were
-    collapsed anyway and survive in the reflog until GC). It is NEVER reachable
-    by the model: the LLM-facing `_git_guard.refuse_mutating_git_command` still
-    blocks a `git branch -D` run through run_command. Operator-initiated, fixed
-    argv, content-preserving. Returns True if deleted."""
+    collapsed anyway and survive in the reflog until GC). Operator-initiated,
+    fixed argv, content-preserving. Returns True if deleted."""
     return _run(path, "branch", "-D", branch, check=False).ok
 
 
