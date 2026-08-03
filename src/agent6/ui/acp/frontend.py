@@ -33,7 +33,11 @@ from agent6.workflows.loop import RunResult, Workflow
 # What the client is asked, and what an unaskable client is assumed to have
 # said. Every one of these is the CAUTIOUS answer: a session that cannot ask
 # is a session that does less, never one that does something unwatched.
-Asker = Callable[[str, tuple[str, ...]], str | None]
+# (prompt, options, standing) -> the chosen option, or None for no answer.
+# `standing` is None for a QUESTION, whose options the model wrote: an
+# answer among several is not a permission, and must never be offered as
+# one the editor may remember.
+Asker = Callable[[str, tuple[str, ...], bool | None], str | None]
 
 
 def _false() -> bool:
@@ -77,13 +81,13 @@ def acp_frontend(
         # carry data out in its path. The option names carry it, because an
         # editor that offers "always" needs something to key that decision on.
         options = ("allow", "deny") if standing else ("allow once", "deny")
-        answer = ask(prompt, options)
+        answer = ask(prompt, options, standing)
         return bool(answer) and answer.startswith("allow")
 
     def _questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         answers: list[str] = []
         for question in questions:
-            reply = ask(question.question, question.options) if capabilities.can_ask else None
+            reply = ask(question.question, question.options, None) if capabilities.can_ask else None
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
             answers.append(reply or "")

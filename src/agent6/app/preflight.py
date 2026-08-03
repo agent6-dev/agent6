@@ -98,24 +98,39 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
         )
 
 
-def require_git_repo(cwd: Path) -> bool:
-    """Print a friendly error and return False when *cwd* is not a git repo.
+def git_repo_refusal(cwd: Path) -> str | None:
+    """Refuse a workspace that is not a git repository, naming the fix.
 
     A clean early exit instead of the misleading "Git identity not configured"
     error (when there's no global identity) or an ugly failure deeper in the
     run. agent6 needs git to branch, commit per step, and let the user
     review/revert what the agent did.
+
+    This is also the WALL on what becomes the model's workspace: whatever
+    directory a run starts in is what the jail mounts writable. Every front-end
+    that chooses one has to pass it through here -- `agent6 acp` takes that
+    directory from the editor over the wire, and without this a client could
+    point a run at any absolute path.
+
+    Returns the message, or None when *cwd* is usable.
     """
     if is_git_repo(cwd):
-        return True
-    print(
-        f"ERROR: {cwd} is not a git repository.\n"
+        return None
+    return (
+        f"{cwd} is not a git repository.\n"
         "agent6 needs git here to create a run branch, commit each step, and let"
         " you review or revert what the agent did.\n"
         "  Fix: run `agent6 init` (it offers to set up git for you), or\n"
-        '       `git init && git add -A && git commit -m "initial commit"`.',
-        file=sys.stderr,
+        '       `git init && git add -A && git commit -m "initial commit"`.'
     )
+
+
+def require_git_repo(cwd: Path) -> bool:
+    """:func:`git_repo_refusal` for a front-end that prints and branches."""
+    refusal = git_repo_refusal(cwd)
+    if refusal is None:
+        return True
+    print(f"ERROR: {refusal}", file=sys.stderr)
     return False
 
 

@@ -59,22 +59,45 @@ def _stderr(message: str) -> None:
 # Everything the lifecycle would print goes to stderr, where an editor shows it
 # as agent log output. stdout is the wire.
 STDERR_REPORTER = Reporter(out=_stderr, err=_stderr)
+# How many of the run's own lines to keep for a refusal that never reached a
+# journal. The reason is the last thing said, and one screen of context is
+# what makes it actionable.
+KEPT_LINES = 40
 
 
-def option_kind(text: str) -> str:
-    """ACP's button kinds, from the option text the seam offered.
+def teeing_reporter(kept: list[str]) -> Reporter:
+    """The stderr reporter, remembering what it said.
 
-    "allow" is the one an editor may REMEMBER. "allow once" is the fetch tool's
-    off-list host, where remembering would silently cover a different host.
-    Anything else is one answer among several (a `UserQuestion`), which is not
-    a permission at all -- `allow_once` is the only kind that does not invite
-    the editor to reuse it.
+    A lifecycle refusal (`return 2`) writes its reason here and nowhere
+    else: no `run.end` event exists, so the fold produces no ending and the
+    editor saw a turn stop with a stop reason and no words. There are about
+    a dozen such paths -- a missing git identity, a run id already in use,
+    another writer holding the repo, a dirty worktree, isolation refused.
     """
+
+    def _keep(message: str) -> None:
+        _stderr(message)
+        kept.extend(message.splitlines() or [""])
+        del kept[:-KEPT_LINES]
+
+    return Reporter(out=_keep, err=_keep)
+
+
+def option_kind(text: str, standing: bool | None) -> str:
+    """ACP's button kinds, from WHO asked -- never from the option text.
+
+    `standing=True` is an approval an editor may REMEMBER. `False` is the
+    fetch tool's off-list host, where remembering would silently cover a
+    different host. `None` is a `UserQuestion`, whose options the MODEL
+    wrote: keying on the text let a model emit an option literally named
+    "allow" and have it advertised as `allow_always`, so an editor keying its
+    memory on the title would auto-approve later real permission requests.
+    """
+    if standing is None:
+        return "allow_once"
     if text == "deny":
         return "reject_once"
-    if text == "allow":
-        return "allow_always"
-    return "allow_once"
+    return "allow_always" if standing else "allow_once"
 
 
 def stop_reason(code: int) -> StopReason:
@@ -104,7 +127,9 @@ class RunBridge:
     def sessions(self) -> Sessions:
         return Sessions(run=self.run, state_dir_for=resolved_state_dir)
 
-    def ask(self, session: Session, prompt: str, options: tuple[str, ...]) -> str | None:
+    def ask(
+        self, session: Session, prompt: str, options: tuple[str, ...], standing: bool | None
+    ) -> str | None:
         """Put one approval or question to the editor.
 
         ACP v1 has no method for a free-form question, so a `UserQuestion` goes
@@ -125,7 +150,8 @@ class RunBridge:
                     "status": "pending",
                 },
                 "options": [
-                    {"optionId": text, "name": text, "kind": option_kind(text)} for text in options
+                    {"optionId": text, "name": text, "kind": option_kind(text, standing)}
+                    for text in options
                 ],
             },
             timeout_s=PERMISSION_TIMEOUT_S,
@@ -137,6 +163,13 @@ class RunBridge:
         # Only an option we offered. An editor that echoes something else is
         # not choosing, and an unknown string could become an "allow" by prefix.
         return chosen if isinstance(chosen, str) and chosen in options else None
+
+    def had_journal(self, session: Session) -> bool:
+        """Whether this turn got far enough to say anything of its own."""
+        if not session.run_id:
+            return False
+        layout = RunLayout(state_dir=resolved_state_dir(session.cwd), run_id=session.run_id)
+        return layout.logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
         # BEFORE the queue, not after. `_runs` is held for a whole run, so a
@@ -157,9 +190,12 @@ class RunBridge:
                 # say so, and the turn still ends with a stop reason. A broken
                 # config is the ordinary case: the CLI prints it, and here the
                 # editor would have seen a turn end with no words at all.
-                self.server.notify_raw(
-                    message_update(session.id, f"the run could not start: {exc}")
-                )
+                # Once a journal exists the fold has already reported the
+                # ending, and saying this too contradicts it.
+                if not self.had_journal(session):
+                    self.server.notify_raw(
+                        message_update(session.id, f"the run could not start: {exc}")
+                    )
                 return "refusal"
 
     def _run(self, session: Session, text: str) -> StopReason:
@@ -167,6 +203,7 @@ class RunBridge:
         layout = RunLayout(state_dir=resolved_state_dir(session.cwd), run_id=session.run_id)
         os.chdir(session.cwd)
 
+        said: list[str] = []
         ended, drained = threading.Event(), threading.Event()
 
         def _stop() -> bool:
@@ -197,7 +234,9 @@ class RunBridge:
                 effective.config,
                 text,
                 frontend=acp_frontend(
-                    ask=lambda prompt, options: self.ask(session, prompt, options),
+                    ask=lambda prompt, options, standing: self.ask(
+                        session, prompt, options, standing
+                    ),
                     # `initialize` has not landed if this is None, and nothing
                     # is known about the client; the cautious answer is that it
                     # can do nothing.
@@ -207,11 +246,16 @@ class RunBridge:
                 ),
                 run_id=session.run_id,
                 explicit_leaves=frozenset(effective.sources),
-                reporter=STDERR_REPORTER,
+                reporter=teeing_reporter(said),
             )
         finally:
             ended.set()
             tail.join(timeout=DRAIN_S)
+        if code != 0 and not self.had_journal(session):
+            # A refusal before the run had anything to say for itself.
+            self.server.notify_raw(
+                message_update(session.id, "\n".join(said) or f"the run stopped (exit {code})")
+            )
         return stop_reason(code)
 
     def _stream(self, session: Session, logs_path: Path, stop: Callable[[], bool]) -> None:
@@ -219,7 +263,7 @@ class RunBridge:
         fold = TranscriptFold()
         for event in tail_events(logs_path, stop_when_finished=True, should_stop=stop):
             for item in fold.feed(event):
-                for body in updates_for(item, session_id=session.id):
+                for body in updates_for(item, session_id=session.id, run_id=session.run_id):
                     self.server.notify_raw(body)
 
 

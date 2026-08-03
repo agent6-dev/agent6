@@ -19,10 +19,10 @@ from agent6.ui.acp.frontend import acp_frontend
 
 
 def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
-    asked: list[tuple[str, tuple[str, ...]]] = []
+    asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
-    def _ask(prompt: str, options: tuple[str, ...]) -> str | None:
-        asked.append((prompt, options))
+    def _ask(prompt: str, options: tuple[str, ...], standing: bool | None) -> str | None:
+        asked.append((prompt, options, standing))
         return reply
 
     front = acp_frontend(
@@ -38,7 +38,7 @@ def test_an_approval_becomes_a_request_to_the_editor() -> None:
     front, asked = _frontend()
     approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
     assert approve("Allow run_command: ls") is True
-    assert asked == [("Allow run_command: ls", ("allow", "deny"))]
+    assert asked == [("Allow run_command: ls", ("allow", "deny"), True)]
 
 
 def test_a_client_that_cannot_be_asked_gets_a_no() -> None:
@@ -61,7 +61,7 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty() -> None
     front, asked = _frontend(reply="dark")
     ask_user = front.build_questioner(Path("/x"), None)  # pyright: ignore[reportArgumentType]
     assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)) == ("dark",)
-    assert asked[0] == ("Theme?", ("dark", "light"))
+    assert asked[0] == ("Theme?", ("dark", "light"), None)
 
     mute, _ = _frontend(can_ask=False)
     silent = mute.build_questioner(Path("/x"), None)  # pyright: ignore[reportArgumentType]
@@ -114,10 +114,10 @@ def test_an_approval_that_must_not_be_remembered_says_so() -> None:
     front, asked = _frontend(reply="allow once")
     approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
     assert approve("Allow fetch: evil.example (1.2.3.4) /x", standing=False) is True
-    assert asked[-1][1] == ("allow once", "deny")
+    assert asked[-1][1:] == (("allow once", "deny"), False)
 
     approve("Allow run_command: ls")
-    assert asked[-1][1] == ("allow", "deny")
+    assert asked[-1][1:] == (("allow", "deny"), True)
 
 
 def test_nothing_is_drawn_and_deltas_still_reach_the_journal() -> None:

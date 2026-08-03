@@ -32,7 +32,7 @@ _CHUNK_KIND = {
 }
 
 
-def updates_for(item: TranscriptItem, *, session_id: str) -> list[dict[str, Any]]:
+def updates_for(item: TranscriptItem, *, session_id: str, run_id: str = "") -> list[dict[str, Any]]:
     """The `session/update` notifications one fold item becomes.
 
     A tool becomes TWO: the call, then its outcome. ACP models a tool call as a
@@ -55,12 +55,12 @@ def updates_for(item: TranscriptItem, *, session_id: str) -> list[dict[str, Any]
         ]
     if item.kind == "tool":
         return [
-            _update(session_id, {"sessionUpdate": "tool_call", **_tool_call(item)}),
+            _update(session_id, {"sessionUpdate": "tool_call", **_tool_call(item, run_id)}),
             _update(
                 session_id,
                 {
                     "sessionUpdate": "tool_call_update",
-                    "toolCallId": _tool_id(item),
+                    "toolCallId": _tool_id(item, run_id),
                     "status": "completed" if item.ok is not False else "failed",
                     **({"content": [_text(item.detail)]} if item.detail else {}),
                 },
@@ -133,7 +133,7 @@ def _text(text: str) -> dict[str, Any]:
     return {"type": "text", "text": text}
 
 
-def _tool_id(item: TranscriptItem) -> str:
+def _tool_id(item: TranscriptItem, run_id: str) -> str:
     """The provider's stamped call id, so every call is its own entity.
 
     Reconstructing one from name+arg made two identical calls share an id, and
@@ -141,14 +141,19 @@ def _tool_id(item: TranscriptItem) -> str:
     lifecycle) overwrote the first call's FAILURE with the second's success --
     the red run vanished from the editor's view. The fall-back is for historical
     events with no stamped id.
+
+    The stamp is a per-DISPATCHER counter and a dispatcher is per run, so one
+    ACP session's turns all start again at "1"; the run id is what makes it
+    unique for the life of the session.
     """
-    return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
+    within_run = item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
+    return f"{run_id}:{within_run}" if run_id else within_run
 
 
-def _tool_call(item: TranscriptItem) -> dict[str, Any]:
+def _tool_call(item: TranscriptItem, run_id: str) -> dict[str, Any]:
     title = f"{item.name} {item.arg}".strip()
     return {
-        "toolCallId": _tool_id(item),
+        "toolCallId": _tool_id(item, run_id),
         "title": title,
         # ACP's `kind` drives the editor's icon. agent6's own tool names are
         # the honest source; guessing a finer category from them would be a

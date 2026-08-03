@@ -72,8 +72,10 @@ def capabilities_from(client: dict[str, Any]) -> FrontendCapabilities:
         # session/request_permission is required of every ACP client, so a
         # connected one can always be asked.
         can_ask=True,
-        # A prompt into a live session is how ACP steers.
-        can_steer=True,
+        # A steer arrives through agent6's pause menu, which needs a terminal;
+        # this front-end wires the inert one. Declaring it left the lifecycle
+        # offering a mid-run affordance nothing here can deliver.
+        can_steer=False,
         # Sibling sessions need somewhere to put them; without a terminal or
         # filesystem capability the client has nowhere to show one.
         can_spawn=terminal or bool(fs),
@@ -117,6 +119,7 @@ class ACPServer:
             if not line:
                 # EOF: the editor closed. Let a live turn stop at a boundary
                 # rather than being torn down mid-git holding the locks.
+                self.abandon_pending()
                 if self.sessions is not None:
                     self.sessions.wait_for_turns(timeout_s=EOF_GRACE_S)
                 return
@@ -182,6 +185,22 @@ class ACPServer:
                 self.reply(req_id, error=(INVALID_REQUEST, "no method"))
             return None
         return req_id, method, raw if isinstance(raw, dict) else {}
+
+    def abandon_pending(self) -> None:
+        """Answer every outstanding request with nothing, because nobody will.
+
+        The read loop is the only thing that delivers a client's answer, so
+        once it is gone a worker waiting on an approval waits the full
+        permission timeout -- far longer than the EOF grace, so the process
+        always exited and killed the run it was trying to let finish. The
+        seam already reads an empty answer as the cautious deny, so the run
+        reaches its next boundary and the stop marker takes effect.
+        """
+        with self._pending_lock:
+            waiting = list(self._pending.values())
+            self._pending.clear()
+        for slot in waiting:
+            slot.arrived.set()
 
     def _deliver(self, req_id: object, message: dict[str, Any]) -> bool:
         """Hand a client response to whoever is waiting for it. True if it was
@@ -291,6 +310,7 @@ class ACPServer:
         model-emitted text would otherwise raise mid-write and desynchronise
         the stream, which is worse than a replacement character."""
         line = json.dumps(body, ensure_ascii=False, default=str) + "\n"
+        gone = False
         with self._write_lock:
             if self._gone:
                 return
@@ -302,3 +322,7 @@ class ACPServer:
                 # tell, and a live run's tail would otherwise raise once per
                 # event; the run itself keeps going to its next boundary.
                 self._gone = True
+                gone = True
+        if gone:
+            # Nothing we asked can be answered now either.
+            self.abandon_pending()

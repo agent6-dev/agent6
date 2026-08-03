@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent6.app.preflight import git_repo_refusal
 from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import request_stop
 from agent6.runs.layout import RunLayout
@@ -61,7 +62,16 @@ class Sessions:
             # The spec makes every path absolute; a relative one would resolve
             # against whatever directory the editor happened to launch us in.
             raise RpcError(INVALID_PARAMS, "cwd must be an absolute path")
-        session = Session(id=new_friendly_id(), cwd=Path(raw_cwd))
+        cwd = Path(raw_cwd)
+        # The same wall `agent6 run` puts in front of a workspace. This
+        # directory becomes what the jail mounts WRITABLE, and here it arrives
+        # over the wire: without this a client could point a run at any
+        # absolute path, and `$HOME` on a machine with dotfiles under git would
+        # hand the model the whole home directory.
+        refusal = git_repo_refusal(cwd)
+        if refusal is not None:
+            raise RpcError(INVALID_PARAMS, refusal)
+        session = Session(id=new_friendly_id(), cwd=cwd)
         self._by_id[session.id] = session
         return {"sessionId": session.id}
 

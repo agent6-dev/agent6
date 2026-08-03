@@ -23,9 +23,11 @@ all render it through the same fold. ACP is a fourth projection of that fold, so
 an editor sees exactly what `agent6 attach` would show: reasoning, each tool
 call and its outcome, auto-commits, and how the run ended.
 
-A tool call arrives twice, as ACP models it: `pending` when it starts, then
-`completed` or `failed`. A long verify is visible while it runs rather than
-appearing when it is over.
+A tool call arrives twice, as ACP models it: `pending`, then `completed` or
+`failed`. Both land when the call finishes -- the shared fold does not emit
+an item until the result is in, so a long verify is not yet visible while it
+runs. The pair is the shape an editor keys its lifecycle on, not a progress
+signal.
 
 ## Approvals
 
@@ -46,8 +48,12 @@ Two things do not change because an editor is driving:
 
 One session is one directory (`session/new` carries an absolute `cwd`), and its
 config is that directory's own layered config -- global, then repo, then any
-preset. Prompting a live session steers the run in flight, which is how ACP
-expresses a follow-up.
+preset. That directory has to be a git repository: it becomes what the jail
+mounts writable, and a run needs git to branch and commit each step.
+
+A session runs one turn at a time. Prompting one that is busy is refused
+rather than queued, so the editor can offer the prompt again; mid-run
+steering is `agent6`'s pause menu, which an editor has no terminal for.
 
 Runs are serialised across the connection: a second prompt waits for the first
 to reach a boundary. `session/cancel` drops the same stop marker `agent6 stop`
@@ -59,6 +65,8 @@ the run ends.
 - **`session/load`.** ACP v2 reorganises it, and resume is where agent6 has the
   most of its own semantics (`agent6 resume`, `agent6 fork`). `initialize`
   reports the capability as absent rather than half-answering it.
+- **Mid-run steering.** A steer arrives through agent6's own pause menu,
+  which needs a terminal. An ACP session's follow-up is the next prompt.
 - **`fs/*` and `terminal/*`.** ACP lets the CLIENT own the filesystem and the
   terminal. agent6 inverts that on purpose: the agent owns a jail the operator
   configured, precisely so an editor cannot be talked into doing the model's

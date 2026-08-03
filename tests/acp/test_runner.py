@@ -8,12 +8,14 @@ import io
 import json
 import os
 import select
+import subprocess
 import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from agent6.app.reporter import Reporter
 from agent6.config.model import ConfigError
 from agent6.runs.layout import RunLayout
 from agent6.ui.acp import runner
@@ -75,6 +77,12 @@ def _ignore(_path: Path) -> None:
     """A cancel that has nowhere to write is still a cancel."""
 
 
+def _repo(path: Path) -> Path:
+    """A session's cwd has to pass the same git-repo wall `agent6 run` uses."""
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    return path
+
+
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     """stdout IS the protocol stream. One status line on it desynchronises the
     connection irrecoverably, and no editor recovers from that."""
@@ -105,7 +113,7 @@ def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.M
 
     wire = _Wire()
     try:
-        session_id = wire.new_session(tmp_path)
+        session_id = wire.new_session(_repo(tmp_path))
         wire.prompt(session_id, "do the thing")
         assert started.wait(timeout=5.0), "the run never started"
         wire.send(method="session/cancel", params={"sessionId": session_id})
@@ -134,7 +142,7 @@ def test_a_cancelled_turn_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(runner, "run_task", _blocking_run)
     wire = _Wire()
     try:
-        session_id = wire.new_session(tmp_path)
+        session_id = wire.new_session(_repo(tmp_path))
         wire.prompt(session_id, "do the thing")
         assert started.wait(timeout=5.0)
         wire.send(method="session/cancel", params={"sessionId": session_id})
@@ -170,7 +178,7 @@ def test_the_runs_journal_streams_out_as_session_update(
     monkeypatch.setattr(runner, "run_task", _writing_run)
     wire = _Wire()
     try:
-        session_id = wire.new_session(tmp_path)
+        session_id = wire.new_session(_repo(tmp_path))
         wire.prompt(session_id, "do the thing")
         seen: list[str] = []
         for _ in range(40):
@@ -200,7 +208,7 @@ def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(runner, "load_effective", _broken)
     wire = _Wire()
     try:
-        session_id = wire.new_session(tmp_path)
+        session_id = wire.new_session(_repo(tmp_path))
         wire.prompt(session_id, "do the thing")
         said = wire.until("session/update")
         text = said["params"]["update"]["content"]["text"]
@@ -223,7 +231,7 @@ def _bridge(answer: dict[str, Any]) -> RunBridge:
 def test_an_approval_round_trips_through_the_editor() -> None:
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "allow"}})
     session = session_mod.Session(id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny")) == "allow"
+    assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
 
 
 @pytest.mark.parametrize(
@@ -241,16 +249,19 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     seam reads a None as the cautious answer."""
     bridge = _bridge(answer)
     session = session_mod.Session(id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "Allow run_command: rm -rf /", ("allow", "deny")) is None
+    assert bridge.ask(session, "Allow run_command: rm -rf /", ("allow", "deny"), True) is None
 
 
 def test_the_option_kinds_carry_what_the_editor_may_remember() -> None:
     """`allow once` is the fetch tool's off-list host, where an editor that
     remembers the answer would silently cover a different host."""
-    assert option_kind("allow") == "allow_always"
-    assert option_kind("allow once") == "allow_once"
-    assert option_kind("deny") == "reject_once"
-    assert option_kind("dark") == "allow_once", "a question's answer is not a standing permission"
+    assert option_kind("allow", True) == "allow_always"
+    assert option_kind("allow once", False) == "allow_once"
+    assert option_kind("deny", True) == "reject_once"
+    assert option_kind("dark", None) == "allow_once"
+    # The MODEL writes a question's options. Keying on the text let it name one
+    # "allow" and have it advertised as a permission the editor may REMEMBER.
+    assert option_kind("allow", None) == "allow_once"
 
 
 def test_the_stop_reason_is_one_acp_defines() -> None:
@@ -302,7 +313,7 @@ def test_a_turn_cancelled_while_queued_never_starts(
     monkeypatch.setattr(runner, "run_task", _blocking_run)
     wire = _Wire()
     try:
-        first = wire.new_session(tmp_path)
+        first = wire.new_session(_repo(tmp_path))
         wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
         second = str(wire.recv()["result"]["sessionId"])
         wire.prompt(first, "the long one", req_id=3)
@@ -320,3 +331,84 @@ def test_a_turn_cancelled_while_queued_never_starts(
     finally:
         release.set()
         wire.close()
+
+
+def test_a_session_outside_a_git_repo_is_refused(tmp_path: Path) -> None:
+    """`cwd` arrives over the wire and becomes what the jail mounts WRITABLE.
+
+    `agent6 run` walls this with the same check; the ACP path was the one
+    caller that never ran it, so a client could point a run at any absolute
+    path -- and `$HOME` on a machine with dotfiles under git would hand the
+    model the whole home directory as its workspace.
+    """
+    wire = _Wire()
+    try:
+        wire.send(id=1, method="initialize", params={"clientCapabilities": {}})
+        wire.recv()
+        wire.send(id=2, method="session/new", params={"cwd": str(tmp_path)})
+        reply = wire.recv()
+        assert "result" not in reply, "a non-repo directory became a workspace"
+        assert "not a git repository" in reply["error"]["message"]
+    finally:
+        wire.close()
+
+
+def test_a_relative_or_missing_cwd_is_refused(tmp_path: Path) -> None:
+    wire = _Wire()
+    try:
+        wire.send(id=1, method="initialize", params={"clientCapabilities": {}})
+        wire.recv()
+        for cwd in ("relative/path", None):
+            wire.send(id=2, method="session/new", params={"cwd": cwd})
+            assert "absolute" in wire.recv()["error"]["message"]
+    finally:
+        wire.close()
+
+
+def test_a_refusal_that_never_reached_a_journal_still_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """About a dozen lifecycle paths `return 2` after writing their reason to
+    the reporter and nowhere else. With no `run.end` the fold produces no
+    ending, so the editor saw a turn stop with a stop reason and no words."""
+    monkeypatch.chdir(tmp_path)
+
+    def _refusing_run(*_a: object, **kw: object) -> int:
+        reporter = kw["reporter"]
+        assert isinstance(reporter, Reporter)
+        reporter.err("REFUSING: another writer holds this repository")
+        return 2
+
+    monkeypatch.setattr(runner, "run_task", _refusing_run)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        said = wire.until("session/update")["params"]["update"]["content"]["text"]
+        assert "another writer holds this repository" in said
+        assert wire.until("")["result"]["stopReason"] == "refusal"
+    finally:
+        wire.close()
+
+
+def test_a_closed_editor_stops_waiting_for_answers_it_will_never_get() -> None:
+    """The read loop is the only thing that delivers a client's answer, so once
+    it is gone a worker parked on an approval waits the full permission
+    timeout -- far longer than the EOF grace, so the process always exited and
+    killed the run it was trying to let finish."""
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    answered: list[dict[str, Any]] = []
+    asking = threading.Thread(
+        target=lambda: answered.append(
+            server.request("session/request_permission", {}, timeout_s=30.0)
+        ),
+        daemon=True,
+    )
+    asking.start()
+    for _ in range(100):  # let it register its pending slot
+        if server._pending:  # pyright: ignore[reportPrivateUsage]
+            break
+        threading.Event().wait(0.01)
+    server.abandon_pending()
+    asking.join(timeout=5.0)
+    assert answered == [{}], "the worker was left waiting"

@@ -152,3 +152,18 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
         if "toolCallId" in u["params"]["update"]
     }
     assert len(ids) == 2, f"the two calls collided on {ids}"
+
+
+def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
+    """One ACP session runs many runs, and the stamped call id is a
+    per-DISPATCHER counter that restarts at "1" each time. Without the run id
+    an editor keyed on toolCallId -- which is the whole reason the field is
+    carried -- overwrites turn 1's FAILED call with turn 2's success."""
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptItem
+
+    item = TranscriptItem(kind="tool", name="run_command", arg="ls", ok=True, call_id="1")
+    first = updates_for(item, session_id="s", run_id="brave-oak-AAAAAA")
+    second = updates_for(item, session_id="s", run_id="clever-elm-BBBBBB")
+    assert first[0]["params"]["update"]["toolCallId"] != second[0]["params"]["update"]["toolCallId"]
+    assert first[0]["params"]["update"]["toolCallId"].startswith("brave-oak-AAAAAA:")
