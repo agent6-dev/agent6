@@ -3843,7 +3843,10 @@ class Workflow:
             return RunResult(
                 completed=False,
                 reason="steer_abort",
-                summary=f"operator aborted at iter {iteration} via steering prompt",
+                summary=(
+                    f"operator aborted at iter {iteration} via steering prompt"
+                    f"{self._dirty_tree_note()}"
+                ),
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )

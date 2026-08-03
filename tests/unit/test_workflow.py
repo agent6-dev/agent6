@@ -5877,3 +5877,25 @@ def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> 
     note = wf._dirty_tree_note()  # pyright: ignore[reportPrivateUsage]
     assert "worktree left dirty" in note
     assert "2 file" in note  # the real count, not a capped one
+
+
+def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: Path) -> None:
+    """The pause-menu / front-end Stop consumed at the boundary is the fourth
+    operator end, and the only one that said nothing about the worktree it
+    leaves uncommitted. The same Stop delivered mid-stream did say so, so one
+    operator action reported two different truths depending on timing."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
+    (tmp_path / "a.txt").write_text("edited after the last checkpoint\n", encoding="utf-8")
+
+    wf = _wf(root=tmp_path, mode="run")
+    res = wf._steer_outcome("abort", 4, _state())  # pyright: ignore[reportPrivateUsage]
+    assert res is not None
+    assert res.reason == "steer_abort"
+    assert "worktree left dirty" in res.summary
