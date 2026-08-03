@@ -57,6 +57,7 @@ def _seed_tree(tmp_path: Path, session_id: str) -> None:
     """
     layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
     layout.ensure()
+    (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     root_id = "0" * 25 + "R"
     s1_id = "0" * 25 + "1"
     s2_id = "0" * 25 + "2"
@@ -134,6 +135,7 @@ def test_history_graph_empty_graph_errors(
     monkeypatch.chdir(tmp_path)
     layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="empty-run-CCCC33")
     layout.ensure()
+    (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     rc = main(["sessions", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err
     assert rc == 2

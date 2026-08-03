@@ -870,7 +870,8 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
         return 0
     try:
-        layout = resolve_or_newest_layout(cwd, session_id)
+        # rm is the surface that deletes a husk, so it resolves one.
+        layout = resolve_or_newest_layout(cwd, session_id, allow_husk=True)
     except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

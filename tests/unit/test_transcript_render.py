@@ -428,6 +428,7 @@ def test_cmd_history_transcript_end_to_end(
     monkeypatch.chdir(repo)
     tdir = resolved_state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
     tdir.mkdir(parents=True)
+    (tdir.parent / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
     (tdir / "20260101-000002.json").write_text(json.dumps(_OPENAI[1]), encoding="utf-8")
 

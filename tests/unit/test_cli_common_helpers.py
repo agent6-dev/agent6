@@ -34,6 +34,7 @@ def test_explicit_id_resolves_across_buckets(tmp_path: Path) -> None:
     repo.mkdir()
     state = resolved_state_dir(repo)
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
+    (state / "sessions" / "asks" / "ask-xyz" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
     layout = resolve_or_newest_layout(repo, "ask-")
     assert layout is not None
@@ -63,5 +64,8 @@ def test_bad_explicit_id_raises(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
     with pytest.raises(SessionIdError):
         resolve_or_newest_layout(repo, "nope")

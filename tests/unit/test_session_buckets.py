@@ -84,6 +84,9 @@ def test_bare_resume_finds_the_newest_session_in_every_resumable_bucket(
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
     (bucket_dir(tmp_path, "machines") / "quiet-fox-BBBBBB").mkdir(parents=True)
+    (bucket_dir(tmp_path, "machines") / "quiet-fox-BBBBBB" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     found = newest_session_dir(resumable_bucket_dirs(tmp_path))
     assert found == session
@@ -155,6 +158,9 @@ def test_a_machine_draft_is_reachable_as_a_session(
     monkeypatch.chdir(tmp_path)
     state = resolved_state_dir(tmp_path)
     (bucket_dir(state, "machines") / "brave-oak-AAAAAA").mkdir(parents=True)
+    (bucket_dir(state, "machines") / "brave-oak-AAAAAA" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     layout = resolve_session_layout(tmp_path, "brave-oak-AAAAAA")
     assert layout.subdir == "machines"

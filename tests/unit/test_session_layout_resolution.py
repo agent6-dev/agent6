@@ -25,7 +25,9 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
     repo.mkdir()
     state = resolved_state_dir(repo)
     (state / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (state / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
+    (state / "sessions" / "asks" / "ask-xyz" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
     session_layout = resolve_session_layout(repo, "run-abc")
     assert session_layout.subdir == "runs" and session_layout.session_id == "run-abc"
@@ -45,6 +47,9 @@ def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
     repo.mkdir()
     state = resolved_state_dir(repo)
     (state / "sessions" / "machines" / "blue-meadow-X1").mkdir(parents=True)
+    (state / "sessions" / "machines" / "blue-meadow-X1" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     layout = resolve_session_layout(repo, "blue-")
     assert layout.subdir == "machines"
@@ -56,7 +61,9 @@ def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
     repo.mkdir()
     state = resolved_state_dir(repo)
     (state / "sessions" / "runs" / "same-run").mkdir(parents=True)
+    (state / "sessions" / "runs" / "same-run" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "same-ask").mkdir(parents=True)
+    (state / "sessions" / "asks" / "same-ask" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
     with pytest.raises(SessionIdError) as exc:
         resolve_session_layout(repo, "same-")
@@ -70,7 +77,11 @@ def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
     repo.mkdir()
     state = resolved_state_dir(repo)
     (state / "sessions" / "runs" / "run").mkdir(parents=True)
+    (state / "sessions" / "runs" / "run" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "run-question").mkdir(parents=True)
+    (state / "sessions" / "asks" / "run-question" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     layout = resolve_session_layout(repo, "run")
     assert layout.subdir == "runs"
@@ -81,6 +92,9 @@ def test_empty_query_is_invalid(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     with pytest.raises(SessionIdError, match="empty run id"):
         resolve_session_layout(repo, "")
@@ -90,5 +104,8 @@ def test_raises_when_no_match(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+        "{}\n", encoding="utf-8"
+    )
     with pytest.raises(SessionIdError):
         resolve_session_layout(repo, "nope")

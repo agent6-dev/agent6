@@ -18,7 +18,7 @@ from agent6.paths import (
 )
 from agent6.sessions.id import SessionIdError, list_session_ids
 from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir
-from agent6.viewmodel import newest_session_dir, session_mtime
+from agent6.viewmodel import is_session_husk, newest_session_dir, session_mtime
 
 
 def _sub(
@@ -174,7 +174,9 @@ def _machines_dir(repo_root: Path) -> Path:
     return _state_dir(repo_root) / "machines"
 
 
-def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
+def resolve_session_layout(
+    repo_root: Path, query: str, *, allow_husk: bool = False
+) -> SessionLayout:
     """Resolve a run id (or unique prefix) across every run-style bucket --
     one per mode under ``sessions/`` -- returning a ``SessionLayout``
     with the matching subdir.
@@ -184,6 +186,11 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
     commands (``sessions show``/``watch``/``history search``) use this so anything
     a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
     matches in any bucket.
+
+    A HUSK (no manifest, no log: it crashed before it ever started) refuses
+    with the remedy, so every surface says the same thing instead of showing
+    an empty session and advising a resume that fails. ``allow_husk`` is for
+    ``sessions rm``, whose whole job is deleting one.
     """
     if not query:
         raise SessionIdError("empty run id")
@@ -201,7 +208,7 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
                 prefix.append((subdir, rid))
     if len(exact) == 1:
         subdir, rid = exact[0]
-        return SessionLayout(state_dir=state, session_id=rid, subdir=subdir)
+        return _checked_layout(state, subdir, rid, allow_husk=allow_husk)
     if len(exact) > 1:
         preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(exact)[:5])
         raise SessionIdError(
@@ -210,7 +217,7 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
         )
     if len(prefix) == 1:
         subdir, rid = prefix[0]
-        return SessionLayout(state_dir=state, session_id=rid, subdir=subdir)
+        return _checked_layout(state, subdir, rid, allow_husk=allow_husk)
     if len(prefix) > 1:
         preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(prefix)[:5])
         raise SessionIdError(
@@ -218,6 +225,19 @@ def resolve_session_layout(repo_root: Path, query: str) -> SessionLayout:
             ambiguous=True,
         )
     raise SessionIdError(f"no session matches {query!r} (looked under {state})")
+
+
+def _checked_layout(
+    state: Path, subdir: str, session_id: str, *, allow_husk: bool
+) -> SessionLayout:
+    """The resolved layout, refusing a husk unless the caller deletes one."""
+    layout = SessionLayout(state_dir=state, session_id=session_id, subdir=subdir)
+    if not allow_husk and is_session_husk(layout.session_dir):
+        raise SessionIdError(
+            f"session {session_id} crashed before it ever started (no log, nothing to"
+            f" resume); `agent6 sessions rm {session_id}` removes it"
+        )
+    return layout
 
 
 def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
@@ -243,7 +263,9 @@ def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     )
 
 
-def resolve_or_newest_layout(repo_root: Path, session_id: str) -> SessionLayout | None:
+def resolve_or_newest_layout(
+    repo_root: Path, session_id: str, *, allow_husk: bool = False
+) -> SessionLayout | None:
     """Resolve an explicit *session_id* across every run-style bucket, or fall back to
     the newest run across all buckets when *session_id* is empty.
 
@@ -255,7 +277,7 @@ def resolve_or_newest_layout(repo_root: Path, session_id: str) -> SessionLayout 
     same way instead of re-deriving the id-or-newest glue.
     """
     if session_id:
-        return resolve_session_layout(repo_root, session_id)
+        return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
     newest = newest_session_dir(session_bucket_dirs(repo_root))
     if newest is None:
         return None
