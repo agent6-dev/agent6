@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -17,13 +18,25 @@ EXIT_COMMAND = "/exit"
 
 
 def prompting_is_possible() -> bool:
-    """Whether the operator is here to answer: an attended terminal.
+    """Whether the operator is here to answer: an attended terminal this
+    process is in the FOREGROUND of.
 
     The same question every model prompt asks, answered in one place. Without a
     terminal there is nobody to type, so the session prints the resume line
     instead.
+
+    A tty is not enough. `agent6 run ... &` keeps one on stdin, and reading it
+    from a background process group raises SIGTTIN, which stops the job: the
+    run suspended at the end instead of finishing. The foreground check also
+    covers a tty allocated with nobody at it (`docker run -t`, some CI
+    runners), where the read would block forever.
     """
-    return sys.stdin.isatty()
+    if not sys.stdin.isatty():
+        return False
+    try:
+        return os.tcgetpgrp(sys.stdin.fileno()) == os.getpgrp()
+    except OSError:
+        return False
 
 
 def end_of_session_prompt(

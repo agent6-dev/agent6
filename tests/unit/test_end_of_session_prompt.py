@@ -104,3 +104,55 @@ def test_ask_sessions_do_not_prompt() -> None:
     from agent6.ui.cli import _dispatch_ask  # pyright: ignore[reportPrivateUsage]
 
     assert "_prompt_for_the_next_input" not in inspect.getsource(_dispatch_ask)
+
+
+def test_a_run_that_never_started_a_session_does_not_offer_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The prompt resolved the NEWEST session in the repo rather than the one
+    this invocation created, and `agent6 run` has refusal paths (no provider
+    key, not a git repo, an unknown --skill) that return before any session
+    exists. A refused run then offered to continue an unrelated older session,
+    resumed it on the operator's next line, and reported its exit code as this
+    run's -- so a failed run finished 0.
+    """
+    from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
+    asked: list[str] = []
+
+    def spy(**_kw: object) -> int:
+        asked.append("asked")
+        return 0
+
+    monkeypatch.setattr(prompt_mod, "end_of_session_prompt", spy)
+    # This invocation minted an id but refused before creating its directory.
+    assert _prompt_for_the_next_input(None, 2, "never-created-XYZ99") == 2
+    assert not asked, "offered to continue a session this run never started"
+
+
+def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`agent6 run ... &` keeps a tty on stdin, so isatty() alone said "someone
+    is there". Reading the terminal from a BACKGROUND process group raises
+    SIGTTIN, which stops the job: the run suspended at the end instead of
+    finishing, and needed `fg`. The same shape blocks forever wherever a tty is
+    allocated with nobody at it (`docker run -t`, some CI runners).
+    """
+    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(prompt_mod.sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(prompt_mod.os, "getpgrp", lambda: 4242)
+
+    def owner_is(pgrp: int) -> Callable[[int], int]:
+        def tcgetpgrp(_fd: int) -> int:
+            return pgrp
+
+        return tcgetpgrp
+
+    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", owner_is(1717))
+    assert not prompt_mod.prompting_is_possible(), "prompted from a background process group"
+
+    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", owner_is(4242))
+    assert prompt_mod.prompting_is_possible(), "the foreground job must still prompt"
