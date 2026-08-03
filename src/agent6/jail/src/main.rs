@@ -18,7 +18,7 @@
 use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -85,6 +85,40 @@ struct Policy {
     /// a policy missing the field still gets the bounded value.
     #[serde(default = "default_memory_limit_mb")]
     memory_limit_mb: u64,
+    /// "once" (default): run `argv` and exit. "serve": after the same setup,
+    /// read newline-delimited JSON requests from stdin and run each in THESE
+    /// namespaces, so a run's commands share one netns, one PID namespace and
+    /// one /tmp -- and a backgrounded server outlives the command that started
+    /// it. EOF on stdin tears the namespace (and everything in it) down.
+    #[serde(default = "default_mode")]
+    mode: String,
+}
+
+/// One command to run against an already-established jail.
+#[derive(Deserialize)]
+struct Request {
+    argv: Vec<String>,
+    #[serde(default)]
+    env: Vec<(String, String)>,
+    #[serde(default = "default_timeout")]
+    timeout_s: f64,
+    #[serde(default = "default_memory_limit_mb")]
+    memory_limit_mb: u64,
+}
+
+impl Request {
+    fn child_spec(&self) -> ChildSpec<'_> {
+        ChildSpec {
+            argv: &self.argv,
+            env: &self.env,
+            memory_limit_mb: self.memory_limit_mb,
+            timeout_s: self.timeout_s,
+        }
+    }
+}
+
+fn default_mode() -> String {
+    "once".to_string()
 }
 
 fn default_isolation() -> String {
@@ -105,8 +139,10 @@ fn die(msg: impl AsRef<str>) -> ! {
 }
 
 fn main() {
+    // The policy is the FIRST LINE, not the whole stream: in serve mode the
+    // same pipe then carries one request per line.
     let mut input = String::new();
-    if io::stdin().read_to_string(&mut input).is_err() {
+    if io::stdin().lock().read_line(&mut input).is_err() || input.trim().is_empty() {
         die("failed to read policy from stdin");
     }
     let policy: Policy = match serde_json::from_str(&input) {
@@ -149,6 +185,9 @@ fn run_strict(policy: &Policy) -> ! {
             if let Err(e) = apply_seccomp() {
                 die(format!("seccomp failed: {e}"));
             }
+            if policy.mode == "serve" {
+                serve(Path::new("/workspace"));
+            }
             if let Err(e) = run_child(&policy.child_spec(), Path::new("/workspace")) {
                 die(format!("child execution failed: {e}"));
             }
@@ -170,10 +209,63 @@ fn run_hardened(policy: &Policy) -> ! {
     if let Err(e) = apply_seccomp() {
         die(format!("seccomp failed: {e}"));
     }
+    if policy.mode == "serve" {
+        serve(&policy.cwd);
+    }
     if let Err(e) = run_child(&policy.child_spec(), &policy.cwd) {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
+}
+
+/// Run one command per stdin line inside the namespaces already established,
+/// answering each with the same single-line JSON result the one-shot mode
+/// prints. Exits when stdin closes, which takes the PID namespace (and any
+/// backgrounded server in it) down with it.
+fn serve(cwd: &Path) -> ! {
+    let stdin = io::stdin();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match stdin.lock().read_line(&mut line) {
+            Ok(0) => std::process::exit(0),
+            Ok(_) => {}
+            Err(e) => die(format!("serve: reading request failed: {e}")),
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: Request = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(e) => die(format!("serve: invalid request JSON: {e}")),
+        };
+        if let Err(e) = run_child(&request.child_spec(), cwd) {
+            die(format!("serve: child execution failed: {e}"));
+        }
+    }
+}
+
+/// Set IFF_UP on `lo` in the CURRENT network namespace.
+fn bring_loopback_up() -> io::Result<()> {
+    // SIOCSIFFLAGS on a datagram socket: no netlink dependency, and this runs
+    // before seccomp is installed.
+    let sock = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    if sock < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut req: libc::ifreq = unsafe { std::mem::zeroed() };
+    for (i, b) in b"lo".iter().enumerate() {
+        req.ifr_name[i] = *b as libc::c_char;
+    }
+    req.ifr_ifru.ifru_flags = (libc::IFF_UP | libc::IFF_RUNNING) as libc::c_short;
+    // The ioctl request type differs by arch (u64 on x86_64, i32 on aarch64),
+    // and the release wheels build both.
+    let rc = unsafe { libc::ioctl(sock, libc::SIOCSIFFLAGS as _, &req) };
+    unsafe { libc::close(sock) };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 fn setup_namespaces(allow_network: bool) -> io::Result<()> {
@@ -189,6 +281,14 @@ fn setup_namespaces(allow_network: bool) -> io::Result<()> {
         flags |= CloneFlags::CLONE_NEWNET;
     }
     unshare(flags).map_err(io_err)?;
+    if !allow_network {
+        // An empty netns has `lo` DOWN, so nothing inside can reach even
+        // itself: a server one command starts is unreachable by the next.
+        // Loopback in a namespace with no other interface and no route out
+        // reaches nothing beyond that namespace, so this changes what the
+        // jail's own commands can talk to, never what they can leave to.
+        bring_loopback_up()?;
+    }
 
     // Map current uid/gid into the new user namespace so we appear as root inside
     // (required to mount, but capabilities are still confined to this namespace).

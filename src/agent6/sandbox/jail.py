@@ -527,13 +527,29 @@ def _launcher_result(
         raise JailUnavailableError(
             f"agent6-jail produced unparseable output: {proc.stdout!r}"
         ) from exc
+    return _result_from_json(result_json, tuple(policy.argv), duration)
+
+
+def _result_from_json(
+    result_json: dict[str, object], argv: tuple[str, ...], duration: float
+) -> CommandResult:
+    """The launcher's result object as a CommandResult."""
     return CommandResult(
-        argv=tuple(policy.argv),
-        returncode=int(result_json["returncode"]),
+        argv=argv,
+        returncode=int(str(result_json["returncode"])),
         stdout=str(result_json.get("stdout", "")),
         stderr=str(result_json.get("stderr", "")),
         duration_s=duration,
     )
+
+
+def _result_from_line(line: str, argv: tuple[str, ...], start: float) -> CommandResult:
+    """One serve-mode reply line as a CommandResult."""
+    try:
+        parsed = json.loads(line)
+    except ValueError as exc:
+        raise JailUnavailableError(f"jail session produced unparseable output: {line!r}") from exc
+    return _result_from_json(parsed, argv, time.monotonic() - start)
 
 
 # --- detached commands -------------------------------------------------------
@@ -670,3 +686,74 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
         launcher.stdin.write(spec.encode())
     launcher.stdin.close()
     return BackgroundJob(launcher, outcome_dir)
+
+
+@dataclass(slots=True)
+class JailSession:
+    """One long-lived launcher, serving every command of one run.
+
+    The launcher establishes its namespaces, rootfs, Landlock and seccomp once
+    and then reads one request per line, so the run's commands share a netns, a
+    PID namespace and a /tmp: a server one command starts is reachable by the
+    next, which per-command launchers cannot offer. Closing the session shuts
+    stdin, and the PID namespace takes everything inside it down.
+
+    Not thread-safe: one loop drives it, one command at a time.
+    """
+
+    _proc: subprocess.Popen[bytes]
+    _binary: Path
+
+    @classmethod
+    def open(cls, policy: JailPolicy) -> JailSession:
+        """Start a serving launcher confined by *policy* (its argv is ignored;
+        each command arrives as a request)."""
+        binary = _require_jail_binary()
+        _become_subreaper()
+        with _sweep_lock:
+            proc = subprocess.Popen(
+                [str(binary)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                env=_LAUNCHER_ENV,
+            )
+            _live_launchers.add(proc.pid)
+        spec = json.loads(_policy_to_json(policy))
+        spec["mode"] = "serve"
+        assert proc.stdin is not None
+        proc.stdin.write((json.dumps(spec) + "\n").encode())
+        proc.stdin.flush()
+        return cls(_proc=proc, _binary=binary)
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: tuple[tuple[str, str], ...] = (),
+        timeout_s: float = 600.0,
+    ) -> CommandResult:
+        """Run one command in this session's namespaces."""
+        assert self._proc.stdin is not None and self._proc.stdout is not None
+        start = time.monotonic()
+        request = {"argv": list(argv), "env": [list(p) for p in env], "timeout_s": timeout_s}
+        self._proc.stdin.write((json.dumps(request) + "\n").encode())
+        self._proc.stdin.flush()
+        line = self._proc.stdout.readline()
+        if not line:
+            raise JailUnavailableError("jail session ended before answering")
+        return _result_from_line(line.decode(errors="replace"), argv, start)
+
+    def close(self) -> None:
+        """Shut the request channel; the PID namespace takes the rest down."""
+        with contextlib.suppress(OSError):
+            if self._proc.stdin is not None:
+                self._proc.stdin.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            self._proc.communicate(timeout=10.0)
+        if self._proc.poll() is None:
+            with contextlib.suppress(OSError):
+                os.killpg(self._proc.pid, signal.SIGKILL)
+        with _sweep_lock:
+            _live_launchers.discard(self._proc.pid)
