@@ -329,6 +329,15 @@ def _written_value_error(key: str, value: object) -> str | None:
     return None
 
 
+def _target_unparseable(target: Path) -> bool:
+    """Whether *target* itself is no longer valid TOML (a missing file is fine)."""
+    try:
+        read_toml_file(target)
+    except ConfigError:
+        return True
+    return False
+
+
 def _revalidate_layered(
     target: Path,
     prior_text: str | None,
@@ -353,8 +362,11 @@ def _revalidate_layered(
     after = _merged_config_error()
     if after is None:
         return None  # valid -> success
-    if was_valid:
-        _restore_file(target, prior_text)  # the write broke a valid config -> fail loud
+    # A target that no longer PARSES is always this write's doing, never "a
+    # value in another layer": keeping it there left a config no command could
+    # read, and each retry appended more surgery to it.
+    if was_valid or _target_unparseable(target):
+        _restore_file(target, prior_text)  # the write broke the config -> fail loud
         return after
     print(
         "WARNING: the config is still invalid because of a value in another layer;"
@@ -444,7 +456,15 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
             prior = target.read_text(encoding="utf-8") if target.is_file() else None
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this write?
             try:
+                # Line surgery on a file we cannot parse only appends to the
+                # damage (a malformed header is invisible to the lookups, so
+                # the write lands as a duplicate table), and the already-invalid
+                # branch below would then report it as another layer's fault.
+                read_toml_file(target)
                 upsert_toml_leaf(target, prefix + key, parsed)
+            except ConfigError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
             except ValueError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 2
@@ -479,7 +499,11 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
             prior = target.read_text(encoding="utf-8")
             was_valid = machine is None and _merged_config_error() is None  # BEFORE this unset?
             try:
+                read_toml_file(target)  # see _cmd_config_set: never edit what we cannot read
                 removed = remove_toml_leaf(target, prefix + key)
+            except ConfigError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
             except ValueError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 2

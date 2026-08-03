@@ -144,6 +144,32 @@ _BAD = (
 )
 
 
+def test_config_set_refuses_a_target_that_does_not_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config set` never parsed the file it edits. Over a target with a typo'd
+    bracket it appended line-surgery output, could not find the malformed header,
+    and left the file still unparseable -- then reported success, because the
+    "config was already invalid, so blame another layer" branch swallows a parse
+    error in the very file just written. Repeating it kept appending."""
+    from agent6.ui.cli import main
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
+
+    def _global_path(*_a: object, **_k: object) -> Path:
+        return cfg
+
+    monkeypatch.setattr(cc, "global_config_path", _global_path)
+
+    rc = main(["config", "set", "sandbox.run_commands", "yes"])
+    out = capsys.readouterr()
+    assert rc == 2, "a target that does not parse must not report success"
+    assert "Set sandbox.run_commands" not in out.out
+    # And the file is untouched: no surgery appended into a file we cannot read.
+    assert cfg.read_text(encoding="utf-8") == "[sandbox\nprotect_git = true\n"
+
+
 def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path) -> None:
     """The CLI guard documents itself as mirroring the MachineSpec validator but
     checked only providers/sandbox, so `config set --machine-file` wrote
