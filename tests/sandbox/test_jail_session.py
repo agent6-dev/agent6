@@ -121,3 +121,19 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: 
         assert gone["returncode"] != 0, "a bare dispatcher must not share a namespace"
     finally:
         bare.close()
+
+
+def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> None:
+    """One command's timeout must not cost the run its jail process: the
+    launcher bounds each request itself (killing that command's group and
+    answering 124), so the next command still runs in the same namespaces."""
+    session = _session(tmp_path)
+    try:
+        session.run(("sh", "-c", "echo before > /tmp/timeout-marker"))
+        hung = session.run(("sleep", "30"), timeout_s=1.0)
+        assert hung.returncode == 124, hung
+        after = session.run(("cat", "/tmp/timeout-marker"))
+        assert after.returncode == 0, after.stderr
+        assert "before" in after.stdout, "the session lost its namespaces"
+    finally:
+        session.close()
