@@ -641,11 +641,15 @@ def _entry_is_stale(entry: InvalidEntry) -> bool:
     except ConfigError:
         return True  # unreadable now: leave it to the loud paths
     current = read_toml_leaf(data, entry.file_key)
-    if isinstance(current, float) and isinstance(entry.value, float):
-        # nan != nan: a still-present nan entry otherwise reads "replaced by
-        # a concurrent writer" on every pass and can never be removed.
-        if math.isnan(current) and math.isnan(entry.value):
-            return False
+    # nan != nan: a still-present nan entry otherwise reads "replaced by a
+    # concurrent writer" on every pass and can never be removed.
+    if (
+        isinstance(current, float)
+        and isinstance(entry.value, float)
+        and math.isnan(current)
+        and math.isnan(entry.value)
+    ):
+        return False
     return current != entry.value
 
 

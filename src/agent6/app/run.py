@@ -12,7 +12,7 @@ import contextlib
 import os
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
@@ -230,6 +230,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
     initial_steer: str = "",
+    pins: Sequence[str] = (),
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -686,6 +687,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             wf = Workflow(
                 root=cwd,
                 config=cfg,
+                initial_pins=tuple(pins),
                 provider=provider,
                 dispatcher=dispatcher,
                 logger=loop_log,

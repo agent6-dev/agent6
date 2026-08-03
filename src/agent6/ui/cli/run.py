@@ -194,6 +194,7 @@ def _cmd_run(  # noqa: PLR0911
     sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
     parallel_spec: str = "",
+    pins: tuple[str, ...] = (),
 ) -> int:
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
     the flag overrides, resolve skills and @file refs, route ``--parallel``,
@@ -283,4 +284,5 @@ def _cmd_run(  # noqa: PLR0911
         budget_overrides=budget_overrides,
         sandbox_overrides=sandbox_overrides,
         profile=profile,
+        pins=pins,
     )

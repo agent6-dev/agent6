@@ -18,7 +18,6 @@ from typing import Literal
 
 from agent6.directive import Segment, parse_spec
 from agent6.graph.models import NodeStatus
-from agent6.prompts.revision import pinned_block
 from agent6.workflows.subrun import LaneResult, LaneTask, SubrunError, join_branch
 
 
@@ -43,16 +42,18 @@ def segment_lanes(seg: Segment, pins: Sequence[str] = ()) -> list[LaneTask]:
     model per lane (`None` = the worker model). Raises DirectiveError on a
     bad spec (zero lanes, empty model list).
 
-    Operator *pins* head every lane's task. `/pin` promises an instruction
-    "stays binding for the rest of the run", and a lane is work done for that
-    run whose branch is merged back into the coordinator's -- so a lane that
-    never saw the pin could violate a standing instruction and have it land
-    anyway. Rendered with the same block a restart re-shows, so the wording the
-    worker sees does not depend on which path delivered it.
+    Operator *pins* ride on every lane OUT-OF-BAND of the task. `/pin`
+    promises an instruction "stays binding for the rest of the run", and a
+    lane is work done for that run whose branch is merged back into the
+    coordinator's -- so a lane that never saw the pin could violate a
+    standing instruction and have it land anyway. Folding the pins into the
+    task text made them the lane's manifest user_task (every listing and the
+    judge's brief led with the pin header); the spawner's --pin channel seeds
+    the lane's own pin state instead, which renders the same block a restart
+    re-shows.
     """
-    block = pinned_block(pins)
-    task = f"{block}\n\n{seg.task}" if block else seg.task
-    return [LaneTask(task=task, model=model) for model in parse_spec(seg.spec)]
+    lane_pins = tuple(pins)
+    return [LaneTask(task=seg.task, model=model, pins=lane_pins) for model in parse_spec(seg.spec)]
 
 
 def join_lane_result(root: Path, res: LaneResult) -> LaneJoin:

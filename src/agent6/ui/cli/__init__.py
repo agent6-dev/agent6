@@ -280,6 +280,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         sandbox_overrides=SandboxOverrides.from_args(args),
         profile=getattr(args, "profile", ""),
         parallel_spec=getattr(args, "parallel", ""),
+        pins=tuple(args.pins),
     )
 
 

@@ -53,6 +53,10 @@ class LaneTask:
 
     task: str
     model: str | None
+    # Operator pins delivered OUT-OF-BAND of the task (the spawner's --pin
+    # channel): a pin folded into `task` became the lane's manifest user_task,
+    # so every listing and the judge's CandidateBrief led with the pin header.
+    pins: tuple[str, ...] = ()
 
 
 class LaneSpawner(Protocol):

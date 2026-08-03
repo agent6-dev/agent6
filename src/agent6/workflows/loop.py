@@ -22,7 +22,7 @@ import os
 import random
 import shutil
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -51,6 +51,7 @@ from agent6.prompts.revision import (
     PINS_NO_RESTATE_CLAUSE,
     PROMPT_REVISION_SYSTEM_PROMPT,
     context_restart_notice,
+    pinned_block,
     progress_summary_from_notice,
 )
 from agent6.providers import (
@@ -631,6 +632,11 @@ class Workflow:
     # the worker). When None the loop falls back to ``provider`` so the
     # feature still works without explicit wiring.
     summariser_provider: Provider | None = None
+    # Pins seeded before the first turn (a /parallel lane inherits the
+    # coordinator's standing instructions via the spawner's --pin channel,
+    # out-of-band of user_task). Fresh runs only; resume/fork restore pins
+    # from the snapshot instead.
+    initial_pins: Sequence[str] = ()
     context_summary_max_tokens: int = 2048
     # Tier-1 gist elision (``context.elision_gists``): large read_file results
     # decay to a distilled-gist placeholder (summariser model, one batched call
@@ -853,6 +859,33 @@ class Workflow:
             resume_from=snapshot,
         )
 
+    def _seed_carryover(
+        self, state: _LoopState, conversation: Conversation, resume_from: RunSnapshot | None
+    ) -> None:
+        """Seed the leg's carried state and announce it for the read model.
+
+        A resumed/forked leg re-announces its restored pins and elision
+        counters: a fork's fresh logs.jsonl has no pin.added or compact
+        events to fold (the fold REPLACES on these events, so a plain resume
+        never double-counts). Announced even when empty: a pin whose
+        pin.added reached the log but whose snapshot never did is still
+        folded from the same log, so only a replace with the real (empty)
+        list stops the surfaces listing a pin no restart will re-inject.
+
+        A FRESH run seeded with pins (--pin; the /parallel lane channel) uses
+        the same state, the same replace-fold event, and the same block a
+        restart re-shows, so the wording never depends on the delivery path.
+        """
+        if resume_from is not None:
+            _restore_completion_state(state, resume_from)
+            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
+            elided, gists = count_elisions(conversation)
+            self._emit("loop.compact.restored", elided=elided, gists=gists)
+        elif self.initial_pins:
+            state.pins = list(self.initial_pins)
+            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
+            conversation.notice(pinned_block(state.pins))
+
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
         *,
@@ -880,22 +913,7 @@ class Workflow:
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
         state.system = system  # ... and snapshot with it (see _dispatch_parallel)
-        if resume_from is not None:
-            _restore_completion_state(state, resume_from)
-            # Re-announce restored pins for the read model: a fork's fresh
-            # logs.jsonl has no pin.added events to fold (the fold REPLACES on
-            # this event, so a plain resume never double-counts). Announced even
-            # when empty: a pin whose pin.added reached the log but whose
-            # snapshot never did is still folded from the same log, so only a
-            # replace with the real (empty) list stops the surfaces listing a
-            # pin no restart will ever re-inject.
-            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
-            # Same shape for the elision counters: a fork's fresh logs.jsonl has
-            # no compact.dropped/gists events to fold, so /status reported "0
-            # elided" over a restored context full of markers. Count what the
-            # context actually carries and let the fold replace.
-            elided, gists = count_elisions(conversation)
-            self._emit("loop.compact.restored", elided=elided, gists=gists)
+        self._seed_carryover(state, conversation, resume_from)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
             # A resume seeded with `--steer` queues the operator's follow-up

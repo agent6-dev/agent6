@@ -26,7 +26,7 @@ import os
 import shutil
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass
@@ -213,6 +213,7 @@ def bridge_spawner(
     spec: LaneSpec,
     task: str,
     *,
+    pins: Sequence[str] = (),
     cfg: Config,
     origin: Path,
     max_usd: float | None,
@@ -254,6 +255,11 @@ def bridge_spawner(
         argv += ["--max-usd", f"{max_usd:g}"]
     if auto_approve:
         argv += ["--auto-approve"]
+    for pin in pins:
+        # Coordinator pins ride out-of-band of the task (see segment_lanes):
+        # the lane seeds its own pin state from these instead of a task prefix
+        # that became its manifest user_task.
+        argv += ["--pin", pin]
     # `--` before the task so a task that looks like a flag (`--allow-root ...`)
     # is never parsed as one. Flags all precede it.
     argv += ["--", task]
@@ -349,6 +355,7 @@ def run_lane_to_completion(
     spec: LaneSpec,
     task: str,
     *,
+    pins: Sequence[str] = (),
     cfg: Config,
     origin: Path,
     origin_state: Path,
@@ -385,6 +392,7 @@ def run_lane_to_completion(
     if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
+            pins=pins,
             cfg=cfg,
             origin=origin,
             max_usd=max_usd,
@@ -529,6 +537,7 @@ def build_lane_spawner(
             return run_lane_to_completion(
                 spec,
                 lane.task,
+                pins=lane.pins,
                 cfg=cfg,
                 origin=origin,
                 origin_state=origin_state,

@@ -27,6 +27,16 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help="Task description (in quotes). Omit when using --continue.",
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    run_p.add_argument(
+        "--pin",
+        dest="pins",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help="Pin an instruction before the run starts (repeatable). Like /pin:"
+        " it survives context compaction and stays binding for the whole run."
+        " A /parallel lane inherits the coordinator's pins through this.",
+    )
     run_profile = run_p.add_argument(
         "--profile",
         default="",

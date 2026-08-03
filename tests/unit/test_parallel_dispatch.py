@@ -113,19 +113,22 @@ def test_lane_note_wordings() -> None:
     assert lane_note(_join("failed")) == "lane-1 failed: boom"
 
 
-def test_segment_lanes_carry_the_operator_pins() -> None:
+def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     """`/pin` tells the worker an instruction "stays binding for the rest of the
     run", and a lane's branch is merged back into the coordinator's -- so a lane
     that never saw the pin could violate a standing instruction and have that
-    work land anyway. Lanes were built from the segment text alone."""
+    work land anyway. But a pin folded into the TASK became the lane's manifest
+    user_task, so every listing and the judge's CandidateBrief led with
+    "PINNED operator instructions (verbatim):" instead of the work. Pins ride
+    the LaneTask out-of-band; the task text stays the task."""
     lanes = segment_lanes(
         Segment(spec="2", task="refactor the model layer"), ["never touch schema files"]
     )
     assert len(lanes) == 2
     for lane in lanes:
-        assert "never touch schema files" in lane.task
-        assert "refactor the model layer" in lane.task
+        assert lane.task == "refactor the model layer"
+        assert lane.pins == ("never touch schema files",)
 
-    # No pins: the task text is untouched.
+    # No pins: nothing rides along.
     plain = segment_lanes(Segment(spec="", task="do it"))
-    assert plain[0].task == "do it"
+    assert plain[0].task == "do it" and plain[0].pins == ()

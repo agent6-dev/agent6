@@ -771,3 +771,64 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
     assert restored_ev, "the restored context's elisions were never announced"
     assert restored_ev[0]["elided"] == 3
     assert restored_ev[0]["gists"] == 1
+
+
+def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
+    """A /parallel lane inherits the coordinator's pins via --pin, NOT a task
+    prefix (the prefix became the lane's manifest user_task, so listings and
+    the judge's brief led with the pin header). Seeding emits the same
+    replace-fold event a restore does, renders the same PINNED block into the
+    conversation, and keeps the pins in state so a later compaction restart
+    re-shows them."""
+    from agent6.providers import ProviderResponse
+
+    provider = MagicMock()
+    provider.call.return_value = ProviderResponse(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "d"}}
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    config = MagicMock(
+        prompt=MagicMock(system_prompt_file=""),
+        workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+    )
+    ev = _EventCapture()
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        initial_pins=("never touch schema files",),
+    )
+    conversation = Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=conversation,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        original_task="go",
+        root_task_id=None,
+    )
+    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    assert restored and restored[0]["pins"] == ["never touch schema files"]
+    # The block the worker sees is the SAME one a restart re-shows.
+    first_call = provider.call.call_args_list[0]
+    messages = first_call.kwargs.get("messages") or first_call.args[1]
+    flat = str(messages)
+    assert "PINNED operator instructions (verbatim):" in flat
+    assert "never touch schema files" in flat

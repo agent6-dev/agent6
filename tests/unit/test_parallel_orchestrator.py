@@ -413,6 +413,7 @@ def test_bridge_spawner_routes_through_host_launch_under_netns(
     res = parallel.bridge_spawner(
         spec,
         "do it",
+        pins=("never touch schema files",),
         cfg=cfg,
         origin=origin,
         max_usd=2.0,
@@ -429,6 +430,8 @@ def test_bridge_spawner_routes_through_host_launch_under_netns(
         argv[:dd]
     )
     assert argv[dd + 1 :] == ["do it"]  # the exe-less argv, task after `--`
+    pin_at = argv.index("--pin")
+    assert pin_at < dd and argv[pin_at + 1] == "never touch schema files"  # out-of-band of task
     assert env_extra == {
         "AGENT6_STREAM_TO_LOG": "1",
         "AGENT6_DETACHED_AWAY": "wait",
