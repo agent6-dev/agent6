@@ -12,9 +12,11 @@ from typing import Any
 
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import (
+    Config,
     ConfigError,
 )
 from agent6.config.layer import (
+    EffectiveConfig,
     available_preset_names,
     leaf_keys,
     load_effective,
@@ -29,6 +31,7 @@ from agent6.ui.cli._common import (
 )
 from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
+from agent6.viewmodel.config_view import build_config_view
 
 
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
@@ -104,23 +107,29 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
     return sorted(lead + m for m in _all_parallel_model_names() if m.startswith(frag))
 
 
-# Dotted config leaves whose type is a Literal/enum, with their allowed values.
-# Used by the `config set/add/remove` value completer so TAB offers the exact
-# valid choices (e.g. `config set sandbox.tool_network <TAB>` -> auto/block/...).
-_CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
-    # `sandbox.isolation` also accepts "none" (the unsandboxed opt-out, see
-    # config.Config.preset), deliberately omitted here: TAB should not put
-    # "disable the sandbox" one keystroke away. Type it explicitly to set it.
-    "sandbox.isolation": ("auto", "strict", "hardened"),
-    "sandbox.tool_network": ("auto", "block", "only_explicit_states", "allow"),
-    "sandbox.run_commands": ("yes", "no", "ask"),
-    "git.merge_strategy": ("squash", "merge", "ff"),
-    "review.trigger": ("off", "on_verify_fail", "before_finish", "periodic"),
-    "prompt.revise_prompt": ("off", "auto", "interactive"),
-    "models.worker.thinking": ("off", "low", "medium", "high"),
-    "models.reviewer.thinking": ("off", "low", "medium", "high"),
-    "models.planner.thinking": ("off", "low", "medium", "high"),
-}
+# Values TAB must not offer even though the schema allows them, keyed by leaf.
+# `sandbox.isolation = "none"` is the unsandboxed opt-out: TAB should not put
+# "disable the sandbox" one keystroke away. Type it explicitly to set it.
+_WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
+
+
+def _config_enum_choices() -> dict[str, tuple[str, ...]]:
+    """Every enum leaf's allowed values, read from the schema through the same
+    view the config surfaces render. A hand-kept copy drifted: leaves added
+    since offered nothing on TAB."""
+    try:
+        view = build_config_view(load_effective(Path.cwd(), None))
+    except ConfigError:
+        # A config that does not load still gets completion: the schema is
+        # what carries the choices, and a default config is all schema.
+        view = build_config_view(EffectiveConfig(config=Config(), sources={}, layers=()))
+    out: dict[str, tuple[str, ...]] = {}
+    for setting in view.settings:
+        if setting.py_type != "choice" or not setting.choices:
+            continue
+        withheld = _WITHHELD_ENUM_VALUES.get(setting.key, frozenset())
+        out[setting.key] = tuple(c for c in setting.choices if c not in withheld)
+    return out
 
 
 def _user_preset_names() -> list[str]:
@@ -150,7 +159,7 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **_kw: object) 
     except ConfigError:
         keys = set()
     if settable:
-        keys |= set(_CONFIG_ENUM_CHOICES)
+        keys |= set(_config_enum_choices())
     if settable and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
         keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
@@ -158,7 +167,7 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **_kw: object) 
 
 
 # Presets offered for any `providers.<name>.extra_body` value (the provider name
-# varies, so this is matched by suffix, not in _CONFIG_ENUM_CHOICES). The first
+# varies, so this is matched by suffix, not a schema enum). The first
 # is the recommended OpenRouter routing, a fast, prefix-caching backend.
 _EXTRA_BODY_RECIPES: tuple[str, ...] = (
     '{ provider = { sort = "throughput" } }',
@@ -175,7 +184,7 @@ def _complete_config_values(
     key = getattr(parsed_args, "key", "") or ""
     if key == "preset":
         return _complete_presets(prefix)
-    choices = list(_CONFIG_ENUM_CHOICES.get(key, ()))
+    choices = list(_config_enum_choices().get(key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
     return [v for v in choices if v.startswith(prefix)]

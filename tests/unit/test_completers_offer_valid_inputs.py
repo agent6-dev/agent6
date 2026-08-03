@@ -69,3 +69,37 @@ def test_attach_offers_every_session_and_every_machine(
     offered = set(completers._complete_watch_targets(""))  # pyright: ignore[reportPrivateUsage]
     assert "live-machine" in offered
     assert {"runny-one-AAAAAA", "planny-two-BBBBB", "asky-three-CCCCC"} <= offered
+
+
+def test_enum_value_completion_is_derived_from_the_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hand-kept enum table drifts: leaves whose type is a Literal got
+    nothing on TAB because nobody added them. The choices come from the schema
+    the config view already reads, so a new enum leaf completes for free."""
+    import argparse
+
+    from agent6.config import Config
+    from agent6.config.layer import load_effective
+    from agent6.viewmodel.config_view import build_config_view
+
+    monkeypatch.chdir(tmp_path)
+    schema_enums = {
+        s.key
+        for s in build_config_view(load_effective(tmp_path)).settings
+        if s.choices and s.py_type == "choice"
+    }
+    assert len(schema_enums) > 10, "expected many enum leaves in the schema"
+    for key in sorted(schema_enums):
+        offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+            "", argparse.Namespace(key=key)
+        )
+        assert offered, f"{key} offers no values on TAB"
+
+    # sandbox.isolation keeps its deliberate omission: TAB must not put
+    # "disable the sandbox" one keystroke away.
+    iso = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+        "", argparse.Namespace(key="sandbox.isolation")
+    )
+    assert "none" not in iso and {"auto", "strict", "hardened"} <= set(iso)
+    assert Config()  # the schema loaded
