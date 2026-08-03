@@ -118,7 +118,8 @@ def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) 
     wf = tmp_path / "w.asm.toml"
     wf.write_text(
         'machine = "w"\nversion = 1\ninitial = "poll"\n[budget]\nmax_transitions = 10\n'
-        '[states.poll]\nkind = "wait"\nevery_secs = "3600"\non = { tick = "done", signal = "done" }\n'
+        '[states.poll]\nkind = "wait"\nevery_secs = "3600"\n'
+        'on = { tick = "done", signal = "done" }\n'
         '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "d"\n',
         encoding="utf-8",
     )
