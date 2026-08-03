@@ -18,7 +18,9 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
     )
     connect.add_argument("name", help="The tool prefix: its tools appear as mcp__<name>__<tool>.")
     connect.add_argument(
-        "command",
+        # Not named "command": a positional's name is its dest, and the root
+        # parser's subcommand verb already owns args.command.
+        "server_command",
         nargs="*",
         metavar="ARGV",
         help=("argv for a server to SPAWN (put it after `--`). Exactly one of this or --url."),

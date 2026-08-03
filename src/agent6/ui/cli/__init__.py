@@ -497,7 +497,7 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
     if args.mcp_command == "connect":
         return cmd_mcp_connect(
             args.name,
-            command=args.command,
+            command=args.server_command,
             url=args.url,
             token_env=args.token_env,
             pass_env=args.pass_env,

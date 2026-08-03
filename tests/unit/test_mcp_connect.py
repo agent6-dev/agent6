@@ -197,3 +197,30 @@ def test_the_probe_leaves_no_server_running(
         ["pgrep", "-f", "agent6-test-marker-none"], capture_output=True, check=False
     )
     assert left.returncode != 0
+
+
+def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
+    """The `connect` positional shared its dest with the root subparser's
+    command verb, so `mcp connect files -- npx srv` dispatched on a LIST and
+    crashed (unhashable dict key) before any of connect's own validation."""
+    from agent6.ui.cli.parser import build_parser
+
+    args = build_parser().parse_args(["mcp", "connect", "files", "--", "npx", "-y", "srv"])
+    assert args.command == "mcp"
+    assert args.server_command == ["npx", "-y", "srv"]
+
+
+def test_mcp_connect_without_a_transport_refuses_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`mcp connect x` reached the dispatch table with args.command rebound to
+    an empty list: "unexpected TypeError", a crash log, exit 1."""
+    from agent6.ui.cli import cli_main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    assert cli_main(["mcp", "connect", "x"]) == 2
+    err = capsys.readouterr().err
+    assert "exactly one" in err
+    assert "unexpected" not in err
