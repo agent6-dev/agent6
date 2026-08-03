@@ -25,7 +25,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 ## RunManifest
 
-[`agent6.runs.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/manifest.py) &middot; pydantic model + 5 nested models
+[`agent6.runs.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/manifest.py) &middot; pydantic model + 6 nested models
 
 Read a run's manifest.json into the typed RunManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
 
@@ -44,6 +44,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `run_branch` | `str | None` | `None` |
 | `models` | `ModelsBrief` | `ModelsBrief()` |
 | `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
+| `policy` | `PolicyStamp` | `PolicyStamp()` |
 | `parked_task` | `str` | `''` |
 | `parent_run_id` | `str | None` | `None` |
 | `forked_from_turn` | `int | None` | `None` |
@@ -54,7 +55,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, state}
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, policy, state}
 - **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (6 test files exercise it)
 
 ## RunSnapshot

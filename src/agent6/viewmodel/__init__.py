@@ -61,6 +61,7 @@ from agent6.viewmodel.machine_state import (
     notification_key,
     read_complete_lines,
 )
+from agent6.viewmodel.policy import RunPolicy, run_policy
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -102,6 +103,7 @@ __all__ = [
     "NotificationView",
     "QuestionPrompt",
     "RoleCall",
+    "RunPolicy",
     "RunState",
     "RunSummary",
     "StatusFacts",
@@ -133,6 +135,7 @@ __all__ = [
     "run_compare",
     "run_is_live",
     "run_mtime",
+    "run_policy",
     "run_state_as_dict",
     "run_status_label",
     "salient_arg",

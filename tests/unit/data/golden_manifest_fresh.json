@@ -26,6 +26,10 @@
     "verify_origin": "",
     "preset_from_flag": false
   },
+  "policy": {
+    "run_commands": "",
+    "isolation": ""
+  },
   "parked_task": "",
   "parent_run_id": null,
   "forked_from_turn": null,

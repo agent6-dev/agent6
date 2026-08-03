@@ -71,6 +71,7 @@ from agent6.ui.cli.parallel import (
     dispatch_parallel,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
+from agent6.viewmodel import run_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -102,7 +103,9 @@ def run_frontend() -> RunFrontend:
     console_cell: list[ConsoleView | None] = [None]
 
     def attach_console_view(events: EventSink) -> None:
-        view = ConsoleView(sys.stderr)
+        # The sink writes into the run dir, so its path is the handle to the
+        # run's policy facts without threading the layout through the protocol.
+        view = ConsoleView(sys.stderr, policy=run_policy(events.path.parent).line())
         console_cell[0] = view
         events.subscribe(view)
 

@@ -358,6 +358,6 @@ def test_a_resumed_leg_reports_whose_gate_it_used(
     """Precedence across legs: an operator's config outranks whatever the run
     pinned, the pin outranks re-inference, and the manifest names which one
     this leg actually ran under."""
-    from agent6.app.resume import _leg_gate_origin
+    from agent6.app.resume import leg_gate_origin
 
-    assert _leg_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected
+    assert leg_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned) == expected

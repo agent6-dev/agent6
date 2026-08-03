@@ -53,6 +53,17 @@ class ModelsBrief(BaseModel):
     reviewer: ModelBrief | None = None
 
 
+class PolicyStamp(BaseModel):
+    """How the run was launched: the two policy facts an operator wants to see
+    without opening config. Recorded so every surface reads them from one
+    place -- the TUI and web are other processes and have only the run dir."""
+
+    model_config = _MODEL_CONFIG
+
+    run_commands: str = ""
+    isolation: str = ""
+
+
 class WorkflowStamp(BaseModel):
     """The in-loop strategy the run started with, so ``resume`` re-applies it."""
 
@@ -156,6 +167,7 @@ class RunManifest(BaseModel):
     run_branch: str | None = None
     models: ModelsBrief = ModelsBrief()
     workflow: WorkflowStamp = WorkflowStamp()
+    policy: PolicyStamp = PolicyStamp()
     # A parked run: submitted while another run-mode worker held the checkout
     # (the repo.lock refusal). Holds the VERBATIM task -- user_task above is
     # the truncated display twin -- and non-empty means the run never started:

@@ -200,7 +200,7 @@ def snapshot_head_mismatch(
     return (snap_head, current_head)
 
 
-def _leg_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
+def leg_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
     """Where THIS leg's gate came from: config outranks the run's pin, the pin
     stands when the leg reused it (an adopted gate stays adopted), and a leg
     that had to re-infer says so."""
@@ -528,7 +528,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             stamp_verify_gate(
                 layout.run_dir,
                 cfg.workflow.verify_command,
-                _leg_gate_origin(
+                leg_gate_origin(
                     configured=leg_configured,
                     has_gate=bool(cfg.workflow.verify_command),
                     pinned=pinned.verify_origin,

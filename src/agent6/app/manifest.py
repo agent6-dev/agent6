@@ -19,6 +19,7 @@ from agent6.runs.manifest import (
     ManifestError,
     ModelBrief,
     ModelsBrief,
+    PolicyStamp,
     RunManifest,
     WorkflowStamp,
     read_manifest,
@@ -116,6 +117,10 @@ def write_run_manifest(
             preset_from_flag=preset_from_flag,
             verify_command=tuple(cfg.workflow.verify_command),
             verify_origin=verify_origin,
+        ),
+        policy=PolicyStamp(
+            run_commands=cfg.sandbox.run_commands,
+            isolation=str(cfg.sandbox.isolation),
         ),
         parked_task=parked_task,
         parent_run_id=parent_run_id,

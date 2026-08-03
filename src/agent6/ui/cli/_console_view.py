@@ -80,7 +80,13 @@ class ConsoleView:
     """Fold events to styled terminal lines. `feed`/`__call__` take one event;
     thread-safe so it can subscribe to an EventSink that several roles emit to."""
 
-    def __init__(self, out: TextIO | None = None, *, color: bool | None = None) -> None:
+    def __init__(
+        self, out: TextIO | None = None, *, color: bool | None = None, policy: str = ""
+    ) -> None:
+        # The run's policy line (viewmodel.run_policy), printed under the task so
+        # an operator sees the model, the command setting, the sandbox and the
+        # gate without interrupting. "" when the caller has no run dir.
+        self._policy = policy
         self._out = out if out is not None else sys.stderr
         self._color = self._out.isatty() if color is None else color
         self._fold = TranscriptFold()
@@ -134,6 +140,8 @@ class ConsoleView:
             if etype == "run.start":
                 task = " ".join(str(event.get("user_task", "")).split())
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
+                if self._policy:
+                    self._line(self._c("dim", f"  {self._policy}") + "\n")
                 return
             if etype == "graph.update":
                 self._render_plan(event)
