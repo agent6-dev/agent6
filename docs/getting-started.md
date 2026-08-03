@@ -36,6 +36,12 @@ agent6 run "add a --json output mode to the CLI"
 agent6 works on a per-run branch, edits files, runs the verify command, and commits each
 step that passes. It stops when the model calls `finish_session` or a budget ceiling is hit.
 
+At a terminal the session then asks for the next input rather than ending: type
+the next instruction to continue in the same session (no `agent6 resume` to
+retype), or `/exit` to finish. Finishing leaves the session resumable like any
+other; without a terminal (CI, a detached run) the resume line is printed
+instead.
+
 The verify command is the success gate. If the repo has not set
 `workflow.verify_command`, agent6 infers one per run (from AGENTS.md, then the repo's
 manifest files, then a cheap model call) and prints what it picked. If none can be

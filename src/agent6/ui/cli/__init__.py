@@ -30,7 +30,9 @@ from agent6.ui.cli._ask import (
 from agent6.ui.cli._common import (
     _enforce_root_policy,
     _plans_dir,
+    resolve_or_newest_layout,
 )
+from agent6.ui.cli._session_prompt import end_of_session_prompt, prompting_is_possible
 from agent6.ui.cli.check_cmds import _cmd_check
 from agent6.ui.cli.completions_cmd import cmd_completions
 from agent6.ui.cli.config_cmds import (
@@ -226,7 +228,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         task = _from_plan_task(plan_md, last_plan)
     else:
         task = args.task
-    return _cmd_run(
+    rc = _cmd_run(
         args.config,
         task,
         session_id=args.session_id,
@@ -241,6 +243,28 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         parallel_spec=getattr(args, "parallel", ""),
         pins=tuple(args.pins),
     )
+    # A fan-out ends in its own compare summary and the TUI owns its screen,
+    # so neither hands the terminal back to a prompt.
+    if getattr(args, "parallel", "") or args.tui:
+        return rc
+    return _prompt_for_the_next_input(args.config, rc)
+
+
+def _prompt_for_the_next_input(config_path: Path | None, rc: int) -> int:
+    """Ask for the next input instead of ending, when someone is there to type.
+
+    `run` and `plan` sessions end this way; `ask` does not (a one-shot question
+    that becomes a conversation is a different feature). Without a terminal the
+    session ends as it always did, with the resume line already printed.
+    """
+    if not prompting_is_possible():
+        return rc
+    layout = resolve_or_newest_layout(Path.cwd(), "")
+    if layout is None:
+        return rc
+    return end_of_session_prompt(
+        rc=rc, session_id=layout.session_id, ask=input, config_path=config_path
+    )
 
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
@@ -254,7 +278,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    return _cmd_run(
+    rc = _cmd_run(
         args.config,
         args.task,
         session_id=args.session_id,
@@ -263,6 +287,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
     )
+    return _prompt_for_the_next_input(args.config, rc)
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
