@@ -32,7 +32,9 @@ def finish_run(raw: dict[str, Any]) -> FinishRunResult:
     (and any structured ``result`` payload, used by state-machine agent
     states)."""
     args = FinishRunInput.model_validate(raw)
-    return FinishRunResult(summary_text=args.summary, result=args.result)
+    return FinishRunResult(
+        summary_text=args.summary, result=args.result, stale_gate=args.stale_gate
+    )
 
 
 def finish_planning(raw: dict[str, Any]) -> FinishPlanningResult:

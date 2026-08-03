@@ -164,7 +164,8 @@ def _add_runs_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     runs_rm.add_argument(
         "--asks",
         action="store_true",
-        help="Delete every saved ask instead of one run (asks are transient Q&A).",
+        help="Delete this directory's saved asks instead of one run (an ask is keyed by "
+        "the directory it ran in; asks elsewhere are untouched).",
     )
 
     runs_prune = _sub(

@@ -274,6 +274,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     role = role_for_mode(mode)
 
+    if mode == "ask":
+        # Before anything reads the knob: an ask is a question with the operator
+        # sitting there, often in a directory that is not a repo, so it never
+        # runs a command unwatched. Clamped once here, so the tool gate, the
+        # status line and the detach prompt cannot disagree about it.
+        cfg = cfg.clamped_for_ask()
     try:
         isolation = select_isolation(
             cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter

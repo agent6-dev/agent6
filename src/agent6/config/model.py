@@ -1213,6 +1213,22 @@ class Config(BaseModel):
         data.setdefault("workflow", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
 
+    def clamped_for_ask(self) -> Config:
+        """Return a copy with ``sandbox.run_commands`` clamped for `agent6 ask`.
+
+        An ask is a question with the operator sitting there, often in a
+        directory that is not even a repo, so it must never execute anything
+        unwatched: ``"yes"`` becomes ``"ask"``. Only ever tightens -- ``"no"``
+        stays refused, because a run can never loosen a boundary the operator
+        set. IN-MEMORY only, like ``with_inferred_verify``: `config show` keeps
+        reporting what the operator actually configured.
+        """
+        if self.sandbox.run_commands != "yes":
+            return self
+        data = self.model_dump(mode="python")
+        data.setdefault("sandbox", {})["run_commands"] = "ask"
+        return Config.model_validate(data)
+
     def with_decompose(self, value: Literal["on", "off"]) -> Config:
         """Return a copy with ``prompt.decompose`` pinned to *value*.
 

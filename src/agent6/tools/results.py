@@ -301,9 +301,22 @@ class MetricResult(ToolResult):
 class FinishRunResult(ToolResult):
     summary_text: str
     result: dict[str, Any] | None
+    stale_gate: str = ""
 
     def to_wire(self) -> dict[str, Any]:
-        return {"acknowledged": True, "summary": self.summary_text, "result": self.result}
+        wire: dict[str, Any] = {
+            "acknowledged": True,
+            "summary": self.summary_text,
+            "result": self.result,
+        }
+        if self.stale_gate:
+            # Say plainly that nothing changed, so the model does not finish
+            # believing it swapped the gate.
+            wire["stale_gate"] = (
+                f"recorded for the operator: {self.stale_gate}."
+                " This run's gate is unchanged and this run does not pass."
+            )
+        return wire
 
 
 @dataclass(frozen=True, slots=True)

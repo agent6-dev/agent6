@@ -74,6 +74,7 @@
     ],
     "properties": {
       "result": "anyOf[null,object]",
+      "stale_gate": "string",
       "summary": "string"
     }
   },

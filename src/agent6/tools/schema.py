@@ -275,6 +275,18 @@ class FinishRunInput(_ToolInput):
             "validated against the schema at the trust boundary."
         ),
     )
+    stale_gate: str = Field(
+        default="",
+        description=(
+            "Set ONLY when the verify command no longer matches the task -- it "
+            "tests behaviour this run deliberately changed, or it cannot run at "
+            "all. Give the command you believe it should be. This never changes "
+            "the gate and never makes the run pass; it records the proposal for "
+            "the operator, who decides. Use it instead of reverting correct work "
+            "to satisfy a stale gate: that is always the wrong move. Leave empty "
+            "when the gate is simply failing -- then fix the work."
+        ),
+    )
 
 
 class FinishPlanningInput(_ToolInput):

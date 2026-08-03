@@ -778,18 +778,18 @@ def _cmd_runs_rm(*, run_id: str, asks: bool) -> int:
     """Delete run history from the state dir.
 
     Only history: the run's branch and its commits are git's, and are left
-    alone (`runs prune` is the branch verb). `--asks` clears every saved ask,
-    which is the bucket that accumulates -- an ask runs in any directory, so
-    each one gets a state dir keyed by that path."""
+    alone (`runs prune` is the branch verb). `--asks` clears the asks made in
+    THIS directory -- an ask is keyed by the directory it ran in, so asks made
+    elsewhere are untouched."""
     cwd = Path.cwd()
     if asks:
         if run_id:
-            print("ERROR: --asks clears every ask; drop the run id.", file=sys.stderr)
+            print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
             return 2
         bucket = _state_dir(cwd) / "asks"
         gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
         shutil.rmtree(bucket, ignore_errors=True)
-        print(f"removed {gone} ask{'' if gone == 1 else 's'}")
+        print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
         return 0
     try:
         layout = resolve_or_newest_layout(cwd, run_id)
