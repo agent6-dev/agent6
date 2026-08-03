@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""The RunFrontend an ACP client provides.
+
+The rule every case here pins: a client that cannot be asked is never asked,
+and the answer is the CAUTIOUS one. A session that cannot ask is a session that
+does less, never one that does something unwatched.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from agent6.app.run import FrontendCapabilities
+from agent6.tools.schema import UserQuestion
+from agent6.ui.acp.frontend import acp_frontend
+
+
+def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
+    asked: list[tuple[str, tuple[str, ...]]] = []
+
+    def _ask(prompt: str, options: tuple[str, ...]) -> str | None:
+        asked.append((prompt, options))
+        return reply
+
+    front = acp_frontend(
+        ask=_ask,
+        capabilities=FrontendCapabilities(can_ask=can_ask),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid: "",
+    )
+    return front, asked
+
+
+def test_an_approval_becomes_a_request_to_the_editor() -> None:
+    front, asked = _frontend()
+    approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert approve("Allow run_command: ls") is True
+    assert asked == [("Allow run_command: ls", ("allow", "deny"))]
+
+
+def test_a_client_that_cannot_be_asked_gets_a_no() -> None:
+    """Not a hang, and not an invented yes."""
+    front, asked = _frontend(can_ask=False)
+    approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert approve("Allow run_command: rm -rf /") is False
+    assert asked == [], "it must not even try"
+
+
+def test_declining_is_a_no() -> None:
+    front, _asked = _frontend(reply="deny")
+    approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert approve("Allow run_command: ls") is False
+
+
+def test_a_question_carries_its_options_and_an_unanswered_one_is_empty() -> None:
+    """The loop already reads an empty answer as "the operator said nothing",
+    which is different from a value."""
+    front, asked = _frontend(reply="dark")
+    ask_user = front.build_questioner(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)) == ("dark",)
+    assert asked[0] == ("Theme?", ("dark", "light"))
+
+    mute, _ = _frontend(can_ask=False)
+    silent = mute.build_questioner(Path("/x"), None)  # pyright: ignore[reportArgumentType]
+    assert silent((UserQuestion(question="Theme?"),)) == ("",)
+
+
+def test_an_unsandboxed_autorun_needs_a_yes_from_a_human() -> None:
+    """The one prompt that must never default to yes: refusing costs a run,
+    agreeing costs the host."""
+    mute, _ = _frontend(can_ask=False)
+    assert mute.confirm_unconfined_autorun("none", None) is False  # pyright: ignore[reportArgumentType]
+    asked_front, _ = _frontend(reply="allow")
+    assert asked_front.confirm_unconfined_autorun("none", None) is True  # pyright: ignore[reportArgumentType]
+
+
+def test_nothing_is_drawn_and_deltas_still_reach_the_journal() -> None:
+    """An ACP client renders from session/update, so there is no console view
+    -- but the deltas still have to be EMITTED for it to render."""
+    front, _asked = _frontend()
+    stream_text, console_stream = front.stream_modes(False)
+    assert stream_text is True, "session/update has nothing to show otherwise"
+    assert console_stream is False, "there is no console to echo to"
+    assert front.should_spawn_tui(True, True, "run") is False
+
+
+def test_the_steer_seam_is_inert() -> None:
+    """ACP steers by prompting into a live session; a SIGINT pause menu has no
+    terminal to draw on."""
+    front, _asked = _frontend()
+    steer = front.make_steer_state(None, Path("/x"), lambda: None)  # pyright: ignore[reportArgumentType]
+    assert steer.requested() is False
+    assert steer.prompt() is None
+    assert steer.abort_pending() is False
+    steer.clear()
+    steer.restore()
+    steer.reset_stage()
+
+
+def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
+    """`/parallel` fans out sibling runs. An ACP client renders ONE session, so
+    lanes would run invisibly."""
+    from agent6.config import Config
+
+    front, _asked = _frontend()
+    spawner = front.build_coordinator_spawner(
+        Config(), Path("/x"), Path("/y"), "run", "r", None, False
+    )
+    assert spawner is None
+
+
+def test_the_ask_repl_is_refused_rather_than_faked() -> None:
+    """Two turn loops reading the same stdin is not something to paper over."""
+    front, _asked = _frontend()
+    with pytest.raises(RuntimeError, match="drives its own turns"):
+        front.run_ask_repl(None, None, None, "q")  # pyright: ignore[reportArgumentType]

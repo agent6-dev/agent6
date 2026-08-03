@@ -151,7 +151,18 @@ depends_on = []
 # lifecycle, so `initialize`'s capability exchange maps onto
 # FrontendCapabilities rather than needing plumbing of its own.
 path = "agent6.ui.acp"
-depends_on = ["agent6", "agent6.app"]
+# The types RunFrontend's own signatures name: implementing the seam means
+# naming what it passes. The same set ui.cli has, minus everything that draws.
+depends_on = [
+  "agent6",
+  "agent6.app",
+  "agent6.budget",
+  "agent6.config",
+  "agent6.events",
+  "agent6.runs.layout",
+  "agent6.tools.schema",
+  "agent6.workflows",
+]
 
 [[modules]]
 # The web UI: a stdlib HTTP server + one embedded page. Renders the shared
