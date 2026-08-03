@@ -82,6 +82,7 @@ from agent6.workflows._compaction import (
     cap_tool_result,
     compact_old_tool_results,
     context_chars,
+    count_elisions,
     parse_checkoff,
     parse_gist_lines,
     recently_edited_paths,
@@ -889,6 +890,12 @@ class Workflow:
             # replace with the real (empty) list stops the surfaces listing a
             # pin no restart will ever re-inject.
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
+            # Same shape for the elision counters: a fork's fresh logs.jsonl has
+            # no compact.dropped/gists events to fold, so /status reported "0
+            # elided" over a restored context full of markers. Count what the
+            # context actually carries and let the fold replace.
+            elided, gists = count_elisions(conversation)
+            self._emit("loop.compact.restored", elided=elided, gists=gists)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
             # A resume seeded with `--steer` queues the operator's follow-up

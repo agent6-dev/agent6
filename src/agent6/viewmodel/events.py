@@ -207,6 +207,17 @@ class PinsRestored:
 
 
 @dataclass(frozen=True, slots=True)
+class CompactRestored:
+    """loop.compact.restored: a resume/fork leg counted the elision markers its
+    RESTORED context actually carries. The counts replace the fold's (a fork's
+    fresh log has no compact.dropped events to fold, so it reported zero over a
+    context full of markers)."""
+
+    elided: int
+    gists: int
+
+
+@dataclass(frozen=True, slots=True)
 class CompactDropped:
     """loop.compact.dropped: tier-1 elision, with the elided call identities."""
 
@@ -269,6 +280,7 @@ Event = (
     | QuestionAnswer
     | PinAdded
     | PinsRestored
+    | CompactRestored
     | CompactDropped
     | CompactGists
     | CompactSummarised
@@ -387,6 +399,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             raw_pins = raw.get("pins", ()) or ()
             pins = tuple(str(x) for x in raw_pins) if isinstance(raw_pins, (list, tuple)) else ()
             return PinsRestored(pins=pins)
+        case "loop.compact.restored":
+            return CompactRestored(
+                elided=_as_int(raw.get("elided")), gists=_as_int(raw.get("gists"))
+            )
         case "loop.compact.dropped":
             raw_calls = raw.get("calls", ()) or ()
             calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()

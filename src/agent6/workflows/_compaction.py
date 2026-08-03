@@ -399,6 +399,23 @@ def _tool_result_pointers(
     return pointers, total
 
 
+def count_elisions(conversation: Conversation) -> tuple[int, int]:
+    """How many elision markers a context carries, and how many are live gists.
+
+    A resumed or forked leg re-announces these: a fork's fresh logs.jsonl has no
+    compact.dropped events to fold, so the status surfaces reported zero over a
+    restored context full of markers.
+    """
+    elided = gists = 0
+    for turn in conversation.turns:
+        for item in getattr(turn, "items", ()):
+            body = getattr(item, "content", "")
+            if isinstance(body, str) and body.startswith(ELISION_PREFIX):
+                elided += 1
+                gists += body.startswith(ELISION_GIST_PREFIX)
+    return elided, gists
+
+
 def compact_old_tool_results(
     conversation: Conversation,
     *,

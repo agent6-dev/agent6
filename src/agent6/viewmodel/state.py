@@ -464,6 +464,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case events.PinsRestored(pins=pins):
             return replace(state, pins=pins)
 
+        case events.CompactRestored(elided=elided, gists=gists):
+            return replace(state, compact_elided=elided, compact_gists_live=gists)
+
         case events.CompactDropped(n=n):
             return replace(state, compact_elided=state.compact_elided + n)
 
@@ -631,6 +634,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.compact.requested":
             focus = str(event.get("focus", ""))
             salient = f"focus: {focus[:120]}" if focus else "no focus"
+        case "loop.compact.restored":
+            salient = f"{event.get('elided')} elided, {event.get('gists')} gists in context"
         case "loop.compact.refused":
             salient = str(event.get("reason", ""))[:160]
         case "loop.memories.unavailable":

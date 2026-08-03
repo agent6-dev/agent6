@@ -679,3 +679,95 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
         ).stdout.strip()
         == head
     )
+
+
+def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
+    """A fork copies the checkpoint but NOT logs.jsonl, so the child's log has no
+    compact.dropped events to fold: /status reported "0 elided" over a restored
+    context full of elision markers, contradicting the field's own "markers in
+    the CURRENT context" contract. Same shape as the pin re-announce."""
+    from agent6.workflows._compaction import ELISION_GIST_PREFIX, ELISION_PREFIX
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
+    )
+    provider = MagicMock()
+    provider.call.return_value = SimpleNamespace(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "done"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        raw={"content": [{"type": "tool_use", "id": "t1", "name": "finish_run", "input": {}}]},
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    ev = _EventCapture()
+    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
+    # A restored context carrying two bare elisions and one distilled gist.
+    restored = Conversation.from_wire(
+        [
+            {"role": "user", "content": [{"type": "text", "text": "go"}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "a", "name": "read_file", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "a", "content": f"{ELISION_PREFIX}: x"}
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "b", "name": "read_file", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "b", "content": f"{ELISION_PREFIX}: y"}
+                ],
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "c", "name": "read_file", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "c",
+                        "content": f"{ELISION_GIST_PREFIX}: z",
+                    }
+                ],
+            },
+        ]
+    )
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=restored,
+        tools=[],
+        tool_calls=0,
+        start_iteration=3,
+        root_task_id=None,
+        original_task="go",
+        resume_from=RunSnapshot(
+            system="s",
+            messages=[],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=(),
+        ),
+    )
+    restored_ev = [e for e in ev.events if e["type"] == "loop.compact.restored"]
+    assert restored_ev, "the restored context's elisions were never announced"
+    assert restored_ev[0]["elided"] == 3
+    assert restored_ev[0]["gists"] == 1
