@@ -308,7 +308,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     dst = RunLayout(state_dir=state_dir, run_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["preset"] == "fast"
-    assert manifest["models"]["worker"]["model"] == "claude-fast"  # not claude-base
+    assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
 
 
 def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(

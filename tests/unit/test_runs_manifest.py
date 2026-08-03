@@ -38,7 +38,7 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: Path) -> None:
     assert m.version == MANIFEST_VERSION
     assert m.mode == "run"
     assert m.run_branch is None
-    assert m.models.worker is None
+    assert m.models.driver is None
     assert m.merged is None and m.compare is None
 
 
@@ -152,7 +152,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
         base_branch="master",
         run_branch="agent6/r-fresh01",
         models=ModelsBrief(
-            worker=ModelBrief(provider="anthropic", model="claude-x"),
+            driver=ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=ModelBrief(provider="anthropic", model="claude-y"),
         ),
         workflow=WorkflowStamp(critic="off", revise_prompt="on", preset="strict"),
@@ -187,7 +187,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         base_sha="1" * 40,
         base_branch="master",
         run_branch="agent6/r-lane02",
-        models=ModelsBrief(worker=ModelBrief(provider="openai", model="gpt-z")),
+        models=ModelsBrief(driver=ModelBrief(provider="openai", model="gpt-z")),
         workflow=WorkflowStamp(critic="on", revise_prompt="off", preset=""),
         parent_run_id="r-parent",
         forked_from_turn=7,
@@ -291,3 +291,45 @@ def test_legacy_config_selected_profile_is_not_replayed_as_a_flag(tmp_path: Path
     stamp = read_manifest(tmp_path).workflow
     assert stamp.preset == "quick"
     assert stamp.replay_preset == ""
+
+
+def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
+    """`runs show` reads one field for "the model that drove this run". It used
+    to be the worker unconditionally, so a plan run -- driven by the planner --
+    displayed a model that never ran, and disagreed with both the web (which
+    reads the role events) and its own cost block."""
+    from agent6.app.manifest import write_run_manifest
+    from agent6.config import Config
+    from agent6.runs.layout import RunLayout
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"anthropic": {"api_format": "anthropic"}},
+            "models": {
+                "worker": {"provider": "anthropic", "model": "worker-model"},
+                "planner": {"provider": "anthropic", "model": "planner-model"},
+            },
+        }
+    )
+    for mode, expected in (("plan", "planner-model"), ("run", "worker-model")):
+        layout = RunLayout(state_dir=tmp_path / mode, run_id="r")
+        layout.ensure()
+        write_run_manifest(
+            layout,
+            run_id="r",
+            user_task="t",
+            base_sha="",
+            base_branch="main",
+            run_branch=None,
+            cfg=cfg,
+            mode=mode,
+        )
+        driver = read_manifest(layout.run_dir).models.driver
+        assert driver is not None and driver.model == expected
+
+
+def test_legacy_worker_brief_reads_as_the_driver(tmp_path: Path) -> None:
+    # Pre-v3 dirs recorded the driver under `worker`; they still render.
+    _write(tmp_path, {"version": 2, "models": {"worker": {"provider": "p", "model": "m"}}})
+    driver = read_manifest(tmp_path).models.driver
+    assert driver is not None and driver.model == "m"

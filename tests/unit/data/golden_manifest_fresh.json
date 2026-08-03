@@ -9,7 +9,7 @@
   "base_branch": "master",
   "run_branch": "agent6/r-fresh01",
   "models": {
-    "worker": {
+    "driver": {
       "provider": "anthropic",
       "model": "claude-x"
     },

@@ -9,7 +9,7 @@
   "base_branch": "master",
   "run_branch": "agent6/r-lane02",
   "models": {
-    "worker": {
+    "driver": {
       "provider": "openai",
       "model": "gpt-z"
     },

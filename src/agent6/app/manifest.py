@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6 import __version__
-from agent6.config import Config
+from agent6.config import Config, role_for_mode
 from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import (
@@ -95,7 +95,9 @@ def write_run_manifest(
         base_branch=base_branch,
         run_branch=run_branch,
         models=ModelsBrief(
-            worker=_model_brief(cfg.models.resolve("worker")),
+            # The role that actually drives this mode: a plan run recorded the
+            # worker here and `runs show` then named a model that never ran.
+            driver=_model_brief(cfg.models.resolve(role_for_mode(mode))),
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
         ),
         workflow=WorkflowStamp(

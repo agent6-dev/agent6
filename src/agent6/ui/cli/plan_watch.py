@@ -275,8 +275,8 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
 
     state = _status_state(target, scan, last_age=last_age)
 
-    worker = manifest.models.worker
-    model = (worker.model if worker else "") or "?"
+    driver = manifest.models.driver
+    model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
 
     if as_json:

@@ -44,11 +44,22 @@ class ModelBrief(BaseModel):
 
 
 class ModelsBrief(BaseModel):
-    """The worker/reviewer models the run resolved (a role is null when unset)."""
+    """The models the run resolved: the one that DROVE it (the worker, or the
+    planner for a plan run) and the reviewer. Null when the role is unset."""
 
     model_config = _MODEL_CONFIG
 
-    worker: ModelBrief | None = None
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_legacy_worker(cls, data: Any) -> Any:
+        """Read the pre-v3 ``worker`` key as the driver: for a run that is what
+        drove it, and a plan run recorded the worker there wrongly anyway."""
+        if isinstance(data, dict) and "driver" not in data and "worker" in data:
+            data = dict(data)
+            data["driver"] = data["worker"]
+        return data
+
+    driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
 
 
