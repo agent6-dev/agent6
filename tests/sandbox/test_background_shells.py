@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sandbox.jail import locate_jail_binary, run_in_jail
+from agent6.sandbox.jail import BackgroundJob, locate_jail_binary, run_in_jail
 from agent6.tools.background import BackgroundError, BackgroundShells
 from agent6.types import IsolationLevel, JailPolicy
 
@@ -212,6 +212,7 @@ def test_a_command_started_mid_sweep_window_is_spared(
 
 def _launcher_pids(shells: BackgroundShells, shell_id: str) -> set[int]:
     shell = shells._get(shell_id)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(shell.job, BackgroundJob), "these pin the per-command launcher"
     return {shell.job.pid}
 
 
@@ -365,7 +366,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: Path) -> 
         return jail_policy(work, Config(), "none", argv, extra_rw_paths=rw)
 
     view = shells.start(("sh", "-c", "echo mine; sleep 30"), _policy)  # pyright: ignore[reportArgumentType]
-    log = tmp_path / "shells" / view.id / "log" / "out.log"
+    log = tmp_path / "shells" / "logs" / view.id / "out.log"
     for _ in range(100):
         if log.stat().st_size:
             break

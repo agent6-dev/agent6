@@ -112,9 +112,16 @@ process irrevocably, inherited by every child:
 ### 2. `agent6-jail` (Rust), for every child command
 
 `apply_edit` is in-process; every `run_verify_command`/`run_command` runs in
-`agent6-jail`, as does every `run_background` (same policy, same launcher; the
-only difference is that nothing waits on it, so the run's teardown kills it).
-Under `strict` it:
+`agent6-jail`, as does every `run_background`. Under `strict` a RUN's commands
+are served by ONE launcher process, so they share its netns, PID namespace and
+private `/tmp`: a server `run_background` starts is reachable by the next
+command on loopback, and closing the run's request channel takes the PID
+namespace and everything in it down. Its confinement is fixed when it opens, so
+the policy is the run's rather than the first command's, and it grants the
+background log root (`<session>/shells/logs`) up front -- a run's background
+commands can therefore write each other's logs, but not their own exit code or
+name, which live outside that root. Anywhere else (`hardened`, a dispatcher with
+no run) each command gets its own launcher. Under `strict` it:
 
 - Forks a new user/mount/PID/IPC/UTS/net namespace.
 - `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd + private

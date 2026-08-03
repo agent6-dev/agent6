@@ -173,6 +173,54 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: 
         bare.close()
 
 
+def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(tmp_path: Path) -> None:
+    """What a run's own jail process is for: `run_background` starts a dev
+    server and a later `run_command` reaches it on loopback. Per-command
+    launchers put each in its own empty netns, so the address was unreachable
+    however long the server ran."""
+    from agent6.config import Config
+    from agent6.tools.dispatch import ToolDispatcher
+
+    cfg = Config.model_validate({"sandbox": {"isolation": "strict", "run_commands": "yes"}})
+    d = ToolDispatcher(
+        root=tmp_path,
+        config=cfg,
+        isolation="strict",
+        use_jail_session=True,
+        session_dir=tmp_path / "session",
+        state_dir=tmp_path / "state",
+    )
+    try:
+        listener = (
+            "import socket;s=socket.socket();"
+            "s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);"
+            "s.bind(('127.0.0.1',8741));s.listen(1);"
+            "c,_=s.accept();c.sendall(b'alive');c.close()"
+        )
+        started = d.dispatch("run_background", {"argv": ["python3", "-c", listener]}).to_wire()
+        assert "running" in str(started), started
+        probe = d.dispatch(
+            "run_command",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "import socket,time\n"
+                    "for _ in range(50):\n"
+                    "    try:\n"
+                    "        s=socket.create_connection(('127.0.0.1',8741),timeout=5)\n"
+                    "        print(s.recv(16).decode());break\n"
+                    "    except OSError:\n"
+                    "        time.sleep(0.1)\n",
+                ]
+            },
+        ).to_wire()
+        assert probe["returncode"] == 0, probe
+        assert "alive" in str(probe["stdout"]), probe
+    finally:
+        d.close()
+
+
 def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> None:
     """One command's timeout must not cost the run its jail process: the
     launcher bounds each request itself (killing that command's group and

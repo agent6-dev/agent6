@@ -1596,13 +1596,17 @@ fn answer_stop(pid: i32) -> io::Result<()> {
     // server's children go down with it.
     unsafe { libc::killpg(pid, libc::SIGKILL) };
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let stopped = serde_json::json!({"stopped": true});
     let result = loop {
         match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => {}
+            Ok(status) => {
+                break serde_json::json!({"stopped": true, "returncode": wait_code(status)})
+            }
             // ECHILD: a status request already reaped it, which is the state
-            // stop is asking for.
-            Ok(_) | Err(nix::errno::Errno::ECHILD) => break stopped,
+            // stop is asking for. Its code went out with that answer.
+            Err(nix::errno::Errno::ECHILD) => {
+                break serde_json::json!({"stopped": true, "returncode": null})
+            }
             Err(e) => break serde_json::json!({"stopped": false, "error": e.to_string()}),
         }
         if std::time::Instant::now() >= deadline {

@@ -627,6 +627,54 @@ class BackgroundJob:
             _live_launchers.discard(self._proc.pid)
 
 
+class SessionJob:
+    """A command left running inside a :class:`JailSession`.
+
+    Its pid is namespace-local, so every question about it goes back through
+    the session. The terminal answer is kept: once the launcher has reaped the
+    command, asking again gets ECHILD, which is not "exit code unknown".
+    """
+
+    def __init__(self, session: JailSession, pid: int, outcome_dir: Path) -> None:
+        self._session = session
+        self._pid = pid
+        self._outcome_dir = outcome_dir
+        self._final: BackgroundStatus | None = None
+
+    def status(self) -> BackgroundStatus:
+        if self._final is not None:
+            return self._final
+        try:
+            status = self._session.status_background(self._pid)
+        except JailUnavailableError as exc:
+            self._final = BackgroundStatus(running=False, returncode=None, error=str(exc))
+            return self._final
+        if not status.running:
+            self._settle(status)
+        return status
+
+    def stop(self) -> None:
+        """Kill the command and its group. Idempotent."""
+        if self._final is not None:
+            return
+        try:
+            code = self._session.stop_background(self._pid)
+        except JailUnavailableError as exc:
+            self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
+            return
+        self._settle(BackgroundStatus(running=False, returncode=code, error=""))
+
+    def _settle(self, status: BackgroundStatus) -> None:
+        """Record the command's end, and write its exit code where a surface in
+        another process reads it (this session answers only its own run)."""
+        self._final = status
+        if status.returncode is not None:
+            with contextlib.suppress(OSError):
+                (self._outcome_dir / _RESULT_NAME).write_text(
+                    json.dumps({"returncode": status.returncode}), encoding="utf-8"
+                )
+
+
 def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
     """Spawn `policy.argv` in the sandbox and return WITHOUT waiting for it.
 
@@ -769,11 +817,14 @@ class JailSession:
             error=str(answer.get("error", "")),
         )
 
-    def stop_background(self, pid: int) -> None:
-        """Kill a backgrounded command and its group. Idempotent."""
+    def stop_background(self, pid: int) -> int | None:
+        """Kill a backgrounded command and its group, answering the exit code
+        when this call is the one that reaped it. Idempotent."""
         answer = self._request({"kind": "stop", "pid": pid})
         if not answer.get("stopped"):
             raise JailUnavailableError(f"jail session could not stop {pid}: {answer}")
+        code = answer.get("returncode")
+        return code if isinstance(code, int) else None
 
     def _request(self, request: dict[str, object]) -> dict[str, object]:
         """One request, one answer line. The channel is in lockstep: every

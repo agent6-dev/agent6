@@ -851,7 +851,11 @@ class ToolDispatcher:
         ):
             raise ToolDenied("run_background not approved (sandbox.run_commands='ask')")
         try:
-            shells.start(args.argv, lambda argv, rw: self._jail_policy(argv, extra_rw_paths=rw))
+            shells.start(
+                args.argv,
+                lambda argv, rw: self._jail_policy(argv, extra_rw_paths=rw),
+                session=self._run_session(),
+            )
         except BackgroundError as exc:
             raise ToolError(str(exc)) from exc
         return BackgroundResult(shells=_roster(shells))
@@ -1004,20 +1008,25 @@ class ToolDispatcher:
             extra_protect_paths=self._extra_protect_paths,
         )
 
-    def _run_session(self, policy: JailPolicy) -> JailSession | None:
-        """The run's jail process, or None to give this command its own.
+    def _run_session(self) -> JailSession | None:
+        """The run's jail process, or None to give each command its own.
 
         STRICT only: the other levels have no PID namespace to bound what a
         command leaves running. A session that cannot start (an older bundled
         launcher, a host without namespaces) answers None once and is not
         retried, so the per-command path is the fallback rather than the run
         failing.
+
+        Its confinement is fixed when it opens, so the policy is the run's, not
+        the first command's: every command in the run gets the same one, and
+        the background log root is granted before any command asks for it.
         """
-        if not self._use_session or policy.isolation != "strict":
+        if not self._use_session or self._isolation != "strict":
             return None
         if self._session is None and not self._session_failed:
+            rw = () if self._shells is None else (self._shells.log_root,)
             try:
-                self._session = JailSession.open(policy)
+                self._session = JailSession.open(self._jail_policy(("true",), extra_rw_paths=rw))
             except (JailUnavailableError, OSError):
                 self._session_failed = True
         return self._session
@@ -1037,7 +1046,7 @@ class ToolDispatcher:
     ) -> ExecResult:
         policy = self._jail_policy(argv, timeout_s=timeout_s)
         try:
-            session = self._run_session(policy)
+            session = self._run_session()
             res: CommandResult = (
                 session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
                 if session is not None

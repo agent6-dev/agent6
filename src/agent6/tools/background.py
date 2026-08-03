@@ -19,26 +19,33 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.sandbox.jail import BackgroundJob, JailUnavailableError, start_in_jail
+from agent6.sandbox.jail import (
+    BackgroundJob,
+    JailSession,
+    JailUnavailableError,
+    SessionJob,
+    start_in_jail,
+)
 from agent6.types import JailPolicy
 
 # The command's own output goes to a file both sides can read: the jail gets
 # the LOG directory read-write, and `exec` applies the redirect to the whole
 # command. argv values ride as positional parameters, never as shell text.
 #
-# The log dir is a CHILD of the shell dir, and the only thing granted. The
-# launcher's result and the command's identity live in the shell dir itself,
-# out of the command's reach: a command that can rewrite its own exit code and
-# its own name is not an audit trail, it is a suggestion box. (Proven: a
-# command that exited 42 reported "exited 0: npm test (all green)".)
+# Every log lives under ONE root, `<root>/logs/<id>/`, and that root is the
+# only thing granted. The run's jail session grants it when it opens, before
+# any background command exists, which a per-shell grant cannot do. The cost is
+# that a run's background commands share the root and can write each other's
+# logs; the launcher's result and each command's identity stay OUTSIDE it, so
+# what a command cannot do is rewrite its own exit code or its own name. (A
+# command that exited 42 once reported "exited 0: npm test (all green)".)
 #
 # The grant includes MakeSym, so the agent NEVER resolves that path again: it
 # reads through the descriptor it opened before the jail existed. Opening
-# `log/out.log` by name, outside the jail and as the operator, let a command
-# unlink it, symlink it at the operator's secrets, and have the next
-# `read_background` hand them to the model -- or point it at a FIFO and hang
-# the loop forever.
-_LOG_DIR = "log"
+# `out.log` by name, outside the jail and as the operator, let a command unlink
+# it, symlink it at the operator's secrets, and have the next `read_background`
+# hand them to the model -- or point it at a FIFO and hang the loop forever.
+_LOG_ROOT = "logs"
 _LOG_NAME = "out.log"
 # How much of a log a read considers. A build can print gigabytes; only the
 # tail is ever returned, so only the tail is read.
@@ -80,7 +87,7 @@ class _Shell:
     id: str
     command: str
     dir: Path
-    job: BackgroundJob
+    job: BackgroundJob | SessionJob
     # Opened before the command could exist, held for the run: the one handle
     # to its output that no jailed process can redirect.
     log_fd: int
@@ -94,12 +101,22 @@ class BackgroundShells:
         self._root = root
         self._shells: dict[str, _Shell] = {}
         self._seq = 0
+        # Eagerly: the run's jail session grants this path when it opens, and a
+        # mount source has to exist by then.
+        self.log_root = root / _LOG_ROOT
+        self.log_root.mkdir(parents=True, exist_ok=True)
 
-    def start(self, argv: tuple[str, ...], policy_for: PolicyFor) -> ShellView:
+    def start(
+        self, argv: tuple[str, ...], policy_for: PolicyFor, *, session: JailSession | None = None
+    ) -> ShellView:
+        """Start *argv* detached. With a *session*, it runs in the run's jail
+        process, so it shares that netns and a later command can reach it;
+        without one it gets a launcher of its own."""
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
-        log_dir = shell_dir / _LOG_DIR
+        log_dir = self.log_root / shell_id
+        shell_dir.mkdir(parents=True, exist_ok=True)
         log_dir.mkdir(parents=True, exist_ok=True)
         # O_EXCL: we create it, so it is a regular file we own. O_CLOEXEC: no
         # child inherits the handle. The command's own `exec >` opens the same
@@ -113,8 +130,18 @@ class BackgroundShells:
             json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
         )
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
+        policy = policy_for(wrapped, (log_dir,))
+        job: BackgroundJob | SessionJob
         try:
-            job = start_in_jail(policy_for(wrapped, (log_dir,)), outcome_dir=shell_dir)
+            if session is None:
+                job = start_in_jail(policy, outcome_dir=shell_dir)
+            else:
+                # The session is already confined; only the env comes from the
+                # policy. Its grant of the log root is what makes the redirect
+                # land.
+                job = SessionJob(
+                    session, session.start_background(wrapped, env=policy.env), shell_dir
+                )
         except (JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
