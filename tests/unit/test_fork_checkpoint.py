@@ -806,3 +806,47 @@ def test_resume_diverged_branch_refuses_without_checkout(
     assert rc == 1
     assert "diverged" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
+
+
+def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forking exists to try an alternative direction; --steer seeds it at the
+    forked session's first safe boundary. Without the pass-through the only
+    route was fork --no-run followed by resume --steer, defeating the default
+    immediate continuation."""
+    import agent6.ui.cli.fork as fork_cli
+
+    def _fake_fork(*_a: object, **_k: object) -> tuple[str, int]:
+        return ("kid-AAAA11", 0)
+
+    captured: dict[str, object] = {}
+
+    def _capture_resume(*_a: object, **k: object) -> int:
+        captured.update(k)
+        return 0
+
+    monkeypatch.setattr(fork_cli, "create_fork", _fake_fork)
+    monkeypatch.setattr(fork_cli, "_cmd_resume", _capture_resume)
+    rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
+        None, "src-run", steer="try the lock-free design instead"
+    )
+    assert rc == 0
+    assert captured["steer"] == "try the lock-free design instead"
+
+
+def test_fork_steer_with_no_run_is_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--steer only means something for the immediate continuation; with
+    --no-run nothing ever ran to receive it, so refuse up front (before any
+    fork dir is created) instead of dropping the instruction silently."""
+    import agent6.ui.cli.fork as fork_cli
+
+    def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
+        pytest.fail("create_fork must not run when the flag combo is refused")
+
+    monkeypatch.setattr(fork_cli, "create_fork", _must_not_fork)
+    rc = fork_cli._cmd_fork(  # pyright: ignore[reportPrivateUsage]
+        None, "src-run", no_run=True, steer="x"
+    )
+    assert rc == 2
+    assert "--steer" in capsys.readouterr().err

@@ -23,12 +23,21 @@ def _cmd_fork(
     no_run: bool = False,
     tui: bool = False,
     budget_overrides: BudgetOverrides | None = None,
+    steer: str = "",
 ) -> int:
     """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
 
     Default: fork from the latest checkpoint and immediately continue the new run
-    from that turn (resume-like). ``--no-run`` just creates the fork dir.
+    from that turn (resume-like); ``--steer`` seeds the fresh direction at its
+    first safe boundary. ``--no-run`` just creates the fork dir.
     """
+    if no_run and steer.strip():
+        print(
+            "ERROR: --steer seeds the immediate continuation, which --no-run skips."
+            " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`.",
+            file=sys.stderr,
+        )
+        return 2
     child_id, rc = create_fork(
         config_path, source_run_id, at_turn=at_turn, new_run_id=new_run_id, cwd=Path.cwd()
     )
@@ -50,4 +59,5 @@ def _cmd_fork(
         force=False,
         tui=tui,
         budget_overrides=budget_overrides,
+        steer=steer,
     )

@@ -216,4 +216,14 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         action="store_true",
         help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
     )
+    fork_p.add_argument(
+        "--steer",
+        default="",
+        metavar="TEXT",
+        help=(
+            "Inject TEXT as an operator steering instruction at the forked"
+            " session's first safe boundary -- the fresh direction this fork"
+            " exists to try. Not with --no-run (resume --steer later instead)."
+        ),
+    )
     _add_budget_flags(fork_p)

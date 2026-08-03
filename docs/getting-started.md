@@ -71,7 +71,7 @@ agent6 runs graph         # the persisted task graph
 
 ```sh
 agent6 resume <run-id>                 # continue from the last snapshot
-agent6 fork <run-id> --at-turn 7       # branch a new run from turn 7
+agent6 fork <run-id> --at-turn 7       # branch a new run from turn 7; --steer "try X" seeds the new direction
 ```
 
 State is snapshotted before each model call and checkpointed per turn. `fork` rolls a
