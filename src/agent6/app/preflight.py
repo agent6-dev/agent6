@@ -23,8 +23,7 @@ from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
-from agent6.sessions.layout import SessionLayout
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import manifest_for_branch
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 
@@ -184,14 +183,10 @@ class BranchChoice:
     abort: bool = False
 
 
-def _manifest_base_branch(state_dir: Path, session_id: str) -> str | None:
-    """The base branch a run recorded it was cut from (manifest.base_branch)."""
-    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
-    try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError:
-        return None
-    return manifest.base_branch or None
+def _manifest_base_branch(state_dir: Path, branch: str) -> str | None:
+    """The base branch the session that cut *branch* recorded it came from."""
+    manifest = manifest_for_branch(state_dir, branch)
+    return (manifest.base_branch or None) if manifest is not None else None
 
 
 def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
@@ -204,7 +199,7 @@ def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
     seen: set[str] = set()
     while branch.startswith(_RUN_BRANCH_PREFIX) and branch not in seen:
         seen.add(branch)
-        base = _manifest_base_branch(state_dir, branch[len(_RUN_BRANCH_PREFIX) :])
+        base = _manifest_base_branch(state_dir, branch)
         if not base:
             break
         branch = base

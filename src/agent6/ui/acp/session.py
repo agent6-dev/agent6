@@ -20,11 +20,15 @@ from agent6.app.preflight import git_repo_refusal
 from agent6.sessions.id import new_friendly_id
 from agent6.sessions.ipc import request_stop
 from agent6.sessions.layout import SessionLayout
+from agent6.types import session_bucket
 from agent6.ui.acp.rpc import INVALID_PARAMS, RpcError
 
 # What ACP is told a turn ended as. `cancelled` is the operator's own act, so
 # it is reported as itself rather than as a failure.
 StopReason = str
+# Every ACP turn is an `agent6 run`; the editor has no way to ask for another
+# mode. Named so the session dir's bucket is stated rather than defaulted.
+ACP_MODE = "run"
 
 
 @dataclass(slots=True)
@@ -46,6 +50,13 @@ class Session:
 
     def is_running(self) -> bool:
         return self.turn_live
+
+    def layout(self, state_dir: Path) -> SessionLayout:
+        """This turn's agent6 session dir. Named once: three call sites built it
+        with the DEFAULT bucket, which is only right while ACP runs one mode."""
+        return SessionLayout(
+            state_dir=state_dir, session_id=self.session_id, subdir=session_bucket(ACP_MODE)
+        )
 
 
 @dataclass
@@ -138,11 +149,7 @@ class Sessions:
         """
         session.cancelled = True
         if session.session_id:
-            request_stop(
-                SessionLayout(
-                    state_dir=self.state_dir_for(session.cwd), session_id=session.session_id
-                ).session_dir
-            )
+            request_stop(session.layout(self.state_dir_for(session.cwd)).session_dir)
 
 
 def prompt_text(params: dict[str, Any]) -> str:

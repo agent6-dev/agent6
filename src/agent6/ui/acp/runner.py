@@ -32,11 +32,10 @@ from agent6.app.reporter import Reporter
 from agent6.app.run import FrontendCapabilities, run_task
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.sessions.id import unused_session_id
-from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
-from agent6.ui.acp.session import Session, Sessions, StopReason
+from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
 from agent6.ui.acp.updates import message_update, printable, updates_for
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.tail import tail_events
@@ -215,10 +214,7 @@ class RunBridge:
         """Whether this turn got far enough to say anything of its own."""
         if not session.session_id:
             return False
-        layout = SessionLayout(
-            state_dir=resolved_state_dir(session.cwd), session_id=session.session_id
-        )
-        return layout.logs_path.exists()
+        return session.layout(resolved_state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
         # BEFORE the queue, not after. `_runs` is held for a whole run, so a
@@ -230,7 +226,7 @@ class RunBridge:
         # skips the lifecycle's own minting, so a collision refused the turn
         # with "use agent6 resume <id>" over an id the editor never chose.
         session.session_id = unused_session_id(
-            resolved_state_dir(session.cwd), session_bucket("run")
+            resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
         )
         with self._runs:
             if session.cancelled:
@@ -254,9 +250,7 @@ class RunBridge:
 
     def _run(self, session: Session, text: str) -> StopReason:
         effective = load_effective(session.cwd)
-        layout = SessionLayout(
-            state_dir=resolved_state_dir(session.cwd), session_id=session.session_id
-        )
+        layout = session.layout(resolved_state_dir(session.cwd))
         os.chdir(session.cwd)
 
         said: list[str] = []

@@ -10,6 +10,7 @@ retargets a plan or an ask at a directory that does not exist.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -71,9 +72,9 @@ def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
     """A forked PLAN cuts `agent6/<id>` like any other session but lives in
     plans/. A runs/-only manifest read returned "" -- which prune reads as
     "never merged", so the branch was kept forever."""
-    from agent6.ui.cli.sessions_cmds import (  # pyright: ignore[reportPrivateUsage]
-        _manifest_merged_into,
-    )
+    from agent6.ui.cli import sessions_cmds
+
+    _manifest_merged_into = sessions_cmds._manifest_merged_into  # pyright: ignore[reportPrivateUsage]
 
     layout = SessionLayout(state_dir=tmp_path, session_id="brave-oak-AAAAAA", subdir="plans")
     layout.ensure()
@@ -91,3 +92,28 @@ def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
     )
 
     assert _manifest_merged_into(tmp_path, "agent6/brave-oak-AAAAAA") == "master"
+
+
+def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
+    """`subdir` defaults to runs/, so an unnamed bucket is a silent assumption.
+    Every one found so far was wrong for a plan or an ask: the task tree, the
+    prune manifest read, the branch chain walk, and three ACP sites."""
+    src = Path(__file__).resolve().parents[2] / "src" / "agent6"
+    # Where defaulting is the point, with the reason.
+    allowed = {
+        # `sessions diff|merge|commits` with no id means the most recent RUN:
+        # these verbs are about a run's branch, which no other mode has.
+        "ui/cli/sessions_cmds.py",
+        # The owner of "this directory's layout" -- it passes the bucket it read
+        # off the path, and a literal `subdir=` here would be circular.
+        "sessions/layout.py",
+    }
+    offenders: list[str] = []
+    for path in src.rglob("*.py"):
+        for call in re.findall(r"SessionLayout\((?:[^()]|\([^()]*\))*\)", path.read_text("utf-8")):
+            if "subdir=" not in call and str(path.relative_to(src)) not in allowed:
+                offenders.append(f"{path.relative_to(src)}: {' '.join(call.split())[:70]}")
+    assert not offenders, (
+        "these assume the runs/ bucket; pass subdir=session_bucket(<mode>),"
+        f" or add the file to `allowed` with the reason: {offenders}"
+    )
