@@ -47,7 +47,16 @@ Under that adversary, agent6 aims to hold:
     - This does NOT bind a `git` the model runs via `run_command`; that path is
       bounded by the sandbox (`protect_git` keeps `.git` unwritable at both
       isolation levels; push needs egress).
-5. **No persistence after the run:** no daemon, cron, or `.bashrc` write.
+5. **No persistence after the run:** no daemon, cron, `.bashrc` write, or
+   setuid binary.
+    - **No setuid/setgid bit can be set.** `chmod`/`fchmod`/`fchmodat` are
+      denied by seccomp when the mode carries `S_ISUID`/`S_ISGID` (ordinary
+      chmod is untouched). The bit would land on the HOST inode and outlive the
+      jail, and under `sudo agent6 --allow-root` the uid_map makes the jailed
+      child real root -- a setuid-root binary left in the workspace is local
+      root for anyone who runs it. Mount `nosuid` does not cover this: it stops
+      the JAIL honouring the bit, not the host. The workspace carries `nosuid`
+      and `nodev` anyway, the same floor the protect and read-only binds have.
     - Children can only write inside the jail's mount namespace (strict) or the
       Landlock write grants (hardened).
     - **Nothing a command starts outlives it.** strict's PID namespace takes the

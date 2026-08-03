@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -778,3 +779,45 @@ def test_a_hostile_process_name_cannot_break_the_sweep(jail_bin: Path, tmp_path:
     finally:
         proc.kill()
         proc.wait()
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_a_jailed_command_cannot_set_the_setuid_bit(
+    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """The bit lands on the HOST inode and outlives the jail. Under
+    `sudo agent6 --allow-root` the uid_map makes the jailed child real root, so
+    `cp /bin/sh x && chmod 4755 x` would leave a setuid-root shell in the
+    operator's workspace -- local root for anyone who runs it. Mount nosuid
+    does not help: it stops the JAIL honouring the bit, not the host.
+    """
+    target = tmp_path / "x"
+    run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "cp /bin/sh x && chmod 4755 x"),
+            isolation=isolation,
+            timeout_s=20.0,
+        )
+    )
+    assert target.exists(), "the copy itself must still work"
+    assert not target.stat().st_mode & stat.S_ISUID
+    assert not target.stat().st_mode & stat.S_ISGID
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_ordinary_chmod_still_works(
+    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """Only the setid bits are refused; chmod is ordinary work and denying it
+    outright would break builds, scripts and installers."""
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "touch a && chmod 640 a && stat -c %a a"),
+            isolation=isolation,
+            timeout_s=20.0,
+        )
+    )
+    assert res.returncode == 0
+    assert res.stdout.strip() == "640"

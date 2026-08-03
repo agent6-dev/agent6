@@ -381,6 +381,24 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         Some(""),
     )
     .map_err(io_err)?;
+    // nosuid/nodev on the workspace, the same unconditional floor the protect
+    // and RO binds carry. A bind mount cannot set these in one step, so this is
+    // a second remount. Under `sudo agent6 --allow-root` the uid_map makes the
+    // jailed child real root and chmod is not seccomp-denied, so without nosuid
+    // it could leave a setuid-root binary on the HOST inode -- surviving the run
+    // and handing local root to anyone who runs it.
+    mount(
+        None::<&Path>,
+        &cwd_in,
+        Some(""),
+        MsFlags::MS_BIND
+            | MsFlags::MS_REMOUNT
+            | MsFlags::MS_NOSUID
+            | MsFlags::MS_NODEV
+            | carried_mount_flags(&cwd_in),
+        Some(""),
+    )
+    .map_err(io_err)?;
     // Re-bind each protect path RO on top of the workspace mount. Subdirs
     // and individual files are both supported; non-existent entries are
     // skipped silently so a project without (e.g.) a `.git` dir is not
@@ -1038,8 +1056,40 @@ fn apply_seccomp() -> io::Result<()> {
     // clone3 outright would break glibc/Go spawning (they fall back to clone
     // only on ENOSYS). This deny-list is defense-in-depth over namespaces +
     // Landlock, not a boundary; see docs/security.md.
-    let rules: std::collections::BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
+    let mut rules: std::collections::BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
         denied.iter().map(|s| (*s, vec![])).collect();
+    // Setuid/setgid bits, denied by ARGUMENT rather than by syscall: an ordinary
+    // chmod is normal work, but setting S_ISUID/S_ISGID writes a bit that lands
+    // on the HOST inode and outlives the jail. Under `sudo agent6 --allow-root`
+    // the uid_map makes the child real root, so that bit would be a setuid-root
+    // binary sitting in the operator's workspace -- local root for anyone who
+    // runs it. mount nosuid does not help: it stops the JAIL honouring the bit,
+    // not the host. The mode argument is a scalar, so seccomp can test it.
+    // One rule per bit: rules for a syscall are OR-ed, conditions within a rule
+    // are AND-ed, so a single MaskedEq(0o6000) would only catch a mode that set
+    // BOTH -- `chmod 4755` sets just S_ISUID.
+    for (syscall, mode_arg) in [
+        (libc::SYS_chmod, 1_u8),
+        (libc::SYS_fchmod, 1),
+        (libc::SYS_fchmodat, 2),
+    ] {
+        let mut per_bit = Vec::new();
+        for bit in [0o4000_u64, 0o2000] {
+            per_bit.push(
+                seccompiler::SeccompRule::new(vec![seccompiler::SeccompCondition::new(
+                    mode_arg,
+                    seccompiler::SeccompCmpArgLen::Dword,
+                    seccompiler::SeccompCmpOp::MaskedEq(bit),
+                    bit,
+                )
+                .map_err(|e| {
+                    io::Error::new(io::ErrorKind::Other, format!("seccomp cond: {e}"))
+                })?])
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp rule: {e}")))?,
+            );
+        }
+        rules.insert(syscall, per_bit);
+    }
     let filter = SeccompFilter::new(
         rules,
         SeccompAction::Allow,                     // default
