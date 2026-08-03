@@ -28,7 +28,6 @@ from agent6.config.io import (
 )
 from agent6.config.layer import (
     InvalidEntry,
-    _target_unparseable,  # pyright: ignore[reportPrivateUsage]
     effective_leaf,
     find_invalid_entries,
     flatten_leaves,
@@ -38,6 +37,7 @@ from agent6.config.layer import (
     materialize,
     profile_catalog,
     repo_config_path_for,
+    target_unparseable,
 )
 from agent6.machine import (
     PROTECTED_OVERLAY_LEAVES,
@@ -373,7 +373,7 @@ def _revalidate_layered(
     # A target that no longer PARSES is always this write's doing, never "a
     # value in another layer": keeping it there left a config no command could
     # read, and each retry appended more surgery to it.
-    if was_valid or _target_unparseable(target):
+    if was_valid or target_unparseable(target):
         if not held:
             return f"{after}\n{_KEPT_NO_LOCK}"
         _restore_file(target, prior_text)  # the write broke the config -> fail loud

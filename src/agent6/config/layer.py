@@ -859,7 +859,7 @@ def _writing_config(target: Path) -> Generator[bool]:
             chown_to_real_user(target)
 
 
-def _target_unparseable(target: Path) -> bool:
+def target_unparseable(target: Path) -> bool:
     """Whether *target* itself is no longer valid TOML (a missing file is fine)."""
     try:
         read_toml_file(target)
@@ -908,7 +908,7 @@ def _revalidate(
         # can read. The CLI writers had this guard; the engine-level ones the
         # TUI, connect, init and model use did not, so `connect` appended a
         # provider block to an unparseable file and reported success.
-        if not was_valid and not _target_unparseable(target):
+        if not was_valid and not target_unparseable(target):
             return None  # broken before this edit; not ours to refuse
         if not held:
             return (
