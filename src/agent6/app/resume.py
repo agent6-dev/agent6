@@ -305,12 +305,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # started fresh below instead of hitting the no-snapshot refusal.
         # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
         # an unknown mode value) must NOT fall open to the more-privileged "run"
-        # (write) mode. read_manifest / validated_mode fail loud on any of those --
+        # (write) mode. read_manifest / session_mode fail loud on any of those --
         # the underlying cause carries in the ManifestError detail -- rather than
         # silently escalating a plan run to a write run.
         try:
             manifest = read_manifest(layout.run_dir)
-            mode = manifest.validated_mode()
+            mode = manifest.session_mode()
         except ManifestError as exc:
             reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
             return 2

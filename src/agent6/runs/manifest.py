@@ -12,7 +12,7 @@ rendering, so the model defaults every field and folds legacy shapes (``version:
 1`` dirs, the pre-nesting flat ``merged_*`` keys). Reading is lenient
 (``read_manifest`` degrades a corrupt file through ``ManifestError``, which the
 render consumers already catch and degrade on); the ONE strict contract is
-``validated_mode`` -- the fork/resume privilege gate, which refuses an unknown mode
+``session_mode`` -- the fork/resume privilege gate, which refuses an unknown mode
 rather than falling open to the write ("run") tools.
 """
 
@@ -29,7 +29,7 @@ _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
 class ManifestError(Exception):
     """A run's manifest.json is missing, unreadable, corrupt, not a JSON object,
-    does not validate, or (via ``validated_mode``) records an unknown privilege
+    does not validate, or (via ``session_mode``) records an unknown privilege
     mode. Carries the underlying cause as its message, so a caller that wants to
     surface a detail can render it."""
 
@@ -201,11 +201,14 @@ class RunManifest(BaseModel):
             }
         return data
 
-    def validated_mode(self) -> Literal["run", "plan", "ask"]:
-        """The mode fork/resume may act on: anything else is refused, so a
+    def session_mode(self) -> Literal["run", "plan", "ask"]:
+        """The session's mode, refusing anything this agent6 does not know.
+
+        Fork and resume act on this rather than the raw ``mode`` string, so a
         damaged manifest never silently escalates a read-only session to the
-        more-privileged write ("run") tools. Pure-render consumers read the raw
-        ``mode`` string for display instead."""
+        privileged write ("run") tools. Pure-render consumers read ``mode``
+        directly: showing an unknown value is fine, acting on one is not.
+        """
         if self.mode in ("run", "plan", "ask"):
             return self.mode  # type: ignore[return-value]
         raise ManifestError(f"unknown run mode {self.mode!r}")

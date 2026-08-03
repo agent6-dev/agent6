@@ -4,7 +4,7 @@
 unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the typed
 ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2
 flat merged_* keys, the legacy ``compare.group``) still parses for rendering;
-and the fork/resume ``validated_mode`` gate refuses an unknown mode rather than
+and the fork/resume ``session_mode`` gate refuses an unknown mode rather than
 falling open to write access."""
 
 from __future__ import annotations
@@ -87,20 +87,20 @@ def test_legacy_compare_group_is_ignored(tmp_path: Path) -> None:
     assert not hasattr(m.compare, "group")
 
 
-def test_validated_mode_accepts_the_two_known_modes(tmp_path: Path) -> None:
+def test_session_mode_accepts_the_two_known_modes(tmp_path: Path) -> None:
     for mode in ("run", "plan"):
         _write(tmp_path, {"mode": mode})
-        assert read_manifest(tmp_path).validated_mode() == mode
+        assert read_manifest(tmp_path).session_mode() == mode
 
 
-def test_validated_mode_refuses_an_unknown_mode(tmp_path: Path) -> None:
+def test_session_mode_refuses_an_unknown_mode(tmp_path: Path) -> None:
     # The security gate: a damaged mode must NOT silently fall open to write
-    # ("run") access; validated_mode refuses loudly. Rendering still reads it raw.
+    # ("run") access; session_mode refuses loudly. Rendering still reads it raw.
     _write(tmp_path, {"mode": "wat"})
     m = read_manifest(tmp_path)
     assert m.mode == "wat"  # lenient render read
     with pytest.raises(ManifestError, match="unknown run mode"):
-        m.validated_mode()
+        m.session_mode()
 
 
 def test_missing_manifest_raises(tmp_path: Path) -> None:
@@ -312,17 +312,17 @@ def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -
     """The privilege gate refused an unknown mode VALUE but not a missing KEY:
     the field defaulted to "run", so a manifest that lost its mode (truncated,
     hand-edited, written by something else) resumed or forked with the
-    write-tool surface -- the exact escalation validated_mode exists to stop."""
+    write-tool surface -- the exact escalation session_mode exists to stop."""
     _write(tmp_path, {"version": 3, "run_id": "r", "user_task": "t"})
     m = read_manifest(tmp_path)
     with pytest.raises(ManifestError, match="unknown run mode"):
-        m.validated_mode()
+        m.session_mode()
 
 
 def test_a_plan_manifest_still_gates_as_plan(tmp_path: Path) -> None:
     for mode in ("run", "plan"):
         _write(tmp_path, {"version": 3, "mode": mode})
-        assert read_manifest(tmp_path).validated_mode() == mode
+        assert read_manifest(tmp_path).session_mode() == mode
 
 
 def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:

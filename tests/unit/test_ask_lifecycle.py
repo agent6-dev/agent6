@@ -55,7 +55,7 @@ def test_ask_is_a_mode_resume_and_fork_may_act_on(tmp_path: Path) -> None:
     """The privilege gate refused "ask" outright, so an ask was a dead end: no
     resume, no fork. It is LESS privileged than plan, not unknown."""
     d = _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask")
-    assert read_manifest(d).validated_mode() == "ask"
+    assert read_manifest(d).session_mode() == "ask"
 
 
 def test_an_unknown_mode_is_still_refused(tmp_path: Path) -> None:
@@ -63,7 +63,7 @@ def test_an_unknown_mode_is_still_refused(tmp_path: Path) -> None:
     privileged write mode."""
     d = _session(tmp_path, "asks", "odd-AAAAAA", "wat")
     with pytest.raises(ManifestError, match="unknown run mode"):
-        read_manifest(d).validated_mode()
+        read_manifest(d).session_mode()
 
 
 def test_a_resumed_ask_is_still_clamped() -> None:
@@ -78,4 +78,4 @@ def test_a_resumed_ask_is_still_clamped() -> None:
 
 def test_an_ask_records_a_mode_that_survives_a_round_trip(tmp_path: Path) -> None:
     m = RunManifest(mode="ask", run_id="x")
-    assert m.validated_mode() == "ask"
+    assert m.session_mode() == "ask"
