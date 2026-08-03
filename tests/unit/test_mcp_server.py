@@ -22,7 +22,7 @@ from agent6.runs.manifest import MANIFEST_VERSION
 from agent6.tools.dispatch import ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.tools.results import ExecResult, PatchResult, ToolResult
-from agent6.ui.mcp_server import MCPServer, _deny_approver  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.mcp_server import MCPServer
 
 _VALID_TOML = """
 [agent6]
@@ -464,8 +464,23 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
 # ---------------------------------------------------------------------------
 
 
-def test_deny_approver_always_returns_false() -> None:
-    assert _deny_approver("Allow this?") is False
+@pytest.mark.parametrize(
+    ("configured", "offered"),
+    [("ask", False), ("yes", True), ("no", False)],
+)
+def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bool) -> None:
+    """There is no human on a JSON-RPC transport, so `ask` cannot be answered.
+    Offering a tool that refuses every call was worse than not offering it:
+    run_verify and run_in_sandbox failed on every call under the DEFAULT config,
+    and apply_patch_in_sandbox applied the patch and then errored on verify --
+    leaving the workspace changed and the call failed."""
+    from agent6.config import Config
+    from agent6.ui.mcp_server import _no_one_to_ask  # pyright: ignore[reportPrivateUsage]
+
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": configured}, "workflow": {"verify_command": ["true"]}}
+    )
+    assert (_no_one_to_ask(cfg).sandbox.run_commands == "yes") is offered
 
 
 def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Path) -> None:

@@ -82,12 +82,20 @@ class _ToolSpec:
 # ---------------------------------------------------------------------------
 
 
-def _deny_approver(_prompt: str) -> bool:
-    """Approver used by the MCP-boundary dispatcher. The MCP transport
-    has no human at the other end, so any tool that asks for approval
-    (``run_commands = "ask"``) is denied cleanly instead of hanging on
-    ``input()`` for stdin we already own."""
-    return False
+def _no_one_to_ask(config: Config) -> Config:
+    """Withdraw the command tools when the config would prompt for them.
+
+    The MCP transport has no human at the other end, so `"ask"` cannot be
+    answered -- and offering a tool that will refuse every call is worse than
+    not offering it: `run_verify` and `run_in_sandbox` failed on every call
+    under the default config, and `apply_patch_in_sandbox` applied the patch
+    and THEN errored on its verify step, leaving the workspace changed and the
+    call failed. Same rule as a detached run with an away-mode of "deny": no
+    one to ask means the tools are gone, not broken.
+    """
+    if config.sandbox.run_commands != "ask":
+        return config
+    return config.with_sandbox_overrides(no_commands=True)
 
 
 def _runs_root(agent6_dir: Path) -> Path:
@@ -140,11 +148,7 @@ class MCPServer:
         self._agent6_dir = resolved_state_dir(self._root)
         self._stdin = stdin
         self._stdout = stdout
-        self._dispatcher = ToolDispatcher(
-            root=self._root,
-            config=config,
-            approver=_deny_approver,
-        )
+        self._dispatcher = ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
         self._tools: dict[str, _ToolSpec] = {t.name: t for t in self._build_tools()}
 
     # ---- public entry point -----
