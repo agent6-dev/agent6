@@ -6,6 +6,10 @@ let live = null; // the active EventSource, closed on navigation
 // 1s ticker updates "#hb-line" with a spinner + elapsed so it reads as alive,
 // not hung. hbState is refreshed by each paintRun; hbTimer runs while on a run.
 let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
+// A run is live per the dir-aware `live` flag the server stamps; the fold's
+// `finished` stays false for a run whose worker was killed, so using it alone
+// painted a ticking "working…" heartbeat under a "stale" header.
+function notLive(s) { return typeof s.live === 'boolean' ? !s.live : !!s.finished; }
 let hbTimer = null;
 const HB_FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 function hbTick() {
@@ -405,12 +409,12 @@ function makeConv(url, box, body) {
   // live "thinking…" marker always shows; the reasoning text itself streams
   // only at the expanded detail level (same rule as the TUI).
   conv.setLive = (s) => {
-    conv.finished = !!s.finished; // steers emptyNote()'s tense (may run before paintItems)
+    conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
     const r = s.last_role;
     const follow = following();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
-    if (s.finished || !r) {
+    if (notLive(s) || !r) {
       liveHost.style.display = 'none';
       if (note) { note.textContent = emptyNote(); note.style.display = ''; } // re-tense if already painted
       return;
@@ -792,8 +796,8 @@ function paintRun(cards, s) {
   if (!cards._readOnly) paintPrompts(cards, s);
   // Stop/compact only mean something on a live run; a finished run ignores the
   // bridge markers. The composer flips to resume mode instead of disabling.
-  const notLive = typeof s.live === 'boolean' ? !s.live : !!s.finished;
-  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = notLive;
+  const isDead = notLive(s);
+  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
   // Merge needs a run branch: an ask (or a branch_per_run=false run) has none,
   // and a merged branch is gone, so clicking could only produce a git error.
   if (cards._merge_btn) {
@@ -873,7 +877,7 @@ function paintRun(cards, s) {
   cards._conv.setLive(s);
   cards._conv.poke();
   hbState = {
-    active: !s.finished && !!s.last_role && !streaming,
+    active: !notLive(s) && !!s.last_role && !streaming,
     role: (s.last_role && s.last_role.role) || 'worker',
     last: Date.now(),
     spin: 0,
@@ -957,7 +961,7 @@ async function renderConversation(id, gen) {
     cc.conv.setLive(s);
     cc.conv.poke();
     hbState = {
-      active: !s.finished && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text),
+      active: !notLive(s) && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text),
       role: (s.last_role && s.last_role.role) || 'worker',
       last: Date.now(),
       spin: hbState.spin + 1,
