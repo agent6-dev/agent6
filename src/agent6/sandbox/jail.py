@@ -615,8 +615,12 @@ class BackgroundJob:
             error=err or f"the sandbox launcher exited {self._proc.returncode} without a result",
         )
 
-    def stop(self) -> None:
+    def stop(self) -> str:
         """Kill the command and everything it started. Idempotent.
+
+        Answers "" when the command is gone, else why it might not be: a
+        surface that prints "stopped" over a live process is stating the one
+        thing an operator acts on, wrongly.
 
         killpg only reaches the launcher's group, so a child that called
         setsid() is missed exactly as it is for a foreground command -- and
@@ -631,6 +635,9 @@ class BackgroundJob:
                 self._proc.wait(timeout=5.0)
         self._unregister()
         _kill_escapees(self._descendants)
+        if self._proc.poll() is None:
+            return f"the sandbox launcher {self._proc.pid} did not exit after SIGKILL"
+        return ""
 
     def _unregister(self) -> None:
         with _sweep_lock:
@@ -663,16 +670,18 @@ class SessionJob:
             self._settle(status)
         return status
 
-    def stop(self) -> None:
-        """Kill the command and its group. Idempotent."""
+    def stop(self) -> str:
+        """Kill the command and its group. Idempotent. Answers "" when the
+        launcher confirmed it is gone, else what it said instead."""
         if self._final is not None:
-            return
+            return ""
         try:
             code = self._session.stop_background(self._pid)
         except JailUnavailableError as exc:
             self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
-            return
+            return str(exc)
         self._settle(BackgroundStatus(running=False, returncode=code, error=""))
+        return ""
 
     def _settle(self, status: BackgroundStatus) -> None:
         """Record the command's end, and write its exit code where a surface in

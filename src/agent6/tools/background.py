@@ -92,6 +92,8 @@ class _Shell:
     # to its output that no jailed process can redirect.
     log_fd: int
     stopped: bool = False
+    # Why a stop could not be confirmed, "" when the command is gone.
+    stop_error: str = ""
 
 
 class BackgroundShells:
@@ -205,7 +207,7 @@ class BackgroundShells:
 
     def stop(self, shell_id: str) -> ShellView:
         shell = self._get(shell_id)
-        shell.job.stop()
+        shell.stop_error = shell.job.stop()
         shell.stopped = True
         return self._view(shell)
 
@@ -219,7 +221,7 @@ class BackgroundShells:
         stopped: list[ShellView] = []
         for shell in self._shells.values():
             was_running = shell.job.status().running
-            shell.job.stop()
+            shell.stop_error = shell.job.stop()
             if was_running:
                 shell.stopped = True
                 stopped.append(self._view(shell))
@@ -234,6 +236,13 @@ class BackgroundShells:
 
     def _view(self, shell: _Shell) -> ShellView:
         status = shell.job.status()
+        # A stop that could not be confirmed outranks every other word: the
+        # command may well still be running, and "stopped" (or "running", with
+        # the reason dropped) hides that the operator's stop did not take.
+        if shell.stop_error:
+            return ShellView(
+                shell.id, shell.command, "stop failed", status.returncode, shell.stop_error
+            )
         if status.running:
             return ShellView(shell.id, shell.command, "running", None, "")
         if shell.stopped:

@@ -425,3 +425,33 @@ def test_a_planted_symlink_cannot_redirect_the_log_directory(tmp_path: Path) -> 
     with pytest.raises(BackgroundError):
         shells.start(("/bin/true",), _policy_for(tmp_path))
     assert not list(victim.iterdir()), "the agent wrote through a command's symlink"
+
+
+def test_a_stop_that_did_not_stop_says_so(tmp_path: Path) -> None:
+    """ "stopped" means the command is gone. When the launcher answers that it
+    could not confirm the kill (a process wedged in uninterruptible I/O across
+    the deadline, or a session that died), the reason was captured and then
+    dropped by the view -- so a command still running rendered as a clean stop,
+    the one word an operator acts on.
+    """
+    from typing import cast
+
+    from agent6.sandbox.jail import BackgroundStatus
+
+    class _Unconfirmed:
+        """A job whose stop the launcher could not confirm."""
+
+        def status(self) -> BackgroundStatus:
+            return BackgroundStatus(running=True, returncode=None, error="")
+
+        def stop(self) -> str:
+            return "pid 7 did not exit within 5s of SIGKILL"
+
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
+    shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
+    shell.job = cast("BackgroundJob", _Unconfirmed())
+
+    got = shells.stop(view.id)
+    assert got.state != "stopped", f"a stop that failed rendered as {got.state!r}"
+    assert "did not exit" in got.detail, got
