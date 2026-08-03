@@ -17,11 +17,8 @@ from agent6.config import (
     ProviderEntry,
     validate_base_url,
 )
-from agent6.config.layer import (
-    PROVIDER_PRESETS,
-    repo_config_path_for,
-    set_config_leaves,
-)
+from agent6.config.layer import repo_config_path_for
+from agent6.config.write import PROVIDER_PRESETS, set_config_leaves
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
 from agent6.secrets import SecretsError, save_secret

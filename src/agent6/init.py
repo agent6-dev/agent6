@@ -28,8 +28,8 @@ from agent6.config.layer import (
     effective_leaf,
     load_effective,
     repo_config_path_for,
-    set_config_value,
 )
+from agent6.config.write import set_config_value
 from agent6.verify_infer import infer_verify_command
 
 _EMPTY_CONFIG = """\

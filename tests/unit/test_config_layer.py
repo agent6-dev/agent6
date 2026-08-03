@@ -13,9 +13,8 @@ from agent6.config.layer import (
     load_effective,
     materialize,
     repo_config_path_for,
-    set_config_value,
-    unset_config_value,
 )
+from agent6.config.write import set_config_value, unset_config_value
 from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
@@ -247,7 +246,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     table dict as one. written_value_error only flags an error at loc == key, so a
     whole (key, dict) dropped every LEAF-level error and a masked-invalid leaf
     still landed (the TUI provider editor and `agent6 model` write through this)."""
-    from agent6.config.layer import set_config_table
+    from agent6.config.write import set_config_table
 
     # The repo layer masks models.worker.thinking with a valid value, so only the
     # standalone per-leaf check catches a bad `thinking` written to global.
@@ -464,11 +463,11 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     import threading
     import time
 
-    from agent6.config import layer as layer_mod
+    from agent6.config import write as write_mod
 
     a_in_revalidate = threading.Event()
     b_attempted = threading.Event()
-    real_load = layer_mod.load_effective
+    real_load = write_mod.load_effective
     calls = {"n": 0}
 
     def gated_load(root: Path, flag: Path | None) -> object:
@@ -479,7 +478,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
             time.sleep(0.4)  # window for B to (old code) land / (fixed) queue
         return real_load(root, flag)
 
-    monkeypatch.setattr(layer_mod, "load_effective", gated_load)
+    monkeypatch.setattr(write_mod, "load_effective", gated_load)
     results: dict[str, str | None] = {}
 
     def writer_a() -> None:
@@ -511,7 +510,7 @@ def test_prepare_write_target_hands_back_the_created_state_base(
     repo's non-root write then died creating its sibling dir there."""
     import os
 
-    from agent6.config import layer as layer_mod
+    from agent6.config import write as write_mod
 
     base = tmp_path / "nested" / "state-base"  # two levels, neither exists yet
     monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
@@ -526,7 +525,7 @@ def test_prepare_write_target_hands_back_the_created_state_base(
         chowned.append(Path(str(a[0])))
 
     monkeypatch.setattr(os, "lchown", _record)
-    target = layer_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
+    target = write_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
     assert target.parent.is_dir()
     assert base in chowned  # the created base is handed back...
     assert tmp_path / "nested" in chowned  # ...and every created level above it
@@ -539,15 +538,15 @@ def test_config_write_hands_the_dir_over_before_writing(
     after a SUCCESSFUL write stranded it root-owned whenever the write failed
     or the writer was killed inside the lock, and every later non-root write
     then died PermissionError creating its atomic-write temp file there."""
-    from agent6.config import layer as layer_mod
+    from agent6.config import write as write_mod
 
     handed: list[Path] = []
-    monkeypatch.setattr(layer_mod, "mkdir_for_real_user", handed.append)
+    monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)
 
     def killed(*_args: object, **_kwargs: object) -> None:
         raise KeyboardInterrupt  # stands in for the operator killing the writer
 
-    monkeypatch.setattr(layer_mod, "upsert_toml_leaf", killed)
+    monkeypatch.setattr(write_mod, "upsert_toml_leaf", killed)
     with pytest.raises(KeyboardInterrupt):
         set_config_value(repo, "git.auto_stash", "true", to_repo=True)
     assert handed[0] == repo_config_path_for(repo).parent  # before the write, not after it
@@ -559,10 +558,10 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
     """A rejected edit rolls back through atomic_write, i.e. republishes the
     file as a NEW inode owned by root under `sudo`, so the handover cannot be
     conditional on the edit being valid."""
-    from agent6.config import layer as layer_mod
+    from agent6.config import write as write_mod
 
     handed: list[Path] = []
-    monkeypatch.setattr(layer_mod, "chown_to_real_user", handed.append)
+    monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
     assert set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True) is not None
     assert repo_config_path_for(repo) in handed
 
@@ -614,7 +613,7 @@ def test_set_config_leaves_returns_the_message_when_an_ancestor_is_headerless(
     A leaf whose ancestor is a header-less (inline) table cannot be set on its own;
     the surgery raises ValueError, which must come back as a printable message with
     the file untouched, never escape as a traceback to the caller."""
-    from agent6.config.layer import set_config_leaves
+    from agent6.config.write import set_config_leaves
 
     rcfg = repo_config_path_for(repo)
     before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
@@ -632,14 +631,14 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
     """One revalidate+rollback wraps ALL the leaf writes: when a later leaf raises,
     the earlier leaves that already landed roll back to the prior file rather than
     leaving a half-applied provider block."""
-    from agent6.config import layer as layer_mod
-    from agent6.config.layer import set_config_leaves
+    from agent6.config import write as write_mod
+    from agent6.config.write import set_config_leaves
 
     rcfg = repo_config_path_for(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
 
-    real = layer_mod.upsert_toml_leaf
+    real = write_mod.upsert_toml_leaf
     calls = {"n": 0}
 
     def _fail_second(path: Path, key: str, value: object) -> None:
@@ -648,7 +647,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
             raise ValueError("second leaf refused")
         real(path, key, value)
 
-    monkeypatch.setattr(layer_mod, "upsert_toml_leaf", _fail_second)
+    monkeypatch.setattr(write_mod, "upsert_toml_leaf", _fail_second)
 
     err = set_config_leaves(
         repo,

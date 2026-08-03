@@ -30,9 +30,8 @@ from agent6.config.layer import (
     materialize,
     profile_catalog,
     repo_config_path_for,
-    target_unparseable,
-    written_value_error,
 )
+from agent6.config.write import target_unparseable, written_value_error
 from agent6.machine import (
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,

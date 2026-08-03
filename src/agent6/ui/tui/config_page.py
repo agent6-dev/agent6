@@ -42,10 +42,9 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.config import ConfigError
 from agent6.config.io import format_toml_value
-from agent6.config.layer import (
+from agent6.config.layer import EffectiveConfig, load_effective
+from agent6.config.write import (
     PROVIDER_PRESETS,
-    EffectiveConfig,
-    load_effective,
     provider_choices,
     set_config_table,
     set_config_value,

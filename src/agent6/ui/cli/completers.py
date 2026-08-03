@@ -11,12 +11,12 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.config.layer import (
-    PROVIDER_PRESETS,
     available_profile_names,
     leaf_keys,
     load_effective,
     profile_catalog,
 )
+from agent6.config.write import PROVIDER_PRESETS
 from agent6.ui.cli._common import _machines_dir, _runs_dir
 from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
