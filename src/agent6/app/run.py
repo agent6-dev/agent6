@@ -65,6 +65,7 @@ from agent6.git_ops import (
     auto_stash_message,
     create_branch,
     dirty_paths,
+    set_repo_hook_policy,
     stash_all,
     verify_git_identity,
 )
@@ -312,6 +313,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # so the same git assumptions apply. Skipping these left first-time runs
     # crashing on dirty-tree or missing-identity errors deep into a paid run.
     cwd = Path.cwd()
+    # The lifecycle's own config decides this, not whichever front-end got
+    # here: `ui/cli` set it and `agent6 acp` did not, so a repo that opted
+    # into its own hooks silently kept them off under an editor -- a knob
+    # `config show` reports and one surface ignored.
+    set_repo_hook_policy(cfg.git.run_repo_hooks)
     identity = CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,

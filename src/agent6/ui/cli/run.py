@@ -29,7 +29,6 @@ from agent6.config.layer import (
     load_effective,
 )
 from agent6.events import EventSink
-from agent6.git_ops import set_repo_hook_policy
 from agent6.models.validate import (
     configured_model_refusal,
     validate_configured_model,
@@ -254,7 +253,6 @@ def _cmd_run(  # noqa: PLR0911
     try:
         effective = load_effective(Path.cwd(), config_path, preset=preset)
         cfg, explicit_leaves = effective.config, frozenset(effective.sources)
-        set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
         if sandbox_overrides is not None:

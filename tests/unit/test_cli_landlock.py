@@ -180,3 +180,34 @@ def test_agent_landlock_refuses_on_oserror(monkeypatch: pytest.MonkeyPatch) -> N
     # the run is refused rather than proceeding unconfined.
     assert err is not None
     assert "Landlock" in err
+
+
+def _applied(**_kw: object) -> LandlockReport:
+    return _report()
+
+
+def test_a_second_workspace_is_refused_rather_than_narrowing_the_first(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Landlock layers only ever narrow.
+
+    A long-lived front-end serves many workspaces from ONE process (`agent6
+    acp` is the case). Applying a second ruleset there leaves a process that
+    can write in NEITHER workspace -- not even its own run journal -- and the
+    domain is irrevocable, so there is no recovering from it.
+    """
+    monkeypatch.setattr(cli, "apply_agent_landlock", _applied)
+    first, second = tmp_path / "one", tmp_path / "two"
+    first.mkdir()
+    second.mkdir()
+
+    monkeypatch.chdir(first)
+    assert cli.maybe_apply_agent_landlock(_cfg(), "hardened") is None
+    # The same workspace again is the ordinary case: one process, many turns.
+    assert cli.maybe_apply_agent_landlock(_cfg(), "hardened") is None
+
+    monkeypatch.chdir(second)
+    refusal = cli.maybe_apply_agent_landlock(_cfg(), "hardened")
+    assert refusal is not None, "a second domain was stacked on top of the first"
+    assert "already confined to" in refusal
+    assert "strict" in refusal, "the refusal has to name a way forward"

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent6.app.preflight import headless_approval_refusal
@@ -43,3 +45,34 @@ def test_answerable_runs_are_not_refused(
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
     assert headless_approval_refusal(cfg, tui_enabled=tui, away=away, can_ask=can_ask) is None
+
+
+def test_the_lifecycle_sets_the_repos_hook_policy_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ui/cli` set it and resume set it, but `run_task` did not -- so a
+    front-end that calls the lifecycle directly (`agent6 acp`) left a repo that
+    opted into its own hooks with them silently off. It fails SAFE, which is
+    how a knob `config show` reports went ignored on one surface unnoticed."""
+    from agent6.app import run as lifecycle
+
+    seen: list[bool] = []
+    monkeypatch.setattr(lifecycle, "set_repo_hook_policy", seen.append)
+    monkeypatch.chdir(tmp_path)
+    cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
+    # It refuses immediately after (no git identity here); the policy is set
+    # before anything git touches the repo, which is the point.
+    from agent6.app.reporter import Reporter
+    from agent6.ui.acp.frontend import acp_frontend
+
+    front = acp_frontend(
+        ask=lambda _p, _o, _s: None,
+        capabilities=lifecycle.FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid: "",
+    )
+    said: list[str] = []
+    lifecycle.run_task(
+        cfg, "t", frontend=front, reporter=Reporter(out=said.append, err=said.append)
+    )
+    assert seen == [True], said

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import pytest
 
@@ -45,3 +46,20 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
     """
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path_factory.mktemp("agent6-state")))
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path_factory.mktemp("agent6-config")))
+
+
+@pytest.fixture(autouse=True)
+def _one_landlock_domain_per_test() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+    """Let each test act like a fresh process.
+
+    The agent-process Landlock domain is irrevocable and process-wide, so
+    `confine` refuses to take on a second workspace -- a second layer can only
+    narrow the first, leaving a process that can write in neither. One pytest
+    process runs many "processes" worth of tests, so it clears the record
+    between them. Production has no such reset, by design.
+    """
+    from agent6.app import confine
+
+    confine._CONFINED_TO.clear()  # pyright: ignore[reportPrivateUsage]
+    yield
+    confine._CONFINED_TO.clear()  # pyright: ignore[reportPrivateUsage]

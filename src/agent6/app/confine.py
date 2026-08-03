@@ -153,6 +153,12 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     return None
 
 
+# The workspaces this PROCESS has been Landlocked for. Process state because
+# the kernel domain is: irrevocable, nothing to hang it off, no way to undo
+# it. At most one ever goes in -- see the guard below for why.
+_CONFINED_TO: set[Path] = set()
+
+
 def maybe_apply_agent_landlock(
     cfg: Config,
     isolation: IsolationLevel,
@@ -176,6 +182,21 @@ def maybe_apply_agent_landlock(
     if isolation != "hardened":
         return None
     cwd = Path.cwd().resolve()
+    if _CONFINED_TO:
+        # Irrevocable and INTERSECTING: a second ruleset cannot widen the
+        # first, it can only cut it down. Applying one for another workspace
+        # leaves a process that can write in NEITHER -- not even its own run
+        # journal. A long-lived front-end (`agent6 acp` serves many sessions
+        # from one process) is where this bites.
+        if cwd in _CONFINED_TO:
+            return None
+        already = next(iter(_CONFINED_TO))
+        return (
+            f"this process is already confined to {already} and cannot take on"
+            f" {cwd}: Landlock layers only ever narrow.\n"
+            "  Fix: run a second agent6 for that workspace, or use"
+            ' sandbox.isolation = "strict", which confines each command instead'
+        )
     # The agent persists run state (including the in-process curator's graph)
     # OUT of the workspace, under the per-repo state dir; grant it read+write
     # so it can write transcripts, snapshots, and the graph. Created here so
@@ -290,6 +311,7 @@ def maybe_apply_agent_landlock(
         # is a can't-happen safety net here -- isolation resolution already
         # probed the ABI before selecting hardened.)
         return f"could not apply agent Landlock confinement: {exc}"
+    _CONFINED_TO.add(cwd)
     reporter.err(
         f"[agent6] agent-process Landlock: ABI {report.abi}, "
         f"{len(report.fs_read)} read / {len(report.fs_write)} write roots"
