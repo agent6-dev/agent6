@@ -26,7 +26,12 @@ from agent6.tools._edit_diag import (
     preview_result,
 )
 from agent6.tools._grep_safety import reject_pathological_regex
-from agent6.tools._path_safety import SafePath, resolve_in_root
+from agent6.tools._path_safety import (
+    SafePath,
+    read_contained,
+    resolve_in_root,
+    write_contained,
+)
 from agent6.tools.errors import ToolError
 from agent6.tools.index import SymbolIndex
 from agent6.tools.patch_apply import (
@@ -85,7 +90,7 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
     try:
-        full = sp.abs_path.read_text(encoding="utf-8")
+        full = read_contained(root, sp.abs_path, args.path)
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
     # A NUL byte is what "binary" means in practice, and some binary payloads
@@ -175,7 +180,7 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
             return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
         try:
             for lineno, line in enumerate(
-                resolved.read_text(encoding="utf-8", errors="ignore").splitlines(),
+                read_contained(root, resolved, args.path, errors="ignore").splitlines(),
                 start=1,
             ):
                 # Re-check the wall-clock inside the line loop too: the
@@ -290,7 +295,7 @@ def refuse_protected_writes(
                 )
 
 
-def _existing_text(sp: SafePath, rel_path: str) -> str | None:
+def _existing_text(root: Path, sp: SafePath, rel_path: str) -> str | None:
     """The file's current text, or None when it does not exist yet (both edit
     tools create). A path that exists but is not a file gets the same clear
     error the read tools give -- letting read_text raise leaked
@@ -299,7 +304,7 @@ def _existing_text(sp: SafePath, rel_path: str) -> str | None:
         return None
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {rel_path}")
-    return sp.abs_path.read_text(encoding="utf-8")
+    return read_contained(root, sp.abs_path, rel_path)
 
 
 def apply_edit(
@@ -315,7 +320,7 @@ def apply_edit(
     refuse_protected_writes(args.path, config, extra_protect_paths, sp)
     # Write-outside-cwd is enforced by resolve_in_root already (root == cwd).
     applied: list[str] = []
-    existing = _existing_text(sp, args.path)
+    existing = _existing_text(root, sp, args.path)
     new_content = existing
     for i, edit in enumerate(args.edits):
         if edit.kind == "create":
@@ -356,7 +361,7 @@ def apply_edit(
     if args.preview:
         return preview_result(args.path, existing, new_content, applied=applied)
     sp.abs_path.parent.mkdir(parents=True, exist_ok=True)
-    sp.abs_path.write_text(new_content, encoding="utf-8")
+    write_contained(root, sp.abs_path, args.path, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
     return EditResult(applied=tuple(applied), path=str(sp.rel_path))
@@ -391,7 +396,7 @@ def apply_patch(
             f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
             f"header path {derived_path!r}; emit them consistently or omit `path`"
         )
-    existing = _existing_text(sp, args.path)
+    existing = _existing_text(root, sp, args.path)
     try:
         if v4a:
             _, new_content = apply_v4a_text(args.patch, existing)
@@ -402,7 +407,7 @@ def apply_patch(
     if args.preview:
         return preview_result(target, existing, new_content)
     sp.abs_path.parent.mkdir(parents=True, exist_ok=True)
-    sp.abs_path.write_text(new_content, encoding="utf-8")
+    write_contained(root, sp.abs_path, args.path, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
     return PatchResult(path=str(sp.rel_path), bytes_written=len(new_content))

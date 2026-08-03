@@ -139,6 +139,55 @@ def test_read_file_follows_symlink_but_rejects_escape(tmp_path: Path) -> None:
         outside.unlink(missing_ok=True)
 
 
+def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path) -> None:
+    """The containment check and the open were two separate path lookups.
+
+    `resolve_in_root` cleared the path, then every caller re-opened it BY NAME
+    -- and these tools run IN-PROCESS, outside the jail, as the operator. A
+    jailed `run_background` loop can swap the leaf for a symlink in that window
+    (the workspace is writable and a symlink needs no access to its target).
+    Raced against the unguarded write, model-controlled content landed outside
+    the workspace on the 7th attempt; 3000 attempts after the fix left the
+    outside file untouched.
+
+    Simulated deterministically here: the swap has already happened, so the
+    checked path IS a symlink by the time the write opens it.
+    """
+    from agent6.tools._path_safety import read_contained, write_contained
+
+    outside = tmp_path.parent / "agent6_race_target.txt"
+    outside.write_text("HOST-CONTENT", encoding="utf-8")
+    try:
+        swapped = tmp_path / "x.txt"
+        swapped.symlink_to(outside)
+
+        with pytest.raises(ToolError, match="became a symlink"):
+            write_contained(tmp_path, swapped, "x.txt", "PWNED")
+        assert outside.read_text(encoding="utf-8") == "HOST-CONTENT"
+
+        # The read side is the same window, and leaks rather than writes.
+        with pytest.raises(ToolError, match="became a symlink"):
+            read_contained(tmp_path, swapped, "x.txt")
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None:
+    """The converse of the guard above: a resolved path has no symlink leaf, so
+    O_NOFOLLOW must not disturb ordinary work -- including a write THROUGH an
+    in-repo symlink, which resolves to its real target before the open."""
+    from agent6.tools._path_safety import read_contained, resolve_in_root, write_contained
+
+    real = tmp_path / "real.txt"
+    real.write_text("before", encoding="utf-8")
+    (tmp_path / "link.txt").symlink_to(real)
+
+    sp = resolve_in_root(tmp_path, "link.txt")
+    write_contained(tmp_path, sp.abs_path, "link.txt", "after")
+    assert read_contained(tmp_path, sp.abs_path, "link.txt") == "after"
+    assert real.read_text(encoding="utf-8") == "after", "the in-repo symlink stopped working"
+
+
 def test_grep_skips_symlink_escaping_root_but_searches_in_repo_links(tmp_path: Path) -> None:
     """Recursive grep must contain every target it reads, not just the base
     path: an in-tree symlink to an outside file is skipped (the read runs
