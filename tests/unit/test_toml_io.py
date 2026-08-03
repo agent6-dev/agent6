@@ -161,6 +161,26 @@ def test_upsert_table_leaf_replaces_conflicting_top_level_key(tmp_path: Path) ->
     }
 
 
+def test_upsert_table_leaf_skips_a_key_name_inside_an_earlier_multiline_value(
+    tmp_path: Path,
+) -> None:
+    """Dropping a conflicting bare `profile` scalar (to write `[profile]`) must not
+    match a `profile = ...`-looking line INSIDE an earlier key's triple-quoted
+    value. The unskipped top-region scan cut the wrong lines and corrupted the
+    file (the drop sibling of the leaf-lookup interior bug)."""
+    path = tmp_path / "c.toml"
+    path.write_text(
+        'doc = """\nprofile = not a real key\n"""\nprofile = "old"\n\n'
+        '[sandbox]\nrun_commands = "ask"\n',
+        encoding="utf-8",
+    )
+    upsert_toml_leaf(path, "profile.name", "x")
+    data = tomllib.loads(path.read_text(encoding="utf-8"))  # must still parse
+    assert data["profile"] == {"name": "x"}  # bare scalar dropped, table written
+    assert "profile = not a real key" in data["doc"]  # the doc string is intact
+    assert data["sandbox"] == {"run_commands": "ask"}
+
+
 def test_leaf_surgery_still_rejects_empty_key_segments(tmp_path: Path) -> None:
     path = tmp_path / "c.toml"
     for bad in ("", "a..b", ".x", "x."):
@@ -186,6 +206,24 @@ def test_remove_toml_table_absent_returns_false(tmp_path: Path) -> None:
     path.write_text("[budget]\nmax_usd = 1.0\n", encoding="utf-8")
     assert remove_toml_table(path, "cli") is False
     assert path.read_text(encoding="utf-8") == "[budget]\nmax_usd = 1.0\n"
+
+
+def test_remove_toml_table_survives_a_bracketed_multiline_interior(tmp_path: Path) -> None:
+    """A `[table]` whose multi-line value has an interior line starting with `[`
+    (a triple-quoted help string with a `[options]` line) must be dropped WHOLE.
+    The per-line `[`-scan flipped `dropping` off at that interior line, leaking
+    the value's tail + every sibling below and leaving the file unparseable --
+    the same corruption class the region walker fixed for the LOOKUP path, on the
+    drop sibling. `config fix` calls remove_toml_table, so this bricked recovery."""
+    path = tmp_path / "c.toml"
+    path.write_text(
+        '[cli]\nhelp = """\nUsage:\n[options]\n"""\nenabled = true\n[review]\ntrigger = "off"\n',
+        encoding="utf-8",
+    )
+    assert remove_toml_table(path, "cli") is True
+    data = tomllib.loads(path.read_text(encoding="utf-8"))  # must still parse
+    assert "cli" not in data  # header, the multi-line help, and enabled all gone
+    assert data == {"review": {"trigger": "off"}}
 
 
 def test_format_toml_value_round_trips_through_parse_cli_value() -> None:

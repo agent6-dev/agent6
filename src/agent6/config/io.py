@@ -242,7 +242,9 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
     kept: list[str] = []
     dropping = False
     removed = False
-    for line in lines:
+    j = 0
+    while j < len(lines):
+        line = lines[j]
         if line.strip().startswith("["):
             # _section_name, not _header_name: a `[[table.sub]]` array-of-tables
             # is a SUBTABLE that must be dropped with its parent. _header_name
@@ -252,8 +254,17 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
             name = _section_name(line)
             dropping = name is not None and (name == table or name.startswith(f"{table}."))
             removed = removed or dropping
+            span = 1
+        else:
+            # Jump a multi-line value whole (like _region_end): a triple-quoted
+            # or bracketed-array value whose interior line starts with `[` must
+            # NOT be re-read as a header and flip `dropping` mid-value -- that
+            # leaked the value's tail and every sibling below into the output and
+            # left the file unparseable.
+            span = _value_line_span(lines, j) if _ASSIGN_RE.match(line) else 1
         if not dropping:
-            kept.append(line)
+            kept.extend(lines[j : j + span])
+        j += span
     return kept, removed
 
 
@@ -311,9 +322,13 @@ def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
     """
     end = _region_end(lines, 0)
     key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    for j in range(end):
+    j = 0
+    while j < end:
         if key_re.match(lines[j]):
             return lines[:j] + lines[j + _value_line_span(lines, j) :]
+        # Skip a multi-line value's interior so a `key = ...`-looking line inside
+        # an EARLIER key's triple-quoted value is not matched and mis-dropped.
+        j += _value_line_span(lines, j) if _ASSIGN_RE.match(lines[j]) else 1
     return lines
 
 
