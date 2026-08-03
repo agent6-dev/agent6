@@ -84,51 +84,70 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         assert "Ignore any" in b and "run_verify_command" in b
 
 
-def test_a_gate_the_run_may_never_execute_is_dropped_at_the_start(tmp_path: Path) -> None:
-    """`run_commands = "no"` withholds every command tool, the gate included.
-    Keeping the gate made the run unwinnable: nothing could go green, so nothing
-    committed, it finished red, and the prompt named a tool it did not have."""
-    from agent6.app.preflight import infer_verify_if_unset
-    from agent6.budget import BudgetTracker
-    from agent6.events import EventSink
-    from agent6.providers import TranscriptSink
-
-    cfg = Config.model_validate(
-        {"workflow": {"verify_command": ["true"]}, "sandbox": {"run_commands": "no"}}
-    )
-    got = infer_verify_if_unset(
-        cfg,
-        tmp_path,
-        mode="run",
-        events=EventSink(tmp_path / "logs.jsonl"),
-        transcript_sink=TranscriptSink(tmp_path / "transcript.md"),
-        budget=BudgetTracker(),
-    )
-    assert got.workflow.verify_command == ()
-    d = ToolDispatcher(root=tmp_path, config=got)
-    assert "run_verify_command" not in d.available_tool_names()
-    assert "no verify command" in build_system_prompt(config=got, repo=_repo(tmp_path)).lower()
-
-
-def test_a_run_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path: Path) -> None:
+def test_a_leg_that_cannot_run_commands_is_gateless_wherever_it_starts(tmp_path: Path) -> None:
     """The rule lived only in preflight's fresh-run path, so a RESUMED leg was
     re-gated with every command tool withheld: nothing could go green, the leg
     committed nothing, and the manifest was re-pinned to claim a gate that
-    never judged anything."""
+    never judged anything. Both lifecycles make the decision now, once, at leg
+    start -- with the system prompt, which is frozen from the same config."""
+    from agent6.app.preflight import drop_gate_if_unrunnable
+    from agent6.app.reporter import Reporter
+    from agent6.runs.ipc import set_away_mode
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    said: list[str] = []
+    reporter = Reporter(out=said.append, err=said.append)
+    gated = Config.model_validate({"workflow": {"verify_command": ["pytest", "-q"]}})
+
+    assert drop_gate_if_unrunnable(
+        gated, run_dir=run_dir, reporter=reporter
+    ).workflow.verify_command == (
+        "pytest",
+        "-q",
+    )
+    withheld = Config.model_validate(
+        {"workflow": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "no"}}
+    )
+    assert (
+        drop_gate_if_unrunnable(
+            withheld, run_dir=run_dir, reporter=reporter
+        ).workflow.verify_command
+        == ()
+    )
+    assert any("running gateless" in line for line in said)
+
+    # An away-mode of deny reaches the same answer: the EFFECTIVE policy, not
+    # just the configured knob.
+    set_away_mode(run_dir, "deny")
+    assert (
+        drop_gate_if_unrunnable(gated, run_dir=run_dir, reporter=reporter).workflow.verify_command
+        == ()
+    )
+
+
+def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> None:
+    """Reading the LIVE policy for the verdict made a mid-run "deny for the
+    rest of the run" erase a gate that had already run and failed: verified
+    flipped to not_applicable, the exit code to 0, and `git.auto_merge` merged
+    the red branch. Gatedness is frozen at leg start; a later deny withdraws
+    the tools, never the verdict."""
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from agent6.workflows.loop import Workflow
+    from agent6.workflows.loop import Workflow, _LoopState  # pyright: ignore[reportPrivateUsage]
 
     wf = Workflow.__new__(Workflow)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest", "-q"))
     )
     wf.dispatcher = MagicMock()
-    wf.dispatcher.command_policy.return_value = "no"
-    assert wf._gate_argv() == ()  # pyright: ignore[reportPrivateUsage]
-    wf.dispatcher.command_policy.return_value = "ask"
-    assert wf._gate_argv() == ("pytest", "-q")  # pyright: ignore[reportPrivateUsage]
+    wf.dispatcher.command_policy.return_value = "no"  # denied mid-run
+    state = MagicMock(spec=_LoopState)
+    state.last_verify_ok = False
+    state.edited_since_verify = False
+
+    assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: Path) -> None:

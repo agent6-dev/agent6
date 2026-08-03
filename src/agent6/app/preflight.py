@@ -15,12 +15,14 @@ from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
 )
+from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
+from agent6.runs.ipc import effective_run_commands
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
@@ -181,6 +183,29 @@ def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
     return branch
 
 
+def drop_gate_if_unrunnable(cfg: Config, *, run_dir: Path, reporter: Reporter) -> Config:
+    """Empty the verify command when this LEG cannot run one.
+
+    Every command tool is withheld when the effective policy is ``no`` -- the
+    operator's configured value, a session deny, or an away-mode of deny -- and
+    the gate is a command. Keeping it made the leg unwinnable: nothing could go
+    green, so nothing committed, and it finished red over work that may be fine.
+
+    Decided ONCE per leg, by whichever lifecycle starts it, because the system
+    prompt is frozen from the same config. A deny that lands MID-leg withdraws
+    the tools (the dispatcher's own filter) but must not retroactively make a
+    gate that already ran red look like a run that never had one.
+    """
+    if effective_run_commands(cfg.sandbox.run_commands, run_dir) != "no":
+        return cfg
+    if cfg.workflow.verify_command:
+        reporter.err(
+            "[agent6] commands are withheld, and the verify gate is a command:"
+            " running gateless (per-step commits, no green gate)."
+        )
+    return cfg.with_verify_command(())
+
+
 def infer_verify_if_unset(
     cfg: Config,
     cwd: Path,
@@ -198,24 +223,10 @@ def infer_verify_if_unset(
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 
-    ``run_commands = "no"`` withholds every command tool, the gate included, so
-    nothing is inferred and the operator is told. The rule itself lives in the
-    loop (``Workflow._gate_argv``), which reads the EFFECTIVE policy every
-    turn: this function only runs for a fresh run/plan, and a resumed leg or a
-    mid-run deny has to reach the same answer.
+    ``drop_gate_if_unrunnable`` runs first and may have emptied the command, so
+    a run that cannot execute one never infers one either.
     """
-    if mode not in ("run", "plan"):
-        return cfg
-    if cfg.sandbox.run_commands == "no":
-        if cfg.workflow.verify_command and mode == "run":
-            print(
-                "[agent6] run_commands = 'no' withholds the verify gate too; running"
-                " gateless\n         (per-step commits, no green gate). Set"
-                " sandbox.run_commands to 'ask' or 'yes' to gate this run.",
-                file=sys.stderr,
-            )
-        return cfg.with_verify_command(())
-    if cfg.workflow.verify_command:
+    if mode not in ("run", "plan") or cfg.workflow.verify_command:
         return cfg
     agents_md = ""
     agents_path = cwd / "AGENTS.md"

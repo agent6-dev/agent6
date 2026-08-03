@@ -240,7 +240,11 @@ def repo_id(repo_root: Path) -> str:
         head, tail = _ID_BYTES_MAX // 3, _ID_BYTES_MAX - _ID_BYTES_MAX // 3 - 2
         return f"{_head_bytes(flat, head)}--{_tail_bytes(flat, tail)}-{digest}"
     marks = "".join("1" if ch == "/" else "0" for ch in real if ch in "/-")
-    return f"{flat or 'root'}-{int(marks or '0', 2):x}"
+    tag = f"{int(marks or '0', 2):x}"
+    # `/` flattens to nothing, and any sentinel word for it would be a legal
+    # directory name too (`root-0` was both `/` and `/root`). The bare tag
+    # cannot collide instead: every other id carries the joining dash.
+    return f"{flat}-{tag}" if flat else tag
 
 
 def _head_bytes(s: str, limit: int) -> str:
@@ -268,18 +272,16 @@ def project_root(start: Path) -> Path:
     command, read-only ones included, and a subprocess per invocation is not.
     A worktree's ``.git`` is a file, hence ``exists`` and not ``is_dir``.
 
-    The walk never adopts ``$HOME`` or ``/`` as an ancestor: a repo there is
-    dotfiles or a pathology, not the project you are standing in. With
-    ``git init $HOME``, every unrelated directory under it keyed to ONE state
-    dir -- cross-project run listings, one client's transcripts handed to a
-    session in another, and a repo lock refusing a run while naming a stranger.
-    Standing IN such a repo still resolves to it: only inheritance is refused.
+    No stop at ``$HOME``: with ``git init $HOME`` every directory under it
+    really IS one repo, and one repo has to be one project. Breaking the walk
+    there gave each subdirectory its own state dir -- and its own
+    ``repo.lock``, while ``git -C`` still resolved every one of them to the
+    same working tree, so two runs committed into it at once. That is exactly
+    the interleaving the lock exists to prevent. Sharing state across a
+    dotfiles repo is the operator's own choice; losing the lock is not.
     """
     start = start.resolve()
-    never_inherited = {Path.home().resolve(), Path(start.anchor)}
     for candidate in (start, *start.parents):
-        if candidate != start and candidate in never_inherited:
-            break
         if (candidate / ".git").exists():
             return candidate
     return start

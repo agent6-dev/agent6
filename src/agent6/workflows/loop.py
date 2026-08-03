@@ -834,7 +834,7 @@ class Workflow:
         # verify command between legs swaps what judges the work while the
         # instructions still name the old gate. Say so rather than let the
         # worker run a command nothing checks.
-        gate = self._gate_argv()
+        gate = tuple(self.config.workflow.verify_command)
         if gate != snapshot.verify_command:
             was = " ".join(snapshot.verify_command) or "none"
             now = " ".join(gate) or "none"
@@ -1469,7 +1469,7 @@ class Workflow:
 
         Returns a RunResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
-        gateless = not self._gate_argv()
+        gateless = not self.config.workflow.verify_command
         gateless_changed = gateless and (turn.edited or self._worktree_dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
         if self.mode != "run" or not (verified_commit or gateless_changed):
@@ -2190,7 +2190,7 @@ class Workflow:
                     "the worker settled, but edits after the last green verify were"
                     " never re-verified"
                 )
-            elif self._gate_argv():
+            elif self.config.workflow.verify_command:
                 # A command can exist here only via mid-run adoption (an
                 # operator-set one is never gateless).
                 summary = (
@@ -2334,7 +2334,11 @@ class Workflow:
             remaining = self._budget_fraction_remaining()
             if remaining is not None and remaining <= RUN_BUDGET_NUDGE_BELOW:
                 state.run_budget_nudged = True
-                nudge = RUN_BUDGET_NUDGE if self._gate_argv() else RUN_BUDGET_NUDGE_GATELESS
+                nudge = (
+                    RUN_BUDGET_NUDGE
+                    if self.config.workflow.verify_command
+                    else RUN_BUDGET_NUDGE_GATELESS
+                )
                 conversation.notice(nudge)
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
                 self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
@@ -2887,27 +2891,13 @@ class Workflow:
         self._pass_pending_root_tasks()
         self._emit("run.end", reason=reason, iterations=iterations, all_passed=True)
 
-    def _gate_argv(self) -> tuple[str, ...]:
-        """The gate this run can actually RUN, `()` when it has none.
-
-        A configured gate the worker has no tool for is worse than none: it can
-        never go green, so nothing commits and the run finishes red over work
-        that may be fine. The policy is the EFFECTIVE one, so a mid-run deny
-        (an approval prompt's "deny for the run", an away-mode of deny) or a
-        resumed leg under `run_commands = "no"` drops the gate the same way a
-        fresh run does. The one answer to "is this run gated".
-        """
-        if self.dispatcher.command_policy() == "no":
-            return ()
-        return tuple(self.config.workflow.verify_command)
-
     def _tree_is_verify_green(self, state: _LoopState) -> bool | None:
         """Is the current tree in a verified-green state? None when no verify
         command is configured (nothing to gate on); else True iff the last verify
         was green AND nothing has been edited since. Grounds both the honest
         finish signal and the opt-in hard finish gate, so 'passed' can never mean
         'finished over a red or stale verify'."""
-        if not self._gate_argv():
+        if not self.config.workflow.verify_command:
             return None
         return state.last_verify_ok is True and not state.edited_since_verify
 
@@ -3052,7 +3042,7 @@ class Workflow:
             next_iteration=next_iteration,
             root_task_id=root_task_id,
             original_task=state.original_task,
-            verify_command=self._gate_argv(),
+            verify_command=self.config.workflow.verify_command,
             review_rejections_total=state.review_rejections_total,
             verify_ever_passed=state.verify_ever_passed,
             gateless_ever_committed=state.gateless_ever_committed,

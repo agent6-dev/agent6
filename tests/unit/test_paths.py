@@ -247,12 +247,32 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
 def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: Path) -> None:
     """From a subdirectory the state dir was a different, empty project: `runs`
     listed nothing, `resume` found nothing, and read_session and memory saw an
-    empty history -- silently, since an empty project looks the same as a new
-    one."""
+    empty history -- silently, since an empty project and a new one look the
+    same."""
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / "src" / "deep").mkdir(parents=True)
     assert paths.state_dir(repo / "src" / "deep") == paths.state_dir(repo)
+
+
+def test_one_repo_is_one_project_even_when_the_repo_is_your_home(tmp_path: Path) -> None:
+    """Stopping the walk at $HOME gave each subdirectory of a dotfiles repo its
+    own state dir -- and its own repo.lock -- while `git -C` still resolved
+    every one of them to the SAME working tree. Two runs then committed into it
+    at once, which is exactly what the lock exists to prevent."""
+    home = tmp_path / "home"
+    (home / ".git").mkdir(parents=True)
+    (home / ".config" / "nvim").mkdir(parents=True)
+    (home / "bin").mkdir()
+    dirs = {paths.state_dir(home / ".config" / "nvim"), paths.state_dir(home / "bin")}
+    assert dirs == {paths.state_dir(home)}, "one working tree must be one lock"
+
+
+def test_the_filesystem_root_is_not_a_directory_named_root(tmp_path: Path) -> None:
+    """`/` flattens to nothing, and the sentinel word for it was also a legal
+    directory name: `/` and `/root` were one id, so a container with WORKDIR /
+    shared config, runs and repo.lock with anything under /root."""
+    assert paths.repo_id(Path("/")) != paths.repo_id(Path("/root"))
 
 
 def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:

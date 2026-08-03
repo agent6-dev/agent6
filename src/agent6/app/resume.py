@@ -36,6 +36,7 @@ from agent6.app.finalize import (
 )
 from agent6.app.manifest import pin_gate
 from agent6.app.preflight import (
+    drop_gate_if_unrunnable,
     headless_approval_refusal,
     require_git_repo,
 )
@@ -524,6 +525,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # diverge. Config the operator has pinned since outranks it (announced
         # below, and to the worker, since the prompt still names the old one).
         # `()` means the original run was gateless: stay gateless.
+        # The same leg-start decision a fresh run makes: a leg that cannot run
+        # a command cannot run its gate, so it is gateless rather than
+        # unwinnable. Frozen here, with the system prompt.
+        cfg = drop_gate_if_unrunnable(cfg, run_dir=layout.run_dir, reporter=reporter)
         leg_configured = bool(cfg.workflow.verify_command)
         if not leg_configured and snapshot.verify_command:
             cfg = cfg.with_verify_command(snapshot.verify_command)
