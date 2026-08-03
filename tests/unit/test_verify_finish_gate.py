@@ -17,7 +17,7 @@ from agent6.workflows.loop import (
 )
 
 
-def _wf(*, verify: bool) -> Workflow:
+def _wf(*, verify: bool, mode: str = "run") -> Workflow:
     data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}
     return Workflow(
         root=Path("/tmp"),
@@ -25,6 +25,7 @@ def _wf(*, verify: bool) -> Workflow:
         provider=MagicMock(),
         dispatcher=MagicMock(),
         logger=lambda _m: None,
+        mode=mode,
     )
 
 
@@ -68,3 +69,14 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=True) == "failed"
     # Gateless: nothing ever gated this run, so there is no verdict to claim.
     assert _verified(_wf(verify=False), last_verify_ok=None) == "not_applicable"
+
+
+def test_plan_and_ask_are_never_gated_on_verify() -> None:
+    """plan/ask end clean whatever the tree looks like -- finish_planning and
+    the ask answer both emit run.end all_passed=True -- so they have no verify
+    verdict to report. Reporting one made `agent6 plan` exit 4 (preflight
+    INFERS a verify command for plan, and plan never runs it, so the tree read
+    as red) while its own journal and every listing said passed."""
+    for mode in ("plan", "ask"):
+        assert _verified(_wf(verify=True, mode=mode), last_verify_ok=None) == "not_applicable"
+        assert _verified(_wf(verify=True, mode=mode), last_verify_ok=False) == "not_applicable"

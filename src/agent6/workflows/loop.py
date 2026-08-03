@@ -2822,7 +2822,15 @@ class Workflow:
     def _verification(self, state: _LoopState) -> Verification:
         """The verify verdict for the RunResult, from the same tri-state
         `run.end.all_passed` is grounded on, so the result and the event can
-        never disagree."""
+        never disagree.
+
+        Only a run is gated: plan and ask finish clean whatever the tree looks
+        like (finish_planning and the ask answer both emit all_passed=True), and
+        preflight still INFERS a verify command for a plan that never runs one,
+        so grounding on the tree there reported failure against their own
+        events."""
+        if self.mode != "run":
+            return "not_applicable"
         green = self._tree_is_verify_green(state)
         return "not_applicable" if green is None else "passed" if green else "failed"
 
