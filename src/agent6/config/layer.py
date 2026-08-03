@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from agent6.config.io import (
     parse_cli_value,
@@ -894,12 +894,10 @@ PROVIDER_MEMBERS = (AnthropicProviderEntry, OpenAIProviderEntry)
 
 def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     """Validate a ``providers.<name>.<leaf>`` write against the union members
-    directly. The standalone minimal dict cannot carry the entry's
-    discriminator, so union validation lands every error at the PARENT with
-    pydantic-speak; the member models themselves give exact answers: a leaf on
-    no member is an unknown key (with the members' own field pool as the
-    did-you-mean universe), and a value every owning member rejects is invalid.
-    None when some member accepts it (partial entries stay writable)."""
+    directly, since a minimal standalone dict lacks the entry's discriminator.
+    A leaf on no member is an unknown key (the members' own field pool is the
+    did-you-mean universe); a value every owning member rejects is invalid.
+    None when some member accepts it, so a partial entry stays writable."""
     fields = sorted({f for m in PROVIDER_MEMBERS for f in m.model_fields})
     if leaf not in fields:
         close = difflib.get_close_matches(leaf, fields, n=2)
@@ -907,17 +905,21 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
         return f"unknown provider key {key!r}{hint} (see `agent6 config show`)"
     errors: list[str] = []
     for member in PROVIDER_MEMBERS:
-        info = member.model_fields.get(leaf)
-        if info is None:
+        if leaf not in member.model_fields:
             continue
+        fmt = get_args(member.model_fields["api_format"].annotation)[0]
         try:
-            # rebuild_annotation carries the Field constraints (gt, pattern,
-            # ...); the model's @field_validators do not travel with it, so
-            # validator-only rejections still fall to the merged-dump path.
-            TypeAdapter(info.rebuild_annotation()).validate_python(value)
-            return None  # a member accepts it: the write stands
+            # Validate the leaf against the whole member so its @field_validators
+            # run; seed the api_format discriminator the member requires. Only a
+            # rejection AT this leaf counts -- a complaint about another unset
+            # field means the leaf itself is acceptable to this member.
+            member.model_validate({"api_format": fmt, leaf: value})
+            return None
         except ValidationError as exc:
-            errors.append(exc.errors()[0]["msg"])
+            leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] == (leaf,)]
+            if not leaf_errs:
+                return None
+            errors.append(leaf_errs[0])
     return f"{key}: {errors[0]}" if errors else None
 
 

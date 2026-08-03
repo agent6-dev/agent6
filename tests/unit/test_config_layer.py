@@ -224,6 +224,24 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -
     assert load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
 
 
+def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path) -> None:
+    """A provider leaf rejected by a @field_validator (base_url's http(s) check),
+    not a Field constraint, must still be caught on a masked write. The check
+    validates the leaf against the provider MODEL, which runs the validator; a
+    bare TypeAdapter of the annotation dropped it and let the bad value land."""
+    repo_config_path_for(repo).write_text(
+        '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
+        encoding="utf-8",
+    )
+    gpath = repo.parent / "g" / "config.toml"
+    before = gpath.read_text(encoding="utf-8")
+
+    err = set_config_value(repo, "providers.x.base_url", "not a url", to_repo=False)
+
+    assert err is not None and "base_url" in err
+    assert gpath.read_text(encoding="utf-8") == before  # the masked bad base_url rolled back
+
+
 def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
     """set_config_table writes a whole [table]; it must validate each LEAF, not the
     table dict as one. written_value_error only flags an error at loc == key, so a
