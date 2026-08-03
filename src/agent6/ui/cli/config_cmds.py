@@ -35,6 +35,7 @@ from agent6.config.layer import (
 from agent6.config.write import (
     keep_or_rollback,
     merged_config_error,
+    resolved_write_path,
     revalidate_write,
     set_config_value,
     unset_config_value,
@@ -133,7 +134,7 @@ def _open_target(target: Path) -> None:
 def _cmd_config_fill(*, force: bool) -> int:
     """Materialize defaults plus global into the global config file, never
     the repo layer and never a preset's effects."""
-    target = global_config_path()
+    target = resolved_write_path(global_config_path())
     _open_target(target)
     # Load the effective config, existence-check, and publish all under the
     # target's lock and via atomic_write: reading the merged config BEFORE the
@@ -169,8 +170,8 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
             raise OperatorError("use either --repo or --machine-file, not both")
         return machine, "config."
     if repo:
-        return repo_config_path_for(Path.cwd()), ""
-    return global_config_path(), ""
+        return resolved_write_path(repo_config_path_for(Path.cwd())), ""
+    return resolved_write_path(global_config_path()), ""
 
 
 def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
@@ -461,16 +462,19 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     while diag.removable:
         progressed = False
         for entry in diag.removable:
+            # The surgery publishes by rename, so it edits the file the layer
+            # RESOLVES to; writing the link's own name would replace it.
+            target = resolved_write_path(entry.path)
             # Re-check under the file's lock: diagnosis ran unlocked, so a
             # concurrent writer may have fixed this key since.
-            with locked_file(entry.path):
+            with locked_file(target):
                 if _entry_is_stale(entry):
                     continue
                 try:
                     ok = (
-                        remove_toml_table(entry.path, entry.file_key)
+                        remove_toml_table(target, entry.file_key)
                         if entry.is_table
-                        else remove_toml_leaf(entry.path, entry.file_key)
+                        else remove_toml_leaf(target, entry.file_key)
                     )
                 except ConfigError:
                     # A leaf inside an inline table / dotted key: the surgery
@@ -482,7 +486,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
                 stuck.append(entry)
                 continue
             progressed = True
-            touched.add(entry.path)
+            touched.add(target)
             removed.append(entry)
         if not progressed:
             # Nothing this pass could actually delete: halt honestly instead of

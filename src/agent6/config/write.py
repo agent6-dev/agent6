@@ -57,16 +57,19 @@ from agent6.paths import (
 from agent6.portable import atomic_write, locked_file
 
 
-def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
-    """The config file to edit, symlinks resolved.
+def resolved_write_path(target: Path) -> Path:
+    """*target* with a symlink resolved: the file a config write must open.
 
-    ``atomic_write`` publishes by rename, which replaces the NAME: a
-    dotfiles-managed ``config.toml`` symlinked into a repo would stop being
-    what agent6 reads after one ``config set``. The link is followed only to a
-    target the REAL operator owns, so ``sudo agent6 config set`` cannot be
-    redirected through it into a root-owned file.
+    ``atomic_write`` publishes by rename, which replaces the NAME, so a
+    dotfiles-managed ``config.toml`` symlinked into place would stop being what
+    agent6 reads after one write. The link is followed only to a target the
+    REAL operator owns, so ``sudo agent6 config set`` cannot be redirected
+    through it into a root-owned file.
+
+    THE one owner: every writer resolves here, or the ones that do not each
+    replace the link while reporting success against a path that is no longer
+    the operator's.
     """
-    target = repo_config_path_for(repo_root) if to_repo else global_config_path()
     if not target.is_symlink():
         return target
     resolved = target.resolve()
@@ -81,6 +84,11 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
             f" not you (uid {owner}); agent6 will not write through it"
         )
     return resolved
+
+
+def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
+    """The config file for this layer, resolved."""
+    return resolved_write_path(repo_config_path_for(repo_root) if to_repo else global_config_path())
 
 
 def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:

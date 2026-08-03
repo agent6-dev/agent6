@@ -61,3 +61,35 @@ def test_a_symlink_to_another_owner_refuses(
         set_config_value(tmp_path, "sandbox.protect_git", "false")
     monkeypatch.undo()
     assert link.is_symlink() and foreign.read_text(encoding="utf-8") == "[sandbox]\n"
+
+
+def test_every_writer_keeps_the_link_not_just_config_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config set` was taught to resolve the link and the other writers were
+    not, so `add`, `remove`, `fill` and `fix` each replaced it: the dotfiles
+    file silently stopped being what agent6 reads, while the command reported
+    success against a path that was no longer the operator's. One resolver
+    owns this for every writer.
+    """
+    from agent6.ui.cli import main
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.chdir(tmp_path)
+    real = tmp_path / "dotfiles" / "agent6.toml"
+    real.parent.mkdir()
+    real.write_text('[sandbox]\nfetch_hosts = ["a.example"]\n', encoding="utf-8")
+    link = global_config_path()
+    link.symlink_to(real)
+
+    assert main(["config", "add", "sandbox.fetch_hosts", "b.example"]) == 0
+    assert link.is_symlink(), "`config add` replaced the dotfiles symlink"
+    assert "b.example" in real.read_text(encoding="utf-8"), "the write missed the real file"
+
+    assert main(["config", "remove", "sandbox.fetch_hosts", "b.example"]) == 0
+    assert link.is_symlink(), "`config remove` replaced the dotfiles symlink"
+
+    assert main(["config", "fill", "--force"]) == 0
+    assert link.is_symlink(), "`config fill` replaced the dotfiles symlink"
