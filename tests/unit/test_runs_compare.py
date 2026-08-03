@@ -253,6 +253,43 @@ def test_compare_excludes_a_run_that_never_finished(
     assert "run-FFFF66" in out and "stale" in out  # named as excluded, not hidden
 
 
+def test_compare_excludes_a_run_that_is_still_live(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live running/waiting run has the same shape as a died one -- verify
+    reads the None of a clean unverified finish and its spend is truncated to
+    the lowest -- so mechanical ranking floated the half-done run to first
+    place with a merge suggestion for a branch that is still moving."""
+    import os
+
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-GGGG77",
+        base_sha=base,
+        commits=[("g.txt", "g\n", "add g")],
+        status="failed",
+        cost=0.09,
+    )
+    _setup_run(
+        repo,
+        "run-HHHH88",
+        base_sha=base,
+        commits=[("h.txt", "h\n", "add h")],
+        status="crashed",  # no run.end...
+        cost=0.01,
+    )
+    layout = RunLayout(state_dir=resolved_state_dir(repo), run_id="run-HHHH88")
+    (layout.run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # ...but LIVE
+
+    assert main(["runs", "compare", "run-GGGG77", "run-HHHH88"]) == 0
+    out = capsys.readouterr().out
+    assert "1. run-GGGG77" in out
+    assert "1. run-HHHH88" not in out
+    assert "agent6 runs merge run-HHHH88" not in out
+    assert "run-HHHH88 is still running" in out  # named as excluded, with why
+
+
 def test_compare_is_read_only(repo: Path) -> None:
     """Never merges, never writes to the run's own branch/manifest."""
     base = _init_repo(repo)

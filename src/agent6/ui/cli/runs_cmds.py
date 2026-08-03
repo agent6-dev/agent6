@@ -46,6 +46,7 @@ from agent6.ui.cli._common import (
 )
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.viewmodel import (
+    LIVE_STATUS_WORDS,
     died_without_end,
     is_run_husk,
     is_winner,
@@ -650,6 +651,43 @@ def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:
     return diff_range(cwd, base_sha, run_branch)
 
 
+def _screen_candidates(
+    cwd: Path, resolved: list[tuple[RunLayout, RunManifest]]
+) -> tuple[list[CandidateBrief], list[str]]:
+    """Briefs for the comparable runs, plus printed notes naming each excluded
+    one. A run without a run.end -- died, or simply not there YET -- has no
+    verdict to compare and a truncated (lowest) spend, so ranking floated it to
+    first place and offered a merge (for a live run, of a branch still moving).
+    The fan-out excludes such lanes; say which run was dropped rather than
+    silently shrinking the table."""
+    candidates: list[CandidateBrief] = []
+    notes: list[str] = []
+    for layout, manifest in resolved:
+        summary = summarize_run_dir(layout.run_dir)
+        if summary.status in LIVE_STATUS_WORDS:
+            notes.append(
+                f"note: {layout.run_id} is still {summary.status};"
+                " excluded (stop it or let it finish first)"
+            )
+            continue
+        if died_without_end(summary.status):
+            notes.append(
+                f"note: {layout.run_id} never finished ({summary.status});"
+                " excluded from the ranking"
+            )
+            continue
+        candidates.append(
+            CandidateBrief(
+                run_id=layout.run_id,
+                task=manifest_task(layout.run_dir, fallback=layout.run_id),
+                diff=_candidate_diff(cwd, manifest.base_sha, manifest.run_branch or ""),
+                verify_ok=verify_ok(summary.status),
+                cost_usd=summary.cost_usd,
+            )
+        )
+    return candidates, notes
+
+
 def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
@@ -681,32 +719,14 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
         return eff
     cfg = eff.config
 
-    candidates: list[CandidateBrief] = []
-    unfinished: list[tuple[str, str]] = []
-    for layout, manifest in resolved:
-        base_sha = manifest.base_sha
-        run_branch = manifest.run_branch or ""
-        summary = summarize_run_dir(layout.run_dir)
-        # A run that never reached run.end has no verdict to compare and a
-        # truncated (lowest) spend, so ranking floated it to first place and
-        # offered it for merge. The fan-out excludes such lanes; say which run
-        # was dropped rather than silently shrinking the table.
-        if died_without_end(summary.status):
-            unfinished.append((layout.run_id, summary.status))
-            continue
-        candidates.append(
-            CandidateBrief(
-                run_id=layout.run_id,
-                task=manifest_task(layout.run_dir, fallback=layout.run_id),
-                diff=_candidate_diff(cwd, base_sha, run_branch),
-                verify_ok=verify_ok(summary.status),
-                cost_usd=summary.cost_usd,
-            )
-        )
-    for run_id, status in unfinished:
-        print(f"note: {run_id} never finished ({status}); excluded from the ranking")
+    candidates, notes = _screen_candidates(cwd, resolved)
+    for note in notes:
+        print(note)
     if not candidates:
-        print("ERROR: no comparable runs; every run given never finished.", file=sys.stderr)
+        print(
+            "ERROR: no comparable runs; every run given is still live or never finished.",
+            file=sys.stderr,
+        )
         return 2
 
     reviewer = cfg.models.resolve("reviewer")
