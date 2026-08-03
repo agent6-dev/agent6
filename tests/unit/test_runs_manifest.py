@@ -273,28 +273,6 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: Path) -> None:
     assert json.loads((run_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
 
-def test_legacy_profile_stamp_reads_as_preset(tmp_path: Path) -> None:
-    """A run recorded before the preset rename keeps its strategy: replay_preset
-    feeds resume and fork, so dropping the old spelling would silently restart
-    an ultra run without its blocking veto panel."""
-    _write(
-        tmp_path,
-        {"version": 2, "workflow": {"profile": "ultra", "profile_from_flag": True}},
-    )
-    stamp = read_manifest(tmp_path).workflow
-    assert stamp.preset == "ultra"
-    assert stamp.preset_from_flag is True
-    assert stamp.replay_preset == "ultra"
-
-
-def test_legacy_config_selected_profile_is_not_replayed_as_a_flag(tmp_path: Path) -> None:
-    # Same rule the current spelling gets: only a FLAG-selected preset replays.
-    _write(tmp_path, {"version": 2, "workflow": {"profile": "quick"}})
-    stamp = read_manifest(tmp_path).workflow
-    assert stamp.preset == "quick"
-    assert stamp.replay_preset == ""
-
-
 def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
     """`runs show` reads one field for "the model that drove this run". It used
     to be the worker unconditionally, so a plan run -- driven by the planner --
@@ -328,13 +306,6 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
         )
         driver = read_manifest(layout.run_dir).models.driver
         assert driver is not None and driver.model == expected
-
-
-def test_legacy_worker_brief_reads_as_the_driver(tmp_path: Path) -> None:
-    # Pre-v3 dirs recorded the driver under `worker`; they still render.
-    _write(tmp_path, {"version": 2, "models": {"worker": {"provider": "p", "model": "m"}}})
-    driver = read_manifest(tmp_path).models.driver
-    assert driver is not None and driver.model == "m"
 
 
 def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -> None:

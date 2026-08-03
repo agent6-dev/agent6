@@ -32,7 +32,7 @@ def _make_run(
     d = runs / "winsome-dawn-YWH5ZS"
     d.mkdir()
     (d / "manifest.json").write_text(
-        json.dumps({"mode": "run", "models": {"worker": {"model": "claude-opus-4-8"}}})
+        json.dumps({"mode": "run", "models": {"driver": {"model": "claude-opus-4-8"}}})
     )
     (d / "logs.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
     return d

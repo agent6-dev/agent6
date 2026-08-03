@@ -49,16 +49,6 @@ class ModelsBrief(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    @model_validator(mode="before")
-    @classmethod
-    def _fold_legacy_worker(cls, data: Any) -> Any:
-        """Read the pre-v3 ``worker`` key as the driver: for a run that is what
-        drove it, and a plan run recorded the worker there wrongly anyway."""
-        if isinstance(data, dict) and "driver" not in data and "worker" in data:
-            data = dict(data)
-            data["driver"] = data["worker"]
-        return data
-
     driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
 
@@ -67,23 +57,6 @@ class WorkflowStamp(BaseModel):
     """The in-loop strategy the run started with, so ``resume`` re-applies it."""
 
     model_config = _MODEL_CONFIG
-
-    @model_validator(mode="before")
-    @classmethod
-    def _fold_legacy_preset(cls, data: Any) -> Any:
-        """Read the pre-v3 spelling (``profile`` / ``profile_from_flag``).
-
-        Dropping it would not just blank a display field: `replay_preset` feeds
-        resume and fork, so every run recorded before the rename would come
-        back without the preset it ran under -- losing, for example, an
-        ultra panel's blocking veto."""
-        if not isinstance(data, dict) or "preset" in data:
-            return data
-        if "profile" in data or "profile_from_flag" in data:
-            data = dict(data)
-            data["preset"] = data.get("profile", "")
-            data["preset_from_flag"] = data.get("profile_from_flag", False)
-        return data
 
     critic: str = ""
     revise_prompt: str = ""
