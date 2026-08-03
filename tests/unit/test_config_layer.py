@@ -502,7 +502,11 @@ def test_prepare_write_target_hands_back_the_created_state_base(
     def _record(*a: object) -> None:
         chowned.append(Path(str(a[0])))
 
+    def _record_at(target: object, _uid: int, _gid: int, **kw: object) -> None:
+        chowned.append(Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
+
     monkeypatch.setattr(os, "lchown", _record)
+    monkeypatch.setattr(os, "chown", _record_at)
     target = write_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
     assert target.parent.is_dir()
     assert base in chowned  # the created base is handed back...

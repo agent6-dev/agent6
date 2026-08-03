@@ -303,20 +303,25 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
 def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
     """Recursively ``chown`` *path* back to the real operator.
 
-    No-op unless the process is root and was launched through sudo. Uses
-    ``lchown`` so we never follow symlinks out of the tree. Best-effort:
-    permission errors are swallowed (the file is still usable by root).
+    No-op unless the process is root and was launched through sudo.
+
+    Every chown names its target relative to an open directory fd and never
+    follows a link, so no path component can be swapped between the walk and
+    the call: a jailed command holds RW on some of these trees, and root
+    resolving a swapped parent would chown anything on the host.
+    Best-effort: permission errors are swallowed (the file is still usable by
+    root), and we never weaken perms to compensate.
     """
     if os.geteuid() != 0:
         return
     user = user or effective_user()
     if not user.via_sudo:
         return
-    targets: list[Path] = [path]
-    if path.is_dir():
-        targets.extend(path.rglob("*"))
-    for target in targets:
-        # Best effort: a file we cannot chown is still owned by root and
-        # readable by root; we never weaken perms to compensate.
-        with contextlib.suppress(OSError):
-            os.lchown(target, user.uid, user.gid)
+    with contextlib.suppress(OSError):
+        os.lchown(path, user.uid, user.gid)
+    if path.is_symlink() or not path.is_dir():
+        return
+    for _dirpath, dirnames, filenames, dir_fd in os.fwalk(path, follow_symlinks=False):
+        for name in (*dirnames, *filenames):
+            with contextlib.suppress(OSError):
+                os.chown(name, user.uid, user.gid, dir_fd=dir_fd, follow_symlinks=False)

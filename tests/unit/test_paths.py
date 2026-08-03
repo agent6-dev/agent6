@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -160,7 +161,11 @@ def test_mkdir_for_real_user_hands_back_created_ancestors(
     def _record(*a: object) -> None:
         chowned.append(Path(str(a[0])))
 
+    def _record_at(target: object, _uid: int, _gid: int, **kw: object) -> None:
+        chowned.append(Path(f"/proc/self/fd/{kw['dir_fd']}").readlink() / str(target))
+
     monkeypatch.setattr(os, "lchown", _record)
+    monkeypatch.setattr(os, "chown", _record_at)
     base = tmp_path / "existing"
     base.mkdir()
     target = base / "agent6" / "repo-abc"
@@ -191,3 +196,49 @@ def test_chown_to_real_user_is_noop_when_not_root(
     monkeypatch.setattr(os, "lchown", _fake_lchown)
     paths.chown_to_real_user(f)
     assert called == []
+
+
+def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Under sudo this runs as root over trees a jailed command holds RW. The
+    old walk listed paths then chowned them BY NAME, so swapping a parent
+    directory for a symlink in between had root chown whatever it pointed at.
+    The swap here is what a live escapee does; the assertion is on the inode
+    each chown would actually land on."""
+    tree = tmp_path / "state"
+    (tree / "sub").mkdir(parents=True)
+    (tree / "sub" / "file").write_text("x", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "file"
+    secret.write_text("s", encoding="utf-8")
+    secret_id = (secret.stat().st_dev, secret.stat().st_ino)
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        paths,
+        "effective_user",
+        lambda: paths.RealUser(1000, 1000, "op", Path("/home/op"), True),
+    )
+    hit: list[tuple[int, int]] = []
+
+    def _swap_then_record(st: os.stat_result) -> None:
+        hit.append((st.st_dev, st.st_ino))
+        if (tree / "sub").is_dir() and not (tree / "sub").is_symlink():
+            shutil.rmtree(tree / "sub")
+            (tree / "sub").symlink_to(outside, target_is_directory=True)
+
+    def _fake_lchown(target: object, _uid: int, _gid: int) -> None:
+        _swap_then_record(Path(str(target)).lstat())
+
+    def _fake_chown(target: object, _uid: int, _gid: int, **kw: object) -> None:
+        assert kw.get("follow_symlinks") is False, "a chown that follows links is the bug"
+        _swap_then_record(os.stat(str(target), dir_fd=kw["dir_fd"], follow_symlinks=False))  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(os, "lchown", _fake_lchown)
+    monkeypatch.setattr(os, "chown", _fake_chown)
+    paths.chown_to_real_user(tree)
+
+    assert hit, "nothing was handed over at all"
+    assert secret_id not in hit, "root chowned a file outside the tree"
