@@ -29,7 +29,9 @@ import subprocess
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+from agent6.events import EventSink
 from agent6.portable import atomic_write
 
 APPROVAL_DIR_NAME = "approvals"
@@ -169,6 +171,18 @@ def write_worker_pid(session_dir: Path, pid: int) -> None:
     # left to refute it, the exact recycled-pid lie this record exists to kill.
     record = f"{pid} {_proc_start_time(pid)}".rstrip()
     atomic_write(session_dir / WORKER_PID_FILE, record)
+
+
+def emit_session_start(
+    events: EventSink, session_dir: Path, event_type: str, /, **fields: Any
+) -> None:
+    """Emit a start-family event (``session.start`` / ``loop.resume.start``)
+    with the worker pid already on disk. The status fold reads a started
+    session with no pid file as one whose worker exited, so a start event
+    readable before the pid write lands makes a live session read dead on
+    every surface. The emitter owns the order; no call site can invert it."""
+    write_worker_pid(session_dir, os.getpid())
+    events.emit(event_type, **fields)
 
 
 def clear_worker_pid(session_dir: Path) -> None:

@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -521,40 +522,26 @@ def test_a_started_session_with_no_pid_file_is_not_running(
     assert "stale" in out
 
 
-def test_a_worker_writes_its_pid_before_it_starts() -> None:
+def test_a_start_event_is_never_readable_before_the_pid_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The invariant `_running_is_stale` rests on: no pid file under a started
     session means the worker cleared it, not that it has not written it yet.
+    Emitting session.start first opened a window where a live session read as
+    dead on every surface. The start emitter owns the order now, so no entry
+    point (the loop's two starts, machine create's header) can invert it."""
+    from agent6.events import EventSink
+    from agent6.sessions.ipc import emit_session_start
 
-    Emitting session.start first opens a window where a live session reads as
-    dead on every surface. machine create had exactly that ordering.
-    """
-    import ast
+    sdir = tmp_path / "sess"
+    sdir.mkdir()
+    pid_present_at_emit: list[bool] = []
+    real_emit = EventSink.emit
 
-    src = Path(__file__).resolve().parents[1].parent / "src" / "agent6"
-    for path in src.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        if "write_worker_pid" not in text or 'emit("session.start"' not in text:
-            continue
-        tree = ast.parse(text)
-        writes = [
-            n.lineno
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Call)
-            and isinstance(n.func, ast.Name)
-            and n.func.id == "write_worker_pid"
-        ]
-        starts = [
-            n.lineno
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Call)
-            and isinstance(n.func, ast.Attribute)
-            and n.func.attr == "emit"
-            and n.args
-            and isinstance(n.args[0], ast.Constant)
-            and n.args[0].value == "session.start"
-        ]
-        assert writes and starts, f"{path.name}: expected both calls"
-        assert min(writes) < min(starts), (
-            f"{path.name}:{min(starts)} emits session.start before writing the worker pid;"
-            " a live session reads as dead until the write lands"
-        )
+    def spy(self: EventSink, event_type: str, /, **fields: Any) -> None:
+        pid_present_at_emit.append((sdir / "worker.pid").exists())
+        real_emit(self, event_type, **fields)
+
+    monkeypatch.setattr(EventSink, "emit", spy)
+    emit_session_start(EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run")
+    assert pid_present_at_emit == [True]

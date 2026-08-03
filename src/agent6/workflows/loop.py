@@ -65,6 +65,7 @@ from agent6.providers import (
     ToolDefinition,
     output_cap_truncated,
 )
+from agent6.sessions.ipc import emit_session_start
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
@@ -717,7 +718,7 @@ class Workflow:
         # The run dir name is the authoritative run id; stamped into session.start so
         # every fold reports it without re-deriving it from the path.
         session_id = self.events.path.parent.name if self.events is not None else ""
-        self._emit(
+        self._emit_start(
             "session.start", session_id=session_id, user_task=user_task[:200], mode=self.mode
         )
         self._log("LOOP: LOAD_CONTEXT")
@@ -828,7 +829,7 @@ class Workflow:
 
         # The leg's log opens with this event: stamp session_id + mode like
         # session.start so the log identifies itself (the manifest owns the task).
-        self._emit(
+        self._emit_start(
             "loop.resume.start",
             session_id=self.events.path.parent.name if self.events is not None else "",
             mode=self.mode,
@@ -4432,6 +4433,12 @@ class Workflow:
     def _emit(self, event_type: str, **fields: Any) -> None:
         if self.events is not None:
             self.events.emit(event_type, **fields)
+
+    def _emit_start(self, event_type: str, **fields: Any) -> None:
+        """A start-family event goes through the one emitter that stamps the
+        worker pid first (see :func:`agent6.sessions.ipc.emit_session_start`)."""
+        if self.events is not None:
+            emit_session_start(self.events, self.events.path.parent, event_type, **fields)
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. Lets

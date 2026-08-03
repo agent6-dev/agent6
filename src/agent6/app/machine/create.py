@@ -12,7 +12,6 @@ reporter; the watchable per-draft event log is a separate `EventSink`.
 
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -42,7 +41,7 @@ from agent6.machine import (
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.id import unused_session_id
-from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions.ipc import emit_session_start
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.types import session_bucket
 
@@ -163,13 +162,10 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     events_log = scratch / LOGS_NAME
     events = EventSink(events_log)
     # Liveness marker, mirroring machine run: the draft dir is watchable (the
-    # hub lists it, the SSE endpoints stream it). BEFORE session.start, because
-    # the status fold reads a started session with no pid as one whose worker
-    # exited; emitting first opens a window where a live draft reads dead.
-    # A terminal draft has its own session.end, which the status decision reads
-    # first, so the marker needs no clearing.
-    write_worker_pid(scratch, os.getpid())
-    events.emit("session.start", user_task=task, mode="machine")
+    # hub lists it, the SSE endpoints stream it). A terminal draft has its own
+    # session.end, which the status decision reads first, so the marker needs
+    # no clearing.
+    emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
     # Authoring can take minutes with nothing on this terminal; say where the
     # live reasoning streams so the operator can follow instead of wondering.
     reporter.err(

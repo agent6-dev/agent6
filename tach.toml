@@ -108,6 +108,8 @@ depends_on = [
   # subrun lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.layout",
+  # the start-family emitter stamps worker.pid before the event is readable
+  "agent6.sessions.ipc",
   "agent6.tools",
   "agent6.tools.schema",
   "agent6.git_ops",
@@ -464,7 +466,8 @@ depends_on = ["agent6.portable"]
 path = "agent6.sessions.ipc"
 # atomic_write: the answer files need a unique-temp durable write (two live
 # front-ends answering one prompt raced on a shared .tmp).
-depends_on = ["agent6.portable"]
+# events: the start-family emitter owns the worker-pid-before-start order.
+depends_on = ["agent6.events", "agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.storage"
