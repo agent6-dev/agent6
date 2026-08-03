@@ -442,10 +442,13 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         running_in = f" -- running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
-        # A parked instance (an armed --exit-on-wait wait, no live worker) reads
-        # "waiting" -- the same word `machine run --exit-on-wait`, the watch
-        # screen, and the web pill use -- not the engine's raw "incomplete".
-        status = "waiting" if pending is not None else result.status
+        # The same word the watch screen, the TUI header, and the web pill show
+        # for this dir, via machine_status_word (the one owner of the
+        # running/waiting/stopped distinction): a parked --exit-on-wait wait is
+        # "waiting", a terminal end its ok/failed, a crashed instance (dead pid,
+        # no end, no wait) "stopped" -- never the engine's raw "incomplete".
+        ms = fold_machine(spec, events)
+        status = machine_status_word(ms, parked=pending is not None, alive=False)
         print(f"  status: {status}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")

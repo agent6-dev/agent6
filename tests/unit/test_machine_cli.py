@@ -135,6 +135,71 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
 
 
+CRASHER = """
+machine = "crasher"
+version = 1
+initial = "one"
+
+[budget]
+max_transitions = 100
+
+[states.one]
+kind = "tool"
+command = ["true"]
+timeout_secs = 60
+on = { ok = "two", nonzero = "bad", timeout = "bad" }
+
+[states.two]
+kind = "tool"
+command = ["true"]
+timeout_secs = 60
+on = { ok = "done", nonzero = "bad", timeout = "bad" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
+
+[states.bad]
+kind = "terminal"
+status = "failed"
+reason = "bad"
+"""
+
+
+def test_status_reports_stopped_for_a_crashed_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A worker that died mid-state (a step recorded, no MachineEnd, no armed
+    # wait, dead pid) is "stopped" -- the word machine watch, the TUI header, and
+    # the web pill all show via machine_status_word, the one owner of the
+    # distinction -- not the engine's raw "incomplete", which only that owner
+    # translates.
+    from agent6.machine.journal import StepEvent, ToolFact
+
+    monkeypatch.chdir(tmp_path)
+    root = resolved_state_dir(tmp_path) / "machines" / "crasher"
+    root.mkdir(parents=True)
+    (root / "machine.asm.toml").write_text(CRASHER, encoding="utf-8")
+    journal = MachineJournal(root)
+    journal.ensure_dirs()
+    journal.begin(machine="crasher", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="one",
+            label="ok",
+            goto="two",
+            fact=ToolFact(exit_code=0, stdout="", timed_out=False),
+        )
+    )
+    # No worker.pid file -> not alive; no pending wait -> not parked.
+    assert main(["machine", "status", "crasher"]) == 0
+    out = capsys.readouterr().out
+    assert "status: stopped" in out
+
+
 def test_status_missing_instance_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
