@@ -117,3 +117,36 @@ def test_a_machine_draft_does_not_collide_with_a_machine_instance(tmp_path: Path
     draft.mkdir(parents=True)
     instance.mkdir(parents=True)
     assert draft != instance
+
+
+def test_a_machine_instance_is_not_reachable_as_a_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`machines` names two things now, and only the path separates them. A
+    session lookup that reached the INSTANCES dir would let `sessions rm` delete
+    a running machine's state -- so the buckets must never resolve there."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.ui.cli._common import resolve_session_layout
+
+    monkeypatch.chdir(tmp_path)
+    state = resolved_state_dir(tmp_path)
+    (state / "machines" / "tiny").mkdir(parents=True)
+
+    with pytest.raises(Exception, match="no run matches"):
+        resolve_session_layout(tmp_path, "tiny")
+
+
+def test_a_machine_draft_is_reachable_as_a_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The converse: an authoring draft IS a session, so an id resolves to it."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.ui.cli._common import resolve_session_layout
+
+    monkeypatch.chdir(tmp_path)
+    state = resolved_state_dir(tmp_path)
+    (bucket_dir(state, "machines") / "brave-oak-AAAAAA").mkdir(parents=True)
+
+    layout = resolve_session_layout(tmp_path, "brave-oak-AAAAAA")
+    assert layout.subdir == "machines"
+    assert layout.session_dir == bucket_dir(state, "machines") / "brave-oak-AAAAAA"
