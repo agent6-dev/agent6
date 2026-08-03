@@ -19,6 +19,7 @@ from pathlib import Path
 
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.runs.id import RunIdError
+from agent6.runs.layout import LOGS_NAME
 from agent6.ui.cli._common import (
     _machines_dir,
     _runs_dir,
@@ -51,7 +52,7 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
 
 def _run_json_snapshot(run_dir: Path) -> int:
     """Print a run's folded RunState as one JSON object (the web wire form)."""
-    logs = run_dir / "logs.jsonl"
+    logs = run_dir / LOGS_NAME
     # No log yet is a STATE, not an error: a parked submission (the busy-checkout
     # refusal saved it) or a `fork --no-run`. Every listing names it; this path
     # answered with a raw filesystem error instead. Fold nothing and let the dir

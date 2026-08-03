@@ -58,11 +58,32 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
                 iterations=1,
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
+                verified="failed",
             )
         )
     text = out.getvalue()
     assert "nothing changed" in text
     assert "agent6 config set workflow.verify_command 'uv run pytest tests/unit'" in text
+
+
+def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
+    """It would ask the operator to replace a gate that just passed."""
+    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        _print_stale_gate(
+            RunResult(
+                completed=True,
+                reason="finish_run",
+                summary="s",
+                iterations=1,
+                tool_calls=1,
+                stale_gate="uv run pytest tests/unit",
+                verified="passed",
+            )
+        )
+    assert out.getvalue() == ""
 
 
 def test_nothing_is_printed_without_a_declaration() -> None:

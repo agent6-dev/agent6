@@ -32,7 +32,7 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import LOGS_NAME, RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.types import IsolationLevel
 from agent6.viewmodel import scan_run_log, summarize_run_dir
@@ -143,8 +143,11 @@ def _print_stale_gate(result: RunResult) -> None:
     The worker may declare the configured gate stale instead of reverting
     correct work to satisfy it. Applying the proposal is the operator's call,
     so this prints the exact command rather than doing anything.
+
+    Only over a RED gate: a proposal alongside a gate that just passed asks the
+    operator to replace something nothing found fault with.
     """
-    if not result.stale_gate:
+    if not result.stale_gate or result.verified != "failed":
         return
     print("\nthe worker says this run's verify gate no longer matches the task:")
     print(f"  it proposes: {result.stale_gate}")
@@ -232,7 +235,7 @@ def _print_run_total_across_legs(layout: RunLayout) -> None:
     """After the leg's token+cost banner: the run's true cumulative spend when
     resume legs precede this one. The tracker is per-leg (each resume starts a
     fresh budget), so its "TOTAL" line undersells a resumed run without this."""
-    scan = scan_run_log(layout.run_dir / "logs.jsonl")
+    scan = scan_run_log(layout.run_dir / LOGS_NAME)
     if scan.legs > 1 and scan.cost_usd is not None:
         cost = format_cost(scan.cost_usd, partial=scan.usd_partial)
         print(f"  RUN TOTAL (all {scan.legs} legs): {cost}")

@@ -90,7 +90,7 @@ from agent6.runs.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import LOGS_NAME, RunLayout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -211,7 +211,7 @@ def discard_husk_dir(run_dir: Path) -> None:
     (no manifest, no logs). Otherwise a refused start (e.g. dirty worktree)
     leaves an empty husk that `agent6 runs` lists as '(no logs)' forever. Guarded
     on the manifest/logs check so a real run's dir is never removed."""
-    if (run_dir / "manifest.json").exists() or (run_dir / "logs.jsonl").exists():
+    if (run_dir / "manifest.json").exists() or (run_dir / LOGS_NAME).exists():
         return
     with contextlib.suppress(OSError):
         shutil.rmtree(run_dir)

@@ -20,7 +20,7 @@ from agent6.paths import (
     root_optin_enabled,
 )
 from agent6.runs.id import RunIdError, list_run_ids
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import RUN_BUCKETS, RunLayout
 from agent6.viewmodel import newest_run_dir
 
 
@@ -120,12 +120,6 @@ def _state_dir(repo_root: Path) -> Path:
 def _runs_dir(repo_root: Path) -> Path:
     """The ``runs/`` directory under the per-repo state dir."""
     return _state_dir(repo_root) / "runs"
-
-
-# Every run-style bucket a listing spans: `run`/`plan` under runs/, `ask` under
-# asks/, `machine create` authoring logs under machine-drafts/. Kept in one place
-# so "most recent" and "search all history" match what `agent6 runs` lists.
-RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
 
 
 def print_no_run_match(query: str, state: Path) -> None:

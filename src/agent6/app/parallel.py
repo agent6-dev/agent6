@@ -52,6 +52,7 @@ from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
 from agent6.runs.ipc import request_stop, steer_answer_is_abort, worker_is_alive
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel import died_without_end, summarize_run_dir
 from agent6.viewmodel.format import format_cost
@@ -671,7 +672,7 @@ def _pending_prompt(run_dir: Path) -> str:
     for approvals/questions. Deliberately not the heavyweight RunState fold; the
     fan-out status line needs only this one bit."""
     try:
-        lines = (run_dir / "logs.jsonl").read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = (run_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return ""
     for raw in reversed(lines):

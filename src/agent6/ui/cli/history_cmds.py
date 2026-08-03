@@ -14,7 +14,7 @@ from pathlib import Path
 
 from agent6.graph.storage import load_graph
 from agent6.runs.id import RunIdError
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import LOGS_NAME, RunLayout
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -224,7 +224,7 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
     otherwise ("", a short label) for a transcript snapshot, plan.md, etc. The
     transcript snapshots are cumulative, so they get one shared "transcript"
     label to collapse the same text repeated across snapshots."""
-    if path.name == "logs.jsonl":
+    if path.name == LOGS_NAME:
         try:
             event = json.loads(raw)
         except (ValueError, RecursionError):

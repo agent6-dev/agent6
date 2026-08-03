@@ -40,6 +40,7 @@ from agent6.directive import parse_btw
 from agent6.models.registry import context_window
 from agent6.paths import data_dir
 from agent6.runs.ipc import request_compact
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.background import roster_from_dir
@@ -123,7 +124,7 @@ def _menu_read(prompt: str) -> str:
 
 
 def _fold(run_dir: Path) -> RunState:
-    return fold_run(tail_events(run_dir / "logs.jsonl", follow=False))
+    return fold_run(tail_events(run_dir / LOGS_NAME, follow=False))
 
 
 def _read_preset(run_dir: Path) -> str:

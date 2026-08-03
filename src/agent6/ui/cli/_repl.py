@@ -22,6 +22,7 @@ from agent6.git_ops import (
     revert_head,
 )
 from agent6.init import init_workspace
+from agent6.runs.layout import LOGS_NAME
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _runs_dir
 from agent6.ui.cli._interact import _pause
@@ -153,7 +154,7 @@ def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
     if not run_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    events_path = _runs_dir(root) / run_id / "logs.jsonl"
+    events_path = _runs_dir(root) / run_id / LOGS_NAME
     if not events_path.is_file():
         print(f"[agent6] /watch: no logs.jsonl at {events_path}", file=sys.stderr)
         return

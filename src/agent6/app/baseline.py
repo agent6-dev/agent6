@@ -80,10 +80,14 @@ def gate_on_base(
         shutil.rmtree(work, ignore_errors=True)
         with contextlib.suppress(GitError):
             prune_worktrees(origin)
-    if res.exec_failed or res.returncode == 124:
+    if res.exec_failed:
+        return Baseline(
+            ran=False, returncode=None, detail="the gate could not be executed at the base commit"
+        )
+    if res.returncode == 124:
         return Baseline(
             ran=False,
             returncode=None,
-            detail=f"the gate could not run at the base commit (exit {res.returncode})",
+            detail=f"the gate timed out at the base commit (after {timeout_s:g}s)",
         )
     return Baseline(ran=True, returncode=res.returncode, detail="")

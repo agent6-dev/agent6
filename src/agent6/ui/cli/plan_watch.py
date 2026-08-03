@@ -23,6 +23,7 @@ from agent6.runs.ipc import (
     write_answer,
     write_question_answers,
 )
+from agent6.runs.layout import LOGS_NAME
 from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
@@ -261,7 +262,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     manifest = loaded or RunManifest()
     mode_display = loaded.mode if loaded is not None else None
 
-    logs = target / "logs.jsonl"
+    logs = target / LOGS_NAME
     scan = scan_run_log(logs) if logs.is_file() else LogScan()
 
     pid = read_worker_pid(target)
@@ -584,7 +585,7 @@ def _watch_transcript(target: Path) -> int:
     would (see ``_CliFrontEnd``). Piped/redirected (no tty) stays a pure reader.
     Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
     A detach emits no run.end, so watching a detached run follows it to its end."""
-    events_path = target / "logs.jsonl"
+    events_path = target / LOGS_NAME
     if not events_path.is_file():
         # Not an error: a parked submission, a `fork --no-run`, or a run still
         # launching (egress + the ~80s verify inference run before the first log
@@ -664,7 +665,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
     Pretty-prints each event with the type and key fields. Returns 0 on
     EOF (run dir gone) or KeyboardInterrupt.
     """
-    events_path = target / "logs.jsonl"
+    events_path = target / LOGS_NAME
     if not events_path.is_file():
         print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
         return 2

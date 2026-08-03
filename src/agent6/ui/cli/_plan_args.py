@@ -111,7 +111,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    ask_run = ask_query.add_argument(
+    # One seed, named one way: passing both silently ignored --from.
+    seed = ask_query.add_mutually_exclusive_group()
+    ask_run = seed.add_argument(
         "--from",
         dest="ask_run",
         default="",
@@ -122,7 +124,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     ask_run.completer = _complete_session_ids  # type: ignore[attr-defined]
-    ask_query.add_argument(
+    seed.add_argument(
         "--from-latest",
         dest="ask_run_latest",
         action="store_true",

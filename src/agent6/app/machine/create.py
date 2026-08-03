@@ -42,6 +42,7 @@ from agent6.machine import (
 )
 from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import write_worker_pid
+from agent6.runs.layout import LOGS_NAME
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 
 _CREATE_TIMEOUT_S = 900.0
@@ -154,7 +155,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # and follows the authoring agent live. The parent owns the run.start header
     # (the NL task) + the per-attempt markers + the final run.end; each attempt's
     # subprocess appends its own role.*_delta / tool.* events to the same file.
-    events_log = scratch / "logs.jsonl"
+    events_log = scratch / LOGS_NAME
     events = EventSink(events_log)
     events.emit("run.start", user_task=task, mode="machine")
     # Liveness marker, mirroring machine run: the draft dir is watchable (the
