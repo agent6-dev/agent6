@@ -539,9 +539,15 @@ def _cmd_merge(
     if outcome.status == "noop":
         print(f"[agent6] {plan.run_branch} is already merged into {plan.target}; nothing to do.")
         return 0
+    note = (
+        f"\n  (merge record could not be written: {outcome.stamp_error};"
+        " `sessions prune` will call this branch unmerged)"
+        if outcome.stamp_error
+        else ""
+    )
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
-        f"({plan.strategy}) -> {outcome.merged_sha[:12]}"
+        f"({plan.strategy}) -> {outcome.merged_sha[:12]}{note}"
     )
     return 0
 

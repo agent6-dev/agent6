@@ -47,20 +47,27 @@ class MergeOutcome:
     merged_sha: str = ""
     conflicts: tuple[str, ...] = ()
     error: str = ""
+    # Why the manifest stamp did not land, "" when it did. The merge happened
+    # either way; without this, `prune` calls the branch unmerged.
+    stamp_error: str = ""
 
 
 def record_merge_in_manifest(
     layout: SessionLayout, *, merged_into: str, merged_sha: str, merged_tip: str = ""
-) -> None:
+) -> str:
     """Record a successful merge in the run manifest so later tooling can tell a
     merged run branch from an unmerged one. *merged_tip* is the run-branch tip
     that was merged: `sessions prune --delete-squashed` force-deletes only a branch
     still pointing there. Best-effort: a missing/corrupt manifest must not fail a
-    merge that already happened."""
+    merge that already happened.
+
+    Returns "" when the stamp landed, else why it did not. Silence made `prune`
+    call a branch agent6 had merged minutes earlier "NOT merged", and left
+    `--delete-squashed` unable to clean it up ever."""
     try:
         m = read_manifest(layout.session_dir)
-    except ManifestError:
-        return
+    except ManifestError as exc:
+        return str(exc)
     stamped = m.model_copy(
         update={
             "merged": MergeStamp(
@@ -73,8 +80,11 @@ def record_merge_in_manifest(
     )
     # Also ManifestError: a manifest newer than this binary can rewrite is left
     # alone rather than downgraded, and the merge it records already happened.
-    with contextlib.suppress(OSError, ManifestError):
+    try:
         write_manifest(layout.manifest_path, stamped)
+    except (OSError, ManifestError) as exc:
+        return str(exc)
+    return ""
 
 
 def restore_checkout(cwd: Path, original: str, target: str) -> None:
@@ -191,10 +201,10 @@ def execute_merge(  # noqa: PLR0911
         # credits the run with whatever was committed there since, and stamping
         # it destroys the record of the merge that did happen.
         return MergeOutcome("noop", merged_sha=result.merged_sha)
-    record_merge_in_manifest(
+    stamp_error = record_merge_in_manifest(
         layout,
         merged_into=target,
         merged_sha=result.merged_sha,
         merged_tip=branch_tip_sha(cwd, run_branch) or "",
     )
-    return MergeOutcome("merged", merged_sha=result.merged_sha)
+    return MergeOutcome("merged", merged_sha=result.merged_sha, stamp_error=stamp_error)

@@ -260,7 +260,7 @@ def print_interrupt_end(
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
 
-def finalize_auto_merge(
+def finalize_auto_merge(  # noqa: PLR0912
     cwd: Path, *, layout: SessionLayout, cfg: Config, reporter: Reporter
 ) -> None:
     """After a successful run, merge the run branch into its base using
@@ -315,6 +315,11 @@ def finalize_auto_merge(
             f"[agent6] auto_merged {run_branch} into {base_branch} "
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
+        if outcome.stamp_error:
+            reporter.err(
+                f"[agent6] merge record could not be written: {outcome.stamp_error};"
+                " `sessions prune` will call this branch unmerged"
+            )
         if cfg.git.auto_prune:
             if delete_branch_if_merged(cwd, run_branch):
                 reporter.err(
