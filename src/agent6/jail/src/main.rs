@@ -300,10 +300,10 @@ fn submounts_under(dir: &Path) -> io::Result<Vec<PathBuf>> {
 ///
 /// Lines appear in mount order, and a mount KEEPS its line after a later
 /// mount covers its mount point or an ancestor of it. A remount addressed
-/// through such a shadowed path lands on whatever the path resolves to now;
-/// where that is not a mount point the remount is EINVAL and would abort the
-/// whole rootfs setup. A recursive covering bind lists its carried copies on
-/// their own later lines, so dropping shadowed entries loses nothing.
+/// through such a shadowed path lands on whatever the path resolves to now
+/// (EINVAL where that is not a mount point). A recursive covering bind lists
+/// its carried copies on their own later lines, so dropping shadowed entries
+/// loses nothing.
 fn live_submounts(raw: &[u8], dir: &Path) -> Vec<PathBuf> {
     let mounts: Vec<PathBuf> = raw
         .split(|b| *b == b'\n')
@@ -564,12 +564,10 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         // then remount read-only. Binding from the host path (rather than
         // self-binding inside the new mount) avoids EPERM on kernels that
         // refuse re-binding paths already covered by a recursive parent
-        // bind in a user namespace. RECURSIVE: a mount nested under the
-        // protect path (`.git/objects` on its own bind) makes a plain bind
-        // of the subtree EINVAL in a user namespace -- it would expose what
-        // the locked child mount covers -- and would otherwise present an
-        // empty directory in place of the nested mount's content. Carried
-        // in, the copy is floored read-only just below.
+        // bind in a user namespace. RECURSIVE: a plain bind of a subtree
+        // holding a locked child mount (`.git/objects` on its own bind) is
+        // EINVAL in a user namespace, and the nested mount's content stays
+        // visible rather than covered by an empty directory.
         mount(
             Some(canon_src.as_path()),
             &target,

@@ -177,10 +177,8 @@ def emit_session_start(
     events: EventSink, session_dir: Path, event_type: str, /, **fields: Any
 ) -> None:
     """Emit a start-family event (``session.start`` / ``loop.resume.start``)
-    with the worker pid already on disk. The status fold reads a started
-    session with no pid file as one whose worker exited, so a start event
-    readable before the pid write lands makes a live session read dead on
-    every surface. The emitter owns the order; no call site can invert it."""
+    with the worker pid already on disk: the status fold reads a started
+    session with no pid file as one whose worker exited."""
     write_worker_pid(session_dir, os.getpid())
     events.emit(event_type, **fields)
 

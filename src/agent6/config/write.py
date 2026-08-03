@@ -376,8 +376,8 @@ def set_config_leaves(
                 if val is not None:
                     upsert_toml_leaf(target, f"{table}.{key}", val)
         except ConfigError as exc:
-            # A refused leaf after earlier ones landed: put the file back (or
-            # keep the partial write, saying so, when the lock failed open).
+            # Earlier leaves may already have landed; the file must not stay
+            # half-written.
             raise ConfigError(keep_or_rollback(target, prior, str(exc), held=held)) from exc
         return revalidate_write(
             repo_root,

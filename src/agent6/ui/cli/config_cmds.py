@@ -130,9 +130,8 @@ def _open_target(target: Path) -> None:
 
 
 def _cmd_config_fill(config_path: Path | None, *, force: bool) -> int:
-    """Materialize defaults plus global into the global config file. Never the
-    repo layer: a filled repo config would explicitly set everything, shadowing
-    the global file permanently, future edits included."""
+    """Materialize defaults plus global into the global config file, never
+    the repo layer."""
     target = global_config_path()
     _open_target(target)
     # Load the effective config, existence-check, and publish all under the
