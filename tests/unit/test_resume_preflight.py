@@ -325,6 +325,9 @@ def test_plan_resume_builds_the_planner_provider(
     monkeypatch.chdir(repo)
     _plan_run_dir(repo, "plan-BBBB22")
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    # The default run_commands="ask" with no tty now REFUSES rather than
+    # hanging; this test is about which provider drives the leg.
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
 
     def _yes(*_a: object) -> bool:
         return True

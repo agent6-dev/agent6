@@ -1145,16 +1145,18 @@ class Config(BaseModel):
         *,
         disable_sandbox: bool = False,
         auto_approve: bool = False,
+        no_commands: bool = False,
     ) -> Config:
         """Return a copy with per-invocation sandbox overrides from CLI flags.
 
         ``disable_sandbox`` forces ``sandbox.isolation = "none"`` (unconfined).
         ``auto_approve`` upgrades ``run_commands`` ``"ask" -> "yes"`` but never
         resurrects a withheld ``"no"`` (a per-invocation flag must not grant a
-        capability the standing policy denied). Both are operator-supplied
-        (flag/env); the LLM can reach neither.
+        capability the standing policy denied). ``no_commands`` pins it to
+        ``"no"`` and always may: tightening needs no permission. All are
+        operator-supplied (flag/env); the LLM can reach none of them.
         """
-        if not disable_sandbox and not auto_approve:
+        if not disable_sandbox and not auto_approve and not no_commands:
             return self
         data = self.model_dump(mode="python")
         sandbox = data.setdefault("sandbox", {})
@@ -1162,6 +1164,8 @@ class Config(BaseModel):
             sandbox["isolation"] = "none"
         if auto_approve and self.sandbox.run_commands != "no":
             sandbox["run_commands"] = "yes"
+        if no_commands:
+            sandbox["run_commands"] = "no"
         return Config.model_validate(data)
 
     def with_machine_agent_overrides(

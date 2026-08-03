@@ -65,3 +65,22 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
         seen.clear()
         run_mod.run_task(_cfg("yes"), "q", frontend=MagicMock(), mode=mode)
         assert seen == [expected], f"{mode} saw {seen}"
+
+
+def test_no_commands_pins_the_knob_shut() -> None:
+    """The symmetric flag to --auto-approve: one knob, two per-invocation pins.
+    A btw uses it, but an operator asking a quick question in a strange repo
+    has the same reason to."""
+    for start in ("yes", "ask", "no"):
+        cfg = Config.model_validate({"sandbox": {"run_commands": start}})
+        assert cfg.with_sandbox_overrides(no_commands=True).sandbox.run_commands == "no"
+
+
+def test_tightening_needs_no_permission_but_widening_does() -> None:
+    """--auto-approve must never resurrect a withheld "no" (a flag cannot grant
+    what the standing policy denied); --no-commands always may, because
+    tightening is always allowed."""
+    withheld = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
+    asked = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    assert asked.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "yes"

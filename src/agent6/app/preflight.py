@@ -117,24 +117,28 @@ def require_git_repo(cwd: Path) -> bool:
     return False
 
 
-def warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
-    """Note when run_commands='ask' but no approver is reachable at start.
+def headless_approval_refusal(cfg: Config, *, tui_enabled: bool, away: str) -> str | None:
+    """Refuse a run that would block forever waiting to be approved.
 
-    A headless run (no TUI, no controlling TTY) has nothing here to answer the
-    Allow/Deny prompt, so a run_command PAUSES for a front-end to attach. Say so
-    up front instead of letting the agent look wedged. run_verify_command is
-    unaffected. Fires for every mode this is called from (run/plan/ask) -- all
-    three expose run_command (only machine/agent block it, and they never reach
-    here).
+    `run_commands = "ask"` needs someone to answer. With no TUI, no controlling
+    tty, and no away-mode telling us what an absent operator meant, the first
+    command PAUSES indefinitely -- and the verify gate is a command too, so that
+    is essentially every run, every `/parallel` lane included. Refuse with the
+    fix rather than hang: a run that cannot ask should not start.
+
+    Returns the message, or None when approval is answerable.
     """
-    if cfg.sandbox.run_commands == "ask" and not tui_enabled and not sys.stdin.isatty():
-        print(
-            "[agent6] NOTE: sandbox.run_commands='ask' with no terminal here, so a"
-            " run_command will PAUSE until you attach a front-end to approve it"
-            " (`agent6 attach <run>`, the TUI, or the web). Set"
-            " sandbox.run_commands='yes'/'no' to auto-approve/deny for unattended runs.",
-            file=sys.stderr,
-        )
+    if cfg.sandbox.run_commands != "ask" or tui_enabled or sys.stdin.isatty() or away:
+        return None
+    return (
+        "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
+        " terminal, no TUI and no away-mode. Every command -- the verify gate"
+        " included -- would wait forever.\n"
+        "  - unattended: sandbox.run_commands = 'yes' (or --auto-approve), or 'no'"
+        " to withhold commands entirely\n"
+        "  - attended: start it from a terminal, or set an away-mode"
+        " (AGENT6_DETACHED_AWAY=wait|deny) so an absent operator's intent is known"
+    )
 
 
 _RUN_BRANCH_PREFIX = "agent6/"

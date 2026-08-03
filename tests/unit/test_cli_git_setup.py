@@ -11,31 +11,27 @@ from typing import cast
 
 import pytest
 
-from agent6.app.preflight import require_git_repo, warn_if_headless_ask
+from agent6.app.preflight import headless_approval_refusal, require_git_repo
 from agent6.config import Config
 from agent6.git_ops import init_repo, is_git_repo
 from agent6.ui.cli import main
 from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 
 
-def testwarn_if_headless_ask(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Duplicate coverage of the refusal, from the CLI's angle: the same helper
+    both lifecycles call before starting anything."""
     ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
-    # Headless (no TTY, no TUI) + ask -> warn (a run_command pauses for a front-end).
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    warn_if_headless_ask(ask, tui_enabled=False)
-    assert "PAUSE" in capsys.readouterr().err
-    # No warning when a TUI is up, or stdin is a TTY, or run_commands != ask.
-    warn_if_headless_ask(ask, tui_enabled=True)
-    assert capsys.readouterr().err == ""
+    assert headless_approval_refusal(ask, tui_enabled=False, away="") is not None
+    # Answerable: a TUI, a tty, an away-mode, or nothing to approve.
+    assert headless_approval_refusal(ask, tui_enabled=True, away="") is None
+    assert headless_approval_refusal(ask, tui_enabled=False, away="deny") is None
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    warn_if_headless_ask(ask, tui_enabled=False)
-    assert capsys.readouterr().err == ""
+    assert headless_approval_refusal(ask, tui_enabled=False, away="") is None
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     yes = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="yes")))
-    warn_if_headless_ask(yes, tui_enabled=False)
-    assert capsys.readouterr().err == ""
+    assert headless_approval_refusal(yes, tui_enabled=False, away="") is None
 
 
 def test_run_surfaces_git_wall_before_provider_wall(

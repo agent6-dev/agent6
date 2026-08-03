@@ -77,14 +77,24 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
             " machine; the host becomes the only boundary."
         ),
     )
-    parser.add_argument(
+    approval = parser.add_mutually_exclusive_group()
+    approval.add_argument(
         "--auto-approve",
         action="store_true",
         help=(
-            "Auto-approve run_command for this run instead of prompting"
+            "Auto-approve every jailed command for this run instead of prompting"
             " (same as sandbox.run_commands = yes). Confinement still depends"
             " on sandbox.isolation; combined with --dangerously-disable-sandbox"
             " it hands the agent unprompted host access."
+        ),
+    )
+    approval.add_argument(
+        "--no-commands",
+        action="store_true",
+        help=(
+            "Withhold every jailed command for this session (same as"
+            " sandbox.run_commands = no): no run_command, no verify gate, no"
+            " background commands. What `/btw` asks its side question with."
         ),
     )
 

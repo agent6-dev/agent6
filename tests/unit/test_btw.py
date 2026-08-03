@@ -44,9 +44,11 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     asks = tmp_path / "asks"
     asks.mkdir()
     launched: list[list[str]] = []
+    envs: list[dict[str, str]] = []
 
     def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
         launched.append(argv)
+        envs.append(env)
         _ask_dir(asks, "quiet-fox-AAAAAA", events=[{"type": "run.start"}])
         return ""
 
@@ -61,7 +63,10 @@ def test_it_returns_as_soon_as_the_session_exists(tmp_path: Path) -> None:
     assert session is not None and session.id == "quiet-fox-AAAAAA"
     # Seeded with the parent's context, and `--` so a question starting with a
     # dash cannot be read as a flag.
-    assert launched == [["ask", "--from", "parent-BBBBBB", "--", "why h265"]]
+    # `--no-commands`: nobody can approve for a btw (no terminal of its own, the
+    # parent mid-run), so the tools are withheld rather than offered-and-denied.
+    # `--` guards a question starting with a dash.
+    assert launched == [["ask", "--no-commands", "--from", "parent-BBBBBB", "--", "why h265"]]
 
 
 def test_a_bare_btw_asks_for_a_question_instead_of_opening_a_session(tmp_path: Path) -> None:

@@ -41,9 +41,9 @@ from agent6.app.finalize import (
 )
 from agent6.app.manifest import stamp_verify_gate
 from agent6.app.preflight import (
+    headless_approval_refusal,
     infer_verify_if_unset,
     require_git_repo,
-    warn_if_headless_ask,
 )
 from agent6.app.providers import (
     role_temperature,
@@ -496,7 +496,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
-        warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        refusal = headless_approval_refusal(
+            cfg, tui_enabled=tui_enabled, away=os.environ.get("AGENT6_DETACHED_AWAY", "")
+        )
+        if refusal is not None:
+            reporter.err(f"REFUSING: {refusal}")
+            return 2
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)

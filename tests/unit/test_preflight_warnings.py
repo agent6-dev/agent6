@@ -8,7 +8,7 @@ import io
 
 import pytest
 
-from agent6.app.preflight import warn_if_headless_ask
+from agent6.app.preflight import headless_approval_refusal
 from agent6.config import Config
 
 
@@ -16,27 +16,33 @@ def _ask_cfg() -> Config:
     return Config.model_validate({"sandbox": {"run_commands": "ask"}})
 
 
-def test_headless_ask_note_prints_when_no_approver_reachable(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # No terminal, no TUI, run_commands='ask': a run_command PAUSES with nothing
-    # to approve it. The note fires for every mode this helper is called from
-    # (run/plan/ask) -- all three expose run_command (see
-    # test_tool_definitions_ask_mode_is_read_only_with_commands).
+    """`ask` needs someone to answer. With no terminal, no TUI and no away-mode
+    the first command waits forever -- and since the verify gate is a command
+    too, that is essentially every run, every /parallel lane included. It used
+    to print a note and hang anyway."""
     monkeypatch.setattr("sys.stdin", io.StringIO())  # isatty() -> False
-    warn_if_headless_ask(_ask_cfg(), tui_enabled=False)
-    assert "run_command will PAUSE" in capsys.readouterr().err
+    refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="")
+    assert refusal is not None
+    assert "would wait forever" in refusal
+    assert "--auto-approve" in refusal  # the fix is named
 
 
-def test_headless_ask_note_silent_with_approver_or_no_ask(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("tui", "away", "commands"),
+    [
+        (True, "", "ask"),  # a TUI can answer
+        (False, "wait", "ask"),  # an away-mode says what an absent operator meant
+        (False, "deny", "ask"),  # ... including "deny", which a btw uses
+        (False, "", "yes"),  # nothing to approve
+        (False, "", "no"),  # commands withheld entirely
+    ],
+)
+def test_answerable_runs_are_not_refused(
+    monkeypatch: pytest.MonkeyPatch, tui: bool, away: str, commands: str
 ) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO())  # isatty() -> False
-    # A TUI can answer the prompt: no note.
-    warn_if_headless_ask(_ask_cfg(), tui_enabled=True)
-    assert capsys.readouterr().err == ""
-    # run_commands != 'ask' never prompts: no note.
-    warn_if_headless_ask(
-        Config.model_validate({"sandbox": {"run_commands": "no"}}), tui_enabled=False
-    )
-    assert capsys.readouterr().err == ""
+    monkeypatch.setattr("sys.stdin", io.StringIO())
+    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
+    assert headless_approval_refusal(cfg, tui_enabled=tui, away=away) is None

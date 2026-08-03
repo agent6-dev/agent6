@@ -63,25 +63,29 @@ class SandboxOverrides:
     """Per-invocation sandbox/approval overrides from CLI flags.
 
     ``--dangerously-disable-sandbox`` runs unconfined; ``--auto-approve``
-    auto-approves ``run_command``. The env setter for the sandbox is read in
+    auto-approves every jailed command; ``--no-commands`` withholds them
+    entirely (what `/btw` spawns its side question with). The env setter for the sandbox is read in
     ``detect.resolve_isolation`` (so it also reaches machine subprocesses), so
     ``from_args`` reads only the flags. Flags and env are structurally
     LLM-unreachable."""
 
     disable_sandbox: bool = False
     auto_approve: bool = False
+    no_commands: bool = False
 
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> SandboxOverrides:
         return cls(
             disable_sandbox=bool(getattr(args, "dangerously_disable_sandbox", False)),
             auto_approve=bool(getattr(args, "auto_approve", False)),
+            no_commands=bool(getattr(args, "no_commands", False)),
         )
 
     def apply(self, cfg: Config) -> Config:
         return cfg.with_sandbox_overrides(
             disable_sandbox=self.disable_sandbox,
             auto_approve=self.auto_approve,
+            no_commands=self.no_commands,
         )
 
 

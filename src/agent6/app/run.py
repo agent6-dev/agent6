@@ -53,8 +53,8 @@ from agent6.app.manifest import (
 )
 from agent6.app.preflight import (
     BranchChoice,
+    headless_approval_refusal,
     infer_verify_if_unset,
-    warn_if_headless_ask,
 )
 from agent6.app.providers import (
     build_prompt_reviser_provider,
@@ -543,7 +543,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        refusal = headless_approval_refusal(
+            cfg, tui_enabled=tui_enabled, away=os.environ.get("AGENT6_DETACHED_AWAY", "")
+        )
+        if refusal is not None:
+            reporter.err(f"REFUSING: {refusal}")
+            return 2
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
         # stdin. Skip revision for this run instead.

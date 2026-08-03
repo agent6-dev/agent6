@@ -60,7 +60,17 @@ def start_btw(
     if not question:
         return None, "ask something: `/btw <question>`"
     before = {d.name for d in list_asks()}
-    err = launch(cwd, ["ask", "--from", parent_id, "--", question], {"AGENT6_SUBRUN": "1"})
+    # `--no-commands`: a btw answers from what it can read, and never runs
+    # anything. It has no terminal of its own and the parent is mid-run, so
+    # there is nobody to approve -- and withholding the tools outright beats
+    # offering them and denying each call, which only burns the model's turns.
+    # A question that needs to run something is a question for a full ask, which
+    # this session already is: resume it and it has the tools.
+    err = launch(
+        cwd,
+        ["ask", "--no-commands", "--from", parent_id, "--", question],
+        {"AGENT6_SUBRUN": "1"},
+    )
     if err:
         return None, err
     deadline = time.monotonic() + 30.0
