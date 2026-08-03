@@ -50,6 +50,7 @@ from agent6.machine import (
     MachineError,
     MachineJournal,
     MachineSpec,
+    PendingWait,
     StepEvent,
     ToolState,
     drive,
@@ -406,6 +407,16 @@ def _plural(n: int, singular: str, plural: str | None = None) -> str:
     return f"{n} {word}"
 
 
+def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | None, str]:
+    """(pending wait, note): a corrupt wait.json yields ``(None, reason)`` so the
+    caller keeps its readout going -- mirroring ``machine_is_parked`` tolerating
+    it -- instead of the JournalError aborting the whole command."""
+    try:
+        return journal.read_pending_wait(), ""
+    except JournalError as exc:
+        return None, str(exc)
+
+
 def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     cwd = Path.cwd()
     root = _machines_dir(cwd) / machine_id
@@ -428,10 +439,14 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         result = drive(spec, journal, None, live=False)
         events = journal.read()
         snapshot = journal.latest_snapshot()
-        pending = journal.read_pending_wait()
     except (JournalError, EngineError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+    # A corrupt wait.json must not hide the whole readout: the shared dir word
+    # (machine_word_for_dir -> machine_is_parked) tolerates it as "parked, keep
+    # streaming", so status mirrors that -- drop the wait DETAIL, note it, and
+    # still print the state / transitions / spend / steps below.
+    pending, pending_note = _read_pending_wait_tolerant(journal)
 
     alive = worker_is_alive(root)
     spend, inflight_state = machine_spend(events, root, alive=alive)
@@ -460,6 +475,8 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         # A foreground run blocked in a wait writes no pending-wait record (that
         # is --exit-on-wait's parked form), but it is just as pokeable; say so.
         print(f"  waiting in {result.state!r}: agent6 machine poke {machine_id} [--message TEXT]")
+    if pending_note:
+        print(f"  pending wait: unreadable ({pending_note})")
     if pending is not None:
         if pending.wake_epoch is not None:
             wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()

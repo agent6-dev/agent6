@@ -135,6 +135,28 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
 
 
+def test_status_tolerates_a_corrupt_pending_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A corrupt wait.json must not abort the whole readout: the shared dir word
+    (machine_word_for_dir -> machine_is_parked) tolerates it as parked, so status
+    mirrors that -- it notes the wait file is unreadable and still prints the
+    state / spend, instead of ERROR + exit 1 (the CLI was off that shared rule)."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()  # drop run output
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    clear_worker_pid(root)
+    MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
+
+    code = main(["machine", "status", "waiter_delayed"])
+    assert code == 0  # not aborted
+    out = capsys.readouterr().out
+    assert "pending wait: unreadable" in out  # truthful, not silently swallowed
+    assert "state:" in out  # the rest of the readout still prints
+
+
 CRASHER = """
 machine = "crasher"
 version = 1
