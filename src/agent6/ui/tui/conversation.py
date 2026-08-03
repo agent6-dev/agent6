@@ -123,6 +123,17 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
     return out
 
 
+def composer_labels(*, live: bool) -> tuple[str, str]:
+    """(border title, key hint) for the composer.
+
+    One conversation view serves runs, plans and asks, so it says "session":
+    a fixed "the run" was wrong two times in three.
+    """
+    if live:
+        return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
+    return ("continue this session", "Enter resumes · Ctrl-J newline")
+
+
 class _ChromeStatic(Static):
     """A Static that never joins a text selection, so dragging over the title or
     the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
@@ -194,12 +205,11 @@ class SteerInput(TextArea):
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
 
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
-        """Relabel for the run's state: steering (live) vs resuming (finished),
-        plus the context-window fill when known, right where you type. Only
-        writes on a real change: this runs on every heartbeat, and same-value
-        style writes still cost a refresh."""
-        title = "steer the run (/pin, /compact [focus])" if live else "continue the run"
-        keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
+        """Relabel for the session's state: steering (live) vs resuming
+        (finished), plus the context-window fill when known, right where you
+        type. Only writes on a real change: this runs on every heartbeat, and
+        same-value style writes still cost a refresh."""
+        title, keys = composer_labels(live=live)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         # The run's policy sits where the eye already goes for status, from the
         # same fold the CLI banner and the web header read.

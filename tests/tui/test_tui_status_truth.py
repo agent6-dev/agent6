@@ -99,7 +99,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
             assert "working…" not in body
             # Both composer bars offer the resume action, not a dead-end steer.
             assert app._dash.query_one("#dash-input", SteerInput).border_title == (
-                "continue the run"
+                "continue this session"
             )
             app.submit_instruction("go ahead")
             assert spawned == [("parked1", "go ahead")]
@@ -182,7 +182,7 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
             app._tick()
             await pilot.pause()
             bar = app._conv.query_one("#conv-input", SteerInput)
-            assert bar.border_title == "continue the run"
+            assert bar.border_title == "continue this session"
 
     asyncio.run(scenario())
 

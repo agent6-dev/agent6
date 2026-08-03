@@ -647,7 +647,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
             await pilot.pause()
             bar = app._conv.query_one("#conv-input", SteerInput)
             assert bar.display  # the primary view keeps the bar after session.end
-            assert bar.border_title == "continue the run"  # relabelled for resume
+            assert bar.border_title == "continue this session"  # relabelled for resume
             bar.post_message(SteerInput.Submitted("also add tests"))
             await pilot.pause()
             await pilot.pause()
