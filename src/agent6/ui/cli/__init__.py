@@ -189,14 +189,15 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             or args.interactive
             or args.skill
             or args.decompose
+            or args.pins
             or getattr(args, "profile", "")
         ):
             # Resume cannot honor run-start flags (the manifest drives
-            # mode/profile); refuse loudly like the task/--run-id conflicts
-            # instead of silently dropping them.
+            # mode/profile; --pin seeds a FRESH run's pins); refuse loudly like
+            # the task/--run-id conflicts instead of silently dropping them.
             print(
                 "ERROR: --continue resumes an existing run; it cannot combine with"
-                " --from-plan, -i, --skill, --decompose, or --profile"
+                " --from-plan, -i, --skill, --decompose, --pin, or --profile"
                 " (those apply only when starting a new run).",
                 file=sys.stderr,
             )

@@ -129,7 +129,14 @@ def test_run_no_task_points_at_most_recent_plan(
 
 @pytest.mark.parametrize(
     "flags",
-    [["--from-plan", "0718-abcd"], ["-i"], ["--skill", "x"], ["--decompose"], ["--profile", "p"]],
+    [
+        ["--from-plan", "0718-abcd"],
+        ["-i"],
+        ["--skill", "x"],
+        ["--decompose"],
+        ["--profile", "p"],
+        ["--pin", "never touch schema"],  # --pin seeds a FRESH run; refuse, don't drop
+    ],
 )
 def test_continue_rejects_run_start_only_flags(
     flags: list[str],

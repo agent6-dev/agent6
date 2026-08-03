@@ -14,7 +14,7 @@ wire the coordinator spawner from here.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from agent6.app._setup import explicit_usd_flag_error
@@ -104,6 +104,7 @@ def dispatch_parallel(
     cwd: Path,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    pins: Sequence[str] = (),
 ) -> int:
     """Preflight and route `agent6 run --parallel`: refuse an unenforceable
     --max-usd or a dirty origin (lanes clone committed HEAD only), plan the
@@ -159,4 +160,5 @@ def dispatch_parallel(
         max_usd=max_usd,
         fanout_id=fanout_id,
         auto_approve=auto_approve,
+        pins=pins,
     )

@@ -832,3 +832,60 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     flat = str(messages)
     assert "PINNED operator instructions (verbatim):" in flat
     assert "never touch schema files" in flat
+
+
+def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
+    """--pin seeded state.pins DIRECTLY, bypassing the PINS_MAX_CHARS cap (a
+    huge --pin then rode every restart and permanently wedged /pin) and the
+    non-empty check (--pin '' seeded a blank pin). Seeding now goes through the
+    same _try_pin owner /pin uses."""
+    from agent6.providers import ProviderResponse
+    from agent6.workflows.loop import PINS_MAX_CHARS  # pyright: ignore[reportPrivateUsage]
+
+    provider = MagicMock()
+    provider.call.return_value = ProviderResponse(
+        text="",
+        tool_uses=({"id": "t1", "name": "finish_run", "input": {"summary": "d"}},),
+        stop_reason="tool_use",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "finish_run", "input": {"summary": "d"}}
+            ]
+        },
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
+    config = MagicMock(
+        prompt=MagicMock(system_prompt_file=""),
+        workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+    )
+    ev = _EventCapture()
+    huge = "x" * (PINS_MAX_CHARS + 1)
+    wf = _wf(
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+        initial_pins=("keep this", "", huge, "   "),  # 1 good, 1 empty, 1 over-cap, 1 blank
+    )
+    conversation = Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=conversation,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        original_task="go",
+        root_task_id=None,
+    )
+    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    assert restored and restored[0]["pins"] == ["keep this"]  # only the fitting one
+    refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
+    assert len(refused) == 3  # the empty, the over-cap, and the blank

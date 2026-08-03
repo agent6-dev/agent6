@@ -271,6 +271,7 @@ def _cmd_run(  # noqa: PLR0911
             cwd=Path.cwd(),
             max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
             auto_approve=sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
+            pins=pins,
         )
 
     return run_task(

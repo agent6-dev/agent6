@@ -889,9 +889,16 @@ class Workflow:
             elided, gists = count_elisions(conversation)
             self._emit("loop.compact.restored", elided=elided, gists=gists)
         elif self.initial_pins:
-            state.pins = list(self.initial_pins)
+            # Seed via the pin owner so --pin honors the cap + non-empty check
+            # (writing state.pins directly skipped both); a --pin that doesn't
+            # fit is refused loudly, not silently dropped or wedged in.
+            for pin in self.initial_pins:
+                if not self._try_pin(state, pin):
+                    self._log(f"  --pin refused (empty or over the {PINS_MAX_CHARS}-char cap)")
+                    self._emit("loop.pin.refused", chars=len(pin), limit=PINS_MAX_CHARS)
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
-            conversation.notice(pinned_block(state.pins))
+            if state.pins:
+                conversation.notice(pinned_block(state.pins))
 
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
@@ -4006,12 +4013,10 @@ class Workflow:
             return True
         if instruction is None:
             return False
-        held = sum(len(p) for p in state.pins)
-        if held + len(instruction) > PINS_MAX_CHARS:
-            self._log(
-                f"  /pin over cap ({held} + {len(instruction)} > {PINS_MAX_CHARS});"
-                " delivered as an ordinary steer"
-            )
+        if not self._try_pin(state, instruction):
+            # parse_pin already rejects an empty directive, so a refusal here is
+            # always the cap: deliver the instruction as an ordinary steer.
+            self._log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
             self._emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
             conversation.notice(
                 f"OPERATOR STEERING (pin refused: the {PINS_MAX_CHARS}-char pin cap "
@@ -4020,7 +4025,6 @@ class Workflow:
                 f"{instruction}"
             )
             return True
-        state.pins.append(instruction)
         self._log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
         self._emit(
             "loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins)
@@ -4030,6 +4034,22 @@ class Workflow:
             "compaction; it stays binding for the rest of the run):\n"
             f"{instruction}"
         )
+        return True
+
+    def _try_pin(self, state: _LoopState, instruction: str) -> bool:
+        """Append *instruction* to the run's pins IF it is non-empty and fits
+        the PINS_MAX_CHARS cap; return whether it was pinned. THE single owner
+        of the pin invariants -- both `/pin` and the pre-run --pin seeding go
+        through it, so seeding cannot skip the cap (a huge --pin otherwise rode
+        every restart and permanently wedged /pin) or the empty check
+        (`--pin ""` seeded a blank pin)."""
+        instruction = instruction.strip()
+        if not instruction:
+            return False
+        held = sum(len(p) for p in state.pins)
+        if held + len(instruction) > PINS_MAX_CHARS:
+            return False
+        state.pins.append(instruction)
         return True
 
     # ---- /parallel steer dispatch (coordinator) --------------------------

@@ -280,6 +280,26 @@ def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
     assert captured == [True, False]
 
 
+def test_dispatch_parallel_forwards_pins_to_run_parallel(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run --parallel --pin X` must reach run_parallel: the CLI fan-out
+    returns before run_task, so my C5 threaded --pin only through the in-loop
+    /parallel path -- the flag's own help promised the CLI fan-out."""
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    captured: list[object] = []
+
+    def _fake_run(task: str, lanes: object, **kw: object) -> int:
+        captured.append(kw.get("pins"))
+        return 0
+
+    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    parallel_cmd.dispatch_parallel(
+        _provider_cfg(), "fix", "made-up/model", cwd=origin, pins=("never touch schema",)
+    )
+    assert captured == [("never touch schema",)]
+
+
 def test_coordinator_dispatch_refuses_unknown_model(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
@@ -573,6 +593,30 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     )
 
     assert captured[-1]["auto_approve"] is True
+
+
+def test_run_parallel_forwards_pins_to_the_default_spawner(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+) -> None:
+    """run_parallel must carry --pin into every lane's bridge spawner (which
+    turns them into repeatable --pin argv, already tested)."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "1")
+    captured: list[dict[str, object]] = []
+
+    def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
+        captured.append(kw)
+        return LaneResult(spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=False, error="s")
+
+    monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
+    run_parallel(
+        "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,
+        runtime=runtime, fanout_id="fan", pins=("keep it",),
+    )  # fmt: skip
+    assert captured[-1]["pins"] == ("keep it",)
 
 
 # ---------------------------------------------------------------------------

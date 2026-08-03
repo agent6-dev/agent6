@@ -945,6 +945,7 @@ def run_parallel(
     max_usd: float | None = None,
     fanout_id: str | None = None,
     auto_approve: bool = False,
+    pins: Sequence[str] = (),
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Run *lanes* to completion, import them, and print a ranked comparison.
@@ -961,6 +962,7 @@ def run_parallel(
     if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
+            pins=pins,
             cfg=cfg,
             origin=origin,
             max_usd=max_usd,
