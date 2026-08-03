@@ -1071,24 +1071,17 @@ fn apply_seccomp() -> io::Result<()> {
     const SYS_KEXEC_FILE_LOAD: i64 = 294;
     #[cfg(not(target_arch = "aarch64"))]
     const SYS_KEXEC_FILE_LOAD: i64 = libc::SYS_kexec_file_load;
-    // libc exposes the legacy umount as `umount` on some targets and not at all
-    // on others (aarch64 never had it), so name it: 22 on x86_64, absent
-    // elsewhere -- denying a number the arch does not implement costs nothing.
-    #[cfg(target_arch = "x86_64")]
-    const SYS_UMOUNT: i64 = 22;
-    #[cfg(not(target_arch = "x86_64"))]
-    const SYS_UMOUNT: i64 = libc::SYS_umount2; // no legacy umount on this arch
-
     let denied: &[i64] = &[
         libc::SYS_ptrace,
         libc::SYS_process_vm_readv,
         libc::SYS_process_vm_writev,
         libc::SYS_kcmp,
         libc::SYS_mount,
-        // Both spellings: syscall 22 is still `umount` on x86_64, and denying
-        // only the newer name left the older one reaching the same teardown.
+        // umount2 is the unmount call on every arch here. There is no second
+        // spelling to add: the legacy `umount` is number 22 of the I386 table,
+        // and 22 in the 64-bit one is `pipe`. A foreign-arch caller cannot reach
+        // the i386 table either -- seccompiler's prologue kills on arch mismatch.
         libc::SYS_umount2,
-        SYS_UMOUNT,
         libc::SYS_pivot_root,
         // Modern mount API (new_mount_api, Linux 5.2+). A strict jailed child
         // is userns-root with CAP_SYS_ADMIN over its own mount namespace and

@@ -213,27 +213,57 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
             assert flags.startswith("ro"), f"{mountpoint} is writable inside a RO grant: {flags}"
 
 
-def test_the_legacy_umount_syscall_is_blocked_too(tmp_path: Path) -> None:
-    """Denying only umount2 left syscall 22 (`umount`, still live on x86_64)
-    reaching the same teardown: a jailed child could unmount /proc, /dev or the
-    workspace bind from inside its own namespace. Probed ALLOWED against a build
-    without it.
+def test_the_teardown_call_is_denied_and_pipe_is_not(tmp_path: Path) -> None:
+    """umount2 is the unmount call to deny, and syscall 22 is not a spelling of
+    it on x86_64: 22 is `pipe(2)` there, and the 64-bit table has no legacy
+    umount at all (the i386 one is number 22 of a DIFFERENT table).
+
+    An audit probe called 22 with a path, read the 0 it got back as "the legacy
+    umount is ALLOWED", and the deny that followed refused pipe(2) under a
+    comment about unmounting. Nothing noticed because glibc routes pipe()
+    through pipe2(); a raw caller got EPERM from a rule that protected nothing.
+    The i386 spelling is unreachable either way -- seccompiler's arch prologue
+    kills a foreign-arch caller outright.
+
+    Both halves matter: the jail must deny the teardown AND leave an ordinary
+    syscall alone.
     """
+    import platform
+
     from agent6.sandbox.jail import run_in_jail
     from agent6.types import JailPolicy
+
+    # Numbers, not names: the point is which number the arch assigns to what.
+    by_arch = {"x86_64": (166, 22), "aarch64": (39, None)}  # (umount2, pipe or none)
+    if platform.machine() not in by_arch:
+        pytest.skip(f"no syscall numbers pinned for {platform.machine()}")
+    umount2_nr, pipe_nr = by_arch[platform.machine()]
 
     probe = (
         "import ctypes\n"
         "libc = ctypes.CDLL(None, use_errno=True)\n"
-        "r = libc.syscall(ctypes.c_long(22), b'/proc')\n"
-        "print('blocked' if r == -1 else 'ALLOWED')\n"
+        "buf = (ctypes.c_int * 2)()\n"
+        f"print('umount2', libc.syscall(ctypes.c_long({umount2_nr}), b'/proc', 0),"
+        " ctypes.get_errno())\n"
+        + (
+            f"print('pipe', libc.syscall(ctypes.c_long({pipe_nr}), ctypes.byref(buf)),"
+            " ctypes.get_errno())\n"
+            if pipe_nr
+            else ""
+        )
     )
     res = run_in_jail(
         JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
     )
-    if "blocked" not in (res.stdout or "") and "ALLOWED" not in (res.stdout or ""):
+    out = res.stdout or ""
+    if "umount2" not in out:
         pytest.skip(f"probe did not run: {res.stderr[:200]}")
-    assert "ALLOWED" not in (res.stdout or ""), "the legacy umount syscall reached the jail"
+    umount2_line = next(ln for ln in out.splitlines() if ln.startswith("umount2"))
+    assert umount2_line.split()[1] == "-1", f"the unmount call reached the jail: {umount2_line}"
+    assert umount2_line.split()[2] == "1", f"denied by something other than the filter: {out}"
+    if pipe_nr:
+        pipe_line = next(ln for ln in out.splitlines() if ln.startswith("pipe"))
+        assert pipe_line.split()[1] == "0", f"the jail denies pipe(2): {pipe_line}"
 
 
 def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
