@@ -829,6 +829,21 @@ def _import_lanes(
                 f" lineage stamp failed: {stamp_err}"
             )
         summary = summarize_session_dir(dest)
+        if summary.status == "failed":
+            # Imported, but not a candidate. "failed" is reserved for a run that
+            # did not finish deliberately (provider_error, went_quiet); a
+            # deliberate finish over a red gate is "finished" and still ranks,
+            # below the green ones. Ranking a failure stamped it `winner` in its
+            # manifest, put a star on it in every listing, and printed a merge
+            # command for a branch with nothing on it.
+            failed.append(
+                (
+                    res,
+                    f"failed ({summary.reason or 'no reason recorded'}); branch imported as"
+                    f" {res.branch}, not ranked",
+                )
+            )
+            continue
         if died_without_end(summary.status):
             # Imported (its branch is safe in the origin) but NOT a candidate:
             # verify_ok reads a crash as the same tri-state as a clean unverified

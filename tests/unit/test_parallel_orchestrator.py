@@ -675,9 +675,11 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     origin_state = resolved_state_dir(origin)
     cfg = Config()  # no reviewer -> mechanical ranking
     lanes = _specs(tmp_path, cfg, "fan", "2")
-    # Lane 2 passes verify, lane 1 fails -> lane 2 wins (rank 1) mechanically.
+    # Lane 2 passes verify, lane 1 finishes without it -> lane 2 wins (rank 1)
+    # mechanically. The loser is a deliberate finish, not a "failed" run: a
+    # failure is imported but never ranked, so it would carry no stamp at all.
     spawner = _FakeSpawner(
-        origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "failed", 2: "passed"}
+        origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "finished", 2: "passed"}
     )
 
     run_parallel(
@@ -1469,3 +1471,52 @@ def test_lane_config_forces_a_run_branch(tmp_path: Path) -> None:
     path = _write_lane_config(cfg, spec)
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
+
+
+def test_a_fanout_where_every_lane_failed_crowns_nobody(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed lane is imported but never ranked.
+
+    Only lanes that died WITHOUT a session.end were excluded, so a lane that
+    ended `provider_error` sailed into the candidate set: the fan-out stamped one
+    `compare.winner=true`, wore the star in every listing, printed a merge
+    command for a branch with nothing on it, and exited 0. `failed` is reserved
+    for a run that did not finish deliberately -- a deliberate finish over a red
+    gate is `finished` and still ranks, which the sibling test above covers."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "allf", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "failed", 2: "failed"},
+        cost_by_lane={1: 0.001, 2: 2.0},
+    )
+
+    rc = run_parallel(
+        "do the task",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="allf",
+    )
+    # Nothing to merge, and the exit code says so.
+    assert rc == 1
+    out = "".join(capsys.readouterr())
+    assert "merge with" not in out
+    for lane_id in ("allf-l1", "allf-l2"):
+        m = json.loads(
+            (origin_state / "sessions" / "runs" / lane_id / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert (m.get("compare") or {}).get("winner") is not True
+        # The work is not lost: the branch is named in the failure report.
+        assert lane_id in out
