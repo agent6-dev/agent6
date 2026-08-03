@@ -171,7 +171,7 @@ class TranscriptFold:
         # Calls awaiting their result, keyed by the per-dispatch call_id (a
         # concurrent explore-tier review panel shares one dispatcher across
         # threads, so same-name calls interleave); an id-less historical event
-        # falls back to its name key, the old sequential behavior.
+        # falls back to its name key (sequential pairing).
         self._pending: dict[int | str, str] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool

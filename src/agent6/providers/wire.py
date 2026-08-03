@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Orthogonal provider wiring: auth-header + request-URL construction.
 
-agent6 separates three concerns that used to be fused into one ``kind``:
+agent6 separates three concerns:
 
 - **api_format** (``anthropic`` | ``openai``) selects the wire dialect; that
   lives in the two provider modules (body shaping, response parsing, SSE).

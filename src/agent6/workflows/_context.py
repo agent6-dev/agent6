@@ -84,9 +84,9 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             if not p.name.startswith(".")
         )
     )
-    # Count git-tracked files, not an unfiltered rglob: the old walk counted
-    # .git/.venv/build junk (a misleading number to the model) and traversed the
-    # whole tree every startup. tracked is reused by _build_repo_map below.
+    # Count git-tracked files: an unfiltered rglob would count .git/.venv/build
+    # junk (a misleading number to the model) and traverse the whole tree every
+    # startup. tracked is reused by _build_repo_map below.
     tracked = tracked_files(root) if in_git else ()
     file_count = len(tracked)
     agents_md_path = root / "AGENTS.md"

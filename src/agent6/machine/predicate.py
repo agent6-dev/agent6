@@ -240,9 +240,9 @@ def _compare(op: ast.cmpop, left: object, right: object) -> bool:
 
 def _order(op: ast.cmpop, left: object, right: object) -> bool:
     # No numeric coercion: Python orders int/int, int/float, float/float
-    # natively and EXACTLY, while the old float() rewrite collapsed distinct
-    # ints above 2^53 (nanosecond epochs) to the same value -- `a > b` read
-    # False for a = b + 100 -- and made `>` lossy while `==` was exact.
+    # natively and EXACTLY. A float() coercion would collapse distinct ints
+    # above 2^53 (nanosecond epochs) to one value -- `a > b` reading False for
+    # a = b + 100 -- making `>` lossy while `==` stays exact.
     # Non-comparable operands still raise TypeError -> PredicateError.
     try:
         if isinstance(op, ast.Lt):

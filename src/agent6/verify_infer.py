@@ -3,7 +3,7 @@
 """Infer a ``verify_command`` for a run when none is configured.
 
 agent6's verify command is the success gate, but a brand-new user has not set
-one. Rather than block the run (the old behaviour), ``agent6 run``/``plan``
+one. Rather than block the run, ``agent6 run``/``plan``
 infers one, cheapest source first:
 
   1. the ``## Verify command`` (or ``## Test``) section of AGENTS.md, or an

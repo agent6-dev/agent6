@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-owned conversation: typed turns over the provider wire.
 
-The agent loop's history used to be a raw ``list[dict]`` in Anthropic wire
-shape, re-parsed defensively by every consumer (compaction, cache roll, critic
-tail). ``Conversation`` owns that history as typed turns and produces the wire
-form only at the boundary:
+``Conversation`` owns the loop's history as typed turns -- one shape for
+every consumer (compaction, cache roll, critic tail) -- and produces the
+Anthropic-wire ``list[dict]`` only at the boundary:
 
 - ``to_wire()`` builds the exact dict list providers and resume snapshots
   take: same keys, same order, ``cache_control`` stamped from the mark

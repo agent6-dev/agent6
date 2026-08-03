@@ -410,8 +410,8 @@ class OpenAIProvider:
         #
         # per-call ``reasoning_effort`` argument takes
         # precedence over the env override. (Used by the CLI/config and
-        # bench scripts; the run loop no longer drives it automatically
-        # -- see below.)
+        # bench scripts; the run loop never drives it automatically --
+        # see the measurement below.)
         #
         # ``off`` must send ``reasoning={"enabled": False}``, NOT
         # omit the block. Empirically (direct OpenRouter probe, K2.6),
@@ -422,15 +422,13 @@ class OpenAIProvider:
         # (0 reasoning tokens); the model writes any chain-of-thought
         # into ``content`` and still emits a tool_use.
         #
-        # With the fix making "off" *actually* disable
-        # reasoning, an N=8 K2.6 perf-takehome batch that forced
-        # reasoning off on starvation-recovery turns scored WORSE than
-        # leaving it on (25% vs ~38% win-rate, best 1.50x vs 7.76x):
-        # K2.6's large speedups come *from* reasoning, so suppressing it
-        # on recovery trades the occasional big win for reliable-but-
-        # mediocre output. The automatic loop-level suppression
-        # (per-turn + latch) was therefore removed. The
-        # "off" knob remains for explicit operator/bench use.
+        # Measured (N=8 K2.6 perf-takehome): forcing reasoning off on
+        # starvation-recovery turns scores WORSE than leaving it on
+        # (25% vs ~38% win-rate, best 1.50x vs 7.76x) -- K2.6's large
+        # speedups come *from* reasoning, so suppression trades the
+        # occasional big win for reliable-but-mediocre output. Hence no
+        # automatic loop-level suppression; the "off" knob is explicit
+        # operator/bench use only.
         # `is_openai_direct_reasoning` (gpt-5, bare o1/o3) is a separate
         # predicate from `_is_reasoning_model` and does NOT imply it, so gate on
         # both: otherwise the configured `thinking`/reasoning_effort is silently

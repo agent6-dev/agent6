@@ -230,7 +230,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
     reads typed fields instead of sniffing the dict. The log line and the run_id
     peek still read the raw dict (they render arbitrary events, including the
     RawEvent long tail). An unknown/telemetry type folds to RawEvent -> no state
-    change, the old `case _`."""
+    change."""
     etype = event.get("type", "")
     if not state.run_id and event.get("run_id"):
         state = replace(state, run_id=str(event["run_id"]))

@@ -43,7 +43,7 @@ from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
 AGENT6_DARK = Theme(
     name="agent6-dark",
     primary="#7AA2F7",  # selection / cursor / resting card borders
-    secondary="#9ECE6A",  # parks the old green accent -- unused today, kept for future
+    secondary="#9ECE6A",  # green; no agent6 widget styles it directly (textual palette slot)
     accent="#06F5F3",  # focus borders, button/action text, key hints -- a vivid neon cyan
     foreground="#C0CAF5",
     # Near-black neutral charcoal (not a blue navy): screen < card < panel, so

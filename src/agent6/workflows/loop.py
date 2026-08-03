@@ -4125,9 +4125,9 @@ class Workflow:
         # Persist the bump BEFORE the group blocks. This runs inside the
         # operator boundary, which is after the iteration's snapshot and before
         # the next one, so the counter would otherwise live only in memory for
-        # the entire group: a crash there resumed with the old value and the
-        # next /parallel re-used this group's id, colliding with its lane
-        # clones and branches.
+        # the entire group: a crash there would resume with the stale count
+        # and the next /parallel would re-use this group's id, colliding with
+        # its lane clones and branches.
         self._save_resume_snapshot(
             system=state.system,
             messages=conversation.to_wire(),

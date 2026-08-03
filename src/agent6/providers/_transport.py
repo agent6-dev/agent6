@@ -76,9 +76,9 @@ def envelope_status(err: object) -> int | None:
     Reads a numeric ``code`` (int or all-digit string) directly, and maps a
     known-permanent STRING ``code``/``type`` (``insufficient_quota``, ...) to its
     terminal status -- a gateway that reports a quota/auth failure as a 200 body
-    with a string code would otherwise be retried every turn (a metered run's
-    ``require_metered`` used to catch this as a permanent 422; the 2xx-envelope
-    path took over that duty and must classify the same failures)."""
+    with a string code would otherwise be retried every turn; this path must
+    classify the same failure set ``require_metered`` treats as permanent on
+    real HTTP statuses."""
     if not isinstance(err, dict):
         return None
     code = err.get("code")

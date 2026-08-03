@@ -74,10 +74,9 @@ def print_run_end(
 ) -> None:
     """One composed end-of-run block: outcome, summary, cost, and the next step.
 
-    Replaces the old `result: completed=True reason=... iterations=...` repr line
-    plus a re-print of the summary. When the live ConsoleView already rendered the
-    `● done <summary>` terminator (console_stream), this omits the summary and
-    just adds what the stream lacks: cost and the branch / next-step footer."""
+    When the live ConsoleView already rendered the `● done <summary>` terminator
+    (console_stream), this omits the summary and just adds what the stream
+    lacks: cost and the branch / next-step footer."""
     # Read the outcome from the SAME fold `agent6 runs` uses, not from
     # result.completed: completed means "the agent finished deliberately", which
     # is true for a finish_run even when verify never went green. status_word off

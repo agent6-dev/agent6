@@ -7,11 +7,10 @@ model-facing ``to_wire()`` dict and the one-line human ``summary()``.
 - ``to_wire()`` -- the exact dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
   insertion order, so field/emit order here is load-bearing), and value
-  formats must match what the handler used to build inline. Pinned by
+  formats are the model-facing contract. Pinned by
   ``tests/unit/test_tool_result_wire.py``.
-- ``summary()`` -- the one-line human string for the log tail / TUI. Replaces
-  the 12-branch key-sniffer that used to guess the tool from the dict's keys;
-  each result states its own summary.
+- ``summary()`` -- the one-line human string for the log tail / TUI; each
+  result states its own (never inferred from the dict's keys).
 
 Internal values, so frozen dataclasses (not pydantic): the wire dict is
 produced at the boundary, never validated back in.
@@ -35,7 +34,7 @@ class ToolResult(abc.ABC):
         """The model-facing dict, JSON-serialized verbatim by the loop."""
 
     def summary(self) -> str:
-        """One-line log/TUI summary. Defaults to the old sniffer's fallback."""
+        """One-line log/TUI summary. Defaults to "ok"."""
         return "ok"
 
 

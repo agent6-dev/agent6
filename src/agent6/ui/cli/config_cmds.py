@@ -251,7 +251,7 @@ def _revalidate_layered(
     BROKE a previously-valid config. If the config was already invalid -- a value left
     stale in a different, unedited layer -- keep the write and warn (a global set that
     the repo layer shadows hits this), so an already-broken config stays fixable through
-    `config set` instead of the old catch-22 where one stale value blocked every write.
+    `config set` (rolling back on ANY error would let one stale value refuse every write).
 
     *written* is the ``(key, value)`` a `config set` just wrote; its value is
     validated against the model even when a higher layer masks it in the merge.

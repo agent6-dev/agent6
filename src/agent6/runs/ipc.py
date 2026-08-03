@@ -238,8 +238,8 @@ def _write_answer_atomic(target: Path, text: str) -> None:
     expose an empty/partial file it consumes as deny / "". The temp must be
     unique per call (portable.atomic_write's mkstemp): two concurrently-live
     front-ends (attach + web on one run, or two web threads) answering the
-    same prompt raced on the old fixed sibling .tmp -- the loser hit
-    FileNotFoundError after the winner's rename, a 500 on an answer that
+    same prompt would race on a shared fixed sibling .tmp, the loser hitting
+    FileNotFoundError after the winner's rename -- a 500 on an answer that
     actually landed."""
     atomic_write(target, text)
 

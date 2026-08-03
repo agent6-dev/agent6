@@ -75,7 +75,7 @@ def join_lane_result(root: Path, res: LaneResult) -> LaneJoin:
 
 def segment_stamp(lanes: list[LaneJoin]) -> tuple[NodeStatus, str, str]:
     """Reduce one segment's lane joins to its DAG stamp ``(status, note,
-    sha)``. A single-lane segment reduces to the old shape (passed with the
+    sha)``. A single-lane segment stamps plainly (passed with the
     join sha, or failed). A multi-lane segment passes when any lane joined --
     recording the LAST joined sha -- and the note names every lane; else it
     fails. NodeStatus has no "blocked", so a conflict counts as not-joined."""

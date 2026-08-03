@@ -66,10 +66,10 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
     try:
         mkdir_for_real_user(path.parent, user)
         # atomic_write uses mkstemp (unpredictable name, O_EXCL): a pre-planted
-        # `ui.toml.tmp` symlink can no longer redirect this write. The old fixed
-        # `.tmp` + write_text (O_CREAT|O_TRUNC) followed such a symlink, and
-        # this runs chown_to_real_user -- i.e. it can run under sudo -- so the
-        # follow was an arbitrary-file truncate-as-root primitive.
+        # `ui.toml.tmp` symlink cannot redirect this write. A fixed `.tmp` +
+        # write_text (O_CREAT|O_TRUNC) would follow such a symlink, and this path
+        # can run under sudo (it chowns to the real user) -- an arbitrary-file
+        # truncate-as-root primitive.
         atomic_write(path, _render_ui_toml(data))
         chown_to_real_user(path.parent, user)
         chown_to_real_user(path, user)

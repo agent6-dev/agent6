@@ -779,8 +779,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # THE (word, reason) for this run -- status_for_run_dir, the same
         # decision the hub row shows -- refreshed on the ~1/s heartbeat.
         # Derived, never latched: a crash->resume flips it back to running
-        # (the old one-way run_ended latch kept "worker exited" painted over
-        # the live resumed leg and dropped operator steers).
+        # (a one-way latch would keep "worker exited" painted over the live
+        # resumed leg and drop operator steers).
         self.dir_status: tuple[str, str] = status_for_run_dir(run_dir, status_facts(self.state))
         # Header task line for a run with no run.start yet (parked/created):
         # the fold has no user_task, but the manifest knows the work.
@@ -987,9 +987,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     # --- run control (dispatched from the composer bars, keys, and menus) --
 
     def _seed_steer(self, text: str) -> None:
-        """Write the steer request + instruction over the file bridge (the same
-        seam the old steer dialog used): discard any stale answer, mark the
-        request, and provide the answer in one shot."""
+        """Write the steer request + instruction over the file bridge: discard
+        any stale answer, mark the request, and provide the answer in one
+        shot."""
         clear_steer_answer(self.run_dir)
         request_steer(self.run_dir)
         write_steer_answer(self.run_dir, text)

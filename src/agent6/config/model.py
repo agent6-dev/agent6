@@ -144,7 +144,7 @@ class _ProviderBase(BaseModel):
     They compose freely -- e.g. Claude-on-Vertex and Gemini-on-Vertex differ
     only in ``api_format`` (both ``deployment = "vertex"``). ``base_url`` and
     ``auth_style`` default from (api_format, deployment) in ``_fill_defaults`` so
-    a minimal entry behaves exactly like the old fixed providers. Each block is
+    a minimal entry (just ``api_format``) is fully usable. Each block is
     one endpoint; configure as many as you like under any names and reference
     them from ``[models.*]``.
     """
@@ -680,8 +680,8 @@ class ContextConfig(BaseModel):
                 " sized from the worker model's context window)."
             )
         # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
-        # tool_results). If summarise <= drop, tier 2 fires at or before tier 1
-        # -- the inverted ordering that historically left tier 2 unreachable.
+        # tool_results): with summarise <= drop, tier 2 fires at or before
+        # tier 1 and can never be reached.
         if drop is not None and summarise is not None and summarise <= drop:
             raise ValueError(
                 "context.summarise_at_chars"
@@ -714,8 +714,8 @@ class PromptConfig(BaseModel):
     structural_priors: bool = True
     # one-shot task prompt revision before the worker loop starts.
     # Reuses the reviewer model, takes no tools, and is budget-tracked like
-    # any other provider call. Default off keeps crisp prompts/frontier-model
-    # runs on the old path.
+    # any other provider call. Default off: crisp prompts and frontier models
+    # do not need revision.
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
     # Front-load task decomposition (run mode). When on the worker's system
     # prompt swaps the "DAG is optional" guidance for a "decompose first"
@@ -1014,7 +1014,7 @@ class MCPServerEntry(BaseModel):
     contains LLM output. The server runs OUTSIDE the agent6 jail with the
     agent6 process's FULL ``os.environ`` (provider API keys included; the
     spawn passes no ``env``) -- NOT the notify hook's curated ``hook_env``,
-    so an MCP server sees keys a ``[notify]`` hook no longer does.
+    so an MCP server sees keys a ``[notify]`` hook does not (its env is curated).
 
     The LLM sees each MCP-server tool as
     ``mcp__<name>__<server-side-tool-name>`` and can call it through

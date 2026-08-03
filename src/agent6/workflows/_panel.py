@@ -24,9 +24,9 @@ Severity = Literal["block", "warn", "nit"]
 Verdict = Literal["pass", "block"]
 ReviewDecision = Literal["advisory", "veto", "quorum", "all"]
 
-# Categories a finding may carry. Only the first set is allowed to GATE; the rest
-# can advise but never block (taste/test-gaps/over-engineering historically drove
-# reviewer.py's false-blocks, so they are structurally barred from blocking).
+# Categories a finding may carry. Only the first set is allowed to GATE; the
+# rest advise but never block (taste/test-gap/over-engineering findings are
+# noisy, not load-bearing, so they are structurally barred from blocking).
 ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
     {"security", "sandbox-bypass", "off-topic-edit", "data-loss", "verify-uncovered-correctness"}
 )

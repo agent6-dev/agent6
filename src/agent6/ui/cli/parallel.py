@@ -44,8 +44,8 @@ def lane_runtime() -> LaneRuntime:
     """The front-end primitives the parallel pipeline drives: the detached
     process spawn (`ui.spawn`) and the reviewer provider + judging spinner
     (`_compare`). Injected so `agent6.app` never imports `agent6.ui`. Lane
-    liveness/stop is the run-dir bridge, imported directly by `agent6.app.parallel`
-    (no longer routed through this seam)."""
+    liveness/stop is the run-dir bridge, which `agent6.app.parallel` imports
+    directly (not part of this seam)."""
 
     def spawn(
         argv: list[str],

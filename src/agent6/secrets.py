@@ -137,10 +137,10 @@ def save_secret(
         mkdir_for_real_user(path.parent, user)
         path.parent.chmod(0o700)
         text = _render_secrets_toml(data)
-        # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL at
-        # 0600, so a pre-planted `secrets.toml.tmp` symlink can no longer redirect
-        # this write (the old fixed `.tmp` + O_CREAT|O_TRUNC followed a symlink,
-        # letting an unprivileged user retarget a root write under `sudo connect`).
+        # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL
+        # at 0600, so a pre-planted `secrets.toml.tmp` symlink cannot redirect this
+        # write. (A fixed `.tmp` opened O_CREAT|O_TRUNC would follow such a symlink
+        # -- an unprivileged user retargeting a root write under `sudo connect`.)
         # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
         # 0600 anyway so a pre-existing wider-mode file is tightened.
         atomic_write(path, text)

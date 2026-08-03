@@ -26,7 +26,7 @@ your config (``[mcp.servers.<name>] command = [...]``); the LLM cannot
 influence it: operator-controlled argv, full user authority, no
 sandboxing. (The ``[notify]`` hook is NARROWER -- it runs under a curated
 ``hook_env`` -- so this is not that trust model; an MCP server sees the
-keys a notify hook no longer does.)
+keys a notify hook does not -- its env is curated.)
 
 What the LLM *can* influence is the *arguments* to ``tools/call`` once
 a server is connected. The MCP server is responsible for validating
