@@ -202,7 +202,9 @@ class TranscriptFold:
             buffer.append(str(event.get("text", "")))
             return []
         if etype == "role.result":
-            return self._flush_message()
+            # The settled text, used only when no deltas arrived: a streaming
+            # leg already has the same prose in `self._text`.
+            return self._flush_message(settled=str(event.get("text", "")))
         if etype == "tool.call":
             out = self._flush_message()  # a turn's prose precedes its calls
             name = str(event.get("name", ""))
@@ -273,13 +275,13 @@ class TranscriptFold:
             return out
         return []
 
-    def _flush_message(self) -> list[TranscriptItem]:
+    def _flush_message(self, *, settled: str = "") -> list[TranscriptItem]:
         out: list[TranscriptItem] = []
         thinking = "".join(self._thinking).strip()
         self._thinking.clear()
         if thinking:
             out.append(TranscriptItem("thinking", body=thinking))
-        text = "".join(self._text).strip()
+        text = "".join(self._text).strip() or settled.strip()
         self._text.clear()
         if text:  # only when non-empty: no more blank response blocks
             out.append(TranscriptItem("text", body=text))

@@ -176,3 +176,53 @@ def _peak_bytes_reading(fn: Callable[[], object]) -> int:
         return tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
+
+
+def test_a_reader_sees_what_the_assistant_SAID_in_a_real_journal(tmp_path: Path) -> None:
+    """Written by the real emitter, not by hand. The prose reached the journal
+    only as `role.text_delta`, which is emitted only when streaming is on -- so
+    a headless run (CI, a redirected stdout, every spawned ask) recorded no
+    assistant text, and this tool returned the task and a list of tool names.
+    Every fixture that hand-wrote `{"type": "role.result", "text": ...}` passed
+    against a shape the engine never emitted."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from agent6.app.providers import InstrumentedProvider
+    from agent6.budget import BudgetTracker
+    from agent6.events import EventSink
+    from agent6.runs.layout import session_layout
+
+    d = tmp_path / "asks" / "quiet-fox-AAAAAA"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),
+        encoding="utf-8",
+    )
+    events = EventSink(d / "logs.jsonl")
+    events.emit("run.start", user_task="how do I convert h264")
+    inner = MagicMock()
+    inner.call.return_value = SimpleNamespace(
+        text="use ffmpeg -c:v libx265",
+        tool_uses=(),
+        stop_reason="end_turn",
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={},
+    )
+    InstrumentedProvider(
+        inner=inner,
+        role="worker",
+        model="m",
+        provider_name="p",
+        events=events,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+    ).call(system="s", messages=[{"role": "user", "content": "q"}], tools=[], max_tokens=64)
+
+    layout = session_layout(tmp_path, "quiet-fox-AAAAAA")
+    assert layout is not None
+    text = conversation(layout, max_chars=10_000)
+    assert "use ffmpeg -c:v libx265" in text, "the answer the other session reached is missing"
+    assert "how do I convert h264" in text

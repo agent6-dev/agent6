@@ -277,6 +277,13 @@ class InstrumentedProvider:
                 "role.result",
                 role=self.role,
                 ok=True,
+                # The turn's settled prose. The deltas are the same text
+                # arriving in pieces and are emitted only when streaming is on,
+                # so a headless run (CI, a redirected stdout, every spawned
+                # ask) wrote a journal with no assistant text at all -- and
+                # every reader of it, `read_session` and `/btw` included, found
+                # nothing.
+                text=resp.text,
                 tokens_in=resp.input_tokens,
                 tokens_out=resp.output_tokens,
                 cache_read=resp.cache_read_tokens,
