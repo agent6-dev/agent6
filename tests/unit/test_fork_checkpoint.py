@@ -954,52 +954,6 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     assert {n.title for n in load_graph(dst).values()} == {"root task", "late subtask"}
 
 
-def test_replay_reorder_sets_order_not_membership() -> None:
-    """A reorder decides the ORDER of a parent's children, never which ones
-    exist. Taking the last reorder as the whole tuple dropped a child created
-    after it but still within the target version, leaving a node in the forked
-    graph that no tree walk reaches and the curator can never reorder again
-    (its permutation check compares against the truncated tuple)."""
-    from agent6.graph.replay import graph_at_version
-    from agent6.graph.storage import load_graph
-
-    root, child_a, child_b = "R" * 26, "A" * 26, "B" * 26
-    _ = load_graph  # the fold is pure; nodes are built inline below
-
-    def _node(nid: str, parent: str | None, children: tuple[str, ...] = ()) -> Any:
-        from datetime import UTC, datetime
-
-        from agent6.graph.models import TaskNode
-
-        now = datetime.now(tz=UTC)
-        return TaskNode(
-            id=nid,
-            parent_id=parent,
-            title=f"t-{nid[0]}",
-            children=children,
-            created_at=now,
-            updated_at=now,
-            created_by="worker",
-        )
-
-    nodes = {
-        root: _node(root, None, (child_b, child_a)),
-        child_a: _node(child_a, root),
-        child_b: _node(child_b, root),
-    }
-    journal = [
-        {"op": "add_subtask", "id": root, "parent_id": None, "graph_version": 1},
-        {"op": "add_subtask", "id": child_a, "parent_id": root, "graph_version": 2},
-        # the reorder happened BEFORE child_b existed
-        {"op": "reorder_children", "parent_id": root, "new_order": [child_a], "graph_version": 3},
-        {"op": "add_subtask", "id": child_b, "parent_id": root, "graph_version": 4},
-    ]
-    replayed = graph_at_version(nodes, journal, 4)
-    assert set(replayed.nodes) == {root, child_a, child_b}
-    # the reorder's order wins, and the later child is still attached
-    assert replayed.nodes[root].children == (child_a, child_b)
-
-
 def test_an_auto_minted_fork_id_skips_a_taken_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

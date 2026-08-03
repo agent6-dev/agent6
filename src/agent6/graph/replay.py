@@ -57,18 +57,10 @@ def _str_field(entry: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _children_at(
-    current: tuple[str, ...], reordered: tuple[str, ...] | None, kept: dict[str, TaskNode]
-) -> tuple[str, ...]:
-    """The parent's children at the target version: the last reorder decides the
-    ORDER, never the membership. Taking the reorder as the whole tuple dropped a
-    child added after it but still within the version, leaving a node in the
-    graph that no tree walk reaches and the curator can never reorder again."""
-    surviving = [c for c in current if c in kept]
-    if reordered is None:
-        return tuple(surviving)
-    first = [c for c in reordered if c in kept]
-    return (*first, *(c for c in surviving if c not in first))
+def _children_at(current: tuple[str, ...], kept: dict[str, TaskNode]) -> tuple[str, ...]:
+    """The parent's children at the target version: the surviving ones, in the
+    order the parent holds them (which is the order the frontier executes)."""
+    return tuple(c for c in current if c in kept)
 
 
 def graph_at_version(
@@ -119,13 +111,6 @@ def graph_at_version(
         nid, dep = _str_field(e, "id"), _str_field(e, "depends_on")
         if nid is not None and dep is not None:
             deps_after.setdefault(nid, set()).add(dep)
-    order: dict[str, tuple[str, ...]] = {
-        parent: tuple(str(c) for c in e["new_order"])
-        for e in at
-        if e["op"] == "reorder_children"
-        and isinstance(e.get("new_order"), list)
-        and (parent := _str_field(e, "parent_id")) is not None
-    }
     cursors = [e for e in at if e["op"] == "set_cursor"]
     cursor = _str_field(cursors[-1], "id") if cursors else current_cursor
 
@@ -137,7 +122,7 @@ def graph_at_version(
                 "status": status.get(nid, "pending" if nid in born else node.status),
                 "commit_sha": commit.get(nid, "" if nid in born else node.commit_sha),
                 "depends_on": tuple(d for d in node.depends_on if d not in deps_after.get(nid, ())),
-                "children": _children_at(node.children, order.get(nid), kept),
+                "children": _children_at(node.children, kept),
             }
         )
         for nid, node in kept.items()

@@ -14,7 +14,6 @@ from agent6.graph.models import (
     AddSubtaskIntent,
     ObsoleteIntent,
     RecordCommitIntent,
-    ReorderChildrenIntent,
     SetCursorIntent,
     TaskNodeDraft,
     UpdateStatusIntent,
@@ -87,22 +86,6 @@ def test_add_dependency_detects_cycle(tmp_path: Path) -> None:
         c.add_dependency(AddDependencyIntent(id=a.id, depends_on=b.id))
 
 
-def test_reorder_children_requires_permutation(tmp_path: Path) -> None:
-    c = GraphCurator(_layout(tmp_path))
-    p = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("p")))
-    a = c.add_subtask(AddSubtaskIntent(parent_id=p.id, draft=_draft("a")))
-    b = c.add_subtask(AddSubtaskIntent(parent_id=p.id, draft=_draft("b")))
-    p2 = c.reorder_children(ReorderChildrenIntent(parent_id=p.id, new_order=(b.id, a.id)))
-    assert p2.children == (b.id, a.id)
-    with pytest.raises(CuratorError, match="permutation"):
-        c.reorder_children(ReorderChildrenIntent(parent_id=p.id, new_order=(a.id,)))
-    # A duplicated child id must be rejected, not silently accepted: a set check
-    # would pass `{a,b,a} == {a,b}` and corrupt children into (a, b, a).
-    with pytest.raises(CuratorError, match="permutation"):
-        c.reorder_children(ReorderChildrenIntent(parent_id=p.id, new_order=(a.id, b.id, a.id)))
-    assert c.get(p.id).children == (b.id, a.id)  # unchanged after the rejected reorder
-
-
 def test_cycle_check_survives_dangling_depends_on(tmp_path: Path) -> None:
     # A node carrying a depends_on edge to an id absent from the loaded graph (a
     # partially-loaded/corrupt graph) must not crash the transitive cycle walk
@@ -165,7 +148,6 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
     b = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("b")))
     c.update_status(UpdateStatusIntent(id=a.id, new_status="in_progress"))
     c.add_dependency(AddDependencyIntent(id=b.id, depends_on=a.id))
-    c.reorder_children(ReorderChildrenIntent(parent_id=root.id, new_order=(b.id, a.id)))
     c.record_commit(RecordCommitIntent(id=a.id, sha="abcd1234"))
     c.obsolete(ObsoleteIntent(id=b.id, reason="dropped"))
     c.set_cursor(SetCursorIntent(id=a.id))
@@ -201,13 +183,7 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
         },
         {"op": "update_status", "id": a.id, "new_status": "in_progress", "graph_version": 4},
         {"op": "add_dependency", "id": b.id, "depends_on": a.id, "graph_version": 5},
-        {
-            "op": "reorder_children",
-            "parent_id": root.id,
-            "new_order": [b.id, a.id],
-            "graph_version": 6,
-        },
-        {"op": "record_commit", "id": a.id, "sha": "abcd1234", "graph_version": 7},
-        {"op": "obsolete", "id": b.id, "reason": "dropped", "graph_version": 8},
-        {"op": "set_cursor", "id": a.id, "graph_version": 9},
+        {"op": "record_commit", "id": a.id, "sha": "abcd1234", "graph_version": 6},
+        {"op": "obsolete", "id": b.id, "reason": "dropped", "graph_version": 7},
+        {"op": "set_cursor", "id": a.id, "graph_version": 8},
     ]
