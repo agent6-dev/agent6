@@ -396,6 +396,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold,
                     all_passed = bool(ev.get("all_passed"))
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
+                    saw_start = True  # a leg has begun; a fork's log has only this
                     finished = False  # a resume un-finishes the run
                     pending_prompts.clear()  # see run.start
                     # Each resume leg starts a FRESH budget (usd_total resets to

@@ -114,6 +114,12 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "waiting",
         "needs answer",
     ),
+    # A FORK is driven by resume(), so its fresh log never carries a run.start:
+    # keying "started" on that alone left every forked run "starting" while alive
+    # and "created" (the never-started word) once it died.
+    ("forked-live", [_RESUME, _TOOL], "", LIVE, "running", ""),
+    ("forked-dead", [_RESUME, _TOOL], "", DEAD, "stale", ""),
+    ("forked-waiting", [_RESUME, _APPROVAL], "", LIVE, "waiting", "needs answer"),
     ("stale", [_START, _TOOL], "", DEAD, "stale", ""),
     ("stale-beats-waiting", [_START, _APPROVAL], "", DEAD, "stale", ""),
     ("passed", [_START, _end("finish_run", True)], "", None, "passed", ""),
