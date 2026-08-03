@@ -11,6 +11,8 @@ let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
 // painted a ticking "working…" heartbeat under a "stale" header.
 function notLive(s) { return typeof s.live === 'boolean' ? !s.live : !!s.finished; }
 let hbTimer = null;
+let hubTimer = null; // the hub's list refresh, cleared by closeLive()
+const HUB_POLL_MS = 4000;
 const HB_FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 function hbTick() {
   const line = document.getElementById('hb-line');
@@ -76,6 +78,7 @@ function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {
   if (live) { live.close(); live = null; }
+  if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }
   if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
   hbState.active = false;
 }
@@ -324,16 +327,35 @@ async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
   // viewport (new work on Runs, create-machine on Machines).
-  const lists = el('div', 'grid');
-  if (machinesTab) {
-    if ((data.machine_files || []).length) lists.appendChild(machineFilesCard(data.machine_files));
-    lists.appendChild(machinesCard(data.machines));
-    if ((data.drafts || []).length) lists.appendChild(draftsCard(data.drafts));
-  } else {
-    lists.appendChild(runsCard(data.runs));
-  }
+  const build = (d) => {
+    const lists = el('div', 'grid');
+    if (machinesTab) {
+      if ((d.machine_files || []).length) lists.appendChild(machineFilesCard(d.machine_files));
+      lists.appendChild(machinesCard(d.machines));
+      if ((d.drafts || []).length) lists.appendChild(draftsCard(d.drafts));
+    } else {
+      lists.appendChild(runsCard(d.runs));
+    }
+    return lists;
+  };
+  let lists = build(data);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock());
+  // The hub painted once and never again, so a lane that finished, failed, or
+  // crashed kept its "running" pill until a manual reload -- and clicking the
+  // already-active tab does not re-enter route(). Refresh the LISTS only: a
+  // whole-view repaint would discard text typed into the dock's composer.
+  hubTimer = setInterval(async () => {
+    if (document.hidden) return; // a background tab has nobody to mislead
+    if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
+    try {
+      const next = await getJSON('/api/hub');
+      if (gen !== undefined && gen !== routeGen) return;
+      const fresh = build(next);
+      lists.replaceWith(fresh);
+      lists = fresh;
+    } catch (_) { /* transient: keep the last good paint */ }
+  }, HUB_POLL_MS);
 }
 
 // --- conversation ------------------------------------------------------------
