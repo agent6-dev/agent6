@@ -104,7 +104,7 @@ from agent6.tools.schema import (
     UseSkillInput,
     mode_tools,
 )
-from agent6.tools.sessions import conversation, matching_sessions, session_briefs
+from agent6.tools.sessions import conversation, roster
 from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
 
@@ -759,19 +759,14 @@ class ToolDispatcher:
         args = ReadSessionInput.model_validate(raw)
         if self._state_dir is None:
             raise ToolError("read_session needs the project state dir; none was wired")
-        briefs = (
-            matching_sessions(self._state_dir, args.query)
-            if args.query
-            else session_briefs(self._state_dir)
-        )
-        roster = tuple(b.line() for b in briefs)
+        lines = roster(self._state_dir, args.query).lines()
         if not args.id:
-            return SessionsResult(sessions=roster)
+            return SessionsResult(sessions=lines)
         layout = session_layout(self._state_dir, args.id)
         if layout is None:
             raise ToolError(f"no session {args.id!r} in this project")
         return SessionsResult(
-            sessions=roster, conversation=conversation(layout, max_chars=args.max_chars)
+            sessions=lines, conversation=conversation(layout, max_chars=args.max_chars)
         )
 
     def _run_background(self, raw: dict[str, Any]) -> BackgroundResult:

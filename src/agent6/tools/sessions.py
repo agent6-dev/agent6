@@ -18,12 +18,32 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.runs.layout import RUN_BUCKETS, RunLayout, session_layout
+from agent6.runs.layout import LOGS_NAME, RUN_BUCKETS, RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
 
 # What a reader needs from another session: who said what. Deltas are the same
 # prose arriving in pieces, so only the settled events are folded.
 _SPEAKER = {"role.result": "assistant", "run.start": "user"}
+
+
+# A roster is context the model pays for on every call, so it is capped. The
+# newest sessions are the ones a reader wants; `query` is how you reach an older
+# one. 2000 sessions rendered ~70k tokens before this.
+ROSTER_MAX = 40
+
+
+@dataclass(frozen=True, slots=True)
+class Roster:
+    """What `read_session` lists, and whether it is the whole story."""
+
+    briefs: tuple[SessionBrief, ...]
+    more: bool
+
+    def lines(self) -> tuple[str, ...]:
+        shown = tuple(b.line() for b in self.briefs)
+        if not self.more:
+            return shown
+        return (*shown, f"(only the {len(shown)} newest are shown; narrow with `query`)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +54,10 @@ class SessionBrief:
     mode: str
     task: str
     started: str
+    # Which bucket it lives in. Carried rather than re-resolved: looking it up
+    # per brief re-scanned every bucket, which made a query O(N^2) -- 44s at
+    # 2000 sessions, with the loop blocked the whole time.
+    bucket: str
 
     def line(self) -> str:
         when = f" · {self.started[:16]}" if self.started else ""
@@ -62,6 +86,7 @@ def session_briefs(state_dir: Path) -> list[SessionBrief]:
                         mode=m.mode or "?",
                         task=" ".join(m.user_task.split())[:120],
                         started=m.start_ts,
+                        bucket=bucket,
                     ),
                 )
             )
@@ -108,21 +133,41 @@ def conversation(layout: RunLayout, *, max_chars: int) -> str:
     return text or "(this session recorded no conversation)"
 
 
-def matching_sessions(state_dir: Path, query: str) -> list[SessionBrief]:
-    """The sessions whose task or journal contains *query*, newest first."""
+def roster(state_dir: Path, query: str) -> Roster:
+    """The sessions to show, newest first: every one, or those matching *query*.
+
+    A query matches the task or anything said in the session.
+    """
+    briefs = session_briefs(state_dir)
+    if not query:
+        return Roster(briefs=tuple(briefs[:ROSTER_MAX]), more=len(briefs) > ROSTER_MAX)
     needle = query.lower()
     hits: list[SessionBrief] = []
-    for brief in session_briefs(state_dir):
-        if needle in brief.task.lower():
+    for brief in briefs:
+        if len(hits) > ROSTER_MAX:
+            break  # one past the cap: enough to know there are more
+        if needle in brief.task.lower() or _file_contains(
+            state_dir / brief.bucket / brief.id / LOGS_NAME, needle
+        ):
             hits.append(brief)
-            continue
-        layout = session_layout(state_dir, brief.id)
-        if layout is None:
-            continue
-        try:
-            raw = layout.logs_path.read_text(errors="replace")
-        except OSError:
-            continue
-        if needle in raw.lower():
-            hits.append(brief)
-    return hits
+    return Roster(briefs=tuple(hits[:ROSTER_MAX]), more=len(hits) > ROSTER_MAX)
+
+
+def _file_contains(path: Path, needle: str) -> bool:
+    """Whether *path* contains *needle*, read in chunks.
+
+    A real journal reaches megabytes (every streamed delta is persisted), and
+    reading whole ones into memory to answer a yes/no was ~1 GB per call across
+    a couple of hundred sessions.
+    """
+    overlap = len(needle)
+    try:
+        with path.open("r", errors="replace") as fh:
+            tail = ""
+            while chunk := fh.read(1 << 16):
+                if needle in (tail + chunk).lower():
+                    return True
+                tail = chunk[-overlap:] if overlap else ""
+    except OSError:
+        return False
+    return False

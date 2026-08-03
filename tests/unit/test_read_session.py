@@ -5,12 +5,14 @@
 from __future__ import annotations
 
 import json
+import tracemalloc
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from agent6.runs.layout import session_layout
-from agent6.tools.sessions import conversation, matching_sessions, session_briefs
+from agent6.tools.sessions import ROSTER_MAX, conversation, roster, session_briefs
 
 
 def _session(state: Path, bucket: str, sid: str, mode: str, task: str, turns: list[str]) -> Path:
@@ -77,9 +79,9 @@ def test_a_query_finds_a_session_by_its_content(tmp_path: Path) -> None:
         tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg -c:v libx265"]
     )
     _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "add a flag", ["unrelated"])
-    assert [b.id for b in matching_sessions(tmp_path, "libx265")] == ["quiet-fox-AAAAAA"]
-    assert [b.id for b in matching_sessions(tmp_path, "add a flag")] == ["brave-elk-BBBBBB"]
-    assert matching_sessions(tmp_path, "nothing here") == []
+    assert [b.id for b in roster(tmp_path, "libx265").briefs] == ["quiet-fox-AAAAAA"]
+    assert [b.id for b in roster(tmp_path, "add a flag").briefs] == ["brave-elk-BBBBBB"]
+    assert roster(tmp_path, "nothing here").briefs == ()
 
 
 def test_a_torn_journal_line_does_not_break_the_read(tmp_path: Path) -> None:
@@ -133,3 +135,44 @@ def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: Path) -> None
     d = ToolDispatcher(root=tmp_path, config=Config())
     with pytest.raises(ToolError, match="state dir"):
         d.dispatch("read_session", {})
+
+
+def test_a_project_with_many_sessions_does_not_flood_the_context(tmp_path: Path) -> None:
+    """Every read_session call pays for the roster. At 2000 sessions the
+    uncapped list rendered ~70k tokens, so one lookup cost more than the answer."""
+    for i in range(ROSTER_MAX + 25):
+        _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "t", [])
+    got = roster(tmp_path, "")
+    assert len(got.briefs) == ROSTER_MAX
+    assert got.more
+    assert "narrow with `query`" in got.lines()[-1], "a silent cut reads as the whole project"
+
+
+def test_a_query_matching_everything_is_capped_too(tmp_path: Path) -> None:
+    for i in range(ROSTER_MAX + 25):
+        _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "refactor the parser", [])
+    got = roster(tmp_path, "parser")
+    assert len(got.briefs) == ROSTER_MAX and got.more
+
+
+def test_a_query_reads_journals_without_holding_them_in_memory(tmp_path: Path) -> None:
+    """Journals reach megabytes; slurping each one to answer a yes/no was ~1 GB
+    per call. The needle is planted across a chunk boundary."""
+    big = _session(tmp_path, "runs", "big-AAAAAA", "run", "t", []) / "logs.jsonl"
+    with big.open("w") as fh:
+        fh.write("x" * ((1 << 16) - 4))  # the needle straddles a chunk boundary
+        fh.write("nEeDlE")
+        fh.write("y" * (4 << 20))
+    size = big.stat().st_size
+    peak = _peak_bytes_reading(lambda: roster(tmp_path, "needle"))
+    assert [b.id for b in roster(tmp_path, "needle").briefs] == ["big-AAAAAA"]
+    assert peak < size // 4, f"held {peak} bytes of a {size}-byte journal"
+
+
+def _peak_bytes_reading(fn: Callable[[], object]) -> int:
+    tracemalloc.start()
+    try:
+        fn()
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
