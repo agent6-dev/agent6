@@ -17,6 +17,7 @@ work to surface.
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
+from agent6.graph.order import tree_order
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
@@ -74,36 +75,10 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     creation order even on a resumed run, where the nodes dict arrives in
     filesystem order. Returns None when nothing is ready (no subtasks, all
     done, or all blocked / waiting on open children)."""
-    for nid in _tree_order(nodes):
+    for nid in tree_order(nodes):
         if is_focusable_subtask(nodes, nodes[nid]):
             return nid
     return None
-
-
-def _tree_order(nodes: dict[str, TaskNode]) -> list[str]:
-    """Every node id, depth-first through ``children``, roots in id order.
-
-    A child named by a parent but absent from *nodes* is skipped, and a node no
-    walk reached (a cycle, a dangling parent_id) is appended in id order, so
-    every node is still visited exactly once.
-    """
-    order: list[str] = []
-    seen: set[str] = set()
-
-    def walk(nid: str) -> None:
-        if nid in seen or nid not in nodes:
-            return
-        seen.add(nid)
-        order.append(nid)
-        for child in nodes[nid].children:
-            walk(child)
-
-    for nid in sorted(nodes):
-        if nodes[nid].parent_id is None:
-            walk(nid)
-    for nid in sorted(nodes):
-        walk(nid)  # anything the roots did not reach
-    return order
 
 
 def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | None:

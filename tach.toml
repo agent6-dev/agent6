@@ -126,6 +126,7 @@ depends_on = [
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.notes",  # the agent's own scratchpad, injected beside them
   "agent6.skills",  # operator-installed skills indexed in the system prompt
+  "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
 ]
 
@@ -270,7 +271,7 @@ path = "agent6.tools"
 # effective command policy (config + the operator's session choice + away-mode)
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.notes", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.notes", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
@@ -398,6 +399,13 @@ depends_on = []
 [[modules]]
 path = "agent6.graph"
 depends_on = []
+
+[[modules]]
+# The one walk order every surface reads a task graph in: the frontier
+# (workflows), the model's own list_tasks (tools) and the renderers. A leaf
+# over the node types, so sharing it pulls in nothing else.
+path = "agent6.graph.order"
+depends_on = ["agent6.graph.models"]
 
 [[modules]]
 path = "agent6.graph.replay"

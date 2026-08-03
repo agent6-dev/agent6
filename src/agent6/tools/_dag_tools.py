@@ -16,6 +16,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.graph.order import tree_order
 from agent6.tools.errors import ToolError
 from agent6.tools.results import (
     AddDependencyResult,
@@ -96,7 +97,12 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksRe
     # Wire surface: to_wire() JSONs each task to the model; the projected shape
     # (and its list-valued relevant_paths/depends_on) is what tool callers hold.
     out: list[dict[str, Any]] = []
-    for node_id, node in curator.nodes().items():
+    # Tree order, the order the frontier executes and every renderer shows:
+    # iterating the map gave insertion order live and filesystem order after a
+    # resume, so the model read back a plan it had not written.
+    nodes = curator.nodes()
+    for node_id in tree_order(nodes):
+        node = nodes[node_id]
         if args.status and node.status != args.status:
             continue
         out.append(

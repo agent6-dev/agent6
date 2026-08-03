@@ -75,3 +75,28 @@ def test_the_inserted_task_is_focused_next(tmp_path: Path) -> None:
     # line rather than behind "last".
     assert first_ready_subtask(nodes) == first
     assert [c for c in nodes[root].children][1] == middle
+
+
+def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: Path) -> None:
+    """The point of placing a task is that the model can insert work between
+    two steps. `list_tasks` iterated the node MAP -- insertion order live, and
+    filesystem order after a resume -- so the model read back a plan it did not
+    write: the task it placed second showed up last, and every id it planned
+    around had moved by the next session.
+
+    Both surfaces walk the same tree order now; the human-facing renderers
+    already did.
+    """
+    from agent6.graph.order import tree_order
+    from agent6.tools._dag_tools import list_tasks
+
+    cur = _curator(tmp_path)
+    root = _add(cur, None, "root")
+    first = _add(cur, root, "first")
+    last = _add(cur, root, "last")
+    middle = _add(cur, root, "middle", after=first)
+    assert cur.get(root).children == (first, middle, last)
+
+    listed = [t["id"] for t in list_tasks(cur, {}).to_wire()["tasks"]]
+    assert listed == tree_order(cur.nodes()), "the model reads a different order than it planned"
+    assert listed == [root, first, middle, last]
