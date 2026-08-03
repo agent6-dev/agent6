@@ -252,9 +252,9 @@ def build_system_prompt(
     config: Config,
     repo: RepoSummary,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
-    memories: tuple[MemoryEntry, ...] = (),
-    notes: str = "",
-    skills: ResolvedSkills | None = None,
+    memories: tuple[MemoryEntry, ...],
+    notes: str,
+    skills: ResolvedSkills | None,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 

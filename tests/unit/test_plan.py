@@ -156,7 +156,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
         recent_log="",
     )
     text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=repo, mode="plan"
+        config=cfg, repo=repo, mode="plan", memories=(), notes="", skills=None
     )
     assert "PLAN mode" in text or "plan mode" in text.lower()
 
@@ -174,8 +174,12 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
         agents_md="",
         recent_log="",
     )
-    run = loopmod.build_system_prompt(config=cfg, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    plan = loopmod.build_system_prompt(config=cfg, repo=repo, mode="plan")  # pyright: ignore[reportPrivateUsage]
+    run = loopmod.build_system_prompt(
+        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
+    plan = loopmod.build_system_prompt(
+        config=cfg, repo=repo, mode="plan", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
     # override replaces the run base...
     assert "CUSTOM WORKER" in run and "<edit-rules>" not in run
     # ...but the dynamic blocks (budget, repo-priors) still append
@@ -200,9 +204,15 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
     off = Config.model_validate({"prompt": {"decompose": "off"}})
     on = Config.model_validate({"prompt": {"decompose": "on"}})
     auto = Config()  # unresolved "auto" reaching the engine renders like off
-    run_off = loopmod.build_system_prompt(config=off, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    run_on = loopmod.build_system_prompt(config=on, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    run_auto = loopmod.build_system_prompt(config=auto, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_off = loopmod.build_system_prompt(
+        config=off, repo=repo, mode="run", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
+    run_on = loopmod.build_system_prompt(
+        config=on, repo=repo, mode="run", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
+    run_auto = loopmod.build_system_prompt(
+        config=auto, repo=repo, mode="run", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
     assert "__DAG_RULES_BLOCK__" not in run_off and "__DAG_RULES_BLOCK__" not in run_on
     assert "<dag-rules>" in run_off and "<decompose-first>" not in run_off
     assert "<decompose-first>" in run_on and "<dag-rules>" not in run_on
@@ -210,7 +220,9 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
     for mode in ("plan", "ask", "machine", "agent"):
-        text = loopmod.build_system_prompt(config=on, repo=repo, mode=mode)  # pyright: ignore[reportPrivateUsage]
+        text = loopmod.build_system_prompt(
+            config=on, repo=repo, mode=mode, memories=(), notes="", skills=None
+        )  # pyright: ignore[reportPrivateUsage]
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
 
@@ -277,7 +289,7 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -
         recent_log="",
     )
     text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=repo, mode="run"
+        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None
     )
     assert "git checkout" in text
     assert ".git/" in text
@@ -303,7 +315,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
         recent_log="",
     )
     text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=repo, mode="run"
+        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None
     )
     assert "automatically runs this" in text
     assert "[harness metric]" in text
@@ -312,7 +324,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
         other = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-            config=cfg, repo=repo, mode=mode
+            config=cfg, repo=repo, mode=mode, memories=(), notes="", skills=None
         )
         assert "<metric-command>" not in other, mode
         assert "run_metric_command" not in other, mode
@@ -411,10 +423,14 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
         agents_md="",
         recent_log="",
     )
-    machine = loopmod.build_system_prompt(config=cfg, repo=repo, mode="machine")  # pyright: ignore[reportPrivateUsage]
+    machine = loopmod.build_system_prompt(
+        config=cfg, repo=repo, mode="machine", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
     assert "MACHINE-AUTHORING" in machine
     assert "run_verify_command" not in machine  # no verify block in authoring mode
-    agent = loopmod.build_system_prompt(config=cfg, repo=repo, mode="agent")  # pyright: ignore[reportPrivateUsage]
+    agent = loopmod.build_system_prompt(
+        config=cfg, repo=repo, mode="agent", memories=(), notes="", skills=None
+    )  # pyright: ignore[reportPrivateUsage]
     assert "state of a state machine" in agent
     assert "run_verify_command" not in agent
 

@@ -53,8 +53,12 @@ def test_adopt_verify_command_probes_the_jail_path(tmp_path: Path) -> None:
 
 def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    with_verify = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run")
-    gateless = build_system_prompt(config=_cfg(verify=False), repo=repo, mode="run")
+    with_verify = build_system_prompt(
+        config=_cfg(verify=True), repo=repo, mode="run", memories=(), notes="", skills=None
+    )
+    gateless = build_system_prompt(
+        config=_cfg(verify=False), repo=repo, mode="run", memories=(), notes="", skills=None
+    )
     assert "<verify-command>" in with_verify and "<no-verify-command>" not in with_verify
     assert "<no-verify-command>" in gateless and "<verify-command>" not in gateless
 
@@ -65,9 +69,11 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
     `finish_planning`, ask has no terminal tool at all, and neither can edit."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
-    run = build_system_prompt(config=cfg, repo=repo, mode="run")
-    plan = build_system_prompt(config=cfg, repo=repo, mode="plan")
-    ask = build_system_prompt(config=cfg, repo=repo, mode="ask")
+    run = build_system_prompt(config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None)
+    plan = build_system_prompt(
+        config=cfg, repo=repo, mode="plan", memories=(), notes="", skills=None
+    )
+    ask = build_system_prompt(config=cfg, repo=repo, mode="ask", memories=(), notes="", skills=None)
 
     def block(text: str) -> str:
         start = text.index("<no-verify-command>")

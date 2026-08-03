@@ -235,12 +235,12 @@ def test_build_system_prompt_injects_memories(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     mem = (_entry("facts", "verify needs the venv"),)
     run = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=_repo(tmp_path), mode="run", memories=mem
+        config=cfg, repo=_repo(tmp_path), mode="run", memories=mem, notes="", skills=None
     )
     assert "<memories>" in run
     assert "verify needs the venv" in run
     plan = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=_repo(tmp_path), mode="plan", memories=mem
+        config=cfg, repo=_repo(tmp_path), mode="plan", memories=mem, notes="", skills=None
     )
     assert "verify needs the venv" in plan
 
@@ -248,7 +248,7 @@ def test_build_system_prompt_injects_memories(tmp_path: Path) -> None:
 def test_build_system_prompt_run_mode_always_has_memories_block(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     run = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=_repo(tmp_path), mode="run"
+        config=cfg, repo=_repo(tmp_path), mode="run", memories=(), notes="", skills=None
     )
     assert "<memories>" in run
 
@@ -258,7 +258,7 @@ def test_build_system_prompt_machine_modes_never_see_memories(tmp_path: Path) ->
     mem = (_entry("facts", "verify needs the venv"),)
     for mode in ("machine", "agent"):
         text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-            config=cfg, repo=_repo(tmp_path), mode=mode, memories=mem
+            config=cfg, repo=_repo(tmp_path), mode=mode, memories=mem, notes="", skills=None
         )
         assert "<memories>" not in text, mode
 
@@ -419,3 +419,16 @@ def test_memories_block_pins_over_cap_elide_oldest_pins() -> None:
     assert "pin 11 " in block  # newest pinned kept
     assert "pin 0 " not in block  # oldest pinned elided
     assert len(block) < 14_000  # bound holds (cap + headers)
+
+
+def test_content_blocks_are_required_at_assembly() -> None:
+    """memories/notes/skills carry no defaults: an assembly site cannot
+    silently omit a block, so `prompt show` and the loop cannot drift apart
+    (one under-reporting what a session receives, the other sending nothing)."""
+    import inspect
+
+    from agent6.workflows._prompt_blocks import build_system_prompt
+
+    sig = inspect.signature(build_system_prompt)
+    for name in ("memories", "notes", "skills"):
+        assert sig.parameters[name].default is inspect.Parameter.empty, name

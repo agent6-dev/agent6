@@ -96,13 +96,22 @@ class TestBuildSystemPromptSkills:
             config=_config(tmp_path),
             repo=_repo(tmp_path),
             mode="run",
+            memories=(),
+            notes="",
             skills=_resolved(enabled=(_skill("tidy"),)),
         )
         assert "<skills>" in out
         assert "- tidy —" in out
 
     def test_no_skills_no_block(self, tmp_path: Path) -> None:
-        out = build_system_prompt(config=_config(tmp_path), repo=_repo(tmp_path), mode="run")
+        out = build_system_prompt(
+            config=_config(tmp_path),
+            repo=_repo(tmp_path),
+            mode="run",
+            memories=(),
+            notes="",
+            skills=None,
+        )
         assert "<skills>" not in out
 
     def test_skills_survive_system_prompt_file_override(self, tmp_path: Path) -> None:
@@ -113,6 +122,8 @@ class TestBuildSystemPromptSkills:
             config=cfg,
             repo=_repo(tmp_path),
             mode="run",
+            memories=(),
+            notes="",
             skills=_resolved(enabled=(_skill("tidy"),)),
         )
         assert out.startswith("CUSTOM BASE")
