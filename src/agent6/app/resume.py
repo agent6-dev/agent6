@@ -715,7 +715,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.out(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
-        print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
+        print_run_end(
+            result,
+            layout=layout,
+            budget=budget,
+            console_stream=console_stream,
+            cfg=cfg,
+            isolation=isolation,
+        )
         fire_notify_hook(
             cfg.notify,
             run_id=layout.run_id,

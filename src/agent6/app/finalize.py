@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent6.app.baseline import gate_on_base
 from agent6.app.merge import execute_merge
 from agent6.budget import BudgetTracker
 from agent6.config import Config, NotifyConfig
@@ -32,6 +33,7 @@ from agent6.git_ops import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.types import IsolationLevel
 from agent6.viewmodel import scan_run_log, summarize_run_dir
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import RunResult
@@ -78,6 +80,31 @@ def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
     return out
 
 
+def _print_baseline(
+    result: RunResult, *, layout: RunLayout, cfg: Config, isolation: IsolationLevel
+) -> None:
+    """On a red gate, say whether it was red BEFORE this run.
+
+    "your run failed" and "your change broke nothing new" are different facts,
+    and the operator cannot tell them apart from a red exit alone -- least of
+    all when the task WAS to change the tests. Only on red: green raises no
+    question, and the answer would change nothing.
+    """
+    if result.verified != "failed":
+        return
+    base_sha = ""
+    with contextlib.suppress(ManifestError):
+        base_sha = read_manifest(layout.run_dir).base_sha
+    baseline = gate_on_base(
+        Path.cwd(),
+        base_sha,
+        argv=tuple(cfg.workflow.verify_command),
+        isolation=isolation,
+        timeout_s=cfg.workflow.verify_timeout_s,
+    )
+    print(f"\n{baseline.line()}")
+
+
 def _print_stale_gate(result: RunResult) -> None:
     """Surface a proposed gate replacement, and say plainly that nothing moved.
 
@@ -94,7 +121,13 @@ def _print_stale_gate(result: RunResult) -> None:
 
 
 def print_run_end(
-    result: RunResult, *, layout: RunLayout, budget: BudgetTracker, console_stream: bool
+    result: RunResult,
+    *,
+    layout: RunLayout,
+    budget: BudgetTracker,
+    console_stream: bool,
+    cfg: Config,
+    isolation: IsolationLevel,
 ) -> None:
     """One composed end-of-run block: outcome, summary, cost, and the next step.
 
@@ -131,6 +164,7 @@ def print_run_end(
         print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
         print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
+    _print_baseline(result, layout=layout, cfg=cfg, isolation=isolation)
     _print_stale_gate(result)
     print(budget.format_summary())
     _print_run_total_across_legs(layout)
