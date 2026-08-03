@@ -1714,3 +1714,38 @@ def test_grep_reads_the_resolved_path_not_the_symlink(
     assert read_from, "grep read nothing"
     for p in read_from:
         assert p == p.resolve(), f"grep read through an unresolved path: {p}"
+
+
+def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> None:
+    """`read_file` on a directory says "Not a file: x". apply_edit/apply_patch
+    leaked the raw errno instead ("[Errno 21] Is a directory: /abs/path"), which
+    also puts an absolute host path in the model's transcript."""
+    cfg = _config(tmp_path)
+    (tmp_path / "adir").mkdir()
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+
+    for tool, args in (
+        ("apply_edit", {"path": "adir", "edits": [{"old_string": "a", "new_string": "b"}]}),
+        ("apply_patch", {"path": "adir", "patch": "--- a/adir\n+++ b/adir\n"}),
+    ):
+        with pytest.raises(ToolError) as exc:
+            d.dispatch(tool, args)
+        assert "Not a file: adir" in str(exc.value), f"{tool}: {exc.value}"
+        assert "Errno" not in str(exc.value), f"{tool} leaked an errno: {exc.value}"
+
+
+def test_read_file_refuses_a_binary_file_as_its_description_promises(tmp_path: Path) -> None:
+    """The tool description says read_file "fails when the file is binary", but
+    it only caught UnicodeDecodeError -- so a file with NUL bytes that happens
+    to decode as UTF-8 was returned verbatim into the transcript. A NUL byte is
+    the definition of binary; make the promise true rather than soften it."""
+    cfg = _config(tmp_path)
+    (tmp_path / "b.bin").write_bytes(b"text\x00\x01more\n")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+
+    with pytest.raises(ToolError, match="binary"):
+        d.dispatch("read_file", {"path": "b.bin"})
+
+    # The converse: ordinary text still reads.
+    (tmp_path / "ok.txt").write_text("hello\n", encoding="utf-8")
+    assert d.dispatch("read_file", {"path": "ok.txt"}).to_wire()["content"] == "hello\n"

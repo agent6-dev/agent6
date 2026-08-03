@@ -88,6 +88,11 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
         full = sp.abs_path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
+    # A NUL byte is what "binary" means in practice, and some binary payloads
+    # decode as UTF-8 -- so the description's promise needs this, not just the
+    # decode error. Without it such a file went verbatim into the transcript.
+    if "\x00" in full:
+        raise ToolError(f"File is binary (contains NUL bytes): {args.path}")
     # One split is the source of truth for every line count: lines_total is its
     # length in both branches (a full read and a later page of the same file
     # must agree), and lines_returned is the returned slice's real length (a
@@ -285,6 +290,18 @@ def refuse_protected_writes(
                 )
 
 
+def _existing_text(sp: SafePath, rel_path: str) -> str | None:
+    """The file's current text, or None when it does not exist yet (both edit
+    tools create). A path that exists but is not a file gets the same clear
+    error the read tools give -- letting read_text raise leaked
+    "[Errno 21] Is a directory: /abs/host/path" into the model's transcript."""
+    if not sp.abs_path.exists():
+        return None
+    if not sp.abs_path.is_file():
+        raise ToolError(f"Not a file: {rel_path}")
+    return sp.abs_path.read_text(encoding="utf-8")
+
+
 def apply_edit(
     root: Path,
     config: Config,
@@ -298,7 +315,7 @@ def apply_edit(
     refuse_protected_writes(args.path, config, extra_protect_paths, sp)
     # Write-outside-cwd is enforced by resolve_in_root already (root == cwd).
     applied: list[str] = []
-    existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
+    existing = _existing_text(sp, args.path)
     new_content = existing
     for i, edit in enumerate(args.edits):
         if edit.kind == "create":
@@ -374,7 +391,7 @@ def apply_patch(
             f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
             f"header path {derived_path!r}; emit them consistently or omit `path`"
         )
-    existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
+    existing = _existing_text(sp, args.path)
     try:
         if v4a:
             _, new_content = apply_v4a_text(args.patch, existing)
