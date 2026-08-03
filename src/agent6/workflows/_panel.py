@@ -78,6 +78,19 @@ class PanelResult:
     skipped_reason: str | None = None
 
 
+def panel_is_inconclusive(result: PanelResult) -> bool:
+    """Whether EVERY seat abstained, so nothing was actually reviewed. "0
+    blocking findings" is not a clean bill then -- the single owner both the CLI
+    verdict and the in-loop critique text ask, so neither can launder an
+    all-abstain panel into a pass."""
+    return bool(result.per_seat) and result.n_abstain == len(result.per_seat)
+
+
+def inconclusive_note(result: PanelResult) -> str:
+    """The human line for an all-abstain panel (see :func:`panel_is_inconclusive`)."""
+    return f"review inconclusive: all {result.n_abstain} seats abstained; nothing was reviewed"
+
+
 # ----------------------------------------------------------------------------
 # Diff grounding: which (path, line) citations does this diff actually support?
 # ----------------------------------------------------------------------------

@@ -190,3 +190,44 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
     result = _drive(wf, _begin())
     # blocks on rejections 1 and 2, disarms on the 3rd attempt -> finish accepted
     assert result.reason == "finish_run" and result.iterations == 3
+
+
+def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
+    """The in-loop panel is the copy that spends the run's budget and feeds the
+    critique to the model. An all-abstain panel must name the abstention, not
+    'No blocking findings.' (the CLI verdict was fixed for the same reason).
+    Uses the shared panel_is_inconclusive/inconclusive_note owner; the gate
+    still lets the finish through (a panel never deadlocks a run)."""
+    import agent6.workflows.loop as loop_mod
+    from agent6.workflows._panel import PanelResult, ReviewVerdict
+    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+
+    abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
+    res = PanelResult(
+        panel_id="p",
+        decision="advisory",
+        blocked=False,
+        merged_findings=(),
+        per_seat=(abstain, abstain, abstain),
+        n_block=0,
+        n_abstain=3,
+    )
+    wf = _wf(
+        provider=MagicMock(),
+        dispatcher=_disp(),
+        review_seats=[_seat(MagicMock())],
+        review_decision="advisory",
+        base_sha="b",
+    )
+    state = _LoopState(original_task="t", tool_calls=0)
+    with (
+        patch.object(loop_mod.Workflow, "_run_diff", return_value=_DIFF),
+        patch.object(loop_mod, "run_panel", return_value=res),
+    ):
+        out = wf._run_review_panel(  # pyright: ignore[reportPrivateUsage]
+            state, trigger="periodic", iteration=1
+        )
+    assert out is not None
+    assert "inconclusive" in out.text and "abstained" in out.text
+    assert "No blocking findings" not in out.text
+    assert out.satisfied is True  # never deadlocks the run

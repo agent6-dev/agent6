@@ -383,3 +383,112 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys
     assert "INCONCLUSIVE" in out
     assert "abstained" in out  # the why is on the verdict line, not buried in stderr
     assert rc == 1  # a panel that reviewed nothing is not a success
+
+
+def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys: Any) -> None:
+    """The exit code carried the verdict for INCONCLUSIVE (1) but left BLOCK at
+    0 -- a CI gate passed a security block and failed on 'nothing reviewed'.
+    PASS 0, INCONCLUSIVE 1, BLOCK 2, consistently."""
+    from typing import cast
+
+    from agent6.budget import BudgetTracker
+    from agent6.config import Config
+    from agent6.ui.cli import review_cmds
+
+    class _Seat:
+        persona = "security"
+        tier = "diff"
+
+    block = _seat("m1", _block("security", "foo.py:11"))  # a real gating verdict
+    passing = _seat("m2", seat="s2")
+
+    def run(
+        per_seat: tuple[ReviewVerdict, ...], *, blocked: bool, findings: tuple[Any, ...]
+    ) -> int:
+        res = PanelResult(
+            panel_id="cli",
+            decision="veto",
+            blocked=blocked,
+            merged_findings=findings,
+            per_seat=per_seat,
+            n_block=1 if blocked else 0,
+            n_abstain=sum(1 for v in per_seat if v.error),
+        )
+        monkeypatch.setattr(review_cmds, "build_review_seats", lambda *a, **k: [_Seat()])
+        monkeypatch.setattr(review_cmds, "run_panel", lambda *a, **k: res)
+        rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
+            Config(),
+            base="",
+            diff="d",
+            agents_md="",
+            reviewers=1,
+            personas="security",
+            model_override="",
+            transcript_sink=cast(Any, object()),
+            budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
+        )
+        capsys.readouterr()
+        return rc
+
+    assert run((passing,), blocked=False, findings=()) == 0  # PASS
+    assert run((block,), blocked=True, findings=block.findings) == 2  # BLOCK
+    abstain = _seat("m3", seat="s3", error="starved")
+    assert run((abstain,), blocked=False, findings=()) == 1  # INCONCLUSIVE
+
+
+def test_output_cap_truncated_case_folds_both_spellings() -> None:
+    from agent6.providers import ProviderResponse, output_cap_truncated
+
+    def r(stop: str) -> ProviderResponse:
+        return ProviderResponse(
+            text="",
+            tool_uses=(),
+            stop_reason=stop,
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+
+    assert output_cap_truncated(r("length"))
+    assert output_cap_truncated(r("max_tokens"))  # anthropic spelling
+    assert output_cap_truncated(r("MAX_TOKENS"))  # upper-casing gateway
+    assert not output_cap_truncated(r("end_turn"))
+    assert not output_cap_truncated(r("tool_use"))
+
+
+def test_panel_is_inconclusive_owner() -> None:
+    from agent6.workflows._panel import panel_is_inconclusive
+
+    abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="starved")
+    passing = ReviewVerdict(seat="s2", model="m2", verdict="pass")
+    all_abstain = PanelResult(
+        panel_id="p",
+        decision="advisory",
+        blocked=False,
+        merged_findings=(),
+        per_seat=(abstain, abstain),
+        n_block=0,
+        n_abstain=2,
+    )
+    assert panel_is_inconclusive(all_abstain) is True
+    mixed = PanelResult(
+        panel_id="p",
+        decision="advisory",
+        blocked=False,
+        merged_findings=(),
+        per_seat=(abstain, passing),
+        n_block=0,
+        n_abstain=1,
+    )
+    assert panel_is_inconclusive(mixed) is False
+    empty = PanelResult(
+        panel_id="p",
+        decision="advisory",
+        blocked=False,
+        merged_findings=(),
+        per_seat=(),
+        n_block=0,
+        n_abstain=0,
+    )
+    assert panel_is_inconclusive(empty) is False  # nothing to be inconclusive about

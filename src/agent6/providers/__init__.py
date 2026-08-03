@@ -27,6 +27,7 @@ from agent6.providers.types import (
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
+    output_cap_truncated,
 )
 
 
@@ -74,4 +75,5 @@ __all__ = [
     "ToolDefinition",
     "TranscriptRecorder",
     "TranscriptSink",
+    "output_cap_truncated",
 ]

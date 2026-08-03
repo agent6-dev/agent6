@@ -29,6 +29,8 @@ from agent6.workflows.review import (
     CodeReviewError,
     ReviewContext,
     code_review,
+    inconclusive_note,
+    panel_is_inconclusive,
     render_findings,
     run_panel,
 )
@@ -108,8 +110,12 @@ def _run_review_panel(
     budget: BudgetTracker,
 ) -> int:
     """Run the grounded adversarial review panel over *diff* and print a verdict
-    + merged findings. Read-only; no gating here (post-hoc), the verdict is
-    informational. Per-seat status and budget go to stderr."""
+    + merged findings. Read-only. Per-seat status and budget go to stderr.
+
+    The exit code carries the verdict for scripting: 0 = PASS (clean or with
+    non-blocking findings), 1 = INCONCLUSIVE (every seat abstained; nothing was
+    reviewed), 2 = BLOCK (a grounded gating finding). Half a contract -- BLOCK 0
+    but INCONCLUSIVE 1 -- was worse than none."""
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     seats = build_review_seats(
         cfg,
@@ -147,18 +153,17 @@ def _run_review_panel(
     except BudgetExceeded as exc:
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
-    inconclusive = result.per_seat and result.n_abstain == len(result.per_seat)
+    # One all-abstain owner, shared with the in-loop panel, so neither surface
+    # launders "nothing was reviewed" into a pass.
+    inconclusive = panel_is_inconclusive(result)
     if inconclusive:
-        # Every seat failed to produce a review: "0 blocking" is not a pass,
-        # nothing was reviewed. The gate already refuses to count abstains;
-        # the printed verdict must not launder them into a clean bill.
-        verdict = f"INCONCLUSIVE (all {result.n_abstain} seats abstained; nothing was reviewed)"
+        verdict, rc = f"INCONCLUSIVE ({inconclusive_note(result)})", 1
     elif result.blocked:
-        verdict = "BLOCK"
+        verdict, rc = "BLOCK", 2
     elif result.merged_findings:
-        verdict = "PASS (with findings)"
+        verdict, rc = "PASS (with findings)", 0
     else:
-        verdict = "PASS"
+        verdict, rc = "PASS", 0
     print(f"VERDICT: {verdict}")
     body = render_findings(result.merged_findings)
     if body:
@@ -171,7 +176,7 @@ def _run_review_panel(
         status = f"abstain: {v.error}" if v.error else f"{v.verdict} ({len(v.findings)} findings)"
         print(f"  - {v.seat} [{v.model}]: {status}", file=sys.stderr)
     print(budget.format_summary(), file=sys.stderr)
-    return 1 if inconclusive else 0
+    return rc
 
 
 def _cmd_review(  # noqa: PLR0911

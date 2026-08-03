@@ -515,3 +515,42 @@ def test_silent_finish_critic_off_bypasses() -> None:
         # periodic/on_verify_fail don't fire on silent_finish either -
         # critic was wired but had no trigger condition matched.
         assert critic.call.call_count == 0, f"mode={mode} called critic unexpectedly"
+
+
+def _resp_capped(text: str = "", *, stop_reason: str = "length") -> ProviderResponse:
+    return ProviderResponse(
+        text=text,
+        tool_uses=(),
+        stop_reason=stop_reason,
+        input_tokens=10,
+        output_tokens=4000,  # spent the cap
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+
+
+def test_run_critic_none_when_output_capped() -> None:
+    """A reasoning-model critic can spend its whole output cap before emitting a
+    verdict (stop_reason=length / max_tokens, empty text). Folding that into
+    NEEDS_WORK revoked finish_run with an EMPTY critique and burned iterations
+    against a phantom rejection; a truncated call is a FAILED call -> None (like
+    a ProviderError), 'no critique, proceed'."""
+    for reason in ("length", "max_tokens", "MAX_TOKENS"):
+        critic = MagicMock()
+        critic.call.return_value = _resp_capped("", stop_reason=reason)
+        wf = _wf(critic_provider=critic, critic_mode="before_finish")
+        out = wf._run_critic(  # pyright: ignore[reportPrivateUsage]
+            task="t", conversation=Conversation(), trigger="before_finish", iteration=1
+        )
+        assert out is None, f"stop_reason={reason!r} must abstain, not NEEDS_WORK"
+
+
+def test_run_critic_none_when_empty_text() -> None:
+    # An empty critic response (no cap flag) is also not a verdict.
+    critic = MagicMock()
+    critic.call.return_value = _resp("   ")
+    wf = _wf(critic_provider=critic, critic_mode="periodic")
+    out = wf._run_critic(  # pyright: ignore[reportPrivateUsage]
+        task="t", conversation=Conversation(), trigger="periodic", iteration=1
+    )
+    assert out is None

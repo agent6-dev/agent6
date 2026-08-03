@@ -11,7 +11,12 @@ reaching into privates.
 
 from __future__ import annotations
 
-from agent6.workflows._panel import ReviewContext, render_findings
+from agent6.workflows._panel import (
+    ReviewContext,
+    inconclusive_note,
+    panel_is_inconclusive,
+    render_findings,
+)
 from agent6.workflows._review import ReviewSeat, parse_seat_spec, run_panel
 from agent6.workflows.code_review import CodeReviewError, code_review
 
@@ -20,6 +25,8 @@ __all__ = [
     "ReviewContext",
     "ReviewSeat",
     "code_review",
+    "inconclusive_note",
+    "panel_is_inconclusive",
     "parse_seat_spec",
     "render_findings",
     "run_panel",

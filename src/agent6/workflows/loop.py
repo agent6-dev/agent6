@@ -61,6 +61,7 @@ from agent6.providers import (
     ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
+    output_cap_truncated,
 )
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import (
@@ -161,7 +162,13 @@ from agent6.workflows._nudges import (
     verify_did_not_run,
     verify_failure_signature,
 )
-from agent6.workflows._panel import ReviewContext, ReviewDecision, render_findings
+from agent6.workflows._panel import (
+    ReviewContext,
+    ReviewDecision,
+    inconclusive_note,
+    panel_is_inconclusive,
+    render_findings,
+)
 from agent6.workflows._parallel_dispatch import (
     LaneJoin,
     join_lane_result,
@@ -2641,7 +2648,7 @@ class Workflow:
                 if isinstance(block, dict) and block.get("type") == "thinking":
                     reasoning_chars = len(str(block.get("thinking") or ""))
                     break
-        starved = resp.stop_reason == "length" and reasoning_chars > 0 and resp.output_tokens > 0
+        starved = output_cap_truncated(resp) and reasoning_chars > 0 and resp.output_tokens > 0
         if starved:
             self._log(
                 f"LOOP: reasoning_starvation at iter {iteration}"
@@ -3802,7 +3809,14 @@ class Workflow:
                 state.review_rejections_total += 1
             else:
                 state.review_rejections_total = max(0, state.review_rejections_total - 1)
-        text = render_findings(result.merged_findings) or "No blocking findings."
+        # An all-abstain panel reviewed nothing: name that in the critique text
+        # (the model reads it) instead of "No blocking findings.", which the CLI
+        # verdict was fixed for too. The gate still lets the finish through -- a
+        # panel must never deadlock a run -- so `satisfied` is unchanged.
+        if panel_is_inconclusive(result):
+            text = inconclusive_note(result)
+        else:
+            text = render_findings(result.merged_findings) or "No blocking findings."
         return CritiqueResult(text=text, satisfied=not effective_blocked)
 
     def _run_critic(
@@ -3841,6 +3855,22 @@ class Workflow:
             self._emit("loop.critic.failed", iteration=iteration, error=str(exc)[:200])
             return None
         text = (resp.text or "").strip()
+        if output_cap_truncated(resp) or not text:
+            # A starved/empty critic response is a FAILED call, not a verdict:
+            # folding it into NEEDS_WORK revoked finish_run with an empty
+            # critique and burned iterations against a phantom rejection. Treat
+            # it like a ProviderError -- no critique, proceed.
+            self._log(
+                f"  critic produced no verdict (stop_reason={resp.stop_reason!r},"
+                f" {len(text)} chars); skipping the critique"
+            )
+            self._emit(
+                "loop.critic.inconclusive",
+                iteration=iteration,
+                trigger=trigger,
+                stop_reason=resp.stop_reason,
+            )
+            return None
         satisfied = parse_critic_verdict(text)
         self._emit(
             "loop.critic.verdict",

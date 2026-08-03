@@ -23,7 +23,13 @@ from typing import Any
 
 from agent6.config import ReviewTier
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
-from agent6.providers import Provider, ProviderError, ProviderResponse, ToolDefinition
+from agent6.providers import (
+    Provider,
+    ProviderError,
+    ProviderResponse,
+    ToolDefinition,
+    output_cap_truncated,
+)
 from agent6.tools.results import ToolResult
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
@@ -165,7 +171,7 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
     (finish_reason=length, empty text, everything in the reasoning channel),
     and the generic "unparseable reviewer output" blamed the parser for the
     provider's truncation -- hiding the one actionable fact."""
-    if resp.stop_reason in ("length", "max_tokens"):
+    if output_cap_truncated(resp):
         detail = (
             "before emitting any content (likely all reasoning)"
             if not resp.text.strip()

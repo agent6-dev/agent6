@@ -257,3 +257,18 @@ class ProviderResponse:
     # ``BudgetTracker.estimate_usd``.
     cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+# The stop-reason spellings a provider uses when the OUTPUT CAP truncated a turn
+# (OpenAI "length", Anthropic "max_tokens"), case-folded for gateways that
+# upper-case them. A reasoning model can spend its whole cap before emitting any
+# content, so a truncated call is a FAILED call (retry / raise the cap), never a
+# "verdict of empty" or NEEDS_WORK.
+_OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens"})
+
+
+def output_cap_truncated(resp: ProviderResponse) -> bool:
+    """Whether *resp* was cut off by the output token cap. THE single owner: the
+    review seat, the in-loop critic, and the loop's starvation trip-wire all ask
+    it, so "the cap ate the answer" cannot be spelled three different ways."""
+    return resp.stop_reason.strip().lower() in _OUTPUT_CAP_STOP_REASONS
