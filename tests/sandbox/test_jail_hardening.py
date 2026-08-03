@@ -168,3 +168,71 @@ def test_the_jail_launcher_does_not_carry_the_agent_env_into_the_jail(
         JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation="strict", timeout_s=20.0)
     )
     assert "LEAK" not in (res.stdout or ""), f"the agent's env reached the jail: {res.stdout}"
+
+
+def test_a_fully_populated_policy_holds_every_invariant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every jail invariant at once, against a policy with EVERY field set.
+
+    The tests around this one each exercise a default-shaped policy, and that is
+    how tool_paths and extra_ro_paths kept a missing mount floor through a sweep
+    meant to close that class: a bare policy mounts neither, so enumerating
+    "every mount" enumerated everything except them. This one populates the
+    whole surface -- ro/rw/protect grants, tool paths, a child env, a memory cap
+    -- and asserts the properties together.
+
+    Honest limit on the GAPS half: a bind inherits its SOURCE mount's flags, and
+    pytest's tmp_path is usually on a tmpfs that already carries nosuid,nodev --
+    so on such a host this cannot tell an explicit floor from an inherited one
+    (red-verified: reverting the tool_paths floor leaves this passing). It bites
+    where tmp is ext4, and the ext4 case was probed by hand. The LEAK and
+    PROTECT halves are deterministic everywhere.
+    """
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    ws, ro, rw, tools = (tmp_path / n for n in ("ws", "ro", "rw", "tools"))
+    for d in (ws, ro, rw, tools):
+        d.mkdir()
+    (ws / ".git").mkdir()
+    (ws / ".git" / "config").write_text("[core]\n", encoding="utf-8")
+    (ro / "f.txt").write_text("ro", encoding="utf-8")
+    monkeypatch.setenv("AGENT_ONLY_CANARY", "sk-PARENT-SECRET")
+
+    probe = (
+        "import os, glob\n"
+        "me = os.getpid()\n"
+        "gaps = []\n"
+        "for l in open('/proc/self/mountinfo'):\n"
+        "    f = l.split(' - ')[0].split()\n"
+        "    if f[4].startswith('/dev/'): continue\n"
+        "    if 'nosuid' not in f[5] or 'nodev' not in f[5]: gaps.append(f[4])\n"
+        "print('GAPS', gaps)\n"
+        "leak = [p for p in glob.glob('/proc/[0-9]*/environ')\n"
+        "        if int(p.split('/')[2]) != me and b'PARENT-SECRET' in open(p,'rb').read()]\n"
+        "print('LEAK', leak)\n"
+        "try:\n"
+        "    open('/workspace/.git/config','w').write('x'); print('PROTECT writable')\n"
+        "except OSError: print('PROTECT refused')\n"
+    )
+    res = run_in_jail(
+        JailPolicy(
+            cwd=ws,
+            argv=("python3", "-c", probe),
+            isolation="strict",
+            env=(("CHILD_VAR", "child-only"),),
+            extra_ro_paths=(ro,),
+            extra_rw_paths=(rw,),
+            extra_protect_paths=(ws / ".git",),
+            tool_paths=(tools,),
+            timeout_s=30.0,
+            memory_limit_mb=512,
+        )
+    )
+    out = res.stdout or ""
+    if "GAPS" not in out:
+        pytest.skip(f"probe did not run: {res.stderr[:200]}")
+    assert "GAPS []" in out, f"a mount in a fully-populated policy lacks the floor: {out}"
+    assert "LEAK []" in out, f"the agent's environment reached the jail: {out}"
+    assert "PROTECT refused" in out, f"a protect path was writable: {out}"
