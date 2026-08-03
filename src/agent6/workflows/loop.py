@@ -876,11 +876,14 @@ class Workflow:
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
         if resume_from is not None:
             _restore_completion_state(state, resume_from)
-            if state.pins:
-                # Re-announce restored pins for the read model: a fork's fresh
-                # logs.jsonl has no pin.added events to fold (the fold REPLACES
-                # on this event, so a plain resume never double-counts).
-                self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
+            # Re-announce restored pins for the read model: a fork's fresh
+            # logs.jsonl has no pin.added events to fold (the fold REPLACES on
+            # this event, so a plain resume never double-counts). Announced even
+            # when empty: a pin whose pin.added reached the log but whose
+            # snapshot never did is still folded from the same log, so only a
+            # replace with the real (empty) list stops the surfaces listing a
+            # pin no restart will ever re-inject.
+            self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
             # A resume seeded with `--steer` queues the operator's follow-up
