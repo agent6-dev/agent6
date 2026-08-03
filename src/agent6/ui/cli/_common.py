@@ -122,6 +122,11 @@ def _runs_dir(repo_root: Path) -> Path:
     return _state_dir(repo_root) / "runs"
 
 
+def _plans_dir(repo_root: Path) -> Path:
+    """The ``plans/`` directory under the per-repo state dir."""
+    return _state_dir(repo_root) / "plans"
+
+
 def print_no_session_match(query: str, state: Path) -> None:
     """The one missing-run error, shared by every command that resolves a run:
     name the query and where it looked (never the bucket-layout internals), or

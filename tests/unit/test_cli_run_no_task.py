@@ -45,10 +45,10 @@ def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path)
 
 
 def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
-    runs = resolved_state_dir(tmp_path) / "runs"
-    runs.mkdir(parents=True)
-    older = runs / "older-plan"
-    newer = runs / "newer-plan"
+    plans = resolved_state_dir(tmp_path) / "plans"
+    plans.mkdir(parents=True)
+    older = plans / "older-plan"
+    newer = plans / "newer-plan"
     older.mkdir()
     newer.mkdir()
     for session_dir in (older, newer):
@@ -57,7 +57,7 @@ def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_pa
     os.utime(older / "logs.jsonl", (100, 100))
     os.utime(newer / "logs.jsonl", (1000, 1000))
     (older / "frontend.pid").write_text("12345", encoding="utf-8")
-    assert _most_recent_plan_session_id(runs) == "newer-plan"
+    assert _most_recent_plan_session_id(plans) == "newer-plan"
 
 
 def test_run_without_task_errors(
@@ -81,7 +81,7 @@ def test_run_no_task_points_at_most_recent_plan(
     # No task given but a prior plan exists: non-interactively (pytest stdin is
     # not a TTY) refuse, but point the user at the plan + the --from-plan form.
     monkeypatch.chdir(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "runs" / "tidy-otter-AB12CD"
+    session_dir = resolved_state_dir(tmp_path) / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
     rc = main(["run"])

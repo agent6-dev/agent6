@@ -27,7 +27,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
-    _runs_dir,
+    _plans_dir,
     _state_dir,
     print_no_session_match,
     resolve_or_newest_layout,
@@ -48,25 +48,25 @@ from agent6.viewmodel.state import SESSION_START_EVENTS
 
 
 def _resolve_plan_session_id(session_id: str) -> str | None:
-    """Resolve a (possibly prefix) run-id under the per-repo run-state dir.
+    """Resolve a (possibly prefix) plan id under the per-repo state dir.
 
     Prints an error and returns None on failure. Used by ``run --from-plan``,
     ``plan show``, and ``plan edit``. An empty *session_id* resolves the most recent
-    planning run, matching the omit-for-latest convention of the runs commands.
+    plan, matching the omit-for-latest convention of the sessions commands.
     """
-    runs_dir = _runs_dir(Path.cwd())
+    plans_dir = _plans_dir(Path.cwd())
     if not session_id:
-        latest = _most_recent_plan_session_id(runs_dir)
+        latest = _most_recent_plan_session_id(plans_dir)
         if latest is None:
-            print("ERROR: no planning runs yet (start one with `agent6 plan`).", file=sys.stderr)
+            print("ERROR: no plans yet (start one with `agent6 plan`).", file=sys.stderr)
             return None
         session_id = latest
     try:
-        resolved = resolve_session_id(runs_dir, session_id)
+        resolved = resolve_session_id(plans_dir, session_id)
     except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return None
-    plan = runs_dir / resolved / "plan.md"
+    plan = plans_dir / resolved / "plan.md"
     if not plan.is_file():
         print(
             f"ERROR: {resolved} has no plan.md (was it created with `agent6 plan`?)",
@@ -81,7 +81,7 @@ def _cmd_plan_show(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
+    plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
     sys.stdout.write(plan.read_text(encoding="utf-8"))
     return 0
 
@@ -95,7 +95,7 @@ def _cmd_plan_edit(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
+    plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
     editor = os.environ.get("EDITOR", "vi")
     # $EDITOR may be a command with flags ("code --wait"); split it.
     argv = shlex.split(editor) or ["vi"]
@@ -107,15 +107,15 @@ def _cmd_plan_edit(session_id: str) -> int:
     return result.returncode
 
 
-def _most_recent_plan_session_id(runs_dir: Path) -> str | None:
-    """Most recently active run dir that holds a ``plan.md`` (a plan run).
+def _most_recent_plan_session_id(plans_dir: Path) -> str | None:
+    """Most recently active plan dir that holds a ``plan.md``.
 
     Used by bare `agent6 run` (no task) to offer the latest plan for execution.
     """
-    if not runs_dir.is_dir():
+    if not plans_dir.is_dir():
         return None
     candidates = sorted(
-        (p for p in runs_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
+        (p for p in plans_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
         key=session_mtime,
         reverse=True,
     )
@@ -377,7 +377,7 @@ def _cmd_tui() -> int:
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = Path.cwd()
-    agent6_dir = _runs_dir(cwd).parent
+    agent6_dir = _plans_dir(cwd).parent
     while True:
         session_dir = run_home(agent6_dir, cwd)
         if session_dir is None:

@@ -36,7 +36,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import request_stop, worker_is_alive
-from agent6.sessions.layout import SessionLayout
+from agent6.sessions.layout import HUB_BUCKETS, SessionLayout
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
@@ -86,14 +86,14 @@ def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
 
 
 def _cmd_list() -> int:
-    """List this repo's runs (runs/ + asks/), newest first: updated (last-activity
-    time), status (with the failure reason), mode, cost, id, task. The listing twin
-    of the TUI/web hubs, built on the same shared summary."""
+    """List this repo's sessions, newest first: updated (last-activity time),
+    status (with the failure reason), mode, cost, id, task. The listing twin of
+    the TUI/web hubs, built on the same shared summary and the same buckets."""
     import time  # noqa: PLC0415
 
     cwd = Path.cwd()
     dirs: list[Path] = []
-    for sub in ("runs", "asks"):
+    for sub in HUB_BUCKETS:
         d = _state_dir(cwd) / sub
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))

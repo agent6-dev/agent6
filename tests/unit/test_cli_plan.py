@@ -13,7 +13,7 @@ from agent6.ui.cli import main
 
 
 def _seed_plan(tmp_path: Path, session_id: str, body: str) -> Path:
-    plan_dir = resolved_state_dir(tmp_path) / "runs" / session_id
+    plan_dir = resolved_state_dir(tmp_path) / "plans" / session_id
     plan_dir.mkdir(parents=True)
     plan = plan_dir / "plan.md"
     plan.write_text(body, encoding="utf-8")
@@ -74,7 +74,7 @@ def test_plan_show_omit_id_with_no_plans_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["plan", "show"]) == 2
-    assert "no planning runs yet" in capsys.readouterr().err
+    assert "no plans yet" in capsys.readouterr().err
 
 
 def test_plan_show_missing_run_errors(
@@ -83,7 +83,7 @@ def test_plan_show_missing_run_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "plans").mkdir(parents=True)
     rc = main(["plan", "show", "nonexistent"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
@@ -95,7 +95,7 @@ def test_plan_show_no_plan_md_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (resolved_state_dir(tmp_path) / "runs" / "happy-tree-abcd").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "plans" / "happy-tree-abcd").mkdir(parents=True)
     rc = main(["plan", "show", "happy-tree-abcd"])
     assert rc == 2
     err = capsys.readouterr().err

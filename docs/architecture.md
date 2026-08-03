@@ -85,7 +85,7 @@ Notes:
   conversation. The in-loop critic and the adversarial review panel
   are opt-in (`[review]` config) and layer onto this same history.
 - **Snapshot before every LLM call.** `loop_state.json` is rewritten
-  in the session directory (`<state-dir>/<repo-id>/runs/<session-id>/`,
+  in the session directory (`<state-dir>/<repo-id>/<bucket>/<session-id>/`,
   out of the workspace) before each provider request, with a per-turn
   copy under `checkpoints/<NNNN>.json` (see "Run state on disk").
   `agent6 resume <session-id>` rehydrates from `loop_state.json`,
@@ -389,7 +389,9 @@ one lock.
 
 ## Run state on disk
 
-Each run's directory `<state-dir>/<repo-id>/runs/<session-id>/` holds:
+Each session's directory `<state-dir>/<repo-id>/<bucket>/<session-id>/` holds
+(the bucket is named for the mode: `runs/`, `plans/`, `asks/`, and
+`machine-drafts/` for `machine create` authoring):
 
 - `graph.jsonl`: append-only journal of every task-graph mutation
   (curator-owned).
@@ -519,7 +521,7 @@ graph`).
 | Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
-| Run state on disk                | `<state-dir>/<repo-id>/runs/<session-id>/` (out of the workspace)         |
+| Session state on disk            | `<state-dir>/<repo-id>/<bucket>/<session-id>/` (out of the workspace)    |
 
 ## Pre-1.0 stability
 

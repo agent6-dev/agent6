@@ -14,7 +14,7 @@ from pathlib import Path
 
 from agent6.graph.storage import load_graph
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -50,7 +50,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
-        # No id: search every run across runs/ + asks/ + machine-drafts/, so a
+        # No id: search every session across every bucket, so a
         # search right after an `ask` finds it (matching what `agent6 sessions` lists).
         targets = all_session_dirs(cwd)
         if not targets:
@@ -208,11 +208,11 @@ def _rg_text(field: object) -> str:
 
 
 def _session_id_from_path(path: Path) -> str:
-    """The run/ask id owning a match file: the child of the DEEPEST
-    runs/asks/machine-drafts segment (a state-base ancestor may reuse a
-    bucket name, e.g. XDG_STATE_HOME=/mnt/runs/state)."""
+    """The session id owning a match file: the child of the DEEPEST bucket
+    segment (a state-base ancestor may reuse a bucket name, e.g.
+    XDG_STATE_HOME=/mnt/runs/state)."""
     parts = path.parts
-    anchors = {"runs", "asks", "machine-drafts"}
+    anchors = set(SESSION_BUCKETS)
     for i in range(len(parts) - 2, -1, -1):
         if parts[i] in anchors:
             return parts[i + 1]

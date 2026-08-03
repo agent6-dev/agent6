@@ -17,7 +17,12 @@ from agent6.config.layer import (
     preset_catalog,
 )
 from agent6.config.write import PROVIDER_DEFAULTS
-from agent6.ui.cli._common import _machines_dir, _runs_dir, session_bucket_dirs
+from agent6.ui.cli._common import (
+    _machines_dir,
+    _plans_dir,
+    _runs_dir,
+    session_bucket_dirs,
+)
 from agent6.ui.cli.model import _connected_providers, _models_for
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 
@@ -178,14 +183,14 @@ def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids that hold a plan.md (for --from-plan / plan show/edit)."""
+    """argcomplete: plan ids (for --from-plan / plan show/edit)."""
     try:
-        runs = _runs_dir(Path.cwd())
-        if not runs.is_dir():
+        plans = _plans_dir(Path.cwd())
+        if not plans.is_dir():
             return []
         return sorted(
             p.name
-            for p in runs.iterdir()
+            for p in plans.iterdir()
             if p.is_dir() and p.name.startswith(prefix) and (p / "plan.md").is_file()
         )
     except (OSError, ConfigError):

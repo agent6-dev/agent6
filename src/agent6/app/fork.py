@@ -32,6 +32,7 @@ from typing import Any
 
 from agent6.app.manifest import write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import GitError, create_branch_at
@@ -50,11 +51,11 @@ from agent6.portable import atomic_write
 from agent6.sessions.id import (
     SessionIdError,
     new_friendly_id,
-    resolve_session_id,
     validate_explicit_session_id,
 )
-from agent6.sessions.layout import SessionLayout
+from agent6.sessions.layout import SessionLayout, session_layout, session_matches
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.types import session_bucket
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows._run_state import load_run_snapshot
 
@@ -66,6 +67,32 @@ _DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "graph.dot", "cursor.
 def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> dict[str, object]:
     """One per-repo lineage event. Pure: the caller passes the timestamp in."""
     return {"child": child, "parent": parent, "turn": turn, "sha": sha, "ts": ts}
+
+
+def _resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> SessionLayout | None:
+    """The session to fork, by id or (empty query) the most recent one.
+
+    The same cross-bucket resolver resume uses: a plan lives in plans/ and an
+    ask in asks/, and a runs/-only lookup silently could not see either.
+    """
+    if not query:
+        # The same bucket set bare `resume` uses, so the two agree on what
+        # "most recent" means.
+        latest = newest_session_dir(resumable_bucket_dirs(state_dir))
+        if latest is None:
+            reporter.err(f"ERROR: nothing forkable under {state_dir}; nothing to fork.")
+            return None
+        query = latest.name
+        reporter.err(f"[agent6] forking most recent session: {query}")
+    src = session_layout(state_dir, query)
+    if src is None:
+        candidates = session_matches(state_dir, query)
+        if candidates:
+            named = ", ".join(c.session_id for c in candidates)
+            reporter.err(f"ERROR: {query!r} matches more than one session: {named}")
+        else:
+            reporter.err(f"ERROR: no session {query!r} under {state_dir}")
+    return src
 
 
 def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> None:
@@ -224,24 +251,8 @@ def create_fork(  # noqa: PLR0911
     either reports the created id (`--no-run`) or continues it over resume.
     """
     state_dir = resolved_state_dir(cwd)
-    runs_dir = state_dir / "runs"
-    if not source_session_id:
-        # "fork my last run" -- omitting the id forks the most recent run.
-        latest = newest_session_dir([runs_dir])
-        if latest is None:
-            reporter.err(f"ERROR: no runs under {runs_dir}; nothing to fork.")
-            return "", 2
-        source_session_id = latest.name
-        reporter.err(f"[agent6] forking most recent run: {source_session_id}")
-    try:
-        source_id = resolve_session_id(runs_dir, source_session_id)
-    except SessionIdError as exc:
-        reporter.err(f"ERROR: {exc}")
-        return "", 2
-
-    src = SessionLayout(state_dir=state_dir, session_id=source_id)
-    if not src.session_dir.is_dir():
-        reporter.err(f"ERROR: no such run dir: {src.session_dir}")
+    src = _resolve_source(state_dir, source_session_id, reporter=reporter)
+    if src is None:
         return "", 2
 
     checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
@@ -307,7 +318,12 @@ def create_fork(  # noqa: PLR0911
     rc = _materialize_fork(
         cwd=cwd,
         src=src,
-        dst=SessionLayout(state_dir=state_dir, session_id=child_id),
+        # A fork keeps its source's mode, so its dir belongs in that mode's
+        # bucket: a forked plan in runs/ would be the one session whose
+        # directory disagreed with its own manifest.
+        dst=SessionLayout(
+            state_dir=state_dir, session_id=child_id, subdir=session_bucket(src_mode)
+        ),
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,

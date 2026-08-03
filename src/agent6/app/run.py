@@ -103,7 +103,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel, session_kind
+from agent6.types import IsolationLevel, session_bucket, session_kind
 from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -373,7 +373,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     layout = SessionLayout(
         state_dir=state_dir,
         session_id=effective_session_id,
-        subdir=session_kind(mode).bucket,
+        subdir=session_bucket(mode),
     )
     # An explicit --session-id that already has a session is a resume, not a fresh start:
     # reusing the dir would write a new manifest + loop_state beside the old run's

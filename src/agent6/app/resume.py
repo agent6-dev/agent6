@@ -94,10 +94,24 @@ from agent6.sessions.lock import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.types import IsolationLevel, session_kind
+from agent6.types import SESSION_KINDS, IsolationLevel, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows._run_state import RunReason, load_run_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
+
+
+def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
+    """The bucket dirs holding sessions `agent6 resume` can pick up.
+
+    Derived from the mode records rather than listed again here: a new resumable
+    mode that a hand-kept list forgot would be resumable by id and invisible to
+    the bare form.
+    """
+    return [
+        state_dir / kind.bucket
+        for kind in SESSION_KINDS.values()
+        if kind.resumable and kind.bucket is not None
+    ]
 
 
 def ensure_on_run_branch(cwd: Path, layout: SessionLayout) -> str | None:
@@ -234,15 +248,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     cwd = Path.cwd()
     state_dir = resolved_state_dir(cwd)
-    runs_dir = state_dir / "runs"
     if not session_id:
-        # "resume my last run" -- the common recovery case, matching `runs *`.
-        latest = newest_session_dir([runs_dir])
+        # "resume my last session" -- the common recovery case. Every bucket a
+        # resumable mode writes to, so splitting plans/ out of runs/ does not
+        # hide a plan from the bare form, and so the no-id path finds what the
+        # by-id path below already accepts.
+        buckets = resumable_bucket_dirs(state_dir)
+        latest = newest_session_dir(buckets)
         if latest is None:
-            reporter.err(f"ERROR: no runs under {runs_dir}; nothing to resume.")
+            reporter.err(f"ERROR: nothing resumable under {state_dir}; nothing to resume.")
             return 2
         session_id = latest.name
-        reporter.err(f"[agent6] resuming most recent run: {session_id}")
+        reporter.err(f"[agent6] resuming most recent session: {session_id}")
     # Across buckets: an ask is a session like any other, so `agent6 resume`
     # continues one by id instead of only finding what lives under runs/.
     # One resolver, no per-bucket fallback: falling back to a runs/-only lookup

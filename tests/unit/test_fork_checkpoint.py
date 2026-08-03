@@ -25,6 +25,7 @@ import pytest
 
 from agent6.graph.storage import list_checkpoint_turns
 from agent6.sessions.layout import SessionLayout
+from agent6.types import session_bucket
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
@@ -187,8 +188,8 @@ def _seed_source_run(
     workflow_profile: str = "",
     preset_from_flag: bool | None = None,
 ) -> SessionLayout:
-    """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
-    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
+    """Lay down a source session dir with a manifest, graph DAG, and checkpoints."""
+    layout = SessionLayout(state_dir=state_dir, session_id=session_id, subdir=session_bucket(mode))
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -252,8 +253,11 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="plan-fork-BBBB22")
+    # The fork inherits mode="plan", so its dir belongs in plans/ -- not in the
+    # runs/ bucket the default layout would have put it in.
+    dst = SessionLayout(state_dir=state_dir, session_id="plan-fork-BBBB22", subdir="plans")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
+    assert not (state_dir / "runs" / "plan-fork-BBBB22").exists()
 
 
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

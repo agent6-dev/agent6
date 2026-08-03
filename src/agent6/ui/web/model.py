@@ -21,7 +21,7 @@ from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
 from agent6.secrets import resolve_api_key
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_machine,
@@ -41,9 +41,6 @@ from agent6.viewmodel import (
 from agent6.viewmodel.config_view import render_show
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.transcript_style import item_lines
-
-SESSION_SUBDIRS = ("runs", "asks")
-
 
 # --- directory layout --------------------------------------------------------
 
@@ -75,13 +72,13 @@ _safe_component = is_safe_component
 
 
 def session_dir_for(cwd: Path, session_id: str) -> Path | None:
-    """Locate a run dir by exact id across runs/ and asks/ (no prefix match: the
+    """Locate a session dir by exact id across the hub buckets (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a session_id
     that is not a single safe path component. Husks are skipped so an orphaned
     dir in runs/ cannot shadow a real ask of the same id."""
     if not _safe_component(session_id):
         return None
-    for sub in SESSION_SUBDIRS:
+    for sub in HUB_BUCKETS:
         d = state_dir_for(cwd) / sub / session_id
         if d.is_dir() and not is_session_husk(d):
             return d
@@ -107,7 +104,7 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
 def session_dir_paths(cwd: Path) -> list[Path]:
     """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
     out: list[Path] = []
-    for sub in SESSION_SUBDIRS:
+    for sub in HUB_BUCKETS:
         d = state_dir_for(cwd) / sub
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir())
@@ -146,10 +143,10 @@ def _session_summary(session_dir: Path) -> dict[str, Any]:
 
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
-    """All runs (runs/ + asks/) summarized, newest first by last-activity time.
+    """Every session a hub lists, summarized, newest first by last-activity time.
     Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     dirs: list[Path] = []
-    for sub in SESSION_SUBDIRS:
+    for sub in HUB_BUCKETS:
         d = state_dir_for(cwd) / sub
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))

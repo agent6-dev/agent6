@@ -40,7 +40,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.models.validate import known_models, refusal_message, validate_spec_models
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -59,9 +59,6 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
-
-# Subdirs (relative to the agent6 dir) that hold watchable run directories.
-_SESSION_SUBDIRS = ("runs", "asks")
 
 # The hub re-asks on this cadence (the web hub's poll rate): it was the one TUI
 # screen that never refreshed, so a run that died while you watched kept its
@@ -143,10 +140,10 @@ def _cost_cell(cost_usd: float, *, partial: bool) -> str:
 
 
 def _list_sessions(agent6_dir: Path) -> list[Path]:
-    """All run directories (runs/ + asks/), newest first by last-activity time.
+    """Every session directory a hub lists, newest first by last-activity time.
     Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     out: list[Path] = []
-    for sub in _SESSION_SUBDIRS:
+    for sub in HUB_BUCKETS:
         d = agent6_dir / sub
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))

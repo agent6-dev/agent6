@@ -116,11 +116,16 @@ class SessionLayout:
         return self.checkpoints_dir / f"{turn:04d}.json"
 
 
-# The buckets a session dir can live in. `run`/`plan` write to runs/, `ask` to
-# asks/, and `machine create` authoring logs to machine-drafts/. Defined beside
-# SessionLayout.subdir because it is a fact about the on-disk layout, not about any
-# one front-end: both the CLI's id resolution and the resume lifecycle need it.
-SESSION_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
+# One bucket per session mode, named after it (`SessionKind.bucket`; a test pins
+# the two together). `machine create` authoring drafts are the one bucket not
+# named for its mode: machines/ already holds live machine instances.
+# Defined beside SessionLayout.subdir because it is a fact about the on-disk
+# layout, not about any one front-end: both the CLI's id resolution and the
+# resume lifecycle need it.
+SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machine-drafts")
+# What a hub lists as an ordinary session. `machine create` drafts are excluded:
+# every hub gives them their own card, keyed by the machine being authored.
+HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
 
 
 def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:

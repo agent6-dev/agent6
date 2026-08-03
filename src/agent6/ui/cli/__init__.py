@@ -29,7 +29,7 @@ from agent6.ui.cli._ask import (
 )
 from agent6.ui.cli._common import (
     _enforce_root_policy,
-    _runs_dir,
+    _plans_dir,
 )
 from agent6.ui.cli.check_cmds import _cmd_check
 from agent6.ui.cli.completions_cmd import cmd_completions
@@ -193,21 +193,21 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         resolved = _resolve_plan_session_id(args.from_plan)
         if resolved is None:
             return 2
-        plan_md = (_runs_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
+        plan_md = (_plans_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
         task = _from_plan_task(plan_md, resolved)
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
         # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
         # confirm before editing; non-interactively, refuse (a bare
         # `run` in a script should not silently start mutating).
-        last_plan = _most_recent_plan_session_id(_runs_dir(Path.cwd()))
+        last_plan = _most_recent_plan_session_id(_plans_dir(Path.cwd()))
         if last_plan is None:
             print(
                 "ERROR: 'run' needs a task (or --from-plan <id>); no prior plan found to execute.",
                 file=sys.stderr,
             )
             return 2
-        plan_path = _runs_dir(Path.cwd()) / last_plan / "plan.md"
+        plan_path = _plans_dir(Path.cwd()) / last_plan / "plan.md"
         try:
             plan_md = plan_path.read_text(encoding="utf-8")
         except OSError as exc:
