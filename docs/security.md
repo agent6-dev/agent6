@@ -143,6 +143,18 @@ Notes:
   `RLIMIT_DATA` (`[sandbox].memory_limit_mb`, default 4096, `0` off; not
   `RLIMIT_AS`, so V8/JVM/ASAN keep working) stops one runaway allocation, nothing
   more.
+- **The seccomp layer is a deny-list (defense-in-depth), not a boundary.** It
+  enumerates known-dangerous syscalls, so by construction it does not catch
+  everything: namespace creation via `clone`/`clone3` (`CLONE_NEWUSER|CLONE_NEWNS`)
+  is not blocked, only `unshare` is. Accepted, because a nested namespace grants
+  no new access against the host — the whole mount family (`mount`,
+  `mount_setattr`, `open_tree`, `move_mount`, `fsopen`/`fsconfig`/`fsmount`/`fspick`,
+  `pivot_root`, `umount2`) is denied, Landlock is inherited and irrevocable, and
+  `mknod` checks caps against the initial user namespace. Filtering `clone3` is
+  declined on purpose: seccomp cannot read its flags (they sit behind a struct
+  pointer), and denying it outright would break glibc/Go process spawning (they
+  fall back to `clone` only on `ENOSYS`). The real boundaries are the namespaces,
+  Landlock, and the mount-syscall denials — not this list.
 - **No `capset`.** `strict` maps namespaced-root to your uid; `hardened` keeps the
   caller's caps (none for a normal user).
 - **`hardened` drops the namespaces + rootfs;** Landlock, seccomp,

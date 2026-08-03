@@ -970,6 +970,14 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_adjtimex,
         libc::SYS_clock_settime,
     ];
+    // Deliberately NOT here: clone/clone3 with CLONE_NEWUSER|CLONE_NEWNS. A
+    // nested namespace grants no new access -- the whole mount family above is
+    // denied, the Landlock domain and this filter are both inherited and
+    // irrevocable, and mknod checks caps against the init userns. seccomp can't
+    // read clone3's flags (behind a struct pointer) to filter them, and denying
+    // clone3 outright would break glibc/Go spawning (they fall back to clone
+    // only on ENOSYS). This deny-list is defense-in-depth over namespaces +
+    // Landlock, not a boundary; see docs/security.md.
     let rules: std::collections::BTreeMap<i64, Vec<seccompiler::SeccompRule>> =
         denied.iter().map(|s| (*s, vec![])).collect();
     let filter = SeccompFilter::new(
