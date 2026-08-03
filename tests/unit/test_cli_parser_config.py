@@ -113,3 +113,23 @@ def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
 
     args = parser.parse_args(["fork", "--no-commands", "some-session-id"])
     assert SandboxOverrides.from_args(args).no_commands is True
+
+
+def test_get_completion_offers_no_key_get_rejects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The contract this file already states: a completer offers what the
+    command accepts, and nothing else.
+
+    The enum keys exist so `config set` can reach a leaf no layer has set yet.
+    `config get` reads EFFECTIVE leaves and rejects those, so offering them made
+    TAB suggest three keys it answers "is not a config leaf" to."""
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.chdir(tmp_path)
+    from agent6.ui.cli import main
+    from agent6.ui.cli.completers import (
+        _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for key in _complete_config_keys("models.", include_presets=False):
+        assert main(["config", "get", key]) == 0, f"completion offered {key!r}, which get rejects"

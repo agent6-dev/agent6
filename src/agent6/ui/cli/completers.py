@@ -142,13 +142,16 @@ def _complete_config_keys(prefix: str, *, include_presets: bool = True, **_kw: o
 
     ``include_presets=False`` for `config get`, which reads EFFECTIVE leaves:
     `[presets.*]` tables are stripped before validation, so it rejects them as
-    "not a config leaf". A completer must offer what its command accepts.
+    "not a config leaf". A completer must offer what its command accepts -- which
+    is also why the enum keys, offered so `config set` can reach a leaf no layer
+    has set yet, are withheld from it: `get` rejects those for the same reason.
     """
     try:
         keys = set(leaf_keys(load_effective(Path.cwd(), None)))
     except ConfigError:
         keys = set()
-    keys |= set(_CONFIG_ENUM_CHOICES)
+    if include_presets:
+        keys |= set(_CONFIG_ENUM_CHOICES)
     if include_presets and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
         keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
