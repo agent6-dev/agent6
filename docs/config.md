@@ -530,6 +530,23 @@ agent6 mcp list
 
 It leaves `mcp.enabled` alone: that master switch stays your decision.
 
+A spawned server runs as you, with your whole filesystem, until you say
+otherwise. A `[sandbox]` block is how:
+
+```toml
+[mcp.servers.notes]
+command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
+
+[mcp.servers.notes.sandbox]
+read_paths  = ["/usr", "/etc", "~/notes"]
+write_paths = ["~/notes"]
+```
+
+Filesystem only, for now. Namespace-level knobs (network, pivot_root, seccomp)
+need the jail launcher, which captures stdio and so cannot host a live MCP
+pipe; they are refused rather than accepted and ignored. A `url` server is your
+own process -- confine it where you start it.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |
@@ -537,6 +554,9 @@ It leaves `mcp.enabled` alone: that master switch stays your decision.
 | `servers.<name>.url` | `""` | An http(s) endpoint of a server the OPERATOR runs -- their container, their sandbox, their credentials -- which agent6 only connects to. Exactly one of this or `command`. Connecting means agent6 owns none of that server's environment, lifetime or confinement, which is how anyone actually runs a server that wants a browser or a device. |
 | `servers.<name>.token_env` | `""` | For a `url` server: the env var holding the bearer token. Named, never inlined -- a secret in a config file is a secret in a backup. Never logged, never in an error. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
+| `servers.<name>.sandbox.read_paths` | `[]` | Paths a SPAWNED server may read and execute (`~` expands). Naming any path opts the server into a Landlock domain it and everything it spawns inherit. **Absent means unconfined** -- it runs as you, with your whole filesystem -- because agent6 cannot know what a given server needs and a guess that breaks it is worse than none. |
+| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. A `[sandbox]` block naming neither is refused: it would read as protection while granting everything. |
+| `servers.<name>.sandbox.require` | `false` | Refuse to start the server at all on a kernel with no Landlock, instead of running it unconfined with a warning. |
 | `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |

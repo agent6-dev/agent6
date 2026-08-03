@@ -45,6 +45,7 @@ import contextlib
 import json
 import re
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -103,6 +104,28 @@ class MCPToolDescriptor:
         return f"{MCP_TOOL_PREFIX}{self.server_name}__{self.tool_name}"
 
 
+def _confined_argv(
+    command: tuple[str, ...], confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None
+) -> tuple[str, ...]:
+    """*command*, wrapped in the Landlock shim when the operator asked for one.
+
+    A shim rather than `preexec_fn`: Landlock is restrict-self-then-exec and
+    inherited across the exec, and `preexec_fn` is unsafe in a process with
+    threads -- which this one has.
+    """
+    if confine is None:
+        return command
+    read, write, require = confine
+    shim = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
+    for path in read:
+        shim += ["--read", path]
+    for path in write:
+        shim += ["--write", path]
+    if require:
+        shim.append("--require")
+    return (*shim, "--", *command)
+
+
 def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
     """The `result` of a JSON-RPC response, or raise its `error`."""
     if "error" in response:
@@ -126,6 +149,8 @@ class MCPServerSpec:
     pass_env: tuple[str, ...] = ()
     # Set instead of `command` for a server the operator runs.
     http: HttpTransport | None = None
+    # (read_paths, write_paths, require) for a spawned server, or None.
+    confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None = None
 
 
 @dataclass
@@ -139,6 +164,10 @@ class _MCPServer:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
+    # Filesystem confinement for a spawned server: (read_paths, write_paths,
+    # require). Empty paths means unconfined, which is what a server without a
+    # `[sandbox]` block gets.
+    confine: tuple[tuple[str, ...], tuple[str, ...], bool] | None = None
     # Set instead of `command` for a server the OPERATOR runs: agent6 connects
     # rather than spawning, so it owns none of that server's environment,
     # lifetime or confinement.
@@ -172,7 +201,7 @@ class _MCPServer:
             return
         try:
             self._proc = subprocess.Popen(
-                self.command,
+                _confined_argv(self.command, self.confine),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -489,6 +518,7 @@ class MCPManager:
                 call_timeout_s=spec.call_timeout_s,
                 pass_env=spec.pass_env,
                 http=spec.http,
+                confine=spec.confine,
             )
             try:
                 srv.start()

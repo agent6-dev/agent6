@@ -934,6 +934,39 @@ class NotifyConfig(BaseModel):
     timeout_s: float = Field(gt=0.0, default=30.0)
 
 
+class MCPSandbox(BaseModel):
+    """Filesystem confinement for one SPAWNED MCP server.
+
+    Absent means unconfined -- the server runs as the operator, with their
+    whole filesystem, because agent6 cannot know what a given one needs and a
+    guess that breaks it is worse than none. Naming paths opts in.
+
+    Landlock only: the domain is applied to a shim which then becomes the
+    server, so it is inherited by the server and everything it spawns.
+    Namespace-level knobs (network, pivot_root, seccomp) need the jail
+    launcher, which captures stdio and so cannot host a live MCP pipe; they
+    are refused rather than accepted and ignored.
+    """
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # Readable+executable, and writable, for this server. `~` expands.
+    read_paths: tuple[str, ...] = ()
+    write_paths: tuple[str, ...] = ()
+    # Refuse to start the server at all when the kernel has no Landlock,
+    # instead of running it unconfined with a warning.
+    require: bool = False
+
+    @model_validator(mode="after")
+    def _reachable(self) -> MCPSandbox:
+        if not (self.read_paths or self.write_paths):
+            raise ValueError(
+                "a [sandbox] block with no read_paths or write_paths confines"
+                " nothing; drop the block, or name what the server may reach"
+            )
+        return self
+
+
 class MCPServerEntry(BaseModel):
     """One MCP (Model Context Protocol) server to spawn at run start.
 
@@ -971,6 +1004,9 @@ class MCPServerEntry(BaseModel):
     # spawns outside the jail. Naming each one is the point: a provider key is
     # never among them, because nobody would write it down.
     pass_env: tuple[str, ...] = ()
+    # Filesystem confinement for a SPAWNED server. A `url` one is the
+    # operator's own process; they confine it where they start it.
+    sandbox: MCPSandbox | None = None
     # Time budget for the initialize + tools/list handshake. If the
     # server doesn't respond in this window we log and skip it.
     startup_timeout_s: float = Field(gt=0.0, default=10.0)
@@ -986,10 +1022,20 @@ class MCPServerEntry(BaseModel):
             raise ValueError(f"url must be http(s), got {self.url!r}")
         if self.token_env and not self.url:
             raise ValueError("token_env is for `url` servers; a spawned one uses pass_env")
+        if self.sandbox is not None and self.url:
+            raise ValueError(
+                "a [sandbox] block confines a server agent6 SPAWNS; a `url` one"
+                " is your own process, so confine it where you start it"
+            )
         if self.pass_env and self.url:
             # Nothing is spawned, so there is no environment to pass. Refusing
             # loudly beats accepting a setting that can never take effect.
             raise ValueError("pass_env is for spawned servers; a `url` one uses token_env")
+        if self.sandbox is not None and self.url:
+            raise ValueError(
+                "a [sandbox] block confines a server agent6 SPAWNS; a `url` one"
+                " is your own process, so confine it where you start it"
+            )
         if self.token_env and self.url.startswith("http://") and not _is_loopback(self.url):
             raise ValueError(
                 "a token over plain http would cross the network in cleartext;"

@@ -146,6 +146,11 @@ def start_mcp_manager_if_enabled(
             startup_timeout_s=srv.startup_timeout_s,
             call_timeout_s=srv.call_timeout_s,
             pass_env=srv.pass_env,
+            confine=(
+                (srv.sandbox.read_paths, srv.sandbox.write_paths, srv.sandbox.require)
+                if srv.sandbox is not None
+                else None
+            ),
             http=(
                 HttpTransport(name=name, url=srv.url, token_env=srv.token_env) if srv.url else None
             ),
