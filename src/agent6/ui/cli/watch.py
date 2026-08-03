@@ -52,12 +52,14 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
 def _run_json_snapshot(run_dir: Path) -> int:
     """Print a run's folded RunState as one JSON object (the web wire form)."""
     logs = run_dir / "logs.jsonl"
-    if not logs.is_file():
-        print(f"ERROR: no logs.jsonl in {run_dir}", file=sys.stderr)
-        return 2
+    # No log yet is a STATE, not an error: a parked submission (the busy-checkout
+    # refusal saved it) or a `fork --no-run`. Every listing names it; this path
+    # answered with a raw filesystem error instead. Fold nothing and let the dir
+    # supply the word.
+    events = tail_events(logs, follow=False) if logs.is_file() else []
     # With the run dir in hand the label is the dir-aware status (parked /
     # stale / waiting), not the fold's blanket "running".
-    snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)), run_dir)
+    snap = run_state_as_dict(fold_run(events), run_dir)
     snap["run_id"] = snap.get("run_id") or run_dir.name  # authoritative from the dir
     print(json.dumps(snap))
     return 0

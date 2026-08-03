@@ -35,6 +35,7 @@ from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
     LogScan,
+    StatusFacts,
     event_epoch,
     run_mtime,
     scan_run_log,
@@ -585,8 +586,13 @@ def _watch_transcript(target: Path) -> int:
     A detach emits no run.end, so watching a detached run follows it to its end."""
     events_path = target / "logs.jsonl"
     if not events_path.is_file():
-        print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
-        return 2
+        # Not an error: a parked submission or a `fork --no-run` has no log yet.
+        # Answer with the same word the listings and `runs show` use, plus how
+        # to start it, instead of a raw filesystem message.
+        word, reason = status_for_run_dir(target, StatusFacts())
+        print(f"{target.name}: {word}" + (f" ({reason})" if reason else ""))
+        print(f"start it with: agent6 resume {target.name}")
+        return 0
 
     def worker_dead() -> bool:
         # pid None is NOT dead: a not-yet-started or mid-detach-handoff worker
