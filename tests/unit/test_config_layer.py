@@ -543,3 +543,57 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
     # NOT restored: the invalid value is still in the file for the operator.
     text = repo_config_path_for(repo).read_text(encoding="utf-8")
     assert 'run_commands = "bogus_value"' in text
+
+
+def test_set_config_leaves_returns_the_message_when_an_ancestor_is_headerless(
+    repo: Path,
+) -> None:
+    """`agent6 connect` / init / the TUI write providers through set_config_leaves.
+    A leaf whose ancestor is a header-less (inline) table cannot be set on its own;
+    the surgery raises ValueError, which must come back as a printable message with
+    the file untouched, never escape as a traceback to the caller."""
+    from agent6.config.layer import set_config_leaves
+
+    rcfg = repo_config_path_for(repo)
+    before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
+    rcfg.write_text(before, encoding="utf-8")
+
+    err = set_config_leaves(repo, "providers.anthropic", {"base_url": "https://x/v1"}, to_repo=True)
+
+    assert err is not None and "without a [table] header" in err
+    assert rcfg.read_text(encoding="utf-8") == before  # nothing partially written
+
+
+def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One revalidate+rollback wraps ALL the leaf writes: when a later leaf raises,
+    the earlier leaves that already landed roll back to the prior file rather than
+    leaving a half-applied provider block."""
+    from agent6.config import layer as layer_mod
+    from agent6.config.layer import set_config_leaves
+
+    rcfg = repo_config_path_for(repo)
+    before = '[providers.anthropic]\napi_format = "anthropic"\n'
+    rcfg.write_text(before, encoding="utf-8")
+
+    real = layer_mod.upsert_toml_leaf
+    calls = {"n": 0}
+
+    def _fail_second(path: Path, key: str, value: object) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise ValueError("second leaf refused")
+        real(path, key, value)
+
+    monkeypatch.setattr(layer_mod, "upsert_toml_leaf", _fail_second)
+
+    err = set_config_leaves(
+        repo,
+        "providers.anthropic",
+        {"base_url": "https://x/v1", "api_key_env": "KEY"},
+        to_repo=True,
+    )
+
+    assert err == "second leaf refused"
+    assert rcfg.read_text(encoding="utf-8") == before  # the first leaf's write rolled back

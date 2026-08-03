@@ -189,6 +189,22 @@ class TestStateCommands:
         assert _cmd_skills_disable("ghost", repo=False) == 2
         assert _cmd_skills_enable("ghost", always=False, repo=False) == 2
 
+    def test_disable_over_a_headerless_state_table_errors_not_crashes(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A hand-written inline `state` table under [skills] can't take a single
+        leaf; the surgery refuses, which must print an ERROR and exit 2, not crash
+        the CLI with a 'please report this' traceback."""
+        self._install_tidy(env)
+        cfg = env / "config" / "config.toml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        before = '[skills]\nstate = { tidy = "always" }\n'
+        cfg.write_text(before, encoding="utf-8")
+
+        assert _cmd_skills_disable("tidy", repo=False) == 2
+        assert "ERROR" in capsys.readouterr().err
+        assert cfg.read_text(encoding="utf-8") == before  # untouched
+
 
 class TestRemoveListComplete:
     def test_remove_installed(self, env: Path) -> None:

@@ -472,7 +472,13 @@ def _cmd_skills_disable(name: str, *, repo: bool) -> int:
         return 2
     target = _state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    upsert_toml_leaf(target, f"skills.state.{name}", "disabled")
+    try:
+        upsert_toml_leaf(target, f"skills.state.{name}", "disabled")
+    except ValueError as exc:
+        # A hand-written inline [skills] state table: the surgery refuses (same
+        # as `skills enable`), rather than crashing "please report this".
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     chown_to_real_user(target)
     print(f'Set skills.state.{name} = "disabled" in {target}')
     return 0

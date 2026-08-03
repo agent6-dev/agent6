@@ -1010,9 +1010,18 @@ def set_config_leaves(
     with _writing_config(target) as held:
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = config_is_valid(repo_root)
-        for key, val in fields.items():
-            if val is not None:
-                upsert_toml_leaf(target, f"{table}.{key}", val)
+        try:
+            for key, val in fields.items():
+                if val is not None:
+                    upsert_toml_leaf(target, f"{table}.{key}", val)
+        except ValueError as exc:
+            # A leaf whose ancestor is a header-less table: the surgery refuses
+            # (its sibling writers catch this too). Restore the prior file so a
+            # partial multi-leaf write doesn't land, and return the message --
+            # the caller (connect / TUI / init) prints it, never a traceback.
+            if prior is not None:
+                atomic_write(target, prior)
+            return str(exc)
         return _revalidate(repo_root, target, prior, was_valid=was_valid, held=held)
 
 
