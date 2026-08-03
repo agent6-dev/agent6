@@ -54,11 +54,18 @@ from agent6.tools._result_format import (
     passthrough_env,
     truncate_args,
 )
+from agent6.tools.background import BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
-from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
+from agent6.tools.results import (
+    BackgroundResult,
+    ExecResult,
+    MetricResult,
+    RawResult,
+    ToolResult,
+)
 from agent6.tools.schema import (
     ALL_TOOLS,
     AddMemoryInput,
@@ -81,10 +88,13 @@ from agent6.tools.schema import (
     InvalidateMemoryInput,
     ListDirInput,
     OutlineInput,
+    ReadBackgroundInput,
     ReadFileInput,
+    RunBackgroundInput,
     RunCommandInput,
     RunMetricInput,
     RunVerifyInput,
+    StopBackgroundInput,
     UserQuestion,
     UseSkillInput,
     mode_tools,
@@ -184,6 +194,16 @@ def _default_questioner(  # pragma: no cover — interactive
     return tuple(answers)
 
 
+# run_command's power, so they answer to the same knob and the same approval.
+_COMMAND_TOOLS = frozenset(
+    {RunCommandInput.TOOL_NAME, RunBackgroundInput.TOOL_NAME, StopBackgroundInput.TOOL_NAME}
+)
+
+
+def _roster(shells: BackgroundShells) -> tuple[str, ...]:
+    return tuple(v.line() for v in shells.roster())
+
+
 class ToolDispatcher:
     """Runtime tool dispatcher. Constructed once per workflow run."""
 
@@ -202,6 +222,7 @@ class ToolDispatcher:
         extra_protect_paths: tuple[Path, ...] = (),
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: Path | None = None,
+        run_dir: Path | None = None,
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -236,6 +257,10 @@ class ToolDispatcher:
         # leaves add_memory / invalidate_memory unwired: they raise ToolError,
         # like the DAG tools without a curator.
         self._state_dir = state_dir
+        # Background commands live under the run dir so they die with the run
+        # and `runs rm` clears them. None (tests, review dispatchers) leaves
+        # them unwired: the tools raise ToolError, like the DAG tools.
+        self._shells = BackgroundShells(run_dir / "shells") if run_dir is not None else None
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
@@ -250,6 +275,9 @@ class ToolDispatcher:
             ApplyPatchInput.TOOL_NAME: self._apply_patch,
             RunVerifyInput.TOOL_NAME: self._run_verify,
             RunCommandInput.TOOL_NAME: self._run_command,
+            RunBackgroundInput.TOOL_NAME: self._run_background,
+            ReadBackgroundInput.TOOL_NAME: self._read_background,
+            StopBackgroundInput.TOOL_NAME: self._stop_background,
             # run_metric: LLM-exposed via LOOP_EXTRA_TOOLS so the
             # loop can call it after a successful verify when
             # [workflow.metric] is configured.
@@ -404,8 +432,8 @@ class ToolDispatcher:
                 raise ToolError(str(exc)) from exc
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
-        if name == RunCommandInput.TOOL_NAME and self._config.sandbox.run_commands == "no":
-            raise ToolError("run_command is disabled by config (run_commands = 'no')")
+        if name in _COMMAND_TOOLS and self._config.sandbox.run_commands == "no":
+            raise ToolError(f"{name} is disabled by config (run_commands = 'no')")
         if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1" and name in {
             OutlineInput.TOOL_NAME,
             FindDefinitionInput.TOOL_NAME,
@@ -556,6 +584,8 @@ class ToolDispatcher:
         Idempotent. Safe to call from CLI teardown alongside
         ``mcp_manager.close()``.
         """
+        if self._shells is not None:
+            self._shells.stop_all()
         if self._lsp is not None:
             self._lsp.close()
             self._lsp = None
@@ -617,6 +647,44 @@ class ToolDispatcher:
                 # the knob.
                 raise ToolDenied("run_command not approved (sandbox.run_commands='ask')")
         return self._run_argv_in_jail(args.argv, label="run_command")
+
+    def _background(self) -> BackgroundShells:
+        if self._shells is None:
+            raise ToolError("background commands need a run directory; none was wired")
+        return self._shells
+
+    def _run_background(self, raw: dict[str, Any]) -> BackgroundResult:
+        args = RunBackgroundInput.model_validate(raw)
+        shells = self._background()
+        if self._config.sandbox.run_commands == "ask" and not self._approver(
+            f"Allow run_background: {shlex.join(args.argv)}"
+        ):
+            raise ToolDenied("run_background not approved (sandbox.run_commands='ask')")
+        try:
+            shells.start(args.argv, lambda argv, rw: self._jail_policy(argv, extra_rw_paths=rw))
+        except BackgroundError as exc:
+            raise ToolError(str(exc)) from exc
+        return BackgroundResult(shells=_roster(shells))
+
+    def _read_background(self, raw: dict[str, Any]) -> BackgroundResult:
+        args = ReadBackgroundInput.model_validate(raw)
+        shells = self._background()
+        if not args.id:
+            return BackgroundResult(shells=_roster(shells))
+        try:
+            _view, output = shells.read(args.id, tail_lines=args.tail_lines)
+        except BackgroundError as exc:
+            raise ToolError(str(exc)) from exc
+        return BackgroundResult(shells=_roster(shells), output=output)
+
+    def _stop_background(self, raw: dict[str, Any]) -> BackgroundResult:
+        args = StopBackgroundInput.model_validate(raw)
+        shells = self._background()
+        try:
+            shells.stop(args.id)
+        except BackgroundError as exc:
+            raise ToolError(str(exc)) from exc
+        return BackgroundResult(shells=_roster(shells))
 
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
         return ask_user(self._questioner, raw)
@@ -723,13 +791,18 @@ class ToolDispatcher:
         )
         return MetricResult.from_exec(res, score)
 
-    def _run_argv_in_jail(
+    def _jail_policy(
         self,
         argv: tuple[str, ...],
         *,
-        label: str,
         timeout_s: float | None = None,
-    ) -> ExecResult:
+        extra_rw_paths: tuple[Path, ...] = (),
+    ) -> JailPolicy:
+        """The sandbox policy every LLM-influenced argv runs under.
+
+        One owner, so a detached command (`run_background`) is confined exactly
+        like a foreground one: same protect paths, same env, same tool mounts.
+        """
         # run_command reaches the network only under tool_network = "allow"
         # (which the config validator pins to agent_network = "open", so this
         # process is in the host netns and the child inherits it).
@@ -773,7 +846,7 @@ class ToolDispatcher:
         # RO+exec mounts. Without this a `uv run` verify dies 127.
         tool_path, tool_mounts = operator_tool_paths()
         env["PATH"] = tool_path
-        policy = JailPolicy(
+        return JailPolicy(
             cwd=self._root,
             argv=argv,
             isolation=self._isolation,
@@ -781,12 +854,21 @@ class ToolDispatcher:
             allow_network=allow_network,
             extra_protect_paths=tuple(protect_paths),
             extra_ro_paths=tuple(Path(p) for p in self._config.sandbox.extra_read_paths),
+            extra_rw_paths=extra_rw_paths,
             tool_paths=tool_mounts,
             memory_limit_mb=self._config.sandbox.memory_limit_mb,
             **policy_kwargs,
         )
+
+    def _run_argv_in_jail(
+        self,
+        argv: tuple[str, ...],
+        *,
+        label: str,
+        timeout_s: float | None = None,
+    ) -> ExecResult:
         try:
-            res: CommandResult = run_in_jail(policy)
+            res: CommandResult = run_in_jail(self._jail_policy(argv, timeout_s=timeout_s))
         except JailUnavailableError as exc:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
         return ExecResult(

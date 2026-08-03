@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.types import CommandResult, JailPolicy
@@ -244,6 +245,18 @@ def strict_namespaces_work() -> bool:
     return res.returncode == 0
 
 
+def _require_jail_binary() -> Path:
+    binary = locate_jail_binary()
+    if binary is None:
+        raise JailUnavailableError(
+            "agent6-jail binary not found. Install agent6 from a built wheel"
+            " (which bundles the binary), or build from source with"
+            " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml`,"
+            f" or set {_ENV_VAR}=/path/to/agent6-jail."
+        )
+    return binary
+
+
 # --- escapee reaping ---------------------------------------------------------
 # `strict` confines the child in a PID namespace, so nothing outlives it.
 # `hardened` has none: a child that calls setsid() leaves the launcher's process
@@ -345,14 +358,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
     """
     if policy.isolation == "none":
         return _run_unsandboxed(policy)
-    binary = locate_jail_binary()
-    if binary is None:
-        raise JailUnavailableError(
-            "agent6-jail binary not found. Install agent6 from a built wheel"
-            " (which bundles the binary), or build from source with"
-            " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml`,"
-            f" or set {_ENV_VAR}=/path/to/agent6-jail."
-        )
+    binary = _require_jail_binary()
     spec = _policy_to_json(policy)
     start = time.monotonic()
     _become_subreaper()
@@ -463,3 +469,127 @@ def _launcher_result(
         stderr=str(result_json.get("stderr", "")),
         duration_s=duration,
     )
+
+
+# --- detached commands -------------------------------------------------------
+# A background command keeps running after the call that started it, so it is
+# the one jailed child the escapee sweep must NOT kill: its launcher stays
+# registered live until `stop`. Its own output is not captured here (the caller
+# redirects it in argv); only the launcher's result JSON is, so the exit code
+# survives the turn that started the command.
+_RESULT_NAME = "result.json"
+_LAUNCHER_ERR_NAME = "launcher.err"
+
+
+@dataclass(frozen=True, slots=True)
+class BackgroundStatus:
+    """What a detached command is doing, right now.
+
+    ``running`` is the live process, never an inference from output or age. A
+    launcher that exited without a result reports ``error``: a command whose
+    fate is unknown is never reported as still running.
+    """
+
+    running: bool
+    returncode: int | None
+    error: str
+
+
+class BackgroundJob:
+    """A jailed command detached from the call that started it."""
+
+    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path | None) -> None:
+        self._proc = proc
+        self._outcome_dir = outcome_dir
+
+    @property
+    def pid(self) -> int:
+        return self._proc.pid
+
+    def status(self) -> BackgroundStatus:
+        if self._proc.poll() is None:
+            return BackgroundStatus(running=True, returncode=None, error="")
+        if self._outcome_dir is None:  # unsandboxed: the child IS the process
+            return BackgroundStatus(running=False, returncode=self._proc.returncode, error="")
+        self._unregister()
+        raw = ""
+        with contextlib.suppress(OSError):
+            raw = (self._outcome_dir / _RESULT_NAME).read_text(errors="replace")
+        with contextlib.suppress(ValueError, IndexError, KeyError):
+            return BackgroundStatus(
+                running=False,
+                returncode=int(json.loads(raw.strip().splitlines()[-1])["returncode"]),
+                error="",
+            )
+        err = ""
+        with contextlib.suppress(OSError):
+            err = (self._outcome_dir / _LAUNCHER_ERR_NAME).read_text(errors="replace").strip()
+        return BackgroundStatus(
+            running=False,
+            returncode=None,
+            error=err or f"the sandbox launcher exited {self._proc.returncode} without a result",
+        )
+
+    def stop(self) -> None:
+        """Kill the command and everything it started. Idempotent."""
+        if self._proc.poll() is None:
+            with contextlib.suppress(OSError):
+                os.killpg(os.getpgid(self._proc.pid), signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self._proc.wait(timeout=5.0)
+        self._unregister()
+
+    def _unregister(self) -> None:
+        with _sweep_lock:
+            _live_launchers.discard(self._proc.pid)
+
+
+def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
+    """Spawn `policy.argv` in the sandbox and return WITHOUT waiting for it.
+
+    The caller owns the command's own output: nothing is captured here, so
+    `policy.argv` must redirect it somewhere both sides can read. Only the
+    launcher's result JSON and stderr land in *outcome_dir*, which is what lets
+    the exit code outlive the turn that started the command.
+
+    Security review note: same policy, same launcher, same confinement as
+    `run_in_jail` -- the only difference is that this call does not wait. The
+    escapee sweep spares it while it lives (it is a deliberate child, not
+    something a command left behind) and `stop` takes its whole group down.
+    """
+    outcome_dir.mkdir(parents=True, exist_ok=True)
+    if policy.isolation == "none":
+        # Unsandboxed escape hatch (non-Linux only); see run_in_jail's note.
+        proc = subprocess.Popen(
+            list(policy.argv),
+            cwd=str(policy.cwd),
+            env={**os.environ, **dict(policy.env)},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return BackgroundJob(proc, None)
+    binary = _require_jail_binary()
+    spec = _policy_to_json(policy)
+    _become_subreaper()
+    result = (outcome_dir / _RESULT_NAME).open("wb")
+    errors = (outcome_dir / _LAUNCHER_ERR_NAME).open("wb")
+    try:
+        with _sweep_lock:
+            launcher = subprocess.Popen(
+                [str(binary)],
+                stdin=subprocess.PIPE,
+                stdout=result,
+                stderr=errors,
+                start_new_session=True,
+            )
+            _live_launchers.add(launcher.pid)
+    finally:
+        result.close()
+        errors.close()
+    assert launcher.stdin is not None
+    with contextlib.suppress(OSError):
+        launcher.stdin.write(spec.encode())
+    launcher.stdin.close()
+    return BackgroundJob(launcher, outcome_dir)

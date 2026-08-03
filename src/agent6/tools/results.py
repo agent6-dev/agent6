@@ -442,3 +442,25 @@ class RawResult(ToolResult):
 
     def to_wire(self) -> dict[str, Any]:
         return self.payload
+
+
+# --- background commands -----------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class BackgroundResult(ToolResult):
+    """A background command tool's result. The roster rides on every one of
+    them: whatever the model asked, it also learns that a command it started
+    has died."""
+
+    shells: tuple[str, ...]
+    output: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"shells": list(self.shells)}
+        if self.output is not None:
+            wire["output"] = self.output
+        return wire
+
+    def summary(self) -> str:
+        return self.shells[0] if len(self.shells) == 1 else f"{len(self.shells)} background"

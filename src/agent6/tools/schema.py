@@ -201,6 +201,44 @@ class RunCommandInput(_ToolInput):
     argv: tuple[str, ...] = Field(min_length=1)
 
 
+class RunBackgroundInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "run_background"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Start a long-running command in the sandbox WITHOUT waiting for it: a dev server, a"
+        " long build, a file watcher. Same sandbox, PATH and approval as run_command; argv must"
+        " be an array of strings (no shell). Returns the new command's id and the state of every"
+        " background command this run started. Its output goes to a log you read with"
+        " read_background -- nothing here ever blocks, so poll instead of waiting. Every"
+        " background command is killed when the run ends, so never use this for work whose"
+        " result you need after the run."
+    )
+
+    argv: tuple[str, ...] = Field(min_length=1)
+
+
+class ReadBackgroundInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "read_background"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Read what a background command has printed so far. Always returns the state of every"
+        " background command this run started (running / exited with its code / stopped / died),"
+        " so a command that ended on its own is visible the next time you look. Omit `id` for"
+        " that roster alone. Never blocks."
+    )
+
+    id: str = ""
+    tail_lines: int = Field(default=200, ge=1, le=2000)
+
+
+class StopBackgroundInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "stop_background"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Kill a background command and everything it started. Already-finished commands are"
+        " left as they are; their output stays readable."
+    )
+
+    id: str
+
+
 class RunMetricInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_metric_command"
     TOOL_DESCRIPTION: ClassVar[str] = (

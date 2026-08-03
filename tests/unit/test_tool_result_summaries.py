@@ -29,6 +29,7 @@ from agent6.tools.results import (
     AddMemoryResult,
     AddTaskResult,
     AnswersResult,
+    BackgroundResult,
     DefinitionsResult,
     DocsContentResult,
     DocsIndexResult,
@@ -117,6 +118,17 @@ CASES: list[tuple[str, ToolResult, str]] = [
             would_apply=("replace",),
         ),
         "ok",
+    ),
+    # background commands
+    (
+        "background_one",
+        BackgroundResult(shells=("[bg1] running: sleep 300",)),
+        "[bg1] running: sleep 300",
+    ),
+    (
+        "background_many",
+        BackgroundResult(shells=("[bg1] running: a", "[bg2] exited (exit 1): b"), output="x"),
+        "2 background",
     ),
     # execution
     (
