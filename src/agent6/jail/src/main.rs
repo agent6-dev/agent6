@@ -257,6 +257,80 @@ fn carried_mount_flags(dst: &Path) -> MsFlags {
     flags
 }
 
+/// One mountinfo path field, with the kernel's octal escapes (\040 space, \011
+/// tab, \012 newline, \134 backslash) resolved. Bytes throughout: a path is not
+/// required to be UTF-8, and a lossy decode would name a different file.
+fn mountinfo_path(field: &[u8]) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+    let mut out: Vec<u8> = Vec::with_capacity(field.len());
+    let mut i = 0;
+    while i < field.len() {
+        let esc = field
+            .get(i + 1..i + 4)
+            .filter(|d| d.iter().all(|c| (b'0'..=b'7').contains(c)));
+        match esc {
+            Some(digits) if field[i] == b'\\' => {
+                let val = digits
+                    .iter()
+                    .fold(0u32, |acc, d| acc * 8 + u32::from(d - b'0'));
+                out.push(val as u8);
+                i += 4;
+            }
+            _ => {
+                out.push(field[i]);
+                i += 1;
+            }
+        }
+    }
+    PathBuf::from(OsString::from_vec(out))
+}
+
+/// The mount points nested UNDER `dir` in this mount namespace.
+fn submounts_under(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let raw = fs::read("/proc/self/mountinfo")?;
+    let mut out = Vec::new();
+    for line in raw.split(|b| *b == b'\n') {
+        let Some(field) = line.split(|b| *b == b' ').nth(4) else {
+            continue;
+        };
+        let mp = mountinfo_path(field);
+        if mp != dir && mp.starts_with(dir) {
+            out.push(mp);
+        }
+    }
+    Ok(out)
+}
+
+/// Repeat a bind's own `flags` on every mount NESTED under `dst`.
+///
+/// MS_REC is silently IGNORED on MS_REMOUNT -- recursive attribute changes need
+/// mount_setattr(AT_RECURSIVE) -- so a recursive bind carries its whole subtree
+/// in and then makes only its TOP mount read-only. Probed: a tmpfs nested inside
+/// a read-only grant arrived `rw,relatime` and a jailed command wrote a file
+/// that was still on the host afterwards.
+fn floor_submounts(dst: &Path, flags: MsFlags) -> io::Result<()> {
+    for mp in submounts_under(dst)? {
+        mount(
+            Some(""),
+            &mp,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | flags | carried_mount_flags(&mp),
+            Some(""),
+        )
+        .map_err(io_err)?;
+    }
+    Ok(())
+}
+
+/// Read-only plus the nosuid/nodev floor: what every bind the child may not
+/// write carries, top mount and submounts alike.
+const RO_FLOOR: MsFlags = MsFlags::MS_RDONLY
+    .union(MsFlags::MS_NOSUID)
+    .union(MsFlags::MS_NODEV);
+/// The floor alone, for the binds that are writable by design.
+const RW_FLOOR: MsFlags = MsFlags::MS_NOSUID.union(MsFlags::MS_NODEV);
+
 fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     let new_root = PathBuf::from("/tmp/agent6-jail-root");
     // Make sure parent dir is on tmpfs we can write to (it's in our own NS now).
@@ -298,15 +372,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 Some(""),
                 &dst,
                 Some(""),
-                MsFlags::MS_BIND
-                    | MsFlags::MS_REMOUNT
-                    | MsFlags::MS_RDONLY
-                    | MsFlags::MS_NOSUID
-                    | MsFlags::MS_NODEV
-                    | MsFlags::MS_REC,
+                MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR,
                 Some(""),
             )
             .map_err(io_err)?;
+            floor_submounts(&dst, RO_FLOOR)?;
         }
     }
     // /tmp -> tmpfs. HOME points here (dispatch sets HOME=/tmp/agent6-home so
@@ -352,21 +422,17 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         // Best-effort means UNREACHABLE, never writable: if the read-only
         // remount fails the bind is already up, so drop it rather than leave the
         // operator's tool dir writable from inside the jail (a jailed command
-        // could then rewrite a binary that later runs on the HOST).
+        // could then rewrite a binary that later runs on the HOST). A submount
+        // that cannot be secured leaves the same hole, so it drops the bind too.
         if mount(
             Some(""),
             &dst,
             Some(""),
-            MsFlags::MS_BIND
-                | MsFlags::MS_REMOUNT
-                | MsFlags::MS_RDONLY
-                | MsFlags::MS_NOSUID
-                | MsFlags::MS_NODEV
-                | MsFlags::MS_REC
-                | carried_mount_flags(&dst),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&dst),
             Some(""),
         )
         .is_err()
+            || floor_submounts(&dst, RO_FLOOR).is_err()
         {
             // If it can be neither made read-only nor dropped, the invariant
             // cannot hold: refuse the run rather than proceed with a writable
@@ -419,14 +485,14 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         None::<&Path>,
         &cwd_in,
         Some(""),
-        MsFlags::MS_BIND
-            | MsFlags::MS_REMOUNT
-            | MsFlags::MS_NOSUID
-            | MsFlags::MS_NODEV
-            | carried_mount_flags(&cwd_in),
+        MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RW_FLOOR | carried_mount_flags(&cwd_in),
         Some(""),
     )
     .map_err(io_err)?;
+    // A workspace that CONTAINS a mount (a vendored tree on its own filesystem,
+    // a bind) carried it in with the recursive bind above; the floor is the
+    // whole point there too.
+    floor_submounts(&cwd_in, RW_FLOOR)?;
     // Re-bind each protect path RO on top of the workspace mount. Subdirs
     // and individual files are both supported; non-existent entries are
     // skipped silently so a project without (e.g.) a `.git` dir is not
@@ -500,15 +566,14 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             // jailed command under the default strict + protect_git config. Its
             // two sibling remounts (tool_paths, extra_ro_paths) already carry it;
             // this one was missed.
-            MsFlags::MS_BIND
-                | MsFlags::MS_REMOUNT
-                | MsFlags::MS_RDONLY
-                | MsFlags::MS_NOSUID
-                | MsFlags::MS_NODEV
-                | carried_mount_flags(&target),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&target),
             Some(""),
         )
         .map_err(|e| io::Error::other(format!("protect remount-ro {}: {e}", target.display())))?;
+        // The workspace's recursive bind may have carried a mount in BELOW this
+        // protect path; this bind is not recursive, so that one is still
+        // writable at its own path unless it is floored here.
+        floor_submounts(&target, RO_FLOOR)?;
     }
     // Extra RO paths, at their REAL locations (matching tool_paths and the
     // hardened, and the documented contract: a granted toolchain works
@@ -538,16 +603,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
             &dst,
             Some(""),
-            MsFlags::MS_BIND
-                | MsFlags::MS_REMOUNT
-                | MsFlags::MS_RDONLY
-                | MsFlags::MS_NOSUID
-                | MsFlags::MS_NODEV
-                | MsFlags::MS_REC
-                | carried_mount_flags(&dst),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RO_FLOOR | carried_mount_flags(&dst),
             Some(""),
         )
         .map_err(io_err)?;
+        floor_submounts(&dst, RO_FLOOR)?;
     }
     // Extra RW paths, at their REAL locations. Under a system bind the write
     // grant cannot be honored (the covering mount is read-only): refuse loudly
@@ -585,15 +645,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
             &dst,
             Some(""),
-            MsFlags::MS_BIND
-                | MsFlags::MS_REMOUNT
-                | MsFlags::MS_NOSUID
-                | MsFlags::MS_NODEV
-                | MsFlags::MS_REC
-                | carried_mount_flags(&dst),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | RW_FLOOR | carried_mount_flags(&dst),
             Some(""),
         )
         .map_err(io_err)?;
+        floor_submounts(&dst, RW_FLOOR)?;
     }
 
     // pivot_root into new_root.

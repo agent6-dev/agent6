@@ -115,6 +115,104 @@ def test_every_mount_carries_the_nosuid_nodev_floor(tmp_path: Path) -> None:
         assert "nodev" in flags, f"{mountpoint} lacks nodev: {flags}"
 
 
+def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None:
+    """The floor has to reach the submounts a recursive bind carries in, not
+    just the top of each grant.
+
+    `MS_REC` is silently IGNORED on `MS_REMOUNT` -- recursive attribute changes
+    need `mount_setattr(AT_RECURSIVE)` -- so every bind here mounted its whole
+    subtree and then made only its top mount read-only. A mount nested inside a
+    grant arrived with its SOURCE flags: probed, a tmpfs under a read-only grant
+    came in `rw,relatime`, and a jailed command wrote a file that was still on
+    the host afterwards.
+
+    The sibling test that reads the jail's own mountinfo does not catch this: on
+    a host with no nested mounts under any grant there is no such line to check.
+    Checking every mount of a default-shaped HOST only looks exhaustive.
+
+    Creating the submount needs a mount namespace, so the probe runs under
+    `unshare`; the jail's own userns nests inside it.
+    """
+    import shutil
+    import subprocess
+    import sys
+    import textwrap
+
+    if shutil.which("unshare") is None:
+        pytest.skip("needs unshare to nest a mount under a grant")
+
+    ws, ro, tools = (tmp_path / n for n in ("ws", "ro", "tools"))
+    for d in (ws, ws / "vendor", ro / "sub", tools / "sub"):
+        d.mkdir(parents=True)
+
+    inner = textwrap.dedent(
+        """
+        import ctypes, sys
+        from pathlib import Path
+        from agent6.sandbox.jail import run_in_jail
+        from agent6.types import JailPolicy
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        ws, ro, tools = (Path(p) for p in sys.argv[1:4])
+        for sub in (ws / "vendor", ro / "sub", tools / "sub"):
+            if libc.mount(b"tmpfs", str(sub).encode(), b"tmpfs", 0, None) != 0:
+                print("MOUNT_FAILED", ctypes.get_errno())
+                raise SystemExit(0)
+
+        probe = (
+            "for l in open('/proc/self/mountinfo'):\\n"
+            "    f = l.split(' - ')[0].split()\\n"
+            "    print(f[4], f[5])\\n"
+        )
+        res = run_in_jail(
+            JailPolicy(
+                cwd=ws,
+                argv=("python3", "-c", probe),
+                isolation="strict",
+                tool_paths=(tools,),
+                extra_ro_paths=(ro,),
+                timeout_s=20.0,
+            )
+        )
+        print(res.stdout)
+        print("STDERR", res.stderr[:300])
+        """
+    )
+    proc = subprocess.run(
+        [
+            "unshare",
+            "--map-root-user",
+            "--mount",
+            "--propagation",
+            "private",
+            sys.executable,
+            "-c",
+            inner,
+            str(ws),
+            str(ro),
+            str(tools),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    out = proc.stdout
+    if "MOUNT_FAILED" in out or proc.returncode != 0:
+        pytest.skip(f"could not nest a mount: {out[:200]} {proc.stderr[:200]}")
+    rows = [ln.split() for ln in out.strip().splitlines() if ln.startswith("/")]
+    if not rows:
+        pytest.skip(f"probe did not run: {out[:200]} {proc.stderr[:300]}")
+
+    nested = [(mp, fl) for mp, fl in rows if mp.endswith(("/vendor", "/sub"))]
+    assert len(nested) == 3, f"the submounts did not reach the jail: {rows}"
+    for mountpoint, flags in nested:
+        assert "nosuid" in flags and "nodev" in flags, f"{mountpoint} lacks the floor: {flags}"
+        # Under a read-only grant the submount must be read-only as well: the
+        # grant is what the operator made read-only, not its top mount.
+        if "/ro/" in mountpoint or "/tools/" in mountpoint:
+            assert flags.startswith("ro"), f"{mountpoint} is writable inside a RO grant: {flags}"
+
+
 def test_the_legacy_umount_syscall_is_blocked_too(tmp_path: Path) -> None:
     """Denying only umount2 left syscall 22 (`umount`, still live on x86_64)
     reaching the same teardown: a jailed child could unmount /proc, /dev or the
