@@ -42,6 +42,7 @@ from agent6.paths import data_dir
 from agent6.runs.ipc import request_compact
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
+from agent6.tools.background import roster_from_dir
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.viewmodel import fold_run, status_for_run_dir, tail_events
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
@@ -56,6 +57,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
     "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
+    "/shells": "background commands this run started, and how they ended",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
     "/detach": "keep the run going in the background",
@@ -194,6 +196,17 @@ def _print_help() -> None:
 BtwRunner = Callable[[str, Path], str]
 
 
+def _print_shells(run_dir: Path) -> None:
+    """The run's background commands. Read off disk, not from the dispatcher:
+    the menu answers from the same place every other surface reads."""
+    lines = roster_from_dir(run_dir / "shells")
+    if not lines:
+        print("[agent6] no background commands this run")
+        return
+    for line in lines:
+        print(f"  {line}")
+
+
 def _start_btw(cmd: str, run_dir: Path, runner: BtwRunner | None) -> str:
     question = parse_btw(cmd)
     if not question:
@@ -222,6 +235,8 @@ def _run_info_command(cmd: str, run_dir: Path, btw_runner: BtwRunner | None = No
             print("[agent6] compaction requested; applies before the next model call")
         else:
             print("[agent6] could not write the compaction request; nothing was requested")
+    elif cmd == "/shells":
+        _print_shells(run_dir)
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, run_dir, btw_runner))
 

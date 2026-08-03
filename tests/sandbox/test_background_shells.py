@@ -222,3 +222,28 @@ def _alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def test_the_roster_is_readable_from_another_process(
+    shells: BackgroundShells, tmp_path: Path
+) -> None:
+    """`/shells` and any dashboard widget run outside the dispatcher, so what
+    each command WAS and how it ended has to be on disk, not just in memory."""
+    from agent6.tools.background import roster_from_dir
+
+    live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
+    done = shells.start(("/bin/sh", "-c", "exit 5"), _policy_for(tmp_path))
+    assert _wait_state(shells, done.id, "exited") == "exited"
+
+    lines = roster_from_dir(tmp_path / "shells")
+    assert any(f"[{done.id}] exited 5" in line and "exit 5" in line for line in lines)
+    assert any(f"[{live.id}] still running" in line for line in lines)
+    shells.stop_all()
+
+
+def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: Path) -> None:
+    from agent6.tools.background import roster_from_dir
+
+    assert roster_from_dir(tmp_path / "nope") == []
+    (tmp_path / "empty").mkdir()
+    assert roster_from_dir(tmp_path / "empty") == []

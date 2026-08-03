@@ -12,6 +12,7 @@ dead the next time anyone looks. Nothing here blocks: there is no wait.
 
 from __future__ import annotations
 
+import json
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +25,10 @@ from agent6.types import JailPolicy
 # the directory read-write, and `exec` applies the redirect to the whole
 # command. argv values ride as positional parameters, never as shell text.
 _LOG_NAME = "out.log"
+# What a surface needs that the run's own memory holds: the command, and when.
+# Written at start so `/shells` and any dashboard widget read the roster off
+# disk like every other run state, rather than needing the dispatcher.
+_META_NAME = "meta.json"
 _REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
 
@@ -75,6 +80,9 @@ class BackgroundShells:
         shell_dir = self._root / shell_id
         shell_dir.mkdir(parents=True, exist_ok=True)
         (shell_dir / _LOG_NAME).touch()
+        (shell_dir / _META_NAME).write_text(
+            json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
+        )
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(shell_dir), *argv)
         try:
             job = start_in_jail(policy_for(wrapped, (shell_dir,)), outcome_dir=shell_dir)
@@ -134,3 +142,37 @@ class BackgroundShells:
         if status.returncode is None:
             return ShellView(shell.id, shell.command, "died", None, status.error)
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
+
+
+def roster_from_dir(root: Path) -> list[str]:
+    """The run's background commands, read off disk.
+
+    For surfaces in another process (`/shells`, a dashboard widget): liveness
+    needs the owning process, so this reports what each command WAS and how it
+    ended, and says plainly when it cannot tell.
+    """
+    if not root.is_dir():
+        return []
+    lines: list[str] = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        try:
+            meta = json.loads((d / _META_NAME).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        command = str(meta.get("command", ""))
+        try:
+            raw = (d / "result.json").read_text(errors="replace").strip()
+        except OSError:
+            raw = ""
+        if not raw:
+            lines.append(f"[{d.name}] still running (or the run that owns it ended): {command}")
+            continue
+        try:
+            code = int(json.loads(raw.splitlines()[-1])["returncode"])
+        except (ValueError, IndexError, KeyError):
+            lines.append(f"[{d.name}] ended without a result: {command}")
+            continue
+        lines.append(f"[{d.name}] exited {code}: {command}")
+    return lines
