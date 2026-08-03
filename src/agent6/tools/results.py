@@ -19,6 +19,7 @@ produced at the boundary, never validated back in.
 from __future__ import annotations
 
 import abc
+import shlex
 from dataclasses import dataclass
 from typing import Any
 
@@ -243,15 +244,22 @@ class ExecResult(ToolResult):
     stderr: str
     duration_s: float
     exec_failed: bool
+    # What actually ran, for a command the model did not choose. run_command
+    # already knows its own argv; a verify gate is the operator's (or inferred),
+    # and a worker that cannot see it cannot tell a failure from a stale gate.
+    command: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
-        return {
+        wire: dict[str, Any] = {
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
             "duration_s": self.duration_s,
             "exec_failed": self.exec_failed,
         }
+        if self.command:
+            wire["command"] = shlex.join(self.command)
+        return wire
 
     def summary(self) -> str:
         return f"exit={self.returncode} in {self.duration_s:.1f}s"

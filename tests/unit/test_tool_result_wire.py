@@ -266,8 +266,11 @@ def test_wire_run_verify(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=_cmd_result(stdout="ok")):
         out = d.dispatch("run_verify_command", {})
+    # The gate names itself: the worker never chose this command, so without
+    # it a real failure and a stale gate look identical from the result.
     assert _dumps(out) == (
-        '{"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.5, "exec_failed": false}'
+        '{"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.5,'
+        ' "exec_failed": false, "command": "true"}'
     )
 
 

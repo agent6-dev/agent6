@@ -99,3 +99,30 @@ def test_a_declaration_names_the_end_only_over_a_red_tree(
     object.__setattr__(wf, "_tree_is_verify_green", MagicMock(return_value=green))
     reason = wf._finish_reason(turn, MagicMock(spec=_LoopState))  # pyright: ignore[reportPrivateUsage]
     assert reason == expected
+
+
+def test_the_verify_result_names_the_command_that_judged_the_run() -> None:
+    """A worker cannot tell a real failure from a stale gate without knowing
+    WHICH command ran -- and it never chose this one: the gate is the
+    operator's, or inferred from the repo."""
+    from agent6.tools.results import ExecResult
+
+    wire = ExecResult(
+        returncode=1,
+        stdout="",
+        stderr="boom",
+        duration_s=0.5,
+        exec_failed=False,
+        command=("uv", "run", "pytest", "-k", "not slow"),
+    ).to_wire()
+    assert wire["command"] == "uv run pytest -k 'not slow'"
+
+
+def test_a_command_the_model_chose_is_not_echoed_back() -> None:
+    """run_command already knows its own argv; repeating it is noise."""
+    from agent6.tools.results import ExecResult
+
+    wire = ExecResult(
+        returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+    ).to_wire()
+    assert "command" not in wire

@@ -17,6 +17,7 @@ import shutil
 import sys
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -632,6 +633,10 @@ class ToolDispatcher:
         timeout_s = self._config.workflow.verify_timeout_s
         self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
         res = self._run_argv_in_jail(argv, label="verify_command", timeout_s=timeout_s)
+        # Name the gate in the result: it is the operator's command, or one
+        # inferred from the repo, so the worker cannot otherwise tell WHICH
+        # thing judged it -- or that it is judging the wrong thing (stale_gate).
+        res = replace(res, command=argv)
         self._emit(
             "verify.end",
             cmd=list(argv),
