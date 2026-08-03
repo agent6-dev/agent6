@@ -74,14 +74,100 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
     assert "non-JSON" in str(ei.value)
 
 
+def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
+    """A 402 (insufficient credits) / 400 / 401 / 404 in a 2xx error envelope
+    carries a PERMANENT upstream status in error.code. My first envelope fix
+    always left status_code=None (retryable), re-creating the exact
+    402-retried-every-turn regression _call_with_retry documents. The upstream
+    code now becomes the status, so NON_RETRYABLE classifies it permanent, and
+    the hint (HTTP 402) survives."""
+    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps({"error": {"code": 402, "message": "Insufficient credits"}}),
+    )
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 402
+    assert ei.value.status_code in NON_RETRYABLE_HTTP_STATUSES  # permanent, not retried
+    assert "402" in str(ei.value) and "Insufficient credits" in str(ei.value)
+
+
+def test_openai_2xx_envelope_transient_status_stays_retryable() -> None:
+    # A 429/5xx envelope keeps a retryable classification (not in the set).
+    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200, text=json.dumps({"error": {"code": 503, "message": "Overloaded"}})
+    )
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # retryable
+
+
+def test_openai_2xx_string_error_and_placeholder_choices_are_envelopes() -> None:
+    """A string `error`, or an error object beside a null-content placeholder
+    `choices` entry, must be the envelope -- not fall through to the misleading
+    metering 422. The guard tested key presence and required error to be a dict."""
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    for body in (
+        {"error": "model not found"},
+        {
+            "error": {"code": 400, "message": "bad"},
+            "choices": [{"message": {"content": None}, "finish_reason": "error"}],
+        },
+    ):
+        provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+        resp = _FakeJSONResponse(status_code=200, text=json.dumps(body))
+        with (
+            mock.patch("agent6.providers._transport.http_post", return_value=resp),
+            pytest.raises(ProviderError) as ei,
+        ):
+            provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+        assert "usage" not in str(ei.value), f"misattributed metering 422 for {body}"
+
+
+def test_openai_error_key_beside_real_content_still_parses() -> None:
+    # An `error` key beside a REAL assistant message is incidental, not an
+    # envelope: the response must parse normally.
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "error": None,
+                "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 1},
+            }
+        ),
+    )
+    with mock.patch("agent6.providers._transport.http_post", return_value=resp):
+        out = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert out.text == "hi"
+
+
 def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
     """OpenRouter/LiteLLM deliver an upstream 5xx/429 as HTTP 200 with a
     top-level `error` object. The body has no `usage`, so the metering gate
     blamed agent6's own accounting ("no usage input tokens", 422 = permanent)
     and a transient upstream failure killed the run -- and every compaction
     side-call -- with no retry. The streaming paths already surface the
-    envelope; the non-streaming path must match: upstream code/message,
-    retryable (status_code unset)."""
+    envelope; the non-streaming path must match: upstream code/message, and a
+    502/429 stays retryable (not in NON_RETRYABLE_HTTP_STATUSES)."""
+    from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES
+
     budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
     resp = _FakeJSONResponse(
@@ -93,7 +179,7 @@ def test_openai_2xx_error_envelope_is_the_upstreams_failure() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code is None  # retryable
+    assert ei.value.status_code not in NON_RETRYABLE_HTTP_STATUSES  # 502 -> retryable
     assert "502" in str(ei.value) and "Provider returned error" in str(ei.value)
     assert "usage" not in str(ei.value)  # names the upstream, not the accounting
 

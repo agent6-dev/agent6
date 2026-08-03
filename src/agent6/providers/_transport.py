@@ -33,6 +33,47 @@ from agent6.providers.types import (
 )
 
 
+def _has_assistant_output(data: dict[str, Any]) -> bool:
+    """Whether a 2xx body carries a REAL assistant response, so a top-level
+    ``error`` key beside it is incidental rather than an error envelope. Covers
+    both wire shapes: OpenAI ``choices[].message`` (content or tool_calls),
+    Anthropic top-level ``content``. A placeholder choice with null content is
+    not output."""
+    choices = data.get("choices")
+    if isinstance(choices, list):
+        for ch in choices:
+            msg = ch.get("message") if isinstance(ch, dict) else None
+            if isinstance(msg, dict) and (msg.get("content") or msg.get("tool_calls")):
+                return True
+    return isinstance(data.get("content"), list) and bool(data.get("content"))
+
+
+def _envelope_status(err: object) -> int | None:
+    """The upstream HTTP status carried in an error envelope's ``code`` (int or
+    all-digit string), if it is a real 4xx/5xx; else None (retryable). Threading
+    it into ``ProviderError.status_code`` lets ``NON_RETRYABLE_HTTP_STATUSES``
+    classify a 402 as permanent while a 429/5xx stays retryable."""
+    if not isinstance(err, dict):
+        return None
+    code = err.get("code")
+    if isinstance(code, bool):
+        return None
+    if isinstance(code, int):
+        return code if 400 <= code <= 599 else None
+    if isinstance(code, str) and code.isdigit() and 400 <= int(code) <= 599:
+        return int(code)
+    return None
+
+
+def _envelope_detail(err: object) -> str:
+    """A readable ``code: message`` for an error envelope, tolerating a bare
+    string error and an empty object."""
+    if isinstance(err, dict):
+        label = err.get("code") or err.get("type") or "error"
+        return f"{label}: {err.get('message') or err}"
+    return str(err)
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderCall:
     """One provider API call: the attempt loop around a built request body.
@@ -162,17 +203,20 @@ class ProviderCall:
             )
         self.record(headers, resp.status_code, data)
         # An in-band error envelope on a 2xx (OpenRouter/LiteLLM deliver an
-        # upstream 5xx/429 this way; Anthropic's error object has the same
-        # top-level key). The streaming paths already surface it; here the
-        # body has no `usage`, so require_metered below blamed agent6's own
-        # accounting ("no usage input tokens", 422 = permanent) and a
-        # transient upstream failure killed the run with no retry. A body
-        # that also carries real content is NOT an envelope; let it parse.
+        # upstream 5xx/429/4xx this way; Anthropic's error object has the same
+        # top-level key). require_metered below finds no usage and blamed
+        # agent6's own accounting ("no usage input tokens", 422), so a transient
+        # upstream failure killed the run with no retry AND a permanent one
+        # (402 "Insufficient credits") was RETRIED every turn because the status
+        # was dropped. Key on "no usable assistant output" -- a placeholder
+        # `choices` entry with null content is not output, a bare string `error`
+        # is still an envelope -- and carry the upstream code as the status so
+        # NON_RETRYABLE_HTTP_STATUSES makes 4xx permanent, 429/5xx retryable.
         err = data.get("error")
-        if isinstance(err, dict) and not (data.get("choices") or data.get("content")):
+        if err is not None and not _has_assistant_output(data):
             raise ProviderError(
-                f"{self.api_label} error in 2xx body:"
-                f" {err.get('code') or err.get('type')}: {err.get('message')}"
+                f"{self.api_label} error in 2xx body: {_envelope_detail(err)}",
+                status_code=_envelope_status(err),
             )
         if self.budget is not None:
             self.require_metered(data)
