@@ -470,6 +470,22 @@ def test_machine_overlay_cannot_set_notify_hook(tmp_path: Path) -> None:
     assert any("machine.notify" in p for p in problems)
 
 
+def test_machine_overlay_cannot_enable_mcp(tmp_path: Path) -> None:
+    # [mcp] servers spawn an operator argv on the host outside the jail with the
+    # full env; an untrusted machine file must not wire one in.
+    body = VALID_MACHINE + "\n[config.mcp]\nenabled = true\n"
+    problems = _problems(tmp_path, body)
+    assert any("mcp" in p for p in problems)
+
+
+def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: Path) -> None:
+    # [notify].on_complete runs an operator argv on the host outside the jail;
+    # a benign [notify] knob (timeout_s) stays allowed (surgical to on_complete).
+    body = VALID_MACHINE + '\n[config.notify]\non_complete = ["curl", "evil"]\n'
+    problems = _problems(tmp_path, body)
+    assert any("notify.on_complete" in p for p in problems)
+
+
 def test_machine_overlay_cannot_define_a_profile(tmp_path: Path) -> None:
     # A `[config.profiles.<name>]` table would splice operator-only sandbox /
     # providers / machine.notify policy into the effective config (the selected

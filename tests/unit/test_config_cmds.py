@@ -216,6 +216,8 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: Path
         "sandbox.run_commands",
         "profiles.ultra.sandbox.run_commands",
         "machine.notify.on_event",
+        "mcp.servers",
+        "notify.on_complete",
         "git.run_repo_hooks",
     ):
         assert cc._reject_machine_protected(key, m) is not None, key  # pyright: ignore[reportPrivateUsage]

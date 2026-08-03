@@ -379,13 +379,14 @@ StateSpec = Annotated[
 ]
 
 
-# What a machine `[config]` overlay may never carry, in one place: the loader
-# below enforces it, and `config set --machine-file` refuses the same keys up
-# front. The CLI guard used to keep its own shorter copy, so it wrote overlays
-# the loader always rejected.
-PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "profiles")
+# Operator-only security policy an untrusted machine `[config]` overlay may never
+# carry. The loader enforces it and `config set --machine-file` refuses the same
+# keys, both off this one set. `mcp`, `notify.on_complete`, `machine.notify`, and
+# `git.run_repo_hooks` all spawn an operator/repo argv on the host outside the jail.
+PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("providers", "sandbox", "profiles", "mcp")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
+    "notify.on_complete": "the completion hook runs an operator argv on the host outside the jail",
     "git.run_repo_hooks": (
         "honoring the repo's .git/hooks runs repo-controlled code on the host outside the jail"
     ),
@@ -395,7 +396,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
 class MachineSpec(BaseModel):
     """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
     named `states` graph, and an optional agent6 `[config]` overlay whose
-    operator-only security tables (providers/sandbox/profiles) are refused so an
+    operator-only security policy is refused (see PROTECTED_OVERLAY_*) so an
     untrusted machine file cannot weaken the sandbox."""
 
     model_config = _MODEL_CONFIG
@@ -407,41 +408,25 @@ class MachineSpec(BaseModel):
     vars: VarsSection = Field(default_factory=VarsSection)
     schemas: dict[str, dict[str, _FieldSpecT]] = Field(default_factory=dict)
     states: dict[str, StateSpec]
-    # Machine-level agent6 config overlay. Anything set here layers on top of
-    # the effective repo/global/default config for the duration of the
-    # machine run (``machine[config]`` is the highest-precedence layer). It is
-    # an ordinary agent6 config fragment, most knobs ``agent6 config show``
-    # lists are valid, but it MUST NOT carry operator-only security policy
-    # (see ``_forbid_protected_overlay_tables``): ``[providers.*]`` (endpoints
-    # + api-key env names + secrets), ``[sandbox.*]`` (the jail: network
-    # egress incl. allow_urls, run_commands, .git protection), and
-    # ``[profiles.*]`` (presets that DEFINE that same sandbox/providers/notify
-    # policy) are read only from the global/repo config, never a (possibly
-    # untrusted) machine file. Unset keys simply read through to the lower layers.
+    # Highest-precedence config layer for the machine run: an ordinary agent6
+    # config fragment (most `agent6 config show` knobs), minus the operator-only
+    # security policy PROTECTED_OVERLAY_* refuses. Unset keys read through.
     config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _forbid_protected_overlay_tables(self) -> MachineSpec:
-        # A machine file may be LLM-drafted (`machine create`), shared, or
-        # otherwise untrusted, yet its `[config]` overlay is the highest
-        # config layer at run time. So it must not carry operator-only
-        # security policy: `[providers.*]` (endpoints + api-key env names),
-        # `[sandbox.*]` (the jail itself, network egress incl. allow_urls,
-        # run_commands, and .git protection), or `[profiles.*]` (which DEFINE
-        # sandbox/providers/notify presets: the profile the operator selects by
-        # name in the global/repo config is resolved from every layer including
-        # this overlay, so an overlay-defined `[profiles.<selected>]` would splice
-        # operator-only policy, even a host `[machine.notify]` argv, straight into
-        # the effective config). Those are read only from the global/repo config;
-        # an overlay that sets them is rejected at load so a machine can never
-        # weaken the sandbox the operator chose.
+        # An overlay is the highest config layer at run time but may be untrusted
+        # (LLM-drafted, shared), so it must not carry operator-only security
+        # policy: the jail, connections/secrets, MCP servers, host-argv hooks, or
+        # the profile presets that define them (a `[profiles.<selected>]` splices
+        # straight into the effective config). Refused off PROTECTED_OVERLAY_*.
         for table in PROTECTED_OVERLAY_TABLES:
             if table in self.config:
                 raise ValueError(
                     f"machine `[config]` overlay must not declare `[{table}.*]`:"
-                    " connections/secrets, sandbox policy, and profile presets are"
-                    " operator decisions set in the global/repo config, never in a"
-                    " .asm.toml file"
+                    " connections/secrets, sandbox policy, profile presets, and MCP"
+                    " servers are operator decisions set in the global/repo config,"
+                    " never in a .asm.toml file"
                 )
         # Individual operator-only leaves (the rest of their table stays a
         # legitimate overlay knob, e.g. [config.git.commit] identity).
