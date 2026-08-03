@@ -24,6 +24,27 @@ def _write(path: Path, text: str) -> None:
     atomic_write(path, text)
 
 
+def _header_name(line: str) -> str | None:
+    """The table name of a ``[table]`` header line, or None if it is not one.
+
+    The single owner of header matching. Exact-matching the stripped line made
+    `[sandbox]  # the jail` and `[ sandbox ]` -- both ordinary TOML -- invisible
+    to the surgery: unset reported nothing to unset for a leaf that was set, and
+    upsert appended a SECOND table, leaving the file unparseable. An
+    array-of-tables (`[[x]]`) is deliberately not a match.
+    """
+    stripped = line.strip()
+    if not stripped.startswith("["):
+        return None
+    end = stripped.find("]")
+    if end == -1:
+        return None
+    trailing = stripped[end + 1 :].strip()
+    if trailing and not trailing.startswith("#"):
+        return None
+    return stripped[1:end].strip()
+
+
 def _toml_value(value: str | bool) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -53,10 +74,9 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     with locked_file(path):
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
         lines = text.splitlines()
-        header = f"[{table}]"
         start: int | None = None
         for i, line in enumerate(lines):
-            if line.strip() == header:
+            if _header_name(line) == table:
                 start = i
                 break
         if start is None:
@@ -153,12 +173,11 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         lines = text.splitlines()
         if table:
             lines = _drop_top_region_key(lines, table.split(".", 1)[0])
-            header = f"[{table}]"
-            start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+            start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
                 sep = "\n" if text and not text.endswith("\n\n") else ""
-                _write(path, text + sep + header + "\n" + new_line + "\n")
+                _write(path, text + sep + f"[{table}]" + "\n" + new_line + "\n")
                 return
             region = start + 1
         else:
@@ -195,10 +214,11 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
     dropping = False
     removed = False
     for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            name = stripped.strip("[]").strip()
-            dropping = name == table or name.startswith(f"{table}.")
+        if line.strip().startswith("["):
+            # Any header line ends the previous section (an array-of-tables
+            # included, which _header_name reports as not-a-table).
+            name = _header_name(line)
+            dropping = name is not None and (name == table or name.startswith(f"{table}."))
             removed = removed or dropping
         if not dropping:
             kept.append(line)
@@ -276,8 +296,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
             return False
         lines = path.read_text(encoding="utf-8").splitlines()
         if table:
-            header = f"[{table}]"
-            start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+            start = next((i for i, line in enumerate(lines) if _header_name(line) == table), None)
             if start is None:
                 return False
             region = start + 1

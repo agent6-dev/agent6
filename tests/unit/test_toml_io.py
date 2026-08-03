@@ -19,6 +19,24 @@ from agent6.config.io import (
 )
 
 
+def test_table_header_lookup_tolerates_a_trailing_comment(tmp_path: Path) -> None:
+    """`[sandbox]  # the jail` is ordinary TOML, but every header lookup matched
+    the stripped line exactly, so the table was invisible to the surgery: unset
+    reported nothing to unset for a leaf that was set, and set appended a SECOND
+    [sandbox] table, which makes the whole file unparseable."""
+    p = tmp_path / "c.toml"
+    p.write_text("[sandbox]  # the jail\nprotect_git = true\n", encoding="utf-8")
+
+    upsert_toml_leaf(p, "sandbox.run_commands", "yes")
+    text = p.read_text(encoding="utf-8")
+    assert text.count("[sandbox]") == 1, "a second table was appended"
+    parsed = tomllib.loads(text)
+    assert parsed["sandbox"] == {"protect_git": True, "run_commands": "yes"}
+
+    assert remove_toml_leaf(p, "sandbox.protect_git") is True
+    assert tomllib.loads(p.read_text(encoding="utf-8"))["sandbox"] == {"run_commands": "yes"}
+
+
 def test_remove_toml_leaf_deletes_whole_multiline_array(tmp_path: Path) -> None:
     """A multi-line array value must be removed whole. Deleting only the opening
     `leaf = [` line orphaned the continuation lines, leaving unparseable TOML
