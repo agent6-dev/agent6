@@ -765,6 +765,14 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
     data = config.model_dump(mode="python")
     if for_repo and isinstance(data.get("agent6"), dict):
         data["agent6"].pop("state_dir", None)
+    # `preset` SELECTS other leaves rather than being one. Every leaf it chose is
+    # explicit in this document already, so re-emitting the selector is
+    # redundant -- and for a named preset it would apply twice. Emitting it also
+    # made the output unloadable: the layer refuses a top-level `preset` from an
+    # explicit `--config` file, so `config fill` wrote a file `--config` rejected
+    # and every `--parallel` lane (whose config is materialized the same way)
+    # died before it started.
+    data.pop("preset", None)
     lines: list[str] = [
         "# agent6 effective config, materialized by `agent6 config fill`.",
         "# Every value below is explicit; edit freely.",

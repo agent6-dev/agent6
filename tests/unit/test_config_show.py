@@ -45,3 +45,29 @@ def test_config_presets_reads_the_explicit_config_file(
 
     assert main(["--config", str(cfg), "config", "presets"]) == 0
     assert "myfast" in capsys.readouterr().out, "presets ignored the explicit config file"
+
+
+def test_a_filled_config_can_be_used_as_an_explicit_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`config fill` snapshots every effective value into one explicit file. That
+    file has to be a config agent6 will actually load.
+
+    It emitted the top-level `preset` selector, which the layer REFUSES from an
+    explicit `--config` file -- so `agent6 config fill` produced a file that
+    `agent6 --config <it>` rejected. `--parallel` was collateral: the
+    orchestrator materializes each lane's config the same way, so every lane
+    died before starting.
+
+    A preset SELECTS other leaves; once they are materialized the selector is
+    both redundant and, for a named preset, would apply twice.
+    """
+    from agent6.config.layer import materialize
+
+    filled = tmp_path / "filled.toml"
+    filled.write_text(materialize(load_effective(tmp_path).config), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    # The point: this must not raise.
+    reloaded = load_effective(tmp_path, filled).config
+    assert reloaded.agent6.config_version == 1
