@@ -242,3 +242,30 @@ def test_a_chown_never_resolves_a_symlink_swapped_in_mid_walk(
 
     assert hit, "nothing was handed over at all"
     assert secret_id not in hit, "root chowned a file outside the tree"
+
+
+def test_state_is_keyed_on_the_project_not_the_directory_you_stood_in(tmp_path: Path) -> None:
+    """From a subdirectory the state dir was a different, empty project: `runs`
+    listed nothing, `resume` found nothing, and read_session and memory saw an
+    empty history -- silently, since an empty project looks the same as a new
+    one."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "src" / "deep").mkdir(parents=True)
+    assert paths.state_dir(repo / "src" / "deep") == paths.state_dir(repo)
+
+
+def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
+    """A linked worktree's `.git` is a FILE, so an is_dir() walk would climb
+    past it into whatever repo happens to be above."""
+    tree = tmp_path / "wt"
+    tree.mkdir()
+    (tree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n", encoding="utf-8")
+    (tree / "sub").mkdir()
+    assert paths.project_root(tree / "sub") == tree.resolve()
+
+
+def test_outside_a_repo_the_directory_is_the_project(tmp_path: Path) -> None:
+    plain = tmp_path / "notarepo"
+    plain.mkdir()
+    assert paths.project_root(plain) == plain.resolve()

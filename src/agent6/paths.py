@@ -251,15 +251,33 @@ def _tail_bytes(s: str, limit: int) -> str:
     return ""
 
 
+def project_root(start: Path) -> Path:
+    """The repo *start* is inside, or *start* itself outside one.
+
+    Walks for ``.git`` rather than asking git: this is on the path of every
+    command, read-only ones included, and a subprocess per invocation is not.
+    A worktree's ``.git`` is a file, hence ``exists`` and not ``is_dir``.
+    """
+    start = start.resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
 def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
     """The per-repo agent6 state directory (``<base>/<repo-id>``).
+
+    Keyed on the PROJECT, not on where the operator was standing: keyed on the
+    cwd, every cross-session feature (`runs`, `resume`, `read_session`, memory)
+    silently found an empty project from any subdirectory.
 
     ``base_override`` is the global ``[agent6].state_dir`` (an absolute base
     path); when set it replaces the XDG base. ``repo_id`` is always appended,
     so one global base namespaces every repo without collision.
     """
     base = Path(base_override).expanduser() if base_override else state_base()
-    return base / repo_id(repo_root)
+    return base / repo_id(project_root(repo_root))
 
 
 def repo_config_path(repo_root: Path, base_override: str | None = None) -> Path:
