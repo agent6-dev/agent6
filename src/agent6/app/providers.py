@@ -26,6 +26,7 @@ from agent6.providers import (
     ProviderError,
     ProviderResponse,
     ToolDefinition,
+    TranscriptRecorder,
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
@@ -108,7 +109,15 @@ def build_role_provider(
             f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}] missing"
         )
     return _provider_from_entry(
-        rm.provider, entry, model, rm.thinking, transcript_sink=transcript_sink, budget=budget
+        rm.provider,
+        entry,
+        model,
+        rm.thinking,
+        # Stamp the seat on this provider's transcripts: the conversation fold
+        # keeps the worker's round-trips and skips compaction's side-calls,
+        # whose one-message requests otherwise read as a restart.
+        transcript_sink=transcript_sink.for_seat(role),
+        budget=budget,
     )
 
 
@@ -118,7 +127,7 @@ def _provider_from_entry(
     model: str,
     thinking: ThinkingLevel | None,
     *,
-    transcript_sink: TranscriptSink,
+    transcript_sink: TranscriptRecorder,
     budget: BudgetTracker,
 ) -> Provider:
     """Build a Provider for an explicit ``[providers.<provider_name>]`` entry +

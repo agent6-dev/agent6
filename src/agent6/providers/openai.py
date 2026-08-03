@@ -65,7 +65,7 @@ from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
     ToolDefinition,
-    TranscriptSink,
+    TranscriptRecorder,
 )
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
@@ -198,7 +198,7 @@ class OpenAIProvider:
     # api-version). See config extra_query.
     extra_query: dict[str, str] = field(default_factory=dict)
     timeout_s: float = 120.0
-    transcript_sink: TranscriptSink | None = None
+    transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
     # Default reasoning effort for this provider (off|low|medium|high), wired
     # from the role's `[models.<role>].thinking`. A per-call `reasoning_effort`
@@ -265,7 +265,7 @@ class OpenAIProvider:
         base_url: str = OPENAI_DEFAULT_BASE_URL,
         extra_headers: dict[str, str] | None = None,
         timeout_s: float = 120.0,
-        transcript_sink: TranscriptSink | None = None,
+        transcript_sink: TranscriptRecorder | None = None,
         budget: BudgetTracker | None = None,
     ) -> OpenAIProvider:
         # env_var is optional: Ollama and similar local endpoints take no

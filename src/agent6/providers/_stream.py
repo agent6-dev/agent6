@@ -57,7 +57,7 @@ from agent6.providers.types import (
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
-    TranscriptSink,
+    TranscriptRecorder,
     parse_retry_after,
 )
 
@@ -131,7 +131,7 @@ class SseCall:
     headers: dict[str, str]
     body: dict[str, Any]
     timeout_s: float
-    transcript_sink: TranscriptSink | None
+    transcript_sink: TranscriptRecorder | None
     should_abort: Callable[[], bool] | None
     should_interrupt: Callable[[], bool] | None
 

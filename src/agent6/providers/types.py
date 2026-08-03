@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from agent6.portable import atomic_write
 
@@ -111,6 +111,55 @@ def _max_seq_in_dir(transcripts_dir: Path) -> int:
     return max(seqs, default=0)
 
 
+class TranscriptRecorder(Protocol):
+    """What a provider needs of a transcript sink: record one round-trip.
+
+    Lets a provider hold either the run's shared :class:`TranscriptSink` or a
+    :class:`RoleTranscriptSink` view bound to its seat.
+    """
+
+    def record(
+        self,
+        *,
+        url: str = "",
+        request_headers: dict[str, str],
+        request_body: dict[str, Any],
+        response_status: int,
+        response_body: dict[str, Any] | str,
+    ) -> Path: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RoleTranscriptSink:
+    """A :class:`TranscriptSink` view bound to one seat.
+
+    Delegates every write to the shared sink (so seq stays run-global) with the
+    seat stamped, which is what lets a transcript consumer tell the worker's
+    conversation from a compaction side-call's scratch round-trip.
+    """
+
+    inner: TranscriptSink
+    seat: str
+
+    def record(
+        self,
+        *,
+        url: str = "",
+        request_headers: dict[str, str],
+        request_body: dict[str, Any],
+        response_status: int,
+        response_body: dict[str, Any] | str,
+    ) -> Path:
+        return self.inner.record(
+            url=url,
+            request_headers=request_headers,
+            request_body=request_body,
+            response_status=response_status,
+            response_body=response_body,
+            seat=self.seat,
+        )
+
+
 class TranscriptSink:
     """Append-only writer of one JSON file per LLM round-trip.
 
@@ -131,6 +180,14 @@ class TranscriptSink:
         self._lock = threading.Lock()
         self._seq = _max_seq_in_dir(transcripts_dir)
 
+    def for_seat(self, seat: str) -> RoleTranscriptSink:
+        """A view of this sink that stamps *seat* on everything it records.
+
+        The seq counter, lock, and directory stay shared: seq is a run-global
+        key every consumer sorts by.
+        """
+        return RoleTranscriptSink(self, seat)
+
     def record(
         self,
         *,
@@ -139,6 +196,7 @@ class TranscriptSink:
         request_body: dict[str, Any],
         response_status: int,
         response_body: dict[str, Any] | str,
+        seat: str = "",
     ) -> Path:
         with self._lock:
             self._seq += 1
@@ -148,6 +206,11 @@ class TranscriptSink:
         payload = {
             "ts": ts,
             "seq": seq,
+            # Which seat made this call. Compaction's side-calls (the gist
+            # distiller, the tier-2 summariser) share the run's sink, and a
+            # side-call's one-message request reads as a compaction restart to
+            # the conversation fold; the seat lets it skip them.
+            "seat": seat,
             "request": {
                 "url": url,
                 "headers": _redact_headers(request_headers),

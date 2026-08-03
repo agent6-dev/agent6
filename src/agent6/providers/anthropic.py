@@ -27,7 +27,7 @@ from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
     ToolDefinition,
-    TranscriptSink,
+    TranscriptRecorder,
 )
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
@@ -187,7 +187,7 @@ class AnthropicProvider:
     auth_style: AuthStyle = "x_api_key"
     prompt_caching: bool = True
     timeout_s: float = 120.0
-    transcript_sink: TranscriptSink | None = None
+    transcript_sink: TranscriptRecorder | None = None
     budget: BudgetTracker | None = None
     # Extended-thinking level (off/low/medium/high). When not "off" the
     # call enables Anthropic extended thinking with a budget drawn from
@@ -243,7 +243,7 @@ class AnthropicProvider:
         env_var: str,
         prompt_caching: bool = True,
         timeout_s: float = 120.0,
-        transcript_sink: TranscriptSink | None = None,
+        transcript_sink: TranscriptRecorder | None = None,
         budget: BudgetTracker | None = None,
         thinking: str | None = None,
     ) -> AnthropicProvider:

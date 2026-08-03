@@ -23,7 +23,9 @@ from agent6.providers.types import (
     ProviderError,
     ProviderInterrupted,
     ProviderResponse,
+    RoleTranscriptSink,
     ToolDefinition,
+    TranscriptRecorder,
     TranscriptSink,
 )
 
@@ -68,6 +70,8 @@ __all__ = [
     "ProviderError",
     "ProviderInterrupted",
     "ProviderResponse",
+    "RoleTranscriptSink",
     "ToolDefinition",
+    "TranscriptRecorder",
     "TranscriptSink",
 ]

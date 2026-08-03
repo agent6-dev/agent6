@@ -59,7 +59,14 @@ def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
             obj = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(obj, dict):
+        if isinstance(obj, dict) and str(obj.get("seat", "worker") or "worker") == "worker":
+            # Only the worker's round-trips are the conversation. Compaction's
+            # side-calls (the gist distiller, the tier-2 summariser) share the
+            # sink, and their one-message requests read as a compaction restart
+            # to the fold below: it printed a phantom "context summarised"
+            # marker, rendered the side-call's scratch prompt as a worker turn,
+            # and re-emitted the history behind it. A transcript written before
+            # seats were stamped has none, and is the worker's by default.
             out.append(obj)
     out.sort(key=lambda t: t.get("seq", 0))
     return out

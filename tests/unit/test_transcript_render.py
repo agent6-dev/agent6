@@ -541,3 +541,52 @@ def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
     assert turns[2].tool_name == "read_file"  # the call id resolved to a name
     md = render_markdown(turns, run_id="r1", show_thinking=True)
     assert "## assistant" in md and "-> read_file(" in md
+
+
+def test_a_compaction_side_call_is_not_a_conversation_turn(tmp_path: Path) -> None:
+    """The gist distiller and the tier-2 summariser share the run's transcript
+    sink, and their ONE-message requests shrink the history, which the fold reads
+    as a compaction restart: it printed a phantom "context summarised" marker,
+    rendered the side-call's scratch prompt as a user turn, and re-emitted the
+    history behind it. Only the worker seat is the conversation."""
+    import json
+
+    d = tmp_path / "transcripts"
+    d.mkdir()
+
+    def rec(seq: int, seat: str, msgs: list[dict[str, object]], reply: str) -> None:
+        (d / f"2026-{seq:06d}.json").write_text(
+            json.dumps(
+                {
+                    "seq": seq,
+                    "seat": seat,
+                    "request": {"url": "", "headers": {}, "body": {"messages": msgs}},
+                    "response": {
+                        "status": 200,
+                        "body": {"content": [{"type": "text", "text": reply}]},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def u(text: str) -> dict[str, object]:
+        return {"role": "user", "content": [{"type": "text", "text": text}]}
+
+    def a(text: str) -> dict[str, object]:
+        return {"role": "assistant", "content": [{"type": "text", "text": text}]}
+
+    rec(1, "worker", [u("TASK: fix the parser"), a("reading"), u("tool result")], "on it")
+    rec(2, "reviewer", [u("=== FILE a.py ===")], "a.py: the parser")  # the distiller
+    rec(
+        3,
+        "worker",
+        [u("TASK: fix the parser"), a("reading"), u("tool result"), a("on it"), u("next")],
+        "done",
+    )
+
+    turns = fold_conversation(load_transcripts(d))
+    body = "\n".join(f"{t.role}:{t.text}" for t in turns)
+    assert "context summarised" not in body, "a restart that never happened"
+    assert "=== FILE a.py ===" not in body, "the side-call's scratch prompt became a turn"
+    assert body.count("reading") == 1, "the history was re-emitted behind the side-call"

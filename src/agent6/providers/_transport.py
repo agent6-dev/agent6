@@ -28,7 +28,7 @@ from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
-    TranscriptSink,
+    TranscriptRecorder,
     parse_retry_after,
 )
 
@@ -52,7 +52,7 @@ class ProviderCall:
     timeout_s: float
     api_key: str
     credential: CommandToken | None
-    transcript_sink: TranscriptSink | None
+    transcript_sink: TranscriptRecorder | None
     budget: BudgetTracker | None
     model: str
     build_headers: Callable[[str], dict[str, str]]
