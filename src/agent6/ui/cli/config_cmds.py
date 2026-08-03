@@ -86,10 +86,14 @@ def _cmd_config_path() -> int:
     return 0
 
 
-def _cmd_config_presets() -> int:
-    """List every known preset with the overrides it applies; mark the selection."""
+def _cmd_config_presets(config_path: Path | None = None) -> int:
+    """List every known preset with the overrides it applies; mark the selection.
+
+    Honours the global ``--config`` like every other config subcommand: without
+    it, a `[presets.*]` table in an explicit file was silently absent from the
+    listing that exists to show which presets are available."""
     try:
-        cat = preset_catalog(Path.cwd(), None)
+        cat = preset_catalog(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent6.config.layer import load_effective
 from agent6.viewmodel.config_view import render_show
 
@@ -24,3 +26,22 @@ def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
     assert "preset" in out, "the setting itself must still be shown"
     # It belongs above the tables, exactly where TOML requires it.
     assert out.index("preset") < out.index("["), "a top-level scalar must precede every section"
+
+
+def test_config_presets_reads_the_explicit_config_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--config FILE` is a global flag every config subcommand honours -- except
+    `presets`, which hardcoded None and silently listed only the built-ins.
+
+    Silently: the file parsed, the preset was there, and the listing simply did
+    not mention it.
+    """
+    from agent6.ui.cli import main
+
+    cfg = tmp_path / "custom.toml"
+    cfg.write_text('[presets.myfast.sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--config", str(cfg), "config", "presets"]) == 0
+    assert "myfast" in capsys.readouterr().out, "presets ignored the explicit config file"
