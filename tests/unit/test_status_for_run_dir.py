@@ -102,6 +102,18 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "running",
         "",
     ),
+    # A prompt is still pending when a LATER event lands: Ctrl-C in the
+    # launching terminal emits run.steer_requested from the signal handler
+    # while the approval waits. "Blocked" is about the unanswered prompt, not
+    # about which event happened to be last.
+    (
+        "waiting-with-a-later-event",
+        [_START, _APPROVAL, {"type": "run.steer_requested", "source": "sigint"}],
+        "",
+        LIVE,
+        "waiting",
+        "needs answer",
+    ),
     ("stale", [_START, _TOOL], "", DEAD, "stale", ""),
     ("stale-beats-waiting", [_START, _APPROVAL], "", DEAD, "stale", ""),
     ("passed", [_START, _end("finish_run", True)], "", None, "passed", ""),

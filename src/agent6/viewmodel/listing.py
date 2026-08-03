@@ -187,6 +187,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
 # definition: the hub listing and `runs show` both key their "waiting (needs
 # answer)" status on it, so the two surfaces can't disagree.
 OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
+OPERATOR_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 
 
 # The word + detail a parked submission reads as, defined once: the hub
@@ -299,6 +300,7 @@ class LogScan:
     start_ep: float | None = None  # run.start ts (epoch seconds)
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
+    operator_blocked: bool = False  # a prompt is still unanswered on this leg
 
     def status_facts(self) -> StatusFacts:
         """This scan's answers to the status questions, for status_for_run_dir.
@@ -309,7 +311,7 @@ class LogScan:
             finished=self.finished,
             all_passed=self.all_passed,
             end_reason=self.end_reason,
-            operator_blocked=self.last_type in OPERATOR_PROMPT_EVENTS,
+            operator_blocked=self.operator_blocked,
         )
 
 
@@ -327,7 +329,7 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
     return last_good
 
 
-def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like build_parser)
+def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
     """Fold ``logs.jsonl`` into a :class:`LogScan`: run.start (mode/task), the
     last run.end (un-finished again by a later resume), the running per-leg
     budget banked across resumes into a cumulative total, and the liveness
@@ -350,6 +352,12 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
     start_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
+    # Prompt ids still awaiting their answer. Reading "blocked" off the LAST
+    # event type instead lost the bit to any later one -- Ctrl-C in the
+    # launching terminal emits run.steer_requested from the signal handler while
+    # the approval waits -- so every listing read a run that needs the operator
+    # as plain "running" while the run view (typed fold) said "waiting".
+    pending_prompts: set[str] = set()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -367,11 +375,20 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
                     last_type = etype
                 if isinstance(ev.get("iteration"), int):
                     iteration = ev["iteration"]
+                if etype in OPERATOR_PROMPT_EVENTS:
+                    if isinstance(pid := ev.get("id"), str):
+                        pending_prompts.add(pid)
+                elif etype in OPERATOR_ANSWER_EVENTS:
+                    pending_prompts.discard(str(ev.get("id")))
                 if etype == "run.start":
                     saw_start = True
                     finished = False  # a leg is starting (ask REPL re-runs in place)
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
+                    # A leg boundary invalidates unanswered prompts: the new leg
+                    # re-asks with restarted ids, so a held-over entry would keep
+                    # the run "waiting" forever (the typed fold's rule too).
+                    pending_prompts.clear()
                     if start_ep is None:
                         start_ep = ep
                 elif etype == "run.end":
@@ -380,6 +397,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     finished = False  # a resume un-finishes the run
+                    pending_prompts.clear()  # see run.start
                     # Each resume leg starts a FRESH budget (usd_total resets to
                     # 0), so bank the finished leg's total before it does -- the
                     # displayed cost is then the true cumulative spend across all
@@ -419,6 +437,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
         start_ep=start_ep,
         last_ep=last_ep,
         last_type=last_type,
+        operator_blocked=bool(pending_prompts),
     )
 
 
