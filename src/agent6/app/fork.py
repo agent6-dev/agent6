@@ -15,9 +15,10 @@ to that turn. So on a gated run (commits fire only on a green verify), an edit
 made but not committed at the forked turn is ABSENT from the fork's tree even
 though the copied transcript mentions it -- the same committed-history-only
 posture `resume` documents, and deliberate: the alternative is snapshotting
-uncommitted bytes into every checkpoint. The DAG is copied verbatim; replaying
-the journal to rebuild an older `graph_version` is not implemented, so forking
-a past turn copies the current DAG and says so.
+uncommitted bytes into every checkpoint. The DAG is not copied but REBUILT: the
+checkpoint's `graph_version` names an exact past state, and `graph.replay`
+undoes every journal-recorded mutation stamped after it, so the fork's tasks,
+statuses, and cursor match the turn its conversation came from.
 """
 
 from __future__ import annotations
@@ -26,13 +27,24 @@ import datetime as _dt
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 from agent6.app.manifest import write_run_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import GitError, create_branch_at
-from agent6.graph.storage import append_jsonl, flock, list_checkpoint_turns
+from agent6.graph.replay import graph_at_version, journal_prefix
+from agent6.graph.storage import (
+    append_jsonl,
+    flock,
+    list_checkpoint_turns,
+    load_graph,
+    read_cursor,
+    write_cursor,
+    write_dot,
+    write_node,
+)
 from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
@@ -50,26 +62,65 @@ def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> 
     return {"child": child, "parent": parent, "turn": turn, "sha": sha, "ts": ts}
 
 
-def _copy_dag(src: RunLayout, dst: RunLayout) -> None:
-    """Copy the curator DAG artifacts from *src* into *dst*, verbatim.
+def _copy_dag(src: RunLayout, dst: RunLayout, *, graph_version: int) -> None:
+    """Write *dst*'s DAG as the source's stood at *graph_version*.
 
-    Snapshots under the SOURCE curator's per-mutation flock: a live source
-    run's curator atomic-renames node files and prunes stale ones mid-copy,
-    so an unlocked copytree could hit a vanishing file (shutil.Error) or
-    produce a torn, mixed-instant DAG. Holding the same lock the curator
-    takes for every mutation (graph.storage.flock on <run>/.lock) makes the
-    four artifacts one consistent point-in-time snapshot; a crashed source
-    driver's fcntl lock releases on process death, so no stale-lock hang."""
+    Reads under the SOURCE curator's per-mutation flock: a live source run's
+    curator atomic-renames node files and prunes stale ones mid-read, so an
+    unlocked copytree could hit a vanishing file (shutil.Error) or produce a
+    torn, mixed-instant DAG. Holding the same lock the curator takes for every
+    mutation (graph.storage.flock on <run>/.lock) makes this one consistent
+    point-in-time read; a crashed source driver's fcntl lock releases on
+    process death, so no stale-lock hang.
+
+    ``graph_version <= 0`` means the checkpoint predates the stamp or the
+    curator was unreadable when it was written: with no version to rebuild at,
+    copy the DAG verbatim (what every fork did before replay existed).
+    """
     with flock(src.lock_path):
-        for name in _DAG_ARTIFACTS:
-            src_path = src.run_dir / name
-            if not src_path.exists():
-                continue
-            dst_path = dst.run_dir / name
-            if src_path.is_dir():
-                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-            else:
-                shutil.copy2(src_path, dst_path)
+        if graph_version <= 0:
+            for name in _DAG_ARTIFACTS:
+                src_path = src.run_dir / name
+                if not src_path.exists():
+                    continue
+                dst_path = dst.run_dir / name
+                if src_path.is_dir():
+                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_path, dst_path)
+            return
+        nodes = load_graph(src)
+        journal = _read_journal(src)
+        replayed = graph_at_version(nodes, journal, graph_version, current_cursor=read_cursor(src))
+    dst.ensure()
+    for node in replayed.nodes.values():
+        write_node(dst, replayed.nodes, node)
+    write_cursor(dst, replayed.cursor)
+    write_dot(dst, replayed.nodes)
+    # The journal prefix, so the fork's curator resumes numbering from the
+    # version it actually holds instead of the source's later one.
+    kept = journal_prefix(journal, graph_version)
+    atomic_write(dst.journal_path, "".join(json.dumps(e, sort_keys=True) + "\n" for e in kept))
+
+
+def _read_journal(src: RunLayout) -> list[dict[str, Any]]:
+    """The source's graph.jsonl as dicts; a torn or non-object line is skipped
+    (the same tolerance `load_graph` gives a malformed node file)."""
+    out: list[dict[str, Any]] = []
+    try:
+        text = src.journal_path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            out.append(entry)  # pyright: ignore[reportUnknownArgumentType]
+    return out
 
 
 def _select_checkpoint_path(
@@ -250,6 +301,7 @@ def create_fork(  # noqa: PLR0911
         src=src,
         dst=RunLayout(state_dir=state_dir, run_id=child_id),
         checkpoint_path=checkpoint_path,
+        graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
         forked_from_sha=forked_from_sha,
         base_sha=src_base_sha,
@@ -272,6 +324,7 @@ def _materialize_fork(
     src: RunLayout,
     dst: RunLayout,
     checkpoint_path: Path,
+    graph_version: int,
     forked_from_turn: int,
     forked_from_sha: str,
     base_sha: str,
@@ -292,11 +345,11 @@ def _materialize_fork(
     dst.ensure()
 
     # Seed the new run's resume pointer + origin checkpoint from the chosen
-    # checkpoint, then clone the curator DAG verbatim.
+    # checkpoint, then rebuild the DAG as it stood at that checkpoint.
     blob = checkpoint_path.read_text(encoding="utf-8")
     atomic_write(dst.run_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
-    _copy_dag(src, dst)
+    _copy_dag(src, dst, graph_version=graph_version)
 
     run_branch = f"agent6/{dst.run_id}"
     write_run_manifest(

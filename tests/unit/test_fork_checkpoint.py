@@ -158,6 +158,25 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
 # --- fork command -----------------------------------------------------------
 
 
+def _seed_graph(layout: RunLayout) -> tuple[str, str]:
+    """A two-node DAG through the real curator: root (graph_version 1), child
+    (2), child passed (3). Returns (root_id, child_id)."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+
+    curator = GraphCurator(layout)
+    root = curator.add_subtask(
+        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root task", created_by="user"))
+    )
+    child = curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root.id, draft=TaskNodeDraft(title="late subtask", created_by="worker")
+        )
+    )
+    curator.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
+    return root.id, child.id
+
+
 def _seed_source_run(
     state_dir: Path,
     run_id: str,
@@ -195,10 +214,10 @@ def _seed_source_run(
         ),
         encoding="utf-8",
     )
-    # A curator DAG artifact to be cloned verbatim.
-    (layout.graph_dir / "root.md").write_text("---\nid: root\n---\nnode\n", encoding="utf-8")
-    layout.journal_path.write_text('{"op": "add_subtask"}\n', encoding="utf-8")
-    layout.cursor_path.write_text('{"node_id": "root"}', encoding="utf-8")
+    # A REAL curator DAG, so a fork exercises the journal replay: the root lands
+    # at graph_version 1, the child at 2, and the child passes at 3 -- matching
+    # the per-turn graph_version the checkpoints below record.
+    _seed_graph(layout)
     for turn in turns:
         payload = {
             "version": 2,
@@ -435,10 +454,14 @@ def test_fork_clones_state_writes_lineage_and_branch(
     seed = load_run_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
     assert (dst.run_dir / "loop_state.json").is_file()
-    # DAG cloned verbatim.
-    assert (dst.graph_dir / "root.md").is_file()
-    assert dst.journal_path.read_text(encoding="utf-8") == '{"op": "add_subtask"}\n'
-    assert dst.cursor_path.read_text(encoding="utf-8") == '{"node_id": "root"}'
+    # DAG rebuilt at the latest checkpoint's graph_version (3): both nodes, the
+    # child still passed, and the journal prefix that produced that version.
+    from agent6.graph.storage import load_graph
+
+    forked_nodes = load_graph(dst)
+    assert {n.title for n in forked_nodes.values()} == {"root task", "late subtask"}
+    assert [n.status for n in forked_nodes.values() if n.title == "late subtask"] == ["passed"]
+    assert len(dst.journal_path.read_text(encoding="utf-8").splitlines()) == 3
 
     # Lineage manifest fields.
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
@@ -850,3 +873,64 @@ def test_fork_steer_with_no_run_is_refused(
     )
     assert rc == 2
     assert "--steer" in capsys.readouterr().err
+
+
+def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A past-turn fork gets the DAG as it stood at that turn, not the run's
+    latest. Copying the newest graph handed the forked session tasks it never
+    created and `passed` statuses for work absent from its tree -- and, since
+    DAG statuses drive the focus frontier and the finish gate, a turn-1 fork
+    resumed with an already-satisfied gate."""
+    from agent6.graph.storage import load_graph
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    # graph_version 1 = root only; 2 = root + child; 3 = child passed.
+    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    assert {n.title for n in load_graph(src).values()} == {"root task", "late subtask"}
+
+    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_run_id="kid-CCCC33", no_run=True) == 0
+
+    dst = RunLayout(state_dir=state_dir, run_id="kid-CCCC33")
+    nodes = load_graph(dst)
+    # The turn-3 subtask did not exist at turn 1, and the root had not passed.
+    assert [n.title for n in nodes.values()] == ["root task"]
+    assert [n.status for n in nodes.values()] == ["pending"]
+    assert [n.children for n in nodes.values()] == [()]
+    # The cursor cannot point into the future, and the journal stops at turn 1.
+    assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] in (
+        None,
+        next(iter(nodes)),
+    )
+    versions = [
+        json.loads(line)["graph_version"]
+        for line in dst.journal_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert versions == [1]
+
+
+def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """graph_version 0 means the checkpoint predates the stamp (or the curator
+    was unreadable when it was written). With no version to rebuild at, the
+    fork copies the DAG verbatim rather than rebuilding to an empty graph."""
+    from agent6.graph.storage import load_graph
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "old-run-AAAA11", head_sha=head, turns=(1,))
+    payload = json.loads(src.checkpoint_path(1).read_text(encoding="utf-8"))
+    payload["graph_version"] = 0
+    src.checkpoint_path(1).write_text(json.dumps(payload), encoding="utf-8")
+
+    assert _cmd_fork(None, "old-run", at_turn=1, new_run_id="kid-DDDD44", no_run=True) == 0
+
+    dst = RunLayout(state_dir=state_dir, run_id="kid-DDDD44")
+    assert {n.title for n in load_graph(dst).values()} == {"root task", "late subtask"}

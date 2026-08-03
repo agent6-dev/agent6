@@ -30,6 +30,7 @@ depends_on = [
   "agent6.events",
   "agent6.git_ops",
   "agent6.graph.curator",
+  "agent6.graph.replay",
   "agent6.graph.storage",
   "agent6.machine",
   "agent6.models.cache",
@@ -315,6 +316,12 @@ depends_on = []
 [[modules]]
 path = "agent6.graph"
 depends_on = []
+
+[[modules]]
+path = "agent6.graph.replay"
+# Pure: the current nodes plus the journal in, the graph at an older
+# graph_version out. No storage, so `fork` owns the read and the write.
+depends_on = ["agent6.graph.models"]
 
 [[modules]]
 path = "agent6.graph.models"

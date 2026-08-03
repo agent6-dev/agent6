@@ -409,14 +409,21 @@ Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
 
 A fork (`agent6 fork <src>`) clones a source run's state, as of a checkpoint,
 into a NEW run dir with a new id: it copies the checkpoint as the new run's
-`loop_state.json` + seed `checkpoints/0000.json`, copies the curator DAG
-(`graph/`, `graph.jsonl`, `cursor.json`) verbatim, writes a manifest with
-`parent_run_id` / `forked_from_turn` / `forked_from_sha`, and cuts
-`agent6/<new>` at the turn's sha (additive `git branch`, the operator's
+`loop_state.json` + seed `checkpoints/0000.json`, REBUILDS the curator DAG
+(`graph/`, `graph.jsonl`, `cursor.json`) at the checkpoint's `graph_version`,
+writes a manifest with `parent_run_id` / `forked_from_turn` / `forked_from_sha`,
+and cuts `agent6/<new>` at the turn's sha (additive `git branch`, the operator's
 checkout is untouched). The source run is never mutated. One fork edge per line
-lands in a per-repo `lineage.jsonl` at the state-dir root. Past-turn DAG replay
-(reconstructing the graph at an older `graph_version`) is deferred; a fork copies
-the source's current DAG.
+lands in a per-repo `lineage.jsonl` at the state-dir root.
+
+The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than
+that version, so a fork's tasks, statuses, cursor, and journal match the turn its
+conversation came from -- no future subtasks, no `passed` for work its tree does
+not contain. Node content the journal never records (title, rationale,
+acceptance, paths) is immutable after creation and comes from the current nodes;
+`notes` and `updated_at` cannot be unwound and stay current (display-only). A
+checkpoint with `graph_version: 0` (written before the stamp, or with the curator
+unreadable) has no version to rebuild at, so its fork copies the DAG verbatim.
 
 The fork's tree is the repo as of that committed sha, nothing more. On a gated
 run (commits fire only on a green verify) an edit not yet committed at the forked
