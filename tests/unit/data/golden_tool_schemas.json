@@ -6,8 +6,8 @@
     ],
     "properties": {
       "limit": "anyOf[integer,null]",
-      "offset": "integer",
-      "path": "string"
+      "path": "string",
+      "start_line": "integer"
     }
   },
   {

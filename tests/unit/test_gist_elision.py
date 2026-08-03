@@ -247,7 +247,7 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     from agent6.workflows._compaction import call_label, elision_placeholder
 
     conv = Conversation()
-    _add_call(conv, "read_file", {"path": "a.py", "offset": 100, "limit": 500}, "z" * 4000)
+    _add_call(conv, "read_file", {"path": "a.py", "start_line": 100, "limit": 500}, "z" * 4000)
     _add_read(conv, "b.py", "y" * 500)
     _add_read(conv, "c.py", "y" * 500)
     compact_old_tool_results(
@@ -258,7 +258,8 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     assert text.startswith(ELISION_GIST_PREFIX)
     ident = re.compile(r": the result of (.+?) was replaced")
     got = ident.search(text)
-    bare = ident.search(elision_placeholder("read_file", {"path": "a.py", "offset": 100}))
+    bare = ident.search(elision_placeholder("read_file", {"path": "a.py", "start_line": 100}))
     assert got is not None and bare is not None
-    assert got.group(1) == call_label("read_file", {"path": "a.py", "offset": 100, "limit": 500})
-    assert "offset=100" in got.group(1)  # the range is part of the identity
+    label = call_label("read_file", {"path": "a.py", "start_line": 100, "limit": 500})
+    assert got.group(1) == label
+    assert "start_line=100" in got.group(1)  # the range is part of the identity

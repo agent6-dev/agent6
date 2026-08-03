@@ -31,15 +31,16 @@ class ReadFileInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a text file from the repository. `path` is repo-root-relative "
         "(e.g. 'src/foo.py', NOT '/abs/...' or './src/foo.py'). Returns the "
-        "UTF-8 decoded contents. Optional `offset` (0-based line number to"
-        " start at, default 0) and `limit` (max lines to return, default"
-        " all). Fails when: path is outside the repo, file does not exist,"
-        " file is not UTF-8 decodable, or file is binary. Use `outline`"
-        " instead when you only need a file's structure, not every line."
+        "UTF-8 decoded contents. Optional `start_line` (1-based, matching"
+        " every line number this harness reports; default 1) and `limit`"
+        " (max lines to return, default all). Fails when: path is outside"
+        " the repo, file does not exist, file is not UTF-8 decodable, or"
+        " file is binary. Use `outline` instead when you only need a file's"
+        " structure, not every line."
     )
 
     path: str = Field(min_length=1)
-    offset: int = Field(default=0, ge=0)
+    start_line: int = Field(default=1, ge=1)
     limit: int | None = Field(default=None, gt=0)
 
 

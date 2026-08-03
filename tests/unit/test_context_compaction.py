@@ -132,7 +132,7 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # its eligible sibling is elided as normal.
     assert contents[0] == tiny
     assert "elided" in contents[1]
-    assert len(PLACEHOLDER) == 263
+    assert len(PLACEHOLDER) == 267
 
 
 def test_compact_noop_when_under_threshold() -> None:
@@ -258,9 +258,9 @@ def test_restart_notice_is_dag_aware() -> None:
 def test_elision_placeholder_names_the_call() -> None:
     from agent6.workflows._compaction import ELISION_PREFIX, elision_placeholder
 
-    p = elision_placeholder("read_file", {"path": "src/x.py", "offset": 10, "limit": 50})
+    p = elision_placeholder("read_file", {"path": "src/x.py", "start_line": 10, "limit": 50})
     assert p.startswith(ELISION_PREFIX)
-    assert "read_file src/x.py" in p and "offset=10" in p
+    assert "read_file src/x.py" in p and "start_line=10" in p
     g = elision_placeholder("grep", {"pattern": "def foo"})
     assert "grep pattern 'def foo'" in g
     # Unknown pairing (orphan result) falls back to the generic marker.
@@ -339,8 +339,8 @@ def test_compact_placeholder_carries_tool_identity() -> None:
 def test_call_label_identities() -> None:
     assert call_label("read_file", {"path": "src/foo.py"}) == "read_file src/foo.py"
     assert (
-        call_label("read_file", {"path": "a.py", "offset": 10, "limit": 40})
-        == "read_file a.py (offset=10, limit=40)"
+        call_label("read_file", {"path": "a.py", "start_line": 10, "limit": 40})
+        == "read_file a.py (start_line=10, limit=40)"
     )
     assert call_label("grep", {"pattern": "needle"}) == "grep pattern 'needle'"
     assert call_label("list_dir", {"path": "src"}) == "list_dir src"
@@ -359,7 +359,7 @@ def test_elision_placeholder_unchanged_by_label_refactor() -> None:
         "<elided by context compaction: the result of read_file src/foo.py was"
         " replaced with this short marker to keep the loop's cumulative input"
         " bounded. If you still need it, re-read only the part you need"
-        " (read_file with a targeted offset/limit); do not re-issue the"
+        " (read_file with a targeted start_line/limit); do not re-issue the"
         " identical call.>"
     )
 

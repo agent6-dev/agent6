@@ -93,9 +93,9 @@ def test_wire_read_file_full(tmp_path: Path) -> None:
 def test_wire_read_file_slice(tmp_path: Path) -> None:
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    out = d.dispatch("read_file", {"path": "abc.txt", "offset": 1, "limit": 1})
+    out = d.dispatch("read_file", {"path": "abc.txt", "start_line": 2, "limit": 1})
     assert _dumps(out) == (
-        '{"content": "b\\n", "size": 2, "lines_total": 3, "offset": 1, "lines_returned": 1}'
+        '{"content": "b\\n", "size": 2, "lines_total": 3, "start_line": 2, "lines_returned": 1}'
     )
 
 
@@ -110,14 +110,14 @@ def test_wire_read_file_full_agrees_with_slice_on_lines_total(tmp_path: Path) ->
     )
 
 
-def test_wire_read_file_offset_past_eof(tmp_path: Path) -> None:
+def test_wire_read_file_start_past_eof(tmp_path: Path) -> None:
     """A paging overshoot returns an empty slice with lines_returned=0, not the
-    negative end-minus-offset arithmetic."""
+    negative end-minus-start arithmetic."""
     (tmp_path / "abc.txt").write_text("a\nb\nc\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    out = d.dispatch("read_file", {"path": "abc.txt", "offset": 10, "limit": 5})
+    out = d.dispatch("read_file", {"path": "abc.txt", "start_line": 10, "limit": 5})
     assert _dumps(out) == (
-        '{"content": "", "size": 0, "lines_total": 3, "offset": 10, "lines_returned": 0}'
+        '{"content": "", "size": 0, "lines_total": 3, "start_line": 10, "lines_returned": 0}'
     )
 
 

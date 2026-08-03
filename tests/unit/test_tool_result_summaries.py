@@ -69,7 +69,7 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ("read_file", ReadFileResult(content="hi", size=2, lines_total=1), "2 bytes"),
     (
         "read_file_slice",
-        ReadFileResult(content="b\n", size=2, lines_total=3, offset=1, lines_returned=1),
+        ReadFileResult(content="b\n", size=2, lines_total=3, start_line=2, lines_returned=1),
         "2 bytes",
     ),
     ("list_dir", ListDirResult(entries=("a.txt", "b/")), "2 entries"),

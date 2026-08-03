@@ -73,10 +73,9 @@ class ReadFileResult(ToolResult):
     content: str
     size: int
     lines_total: int
-    # Present together only for a partial read (offset/limit given); a full
-    # read omits both. offset can legitimately be 0 for a slice, so None is
-    # the "full read" sentinel.
-    offset: int | None = None
+    # Present together only for a partial read (start_line/limit given); a
+    # full read omits both. None is the "full read" sentinel.
+    start_line: int | None = None
     lines_returned: int | None = None
 
     def to_wire(self) -> dict[str, Any]:
@@ -85,8 +84,8 @@ class ReadFileResult(ToolResult):
             "size": self.size,
             "lines_total": self.lines_total,
         }
-        if self.offset is not None:
-            out["offset"] = self.offset
+        if self.start_line is not None:
+            out["start_line"] = self.start_line
             out["lines_returned"] = self.lines_returned
         return out
 

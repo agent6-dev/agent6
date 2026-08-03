@@ -91,18 +91,19 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     # One split is the source of truth for every line count: lines_total is its
     # length in both branches (a full read and a later page of the same file
     # must agree), and lines_returned is the returned slice's real length (a
-    # past-EOF offset yields an empty slice, never negative arithmetic).
+    # past-EOF start_line yields an empty slice, never negative arithmetic).
     lines = full.splitlines(keepends=True)
-    if args.offset == 0 and args.limit is None:
+    if args.start_line == 1 and args.limit is None:
         return ReadFileResult(content=full, size=len(full), lines_total=len(lines))
-    end = len(lines) if args.limit is None else min(len(lines), args.offset + args.limit)
-    sliced = lines[args.offset : end]
+    first = args.start_line - 1  # 1-based on the wire, 0-based slice
+    end = len(lines) if args.limit is None else min(len(lines), first + args.limit)
+    sliced = lines[first:end]
     slice_text = "".join(sliced)
     return ReadFileResult(
         content=slice_text,
         size=len(slice_text),
         lines_total=len(lines),
-        offset=args.offset,
+        start_line=args.start_line,
         lines_returned=len(sliced),
     )
 
