@@ -613,7 +613,13 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // within hierarchies it can already write; the crate's best-effort mode
     // drops TRUNCATE (and REFER) on kernels too old to know them, matching
     // sandbox/landlock.py, which masks the same bit below its ABI.
-    let access_all = AccessFs::from_all(ABI::V3);
+    // MakeChar/MakeBlock are HANDLED (so they are denied everywhere) but never
+    // GRANTED: no build creates a device node, and under `sudo agent6` on a
+    // profile with no user namespace the child holds real CAP_MKNOD -- a block
+    // device for the host disk in its own workspace reads and writes raw
+    // sectors, past every path rule. Handled-but-ungranted is how Landlock
+    // says "never".
+    let access_all = AccessFs::from_all(ABI::V3) & !AccessFs::MakeChar & !AccessFs::MakeBlock;
     let access_read = AccessFs::from_read(ABI::V3);
     // from_read excludes EXECUTE; system paths must be read+execute so spawned
     // binaries can actually run (otherwise execve EACCES).
@@ -818,7 +824,10 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // handling truncate matters. It matters more here -- hardened has no
     // mount-namespace RO binds to fall back on, so Landlock is the only thing
     // standing between a jailed child and truncating files outside its grants.
-    let access_all = AccessFs::from_all(ABI::V3);
+    // Device nodes are handled and never granted; see apply_landlock_strict.
+    // It matters most HERE: hardened has no user namespace, so under sudo the
+    // child is real root with CAP_MKNOD and no MS_NODEV bind to fall back on.
+    let access_all = AccessFs::from_all(ABI::V3) & !AccessFs::MakeChar & !AccessFs::MakeBlock;
     let access_read = AccessFs::from_read(ABI::V3);
     let access_read_exec = access_read | AccessFs::Execute;
     let ruleset = Ruleset::default()
@@ -1008,6 +1017,7 @@ fn apply_seccomp() -> io::Result<()> {
     const SYS_KEXEC_FILE_LOAD: i64 = 294;
     #[cfg(not(target_arch = "aarch64"))]
     const SYS_KEXEC_FILE_LOAD: i64 = libc::SYS_kexec_file_load;
+
     let denied: &[i64] = &[
         libc::SYS_ptrace,
         libc::SYS_process_vm_readv,
@@ -1089,6 +1099,37 @@ fn apply_seccomp() -> io::Result<()> {
             );
         }
         rules.insert(syscall, per_bit);
+    }
+    // Device nodes. Blocked by MODE, not outright: `mkfifo` and socket nodes go
+    // through the same syscalls and builds legitimately use them. Under
+    // `sudo agent6` on a profile with no user namespace the child is real root
+    // with CAP_MKNOD and no MS_NODEV bind, so a block device for the host disk
+    // in its own workspace reads and writes raw sectors past every path rule.
+    // Landlock denies it too (MakeChar/MakeBlock are handled, never granted);
+    // this is the second lock. One rule per type: rules are OR-ed, conditions
+    // AND-ed, so testing both types in one rule would match neither.
+    // arm64 has no bare mknod(2); its mknodat carries the mode one arg later.
+    #[cfg(target_arch = "aarch64")]
+    let mknod_syscalls: [(i64, u8); 1] = [(libc::SYS_mknodat, 2)];
+    #[cfg(not(target_arch = "aarch64"))]
+    let mknod_syscalls: [(i64, u8); 2] = [(libc::SYS_mknod, 1), (libc::SYS_mknodat, 2)];
+    for (syscall, mode_arg) in mknod_syscalls {
+        let mut per_type = Vec::new();
+        for kind in [libc::S_IFBLK as u64, libc::S_IFCHR as u64] {
+            per_type.push(
+                seccompiler::SeccompRule::new(vec![seccompiler::SeccompCondition::new(
+                    mode_arg,
+                    seccompiler::SeccompCmpArgLen::Dword,
+                    seccompiler::SeccompCmpOp::MaskedEq(libc::S_IFMT as u64),
+                    kind,
+                )
+                .map_err(|e| {
+                    io::Error::new(io::ErrorKind::Other, format!("seccomp cond: {e}"))
+                })?])
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp rule: {e}")))?,
+            );
+        }
+        rules.insert(syscall, per_type);
     }
     let filter = SeccompFilter::new(
         rules,
