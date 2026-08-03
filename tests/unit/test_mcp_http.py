@@ -141,3 +141,156 @@ def test_a_server_names_one_transport(entry: dict[str, Any], message: str) -> No
     """Both or neither is a config error, not a guess."""
     with pytest.raises(ValueError, match=message):
         Config.model_validate({"mcp": {"enabled": True, "servers": {"s": entry}}})
+
+
+def test_a_token_that_cannot_be_a_header_is_refused_before_it_leaks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A token file with CRLF endings keeps the CR. The HTTP layer then raises
+    with the header VALUE in its message, and that message reaches stderr, the
+    launch log and the model's context."""
+    monkeypatch.setenv("MCP_TEST_TOKEN", "sk-live-DEADBEEF\r")
+    with pytest.raises(MCPHttpError) as caught:
+        HttpTransport(name="s", url="https://h/mcp", token_env="MCP_TEST_TOKEN").send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
+    assert "DEADBEEF" not in str(caught.value)
+    assert "not a usable header value" in str(caught.value)
+
+
+def test_an_unreachable_server_never_quotes_the_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The message is the exception TYPE. Its text can quote a rejected header
+    value straight back at us -- and InvalidURL does not derive from HTTPError,
+    so a narrower catch let an operator typo crash the run."""
+    monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
+    with pytest.raises(MCPHttpError) as caught:
+        HttpTransport(name="s", url="http://[::1/mcp", token_env="MCP_TEST_TOKEN").send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
+    assert "s3cr3t" not in str(caught.value)
+    assert "unreachable" in str(caught.value)
+
+
+def test_a_body_is_capped_while_it_arrives_not_after() -> None:
+    """`response.content` materializes first: a 400 MiB body reached 849 MiB of
+    RSS before the check, and a 1 MiB gzip bomb reached 2 GiB -- enough to OOM
+    the process that owns the run and the provider keys."""
+    import tracemalloc
+
+    url, seen, httpd = _serve(None, body=b"x" * (48 << 20))
+    try:
+        tracemalloc.start()
+        try:
+            with pytest.raises(MCPHttpError, match="more than"):
+                HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=30.0)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+    finally:
+        httpd.shutdown()
+    assert peak < 32 << 20, f"buffered {peak} bytes of a 48 MiB body"
+    assert seen["accept-encoding"] == "identity", "a decoded stream expands past the cap"
+
+
+def test_an_ambient_proxy_does_not_capture_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """httpx trusts the environment by default and has no loopback bypass, so
+    an exported HTTP_PROXY sent the bearer token to the proxy in cleartext
+    while the operator own server received nothing."""
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("MCP_TEST_TOKEN", "s3cr3t")
+    url, seen, httpd = _serve(_mcp_reply)
+    try:
+        HttpTransport(name="s", url=url, token_env="MCP_TEST_TOKEN").send(
+            {"jsonrpc": "2.0", "id": 1}, timeout_s=5.0
+        )
+    finally:
+        httpd.shutdown()
+    assert seen["authorization"] == "Bearer s3cr3t", "the request went to the proxy"
+
+
+def test_another_requests_answer_is_not_taken_as_this_one() -> None:
+    """A keepalive frame, a server-initiated request, or a multiplexing gateway
+    can put SOMEONE ELSE message first. The stdio reader has always checked the
+    id; taking the first frame handed the model another call answer."""
+    from agent6.tools.mcp_client import (
+        MCPError,
+        _MCPServer,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    body = (
+        b'data: {"jsonrpc":"2.0","id":4242,"result":"ANOTHER ANSWER"}\n\n'
+        b'data: {"jsonrpc":"2.0","id":1,"result":"MINE"}\n\n'
+    )
+    url, _seen, httpd = _serve(None, sse=True, body=body)
+    try:
+        srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+            name="s",
+            command=(),
+            startup_timeout_s=5.0,
+            call_timeout_s=5.0,
+            http=HttpTransport(name="s", url=url),
+        )
+        with pytest.raises(MCPError, match="a response to id 4242"):
+            srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        httpd.shutdown()
+
+
+def test_a_server_request_is_not_taken_as_a_response() -> None:
+    from agent6.tools.mcp_client import (
+        MCPError,
+        _MCPServer,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    body = b'data: {"jsonrpc":"2.0","id":1,"method":"sampling/createMessage","params":{}}\n\n'
+    url, _seen, httpd = _serve(None, sse=True, body=body)
+    try:
+        srv = _MCPServer(  # pyright: ignore[reportPrivateUsage]
+            name="s",
+            command=(),
+            startup_timeout_s=5.0,
+            call_timeout_s=5.0,
+            http=HttpTransport(name="s", url=url),
+        )
+        with pytest.raises(MCPError, match="its own"):
+            srv._request("tools/call", {}, timeout_s=5.0)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        httpd.shutdown()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'id: 7\nevent: message\ndata: {"jsonrpc":"2.0","id":1,"result":"ok"}\n\n',
+        b'retry: 100\ndata: {"jsonrpc":"2.0","id":1,"result":"ok"}\n\n',
+        b'\xef\xbb\xbfdata: {"jsonrpc":"2.0","id":1,"result":"ok"}\n\n',
+        b'data: {"jsonrpc":"2.0",\ndata: "id":1,"result":"ok"}\n\n',
+        b'data: {"jsonrpc":"2.0","id":1,"result":"ok"}\r\n\r\n',
+        b': a comment\ndata: {"jsonrpc":"2.0","id":1,"result":"ok"}\n\n',
+    ],
+    ids=["id-field", "retry-field", "bom", "multi-line-data", "crlf", "comment"],
+)
+def test_every_spec_legal_sse_framing_is_read(body: bytes) -> None:
+    """A line scan rejected all of these as invalid JSON."""
+    url, _seen, httpd = _serve(None, sse=True, body=body)
+    try:
+        got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        assert got is not None and got["result"] == "ok"
+    finally:
+        httpd.shutdown()
+
+
+def test_a_line_separator_inside_a_json_string_does_not_cut_the_message() -> None:
+    """U+2028/U+2029/U+0085 are LEGAL raw characters inside a JSON string, and
+    `str.splitlines()` splits on them -- so a tool result containing one was
+    cut in half every time, and the model could plant one deliberately."""
+    sep = "\u2028"
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": f"a{sep}bc"})
+    url, _seen, httpd = _serve(None, sse=True, body=f"data: {payload}\n\n".encode())
+    try:
+        got = HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        assert got is not None and got["result"] == f"a{sep}bc"
+    finally:
+        httpd.shutdown()

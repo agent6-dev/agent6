@@ -353,6 +353,21 @@ class _MCPServer:
                 raise MCPError(str(exc)) from exc
             if response is None:
                 raise MCPError(f"server {self.name!r} sent no response to {method}")
+            # The same two checks the stdio reader applies, for the same
+            # reason: a keepalive frame, a server-initiated request
+            # (sampling/createMessage, roots/list) or a multiplexing gateway
+            # can put SOMEONE ELSE'S message first, and taking it handed the
+            # model another request's answer as this call's result.
+            if "method" in response:
+                raise MCPError(
+                    f"server {self.name!r} answered {method} with its own"
+                    f" {response['method']!r} request, not a response"
+                )
+            if response.get("id") != req_id:
+                raise MCPError(
+                    f"server {self.name!r} answered {method} with a response to"
+                    f" id {response.get('id')!r}, not to {req_id}"
+                )
             return _result_of(response, name=self.name, method=method)
         with self._pending_cv:
             self._pending[req_id] = None

@@ -361,7 +361,9 @@ syscall for hardened), never guessed from the kernel version.
     - It only prompts locally (`getpass`) and writes config/secrets. It makes one
       read-only `GET` to the provider's key endpoint to confirm auth (status only;
       `--no-verify` to skip).
-    - During a run agent6 opens no listening socket (MCP is stdio, the web UI is
+    - During a run agent6 opens no listening socket (an MCP server is spawned on
+      stdio or DIALLED at an operator-set `url` -- outbound either way, never a
+      listener; the web UI is
       private unix socket); the only accept-side socket is opt-in `agent6 web` (§7).
 - **Running as root is refused without an explicit opt-in.**
     - `--allow-root` / `AGENT6_ALLOW_ROOT=1` (+ a banner). Under `sudo`, agent6

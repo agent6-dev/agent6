@@ -986,7 +986,24 @@ class MCPServerEntry(BaseModel):
             raise ValueError(f"url must be http(s), got {self.url!r}")
         if self.token_env and not self.url:
             raise ValueError("token_env is for `url` servers; a spawned one uses pass_env")
+        if self.pass_env and self.url:
+            # Nothing is spawned, so there is no environment to pass. Refusing
+            # loudly beats accepting a setting that can never take effect.
+            raise ValueError("pass_env is for spawned servers; a `url` one uses token_env")
+        if self.token_env and self.url.startswith("http://") and not _is_loopback(self.url):
+            raise ValueError(
+                "a token over plain http would cross the network in cleartext;"
+                " use https, or drop token_env for a loopback server"
+            )
         return self
+
+
+def _is_loopback(url: str) -> bool:
+    """Whether *url*'s host is this machine. The operator dialling their own
+    server is the normal case for `url`, and the only one where plain http
+    with a token is not a cleartext secret on the wire."""
+    host = (urlsplit(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "[::1]"} or host.startswith("127.")
 
 
 class MCPConfig(BaseModel):
