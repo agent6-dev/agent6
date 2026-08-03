@@ -680,3 +680,36 @@ def test_pins_restored_event_replaces_not_appends() -> None:
         initial_state(), {"type": "loop.pin.restored", "pins": ["keep A", "ship X"], "count": 2}
     )
     assert fork.pins == ("keep A", "ship X")
+
+
+# One wrong-shaped field per known family, each syntactically valid JSON: the
+# containers the fold reads without a type check. None is producible by
+# agent6's own writers; a corrupted, hand-edited, or foreign-version log is.
+_WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
+    {"type": "graph.update", "nodes": [1]},
+    {"type": "graph.update", "nodes": 7},
+    {"type": "tool.call", "name": "x", "args": [1]},
+    {"type": "tool.call", "name": "x", "args": "not-a-dict"},
+    {"type": "question.prompt", "questions": {"question": "q"}},
+    {"type": "question.answer", "id": "q1", "answers": 5},
+    {"type": "loop.compact.dropped", "n": 1, "calls": 5},
+    {"type": "loop.compact.gists", "gisted": 1, "paths": True, "demoted": 1, "demoted_paths": 1},
+]
+
+
+@pytest.mark.parametrize(
+    "bad", _WRONG_SHAPE_EVENTS, ids=lambda e: f"{e['type']}-{type(sorted(e)[0]).__name__}"
+)
+def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
+    """Any syntactically valid JSON object must fold, not raise: the fold runs
+    unwrapped inside live tails (attach, TUI, web SSE), so one wrong-shaped
+    field in a corrupted or foreign log crashed every viewer and turned the
+    web run endpoint into a 500."""
+    state = fold_run(
+        [
+            {"type": "run.start", "user_task": "t"},
+            bad,
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+        ]
+    )
+    assert state.finished  # the fold survived the bad line and kept folding

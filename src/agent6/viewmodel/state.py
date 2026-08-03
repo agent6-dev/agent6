@@ -563,6 +563,16 @@ def _render_arg_value(key: str, value: Any) -> str:
     return value if isinstance(value, str) else repr(value)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """An untrusted event field as a dict; the raw log renderer must be total."""
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    """An untrusted event field as a list; the raw log renderer must be total."""
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
 def _render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
     """Render an args dict as `k=v, ...`, truncating each value to *max_value*
     chars. The inline table uses the tight default; the detail modal renders with
@@ -589,7 +599,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "diff.updated":
             salient = f"{len(str(event.get('patch', '')).splitlines())} lines"
         case "tool.call":
-            salient = f"{event.get('name', '')}({_render_args(event.get('args', {}) or {})})"
+            salient = f"{event.get('name', '')}({_render_args(_as_dict(event.get('args')))})"
         case "tool.result":
             summ = events.readable_summary(event.get("summary", ""))
             salient = f"{event.get('name', '')} ok={event.get('ok')} {summ}"
@@ -621,7 +631,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.pin.restored":
             salient = f"{event.get('count')} pinned instructions restored from the snapshot"
         case "loop.compact.dropped":
-            calls = event.get("calls", []) or []
+            calls = _as_list(event.get("calls"))
             named = ", ".join(str(c) for c in calls)
             salient = f"elided {event.get('n')} old tool results"
             if named:
@@ -629,10 +639,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.compact.gists":
             parts = []
             if event.get("gisted"):
-                paths = ", ".join(str(p) for p in (event.get("paths", []) or []))
+                paths = ", ".join(str(p) for p in _as_list(event.get("paths")))
                 parts.append(f"{event.get('gisted')} distilled ({paths[:120]})")
             if event.get("demoted"):
-                dem = ", ".join(str(p) for p in (event.get("demoted_paths", []) or []))
+                dem = ", ".join(str(p) for p in _as_list(event.get("demoted_paths")))
                 parts.append(f"{event.get('demoted')} demoted ({dem[:120]})")
             salient = "; ".join(parts)
         case "loop.compact.summarise.done":
@@ -669,11 +679,11 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "approval.answer":
             salient = f"id={event.get('id')} approved={event.get('approved')}"
         case "question.prompt":
-            qs = event.get("questions", []) or []
+            qs = _as_list(event.get("questions"))
             first = str(qs[0].get("question", "")) if qs and isinstance(qs[0], dict) else ""
             salient = (f"[{len(qs)}] " if len(qs) > 1 else "") + first[:80]
         case "question.answer":
-            ans = event.get("answers", []) or []
+            ans = _as_list(event.get("answers"))
             salient = f"id={event.get('id')} answers={len(ans)}"
         case "run.end":
             salient = f"{event.get('reason', '')} all_passed={event.get('all_passed')}"

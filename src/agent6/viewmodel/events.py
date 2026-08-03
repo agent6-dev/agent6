@@ -313,7 +313,7 @@ def parse_event(raw: dict[str, Any]) -> Event:
     never raise on a line an interrupted writer left behind."""
     try:
         return _parse_known(raw)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError):
         return RawEvent(type=str(raw.get("type", "")), raw=raw)
 
 
@@ -327,9 +327,14 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "loop.resume.start":
             return ResumeStart()
         case "graph.update":
+            nodes = raw.get("nodes", {}) or {}
+            if not isinstance(nodes, dict):
+                # Degrade, don't coerce: an empty-dict fold would REPLACE the
+                # task tree; RawEvent keeps the last good graph.
+                raise ValueError("graph.update nodes must be an object")
             cursor = raw.get("cursor")
             return GraphUpdate(
-                nodes=raw.get("nodes", {}) or {},
+                nodes=nodes,
                 cursor=cursor if isinstance(cursor, str) else None,
             )
         case "diff.updated":
@@ -351,9 +356,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "role.thinking_delta":
             return RoleThinkingDelta(text=str(raw.get("text", "")))
         case "tool.call":
+            args = raw.get("args")
             return ToolCall(
                 name=str(raw.get("name", "")),
-                args=raw.get("args", {}) or {},
+                # Coerce, don't degrade: the call happened even if its args
+                # field is garbled, and args is display-only downstream.
+                args=args if isinstance(args, dict) else {},
                 call_id=_call_id(raw),
             )
         case "tool.result":
