@@ -1097,7 +1097,12 @@ def set_config_table(
             prior,
             was_valid=was_valid,
             held=held,
-            written=[(table, {k: v for k, v in fields.items() if v is not None})],
+            # PER-LEAF, like set_config_leaves: written_value_error only reports an
+            # error whose pydantic loc == key, so a whole-table (key, dict) dropped
+            # every LEAF-level error (its loc is a child of the table key) and a
+            # masked-invalid leaf still landed. Per-leaf also routes a
+            # providers.<name>.<leaf> through provider_field_error.
+            written=[(f"{table}.{k}", v) for k, v in fields.items() if v is not None],
         )
 
 

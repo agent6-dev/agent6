@@ -224,6 +224,33 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -
     assert load_effective(repo).config.sandbox.run_commands == "yes"  # repo layer intact
 
 
+def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
+    """set_config_table writes a whole [table]; it must validate each LEAF, not the
+    table dict as one. written_value_error only flags an error at loc == key, so a
+    whole (key, dict) dropped every LEAF-level error and a masked-invalid leaf
+    still landed (the TUI provider editor and `agent6 model` write through this)."""
+    from agent6.config.layer import set_config_table
+
+    # The repo layer masks models.worker.thinking with a valid value, so only the
+    # standalone per-leaf check catches a bad `thinking` written to global.
+    repo_config_path_for(repo).write_text(
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
+        encoding="utf-8",
+    )
+    gpath = repo.parent / "g" / "config.toml"
+    before = gpath.read_text(encoding="utf-8")
+
+    err = set_config_table(
+        repo,
+        "models.worker",
+        {"provider": "anthropic", "model": "claude", "thinking": "garbage_level"},
+        to_repo=False,
+    )
+
+    assert err is not None and "thinking" in err
+    assert gpath.read_text(encoding="utf-8") == before  # the masked bad leaf rolled back
+
+
 def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
     flag = tmp_path / "flag.toml"
     flag.write_text('[sandbox]\nrun_commands = "no"\n', encoding="utf-8")
