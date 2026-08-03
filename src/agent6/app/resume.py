@@ -351,18 +351,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 profile=profile,
-                # Carry the ORIGINAL submission's stamp forward when this resume
-                # sets no --profile of its own: the parked leg never ran, but its
-                # manifest recorded whether the profile was FLAG-selected, and
-                # deriving from the empty `profile` here would drop that bit --
-                # the next resume/fork would replay a config-selected precedence
-                # and lose a flag-selected profile's veto. A resume that DOES set
-                # --profile (non-empty `profile`) is a fresh flag choice for this
-                # leg, so let run_task's own derivation stamp it.
+                # Pin the ORIGINAL stamp ONLY for a FLAG-selected profile whose
+                # veto must survive, and only when this resume sets no --profile
+                # of its own. A CONFIG-selected profile (from_flag False) re-
+                # resolves from the CURRENT config below, so pinning the manifest's
+                # old NAME would show a stale profile if the config changed since;
+                # pass None and let run_task derive it from the re-resolved cfg,
+                # like a fresh run. A resume that DOES set --profile is a fresh
+                # flag choice, so run_task's own derivation stamps it.
                 profile_stamp=(
-                    None
-                    if profile
-                    else (manifest.workflow.profile, manifest.workflow.profile_from_flag)
+                    (manifest.workflow.profile, True)
+                    if (not profile and manifest.workflow.profile_from_flag)
+                    else None
                 ),
                 # Hand --steer through: the bridge files seeded above are
                 # wiped by run_task's own stale-state clear, so a parked

@@ -187,3 +187,22 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     assert _cmd_resume(None, "parked-CCCC33", force=False, profile="none") == 0
     assert captured["profile_stamp"] is None
     assert captured["profile"] == "none"
+
+
+def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CONFIG-selected profile (from_flag False) re-resolves from the CURRENT
+    config on restart, so pinning the manifest's OLD name would show a stale
+    profile if the config changed since. Pass profile_stamp=None so run_task
+    derives from the re-resolved cfg, like a fresh run -- only a FLAG-selected
+    profile (whose blocking veto must survive) is pinned."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _park_manifest(_state_dir(repo) / "runs" / "parked-DDDD44", profile="hardened", from_flag=False)
+    captured = _stub_start_of_run(resume_mod, monkeypatch)
+
+    assert _cmd_resume(None, "parked-DDDD44", force=False) == 0
+    assert captured["profile_stamp"] is None  # re-derives, not the stale manifest name

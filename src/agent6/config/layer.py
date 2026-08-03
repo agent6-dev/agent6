@@ -188,9 +188,10 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
 
 # Built-in config profiles: named presets that fill in many settings at once, so
 # a task can pick a strategy with one knob (`--profile ultra`) instead of tuning
-# the [review] / budget knobs by hand. Each value is a nested config dict applied
-# as the LOWEST layer (your explicit settings still win). Users add their own via
-# [profiles.<name>] tables in config.toml.
+# the [review] / budget knobs by hand. Each value is a nested config dict spliced
+# ABOVE the layer that SELECTED the profile (so the profile's settings OVERRIDE
+# that layer's; see _apply_profile). Users add their own via [profiles.<name>]
+# tables in config.toml.
 BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     # The pre-feature baseline: plain defaults, no review panel.
     "standard": {},
