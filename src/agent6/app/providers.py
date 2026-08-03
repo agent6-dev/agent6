@@ -460,7 +460,7 @@ def build_summariser_provider(
     *,
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
-    events: EventSink,
+    events: EventSink | None,
 ) -> Provider:
     """Route the reviewer role as the tier-2 context summariser. Always
     available (context compaction can fire on any run) and cheaper than the

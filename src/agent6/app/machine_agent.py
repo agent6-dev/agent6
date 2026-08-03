@@ -49,6 +49,7 @@ from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
+    build_summariser_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
 )
@@ -59,7 +60,7 @@ from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, set_repo_hook_policy
 from agent6.machine import AgentExecResult, AgentRequest
-from agent6.providers import TranscriptSink
+from agent6.providers import Provider, TranscriptSink
 from agent6.runs.ipc import (
     clear_answer,
     clear_pending_answers,
@@ -237,6 +238,57 @@ def _build_machine_bridges(
     return _MachineBridges(approve, ask, steer_requested, steer_clear, steer_prompt)
 
 
+def _build_agent_providers(
+    cfg: Config,
+    req: MachineAgentRequest,
+    *,
+    budget: BudgetTracker,
+    attach_console: Callable[[EventSink], None],
+) -> tuple[InstrumentedProvider, Provider, EventSink | None]:
+    """The agent state's worker provider (instrumented), its reviewer-role
+    summariser, and the optional event sink.
+
+    One TranscriptSink for both (the per-run seq counter is per-instance);
+    the summariser matches the run path's wiring -- without it, compaction
+    side-calls fell back to the worker-stamped provider and their transcripts
+    carried the conversation seat.
+
+    An EventSink only when the caller passes events_log: the machine
+    supervisor points it at this state's per-state
+    `states/<seq>-<name>/logs.jsonl` (and `machine create` at the draft's
+    logs.jsonl), so the TUI/web can watch the agent's reasoning + tool calls
+    live, exactly like a run. The console attach is the front-end's live view
+    (a stderr ConsoleView at a TTY / forced), injected so this module never
+    imports `agent6.ui`.
+
+    stream_text: ALWAYS the streaming transport. Machine agents run headless
+    (cron / nohup) and produce long generations; the non-streaming path drops
+    the connection mid-body on OpenRouter-style gateways (SSE heartbeats
+    corrupt it, observed as "incomplete chunked read" on ~14k-token authoring
+    calls). It also feeds the role.*_delta events to the sink."""
+    transcript_sink = TranscriptSink(req.transcript_dir)
+    inner_provider = build_role_provider(
+        cfg, "worker", transcript_sink=transcript_sink, budget=budget
+    )
+    events_sink = EventSink(req.events_log) if req.events_log is not None else None
+    rm = cfg.models.resolve("worker")
+    if events_sink is not None:
+        attach_console(events_sink)
+    provider = InstrumentedProvider(
+        inner=inner_provider,
+        role="agent",
+        model=rm.model if rm is not None else "",
+        provider_name=rm.provider if rm is not None else "",
+        events=events_sink,
+        budget=budget,
+        stream_text=True,
+    )
+    summariser_provider = build_summariser_provider(
+        cfg, transcript_sink=transcript_sink, budget=budget, events=events_sink
+    )
+    return provider, summariser_provider, events_sink
+
+
 def run_one(
     req: MachineAgentRequest,
     *,
@@ -295,35 +347,8 @@ def run_one(
             max_output_tokens=cfg.budget.max_output_tokens,
             max_usd=cfg.budget.best_effort_usd_limit,
         )
-        inner_provider = build_role_provider(
-            cfg, "worker", transcript_sink=TranscriptSink(req.transcript_dir), budget=budget
-        )
-        # An EventSink only when the caller passes events_log: the machine
-        # supervisor points it at this state's per-state
-        # `states/<seq>-<name>/logs.jsonl` (and `machine create` at the draft's
-        # logs.jsonl), so the TUI/web can watch the agent's reasoning + tool
-        # calls live, exactly like a run. None only when no log path is given.
-        events_sink = EventSink(req.events_log) if req.events_log is not None else None
-        # stream_text: ALWAYS use the streaming transport. Machine agents run
-        # headless (cron / nohup) and produce long generations; the
-        # non-streaming path drops the connection mid-body on OpenRouter-style
-        # gateways (SSE heartbeats corrupt it, observed as "incomplete chunked
-        # read" on ~14k-token authoring calls). It is also what feeds the
-        # role.*_delta events to the sink above.
-        rm = cfg.models.resolve("worker")
-        # The front-end's live view (a stderr ConsoleView at a TTY / forced),
-        # injected so this module never imports `agent6.ui`; headless when the
-        # default no-op is used. Consumes the same events the sink records.
-        if events_sink is not None:
-            attach_console(events_sink)
-        provider = InstrumentedProvider(
-            inner=inner_provider,
-            role="agent",
-            model=rm.model if rm is not None else "",
-            provider_name=rm.provider if rm is not None else "",
-            events=events_sink,
-            budget=budget,
-            stream_text=True,
+        provider, summariser_provider, events_sink = _build_agent_providers(
+            cfg, req, budget=budget, attach_console=attach_console
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
         # (defense in depth, the engine already filtered these).
@@ -363,12 +388,14 @@ def run_one(
             # the machine/agent prompt assembly keep it inert.
             state_dir=resolved_state_dir(req.root),
         )
+        rm = cfg.models.resolve("worker")
         compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
         cfg = resolve_decompose(cfg, rm, log=reporter.err)
         wf = Workflow(
             root=req.root,
             config=cfg,
             provider=provider,
+            summariser_provider=summariser_provider,
             dispatcher=dispatcher,
             logger=reporter.err,
             mode=mode if mode in ("machine", "agent") else "run",

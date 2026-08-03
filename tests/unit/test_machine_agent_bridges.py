@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from agent6.app.machine_agent import (
     _build_machine_bridges,  # pyright: ignore[reportPrivateUsage]
 )
@@ -121,3 +123,71 @@ def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
     assert b.steer_prompt() == "focus on tests"
     b.steer_clear()
     assert b.steer_requested() is False
+
+
+def test_machine_agent_wires_the_summariser_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The machine agent built its Workflow without a summariser_provider, so
+    compaction side-calls fell back to the worker-stamped provider and their
+    transcripts carried seat="worker" -- the class of misfold the seat
+    stamping exists to prevent. It now wires the same reviewer-role
+    summariser the run path uses, sharing ONE TranscriptSink so the per-run
+    seq counter cannot collide."""
+    from typing import Any
+
+    from agent6.app import machine_agent
+    from agent6.machine.engine import AgentRequest
+    from agent6.workflows.loop import RunResult
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+
+    wf_kwargs: dict[str, Any] = {}
+    sinks: dict[str, Any] = {}
+    summariser = object()
+
+    class _FakeWf:
+        def __init__(self, **kw: Any) -> None:
+            wf_kwargs.update(kw)
+
+        def run(self, _prompt: str) -> RunResult:
+            return RunResult(
+                reason="finish_run", completed=True, summary="done", iterations=1, tool_calls=0
+            )
+
+    def _fake_role(*_a: Any, **k: Any) -> object:
+        sinks["worker"] = k.get("transcript_sink")
+        return object()
+
+    def _fake_summariser(*_a: Any, **k: Any) -> object:
+        sinks["summariser"] = k.get("transcript_sink")
+        return summariser
+
+    monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
+    monkeypatch.setattr(machine_agent, "build_role_provider", _fake_role)
+    monkeypatch.setattr(machine_agent, "build_summariser_provider", _fake_summariser)
+
+    def _fake_dispatcher(**_k: Any) -> object:
+        return object()
+
+    monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake_dispatcher)
+
+    req = machine_agent.MachineAgentRequest(
+        cwd=tmp_path,
+        root=tmp_path,
+        overlay={},
+        profile="none",
+        transcript_dir=tmp_path / "t",
+        request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
+    )
+    out = machine_agent.run_one(req)
+    assert out.reason == "finish_run"
+    assert wf_kwargs["summariser_provider"] is summariser
+    assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter
