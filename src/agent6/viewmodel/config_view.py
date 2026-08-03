@@ -320,20 +320,33 @@ def render_show(
     key_w = min(max((len(s.key) for s in view.settings), default=10) + 1, 40)
     val_w = 40
     lines: list[str] = []
+
+    def emit(s: ConfigSetting) -> None:
+        value = (
+            f"{_fmt_value(s.effective_value)}  (adaptive)" if s.is_adaptive else _fmt_value(s.value)
+        )
+        mark = "*" if s.modified else " "
+        key, val = _truncate(s.key, key_w), _truncate(value, val_w)
+        row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source}"
+        # Dim the default rows so the `*` operator-set values stand out of
+        # what is otherwise a long dump of built-in defaults.
+        lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
+
+    # Top-level scalars first and headerless, as TOML requires and `config fill`
+    # already emits: keyed by their own name, they would otherwise each become a
+    # one-row `[section]` an operator cannot paste back into a config file.
+    scalars = [s for s in view.settings if "." not in s.key]
+    if scalars:
+        for s in scalars:
+            emit(s)
+        lines.append("")
     for section in view.sections:
+        rows = [s for s in by_section[section] if "." in s.key]
+        if not rows:
+            continue
         lines.append(f"[{section}]")
-        for s in by_section[section]:
-            if s.is_adaptive:
-                value = f"{_fmt_value(s.effective_value)}  (adaptive)"
-            else:
-                value = _fmt_value(s.value)
-            mark = "*" if s.modified else " "
-            short_key = _truncate(s.key, key_w)
-            short_val = _truncate(value, val_w)
-            row = f"{mark} {short_key:<{key_w}} {short_val:<{val_w}} {s.source}"
-            # Dim the default rows so the `*` operator-set values stand out of
-            # what is otherwise a long dump of built-in defaults.
-            lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
+        for s in rows:
+            emit(s)
         lines.append("")
     legend_layers = ", ".join(
         f"{lyr.name}={lyr.path}" for lyr in view.layers if lyr.path is not None
