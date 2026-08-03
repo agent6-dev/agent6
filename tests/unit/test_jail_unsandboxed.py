@@ -134,6 +134,9 @@ def test_child_exec_failure_is_command_error_not_jail_unavailable(
                 "agent6-jail: child execution failed: No such file or directory (os error 2)",
             )
 
+        def poll(self) -> int:
+            return self.returncode  # already exited, so the escapee sweep leaves it alone
+
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
     res = run_in_jail(
         JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), isolation="hardened")

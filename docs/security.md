@@ -48,7 +48,16 @@ Under that adversary, agent6 aims to hold:
       bounded by the sandbox (`protect_git` keeps `.git` unwritable at both
       isolation levels; push needs egress).
 5. **No persistence after the run:** no daemon, cron, or `.bashrc` write.
-    - Children can only write inside the jail's mount namespace.
+    - Children can only write inside the jail's mount namespace (strict) or the
+      Landlock write grants (hardened).
+    - **Nothing a command starts outlives it.** strict's PID namespace takes the
+      whole tree down. hardened has none, so the agent makes itself a child
+      subreaper: a `setsid` daemon that escapes the launcher's process group
+      reparents to the agent, which kills it when the command returns.
+    - The bound is the command's own descendants. On hardened a command can
+      still hand work to a user daemon that was ALREADY running (a tmux server,
+      `systemd --user`): `AF_UNIX` connect has no Landlock hook, and without a
+      mount namespace those sockets are nameable. strict does not expose them.
 
 ## Defense layers
 
@@ -293,6 +302,10 @@ syscall for hardened), never guessed from the kernel version.
 - **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`, no namespaces.
     - Works in default-seccomp Docker (the container blocks the inner
       `clone(CLONE_NEW*)`); the container is the blast radius.
+    - With no PID namespace, teardown is the agent's job (§5): it holds
+      `PR_SET_CHILD_SUBREAPER`, and each command kills every process that
+      appeared during it from outside the agent's session. A survivor the
+      sweep cannot kill fails the command rather than passing silently.
 - **none**: unsandboxed, always with a loud warning.
 
 - **Unsandboxing is explicit and self-authorizing.** `isolation = "none"`,

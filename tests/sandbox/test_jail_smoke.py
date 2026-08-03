@@ -12,12 +12,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.sandbox.jail import JailUnavailableError, _own_children, run_in_jail
 from agent6.types import JailPolicy
 
 
@@ -725,20 +726,52 @@ def test_no_command_leaves_a_process_running(
     strict confines the child in a PID namespace, so its whole tree dies with
     it. hardened has no namespace: `setsid` leaves the launcher's process group,
     so the launcher's killpg misses it and it reparents away. It has to reparent
-    to the agent (PR_SET_CHILD_SUBREAPER) and be killed here instead.
+    to the agent (PR_SET_CHILD_SUBREAPER) and be killed there instead.
+
+    The command waits for the daemon's marker before returning, so a jail where
+    `setsid` never ran times out rather than passing on a daemon that was never
+    started.
     """
     beat = tmp_path / "beat"
-    daemon = f"for i in 1 2 3 4 5 6; do echo x >> {beat}; sleep 1; done"
+    up = tmp_path / "up"
+    # Workspace-relative: strict's private /tmp tmpfs has none of the host's dirs.
+    daemon = "echo up > up; for i in 1 2 3 4 5 6; do echo x >> beat; sleep 1; done"
     res = run_in_jail(
         JailPolicy(
             cwd=tmp_path,
-            argv=("/bin/sh", "-c", f"setsid /bin/sh -c {daemon!r} </dev/null >/dev/null 2>&1 &"),
+            argv=(
+                "/bin/sh",
+                "-c",
+                f"setsid /bin/sh -c {daemon!r} </dev/null >/dev/null 2>&1 &\n"
+                "while [ ! -f up ]; do sleep 0.05; done",
+            ),
             isolation=isolation,
             timeout_s=10.0,
         )
     )
     assert res.returncode == 0
+    assert up.exists(), f"{isolation}: the daemon never started; the test would prove nothing"
     at_return = beat.read_text(encoding="utf-8") if beat.exists() else ""
     time.sleep(2.5)
     later = beat.read_text(encoding="utf-8") if beat.exists() else ""
     assert later == at_return, f"{isolation}: a process survived the command ({later!r})"
+
+
+def test_a_hostile_process_name_cannot_break_the_sweep(tmp_path: Path) -> None:
+    """`/proc/<pid>/stat` carries comm verbatim, so a process can name itself
+    something that is not valid UTF-8. Decoding the scan made ONE such process
+    anywhere on the host -- the scan reads every pid, not just ours -- raise out
+    of every later jailed command, evading the sweep and killing run_command
+    with it."""
+    code = "import ctypes,time; ctypes.CDLL(None).prctl(15, b'x\\xffy'); time.sleep(30)"
+    proc = subprocess.Popen([sys.executable, "-c", code])
+    try:
+        deadline = time.monotonic() + 5.0
+        while b"\xff" not in Path(f"/proc/{proc.pid}/comm").read_bytes():
+            if time.monotonic() > deadline:
+                pytest.skip("child never renamed itself")
+            time.sleep(0.05)
+        assert proc.pid in _own_children()
+    finally:
+        proc.kill()
+        proc.wait()

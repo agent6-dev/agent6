@@ -11,15 +11,14 @@ opts in via `cwd-only-mode`, otherwise raises JailUnavailableError. This keeps
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
-import ctypes.util
 import functools
 import json
 import os
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -110,7 +109,8 @@ def jail_search_path() -> str:
 
 
 class JailUnavailableError(Exception):
-    """`agent6-jail` could not be located or refused to set up the namespace."""
+    """`agent6-jail` could not be located, refused to set up the namespace, or
+    could not guarantee the command left nothing running."""
 
 
 def _lossy_text(v: object) -> str:
@@ -245,33 +245,30 @@ def strict_namespaces_work() -> bool:
 
 
 # --- escapee reaping ---------------------------------------------------------
-# `strict` confines the child in a PID namespace, so nothing outlives it. In
-# `hardened` there is no namespace: a child that calls setsid() leaves the
-# launcher's process group, survives the launcher's killpg, and reparents to
-# init. PR_SET_CHILD_SUBREAPER makes it reparent to the agent instead, so
-# run_in_jail can find and kill it once the command returns.
+# `strict` confines the child in a PID namespace, so nothing outlives it.
+# `hardened` has none: a child that calls setsid() leaves the launcher's process
+# group, survives the launcher's killpg, and reparents to init. The agent makes
+# itself a subreaper so escapees land on it instead, and kills them once the
+# command returns.
 #
-# Security review note: this closes a break of the "no persistence after the
-# run" guarantee (docs/security.md) on `hardened`. The launcher cannot do it
-# itself, and must not: its own Landlock ruleset denies /proc, and granting
-# /proc there would hand every jailed child the agent's environ (API keys).
+# The launcher cannot do this itself, and must not: its own Landlock ruleset
+# denies /proc, and granting it there would hand every jailed child the agent's
+# environ.
 #
-# The sweep kills every child that appears while a command is in flight, which
-# is sound because nothing else spawns during one: a process that runs jailed
-# commands does so from one thread, and the egress broker, host spawner and
-# `/parallel` lanes all predate the call, so they are in `before`. Deliberate
-# children must keep predating the calls that follow them.
+# A process is the command's only if it appeared during the call AND sits
+# outside the agent's session. The launcher runs in its own session, so every
+# jailed descendant is outside ours (setsid creates sessions, setpgid cannot
+# cross one), while a deliberate same-session child -- git, notify-send -- can
+# never be swept, whatever thread spawns it.
 _PR_SET_CHILD_SUBREAPER = 36
-_SWEEP_ROUNDS = 5
+_SWEEP_DEADLINE_S = 5.0
 _sweep_lock = threading.Lock()
 _live_launchers: set[int] = set()
 
 
 @functools.cache
 def _become_subreaper() -> None:
-    if sys.platform != "linux":
-        return
-    libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+    libc = ctypes.CDLL(None, use_errno=True)
     libc.prctl.restype = ctypes.c_int
     if libc.prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
         err = ctypes.get_errno()
@@ -281,46 +278,52 @@ def _become_subreaper() -> None:
         )
 
 
-def _own_children() -> frozenset[int]:
-    """Pids the kernel currently reports as children of this process."""
-    me = str(os.getpid())
-    found: set[int] = set()
+def _own_children() -> dict[int, int]:
+    """``{pid: session id}`` for this process's children, right now.
+
+    Read as bytes: comm is whatever a process named itself, so the line need
+    not be valid UTF-8 and one hostile name must not break the scan.
+    """
+    me = str(os.getpid()).encode()
+    found: dict[int, int] = {}
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
         try:
-            stat = (entry / "stat").read_text()
+            stat = (entry / "stat").read_bytes()
         except OSError:
             continue  # exited mid-scan
-        # Field 4 is the ppid; the comm field before it may itself contain spaces.
-        fields = stat[stat.rfind(")") + 1 :].split()
-        if len(fields) > 1 and fields[1] == me:
-            found.add(int(entry.name))
-    return frozenset(found)
+        # comm can hold spaces and parens, so fields are taken after its closing
+        # one: state, ppid, pgrp, session.
+        fields = stat[stat.rfind(b")") + 1 :].split()
+        if len(fields) > 3 and fields[1] == me:
+            found[int(entry.name)] = int(fields[3])
+    return found
 
 
-def _kill_escapees(before: frozenset[int]) -> None:
-    """Kill anything the command left behind that has reparented to us."""
-    own_group = os.getpgrp()
+def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
+    """Kill what the command left behind. Returns whatever is still alive."""
+    our_session = os.getsid(0)
+    deadline = time.monotonic() + _SWEEP_DEADLINE_S
     with _sweep_lock:
-        # Killing one layer orphans the next, which lands here in turn; a
-        # daemon that re-daemonises as its parent dies needs another round.
-        for _ in range(_SWEEP_ROUNDS):
-            escapees = _own_children() - before - _live_launchers
+        while True:
+            escapees = {
+                pid
+                for pid, session in _own_children().items()
+                if session != our_session and pid not in exclude and pid not in _live_launchers
+            }
             if not escapees:
-                return
+                return frozenset()
             for pid in escapees:
-                try:
-                    group = os.getpgid(pid)
-                    # setsid() left it leading its own group: take the group so
-                    # its children go too. Never our own group.
-                    if group != own_group:
-                        os.killpg(group, signal.SIGKILL)
-                    else:
-                        os.kill(pid, signal.SIGKILL)
-                    os.waitpid(pid, 0)
-                except OSError:
-                    continue
+                with contextlib.suppress(OSError):
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
+                with contextlib.suppress(OSError):
+                    # WNOHANG: a child wedged in uninterruptible sleep must not
+                    # hang every later command behind the sweep lock.
+                    os.waitpid(pid, os.WNOHANG)
+            if time.monotonic() >= deadline:
+                return frozenset(escapees)
+            time.sleep(0.01)  # killing one layer orphans the next onto us
 
 
 def run_in_jail(policy: JailPolicy) -> CommandResult:
@@ -355,7 +358,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
     _become_subreaper()
     # Snapshot first: anything that is our child afterwards but was not before
     # escaped the command. A concurrent caller's launcher is excluded by pid.
-    before = _own_children()
+    before = frozenset(_own_children())
     with _sweep_lock:
         # Launch the launcher in its own session (group leader) so that, if it ever
         # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
@@ -370,12 +373,28 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
             start_new_session=True,
         )
         _live_launchers.add(launcher.pid)
+    survivors: frozenset[int] = frozenset()
     try:
-        return _launcher_result(launcher, policy, spec, start, binary)
+        result = _launcher_result(launcher, policy, spec, start, binary)
     finally:
+        if launcher.poll() is None:
+            # Abandoned mid-command (an interrupt raised through communicate()):
+            # take the launcher's group down so the jailed tree goes with it.
+            try:
+                os.killpg(os.getpgid(launcher.pid), signal.SIGKILL)
+            except OSError:
+                launcher.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                launcher.communicate(timeout=5.0)
         with _sweep_lock:
             _live_launchers.discard(launcher.pid)
-        _kill_escapees(before)
+        survivors = _kill_escapees(before | {launcher.pid})
+    if survivors:
+        raise JailUnavailableError(
+            f"could not kill everything the command left running (pids {sorted(survivors)});"
+            " a process would have outlived this run."
+        )
+    return result
 
 
 def _launcher_result(
