@@ -334,8 +334,8 @@ global/repo config, never the machine overlay):
 So the headline setup (confined agents + one operator-reviewed networked tool) is
 `sandbox.agent_network = "providers"`, `sandbox.tool_network =
 "only_explicit_states"`, and `allow_network = "allow"` on that one state.
-`only_explicit_states` (and `local`) need the `strict` profile; a networked tool
-under `sandbox.tool_network = "block"`, or a tool-network config the profile
+`only_explicit_states` (and `local`) need `strict` isolation; a networked tool
+under `sandbox.tool_network = "block"`, or a tool-network config the isolation level
 can't honor, refuses to run at startup naming the state.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
@@ -350,7 +350,7 @@ probes and `run_command` uses), never the host `PATH`; use an absolute path
 for anything installed elsewhere. `machine check` validates the bundle: every entry under
 `scripts/` must resolve *inside* the bundle (symlinks that escape via
 `..`/absolute are rejected) and every static `scripts/...` command
-reference must exist and stay inside the bundle. On the strict profile the
+reference must exist and stay inside the bundle. Under strict isolation the
 bundle (the `.asm.toml` + `scripts/`) is RO-bound in every jail, so a tool or
 agent cannot rewrite its own machine logic or bundled scripts mid-run. On
 hardened the cwd is blanket read-write (no mount namespace to carve), so the
@@ -359,7 +359,7 @@ bundle is writable there; the surrounding container is the blast radius.
 A `tool` script that needs to persist data across iterations writes to
 `$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory under the
 per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the
-workspace) granted RW in every tool jail. On the `hardened` profile the repo
+workspace) granted RW in every tool jail. Under `hardened` isolation the repo
 cwd is also blanket read-write, so the persisted-data dir is just the durable
 home for cross-iteration state; the journal records every transition either way.
 

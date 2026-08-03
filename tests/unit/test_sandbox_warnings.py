@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`warn_sandbox_gaps`: the run-entry warning when the resolved profile
+"""`warn_sandbox_gaps`: the run-entry warning when the resolved isolation
 confines less than its name promises (`none`, or strict without Landlock)."""
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[
 
 def test_hardened_allow_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
     # An operator who set tool_network='allow' asked for the tool to have the
-    # network, so no degrade warning; the profile itself is fine.
+    # network, so no degrade warning; the isolation itself is fine.
     warn_sandbox_gaps("hardened", _env(4), _cfg("allow"))
     assert capsys.readouterr().err == ""
 

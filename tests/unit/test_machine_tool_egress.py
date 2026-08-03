@@ -180,7 +180,7 @@ def test_liveworld_networked_tool_inherits_host_netns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="strict")
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
     world.run_tool(("curl", "x"), 5.0, allow_network=True)
     assert seen[-1].allow_network is True
 
@@ -189,7 +189,7 @@ def test_liveworld_non_network_tool_is_isolated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="strict")
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
     world.run_tool(("true",), 5.0, allow_network=False)
     assert seen[-1].allow_network is False
 
@@ -202,7 +202,7 @@ def test_liveworld_grants_data_dir_rw_and_env(
     seen = _patch_jail(monkeypatch)
     data = tmp_path / "i" / "data"
     world = LiveWorld(
-        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened", data_dir=data
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened", data_dir=data
     )
     world.run_tool(("true",), 5.0, allow_network=False)
     policy = seen[-1]
@@ -218,7 +218,7 @@ def test_liveworld_no_data_dir_grants_no_extra_rw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened")
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
     world.run_tool(("true",), 5.0, allow_network=False)
     assert seen[-1].extra_rw_paths == ()
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
@@ -228,7 +228,7 @@ def test_liveworld_disables_python_bytecode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened")
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
     world.run_tool(("python3", "-m", "unittest"), 5.0, allow_network=False)
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
@@ -241,7 +241,7 @@ def test_liveworld_passes_protect_paths_to_jail(
     world = LiveWorld(
         cwd=tmp_path,
         journal=MachineJournal(tmp_path / "i"),
-        profile="strict",
+        isolation="strict",
         protect_paths=guarded,
     )
     world.run_tool(("true",), 5.0)
@@ -360,7 +360,7 @@ def test_machine_run_refuses_escaping_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Security: `machine run` must re-validate the bundle, not only `check`. On a
-    # profile that can't RO-bind the bundle, a `scripts/` symlink escaping it
+    # isolation that can't RO-bind the bundle, a `scripts/` symlink escaping it
     # would otherwise be executed; run must refuse before touching the world.
     from agent6.ui.cli import main
 
@@ -406,7 +406,7 @@ def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
     seen_profiles: list[str] = []
 
     def fake_run_in_jail(policy: Any) -> CommandResult:
-        seen_profiles.append(policy.profile)
+        seen_profiles.append(policy.isolation)
         return CommandResult(
             argv=tuple(policy.argv),
             returncode=0,
@@ -422,7 +422,7 @@ def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
         return "strict"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.app.machine.run.select_profile", select_strict)
+    monkeypatch.setattr("agent6.app.machine.run.resolve_isolation", select_strict)
     monkeypatch.setattr("agent6.app.machine.run.resolve_strict_egress_viability", fail_egress_probe)
     monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
 

@@ -40,11 +40,11 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers import Provider, TranscriptSink
 from agent6.runs.layout import RunLayout
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
+from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 from agent6.workflows.review import ReviewSeat
 
 
@@ -60,16 +60,16 @@ class SessionRefused(Exception):
 def select_isolation(
     cfg: Config,
     *,
-    confirm_unconfined: Callable[[SandboxProfile, Config], bool],
+    confirm_unconfined: Callable[[IsolationLevel, Config], bool],
     reporter: Reporter,
-) -> SandboxProfile:
-    """The isolation preflight: pick the sandbox profile for this environment,
-    confirm an unconfined autorun, and refuse configs the profile cannot honor
+) -> IsolationLevel:
+    """The isolation preflight: pick the sandbox isolation for this environment,
+    confirm an unconfined autorun, and refuse configs the isolation cannot honor
     (network mode, strict egress, budget). Raises :class:`SessionRefused`."""
     env = detect_env()
     try:
-        selected = select_profile(cfg.sandbox.profile, env)
-    except ProfileUnavailableError as exc:
+        selected = resolve_isolation(cfg.sandbox.isolation, env)
+    except IsolationUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
         raise SessionRefused(2) from exc
     warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
@@ -82,7 +82,7 @@ def select_isolation(
         raise SessionRefused(2)
     # strict can be selected because the jail launcher has userns, yet this
     # process can't create one for the egress broker (surgical AppArmor
-    # profile). Downgrade auto->hardened, or refuse an explicit strict.
+    # isolation). Downgrade auto->hardened, or refuse an explicit strict.
     selected, egress_err = resolve_strict_egress_viability(cfg, selected, reporter=reporter)
     if egress_err is not None:
         reporter.err(egress_err)
@@ -96,7 +96,7 @@ def select_isolation(
 
 def start_isolation(
     cfg: Config,
-    selected_profile: SandboxProfile,
+    isolation: IsolationLevel,
     *,
     agent6_exe: Callable[[], str],
     reporter: Reporter,
@@ -105,7 +105,7 @@ def start_isolation(
     partially-started guard is torn down HERE (the caller never received it,
     so its finally holds only the empty pre-start guard) and
     :class:`SessionRefused` is raised."""
-    guard, egress_err = maybe_start_egress(cfg, selected_profile, detach_exe=agent6_exe())
+    guard, egress_err = maybe_start_egress(cfg, isolation, detach_exe=agent6_exe())
     if egress_err is not None:
         reporter.err(f"REFUSING: {egress_err}")
         stop_egress(guard)
@@ -115,7 +115,7 @@ def start_isolation(
             f"[agent6] provider-only egress: confined to host network "
             f"namespace via broker pid {guard.broker.pid}"
         )
-    landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, reporter=reporter)
+    landlock_err = maybe_apply_agent_landlock(cfg, isolation, reporter=reporter)
     if landlock_err is not None:
         reporter.err(f"REFUSING: {landlock_err}")
         stop_egress(guard)
@@ -203,7 +203,7 @@ def build_session_tools(
     cwd: Path,
     state_dir: Path,
     layout: RunLayout,
-    sandbox_profile: SandboxProfile,
+    isolation: IsolationLevel,
     mode: Literal["run", "plan", "ask"],
     events: EventSink,
     approver: Callable[[str], bool],
@@ -218,7 +218,7 @@ def build_session_tools(
     dispatcher = ToolDispatcher(
         root=cwd,
         config=cfg,
-        sandbox_profile=sandbox_profile,
+        isolation=isolation,
         approver=approver,
         questioner=questioner,
         events=events,

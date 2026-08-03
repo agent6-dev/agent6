@@ -40,7 +40,7 @@ def _round_trip(tmp_path: Path, req: MachineAgentRequest) -> tuple[int, AgentExe
 
 
 def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
-    # agent_network='local' on the 'hardened' profile is an unenforceable combo:
+    # agent_network='local' on the 'hardened' isolation is an unenforceable combo:
     # check_network_profile refuses before any provider call. No key/network.
     cwd = tmp_path / "repo"
     cwd.mkdir()
@@ -48,7 +48,7 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: Path) -> None:
         cwd=cwd,
         root=cwd,
         overlay={"sandbox": {"agent_network": "local"}},
-        profile="hardened",
+        isolation="hardened",
         transcript_dir=cwd / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
     )
@@ -69,7 +69,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
         cwd=cwd,
         root=cwd,
         overlay={"budget": {"max_tokens_fallback": -5}},
-        profile="none",
+        isolation="none",
         transcript_dir=cwd / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
     )

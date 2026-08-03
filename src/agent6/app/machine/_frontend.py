@@ -12,16 +12,16 @@ from typing import Any
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.machine import ToolState
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 
 # A hard tool-network refusal is resolved interactively: explain it, then offer
 # to apply the minimal config fix and continue, simulate the machine offline, or
-# stop. Returns the new (cfg, profile) when a fix applied and re-validated clear,
+# stop. Returns the new (cfg, isolation) when a fix applied and re-validated clear,
 # else an exit code. Held cli-side because it needs a TTY (and the offline
 # `machine test` escape hatch); the lifecycle only calls it.
 ResolveNetworkFix = Callable[
-    [Path, str, Config, SandboxProfile, list[ToolState], Path, dict[str, Any]],
-    "int | tuple[Config, SandboxProfile]",
+    [Path, str, Config, IsolationLevel, list[ToolState], Path, dict[str, Any]],
+    "int | tuple[Config, IsolationLevel]",
 ]
 
 

@@ -58,7 +58,7 @@ def test_jail_timeout_returns_124_and_kills_group(
     policy = JailPolicy(
         cwd=tmp_path,
         argv=("/bin/true",),
-        profile="strict",
+        isolation="strict",
         allow_network=False,
         # launcher sleeps 600s; timeout is timeout_s + 5.0, so keep it tiny.
         timeout_s=0.5,

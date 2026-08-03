@@ -41,8 +41,8 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Policy {
-    #[serde(default = "default_profile")]
-    profile: String,
+    #[serde(default = "default_isolation")]
+    isolation: String,
     cwd: PathBuf,
     argv: Vec<String>,
     #[serde(default)]
@@ -86,7 +86,7 @@ struct Policy {
     memory_limit_mb: u64,
 }
 
-fn default_profile() -> String {
+fn default_isolation() -> String {
     "strict".to_string()
 }
 
@@ -113,10 +113,10 @@ fn main() {
         Err(e) => die(format!("invalid policy JSON: {e}")),
     };
 
-    match policy.profile.as_str() {
+    match policy.isolation.as_str() {
         "strict" => run_strict(&policy),
         "hardened" => run_hardened(&policy),
-        other => die(format!("unknown sandbox profile: {other}")),
+        other => die(format!("unknown sandbox isolation: {other}")),
     }
 }
 

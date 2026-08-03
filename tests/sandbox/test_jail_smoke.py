@@ -195,7 +195,7 @@ def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: 
             JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(inside)!r}, 0)"),
-                profile="hardened",
+                isolation="hardened",
                 timeout_s=10.0,
             )
         )
@@ -203,7 +203,7 @@ def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: 
             JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", f"import os; os.truncate({str(victim)!r}, 0)"),
-                profile="hardened",
+                isolation="hardened",
                 timeout_s=10.0,
             )
         )
@@ -221,7 +221,7 @@ def test_jail_hardened_truncate_denied_outside_grants(jail_bin: Path, tmp_path: 
 
 
 def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
-    """Writes to /dev/null and friends must succeed under both profiles.
+    """Writes to /dev/null and friends must succeed under both isolation levels.
 
     Regression test for the click-short-help bench task INTERNALERROR:
     pytest's logging plugin opens /dev/null O_WRONLY|O_APPEND when a
@@ -229,24 +229,24 @@ def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
     Landlock rules granted only read+execute on /dev — surfacing as
     PermissionError before any test could run.
     """
-    for profile in ("strict", "hardened"):
+    for isolation in ("strict", "hardened"):
         res = run_in_jail(
             JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "echo x > /dev/null && echo OK"),
-                profile=profile,
+                isolation=isolation,
                 timeout_s=10.0,
             )
         )
-        assert res.returncode == 0, f"{profile} stderr: {res.stderr!r}"
-        assert "OK" in res.stdout, f"{profile} stdout: {res.stdout!r}"
+        assert res.returncode == 0, f"{isolation} stderr: {res.stderr!r}"
+        assert "OK" in res.stdout, f"{isolation} stdout: {res.stdout!r}"
 
 
 def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path) -> None:
     """memory_limit_mb turns a runaway allocation into a plain failed command.
 
     A child allocating 200 MiB under a 64 MiB cap must die with MemoryError
-    (RLIMIT_DATA, applied in run_child and shared by both profiles) while the
+    (RLIMIT_DATA, applied in run_child and shared by both isolation levels) while the
     host never approaches the OOM killer; the same allocation with the 0
     opt-out succeeds.
     """
@@ -351,7 +351,7 @@ def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path:
             JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "echo ok > src/x.txt; echo pwned > escape/sentinel; true"),
-                profile="hardened",
+                isolation="hardened",
                 extra_protect_paths=(tmp_path / ".git",),
                 timeout_s=10.0,
             )
@@ -379,7 +379,7 @@ def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
         JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "echo pwned > secret/key.txt; true"),
-            profile="hardened",
+            isolation="hardened",
             extra_protect_paths=(protected,),
             extra_rw_paths=(tmp_path / "rwlink",),
             timeout_s=10.0,
@@ -391,7 +391,7 @@ def test_jail_hardened_symlinked_rw_path_cannot_shadow_a_protect_path(
 
 
 def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path) -> None:
-    """Hardened profile blocks writes to protect_paths via Landlock carve-out.
+    """Hardened isolation blocks writes to protect_paths via Landlock carve-out.
 
     Hardened has no mount namespace so it cannot bind-remount RO; instead the
     launcher switches its Landlock rules from `RW on cwd` to `R on cwd + RW
@@ -412,7 +412,7 @@ def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path
                 "-c",
                 "echo ok > src/x.txt && echo pwned > .git/HEAD; cat src/x.txt; cat .git/HEAD",
             ),
-            profile="hardened",
+            isolation="hardened",
             extra_protect_paths=(git_dir,),
             timeout_s=10.0,
         )
@@ -496,20 +496,20 @@ def test_jail_preserves_non_utf8_output(jail_bin: Path, tmp_path: Path) -> None:
     """A command emitting non-UTF-8 bytes must return a lossy-decoded result,
     not a silently empty stdout. read_to_string dropped the whole stream to ""
     on the first invalid byte (grep over a binary, cat of a latin-1 file)."""
-    for profile in ("strict", "hardened"):
+    for isolation in ("strict", "hardened"):
         res = run_in_jail(
             JailPolicy(
                 cwd=tmp_path,
                 argv=("/bin/sh", "-c", "printf 'caf'; printf '\\351'; printf 'x'"),
-                profile=profile,
+                isolation=isolation,
                 timeout_s=10.0,
             )
         )
-        assert res.returncode == 0, f"{profile} stderr: {res.stderr!r}"
+        assert res.returncode == 0, f"{isolation} stderr: {res.stderr!r}"
         # 0xe9 decodes to the replacement char; the surrounding bytes survive.
-        assert res.stdout.startswith("caf"), f"{profile} stdout: {res.stdout!r}"
-        assert res.stdout.endswith("x"), f"{profile} stdout: {res.stdout!r}"
-        assert "�" in res.stdout, f"{profile} stdout: {res.stdout!r}"
+        assert res.stdout.startswith("caf"), f"{isolation} stdout: {res.stdout!r}"
+        assert res.stdout.endswith("x"), f"{isolation} stdout: {res.stdout!r}"
+        assert "�" in res.stdout, f"{isolation} stdout: {res.stdout!r}"
 
 
 def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: Path) -> None:
@@ -517,7 +517,7 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: P
     must return promptly with rc=0 -- not block on the reader join until the
     (30s-sleeping) grandchild dies and then report a false rc=124 timeout.
     The process-group teardown runs on the normal-exit path, not only on
-    timeout. Hardened has no PID namespace, so it is the exposed profile."""
+    timeout. Hardened has no PID namespace, so it is the exposed isolation."""
     import time
 
     start = time.monotonic()
@@ -525,7 +525,7 @@ def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: P
         JailPolicy(
             cwd=tmp_path,
             argv=("/bin/sh", "-c", "sleep 30 & echo done; exit 0"),
-            profile="hardened",
+            isolation="hardened",
             timeout_s=10.0,
         )
     )
@@ -557,7 +557,7 @@ def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: P
         JailPolicy(
             cwd=tmp_path,
             argv=("/usr/bin/python3", "-c", prog),
-            profile="strict",
+            isolation="strict",
             extra_protect_paths=(git_dir,),
             timeout_s=10.0,
         )
@@ -568,7 +568,7 @@ def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: P
 
 def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
     # extra_rw (the machine data dir) is writable AT the host abspath, so
-    # $AGENT6_MACHINE_DATA_DIR is the same string in every profile.
+    # $AGENT6_MACHINE_DATA_DIR is the same string in every isolation.
     work = tmp_path / "work"
     work.mkdir()
     data = tmp_path / "data"  # outside the workspace mount
@@ -619,7 +619,7 @@ def test_jail_hardened_protect_paths_nested_below_a_top_level_entry(
             JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", script),
-                profile="hardened",
+                isolation="hardened",
                 extra_protect_paths=(asm, ws / "ops" / "scripts"),
                 timeout_s=20.0,
             )
@@ -671,7 +671,7 @@ def test_jail_hardened_protect_path_symlink_cannot_be_written_through(
             JailPolicy(
                 cwd=ws,
                 argv=("/usr/bin/python3", "-c", script),
-                profile="hardened",
+                isolation="hardened",
                 extra_protect_paths=(ws / "ops" / "scripts",),
                 timeout_s=20.0,
             )

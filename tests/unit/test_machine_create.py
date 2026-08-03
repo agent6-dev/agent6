@@ -142,7 +142,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _load(_root: object, _explicit: object = None) -> object:
         cfg = SimpleNamespace(
-            sandbox=SimpleNamespace(profile="none"),
+            sandbox=SimpleNamespace(isolation="none"),
             require_runnable=_require_runnable,
             models=SimpleNamespace(resolve=_resolve),
         )
@@ -156,14 +156,14 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(_create, "load_effective", _load)
     monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(_create, "select_profile", _profile)
+    monkeypatch.setattr(_create, "resolve_isolation", _profile)
 
 
 def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecResult]) -> None:
     seq = iter(results)
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             return next(seq)
@@ -183,7 +183,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     captured: list[AgentRequest] = []
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append(request)
@@ -233,7 +233,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     captured_log: list[object] = []
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path, **kw: object
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **kw: object
     ) -> Callable[[AgentRequest, object], AgentExecResult]:
         def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
             captured_log.append(events_log)  # events_log is now per CALL, not per build
@@ -576,7 +576,7 @@ def test_create_retry_prompt_carries_prior_scripts(
     )
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             prompts.append(request.prompt)

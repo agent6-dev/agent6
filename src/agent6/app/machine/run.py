@@ -3,7 +3,7 @@
 """`agent6 machine run`: compose the engine and drive a machine to completion.
 
 The engine (`agent6.machine`) is a host-netns supervisor; this module resolves
-the sandbox profile, egress viability, provider keys, budget-price and git
+the sandbox isolation, egress viability, provider keys, budget-price and git
 identity preflight, builds the per-`agent`-state runner and the `LiveWorld`, and
 calls `drive`. Output routes through the injected `MachineFrontend.reporter`; a
 hard tool-network refusal is handed to `frontend.resolve_network_fix` (the one
@@ -51,8 +51,8 @@ from agent6.machine import (
     write_source,
 )
 from agent6.runs.ipc import write_worker_pid
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
-from agent6.types import SandboxProfile
+from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.types import IsolationLevel
 from agent6.viewmodel.format import format_cost
 
 
@@ -142,9 +142,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
 ) -> int:
     reporter = frontend.reporter
     if disable_sandbox:
-        # Set the env setter so this supervisor's select_profile resolves to
-        # none; it then passes that profile to each agent subprocess in its
-        # request (the subprocess trusts req["profile"], it does not re-resolve).
+        # Set the env setter so this supervisor's resolve_isolation resolves to
+        # none; it then passes that isolation to each agent subprocess in its
+        # request (the subprocess trusts req["isolation"], it does not re-resolve).
         # Using the env (vs mutating cfg) is the simplest single knob; the env
         # is operator-controlled and the LLM cannot reach it.
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
@@ -160,7 +160,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except MachineError as exc:
         return _fail(reporter, path, list(exc.problems))
     # Re-validate the script bundle before executing anything: `load_machine`
-    # does not, and on a profile that can't RO-bind the bundle a `scripts/`
+    # does not, and on a isolation that can't RO-bind the bundle a `scripts/`
     # symlink escaping it (which `machine check` rejects) would otherwise be read
     # by a tool. Security boundary, so run enforces it too, not just check.
     bundle_problems = validate_bundle(spec, path)
@@ -182,9 +182,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
     tool_states = [s for s in states if isinstance(s, ToolState)]
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
-    # Default profile for confinement-free machines: resolve from the host.
+    # Default isolation for confinement-free machines: resolve from the host.
     env = detect_env()
-    profile: SandboxProfile = env.detected_profile
+    isolation: IsolationLevel = env.detected_isolation
     # The running machine's own file + scripts bundle are read-only in every
     # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
     protect_paths = machine_protect_paths(path, cwd)
@@ -220,32 +220,32 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"CONFIG ERROR:\n{exc}")
             return 2
         try:
-            profile = select_profile(cfg.sandbox.profile, env)
-        except ProfileUnavailableError as exc:
+            isolation = resolve_isolation(cfg.sandbox.isolation, env)
+        except IsolationUnavailableError as exc:
             reporter.err(f"REFUSING: {exc}")
             return 2
-        agent_profile = profile
+        agent_profile = isolation
         if has_agent_state:
             # Same as run/resume: a strict that can't run the egress broker on
-            # this process (surgical AppArmor profile) downgrades to hardened or
-            # refuses, so the per-state agent subprocess gets a profile it can
-            # actually use. Tool states keep `profile`: the jail launcher itself
+            # this process (surgical AppArmor isolation) downgrades to hardened or
+            # refuses, so the per-state agent subprocess gets a isolation it can
+            # actually use. Tool states keep `isolation`: the jail launcher itself
             # can still run strict and give each tool its own namespace.
             agent_profile, egress_err = resolve_strict_egress_viability(
-                cfg, profile, reporter=reporter
+                cfg, isolation, reporter=reporter
             )
             if egress_err is not None:
                 reporter.err(egress_err)
                 return 2
         snapshot_keep = cfg.machine.snapshot_keep
-        refusal = machine_network_refusal(cfg, profile, tool_states)
+        refusal = machine_network_refusal(cfg, isolation, tool_states)
         if refusal is not None:
             outcome = frontend.resolve_network_fix(
-                path, refusal, cfg, profile, tool_states, cwd, spec.config
+                path, refusal, cfg, isolation, tool_states, cwd, spec.config
             )
             if isinstance(outcome, int):
                 return outcome
-            cfg, profile = outcome  # fix applied + re-validated clear; continue
+            cfg, isolation = outcome  # fix applied + re-validated clear; continue
         if has_agent_state:
             missing = check_provider_keys(cfg)
             if missing is not None:
@@ -284,7 +284,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 protect_paths,
                 commit_identity,
             )
-    warn_sandbox_gaps(profile, env, cfg, reporter=reporter)
+    warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
     root = resolved_state_dir(cwd) / "machines" / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
@@ -333,7 +333,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 cwd=cwd,
                 journal=journal,
                 agent_runner=agent_runner,
-                profile=profile,
+                isolation=isolation,
                 protect_paths=protect_paths,
                 data_dir=data_dir,
                 # Each agent state writes its own watchable logs.jsonl here, so a

@@ -25,11 +25,11 @@ def detect_env() -> Environment:
     """`detect()` with an authoritative userns re-check via the jail binary.
 
     `detect.probe_userns_supported` uses `unshare -U -r true`, which
-    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a profile
+    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a isolation
     grants the *agent6-jail* binary userns but not `/usr/bin/unshare`. When the
     cheap probe says "no" on a Linux host, confirm with the real jail binary so
     a correctly-profiled host gets `strict` instead of silently dropping to
-    `hardened`. Every CLI profile-selection path uses this instead of `detect()`.
+    `hardened`. Every CLI isolation-selection path uses this instead of `detect()`.
     """
     env = detect()
     if env.sandbox_available and not env.userns_supported and strict_namespaces_work():
@@ -64,7 +64,7 @@ class SandboxOverrides:
 
     ``--dangerously-disable-sandbox`` runs unconfined; ``--auto-approve``
     auto-approves ``run_command``. The env setter for the sandbox is read in
-    ``detect.select_profile`` (so it also reaches machine subprocesses), so
+    ``detect.resolve_isolation`` (so it also reaches machine subprocesses), so
     ``from_args`` reads only the flags. Flags and env are structurally
     LLM-unreachable."""
 

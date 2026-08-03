@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""agent_network / tool_network: profile compatibility, machine refusals, and
+"""agent_network / tool_network: isolation compatibility, machine refusals, and
 the supervisor subprocess that runs a machine `agent` state self-confined."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from agent6.config import Config, validate_config
 from agent6.git_ops import CommitIdentity
 from agent6.machine import AgentRequest
 from agent6.machine.model import ToolState
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 
 
 def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Config:
@@ -47,15 +47,15 @@ def test_is_loopback() -> None:
     assert not _is_loopback("127.foo.example.com")
 
 
-# --- check_network_profile (profile compatibility) ------------------------
+# --- check_network_profile (isolation compatibility) ------------------------
 
 
-@pytest.mark.parametrize("profile", ["strict", "none"])
-def test_check_network_profile_allows_off_hardened(profile: SandboxProfile) -> None:
+@pytest.mark.parametrize("isolation", ["strict", "none"])
+def test_check_network_profile_allows_off_hardened(isolation: IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_profile(_cfg("local", "block"), profile) is None
-    assert check_network_profile(_cfg("open", "only_explicit_states"), profile) is None
+    assert check_network_profile(_cfg("local", "block"), isolation) is None
+    assert check_network_profile(_cfg("open", "only_explicit_states"), isolation) is None
 
 
 def test_check_network_profile_refuses_local_on_hardened() -> None:
@@ -105,11 +105,11 @@ def test_refusal_explicit_block_state_on_hardened() -> None:
 
 def test_refusal_networked_tool_under_the_auto_default() -> None:
     """`auto` is the DEFAULT tool_network, and it intends no tool network, so a
-    state demanding allow_network="allow" is refused on both profiles -- and the
+    state demanding allow_network="allow" is refused on both isolation levels -- and the
     message names the ACTUAL value. Every other case here pins block/allow/
     only_explicit_states, leaving the default path unexercised."""
-    for profile in ("strict", "hardened"):
-        msg = machine_network_refusal(_cfg("providers", "auto"), profile, [_NET_TOOL])
+    for isolation in ("strict", "hardened"):
+        msg = machine_network_refusal(_cfg("providers", "auto"), isolation, [_NET_TOOL])
         assert msg is not None and "allow_network" in msg
         assert "'auto'" in msg  # not a hardcoded "block"
 
@@ -230,7 +230,7 @@ def test_run_one_returns_finish_payload(
         cwd=iso,
         root=iso,
         overlay={},
-        profile="none",  # no real sandbox: egress/landlock are no-ops
+        isolation="none",  # no real sandbox: egress/landlock are no-ops
         transcript_dir=tmp_path / "t",
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
     )
@@ -285,7 +285,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
         cwd=iso,
         root=iso,
         overlay={},
-        profile="none",
+        isolation="none",
         transcript_dir=tmp_path / "t",
         protect_paths=(inside, outside),
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
@@ -310,7 +310,7 @@ def test_run_one_exports_commit_identity(
         cwd=iso,
         root=iso,
         overlay={},
-        profile="none",
+        isolation="none",
         transcript_dir=tmp_path / "t",
         commit_identity=CommitIdentity(name="Machine Bot", email="bot@example.com"),
         request=AgentRequest(

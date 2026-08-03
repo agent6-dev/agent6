@@ -30,7 +30,7 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
     assert '{ provider = { sort = "throughput" } }' in out
     # a non-extra_body key is unaffected
-    enum_args = argparse.Namespace(key="sandbox.profile")
+    enum_args = argparse.Namespace(key="sandbox.isolation")
     assert _complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
         "auto",
         "strict",
@@ -67,7 +67,7 @@ def test_config_key_completer_offers_user_profile_paths(
     # only. Built-in names never complete in the KEY position: writing
     # presets.ultra.* creates a user table that REPLACES the built-in
     # wholesale, a footgun TAB should not put one keystroke away (the same
-    # rule keeps `none` out of sandbox.profile completion).
+    # rule keeps `none` out of sandbox.isolation completion).
     from agent6.ui.cli.completers import (
         _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
     )

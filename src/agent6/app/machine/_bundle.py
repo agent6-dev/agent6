@@ -8,7 +8,7 @@ that escape via ``..``/absolute), and every static tool-command element that
 references a bundled script must exist and stay inside the bundle. ``machine
 check``/``test`` run this offline; ``machine run``/``create`` run it again before
 any execution, so a ``scripts/`` symlink escaping the bundle can never be read
-by a tool on a profile that can't RO-bind the bundle.
+by a tool on a isolation that can't RO-bind the bundle.
 """
 
 from __future__ import annotations

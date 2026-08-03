@@ -75,10 +75,10 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
 # Used by the `config set/add/remove` value completer so TAB offers the exact
 # valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
-    # `sandbox.profile` also accepts "none" (the unsandboxed opt-out, see
+    # `sandbox.isolation` also accepts "none" (the unsandboxed opt-out, see
     # config.SandboxConfig.preset), deliberately omitted here: TAB should not put
     # "disable the sandbox" one keystroke away. Type it explicitly to set it.
-    "sandbox.profile": ("auto", "strict", "hardened"),
+    "sandbox.isolation": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
     "sandbox.tool_network": ("auto", "block", "only_explicit_states", "allow"),
     "sandbox.run_commands": ("yes", "no", "ask"),
@@ -95,7 +95,7 @@ def _user_profile_names() -> list[str]:
     """USER-defined [presets.*] names only, for key completion. Built-in names
     are deliberately absent: writing presets.ultra.* creates a user table that
     REPLACES the built-in wholesale, a footgun TAB should not put one keystroke
-    away (the same rule keeps `none` out of sandbox.profile completion)."""
+    away (the same rule keeps `none` out of sandbox.isolation completion)."""
     try:
         return [p.name for p in profile_catalog(Path.cwd()).presets if p.origin != "built-in"]
     except ConfigError:

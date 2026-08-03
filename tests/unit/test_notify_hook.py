@@ -184,7 +184,7 @@ provider = "anthropic"
 model = "claude-opus-4-5"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true

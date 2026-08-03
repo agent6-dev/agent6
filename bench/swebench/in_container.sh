@@ -114,7 +114,7 @@ model = "$MODEL"
 # the boundary. profile="none" is self-authorizing (an operator-only config
 # value); the per-invocation forms are --dangerously-disable-sandbox /
 # AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1.
-profile = "none"
+isolation = "none"
 agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"

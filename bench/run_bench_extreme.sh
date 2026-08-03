@@ -40,7 +40,7 @@ provider = "anthropic"
 model = "claude-sonnet-4-5"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"

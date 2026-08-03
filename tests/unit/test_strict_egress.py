@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """`resolve_strict_egress_viability`: strict selected but this process can't
-create a userns for the egress broker (surgical AppArmor profile case)."""
+create a userns for the egress broker (surgical AppArmor isolation case)."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from agent6.app import egress
 from agent6.config import Config
 
 
-def _cfg(profile: str, agent_network: str, tool_network: str = "auto") -> Config:
+def _cfg(isolation: str, agent_network: str, tool_network: str = "auto") -> Config:
     return cast(
         Config,
         SimpleNamespace(
             sandbox=SimpleNamespace(
-                profile=profile, agent_network=agent_network, tool_network=tool_network
+                isolation=isolation, agent_network=agent_network, tool_network=tool_network
             )
         ),
     )
@@ -53,15 +53,15 @@ def test_auto_downgrades_to_hardened(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
-    profile, err = egress.resolve_strict_egress_viability(_cfg("auto", "providers"), "strict")
-    assert profile == "hardened" and err is None
-    assert "Falling back to the hardened profile" in capsys.readouterr().err
+    isolation, err = egress.resolve_strict_egress_viability(_cfg("auto", "providers"), "strict")
+    assert isolation == "hardened" and err is None
+    assert "Falling back to the hardened isolation" in capsys.readouterr().err
 
 
 def test_explicit_strict_refuses_with_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
-    profile, err = egress.resolve_strict_egress_viability(_cfg("strict", "providers"), "strict")
-    assert profile == "strict"  # not silently downgraded for an explicit request
+    isolation, err = egress.resolve_strict_egress_viability(_cfg("strict", "providers"), "strict")
+    assert isolation == "strict"  # not silently downgraded for an explicit request
     assert err is not None and "REFUSING" in err and "apparmor_restrict" in err
 
 
@@ -70,8 +70,8 @@ def test_local_refuses_rather_than_downgrade(monkeypatch: pytest.MonkeyPatch) ->
     # must refuse (even for auto) -- NOT silently downgrade to hardened, which
     # would bypass check_network_profile's local-on-hardened refusal.
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
-    profile, err = egress.resolve_strict_egress_viability(_cfg("auto", "local"), "strict")
-    assert profile == "strict" and err is not None
+    isolation, err = egress.resolve_strict_egress_viability(_cfg("auto", "local"), "strict")
+    assert isolation == "strict" and err is not None
     assert "REFUSING" in err and "local" in err
 
 
@@ -82,10 +82,10 @@ def test_explicit_tool_network_block_blocks_the_hardened_fallback(
     # so auto must NOT silently downgrade to hardened -- it refuses, naming the
     # gap. The secure default 'auto' would degrade there with a warning instead.
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
-    profile, err = egress.resolve_strict_egress_viability(
+    isolation, err = egress.resolve_strict_egress_viability(
         _cfg("auto", "providers", tool_network="block"), "strict"
     )
-    assert profile == "strict" and err is not None
+    assert isolation == "strict" and err is not None
     assert "REFUSING" in err and "block" in err
 
 
@@ -96,6 +96,6 @@ def test_only_explicit_states_refuses_rather_than_downgrade(
     # fallback), so the downgrade must refuse it, not silently under-confine.
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
     cfg = _cfg("auto", "providers", tool_network="only_explicit_states")
-    profile, err = egress.resolve_strict_egress_viability(cfg, "strict")
-    assert profile == "strict" and err is not None
+    isolation, err = egress.resolve_strict_egress_viability(cfg, "strict")
+    assert isolation == "strict" and err is not None
     assert "REFUSING" in err and "only_explicit_states" in err

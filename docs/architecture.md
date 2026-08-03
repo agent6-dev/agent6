@@ -330,7 +330,7 @@ flowchart TD
   stops the worker.
 - `protect_git` is strict-only. On strict the jail read-only
   bind-remounts `.git` on top of the workspace mount. The hardened
-  profile (no mount namespace to carve with) grants blanket read-write
+  isolation (no mount namespace to carve with) grants blanket read-write
   on the repo cwd, so `.git` is writable by jailed commands there.
   Carving `.git` read-only on hardened would also deny new top-level
   entries and break toolchains like cargo/pytest that create `target/`

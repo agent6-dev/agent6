@@ -123,7 +123,7 @@ and the principles the Zen doesn't cover:
   - The default value (`auto`) uses the most secure option available in the
     environment and DEGRADES WITH A WARNING when the strongest isn't there
     (still runs, never silently ineffective). Only an EXPLICIT enforce value
-    (`profile = "strict"`, `tool_network = "block"`) refuses to run when the
+    (`isolation = "strict"`, `tool_network = "block"`) refuses to run when the
     environment can't honor it, naming what is unsupported and how to change it.
     A knob with no such value gets an `auto` that is the default.
 

@@ -33,7 +33,7 @@ open-ended agent loop.
 <div class="a6-card" markdown>
 ### Per-command sandbox
 Each command the model runs is jailed on its own with Landlock + seccomp; the default
-`strict` profile adds user namespaces + `pivot_root`, a read-only `.git`, and egress
+`strict` isolation adds user namespaces + `pivot_root`, a read-only `.git`, and egress
 limited to your provider. Not one coarse container around everything.
 </div>
 

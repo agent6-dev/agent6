@@ -89,7 +89,7 @@ from agent6.tools.schema import (
     UseSkillInput,
     mode_tools,
 )
-from agent6.types import CommandResult, JailPolicy, SandboxProfile
+from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
 
 def _coerce_stringified_args(
@@ -192,7 +192,7 @@ class ToolDispatcher:
         *,
         root: Path,
         config: Config,
-        sandbox_profile: SandboxProfile = "strict",
+        isolation: IsolationLevel = "strict",
         approver: _Approver | None = None,
         questioner: _Questioner | None = None,
         events: EventSink | None = None,
@@ -205,7 +205,7 @@ class ToolDispatcher:
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        self._sandbox_profile: SandboxProfile = sandbox_profile
+        self._sandbox_profile: IsolationLevel = isolation
         # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
         # this is the defense-in-depth backstop so the dispatcher itself refuses
         # a source mutation even if something dispatched one directly.
@@ -214,7 +214,7 @@ class ToolDispatcher:
         # distinct ids without a lock.
         self._call_seq = itertools.count(1)
         # Extra read-only paths layered into every run_command jail on top of
-        # the strict-profile protect_git bind (e.g. a running machine's own
+        # the strict-isolation protect_git bind (e.g. a running machine's own
         # .asm.toml + scripts bundle, so an agent state can't rewrite them
         # mid-run).
         self._extra_protect_paths = extra_protect_paths
@@ -738,7 +738,7 @@ class ToolDispatcher:
         # canonical paths; the Rust side canonicalizes too as a backstop.
         protect_paths: list[Path] = []
         # protect_paths are read-only bind-remounts, which only the strict
-        # profile (mount namespace) can apply. On hardened the cwd is blanket
+        # isolation (mount namespace) can apply. On hardened the cwd is blanket
         # read-write -- there is no way to carve .git read-only without also
         # denying new top-level entries (breaking toolchains), so .git is
         # writable there. It is recoverable, gated by run_commands, and run
@@ -755,7 +755,7 @@ class ToolDispatcher:
         env = passthrough_env()
         # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
         # cargo -> $CARGO_HOME or $HOME/.cargo, pip/uv likewise). The jail's /tmp
-        # is writable on both profiles (fresh tmpfs on strict, Landlock rw grant
+        # is writable on both isolation levels (fresh tmpfs on strict, Landlock rw grant
         # on hardened), so point HOME there. Without it `go test` fails outright
         # and models burn whole budgets probing the sandbox for a writable spot.
         env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
@@ -773,7 +773,7 @@ class ToolDispatcher:
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,
-            profile=self._sandbox_profile,
+            isolation=self._sandbox_profile,
             env=tuple(sorted(env.items())),
             allow_network=allow_network,
             extra_protect_paths=tuple(protect_paths),

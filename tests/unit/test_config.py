@@ -29,7 +29,7 @@ provider = "anthropic"
 model = "claude-x"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true
@@ -55,7 +55,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 def test_loads_valid_config(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.agent6.config_version == 1
-    assert cfg.sandbox.profile == "auto"
+    assert cfg.sandbox.isolation == "auto"
     assert cfg.workflow.verify_command == ("true",)
 
 
@@ -80,8 +80,8 @@ def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
 
 def test_with_sandbox_overrides_disable_forces_none() -> None:
     cfg = Config()
-    assert cfg.sandbox.profile == "auto"
-    assert cfg.with_sandbox_overrides(disable_sandbox=True).sandbox.profile == "none"
+    assert cfg.sandbox.isolation == "auto"
+    assert cfg.with_sandbox_overrides(disable_sandbox=True).sandbox.isolation == "none"
 
 
 def test_with_sandbox_overrides_auto_approve_upgrades_ask_only() -> None:
@@ -99,8 +99,8 @@ def test_with_sandbox_overrides_noop_returns_self() -> None:
 
 
 def test_invalid_enum_literal(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace('profile = "auto"', 'profile = "lax"')
-    with pytest.raises(ConfigError, match=r"sandbox\.profile"):
+    body = _VALID_TOML.replace('isolation = "auto"', 'isolation = "lax"')
+    with pytest.raises(ConfigError, match=r"sandbox\.isolation"):
         load_config(_write(tmp_path, body))
 
 
@@ -495,7 +495,7 @@ provider = "anthropic"
 model = "claude-x"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true

@@ -6,7 +6,7 @@ Implements the host-level egress allow-list promised by
 ``[sandbox] agent_network = "providers"`` without root, nftables, or any
 external package.
 
-Design (strict profile only, requires unprivileged user namespaces):
+Design (strict isolation only, requires unprivileged user namespaces):
 
 1. While still in the host network namespace, the agent process binds
    one listening ``AF_UNIX`` socket per allow-listed provider endpoint,

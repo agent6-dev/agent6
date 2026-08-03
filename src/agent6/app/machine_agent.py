@@ -76,7 +76,7 @@ from agent6.runs.ipc import (
 )
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 from agent6.workflows.loop import Workflow
 
 
@@ -102,7 +102,7 @@ class MachineAgentRequest(BaseModel):
     root: Path
     # The machine's `[config]` overlay, applied over the effective config.
     overlay: dict[str, Any]
-    profile: SandboxProfile
+    isolation: IsolationLevel
     transcript_dir: Path
     # When set, the subprocess writes a watchable logs.jsonl here (role.*_delta
     # + tool.* events), so `machine create` and live `agent` states are
@@ -284,7 +284,7 @@ def run_one(
     attach_console: Callable[[EventSink], None] = _no_console,
     reporter: Reporter = STDIO_REPORTER,
 ) -> AgentExecResult:
-    profile = req.profile
+    isolation = req.isolation
     r = req.request
     # Config load + per-state overrides run FIRST, and can raise (a bad overlay,
     # or an override naming a provider that isn't configured). Salvage that into
@@ -316,17 +316,17 @@ def run_one(
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.
-    net_err = check_network_profile(cfg, profile)
+    net_err = check_network_profile(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return _result("error", None, None)
-    egress_guard, egress_err = maybe_start_egress(cfg, profile)
+    egress_guard, egress_err = maybe_start_egress(cfg, isolation)
     if egress_err is not None:
         reporter.err(f"REFUSING: {egress_err}")
         return _result("error", None, None)
     budget: BudgetTracker | None = None
     try:
-        landlock_err = maybe_apply_agent_landlock(cfg, profile)
+        landlock_err = maybe_apply_agent_landlock(cfg, isolation)
         if landlock_err is not None:
             reporter.err(f"REFUSING: {landlock_err}")
             return _result("error", None, None)
@@ -360,7 +360,7 @@ def run_one(
         dispatcher = ToolDispatcher(
             root=req.root,
             config=cfg,
-            sandbox_profile=profile,
+            isolation=isolation,
             approver=bridges.approve if bridges is not None else None,
             questioner=bridges.ask if bridges is not None else None,
             events=events_sink,
@@ -405,7 +405,7 @@ def run_one(
 def build_machine_agent_runner(
     overlay: dict[str, Any],
     cwd: Path,
-    profile: SandboxProfile,
+    isolation: IsolationLevel,
     transcript_dir: Path,
     protect_paths: tuple[Path, ...] = (),
     commit_identity: CommitIdentity | None = None,
@@ -460,7 +460,7 @@ def build_machine_agent_runner(
             cwd=cwd,
             root=cwd,
             overlay=overlay,
-            profile=profile,
+            isolation=isolation,
             transcript_dir=transcript_dir,
             events_log=events_log,
             protect_paths=protect_paths,

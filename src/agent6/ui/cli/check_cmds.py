@@ -27,9 +27,9 @@ from agent6.sandbox import (
     run_in_jail,
 )
 from agent6.sandbox.detect import (
-    ProfileUnavailableError,
+    IsolationUnavailableError,
     apparmor_userns_restricted,
-    select_profile,
+    resolve_isolation,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxReport
 
@@ -37,11 +37,11 @@ from agent6.types import CommandResult, JailPolicy, SandboxReport
 def _cmd_check_sandbox() -> int:
     """Run the sandbox boundary self-tests on the host's kernel.
 
-    The probes run under the *effective* profile this host resolves to
-    (`select_profile("auto", ...)`), not a hardcoded one. On a host that
+    The probes run under the *effective* isolation this host resolves to
+    (`resolve_isolation("auto", ...)`), not a hardcoded one. On a host that
     blocks unprivileged user namespaces (default-seccomp Docker, or Ubuntu
     with `kernel.apparmor_restrict_unprivileged_userns=1`) the effective
-    profile is `hardened`, which is exactly what `agent6 run` would use there;
+    isolation is `hardened`, which is exactly what `agent6 run` would use there;
     testing `strict` instead would report a spurious FAIL for a sandbox the
     agent never uses on this host.
     """
@@ -57,19 +57,19 @@ def _cmd_check_sandbox() -> int:
         )
     )
 
-    profile = select_profile("auto", detect_env())
-    print(f"  effective profile (auto): {profile}")
-    if profile == "hardened" and apparmor_userns_restricted():
+    isolation = resolve_isolation("auto", detect_env())
+    print(f"  effective isolation (auto): {isolation}")
+    if isolation == "hardened" and apparmor_userns_restricted():
         print(
             "  NOTE: strict is unavailable because unprivileged user namespaces are\n"
             "  blocked by kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+\n"
-            "  default). For the stronger strict profile, install the bundled agent6-jail\n"
-            "  AppArmor profile (grants userns to just that binary):\n"
+            "  default). For the stronger strict isolation, install the bundled agent6-jail\n"
+            "  AppArmor isolation (grants userns to just that binary):\n"
             "    agent6 system apparmor install\n"
             "  (or, less surgically, set the sysctl to 0). hardened is still real,\n"
             "  kernel-enforced isolation."
         )
-    if profile == "none":
+    if isolation == "none":
         # No kernel sandbox to test (a non-Linux host, or a deliberate `none`
         # opt-out), and running the boundary probes unconfined would let the
         # /etc-write probe actually escape onto the host. Report and stop.
@@ -77,7 +77,7 @@ def _cmd_check_sandbox() -> int:
             SandboxReport(
                 name="jail",
                 ok=False,
-                detail="no kernel sandbox on this platform (effective profile 'none'); skipped",
+                detail="no kernel sandbox on this platform (effective isolation 'none'); skipped",
             )
         )
         return _print_sandbox_reports(reports)
@@ -86,7 +86,7 @@ def _cmd_check_sandbox() -> int:
 
     def _jail(*argv: str) -> CommandResult:
         return run_in_jail(
-            JailPolicy(cwd=cwd, argv=argv, profile=profile, allow_network=False, timeout_s=10.0)
+            JailPolicy(cwd=cwd, argv=argv, isolation=isolation, allow_network=False, timeout_s=10.0)
         )
 
     # Try running `/usr/bin/true` in the jail.
@@ -103,7 +103,7 @@ def _cmd_check_sandbox() -> int:
     # Landlock applied at run time (SECURITY.md §1, §8 note 2), which this
     # standalone probe does not set up, so testing it here would be testing
     # the wrong thing. Report it as n/a rather than a misleading pass/fail.
-    if profile == "strict":
+    if isolation == "strict":
         try:
             res = _jail("/usr/bin/getent", "hosts", "example.com")
             ok = res.returncode != 0
@@ -225,7 +225,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 
 
 def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
-    """Environment detection + profile selection + static config checks."""
+    """Environment detection + isolation selection + static config checks."""
     env = detect_env()
     print(f"  kernel: {env.kernel.raw}")
     print(f"  userns supported: {env.userns_supported}")
@@ -233,21 +233,21 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     abi_str = str(env.landlock_abi) if env.sandbox_available else "n/a (no Linux sandbox)"
     print(f"  Landlock ABI: {abi_str}")
     print(
-        f"  sandbox.profile = {cfg.sandbox.profile}"
+        f"  sandbox.isolation = {cfg.sandbox.isolation}"
         f"  agent_network = {cfg.sandbox.agent_network}"
         f"  tool_network = {cfg.sandbox.tool_network}"
         f"  run_commands = {cfg.sandbox.run_commands}"
     )
     out: list[_DoctorCheck] = []
     try:
-        selected = select_profile(cfg.sandbox.profile, env)
-        print(f"  -> selected profile: {selected}")
+        selected = resolve_isolation(cfg.sandbox.isolation, env)
+        print(f"  -> selected isolation: {selected}")
         out.append(
-            _DoctorCheck(name="config.profile", status="PASS", detail=f"selected {selected}")
+            _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
         )
-    except ProfileUnavailableError as exc:
-        print(f"  [FAIL] profile selection: {exc}")
-        out.append(_DoctorCheck(name="config.profile", status="FAIL", detail=str(exc)))
+    except IsolationUnavailableError as exc:
+        print(f"  [FAIL] isolation selection: {exc}")
+        out.append(_DoctorCheck(name="config.isolation", status="FAIL", detail=str(exc)))
     out.extend(_doctor_check_config(cfg))
     return out
 

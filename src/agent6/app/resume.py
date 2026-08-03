@@ -429,7 +429,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
         try:
-            selected_profile = select_isolation(
+            isolation = select_isolation(
                 cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
             )
         except SessionRefused as refusal:
@@ -457,7 +457,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         try:
             guard = start_isolation(
-                cfg, selected_profile, agent6_exe=frontend.agent6_exe, reporter=reporter
+                cfg, isolation, agent6_exe=frontend.agent6_exe, reporter=reporter
             )
         except SessionRefused as refusal:
             return refusal.rc
@@ -528,7 +528,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cwd=cwd,
                 state_dir=state_dir,
                 layout=layout,
-                sandbox_profile=selected_profile,
+                isolation=isolation,
                 mode=mode,
                 events=events,
                 approver=frontend.build_approver(layout.run_dir, events),

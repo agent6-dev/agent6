@@ -60,9 +60,9 @@ from agent6.machine import (
 )
 from agent6.paths import chown_to_real_user
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
+from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import jail_search_path
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
@@ -176,7 +176,7 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
         return _fail(path, problems, label)
     # Static (lint + types) then the offline mock tests in a no-network jail.
     script_problems = lint_and_typecheck(path.parent / "scripts")
-    script_problems.extend(run_offline_tests(path.parent, detect_env().detected_profile))
+    script_problems.extend(run_offline_tests(path.parent, detect_env().detected_isolation))
     if script_problems:
         return _fail(path, script_problems, "scripts")
     fixture: dict[str, Any] | None = None
@@ -242,7 +242,7 @@ def _safe_input(prompt: str) -> str | None:
 
 
 def _suggested_network_fix(
-    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
+    cfg: Config, isolation: IsolationLevel, tool_states: list[ToolState]
 ) -> dict[str, str] | None:
     """The minimal sandbox-config change that lets this machine's tool states run
     ON THIS PROFILE, or None if no config change can (a tool that REQUIRES network
@@ -260,11 +260,11 @@ def _suggested_network_fix(
     if has_block:
         # A tool REQUIRES no network; only strict's per-tool netns isolates it.
         return None
-    if profile == "strict":
+    if isolation == "strict":
         # Plain no-network tools already run on strict; only a tool that opted
         # into the network needs the explicit-per-tool egress mode.
         return {"sandbox.tool_network": "only_explicit_states"} if has_allow else None
-    if profile == "hardened":
+    if isolation == "hardened":
         # hardened can't isolate one tool's netns, so EVERY tool (networked or
         # not) shares the host network; the combo validator then requires
         # agent_network = "open". Same fix whether or not a tool opted in.
@@ -276,22 +276,22 @@ def _resolve_network_refusal(  # noqa: PLR0911
     path: Path,
     refusal: str,
     cfg: Config,
-    profile: SandboxProfile,
+    isolation: IsolationLevel,
     tool_states: list[ToolState],
     cwd: Path,
     overlay: dict[str, Any],
-) -> int | tuple[Config, SandboxProfile]:
+) -> int | tuple[Config, IsolationLevel]:
     """A hard network refusal becomes a choice, not a dead end: explain it, then
     (interactively) offer to apply the minimal config fix and continue, simulate
     the machine offline, or stop. Headless prints the exact fix + simulate
     command and exits non-zero, it never relaxes a sandbox setting unattended.
-    Returns the new ``(cfg, profile)`` when the fix applied and re-validates
+    Returns the new ``(cfg, isolation)`` when the fix applied and re-validates
     clear, else an exit code."""
     print(f"REFUSING: {refusal}", file=sys.stderr)
-    fix = _suggested_network_fix(cfg, profile, tool_states)
+    fix = _suggested_network_fix(cfg, isolation, tool_states)
     if fix is None:
         print(
-            f"  No sandbox-config change fixes this on the '{profile}' profile"
+            f"  No sandbox-config change fixes this on the '{isolation}' isolation"
             " (a tool needs isolation only 'strict' provides).",
             file=sys.stderr,
         )
@@ -320,8 +320,8 @@ def _resolve_network_refusal(  # noqa: PLR0911
     chown_to_real_user(target)
     try:
         new_cfg = load_effective_with_overlay(cwd, overlay).config
-        new_profile = select_profile(new_cfg.sandbox.profile, detect_env())
-    except (ConfigError, ProfileUnavailableError) as exc:
+        new_profile = resolve_isolation(new_cfg.sandbox.isolation, detect_env())
+    except (ConfigError, IsolationUnavailableError) as exc:
         print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
         return 2
     if machine_network_refusal(new_cfg, new_profile, tool_states) is not None:

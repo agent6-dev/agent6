@@ -183,7 +183,7 @@ def test_machine_agent_wires_the_summariser_seat(
         cwd=tmp_path,
         root=tmp_path,
         overlay={},
-        profile="none",
+        isolation="none",
         transcript_dir=tmp_path / "t",
         request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
     )

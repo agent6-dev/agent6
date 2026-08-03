@@ -81,7 +81,7 @@ class _Body(BaseModel):
 class NewWorkBody(_Body):
     mode: str
     task: str
-    profile: str = ""
+    isolation: str = ""
 
 
 class SteerBody(_Body):
@@ -332,7 +332,7 @@ class _Handler(BaseHTTPRequestHandler):
         # /api/new  /api/runs/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
-            run_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.profile)
+            run_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.isolation)
             self._ok_or_err(run_id is not None, {"run_id": run_id}, err)
             return
         if path == "/api/runs/prune":

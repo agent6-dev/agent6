@@ -714,11 +714,11 @@ def test_live_world_materializes_poke_atomically(tmp_path: Path) -> None:
 
 def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The data dir lives OUTSIDE cwd by design; the jail mounts extra_rw_paths
-    # at their real locations in every profile, so `$AGENT6_MACHINE_DATA_DIR`
+    # at their real locations in every isolation, so `$AGENT6_MACHINE_DATA_DIR`
     # is always the host abspath (strict used to need a /rw prefix rewrite).
     from agent6.machine import engine
     from agent6.machine.engine import LiveWorld
-    from agent6.types import CommandResult, JailPolicy, SandboxProfile
+    from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
     data_dir = tmp_path / "state" / "machines" / "m" / "data"
     captured: dict[str, JailPolicy] = {}
@@ -729,10 +729,13 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
 
-    profiles: tuple[SandboxProfile, ...] = ("strict", "hardened")
-    for profile in profiles:
+    levels: tuple[IsolationLevel, ...] = ("strict", "hardened")
+    for isolation in levels:
         world = LiveWorld(
-            cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), data_dir=data_dir, profile=profile
+            cwd=tmp_path,
+            journal=MachineJournal(tmp_path / "i"),
+            data_dir=data_dir,
+            isolation=isolation,
         )
         world.run_tool(("python3", "x.py"), 5.0)
         policy = captured["policy"]

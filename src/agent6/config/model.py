@@ -364,8 +364,8 @@ class SandboxConfig(BaseModel):
     # per-invocation forms are `--dangerously-disable-sandbox` /
     # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` resolves to none only when the
     # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
-    # with neither userns nor Landlock) -- see detect.select_profile.
-    profile: Literal["auto", "strict", "hardened", "none"] = "auto"
+    # with neither userns nor Landlock) -- see detect.resolve_isolation.
+    isolation: Literal["auto", "strict", "hardened", "none"] = "auto"
     # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any
     #    `allow_urls`. On `strict` this is structural, a trusted broker (see
@@ -1147,7 +1147,7 @@ class Config(BaseModel):
     ) -> Config:
         """Return a copy with per-invocation sandbox overrides from CLI flags.
 
-        ``disable_sandbox`` forces ``sandbox.profile = "none"`` (unconfined).
+        ``disable_sandbox`` forces ``sandbox.isolation = "none"`` (unconfined).
         ``auto_approve`` upgrades ``run_commands`` ``"ask" -> "yes"`` but never
         resurrects a withheld ``"no"`` (a per-invocation flag must not grant a
         capability the standing policy denied). Both are operator-supplied
@@ -1158,7 +1158,7 @@ class Config(BaseModel):
         data = self.model_dump(mode="python")
         sandbox = data.setdefault("sandbox", {})
         if disable_sandbox:
-            sandbox["profile"] = "none"
+            sandbox["isolation"] = "none"
         if auto_approve and self.sandbox.run_commands != "no":
             sandbox["run_commands"] = "yes"
         return Config.model_validate(data)

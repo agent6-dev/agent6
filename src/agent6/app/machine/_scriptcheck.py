@@ -17,7 +17,7 @@ Two layers, matching their risk:
 
 A missing ruff/ty is skipped silently (a stripped install still produces a
 bundle). An unavailable jail is different: it surfaces a diagnostic rather than
-silently dropping the offline-test gate, except on profile ``none``, where
+silently dropping the offline-test gate, except on isolation ``none``, where
 there is no jail to run model-authored code in and execution is skipped.
 """
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 from agent6.sandbox import run_in_jail
 from agent6.sandbox.jail import JailUnavailableError
-from agent6.types import JailPolicy, SandboxProfile
+from agent6.types import IsolationLevel, JailPolicy
 
 __all__ = ["available_tools", "lint_and_typecheck", "run_offline_tests"]
 
@@ -133,12 +133,12 @@ def lint_and_typecheck(scripts_dir: Path) -> list[str]:
 
 
 def run_offline_tests(
-    bundle_dir: Path, profile: SandboxProfile, *, timeout_s: float = 30.0
+    bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float = 30.0
 ) -> list[str]:
     """Execute every ``scripts/**/*_test.py`` in a no-network jail (the bundle's
     offline simulation). Returns failures (empty = all green / nothing to run).
 
-    Requires the strict profile: it is the only one whose network namespace can
+    Requires the strict isolation: it is the only one whose network namespace can
     enforce the no-network contract on model-authored code. Skipped, with a loud
     "NOT run" note and the static checks still applied, on ``none`` (no jail at
     all) and ``hardened`` (a jail, but no network namespace, so
@@ -153,7 +153,7 @@ def run_offline_tests(
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if not tests:
         return []
-    if profile != "strict":
+    if isolation != "strict":
         # none: no jail to confine model-authored code in. hardened: a jail, but
         # no network namespace, so allow_network=False is silently ignored and
         # the scripts would run with the host network -- exfil or pull-and-exec
@@ -161,7 +161,7 @@ def run_offline_tests(
         # the no-network contract. Skipping is the only safe option on the rest,
         # but say so: a silent pass here looks like "tests ran green". The static
         # checks still apply.
-        reason = "no sandbox" if profile == "none" else "no network isolation (hardened)"
+        reason = "no sandbox" if isolation == "none" else "no network isolation (hardened)"
         print(
             f"note: {reason} on this host; {len(tests)} offline script test(s) NOT run",
             file=sys.stderr,
@@ -179,7 +179,7 @@ def run_offline_tests(
             policy = JailPolicy(
                 cwd=bundle_dir,
                 argv=("python3", rel),
-                profile=profile,
+                isolation=isolation,
                 env=(
                     ("AGENT6_MACHINE_DATA_DIR", ".scriptcheck_data"),
                     ("PYTHONDONTWRITEBYTECODE", "1"),

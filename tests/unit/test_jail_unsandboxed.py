@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the `none` (unsandboxed) jail profile used on non-Linux hosts.
+"""Tests for the `none` (unsandboxed) jail isolation used on non-Linux hosts.
 
-These run on any platform and need no namespaces: the `none` profile runs the
+These run on any platform and need no namespaces: the `none` isolation runs the
 command as a plain subprocess instead of invoking the Rust launcher.
 """
 
@@ -22,7 +22,7 @@ def test_none_profile_runs_plain_subprocess(tmp_path: Path) -> None:
         JailPolicy(
             cwd=tmp_path,
             argv=(sys.executable, "-c", "print('hello-unsandboxed')"),
-            profile="none",
+            isolation="none",
             timeout_s=30.0,
         )
     )
@@ -35,7 +35,7 @@ def test_none_profile_reports_nonzero_exit(tmp_path: Path) -> None:
         JailPolicy(
             cwd=tmp_path,
             argv=(sys.executable, "-c", "import sys; sys.exit(7)"),
-            profile="none",
+            isolation="none",
             timeout_s=30.0,
         )
     )
@@ -48,7 +48,7 @@ def test_none_profile_runs_in_cwd(tmp_path: Path) -> None:
         JailPolicy(
             cwd=tmp_path,
             argv=(sys.executable, "-c", "import os; print(os.getcwd())"),
-            profile="none",
+            isolation="none",
             timeout_s=30.0,
         )
     )
@@ -61,7 +61,7 @@ def test_none_profile_overlays_policy_env(tmp_path: Path) -> None:
         JailPolicy(
             cwd=tmp_path,
             argv=(sys.executable, "-c", "import os; print(os.environ.get('AGENT6_TEST_VAR'))"),
-            profile="none",
+            isolation="none",
             env=(("AGENT6_TEST_VAR", "set-by-policy"),),
             timeout_s=30.0,
         )
@@ -84,7 +84,7 @@ def test_none_profile_preserves_non_utf8_output_lossily(tmp_path: Path) -> None:
                 " sys.stdout.buffer.write(b'caf\\xe9 out');"
                 " sys.stderr.buffer.write(b'caf\\xe9 err')",
             ),
-            profile="none",
+            isolation="none",
             timeout_s=30.0,
         )
     )
@@ -94,13 +94,13 @@ def test_none_profile_preserves_non_utf8_output_lossily(tmp_path: Path) -> None:
 
 
 def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
-    # The jailed profiles surface a timeout as rc=124; the `none` path used to
+    # The jailed isolation levels surface a timeout as rc=124; the `none` path used to
     # leak subprocess.TimeoutExpired instead. It must match the contract.
     res = run_in_jail(
         JailPolicy(
             cwd=tmp_path,
             argv=(sys.executable, "-c", "import time; time.sleep(10)"),
-            profile="none",
+            isolation="none",
             timeout_s=0.5,
         )
     )
@@ -136,7 +136,7 @@ def test_child_exec_failure_is_command_error_not_jail_unavailable(
 
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
     res = run_in_jail(
-        JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), profile="hardened")
+        JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), isolation="hardened")
     )
     assert res.returncode == 127
     assert "not found or not executable" in res.stderr

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """CLI wiring of the per-invocation sandbox/approval opt-outs.
 
-Unit tests already cover the pieces (detect.select_profile env setter,
+Unit tests already cover the pieces (detect.resolve_isolation env setter,
 Config.with_sandbox_overrides, the confirm gate). These cover the wiring the
 CLI does on top: parsing the flags into _SandboxOverrides and applying them,
 and the env mechanism a `machine run` relies on to reach its agent subprocesses.
@@ -16,7 +16,7 @@ import pytest
 
 from agent6.app._setup import SandboxOverrides as _SandboxOverrides
 from agent6.config import Config
-from agent6.sandbox.detect import Environment, KernelInfo, select_profile
+from agent6.sandbox.detect import Environment, KernelInfo, resolve_isolation
 
 
 def _args(**kw: bool) -> argparse.Namespace:
@@ -38,9 +38,9 @@ def test_from_args_defaults_false_when_flags_absent() -> None:
 
 def test_apply_flag_path_forces_none_and_auto_approve() -> None:
     cfg = Config()
-    assert cfg.sandbox.profile == "auto"
+    assert cfg.sandbox.isolation == "auto"
     out = _SandboxOverrides(disable_sandbox=True, auto_approve=True).apply(cfg)
-    assert out.sandbox.profile == "none"
+    assert out.sandbox.isolation == "none"
     assert out.sandbox.run_commands == "yes"
 
 
@@ -62,9 +62,9 @@ def _linux_env() -> Environment:
 
 def test_machine_env_mechanism_forces_none(monkeypatch: pytest.MonkeyPatch) -> None:
     # `machine run --dangerously-disable-sandbox` sets this env var; the machine
-    # supervisor's select_profile (the same function) must then resolve to none
-    # regardless of the machine's configured profile, and it passes that to each
+    # supervisor's resolve_isolation (the same function) must then resolve to none
+    # regardless of the machine's configured isolation, and it passes that to each
     # agent subprocess in the request.
     monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
-    assert select_profile("strict", _linux_env()) == "none"
-    assert select_profile("auto", _linux_env()) == "none"
+    assert resolve_isolation("strict", _linux_env()) == "none"
+    assert resolve_isolation("auto", _linux_env()) == "none"

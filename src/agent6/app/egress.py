@@ -29,7 +29,7 @@ from agent6.sandbox import (
 )
 from agent6.sandbox.detect import Environment, probe_userns_supported
 from agent6.sandbox.jail import locate_jail_binary, operator_tool_paths
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +53,7 @@ def _provider_endpoints(cfg: Config) -> set[Endpoint]:
     endpoint. Every provider (both api_formats, every deployment) carries its
     effective endpoint host in ``base_url`` -- which is exactly the host the
     provider dials -- so the allow-list is derived uniformly from it. The
-    deployment profile only appends path/model to that host, so the host:port
+    deployment isolation only appends path/model to that host, so the host:port
     is unchanged by it.
     """
     eps: set[Endpoint] = set()
@@ -82,17 +82,17 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
 
 
 def warn_sandbox_gaps(
-    selected_profile: SandboxProfile,
+    isolation: IsolationLevel,
     env: Environment,
     cfg: Config,
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print a prominent warning when the profile confines less than it promises.
+    """Print a prominent warning when the isolation confines less than it promises.
 
     `none` is reached on a host with no confinement mechanism at all
     (non-Linux, or a Linux kernel offering neither userns nor Landlock), or
-    when the operator EXPLICITLY sets `profile = "none"` (the unsandboxed
+    when the operator EXPLICITLY sets `isolation = "none"` (the unsandboxed
     opt-out, intended for inside a container). Either way commands run as
     plain subprocesses with no agent6 confinement, so say so loudly.
 
@@ -103,21 +103,21 @@ def warn_sandbox_gaps(
     per run, not in the launcher: a per-spawn stderr warning would land in
     every tool result and prompt the model to fight the sandbox.
 
-    `tool_network = "auto"` DEGRADES on a netns-less profile: with no per-child
+    `tool_network = "auto"` DEGRADES on a netns-less isolation: with no per-child
     network namespace, a jailed run_command shares the (agent-scoped) host
     network instead of being offline, so say so once per run. Explicit `block`
     never reaches here (check_network_profile refused it on hardened).
     """
-    if selected_profile == "none":
+    if isolation == "none":
         reporter.err(
-            "[agent6] WARNING: running UNSANDBOXED (sandbox.profile = 'none'). "
+            "[agent6] WARNING: running UNSANDBOXED (sandbox.isolation = 'none'). "
             "Commands -- including the LLM's run_command and verify_command -- "
             "execute as plain subprocesses with NO filesystem, network, or syscall "
             "confinement; the agent is contained only by the surrounding environment "
             "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
             "kernel-enforced isolation."
         )
-    elif selected_profile == "strict" and env.landlock_abi < 1:
+    elif isolation == "strict" and env.landlock_abi < 1:
         reporter.err(
             "[agent6] WARNING: 'strict' is running WITHOUT its Landlock layer: "
             "this kernel offers no Landlock (needs Linux >= 5.13 with the "
@@ -125,7 +125,7 @@ def warn_sandbox_gaps(
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
         )
-    if selected_profile == "hardened" and cfg.sandbox.tool_network == "auto":
+    if isolation == "hardened" and cfg.sandbox.tool_network == "auto":
         reporter.err(
             "[agent6] WARNING: 'hardened' has no network namespace, so "
             "sandbox.tool_network = 'auto' cannot make a jailed run_command "
@@ -147,32 +147,32 @@ def _is_loopback(host: str) -> bool:
     return is_loopback_host(host) or host == "0.0.0.0"  # noqa: S104
 
 
-def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:
+def check_network_profile(cfg: Config, isolation: IsolationLevel) -> str | None:
     """A refusal message if the network config EXPLICITLY enforces something
-    this profile can't provide.
+    this isolation can't provide.
 
     ``agent_network = "local"`` (loopback-pinning), ``tool_network =
     "only_explicit_states"`` (singling one tool out), and ``tool_network =
     "block"`` (no jailed-command network) all need a network namespace, which
-    only the ``strict`` profile provides. On ``hardened`` (a real sandbox that
+    only the ``strict`` isolation provides. On ``hardened`` (a real sandbox that
     can't provide it) we refuse rather than silently under-confine, naming what
     is unsupported and the fix; ``tool_network = "auto"`` is the secure default
     that DEGRADES with a warning instead. On ``none`` the unsandboxed warning
     already covers it and we run. Returns None when fine.
     """
-    if selected_profile != "hardened":
+    if isolation != "hardened":
         return None
     sb = cfg.sandbox
     if sb.agent_network == "local":
         return (
-            "sandbox.agent_network = 'local' requires the strict profile (loopback"
+            "sandbox.agent_network = 'local' requires the strict isolation (loopback"
             " pinning needs the egress broker), but this host supports only"
             " 'hardened'. Use 'providers' or 'open'."
         )
     if sb.tool_network == "only_explicit_states":
         return (
             "sandbox.tool_network = 'only_explicit_states' requires the strict"
-            " profile (a per-tool network namespace singles one tool out), but"
+            " isolation (a per-tool network namespace singles one tool out), but"
             " this host supports only 'hardened'. Use 'auto' or 'allow'."
         )
     if sb.tool_network == "block":
@@ -183,7 +183,7 @@ def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str 
         # AGENTS.md "Secure by default, degrade or refuse").
         return (
             "sandbox.tool_network = 'block' cannot be enforced on the 'hardened'"
-            " profile: blocking a jailed command's network needs a per-child"
+            " isolation: blocking a jailed command's network needs a per-child"
             " network namespace, which only 'strict' provides. Use"
             " sandbox.tool_network = 'auto' (no tool network on strict, degraded"
             " with a warning here), or run on a host that supports strict"
@@ -193,8 +193,8 @@ def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str 
 
 
 def resolve_strict_egress_viability(
-    cfg: Config, selected_profile: SandboxProfile, *, reporter: Reporter = STDIO_REPORTER
-) -> tuple[SandboxProfile, str | None]:
+    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter = STDIO_REPORTER
+) -> tuple[IsolationLevel, str | None]:
     """Handle strict selected when this process can't run the egress broker.
 
     ``detect_env`` selects ``strict`` when the jail *launcher* binary can create
@@ -202,22 +202,22 @@ def resolve_strict_egress_viability(
     (``agent_network in {providers, local}``) needs THIS process to create one
     too, and we can't apply the hardened agent-Landlock under strict (it breaks
     the jail's ``pivot_root``). On an AppArmor-restricted host where only the
-    surgical agent6-jail profile is installed, the launcher has userns but this
+    surgical agent6-jail isolation is installed, the launcher has userns but this
     process does not, so the broker would fail with a cryptic
     "failed to write namespace id maps".
 
     Returns ``(effective_profile, error)``:
     - ``agent_network = "open"`` (no broker) -> unchanged.
     - this process CAN create a userns -> unchanged (the broker will work).
-    - ``profile = "auto"`` -> downgrade to ``hardened`` (egress confined by
+    - ``isolation = "auto"`` -> downgrade to ``hardened`` (egress confined by
       Landlock instead) with a NOTE, so the run still works.
-    - ``profile = "strict"`` (explicit) -> refuse with guidance (no silent
+    - ``isolation = "strict"`` (explicit) -> refuse with guidance (no silent
       downgrade of an explicit request).
     """
-    if selected_profile != "strict" or cfg.sandbox.agent_network not in ("providers", "local"):
-        return selected_profile, None
+    if isolation != "strict" or cfg.sandbox.agent_network not in ("providers", "local"):
+        return isolation, None
     if probe_userns_supported():
-        return selected_profile, None  # this process can userns -> broker works
+        return isolation, None  # this process can userns -> broker works
     core = (
         "strict's provider-egress broker needs this process to create a user"
         " namespace, but the host blocks it (AppArmor grants userns to the jail"
@@ -229,33 +229,33 @@ def resolve_strict_egress_viability(
         " run_command)"
     )
     # Downgrade to hardened ONLY when the config can actually run there. An
-    # explicit profile='strict' must not be silently downgraded; and a config
+    # explicit isolation='strict' must not be silently downgraded; and a config
     # that itself requires strict (agent_network='local', tool_network=
     # 'only_explicit_states') has no hardened fallback. check_network_profile is
     # the authority on what hardened refuses, so reusing it also covers future
     # strict-only knobs.
     hardened_blocker = check_network_profile(cfg, "hardened")
     if hardened_blocker is not None:
-        return selected_profile, (
+        return isolation, (
             f"REFUSING: {core} That config also requires strict on hardened"
             f" ({hardened_blocker}) so there is no fallback. {fixes}."
         )
-    if cfg.sandbox.profile == "strict":
-        return selected_profile, f"REFUSING: {core} {fixes}, or set sandbox.profile='hardened'."
+    if cfg.sandbox.isolation == "strict":
+        return isolation, f"REFUSING: {core} {fixes}, or set sandbox.isolation='hardened'."
     reporter.err(
-        f"[agent6] NOTE: {core} Falling back to the hardened profile (egress"
+        f"[agent6] NOTE: {core} Falling back to the hardened isolation (egress"
         f" confined by Landlock). {fixes}."
     )
     return "hardened", None
 
 
 def maybe_start_egress(
-    cfg: Config, selected_profile: SandboxProfile, *, detach_exe: str | None = None
+    cfg: Config, isolation: IsolationLevel, *, detach_exe: str | None = None
 ) -> tuple[EgressGuard, str | None]:
     """Confine the agent process's egress via the broker, if configured.
 
     Returns ``(guard, error)``. ``error`` non-None ⇒ the caller must refuse the
-    run. Only acts on the ``strict`` profile under
+    run. Only acts on the ``strict`` isolation under
     ``agent_network ∈ {providers, local}``, on ``open`` nothing is confined,
     and on ``hardened`` the agent-process Landlock (see
     :func:`maybe_apply_agent_landlock`) provides port-level confinement
@@ -283,7 +283,7 @@ def maybe_start_egress(
             " (agent6.sandbox.host_spawn); start runs from a regular shell."
         )
     mode = cfg.sandbox.agent_network
-    if mode == "open" or selected_profile != "strict":
+    if mode == "open" or isolation != "strict":
         return EgressGuard(), None
     if mode == "local":
         eps = _provider_endpoints(cfg)
@@ -376,7 +376,7 @@ def lane_launcher(guard: EgressGuard) -> HostLaneLaunch | None:
 
 def maybe_apply_agent_landlock(
     cfg: Config,
-    selected_profile: SandboxProfile,
+    isolation: IsolationLevel,
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> str | None:
@@ -385,16 +385,16 @@ def maybe_apply_agent_landlock(
     Returns ``None`` when nothing is to be done or confinement succeeds, or a
     ready-to-print error message when the run must be refused.
 
-    Only the ``hardened`` profile takes this path, and profile resolution
-    (``detect.select_profile``) only selects hardened when the Landlock probe
-    succeeded. The ``strict`` profile instead runs every child command in its
+    Only the ``hardened`` isolation takes this path, and isolation resolution
+    (``detect.resolve_isolation``) only selects hardened when the Landlock probe
+    succeeded. The ``strict`` isolation instead runs every child command in its
     own user+mount+pid+net namespace (a stronger boundary) and confines
     provider egress with the broker; Landlocking the agent there would break
     the jail's ``pivot_root(2)`` / ``mount(2)`` on kernels at ABI >= 7.
     Irrevocable, and applied before any provider or network object is built so
     it covers the whole run and every child it spawns.
     """
-    if selected_profile != "hardened":
+    if isolation != "hardened":
         return None
     cwd = Path.cwd().resolve()
     # The agent persists run state (including the in-process curator's graph)
@@ -425,7 +425,7 @@ def maybe_apply_agent_landlock(
     )
     run_paths = (Path("/run"),) if Path("/run").exists() else ()
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
-    # The jail launcher (agent6-jail, hardened profile) grants the CHILD
+    # The jail launcher (agent6-jail, hardened isolation) grants the CHILD
     # read+execute on its ro_paths by opening each one from inside THIS
     # already-Landlocked process (PathFd::new in apply_landlock_hardened), and
     # nested Landlock rulesets INTERSECT. If a dir is not in the agent's own
@@ -515,7 +515,7 @@ def maybe_apply_agent_landlock(
     except (LandlockNotSupportedError, OSError) as exc:
         # Fail closed: hardened's only filesystem boundary is Landlock, so a
         # kernel that cannot apply it refuses the run. (LandlockNotSupported
-        # is a can't-happen safety net here -- profile resolution already
+        # is a can't-happen safety net here -- isolation resolution already
         # probed the ABI before selecting hardened.)
         return f"could not apply agent Landlock confinement: {exc}"
     tcp_note = (

@@ -201,7 +201,7 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
 def repl_run_init(root: Path) -> None:
     """REPL /init: run the setup wizard. Prompts on a TTY (the REPL is
     interactive) and never overwrites existing files; the ecosystem is
-    auto-detected (no hard-coded profile)."""
+    auto-detected (no hard-coded isolation)."""
     try:
         rc = init_workspace(
             root,

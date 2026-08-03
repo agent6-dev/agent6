@@ -170,7 +170,7 @@ provider = "anthropic"
 model = "$MODEL"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"

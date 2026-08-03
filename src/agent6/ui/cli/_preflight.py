@@ -12,7 +12,7 @@ from pathlib import Path
 
 from agent6.app.preflight import BranchChoice, resolve_base_branch
 from agent6.config import Config
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 from agent6.ui.cli._steer import tty_prompt
 
 
@@ -36,7 +36,7 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
-def confirm_unconfined_autorun(selected_profile: SandboxProfile, cfg: Config) -> bool:
+def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
     """The one genuinely dangerous combination: the sandbox is OFF and
     run_command is auto-approved, so the agent can run any command on the host
     with no confinement and no prompt. Get one explicit consent at startup when
@@ -46,7 +46,7 @@ def confirm_unconfined_autorun(selected_profile: SandboxProfile, cfg: Config) ->
 
     Returns True to proceed, False to abort.
     """
-    if selected_profile != "none" or cfg.sandbox.run_commands != "yes":
+    if isolation != "none" or cfg.sandbox.run_commands != "yes":
         return True
     print(
         "[agent6] DANGER: the sandbox is DISABLED and run_command is"

@@ -3,23 +3,23 @@
 ## Requirements
 
 - **Linux** for the sandbox. The jail uses Landlock, seccomp, and user namespaces, which
-  are Linux-only. macOS runs unsandboxed: the default `profile = "auto"` resolves to
+  are Linux-only. macOS runs unsandboxed: the default `isolation = "auto"` resolves to
   `none`, commands run as ordinary subprocesses behind a startup warning, and an explicit
-  `strict` or `hardened` profile is refused. On Windows use WSL; the CLI does not run
+  `strict` or `hardened` isolation is refused. On Windows use WSL; the CLI does not run
   natively there.
 - **Kernel 6.7 or newer** for the Landlock network rules. Older kernels fall back to
   filesystem-only Landlock with a warning.
-- **Unprivileged user namespaces** for the `strict` profile. They are on by default on
+- **Unprivileged user namespaces** for `strict` isolation. They are on by default on
   Ubuntu, Debian, and most cloud images. On Ubuntu 24.04+, where
   `kernel.apparmor_restrict_unprivileged_userns = 1` blocks them, either set that sysctl
   to 0 or install the bundled AppArmor profile with `agent6 system apparmor install`
   (removed again with `agent6 system apparmor remove`). Without user namespaces agent6
-  falls back to the `hardened` profile, which is still real isolation.
+  falls back to `hardened` isolation, which is still real confinement.
 - **Python 3.12 or newer**, and an API key for at least one provider.
 - A **Rust toolchain** only when building from source; the PyPI wheels bundle a prebuilt
   `agent6-jail`.
 
-The [security model](security.md) describes what each profile enforces.
+The [security model](security.md) describes what each isolation level enforces.
 
 ## From PyPI
 
@@ -75,5 +75,5 @@ agent6 --version
 agent6 check          # sandbox probes, config, and provider keys
 ```
 
-`agent6 check sandbox` runs the jail through a set of probes and reports which profile a
+`agent6 check sandbox` runs the jail through a set of probes and reports which isolation level a
 run will use on your kernel.

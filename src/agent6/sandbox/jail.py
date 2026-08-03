@@ -151,7 +151,7 @@ def locate_jail_binary() -> Path | None:
 def _policy_to_json(policy: JailPolicy) -> str:
     return json.dumps(
         {
-            "profile": policy.profile,
+            "isolation": policy.isolation,
             "cwd": str(policy.cwd),
             "argv": list(policy.argv),
             "env": [list(pair) for pair in policy.env],
@@ -169,7 +169,7 @@ def _policy_to_json(policy: JailPolicy) -> str:
 def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     """Run `policy.argv` as a plain subprocess (no confinement).
 
-    Used only for the `none` profile on non-Linux hosts. Inherits the parent
+    Used only for the `none` isolation on non-Linux hosts. Inherits the parent
     environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
     runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
     memory_limit_mb) have no effect here, there is no kernel mechanism to
@@ -191,7 +191,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
             timeout=policy.timeout_s,
         )
     except subprocess.TimeoutExpired as exc:
-        # Match the jailed profiles' contract: a timeout is an rc=124 result,
+        # Match the jailed contract: a timeout is an rc=124 result,
         # not a raised exception the caller would have to special-case.
         return CommandResult(
             argv=tuple(policy.argv),
@@ -216,10 +216,10 @@ def strict_namespaces_work() -> bool:
 
     The cheap ``unshare -U -r true`` probe in ``detect.probe_userns_supported``
     under-reports on an AppArmor-restricted host (Ubuntu 24.04+ with
-    ``kernel.apparmor_restrict_unprivileged_userns=1``) where a profile grants
+    ``kernel.apparmor_restrict_unprivileged_userns=1``) where a isolation grants
     the *agent6-jail* binary userns but not ``/usr/bin/unshare``. This runs the
     real jail binary with a trivial `strict` policy to get the authoritative
-    answer. Cached for the process lifetime; the kernel/profile state does not
+    answer. Cached for the process lifetime; the kernel/isolation state does not
     change mid-run. Returns False if the jail binary is missing.
     """
     if not Path("/usr/bin/true").exists():
@@ -230,7 +230,7 @@ def strict_namespaces_work() -> bool:
             JailPolicy(
                 cwd=probe_cwd,
                 argv=("/usr/bin/true",),
-                profile="strict",
+                isolation="strict",
                 allow_network=False,
                 timeout_s=10.0,
             )
@@ -245,19 +245,19 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
 
     Raises JailUnavailableError if the launcher binary is missing or setup fails.
 
-    The `none` profile is the unsandboxed path: the command runs as a plain
+    The `none` isolation is the unsandboxed path: the command runs as a plain
     subprocess with no kernel confinement. `auto` selects it only on non-Linux
-    hosts; an explicit `profile = "none"`, `--dangerously-disable-sandbox`, or
+    hosts; an explicit `isolation = "none"`, `--dangerously-disable-sandbox`, or
     `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` selects it on any host. The CLI prints a
     prominent warning before any such run.
 
     Security review note: this is the single place where an
     LLM-influenced argv runs without the jail. It exists solely so agent6 is
     usable on platforms (macOS) where the Landlock/seccomp/namespace sandbox
-    does not exist. All real-isolation profiles still go through the Rust
+    does not exist. Both real isolation levels still go through the Rust
     launcher; nothing here weakens the Linux boundary.
     """
-    if policy.profile == "none":
+    if policy.isolation == "none":
         return _run_unsandboxed(policy)
     binary = locate_jail_binary()
     if binary is None:

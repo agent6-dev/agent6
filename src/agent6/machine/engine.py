@@ -71,7 +71,7 @@ from agent6.machine.template import (
 )
 from agent6.portable import atomic_write
 from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
-from agent6.types import JailPolicy, SandboxProfile
+from agent6.types import IsolationLevel, JailPolicy
 
 __all__ = [
     "AgentExecResult",
@@ -282,7 +282,7 @@ class LiveWorld:
     # (None for the rare runner that wants no log). The World derives the path.
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
-    profile: SandboxProfile = "strict"
+    isolation: IsolationLevel = "strict"
     # When set, each agent-state execution writes a watchable event stream to
     # ``<state_log_root>/<seq>-<state>/logs.jsonl`` (the CLI points it at
     # ``<instance>/states``), pruned to the most recent ``state_log_keep`` so a
@@ -324,7 +324,7 @@ class LiveWorld:
         tool_path, tool_mounts = operator_tool_paths()
         env_list.append(("PATH", tool_path))
         # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is
-        # writable on both profiles. Mirrors the run_command jail env.
+        # writable on both isolation levels. Mirrors the run_command jail env.
         env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
         env_list.append(("PYTHONDONTWRITEBYTECODE", "1"))
         # Same reason as the run_command jail: a machine tool's `uv run` must
@@ -338,13 +338,13 @@ class LiveWorld:
             # portable way to persist across iterations (hardened tool jails are
             # otherwise read-only); the journal still records every transition.
             # The jail mounts extra_rw_paths at their real locations in every
-            # profile, so the host abspath resolves inside as-is.
+            # isolation, so the host abspath resolves inside as-is.
             env_list.append(("AGENT6_MACHINE_DATA_DIR", str(self.data_dir)))
             extra_rw = (self.data_dir,)
         policy = JailPolicy(
             cwd=self.cwd,
             argv=argv,
-            profile=self.profile,
+            isolation=self.isolation,
             env=tuple(env_list),
             allow_network=allow_network,
             extra_protect_paths=self.protect_paths,

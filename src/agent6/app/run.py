@@ -106,7 +106,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -172,7 +172,7 @@ class RunFrontend:
         [Path, EventSink], Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
     ]
     make_steer_state: Callable[[EventSink, Path], SteerHooks]
-    confirm_unconfined_autorun: Callable[[SandboxProfile, Config], bool]
+    confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
     choose_branch_start_point: Callable[[Config, Path, str], BranchChoice]
     prompt_detach_away_mode: Callable[[Path], None]
@@ -259,7 +259,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     role = role_for_mode(mode)
 
     try:
-        selected_profile = select_isolation(
+        isolation = select_isolation(
             cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
         )
     except SessionRefused as refusal:
@@ -483,7 +483,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         try:
             guard = start_isolation(
-                cfg, selected_profile, agent6_exe=frontend.agent6_exe, reporter=reporter
+                cfg, isolation, agent6_exe=frontend.agent6_exe, reporter=reporter
             )
         except SessionRefused as refusal:
             return refusal.rc
@@ -572,7 +572,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cwd=cwd,
                 state_dir=state_dir,
                 layout=layout,
-                sandbox_profile=selected_profile,
+                isolation=isolation,
                 mode=mode,
                 events=events,
                 approver=frontend.build_approver(layout.run_dir, events),

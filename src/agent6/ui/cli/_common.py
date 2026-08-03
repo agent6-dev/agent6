@@ -62,11 +62,11 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     command carries both: run/plan/ask/resume and machine run).
 
     ``--dangerously-disable-sandbox`` runs the agent's commands UNCONFINED on
-    the host (equivalent to a one-off ``sandbox.profile = "none"``); the env
+    the host (equivalent to a one-off ``sandbox.isolation = "none"``); the env
     ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` does the same. ``--auto-approve``
     auto-approves ``run_command`` for this invocation: it upgrades
     ``sandbox.run_commands`` from ask to yes and never resurrects a withheld
-    no. Approval is skipped; confinement still depends on ``sandbox.profile``.
+    no. Approval is skipped; confinement still depends on ``sandbox.isolation``.
     """
     parser.add_argument(
         "--dangerously-disable-sandbox",
@@ -83,7 +83,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Auto-approve run_command for this run instead of prompting"
             " (same as sandbox.run_commands = yes). Confinement still depends"
-            " on sandbox.profile; combined with --dangerously-disable-sandbox"
+            " on sandbox.isolation; combined with --dangerously-disable-sandbox"
             " it hands the agent unprompted host access."
         ),
     )

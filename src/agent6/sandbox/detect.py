@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sandbox.landlock import LandlockError, landlock_abi
-from agent6.types import SandboxProfile
+from agent6.types import IsolationLevel
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,11 +45,11 @@ class Environment:
     sandbox_available: bool
 
     @property
-    def detected_profile(self) -> SandboxProfile:
-        """The strongest jail profile this environment can actually run.
+    def detected_isolation(self) -> IsolationLevel:
+        """The strongest jail isolation this environment can actually run.
 
         On non-Linux hosts (macOS) the kernel sandbox does not exist at all,
-        so the only profile is `none` (unsandboxed): child commands run as
+        so the only isolation is `none` (unsandboxed): child commands run as
         plain subprocesses with no confinement. Callers are expected to warn
         loudly when this is selected.
 
@@ -115,10 +115,10 @@ def sandbox_disabled_by_env() -> bool:
     """True when ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` is set.
 
     The env form of ``--dangerously-disable-sandbox``: a per-invocation SETTER
-    that forces the unsandboxed profile regardless of config, read in
-    :func:`select_profile`. For a ``machine run`` the supervisor calls
-    ``select_profile`` and passes the resolved ``none`` to each agent
-    subprocess in its request (the subprocess trusts ``req["profile"]`` and
+    that forces the unsandboxed isolation regardless of config, read in
+    :func:`resolve_isolation`. For a ``machine run`` the supervisor calls
+    ``resolve_isolation`` and passes the resolved ``none`` to each agent
+    subprocess in its request (the subprocess trusts ``req["isolation"]`` and
     does not re-resolve). Never reachable by the LLM (it cannot set the
     launcher's environment)."""
     return os.environ.get("AGENT6_DANGEROUSLY_DISABLE_SANDBOX") == "1"
@@ -130,7 +130,7 @@ def probe_userns_supported() -> bool:
 
     Uses `unshare -U -r true` as a side-effect-free probe: if the call
     succeeds, the kernel + container policy allow `CLONE_NEWUSER`, which is a
-    prerequisite for the `strict` jail profile. Cached for the process
+    prerequisite for the `strict` jail isolation. Cached for the process
     lifetime; this never changes mid-run.
     """
     unshare = "/usr/bin/unshare"
@@ -152,7 +152,7 @@ def probe_userns_supported() -> bool:
 def probe_landlock_abi() -> int:
     """The kernel's Landlock ABI version, 0 when unavailable.
 
-    Fail-closed: a probe error reads as "no Landlock", so profile resolution
+    Fail-closed: a probe error reads as "no Landlock", so isolation resolution
     refuses `hardened` / resolves `auto` to the loudly-warned `none` instead
     of promising confinement the kernel may not deliver. Cached for the
     process lifetime; this never changes mid-run.
@@ -170,7 +170,7 @@ def apparmor_userns_restricted() -> bool:
 
     Ubuntu 23.10+/24.04+ ship ``kernel.apparmor_restrict_unprivileged_userns=1``:
     an unprivileged process can then create a user namespace only with an
-    AppArmor profile granting ``userns``. This is why ``strict`` can be
+    AppArmor isolation granting ``userns``. This is why ``strict`` can be
     unavailable even when ``kernel.unprivileged_userns_clone = 1`` -- the fix is
     ``agent6 system apparmor install`` (or set the sysctl to 0). Reads the proc
     file directly; absent on non-AppArmor kernels.
@@ -189,7 +189,7 @@ def sandbox_available() -> bool:
 
     The sandbox (jail launcher + Landlock + seccomp + namespaces + egress
     broker) is Linux-only. On every other platform there is no confinement
-    mechanism, so we run unsandboxed (`profile = none`) and refuse any config
+    mechanism, so we run unsandboxed (`isolation = none`) and refuse any config
     that explicitly asked for isolation.
     """
     return sys.platform.startswith("linux")
@@ -208,18 +208,18 @@ def detect() -> Environment:
     )
 
 
-class ProfileUnavailableError(Exception):
-    """The host cannot provide the requested `[sandbox] profile`.
+class IsolationUnavailableError(Exception):
+    """The host cannot provide the requested `[sandbox] isolation`.
 
     A distinct type so the refusal sites catch exactly this; catching bare
     RuntimeError there also swallowed unrelated faults as security refusals.
     """
 
 
-def select_profile(requested: str, env: Environment) -> SandboxProfile:
-    """Resolve `[sandbox] profile` ("auto"|"strict"|"hardened") against the host.
+def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
+    """Resolve `[sandbox] isolation` ("auto"|"strict"|"hardened") against the host.
 
-    Raises `ProfileUnavailableError` if the user asked for a profile the kernel
+    Raises `IsolationUnavailableError` if the user asked for a isolation the kernel
     + container cannot provide. This is the "no silent downgrade" rule: we never
     give the user less isolation than they configured.
     """
@@ -228,14 +228,14 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         requested = "none"
     if not env.sandbox_available:
         # Non-Linux host: there is no kernel sandbox. `auto` (and an explicit
-        # opt-out) resolve to the unsandboxed `none` profile (callers warn); an
+        # opt-out) resolve to the unsandboxed `none` isolation (callers warn); an
         # explicit request for real isolation is refused, not silently downgraded.
         if requested in ("auto", "none"):
             return "none"
-        raise ProfileUnavailableError(
-            f"sandbox.profile = {requested!r} requires the Linux kernel sandbox "
+        raise IsolationUnavailableError(
+            f"sandbox.isolation = {requested!r} requires the Linux kernel sandbox "
             f"(Landlock + seccomp + namespaces), which is not available on "
-            f"{sys.platform!r}. Set profile = 'auto' to run unsandboxed on this "
+            f"{sys.platform!r}. Set isolation = 'auto' to run unsandboxed on this "
             f"platform, or run agent6 on Linux for kernel-enforced isolation."
         )
     if requested == "auto":
@@ -244,33 +244,33 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         # userns (no strict) nor Landlock (no hardened). Even then it is never
         # silent: callers warn loudly, and the auto-approved-run_command combo
         # additionally hits the unconfined confirm gate.
-        return env.detected_profile
+        return env.detected_isolation
     if requested == "none":
         # Explicit opt-out of agent6's kernel sandbox: commands run with NO
         # Landlock/seccomp/namespace confinement, relying entirely on whatever
         # isolates the surrounding environment (a container, a disposable VM).
-        # Self-authorizing: `sandbox.profile`, the flag, and the env var are all
+        # Self-authorizing: `sandbox.isolation`, the flag, and the env var are all
         # operator-only (the LLM can set none of them), so writing `none` is the
         # consent. The loud run-startup warning fires either way; when it also
         # coincides with auto-approved run_command an extra confirm gate does.
         return "none"
     if requested == "strict":
         if not env.userns_supported:
-            raise ProfileUnavailableError(
-                "sandbox.profile = 'strict' requires unprivileged user namespaces "
+            raise IsolationUnavailableError(
+                "sandbox.isolation = 'strict' requires unprivileged user namespaces "
                 "(`unshare -U -r true`) to succeed, but this host blocks them. "
-                "Set profile = 'hardened' (or 'auto') to run without namespaces "
+                "Set isolation = 'hardened' (or 'auto') to run without namespaces "
                 "while keeping Landlock + seccomp + NO_NEW_PRIVS."
             )
         return "strict"
     if requested == "hardened":
         if env.landlock_abi < 1:
-            raise ProfileUnavailableError(
-                "sandbox.profile = 'hardened' requires Landlock (Linux >= 5.13 "
+            raise IsolationUnavailableError(
+                "sandbox.isolation = 'hardened' requires Landlock (Linux >= 5.13 "
                 "with the Landlock LSM enabled), which this kernel does not "
                 "provide -- without it hardened would apply no filesystem "
-                "confinement at all. Set profile = 'auto', or 'none' to run "
+                "confinement at all. Set isolation = 'auto', or 'none' to run "
                 "unsandboxed."
             )
         return "hardened"
-    raise ProfileUnavailableError(f"unknown sandbox.profile: {requested!r}")
+    raise IsolationUnavailableError(f"unknown sandbox.isolation: {requested!r}")

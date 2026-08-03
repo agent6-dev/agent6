@@ -3,7 +3,7 @@
 """`detect_env` re-checks userns via the jail binary on AppArmor-restricted hosts.
 
 `detect.probe_userns_supported` uses `/usr/bin/unshare`, which under-reports when
-an AppArmor profile grants the *agent6-jail* binary userns but not unshare. So
+an AppArmor isolation grants the *agent6-jail* binary userns but not unshare. So
 `detect_env` confirms with the real jail binary before dropping to `hardened`.
 """
 
@@ -39,7 +39,7 @@ def test_detect_env_keeps_userns_when_cheap_probe_already_true(
 
 
 def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The AppArmor-profile case: unshare blocked, but the jail binary can userns.
+    # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
     monkeypatch.setattr(_setup, "detect", lambda: _env(False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True

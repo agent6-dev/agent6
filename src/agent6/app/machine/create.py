@@ -43,7 +43,7 @@ from agent6.machine import (
 )
 from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import write_worker_pid
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
+from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -135,19 +135,19 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     env = detect_env()
     try:
-        profile = select_profile(cfg.sandbox.profile, env)
-    except ProfileUnavailableError as exc:
+        isolation = resolve_isolation(cfg.sandbox.isolation, env)
+    except IsolationUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
         return 2
-    profile, egress_err = resolve_strict_egress_viability(cfg, profile, reporter=reporter)
+    isolation, egress_err = resolve_strict_egress_viability(cfg, isolation, reporter=reporter)
     if egress_err is not None:
         reporter.err(egress_err)
         return 2
-    net_err = check_network_profile(cfg, profile)
+    net_err = check_network_profile(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return 2
-    warn_sandbox_gaps(profile, env, cfg, reporter=reporter)
+    warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
 
     scratch = resolved_state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
@@ -174,7 +174,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    runner = build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
+    runner = build_machine_agent_runner({}, cwd, isolation, scratch / "agent_transcripts")
 
     prior_toml: str | None = None
     prior_scripts: dict[str, str] = {}
@@ -249,7 +249,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
             problems = lint_and_typecheck(scratch / "scripts")
-            problems.extend(run_offline_tests(scratch, profile))
+            problems.extend(run_offline_tests(scratch, isolation))
             report = dry_run(candidate_spec, None)
             problems.extend(
                 f"dry-run state {c.name!r}: {c.detail}"

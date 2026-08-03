@@ -23,7 +23,7 @@ _REQUEST = MachineAgentRequest(
     cwd=Path("/work/repo"),
     root=Path("/work/repo"),
     overlay={"budget": {"max_tokens_fallback": 9000}},
-    profile="strict",
+    isolation="strict",
     transcript_dir=Path("/state/machines/m/i/transcripts"),
     events_log=Path("/state/machines/m/i/states/0002-review/logs.jsonl"),
     protect_paths=(Path("/work/repo/m.asm.toml"),),
@@ -45,7 +45,7 @@ _REQUEST = MachineAgentRequest(
 
 _REQUEST_BYTES = (
     '{"cwd":"/work/repo","root":"/work/repo",'
-    '"overlay":{"budget":{"max_tokens_fallback":9000}},"profile":"strict",'
+    '"overlay":{"budget":{"max_tokens_fallback":9000}},"isolation":"strict",'
     '"transcript_dir":"/state/machines/m/i/transcripts",'
     '"events_log":"/state/machines/m/i/states/0002-review/logs.jsonl",'
     '"protect_paths":["/work/repo/m.asm.toml"],'
@@ -108,12 +108,12 @@ def test_defaulted_request_omits_nothing() -> None:
         cwd=Path("/w"),
         root=Path("/w"),
         overlay={},
-        profile="none",
+        isolation="none",
         transcript_dir=Path("/t"),
         request=AgentRequest(prompt="p", timeout_s=1.0),
     )
     assert minimal.model_dump_json() == (
-        '{"cwd":"/w","root":"/w","overlay":{},"profile":"none","transcript_dir":"/t",'
+        '{"cwd":"/w","root":"/w","overlay":{},"isolation":"none","transcript_dir":"/t",'
         '"events_log":null,"protect_paths":[],"commit_identity":null,'
         '"request":{"prompt":"p","timeout_s":1.0,"model":null,"provider":null,'
         '"thinking":null,"temperature":null,"max_usd":null,'

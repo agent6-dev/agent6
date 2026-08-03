@@ -14,7 +14,7 @@ open-ended agent loop.
 ## Features
 
 - Sandboxed execution for every LLM-chosen child process, jailed individually
-  with Landlock + seccomp; the default `strict` profile adds namespaces +
+  with Landlock + seccomp; the default `strict` isolation adds namespaces +
   `pivot_root`, rebinds `.git` read-only, and confines egress to your provider
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
@@ -96,8 +96,8 @@ full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a
 Config is layered: built-in secure defaults, then the global `~/.config/agent6/config.toml`,
 then the per-repo config (out of the workspace, per-machine, not committed), then an
 explicit `--config FILE`. Every field has a default; security-sensitive fields default to
-the safe value (`agent_network = "providers"`, `tool_network = "block"`,
-`run_commands = "ask"`, `protect_git = true`, `git.allow_* = false`), and `git_ops.py`
+the safe value (`agent_network = "providers"`, `tool_network = "auto"`,
+`run_commands = "ask"`, `protect_git = true`), and `git_ops.py`
 refuses `push`, `--force`, and history rewrites unconditionally.
 
 ## Benchmarks

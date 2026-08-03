@@ -27,7 +27,7 @@ model = "x"
 provider = "anthropic"
 model = "x"
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "open"
 run_commands = "no"
 protect_git = true
@@ -415,7 +415,7 @@ def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
     # A machine bundle's .asm.toml + scripts/ are passed as extra_protect_paths.
     # The jail marks them read-only for run_command, but the in-process edit tools
     # ran outside that -- a mode="run" state could rewrite its own logic/scripts
-    # and persist a payload for the next run. Refuse on both profiles.
+    # and persist a payload for the next run. Refuse on both isolation levels.
     cfg = _config(tmp_path)
     (tmp_path / "bundle").mkdir()
     asm = tmp_path / "bundle" / "fixer.asm.toml"

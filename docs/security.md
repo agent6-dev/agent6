@@ -247,14 +247,14 @@ fixed argv depending only on operator input, never LLM output.
 
 ### 3. Profile selection
 
-You set `sandbox.profile`; it resolves against the host to the *effective*
-profile. No silent downgrade: a request the host can't meet is refused, and
+You set `sandbox.isolation`; it resolves against the host to the *effective*
+isolation level. No silent downgrade: a request the host can't meet is refused, and
 `auto` reaches `none` only when the host offers no confinement mechanism at
 all (non-Linux, or a Linux kernel with neither userns nor Landlock) -- always
 loudly. Capabilities are probed (`unshare` for userns, the Landlock ABI
 syscall for hardened), never guessed from the kernel version.
 
-| `sandbox.profile` | Host | Effective |
+| `sandbox.isolation` | Host | Effective |
 |---|---|---|
 | `auto` *(default)* | Linux + user namespaces | `strict` |
 | `auto` | Linux, no userns, Landlock | `hardened` |
@@ -276,7 +276,7 @@ syscall for hardened), never guessed from the kernel version.
       `clone(CLONE_NEW*)`); the container is the blast radius.
 - **none**: unsandboxed, always with a loud warning.
 
-- **Unsandboxing is explicit and self-authorizing.** `profile = "none"`,
+- **Unsandboxing is explicit and self-authorizing.** `isolation = "none"`,
   `--dangerously-disable-sandbox`, or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. The
   LLM can't reach argv/env, so setting one is the consent.
 - **Sandbox-off + auto-approved `run_command` adds a one-time gate.** For that
@@ -377,7 +377,7 @@ steer directive (§ [architecture.md](architecture.md#parallel-runs-fan-out-and-
 each spawn subordinate work. Nothing here loosens the sandbox:
 
 - **Every lane is an ordinary run.** A lane is a plain detached `agent6 run` on
-  its own clone: its own jail per `sandbox.profile`, its own egress broker
+  its own clone: its own jail per `sandbox.isolation`, its own egress broker
   (§1b), its own `run_commands` policy. Nothing shares a sandbox or a broker
   socket across lanes or with the parent run.
 - **Recursion is blocked by an env guard, not policy.** Every spawned lane
@@ -442,7 +442,7 @@ each spawn subordinate work. Nothing here loosens the sandbox:
       argv), a `tool` isn't a free exfil channel.
 
 Egress = `agent_network` × `tool_network` × per-tool `allow_network`; the
-effective profile decides what's enforceable. "offline" = no egress.
+effective isolation level decides what's enforceable. "offline" = no egress.
 
 **Agent egress** by `agent_network`:
 
@@ -492,8 +492,8 @@ More fail-closed properties:
 
 - **Operator-gated policy.** `agent_network`/`tool_network` are read only from the
   operator's config; a machine's `[config]` overlay is rejected at load if it
-  declares `[providers.*]`, `[sandbox.*]`, `[profiles.*]`, or `git.run_repo_hooks`.
-    - Otherwise a profile preset or a host `[machine.notify]` argv could splice
+  declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, or `git.run_repo_hooks`.
+    - Otherwise a strategy preset or a host `[machine.notify]` argv could splice
       into the resolved config, and `run_repo_hooks` would run repo `.git/hooks`
       on the host on a `mode="run"` commit. A `tool` only *declares*
       `allow_network`; honoring `allow` is the operator's call, and every conflict
@@ -549,7 +549,7 @@ regressions.
     - agent6 ships one scoped to the launcher (`agent6 system apparmor install`);
       with it, per-command jailing is `strict`, without it `hardened`.
     - Caveat: the egress broker needs the *agent process* to make a userns, which
-      the launcher-only profile doesn't grant, so a default run downgrades to
+      the launcher-only AppArmor profile doesn't grant, so a default run downgrades to
       `hardened` (Landlock egress) unless you set the sysctl to 0 host-wide or use
       `agent_network = "open"`.
 - **seccomp is required;** kernels that block it from unprivileged callers make the

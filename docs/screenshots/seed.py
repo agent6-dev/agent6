@@ -33,10 +33,10 @@ ORDER = [
 
 DEMO_CONFIG = """\
 # Demo config used only to render the docs screenshots; no secrets here.
-profile = "standard"
+isolation = "standard"
 
 [sandbox]
-profile = "auto"
+isolation = "auto"
 agent_network = "providers"
 tool_network = "block"
 run_commands = "ask"
