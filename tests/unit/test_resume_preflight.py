@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+import agent6.app._session as session_mod
 import agent6.app.resume as resume_mod
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
@@ -47,7 +48,7 @@ def test_v1_snapshot_resume_refuses_before_starting_egress(
     def _no_egress_allowed(*_a: object, **_k: object) -> object:
         pytest.fail("maybe_start_egress must not run before the snapshot refusal")
 
-    monkeypatch.setattr(resume_mod, "maybe_start_egress", _no_egress_allowed)
+    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress_allowed)
 
     rc = _cmd_resume(None, "old-run-AAAA11", force=False)
 
@@ -302,7 +303,7 @@ def test_plan_resume_requires_the_planner_role(
 
     # Reaching detect_env means the readiness gate accepted the planner-only
     # config; the old hard-coded require_runnable("worker") returned 2 first.
-    monkeypatch.setattr(resume_mod, "detect_env", _stop)
+    monkeypatch.setattr(session_mod, "detect_env", _stop)
     with pytest.raises(_Stop):
         _cmd_resume(None, "plan-AAAA11", force=False)
 
@@ -341,19 +342,19 @@ def test_plan_resume_builds_the_planner_provider(
         return ("strict", None)
 
     def _no_egress(*_a: object, **_k: object) -> tuple[object, None]:
-        return (resume_mod.EgressGuard(), None)
+        return (session_mod.EgressGuard(), None)
 
     monkeypatch.setattr(cli_resume_mod, "run_frontend", _frontend)
-    monkeypatch.setattr(resume_mod, "detect_env", object)
-    monkeypatch.setattr(resume_mod, "select_profile", _strict)
-    monkeypatch.setattr(resume_mod, "warn_sandbox_gaps", _none)
-    monkeypatch.setattr(resume_mod, "check_network_profile", _none)
-    monkeypatch.setattr(resume_mod, "resolve_strict_egress_viability", _strict_viable)
+    monkeypatch.setattr(session_mod, "detect_env", object)
+    monkeypatch.setattr(session_mod, "select_profile", _strict)
+    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(session_mod, "check_network_profile", _none)
+    monkeypatch.setattr(session_mod, "resolve_strict_egress_viability", _strict_viable)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
-    monkeypatch.setattr(resume_mod, "budget_preflight", _none)
+    monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(resume_mod, "maybe_start_egress", _no_egress)
-    monkeypatch.setattr(resume_mod, "maybe_apply_agent_landlock", _none)
+    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress)
+    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _none)
     monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
 
     captured: list[str] = []
@@ -362,7 +363,7 @@ def test_plan_resume_builds_the_planner_provider(
         captured.append(role)
         raise _Stop()
 
-    monkeypatch.setattr(resume_mod, "build_role_provider", _capture_role)
+    monkeypatch.setattr(session_mod, "build_role_provider", _capture_role)
     with pytest.raises(_Stop):
         _cmd_resume(None, "plan-BBBB22", force=False)
     assert captured == ["planner"]

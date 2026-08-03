@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import agent6.app._session as session_mod
 import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
 from agent6.config import (
@@ -84,8 +85,8 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
-    monkeypatch.setattr(app_run_mod, "maybe_start_egress", _no_egress)
-    monkeypatch.setattr(app_run_mod, "maybe_apply_agent_landlock", _noop)
+    monkeypatch.setattr(session_mod, "maybe_start_egress", _no_egress)
+    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _noop)
 
 
 def test_dirty_tree_refused_with_default_config(
@@ -105,7 +106,7 @@ def test_dirty_tree_refused_with_default_config(
     def _loud_curator(*a: object, **k: object) -> object:
         return pytest.fail("built the curator past the guard")
 
-    monkeypatch.setattr(app_run_mod, "GraphCurator", _loud_curator)
+    monkeypatch.setattr(session_mod, "GraphCurator", _loud_curator)
 
     rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
@@ -171,7 +172,7 @@ def test_post_guard_refusal_leaves_checkout_untouched(
     def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
         return app_run_mod.EgressGuard(), "no egress today"
 
-    monkeypatch.setattr(app_run_mod, "maybe_start_egress", _refuse_egress)
+    monkeypatch.setattr(session_mod, "maybe_start_egress", _refuse_egress)
 
     rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 

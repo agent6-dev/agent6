@@ -18,23 +18,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
+from agent6.app._session import (
+    SessionRefused,
+    build_session_providers,
+    build_session_tools,
+    select_isolation,
+    start_isolation,
+)
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
-    detect_env,
     start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
     EgressGuard,
     HostLaneLaunch,
-    check_network_profile,
     lane_launcher,
-    maybe_apply_agent_landlock,
-    maybe_start_egress,
-    resolve_strict_egress_viability,
     spawn_detached,
     stop_egress,
-    warn_sandbox_gaps,
 )
 from agent6.app.finalize import (
     finalize_auto_merge,
@@ -50,21 +51,11 @@ from agent6.app.manifest import (
 )
 from agent6.app.preflight import (
     BranchChoice,
-    budget_preflight,
     infer_verify_if_unset,
     warn_if_headless_ask,
-    warn_if_prompt_override_incomplete,
 )
 from agent6.app.providers import (
-    InstrumentedProvider,
-    build_critic_provider,
     build_prompt_reviser_provider,
-    build_review_seats,
-    build_role_provider,
-    build_summariser_provider,
-    resolve_compaction_thresholds,
-    resolve_decompose,
-    review_panel_configured,
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
@@ -84,9 +75,8 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.graph.curator import GraphCurator
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
-from agent6.providers import Provider, TranscriptSink
+from agent6.providers import TranscriptSink
 from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.ipc import (
     away_mode,
@@ -113,7 +103,6 @@ from agent6.runs.lock import (
     repo_writer_holder,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
@@ -269,35 +258,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     role = role_for_mode(mode)
 
-    env = detect_env()
     try:
-        selected_profile = select_profile(cfg.sandbox.profile, env)
-    except ProfileUnavailableError as exc:
-        reporter.err(f"REFUSING: {exc}")
-        return 2
-    warn_sandbox_gaps(selected_profile, env, cfg, reporter=reporter)
-    if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
-        reporter.err("[agent6] aborted.")
-        return 1
-
-    net_err = check_network_profile(cfg, selected_profile)
-    if net_err is not None:
-        reporter.err(f"REFUSING: {net_err}")
-        return 2
-    # strict can be selected because the jail launcher has userns, yet this
-    # process can't create one for the egress broker (surgical AppArmor profile).
-    # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-    selected_profile, egress_err = resolve_strict_egress_viability(
-        cfg, selected_profile, reporter=reporter
-    )
-    if egress_err is not None:
-        reporter.err(egress_err)
-        return 2
-
-    budget_err = budget_preflight(cfg)
-    if budget_err is not None:
-        reporter.err(f"REFUSING: {budget_err}")
-        return 2
+        selected_profile = select_isolation(
+            cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
+        )
+    except SessionRefused as refusal:
+        return refusal.rc
 
     # Git pre-flight (verify identity).
     # The auto-commit-on-verify-pass behaviour requires a clean working tree,
@@ -515,22 +481,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        guard, egress_err = maybe_start_egress(
-            cfg, selected_profile, detach_exe=frontend.agent6_exe()
-        )
-        if egress_err is not None:
-            reporter.err(f"REFUSING: {egress_err}")
-            return 2
-        if guard.broker is not None:
-            reporter.err(
-                f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {guard.broker.pid}"
+        try:
+            guard = start_isolation(
+                cfg, selected_profile, agent6_exe=frontend.agent6_exe, reporter=reporter
             )
-
-        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, reporter=reporter)
-        if landlock_err is not None:
-            reporter.err(f"REFUSING: {landlock_err}")
-            return 2
+        except SessionRefused as refusal:
+            return refusal.rc
 
         # Cut the run branch, then write the manifest that records it. The cut
         # is the ONLY workspace mutation in preflight and deliberately its LAST
@@ -562,17 +518,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             profile_from_flag=(profile_stamp[1] if profile_stamp else bool(profile)),
         )
 
-        budget = BudgetTracker(
-            max_usd=cfg.budget.max_usd,
-            max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        )
-
-        worker_inner = build_role_provider(
-            cfg, role, transcript_sink=transcript_sink, budget=budget
-        )
-        rm_worker = cfg.models.resolve(role)
-        assert rm_worker is not None  # require_runnable validated this
-        warn_if_prompt_override_incomplete(cfg)
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
         warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         # The interactive revision prompt reads the terminal; with the TUI owning
@@ -588,37 +533,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        provider: Provider = InstrumentedProvider(
-            inner=worker_inner,
-            role=role,
-            model=rm_worker.model,
-            provider_name=rm_worker.provider,
-            events=events,
-            budget=budget,
-            stream_text=stream_text,
+        session = build_session_providers(
+            cfg, role=role, events=events, transcript_sink=transcript_sink, stream_text=stream_text
         )
-
-        critic_provider = build_critic_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
+        budget = session.budget
         prompt_reviser_provider = build_prompt_reviser_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
-        summariser_provider = build_summariser_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
-        # The grounded review panel runs at the critic trigger WHEN explicitly
-        # configured (any review_* key); otherwise critic!=off keeps the legacy single
-        # critic, so a pre-panel before_finish/periodic config still gates as before.
-        review_seats = (
-            build_review_seats(
-                cfg,
-                transcript_sink=transcript_sink,
-                budget=budget,
-                n=1,
-            )
-            if cfg.review.trigger != "off" and review_panel_configured(cfg)
-            else []
         )
 
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
@@ -646,27 +566,24 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # owns its subprocesses; we close it in the finally block.
             mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
-            # The DAG curator runs in-process: the run's worker.lock already
-            # makes this the sole writer, so no subprocess or socket is needed.
-            curator = GraphCurator(layout)
-            dispatcher = ToolDispatcher(
-                root=cwd,
-                config=cfg,
+            loop_log = frontend.loop_logger(mode)
+            tools = build_session_tools(
+                cfg,
+                cwd=cwd,
+                state_dir=state_dir,
+                layout=layout,
                 sandbox_profile=selected_profile,
+                mode=mode,
+                events=events,
                 approver=frontend.build_approver(layout.run_dir, events),
                 questioner=frontend.build_questioner(layout.run_dir, events),
-                events=events,
-                curator=curator,
-                run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
+                loop_log=loop_log,
                 mcp_manager=mcp_manager,
-                mode=mode,
-                state_dir=state_dir,
+                rm_role=session.rm_role,
             )
-            loop_log = frontend.loop_logger(mode)
-            compact_drop, compact_summarise = resolve_compaction_thresholds(
-                cfg, rm_worker, log=loop_log
-            )
-            cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
+            curator = tools.curator
+            dispatcher = tools.dispatcher
+            cfg = tools.cfg
             after_auto_commit: Callable[[int, str], Literal["continue", "stop"]] = (
                 frontend.build_repl_hook(cwd, budget, effective_run_id, mcp_manager)
                 if interactive and mode == "run"
@@ -676,7 +593,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 root=cwd,
                 config=cfg,
                 initial_pins=tuple(pins),
-                provider=provider,
+                provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,
                 events=events,
@@ -715,10 +632,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 mode=mode,
                 plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
                 after_auto_commit=after_auto_commit,
-                critic_provider=critic_provider,
+                critic_provider=session.critic_provider,
                 critic_mode=cfg.review.trigger,
                 critic_period=cfg.review.period,
-                review_seats=review_seats,
+                review_seats=session.review_seats,
                 review_decision=cfg.review.decision,
                 review_quorum=cfg.review.quorum,
                 review_max_total_rejections=cfg.review.max_total_rejections,
@@ -735,9 +652,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     if effective_revise_prompt == "interactive"
                     else None
                 ),
-                summariser_provider=summariser_provider,
-                compact_drop_at_chars=compact_drop,
-                compact_summarise_at_chars=compact_summarise,
+                summariser_provider=session.summariser_provider,
+                compact_drop_at_chars=tools.compact_drop_at_chars,
+                compact_summarise_at_chars=tools.compact_summarise_at_chars,
                 context_summary_max_tokens=cfg.context.summary_max_tokens,
                 compact_elision_gists=cfg.context.elision_gists,
             )

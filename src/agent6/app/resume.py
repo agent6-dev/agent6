@@ -12,23 +12,24 @@ import os
 import sys
 from pathlib import Path
 
+from agent6.app._session import (
+    SessionRefused,
+    build_session_providers,
+    build_session_tools,
+    select_isolation,
+    start_isolation,
+)
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
     check_provider_keys,
-    detect_env,
     start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
     EgressGuard,
-    check_network_profile,
     lane_launcher,
-    maybe_apply_agent_landlock,
-    maybe_start_egress,
-    resolve_strict_egress_viability,
     spawn_detached,
     stop_egress,
-    warn_sandbox_gaps,
 )
 from agent6.app.finalize import (
     finalize_auto_merge,
@@ -38,26 +39,15 @@ from agent6.app.finalize import (
     run_exit_code,
 )
 from agent6.app.preflight import (
-    budget_preflight,
     infer_verify_if_unset,
     require_git_repo,
     warn_if_headless_ask,
-    warn_if_prompt_override_incomplete,
 )
 from agent6.app.providers import (
-    InstrumentedProvider,
-    build_critic_provider,
-    build_review_seats,
-    build_role_provider,
-    build_summariser_provider,
-    resolve_compaction_thresholds,
-    resolve_decompose,
-    review_panel_configured,
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.run import RunFrontend, apply_spawned_away_default, run_task
-from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
     ConfigError,
@@ -80,12 +70,10 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.graph.curator import GraphCurator
 from agent6.paths import (
     chown_to_real_user,
 )
 from agent6.providers import (
-    Provider,
     TranscriptSink,
 )
 from agent6.runs.id import RunIdError, resolve_run_id
@@ -111,7 +99,6 @@ from agent6.runs.lock import (
     repo_writer_holder,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import RunReason, load_run_snapshot
@@ -443,36 +430,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"CONFIG ERROR:\n{exc}")
             return 2
 
-        env = detect_env()
         try:
-            selected_profile = select_profile(cfg.sandbox.profile, env)
-        except ProfileUnavailableError as exc:
-            reporter.err(f"REFUSING: {exc}")
-            return 2
-        warn_sandbox_gaps(selected_profile, env, cfg, reporter=reporter)
-        if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
-            reporter.err("[agent6] aborted.")
-            return 1
-
-        net_err = check_network_profile(cfg, selected_profile)
-        if net_err is not None:
-            reporter.err(f"REFUSING: {net_err}")
-            return 2
-        # strict can be selected because the jail launcher has userns, yet this
-        # process can't create one for the egress broker (surgical AppArmor profile).
-        # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-        selected_profile, egress_err = resolve_strict_egress_viability(
-            cfg, selected_profile, reporter=reporter
-        )
-        if egress_err is not None:
-            reporter.err(egress_err)
-            return 2
+            selected_profile = select_isolation(
+                cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
+            )
+        except SessionRefused as refusal:
+            return refusal.rc
 
         missing = check_provider_keys(cfg)
-        budget_err = budget_preflight(cfg)
-        if budget_err is not None:
-            reporter.err(f"REFUSING: {budget_err}")
-            return 2
         if missing is not None:
             reporter.err(missing)
             return 2
@@ -492,24 +457,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        guard, egress_err = maybe_start_egress(
-            cfg, selected_profile, detach_exe=frontend.agent6_exe()
-        )
-        if egress_err is not None:
-            reporter.err(f"REFUSING: {egress_err}")
-            return 2
-        if guard.broker is not None:
-            reporter.err(
-                f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {guard.broker.pid}"
+        try:
+            guard = start_isolation(
+                cfg, selected_profile, agent6_exe=frontend.agent6_exe, reporter=reporter
             )
-
-        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, reporter=reporter)
-        if landlock_err is not None:
-            reporter.err(f"REFUSING: {landlock_err}")
-            # The egress broker is already running; the outer finally tears it
-            # down (and its socket dir) so this refusal does not leak it.
-            return 2
+        except SessionRefused as refusal:
+            return refusal.rc
 
         # Get onto the run's branch so the loop's commits land there (a fork
         # cuts agent6/<id> without checking it out; the operator may have moved
@@ -523,48 +476,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(branch_err)
             return 2
 
-        budget = BudgetTracker(
-            max_usd=cfg.budget.max_usd,
-            max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        )
-
-        worker_inner = build_role_provider(
-            cfg, role, transcript_sink=transcript_sink, budget=budget
-        )
-        rm_worker = cfg.models.resolve(role)
-        assert rm_worker is not None  # require_runnable validated this
-        warn_if_prompt_override_incomplete(cfg)
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        provider: Provider = InstrumentedProvider(
-            inner=worker_inner,
-            role=role,
-            model=rm_worker.model,
-            provider_name=rm_worker.provider,
-            events=events,
-            budget=budget,
-            stream_text=stream_text,
+        session = build_session_providers(
+            cfg, role=role, events=events, transcript_sink=transcript_sink, stream_text=stream_text
         )
-
-        critic_provider = build_critic_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
-        summariser_provider = build_summariser_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
-        )
-        review_seats = (
-            build_review_seats(
-                cfg,
-                transcript_sink=transcript_sink,
-                budget=budget,
-                n=1,
-            )
-            if cfg.review.trigger != "off" and review_panel_configured(cfg)
-            else []
-        )
+        budget = session.budget
         # Resume reuses the verify command the ORIGINAL run resolved (stored in the
         # snapshot), so the tool list, prompt, and commit branch stay consistent with
         # the frozen system prompt -- never re-inferring (which could flip and
@@ -604,34 +524,28 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
             mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
-            # The DAG curator runs in-process: the run's worker.lock already
-            # makes this the sole writer, so no subprocess or socket is needed.
-            curator = GraphCurator(layout)
-            dispatcher = ToolDispatcher(
-                root=cwd,
-                config=cfg,
+            loop_log = frontend.loop_logger(mode)
+            tools = build_session_tools(
+                cfg,
+                cwd=cwd,
+                state_dir=state_dir,
+                layout=layout,
                 sandbox_profile=selected_profile,
+                mode=mode,
+                events=events,
                 approver=frontend.build_approver(layout.run_dir, events),
                 questioner=frontend.build_questioner(layout.run_dir, events),
-                events=events,
-                curator=curator,
-                run_root_node_id=None,
+                loop_log=loop_log,
                 mcp_manager=mcp_manager,
-                mode=mode,
-                state_dir=state_dir,
+                rm_role=session.rm_role,
             )
-            loop_log = frontend.loop_logger(mode)
-            compact_drop, compact_summarise = resolve_compaction_thresholds(
-                cfg, rm_worker, log=loop_log
-            )
-            # Same pin the original run applied: the frozen system prompt
-            # already carries its decompose block; this keeps the loop's
-            # banner/hint reads consistent with it.
-            cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
+            curator = tools.curator
+            dispatcher = tools.dispatcher
+            cfg = tools.cfg
             wf = Workflow(
                 root=cwd,
                 config=cfg,
-                provider=provider,
+                provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,
                 events=events,
@@ -666,10 +580,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 resume_state_path=snapshot_path,
                 mode=mode,
                 plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
-                critic_provider=critic_provider,
+                critic_provider=session.critic_provider,
                 critic_mode=cfg.review.trigger,
                 critic_period=cfg.review.period,
-                review_seats=review_seats,
+                review_seats=session.review_seats,
                 review_decision=cfg.review.decision,
                 review_quorum=cfg.review.quorum,
                 review_max_total_rejections=cfg.review.max_total_rejections,
@@ -678,9 +592,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 base_sha=resume_base_sha,
                 temperature=role_temperature(cfg, role),
                 critic_temperature=role_temperature(cfg, "reviewer"),
-                summariser_provider=summariser_provider,
-                compact_drop_at_chars=compact_drop,
-                compact_summarise_at_chars=compact_summarise,
+                summariser_provider=session.summariser_provider,
+                compact_drop_at_chars=tools.compact_drop_at_chars,
+                compact_summarise_at_chars=tools.compact_summarise_at_chars,
                 context_summary_max_tokens=cfg.context.summary_max_tokens,
                 compact_elision_gists=cfg.context.elision_gists,
             )
