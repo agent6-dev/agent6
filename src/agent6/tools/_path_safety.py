@@ -6,8 +6,8 @@ Every tool that reads/writes a path in-process (outside
 ``agent6.sandbox.jail.run_in_jail``) resolves it through here first: reject an
 absolute path or a ``..`` component, then require the resolved path to still
 be under *root*. Shared by the fs handlers (read_file / list_dir / grep /
-apply_edit / apply_patch) and the navigation handlers (outline / find_*),
-which all take an untrusted ``path`` argument.
+apply_edit / apply_patch), the navigation handlers (outline / find_*) -- which
+all take an untrusted ``path`` argument -- and the symbol index they query.
 """
 
 from __future__ import annotations
@@ -25,6 +25,17 @@ from agent6.tools.errors import ToolError
 class SafePath:
     abs_path: Path
     rel_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class ContainedEntry:
+    """One entry of a contained listing. ``is_dir`` follows a symlink, like
+    ``Path.is_dir``; a caller that recurses checks ``is_symlink`` too, because
+    the walk refuses to traverse one."""
+
+    name: str
+    is_dir: bool
+    is_symlink: bool
 
 
 def resolve_in_root(root: Path, candidate: str) -> SafePath:
@@ -80,7 +91,8 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
             child = _open_dir(dir_fd, name, create=create_parents)
             os.close(dir_fd)
             dir_fd = child
-        return os.open(rel_path.name, flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+        # The root itself is the one path with no leaf to name.
+        return os.open(rel_path.name or ".", flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
     except NotADirectoryError as exc:
         raise ToolError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
@@ -97,6 +109,30 @@ def read_contained(root: Path, rel_path: Path, *, errors: str = "strict") -> str
     fd = open_contained(root, rel_path, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         return handle.read()
+
+
+def read_bytes_contained(root: Path, rel_path: Path) -> bytes:
+    """The file's bytes, read through a descriptor walked from *root*. For a
+    reader that indexes into the source by byte offset (tree-sitter), which the
+    newline translation of a text read would shift."""
+    fd = open_contained(root, rel_path, os.O_RDONLY)
+    with os.fdopen(fd, "rb") as handle:
+        return handle.read()
+
+
+def list_contained(root: Path, rel_path: Path) -> list[ContainedEntry]:
+    """The directory's entries, listed through a descriptor walked from *root*.
+
+    The same containment as :func:`read_contained`, for the tools that read a
+    directory rather than a file: a name resolved a second time is a second
+    lookup, so a listing taken by full path can be a host directory's.
+    """
+    fd = open_contained(root, rel_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with os.scandir(fd) as entries:
+            return [ContainedEntry(e.name, e.is_dir(), e.is_symlink()) for e in entries]
+    finally:
+        os.close(fd)
 
 
 def write_contained(root: Path, rel_path: Path, content: str) -> None:

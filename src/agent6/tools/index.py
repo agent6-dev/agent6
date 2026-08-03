@@ -35,6 +35,8 @@ from typing import Final
 from tree_sitter import Parser, Query, QueryCursor
 from tree_sitter_language_pack import get_language
 
+from agent6.tools._path_safety import read_bytes_contained
+
 
 @dataclass(frozen=True, slots=True)
 class Symbol:
@@ -489,7 +491,7 @@ class SymbolIndex:
         for path in self._root.rglob("*"):
             if not path.is_file():
                 continue
-            if self._is_excluded(path):
+            if self._included_rel(path) is None:
                 continue
             if self._lang_for(path) is None:
                 continue
@@ -497,7 +499,8 @@ class SymbolIndex:
 
     def _reparse(self, path: Path) -> None:
         p = path.resolve()
-        if not p.is_file() or self._is_excluded(p):
+        rel = self._included_rel(p)
+        if rel is None or not p.is_file():
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
             self._stamps.pop(p, None)
@@ -510,7 +513,7 @@ class SymbolIndex:
             return
         parser, def_query, ref_query = bits
         try:
-            src = p.read_bytes()
+            src = read_bytes_contained(self._root, rel)
         except OSError:
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
@@ -572,14 +575,19 @@ class SymbolIndex:
         except OSError:
             self._stamps.pop(p, None)
 
-    def _is_excluded(self, p: Path) -> bool:
-        # Compare against parts of the path relative to root so an excluded
-        # dirname embedded in an outside ancestor doesn't matter.
+    def _included_rel(self, p: Path) -> Path | None:
+        """The path relative to root, or None when *p* lies outside it or under
+        an excluded directory. One answer for both questions, so what is in
+        scope and what the contained read walks cannot disagree. Comparing the
+        RELATIVE parts keeps an excluded dirname in an outside ancestor from
+        mattering."""
         try:
             rel = p.relative_to(self._root)
         except ValueError:
-            return True
-        return any(part in self._excludes for part in rel.parts)
+            return None
+        if any(part in self._excludes for part in rel.parts):
+            return None
+        return rel
 
     def _lang_for(self, path: Path) -> str | None:
         info = _LANG_TABLE.get(path.suffix)

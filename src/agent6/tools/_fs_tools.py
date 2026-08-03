@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 import time
+from collections import deque
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,7 @@ from agent6.tools._edit_diag import (
 from agent6.tools._grep_safety import reject_pathological_regex
 from agent6.tools._path_safety import (
     SafePath,
+    list_contained,
     read_contained,
     resolve_in_root,
     write_contained,
@@ -123,25 +126,47 @@ def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_dir():
         raise ToolError(f"Not a directory: {args.path}")
-    entries: list[str] = []
-    for entry in sorted(sp.abs_path.iterdir()):
-        suffix = "/" if entry.is_dir() else ""
-        entries.append(entry.name + suffix)
-    return ListDirResult(entries=tuple(entries))
+    listing = sorted(list_contained(root, sp.rel_path), key=lambda e: e.name)
+    return ListDirResult(entries=tuple(e.name + "/" if e.is_dir else e.name for e in listing))
 
 
-def _grep_targets(abs_path: Path, rel_path: str) -> tuple[list[Path], Path | None]:
-    """The files a grep of `abs_path` scans, plus the base below which hidden
-    entries (.git, ...) are skipped: the requested directory, or None for an
-    explicitly-named file, so `grep <pat> .github/` (or a hidden file named
-    directly) is still searched."""
-    if abs_path.is_file():
-        return [abs_path], None
-    if abs_path.is_dir():
-        return [p for p in abs_path.rglob("*") if p.is_file()], abs_path
-    # rglob on a missing path yields nothing, which would render as a
+def _walk_contained_files(root: Path, rel_dir: Path) -> Iterator[Path]:
+    """Every workspace-relative file under *rel_dir*, listed through descriptors
+    walked from *root* so the walk itself cannot leave the workspace.
+
+    Hidden entries (.git, ...) are skipped below the requested directory, so
+    `grep <pat> .github/` still searches. A symlink is never descended into (a
+    self-referential one would walk forever, and the walk refuses to traverse
+    one anyway); a symlink to a file is yielded, and the caller contains the
+    read.
+
+    Level order: a grep that runs out of wall-clock has spent it on the shallow
+    files, not inside the first build directory below them (depth-first read
+    827MB before the source file next to it).
+    """
+    queue = deque([rel_dir])
+    while queue:
+        current = queue.popleft()
+        for entry in list_contained(root, current):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir and not entry.is_symlink:
+                queue.append(current / entry.name)
+            elif not entry.is_dir:
+                yield current / entry.name
+
+
+def _grep_targets(root: Path, sp: SafePath, candidate: str) -> list[Path]:
+    """The workspace-relative files a grep of *sp* scans: the visible files
+    under the requested directory, or the file named directly -- which is
+    searched even when it is hidden."""
+    if sp.abs_path.is_file():
+        return [sp.rel_path]
+    if sp.abs_path.is_dir():
+        return list(_walk_contained_files(root, sp.rel_path))
+    # A walk of a missing path yields nothing, which would render as a
     # confident "searched, no matches"; error like the sibling fs tools.
-    raise ToolError(f"No such path: {rel_path}")
+    raise ToolError(f"No such path: {candidate}")
 
 
 def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
@@ -154,14 +179,9 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
         raise ToolError(f"Invalid regex: {exc}") from exc
     deadline = time.monotonic() + MAX_GREP_WALL_S
     hits: list[dict[str, Any]] = []
-    targets, skip_base = _grep_targets(sp.abs_path, args.path)
     root_resolved = root.resolve()
-    for path in targets:
-        if skip_base is not None and any(
-            part.startswith(".") for part in path.relative_to(skip_base).parts
-        ):
-            continue
-        # Contain each target like read_file contains its leaf: rglob yields
+    for path in _grep_targets(root, sp, args.path):
+        # Contain each target like read_file contains its leaf: the walk yields
         # in-repo symlinks whose destination can be anywhere on the host, and
         # this read runs in-process (outside the jail). Resolve and require
         # the real file to still be under root; skip escapees.
@@ -170,7 +190,7 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
         # the symlink, so the check and the use land on different objects and a
         # background command in the same jail can swap the link between them.
         try:
-            rel = path.resolve().relative_to(root_resolved)
+            rel = (root / path).resolve().relative_to(root_resolved)
         except (OSError, ValueError):
             continue
         if time.monotonic() > deadline:
@@ -191,7 +211,7 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
                 if pat.search(line):
                     hits.append(
                         {
-                            "path": str(path.relative_to(root)),
+                            "path": str(path),
                             "line": lineno,
                             "text": line[:500],
                         }

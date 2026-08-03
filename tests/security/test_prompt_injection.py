@@ -323,6 +323,123 @@ def test_a_path_swapped_after_the_check_is_not_read_for_an_lsp_query(
     assert b"OUTSIDE-SECRET" not in bytes(sent), "host content reached the language server"
 
 
+def _swap_after_resolve(root: Path, outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put the swap in the window `list_dir`/grep leave open: right after the
+    containment check returns, before the tool looks the path up again."""
+    from agent6.tools import _fs_tools
+    from agent6.tools._path_safety import SafePath
+
+    real_resolve = _fs_tools.resolve_in_root
+
+    def swap_after_the_check(root_arg: Path, candidate: str) -> SafePath:
+        sp = real_resolve(root_arg, candidate)
+        _swap_parent_for_a_link_out(root, outside)
+        return sp
+
+    monkeypatch.setattr(_fs_tools, "resolve_in_root", swap_after_the_check)
+
+
+def test_a_directory_swapped_after_the_check_is_not_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`list_dir` kept the check-then-reopen shape: `resolve_in_root` cleared the
+    path, then `iterdir()` looked it up again by full path. A component swapped
+    in that window listed a host directory straight back to the model
+    (`{'entries': ['host-only.txt']}`, measured).
+
+    The walk refuses a swapped component as "not a directory": with
+    ``O_DIRECTORY``, ``O_NOFOLLOW`` on a symlink is ``ENOTDIR``, not ``ELOOP``.
+    """
+    root = tmp_path / "ws"
+    (root / "sub").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "host-only.txt").write_text("x", encoding="utf-8")
+
+    _swap_after_resolve(root, outside, monkeypatch)
+    d = _dispatcher(root)
+    with pytest.raises(ToolError, match="not a directory"):
+        d.dispatch("list_dir", {"path": "sub"})
+    assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
+
+
+def test_a_directory_swapped_after_the_check_is_not_walked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """grep contained its per-file reads but not its WALK: `rglob` looked the
+    checked directory up again by full path. A component swapped in that window
+    sent the walk into a host tree -- unbounded, since the wall-clock deadline
+    only covers the reads -- and every target it found then failed the per-file
+    containment check, so grep answered with a confident empty search of a
+    directory it never opened (`{'hits': [], 'truncated': False}`, measured,
+    while the workspace file below held the match)."""
+    root = tmp_path / "ws"
+    (root / "sub").mkdir(parents=True)
+    (root / "sub" / "in_repo.txt").write_text("NEEDLE in the workspace\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "host.txt").write_text("NEEDLE on the host\n", encoding="utf-8")
+
+    _swap_after_resolve(root, outside, monkeypatch)
+    d = _dispatcher(root)
+    with pytest.raises(ToolError, match="not a directory"):
+        d.dispatch("grep", {"path": "sub", "pattern": "NEEDLE"})
+    assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
+
+
+def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`SymbolIndex._reparse` checked the path, then `read_bytes()` opened it
+    again by full path. A leaf swapped in that window put a host file's symbol
+    names into the index under an in-repo path, and `find_definition` reported
+    them to the model as the workspace's own (`{'name': 'host_only_symbol',
+    'path': 'mod.py', ...}`, measured).
+
+    The swap is injected into the window it needs: between the containment check
+    and the read.
+    """
+    from agent6.tools.index import SymbolIndex
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "mod.py").write_text("def in_repo():\n    pass\n", encoding="utf-8")
+    outside = tmp_path / "outside.py"
+    outside.write_text("def host_only_symbol():\n    pass\n", encoding="utf-8")
+
+    real_parser_for = SymbolIndex._parser_for  # pyright: ignore[reportPrivateUsage]
+
+    def swap_after_the_check(self: SymbolIndex, lang_name: str) -> object:
+        bits = real_parser_for(self, lang_name)
+        link = root / "mod.py"
+        if not link.is_symlink():
+            link.unlink()
+            link.symlink_to(outside)
+        return bits
+
+    monkeypatch.setattr(SymbolIndex, "_parser_for", swap_after_the_check)
+
+    d = _dispatcher(root)
+    with pytest.raises(ToolError, match="became a symlink"):
+        d.dispatch("find_definition", {"symbol": "host_only_symbol"})
+    assert (root / "mod.py").is_symlink(), "the swap never happened; the test proves nothing"
+
+
+def test_an_in_repo_symlinked_directory_is_listed_but_never_descended(tmp_path: Path) -> None:
+    """The converse of the contained walk: `list_dir` still marks a symlink to a
+    directory with a trailing "/", and grep neither refuses one nor follows it --
+    a self-referential link would walk forever."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "a.txt").write_text("NEEDLE\n", encoding="utf-8")
+    (tmp_path / "alias").symlink_to(tmp_path / "pkg", target_is_directory=True)
+    (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
+    d = _dispatcher(tmp_path)
+    entries = d.dispatch("list_dir", {"path": "."}).to_wire()["entries"]
+    assert "pkg/" in entries and "alias/" in entries and "loop/" in entries
+    hits = d.dispatch("grep", {"path": ".", "pattern": "NEEDLE"}).to_wire()["hits"]
+    assert [h["path"] for h in hits] == ["pkg/a.txt"]
+
+
 def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None:
     """The converse of the guard above: a resolved path has no symlink leaf, so
     O_NOFOLLOW must not disturb ordinary work -- including a write THROUGH an
