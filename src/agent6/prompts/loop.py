@@ -56,6 +56,14 @@ the loop will halt if you exceed it.
   (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
   `apply_edit` using `kind="create"`: the file itself for a file, or a
   placeholder like `target/.keep` for a directory. Then rerun the command.
+- If the verify command itself no longer matches the task -- it asserts
+    behaviour this run deliberately changed, or it cannot run at all -- say
+    so: finish with `stale_gate` set to the command you believe it should
+    be. NEVER revert correct work to make a stale gate green; that discards
+    the task to satisfy the measurement. The gate does not move and the run
+    does not pass either way, so this records the proposal for the operator
+    instead of hiding the mismatch. Use it only for a mismatched gate: a
+    gate that is simply failing means the work is not done.
 - If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those

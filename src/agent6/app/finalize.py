@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -77,6 +78,21 @@ def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
     return out
 
 
+def _print_stale_gate(result: RunResult) -> None:
+    """Surface a proposed gate replacement, and say plainly that nothing moved.
+
+    The worker may declare the configured gate stale instead of reverting
+    correct work to satisfy it. Applying the proposal is the operator's call,
+    so this prints the exact command rather than doing anything.
+    """
+    if not result.stale_gate:
+        return
+    print("\nthe worker says this run's verify gate no longer matches the task:")
+    print(f"  it proposes: {result.stale_gate}")
+    print("  nothing changed. To adopt it:")
+    print(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
+
+
 def print_run_end(
     result: RunResult, *, layout: RunLayout, budget: BudgetTracker, console_stream: bool
 ) -> None:
@@ -115,6 +131,7 @@ def print_run_end(
         print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
         print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
+    _print_stale_gate(result)
     print(budget.format_summary())
     _print_run_total_across_legs(layout)
     run_branch = ""

@@ -88,7 +88,7 @@ How a run ends and how it resumes: the RunResult the workflow returns, the Resum
 
 - **Written by:** workflows/{loop}
 - **Read by:** app/{fork, resume, run}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (7 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (8 test files exercise it)
 
 ## ToolResult family
 
@@ -102,7 +102,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _memory_tools, _nav_tools}
 - **Read by:** tools/{dispatch}, workflows/{_review, _toolset, loop}
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (16 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (17 test files exercise it)
 
 ## Event union
 

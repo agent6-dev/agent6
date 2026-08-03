@@ -40,6 +40,7 @@ RunReason = Literal[
     "prompt_revision_failed",
     "max_iterations",
     "ask_repl_empty",
+    "gate_stale",
 ]
 
 
@@ -84,6 +85,11 @@ class RunResult:
       prompt_revision_failed - revise_prompt failed before the worker loop.
       max_iterations    - hit max_iterations cap without finish.
       ask_repl_empty    - interactive ask session ended with no question asked.
+      gate_stale        - the worker finished over a red gate it says no longer
+                          matches the task (it tests behaviour this run changed,
+                          or cannot run at all) and proposed a replacement. The
+                          gate is UNCHANGED and the run does not pass; the
+                          operator decides.
     """
 
     completed: bool
@@ -92,6 +98,9 @@ class RunResult:
     iterations: int
     tool_calls: int
     finish_payload: dict[str, Any] | None = None
+    # The replacement gate the worker proposed, when it finished declaring the
+    # configured one stale. Recorded and surfaced; never acted on.
+    stale_gate: str = ""
     # The SAME fact `run.end.all_passed` carries, on the result the app layer
     # reads: `completed` means the agent stopped deliberately, never that the
     # work verified.

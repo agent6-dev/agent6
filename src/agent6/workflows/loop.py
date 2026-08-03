@@ -445,6 +445,9 @@ class _TurnState:
     # may revoke it (set back to None) before the stop checks honour it.
     finish_signal: str | None = None
     finish_payload: dict[str, Any] | None = None
+    # A finish that declared the configured gate stale, with the replacement it
+    # proposes. Recorded and surfaced; the gate itself never moves.
+    finish_stale_gate: str = ""
     finish_kind: Literal["finish_run", "finish_planning"] = "finish_run"
     # The user-turn items accumulated for this turn: tool results in dispatch
     # order, with advisory notices (critic, metric, nudges) appended after
@@ -1345,6 +1348,11 @@ class Workflow:
                 except ValueError:
                     raw_result = None
             turn.finish_payload = raw_result if isinstance(raw_result, dict) else None
+            turn.finish_stale_gate = (
+                str(tool_input.get("stale_gate", "")).strip()
+                if isinstance(tool_input, dict)
+                else ""
+            )
         elif name == FinishPlanningInput.TOOL_NAME:
             turn.finish_kind = "finish_planning"
             turn.finish_signal = (
@@ -2246,20 +2254,20 @@ class Workflow:
             # finish_run over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
             # model called finish_run".
+            reason = self._finish_reason(turn, state)
             if turn.finish_kind == "finish_run":
-                self._emit_run_end_grounded(
-                    reason=turn.finish_kind, iteration=turn.iteration, state=state
-                )
+                self._emit_run_end_grounded(reason=reason, iteration=turn.iteration, state=state)
             else:
-                self._emit_run_end_passed(reason=turn.finish_kind, iterations=turn.iteration)
+                self._emit_run_end_passed(reason=reason, iterations=turn.iteration)
             return RunResult(
                 completed=True,
                 verified=self._verification(state),
-                reason=turn.finish_kind,
+                reason=reason,
                 summary=turn.finish_signal,
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
                 finish_payload=turn.finish_payload,
+                stale_gate=turn.finish_stale_gate,
             )
         return None
 
@@ -2875,6 +2883,17 @@ class Workflow:
         if not self.config.workflow.verify_command:
             return None
         return state.last_verify_ok is True and not state.edited_since_verify
+
+    def _finish_reason(self, turn: _TurnState, state: _LoopState) -> RunReason:
+        """What this finish is called.
+
+        A declared-stale gate names the end only when the run is NOT green:
+        over a green tree the truth is that it passed, and the proposal is
+        still recorded for the operator either way.
+        """
+        if turn.finish_stale_gate and self._tree_is_verify_green(state) is not True:
+            return "gate_stale"
+        return turn.finish_kind
 
     def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:
         """Emit a clean end honestly: all_passed only when the FINAL tree is

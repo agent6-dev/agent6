@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""A worker may say the gate is wrong instead of reverting correct work."""
+
+from __future__ import annotations
+
+import io
+from contextlib import redirect_stdout
+from unittest.mock import MagicMock
+
+import pytest
+
+from agent6.tools.results import FinishRunResult
+from agent6.viewmodel.listing import status_word
+from agent6.workflows._run_state import RunResult
+
+
+def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
+    """No new status word: `died_without_end`, the compare gates and the TUI
+    colours all key off the existing set. "gate stale" is a reason, and the
+    reason field already carries reasons."""
+    assert status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
+        "failed",
+        "gate_stale",
+    )
+
+
+def test_declaring_a_stale_gate_never_makes_a_run_pass() -> None:
+    """The whole point: the worker records a proposal, it does not certify
+    itself. A green tree is still the only thing that passes."""
+    assert status_word(finished=True, all_passed=True, end_reason="gate_stale") == ("passed", "")
+
+
+def test_the_tool_result_says_nothing_changed() -> None:
+    """A model that finished believing it swapped the gate would carry that
+    belief into its summary."""
+    wire = FinishRunResult(
+        summary_text="done", result=None, stale_gate="uv run pytest tests/unit"
+    ).to_wire()
+    assert "unchanged" in wire["stale_gate"]
+    assert "does not pass" in wire["stale_gate"]
+    assert FinishRunResult(summary_text="d", result=None).to_wire().get("stale_gate") is None
+
+
+def test_the_operator_gets_a_paste_ready_line() -> None:
+    """Applying the proposal is the operator's call, so the run prints the
+    exact command rather than doing anything."""
+    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        _print_stale_gate(
+            RunResult(
+                completed=True,
+                reason="gate_stale",
+                summary="s",
+                iterations=1,
+                tool_calls=1,
+                stale_gate="uv run pytest tests/unit",
+            )
+        )
+    text = out.getvalue()
+    assert "nothing changed" in text
+    assert "agent6 config set workflow.verify_command 'uv run pytest tests/unit'" in text
+
+
+def test_nothing_is_printed_without_a_declaration() -> None:
+    from agent6.app.finalize import _print_stale_gate  # pyright: ignore[reportPrivateUsage]
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        _print_stale_gate(
+            RunResult(completed=True, reason="finish_run", summary="s", iterations=1, tool_calls=1)
+        )
+    assert out.getvalue() == ""
+
+
+@pytest.mark.parametrize(
+    ("declared", "green", "expected"),
+    [
+        ("uv run pytest tests/unit", False, "gate_stale"),  # red + declared
+        ("uv run pytest tests/unit", True, "finish_run"),  # green: it passed, truthfully
+        ("", False, "finish_run"),  # red with no declaration is an ordinary finish
+    ],
+)
+def test_a_declaration_names_the_end_only_over_a_red_tree(
+    declared: str, green: bool, expected: str
+) -> None:
+    from agent6.workflows.loop import (
+        Workflow,
+        _LoopState,  # pyright: ignore[reportPrivateUsage]
+        _TurnState,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    wf = Workflow.__new__(Workflow)
+    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+    turn.finish_kind = "finish_run"
+    turn.finish_stale_gate = declared
+    object.__setattr__(wf, "_tree_is_verify_green", MagicMock(return_value=green))
+    reason = wf._finish_reason(turn, MagicMock(spec=_LoopState))  # pyright: ignore[reportPrivateUsage]
+    assert reason == expected
