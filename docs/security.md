@@ -50,8 +50,8 @@ Under that adversary, agent6 aims to hold:
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
    --hard`s** (§5).
     - This does NOT bind a `git` the model runs via `run_command`; that path is
-      bounded by the sandbox (`protect_git` keeps `.git` unwritable at both
-      isolation levels; push needs egress).
+      bounded by the sandbox (`protect_git` keeps `.git` unwritable under
+      `strict`; push needs egress).
 5. **No persistence after the run:** no daemon, cron, `.bashrc` write, or
    setuid binary.
     - **No setuid/setgid bit can be set.** `chmod`/`fchmod`/`fchmodat` are
@@ -317,9 +317,10 @@ syscall for hardened), never guessed from the kernel version.
       on a destructive verb.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
-    - `protect_git` (default on) keeps `.git` unwritable at BOTH isolation
-      levels: strict re-binds it read-only, hardened carves it out of the
-      Landlock RW grant. A rewrite fails and `push` has no egress.
+    - `protect_git` (default on) keeps `.git` unwritable under `strict`, which
+      re-binds it read-only. A rewrite fails and `push` has no egress. It is
+      STRICT-ONLY: see below. On `hardened` the default degrades with a
+      warning and an explicitly-set `true` refuses to run.
     - agent6 used to refuse mutating git subcommands (plus the `-c alias.*`
       injection that dodged them) in `run_command` argv. Removed: a blocklist
       enumerates badness, and a model that writes a shell script and runs it
@@ -332,15 +333,27 @@ syscall for hardened), never guessed from the kernel version.
     - Defense in depth on top of `protect_git`: those settings bound what a
       poisoned `.git/config` could do, and `protect_git` stops the model
       writing one in the first place.
-    - Hardened used to leave `.git` writable (no mount namespace to re-bind
-      with), documented as recoverable. It was not: a jailed command could
-      plant a `filter.<n>.clean` plus a `.gitattributes`, and agent6's own
-      auto-commit -- `git add -A` on the HOST, outside the jail, in the agent's
-      Landlock domain -- then ran it, reaching `$HOME` and the network. The
-      Landlock carve closes that; its cost is that hardened denies CREATING new
-      top-level entries in the workspace root (existing ones stay writable, and
-      the system prompt tells the model to create the entry with `apply_edit`
-      first).
+    - **`protect_git` is strict-only, and hardened leaves `.git` writable.**
+      The threat is real there: a jailed command can plant a
+      `filter.<n>.clean` plus a `.gitattributes`, and agent6's own auto-commit
+      -- `git add -A` on the HOST, outside the jail -- then runs it, reaching
+      `$HOME` and the network.
+      Hardened has no mount namespace, so the only tool is Landlock, and
+      Landlock cannot express this. Two of its properties close the door
+      together: a grant on a directory is RECURSIVE (no "this directory
+      only"), and stacked rulesets INTERSECT (an access needs every layer to
+      allow it). To deny `.git` some layer must not grant it, which by
+      recursion means that layer cannot grant the workspace root either --
+      so the root becomes unwritable overall and nothing new can be created
+      in it. Measured, both shapes: granting the root allows `.git` too;
+      granting only its children denies both. A second layer cannot subtract
+      what a first one granted.
+      agent6 shipped the children-only carve for a while. Its cost was that
+      no NEW top-level entry could be created -- `touch`, `mkdir`, `mkfifo`
+      all failed at the workspace root, and coreutils reported "File exists",
+      sending operators looking in the wrong place. That is too much to pay
+      for a protection the operator can have properly by using `strict`.
+      The in-process edit tools still refuse `.git` writes at every level.
 - **The edit tools refuse writes into an in-repo venv or `site-packages`.**
     - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
       editable-install `.pth` would silently corrupt the venv, invisible in `runs

@@ -15,6 +15,7 @@ from typing import Literal
 from agent6.app._setup import detect_env
 from agent6.app.confine import (
     check_network_support,
+    check_protect_git_support,
     maybe_apply_agent_landlock,
     warn_sandbox_gaps,
 )
@@ -58,6 +59,7 @@ def select_isolation(
     *,
     confirm_unconfined: Callable[[IsolationLevel, Config], bool],
     reporter: Reporter,
+    explicit_leaves: frozenset[str] = frozenset(),
 ) -> IsolationLevel:
     """The isolation preflight: pick the sandbox isolation for this environment,
     confirm an unconfined autorun, and refuse configs the isolation cannot honor
@@ -75,6 +77,14 @@ def select_isolation(
     net_err = check_network_support(cfg, selected)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
+        raise SessionRefused(2)
+    # A DEFAULT degrades with the warning above; a value the operator wrote
+    # down refuses, because they asked for something this host cannot give.
+    git_err = check_protect_git_support(
+        cfg, selected, explicitly_set="sandbox.protect_git" in explicit_leaves
+    )
+    if git_err is not None:
+        reporter.err(f"REFUSING: {git_err}")
         raise SessionRefused(2)
     budget_err = budget_preflight(cfg)
     if budget_err is not None:

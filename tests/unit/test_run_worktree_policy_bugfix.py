@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -60,6 +61,10 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
 def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     class _Loaded:
         config = cfg
+        # Per-leaf provenance: the preflight uses it to tell a DEFAULT that
+        # this host cannot honour (degrade with a warning) from a value the
+        # operator wrote down (refuse).
+        sources: ClassVar[dict[str, str]] = {}
 
     def _load_effective(*a: object, **k: object) -> _Loaded:
         return _Loaded()

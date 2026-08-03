@@ -445,7 +445,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 return 1
 
         try:
-            cfg = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset).config
+            effective = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset)
+            cfg, explicit_leaves = effective.config, frozenset(effective.sources)
             set_repo_hook_policy(cfg.git.run_repo_hooks)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)
@@ -461,7 +462,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         try:
             isolation = select_isolation(
-                cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
+                cfg,
+                confirm_unconfined=frontend.confirm_unconfined_autorun,
+                reporter=reporter,
+                explicit_leaves=explicit_leaves,
             )
         except SessionRefused as refusal:
             return refusal.rc

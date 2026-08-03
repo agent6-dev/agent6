@@ -1576,18 +1576,20 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
     assert out == {"answers": ["dark"]}
 
 
-@pytest.mark.parametrize("isolation", ["strict", "hardened"])
-def test_git_is_protected_at_every_isolation_level(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: IsolationLevel
+@pytest.mark.parametrize(("isolation", "protected"), [("strict", True), ("hardened", False)])
+def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolation: IsolationLevel, protected: bool
 ) -> None:
-    """`.git` reaches the jail as a protect path on hardened too.
+    """`protect_git` is a read-only bind, so it needs a mount namespace.
 
-    Hardened used to leave it writable, on the grounds that the write was
-    recoverable and nothing sensitive was exposed. It was neither: a jailed
-    command could plant a `filter.<n>.clean` in .git/config with a matching
-    .gitattributes, and agent6's own host-side auto-commit (`git add -A`, run
-    OUTSIDE the jail in the agent's Landlock domain) then executed it, which a
-    probe used to read $HOME and open an outbound connection."""
+    The threat is real on hardened too -- a jailed command can plant a
+    `filter.<n>.clean` in .git/config with a matching .gitattributes, and
+    agent6's own host-side auto-commit (`git add -A`, run OUTSIDE the jail)
+    then executes it. But Landlock cannot express the protection: a grant on a
+    directory is recursive and stacked rulesets only intersect, so denying
+    `.git` means not granting the workspace root either -- which denied every
+    `touch`/`mkdir` at the root. Hardened warns instead, and an explicitly-set
+    `protect_git = true` refuses to run there."""
     (tmp_path / ".git").mkdir()
     captured: list[object] = []
 
@@ -1602,8 +1604,8 @@ def test_git_is_protected_at_every_isolation_level(
     d = ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
     d.dispatch("run_command", {"argv": ["true"]})
 
-    protected = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
-    assert (tmp_path / ".git").resolve() in protected
+    paths = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
+    assert ((tmp_path / ".git").resolve() in paths) is protected
 
 
 def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:

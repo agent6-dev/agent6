@@ -58,11 +58,16 @@ def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[
     assert "WARNING" in err and "tool_network" in err and "network namespace" in err
 
 
-def test_hardened_allow_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
+def test_hardened_allow_says_nothing_about_the_network(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     # An operator who set tool_network='allow' asked for the tool to have the
-    # network, so no degrade warning; the isolation itself is fine.
+    # network, so no degrade warning for it. `.git` is a separate degrade and
+    # is expected here: hardened cannot protect it at all.
     warn_sandbox_gaps("hardened", _env(4), _cfg("allow"))
-    assert capsys.readouterr().err == ""
+    err = capsys.readouterr().err
+    assert "network" not in err.lower().split("cannot protect .git")[-1]
+    assert "cannot protect .git" in err
 
 
 def test_explicit_block_refuses_on_hardened() -> None:

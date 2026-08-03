@@ -241,12 +241,20 @@ def jail_policy(
     # jailed child then shares the host network instead of an empty namespace).
     allow_network = config.sandbox.tool_network == "allow"
     protect_paths: list[Path] = []
-    # `.git` is protected at BOTH isolation levels: strict re-binds it read-only,
-    # hardened carves it out of the Landlock RW grant. A writable `.git` is not
-    # merely "recoverable": a jailed command can plant a `filter.<n>.clean` in
-    # `.git/config` plus a `.gitattributes`, and agent6's own auto-commit then
-    # executes it on the HOST, outside the jail.
-    if config.sandbox.protect_git:
+    # STRICT only. A writable `.git` is not merely "recoverable": a jailed
+    # command can plant a `filter.<n>.clean` in `.git/config` plus a
+    # `.gitattributes`, and agent6's own auto-commit then executes it on the
+    # HOST, outside the jail. Strict re-binds `.git` read-only, which needs a
+    # mount namespace.
+    #
+    # Hardened has none, so the only tool is Landlock -- which has no deny
+    # rules. Protecting `.git` there meant not granting the workspace ROOT,
+    # because a Landlock grant is recursive and granting the root its own
+    # create/remove rights grants them over `.git` too. That cost every
+    # top-level write (`touch newfile`, `mkdir build`), which is too much to
+    # pay for a protection the operator can have properly by using strict.
+    # The in-process edit tools refuse `.git` writes at every level regardless.
+    if config.sandbox.protect_git and isolation == "strict":
         protect_paths.append((root / ".git").resolve())
     protect_paths.extend(extra_protect_paths)
     policy_kwargs: dict[str, Any] = {}

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess as sp
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -249,6 +250,10 @@ def _stub_load_effective(monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: P
 
     class _Loaded:
         config = cfg
+        # Per-leaf provenance, as the real EffectiveConfig carries: the
+        # preflight uses it to tell a DEFAULT this host cannot honour (degrade)
+        # from a value the operator wrote down (refuse).
+        sources: ClassVar[dict[str, str]] = {}
 
     def _load(*_a: object, **_k: object) -> _Loaded:
         return _Loaded()

@@ -55,6 +55,9 @@ def warn_sandbox_gaps(
     network namespace, a jailed run_command shares the (agent-scoped) host
     network instead of being offline, so say so once per run. Explicit `block`
     never reaches here (check_network_support refused it on hardened).
+
+    `protect_git` degrades the same way: strict-only, because it is a read-only
+    bind. An explicitly-set one refuses (check_protect_git_support).
     """
     if isolation == "none":
         reporter.err(
@@ -73,6 +76,13 @@ def warn_sandbox_gaps(
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
         )
+    if isolation == "hardened" and cfg.sandbox.protect_git:
+        reporter.err(
+            "[agent6] WARNING: 'hardened' cannot protect .git -- that is a "
+            "read-only bind, which needs the mount namespace only 'strict' has. "
+            "A jailed command can write .git here; the in-process edit tools "
+            "still refuse to. Use 'strict' for the real thing."
+        )
     if isolation == "hardened" and cfg.sandbox.tool_network == "auto":
         reporter.err(
             "[agent6] WARNING: 'hardened' has no network namespace, so "
@@ -82,6 +92,34 @@ def warn_sandbox_gaps(
             "and provider-only agent egress, or set sandbox.tool_network = "
             "'block' to refuse rather than run here."
         )
+
+
+def check_protect_git_support(
+    cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool
+) -> str | None:
+    """A refusal message when `protect_git` was EXPLICITLY asked for and this
+    isolation cannot provide it, else None.
+
+    `protect_git` is strict-only. Strict re-binds `.git` read-only, which needs
+    a mount namespace. On hardened there is none, so the only tool is Landlock,
+    which has no deny rules: protecting `.git` means NOT granting the workspace
+    root itself, and a Landlock grant is recursive, so granting the root its
+    own create/remove rights would grant them over `.git` too. Carving it out
+    therefore cost every top-level write -- `touch newfile`, `mkdir build`,
+    `mkfifo` all failed at the workspace root, which is too much to pay.
+
+    The default DEGRADES with a warning (see `warn_sandbox_gaps`); an explicit
+    `protect_git = true` refuses, naming what is unsupported and the fix. The
+    in-process edit tools still refuse writes into `.git` at every level.
+    """
+    if isolation != "hardened" or not (cfg.sandbox.protect_git and explicitly_set):
+        return None
+    return (
+        "sandbox.protect_git = true requires the strict isolation (a read-only"
+        " bind of .git), but this host supports only 'hardened', where Landlock"
+        " could only provide it by refusing every write at the workspace root."
+        " Set sandbox.protect_git = false to run here, or use strict."
+    )
 
 
 def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:

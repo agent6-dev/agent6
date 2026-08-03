@@ -251,7 +251,8 @@ def _cmd_run(  # noqa: PLR0911
     the flag overrides, resolve skills and @file refs, route ``--parallel``,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
     try:
-        cfg = load_effective(Path.cwd(), config_path, preset=preset).config
+        effective = load_effective(Path.cwd(), config_path, preset=preset)
+        cfg, explicit_leaves = effective.config, frozenset(effective.sources)
         set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
@@ -335,4 +336,5 @@ def _cmd_run(  # noqa: PLR0911
         sandbox_overrides=sandbox_overrides,
         preset=preset,
         pins=pins,
+        explicit_leaves=explicit_leaves,
     )

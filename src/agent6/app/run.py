@@ -256,6 +256,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     initial_steer: str = "",
     pins: Sequence[str] = (),
     preset_stamp: tuple[str, bool] | None = None,
+    # Which config leaves the operator actually WROTE, as dotted paths. A
+    # default that this host cannot honour degrades with a warning; a value
+    # they wrote down refuses, because they asked for something specific.
+    explicit_leaves: frozenset[str] = frozenset(),
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -295,7 +299,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     cfg = session_config(cfg, mode)
     try:
         isolation = select_isolation(
-            cfg, confirm_unconfined=frontend.confirm_unconfined_autorun, reporter=reporter
+            cfg,
+            confirm_unconfined=frontend.confirm_unconfined_autorun,
+            reporter=reporter,
+            explicit_leaves=explicit_leaves,
         )
     except SessionRefused as refusal:
         return refusal.rc
