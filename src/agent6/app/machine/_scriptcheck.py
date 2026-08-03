@@ -138,22 +138,32 @@ def run_offline_tests(
     """Execute every ``scripts/**/*_test.py`` in a no-network jail (the bundle's
     offline simulation). Returns failures (empty = all green / nothing to run).
 
-    Skipped on profile ``none`` (no jail to confine model-authored code in),
-    the static checks still apply. Each test gets a fresh writable
-    ``$AGENT6_MACHINE_DATA_DIR`` so record-style scripts can be exercised.
-    Tests run under the default ``JailPolicy`` memory cap (these are offline
-    mocks; the operator's ``[sandbox].memory_limit_mb`` is not consulted)."""
+    Requires the strict profile: it is the only one whose network namespace can
+    enforce the no-network contract on model-authored code. Skipped, with a loud
+    "NOT run" note and the static checks still applied, on ``none`` (no jail at
+    all) and ``hardened`` (a jail, but no network namespace, so
+    ``allow_network=False`` is silently ignored and the scripts would reach the
+    host network). Each test gets a fresh writable ``$AGENT6_MACHINE_DATA_DIR``
+    so record-style scripts can be exercised. Tests run under the default
+    ``JailPolicy`` memory cap (these are offline mocks; the operator's
+    ``[sandbox].memory_limit_mb`` is not consulted)."""
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
         return []
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if not tests:
         return []
-    if profile == "none":
-        # No jail to confine model-authored code in. Skipping is the only safe
-        # option, but say so: a silent pass here looks like "tests ran green".
+    if profile != "strict":
+        # none: no jail to confine model-authored code in. hardened: a jail, but
+        # no network namespace, so allow_network=False is silently ignored and
+        # the scripts would run with the host network -- exfil or pull-and-exec
+        # of model-authored code during `machine create`. Only strict can honor
+        # the no-network contract. Skipping is the only safe option on the rest,
+        # but say so: a silent pass here looks like "tests ran green". The static
+        # checks still apply.
+        reason = "no sandbox" if profile == "none" else "no network isolation (hardened)"
         print(
-            f"note: no sandbox on this host; {len(tests)} offline script test(s) NOT run",
+            f"note: {reason} on this host; {len(tests)} offline script test(s) NOT run",
             file=sys.stderr,
         )
         return []

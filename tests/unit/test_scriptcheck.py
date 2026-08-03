@@ -116,7 +116,7 @@ def _fake_jail(returncode: int, stderr: str = "") -> object:
 def test_offline_tests_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(0))
-    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert scriptcheck.run_offline_tests(tmp_path, "strict") == []
 
 
 def test_offline_tests_disable_python_bytecode(
@@ -137,7 +137,7 @@ def test_offline_tests_disable_python_bytecode(
 
     monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
 
-    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert scriptcheck.run_offline_tests(tmp_path, "strict") == []
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[0].env
 
 
@@ -146,7 +146,7 @@ def test_offline_tests_fail_surfaces_stderr(
 ) -> None:
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, "AssertionError: boom"))
-    problems = scriptcheck.run_offline_tests(tmp_path, "hardened")
+    problems = scriptcheck.run_offline_tests(tmp_path, "strict")
     assert len(problems) == 1
     assert "thing_test.py" in problems[0]
     assert "boom" in problems[0]
@@ -161,7 +161,7 @@ def test_offline_tests_relativize_bundle_paths(
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
     stderr = f'File "{tmp_path}/scripts/thing_test.py", line 1\nNameError: x'
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, stderr))
-    problems = scriptcheck.run_offline_tests(tmp_path, "hardened")
+    problems = scriptcheck.run_offline_tests(tmp_path, "strict")
     assert str(tmp_path) not in problems[0]
     assert 'File "scripts/thing_test.py"' in problems[0]
 
@@ -182,9 +182,29 @@ def test_offline_tests_skipped_on_none_profile(
     assert not called
 
 
+def test_offline_tests_skipped_on_hardened_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # hardened has a jail but no network namespace, so allow_network=False cannot
+    # be honored: model-authored scripts would reach the host network. They must
+    # NOT run (skipped with a note), like the `none` case.
+    _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
+    called = False
+
+    def _boom(_policy: object) -> CommandResult:  # pragma: no cover - must not run
+        nonlocal called
+        called = True
+        return CommandResult(argv=(), returncode=0, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _boom)
+    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert not called
+    assert "NOT run" in capsys.readouterr().err
+
+
 def test_offline_tests_no_test_files(tmp_path: Path) -> None:
     _write(tmp_path / "scripts", "real.py", "print('hi')\n")
-    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert scriptcheck.run_offline_tests(tmp_path, "strict") == []
 
 
 def test_offline_tests_jail_unavailable_surfaces_diagnostic(
@@ -232,5 +252,5 @@ def test_offline_tests_get_a_fresh_data_dir_per_test(
         )
 
     monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
-    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert scriptcheck.run_offline_tests(tmp_path, "strict") == []
     assert not (tmp_path / ".scriptcheck_data").exists()  # still cleaned up after
