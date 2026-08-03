@@ -106,6 +106,10 @@ class AddSubtaskIntent(BaseModel):
     op: Literal["add_subtask"] = "add_subtask"
     parent_id: str | None
     draft: TaskNodeDraft
+    # Place the new child directly after this sibling instead of appending.
+    # The children list is the order the frontier executes, so this is how
+    # work is inserted between two steps rather than re-planned around.
+    after: str | None = None
 
 
 class UpdateStatusIntent(BaseModel):
@@ -131,14 +135,6 @@ class ObsoleteIntent(BaseModel):
     op: Literal["obsolete"] = "obsolete"
     id: str
     reason: str
-
-
-class ReorderChildrenIntent(BaseModel):
-    model_config = _MODEL_CONFIG
-
-    op: Literal["reorder_children"] = "reorder_children"
-    parent_id: str
-    new_order: tuple[str, ...]
 
 
 class RecordCommitIntent(BaseModel):

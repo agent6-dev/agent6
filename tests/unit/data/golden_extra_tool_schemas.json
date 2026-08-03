@@ -28,6 +28,7 @@
     ],
     "properties": {
       "acceptance": "string",
+      "after": "anyOf[null,string]",
       "parent_id": "anyOf[null,string]",
       "rationale": "string",
       "relevant_paths": "array[string]",

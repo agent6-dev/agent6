@@ -47,7 +47,7 @@ def add_task(
         relevant_paths=args.relevant_paths,
         created_by="worker",
     )
-    intent = AddSubtaskIntent(parent_id=parent_id, draft=draft)
+    intent = AddSubtaskIntent(parent_id=parent_id, draft=draft, after=args.after)
     node = curator.add_subtask(intent)
     return AddTaskResult(
         id=node.id,

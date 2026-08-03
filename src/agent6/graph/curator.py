@@ -51,7 +51,6 @@ from agent6.graph.models import (
     NodeStatus,
     ObsoleteIntent,
     RecordCommitIntent,
-    ReorderChildrenIntent,
     SetCursorIntent,
     TaskNode,
     UpdateStatusIntent,
@@ -112,12 +111,6 @@ class ObsoleteJournal(_JournalBase):
     reason: str
 
 
-class ReorderChildrenJournal(_JournalBase):
-    op: Literal["reorder_children"] = "reorder_children"
-    parent_id: str
-    new_order: tuple[str, ...]
-
-
 class RecordCommitJournal(_JournalBase):
     op: Literal["record_commit"] = "record_commit"
     id: str
@@ -134,10 +127,17 @@ JournalEntry = (
     | UpdateStatusJournal
     | AddDependencyJournal
     | ObsoleteJournal
-    | ReorderChildrenJournal
     | RecordCommitJournal
     | SetCursorJournal
 )
+
+
+def _place(children: tuple[str, ...], new_id: str, after: str | None) -> tuple[str, ...]:
+    """*children* with *new_id* appended, or inserted just after *after*."""
+    if after is None:
+        return (*children, new_id)
+    at = children.index(after) + 1
+    return (*children[:at], new_id, *children[at:])
 
 
 def _now() -> datetime:
@@ -211,6 +211,11 @@ class GraphCurator:
             parent = self._nodes.get(intent.parent_id) if intent.parent_id else None
             if intent.parent_id is not None and parent is None:
                 raise CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
+            if intent.after is not None and (parent is None or intent.after not in parent.children):
+                raise CuratorError(
+                    f"add_subtask: after {intent.after!r} is not a child of"
+                    f" {intent.parent_id!r}; a position names a sibling"
+                )
             for dep in intent.draft.depends_on:
                 if dep not in self._nodes:
                     raise CuratorError(f"add_subtask: unknown dep {dep!r}")
@@ -238,7 +243,7 @@ class GraphCurator:
             if parent is not None:
                 updated_parent = parent.model_copy(
                     update={
-                        "children": (*parent.children, node.id),
+                        "children": _place(parent.children, node.id, intent.after),
                         "updated_at": now,
                     }
                 )
@@ -311,24 +316,6 @@ class GraphCurator:
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
             self._post_mutation(ObsoleteJournal(id=updated.id, reason=intent.reason))
-            return updated
-
-    def reorder_children(self, intent: ReorderChildrenIntent) -> TaskNode:
-        with self._mutating():
-            parent = self.get(intent.parent_id)
-            # Multiset comparison: a set check would accept a new_order with a
-            # duplicated child id (set drops the dup), silently corrupting
-            # parent.children into a list that visits a child twice.
-            if sorted(intent.new_order) != sorted(parent.children):
-                raise CuratorError(
-                    f"reorder_children {intent.parent_id}: new_order must be a permutation"
-                )
-            updated = parent.model_copy(update={"children": intent.new_order, "updated_at": _now()})
-            self._nodes[updated.id] = updated
-            write_node(self._layout, self._nodes, updated)
-            self._post_mutation(
-                ReorderChildrenJournal(parent_id=intent.parent_id, new_order=intent.new_order)
-            )
             return updated
 
     def record_commit(self, intent: RecordCommitIntent) -> TaskNode:

@@ -379,6 +379,8 @@ class DagAddTaskInput(_ToolInput):
         " or single-file work. `parent_id` attaches under an existing task"
         " (omit to attach under the run's root). `title` is a short"
         " imperative; `acceptance` is the verify-able condition."
+        " `after` places the new task directly after that sibling instead of"
+        " last, which is how work is inserted between two existing steps."
         " Returns the new task's 26-char ULID."
     )
 
@@ -386,6 +388,8 @@ class DagAddTaskInput(_ToolInput):
     # ULID is exactly 26 chars, like update_task/set_cursor; None still means
     # "under the run root". "" silently attached to root before the constraint.
     parent_id: str | None = Field(default=None, min_length=26, max_length=26)
+    # A sibling under the same parent; the task lands right after it.
+    after: str | None = Field(default=None, min_length=26, max_length=26)
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
