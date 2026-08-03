@@ -880,13 +880,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             .cwd
             .canonicalize()
             .unwrap_or_else(|_| policy.cwd.clone());
-        ruleset = grant_rw_carved(
-            ruleset,
-            &policy.cwd,
-            &protect_set,
-            &canon_cwd,
-            access_all,
-        )?;
+        ruleset = grant_rw_carved(ruleset, &policy.cwd, &protect_set, &canon_cwd, access_all)?;
     } else {
         // No protect set: original behavior, RW on cwd as a whole.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
