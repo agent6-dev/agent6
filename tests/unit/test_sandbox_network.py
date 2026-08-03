@@ -103,6 +103,17 @@ def test_refusal_explicit_block_state_on_hardened() -> None:
     assert msg is not None and "block" in msg
 
 
+def test_refusal_networked_tool_under_the_auto_default() -> None:
+    """`auto` is the DEFAULT tool_network, and it intends no tool network, so a
+    state demanding allow_network="allow" is refused on both profiles -- and the
+    message names the ACTUAL value. Every other case here pins block/allow/
+    only_explicit_states, leaving the default path unexercised."""
+    for profile in ("strict", "hardened"):
+        msg = machine_network_refusal(_cfg("providers", "auto"), profile, [_NET_TOOL])
+        assert msg is not None and "allow_network" in msg
+        assert "'auto'" in msg  # not a hardcoded "block"
+
+
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
     assert machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
 
