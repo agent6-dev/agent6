@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app.baseline import Baseline, gate_on_base
+from agent6.config import Config
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -44,7 +45,11 @@ def _repo(tmp_path: Path) -> tuple[Path, str]:
 
 def test_a_gate_green_at_base_means_this_run_broke_it(tmp_path: Path) -> None:
     got = gate_on_base(
-        *_repo(tmp_path), argv=("/bin/sh", "gate.sh"), isolation="hardened", timeout_s=30.0
+        *_repo(tmp_path),
+        argv=("/bin/sh", "gate.sh"),
+        config=Config(),
+        isolation="hardened",
+        timeout_s=30.0,
     )
     assert got.ran and got.returncode == 0
     assert "this run broke it" in got.line()
@@ -58,7 +63,12 @@ def test_a_gate_already_red_at_base_is_not_this_run_s_failure(tmp_path: Path) ->
         ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
     ).stdout.strip()
     got = gate_on_base(
-        repo, head, argv=("/bin/sh", "gate.sh"), isolation="hardened", timeout_s=30.0
+        repo,
+        head,
+        argv=("/bin/sh", "gate.sh"),
+        config=Config(),
+        isolation="hardened",
+        timeout_s=30.0,
     )
     assert got.ran and got.returncode == 1
     assert "already failed on the base commit" in got.line()
@@ -69,20 +79,74 @@ def test_the_live_checkout_is_never_touched(tmp_path: Path) -> None:
     be worse than not answering."""
     repo, sha = _repo(tmp_path)
     before = (repo / "gate.sh").read_text()
-    gate_on_base(repo, sha, argv=("/bin/sh", "gate.sh"), isolation="hardened", timeout_s=30.0)
+    gate_on_base(
+        repo,
+        sha,
+        argv=("/bin/sh", "gate.sh"),
+        config=Config(),
+        isolation="hardened",
+        timeout_s=30.0,
+    )
     assert (repo / "gate.sh").read_text() == before
 
 
 def test_nothing_to_check_says_so_rather_than_guessing(tmp_path: Path) -> None:
     repo, sha = _repo(tmp_path)
-    assert gate_on_base(repo, sha, argv=(), isolation="hardened", timeout_s=5.0) == Baseline(
-        ran=False, returncode=None, detail="no gate or no base commit recorded"
-    )
-    assert not gate_on_base(repo, "", argv=("/bin/true",), isolation="hardened", timeout_s=5.0).ran
+    assert gate_on_base(
+        repo, sha, argv=(), config=Config(), isolation="hardened", timeout_s=5.0
+    ) == Baseline(ran=False, returncode=None, detail="no gate or no base commit recorded")
+    assert not gate_on_base(
+        repo, "", argv=("/bin/true",), config=Config(), isolation="hardened", timeout_s=5.0
+    ).ran
 
 
 def test_a_bad_base_sha_reports_instead_of_raising(tmp_path: Path) -> None:
     repo, _sha = _repo(tmp_path)
-    got = gate_on_base(repo, "0" * 40, argv=("/bin/true",), isolation="hardened", timeout_s=5.0)
+    got = gate_on_base(
+        repo, "0" * 40, argv=("/bin/true",), config=Config(), isolation="hardened", timeout_s=5.0
+    )
     assert not got.ran
     assert "could not check the base commit" in got.line()
+
+
+def test_the_gate_gets_the_same_policy_every_other_command_gets(tmp_path: Path) -> None:
+    """It built its own policy and inherited no PATH, so a gate using any
+    operator-installed tool exited 127 at base -- and every red run was told
+    its failure pre-existed."""
+    repo, _base = _repo(tmp_path)
+    (repo / "gate.sh").write_text("#!/bin/sh\ncommand -v uv >/dev/null || exit 3\n")
+    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "needs uv"], check=True)
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    got = gate_on_base(
+        repo,
+        head,
+        argv=("/bin/sh", "gate.sh"),
+        config=Config(),
+        isolation="hardened",
+        timeout_s=60.0,
+    )
+    assert got.ran
+    assert got.returncode == 0, "the operator's PATH must reach the base-commit gate"
+
+
+def test_files_the_run_added_are_not_in_the_baseline_tree(tmp_path: Path) -> None:
+    """A clone plus `reset --mixed` leaves them on disk as untracked, so a run
+    that ADDS a failing test poisons its own baseline and is told the failure
+    came from somewhere else."""
+    repo, base = _repo(tmp_path)
+    (repo / "added_by_the_run.txt").write_text("x\n")
+    (repo / "gate.sh").write_text("#!/bin/sh\ntest ! -e added_by_the_run.txt\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "add a file"], check=True)
+    got = gate_on_base(
+        repo,
+        base,
+        argv=("/bin/sh", "gate.sh"),
+        config=Config(),
+        isolation="hardened",
+        timeout_s=60.0,
+    )
+    # gate.sh at BASE is the original (exit 0); the point is the tree it saw.
+    assert got.ran and got.returncode == 0

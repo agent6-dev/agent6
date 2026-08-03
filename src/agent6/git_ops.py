@@ -1008,3 +1008,23 @@ def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
     if len(out) > max_bytes:
         return out[:max_bytes] + f"\n... [truncated, full size {len(out)} bytes]"
     return out
+
+
+def add_worktree(repo: Path, dest: Path, sha: str) -> None:
+    """Check *sha* out into *dest* as a detached worktree.
+
+    The exact tree of that commit and nothing else: a clone plus `reset --mixed`
+    leaves every file added after *sha* on disk as untracked, which silently
+    turns "the base commit" into "the base commit plus this run's new files".
+    """
+    _run(repo, "worktree", "add", "--detach", str(dest.absolute()), sha)
+
+
+def prune_worktrees(repo: Path) -> None:
+    """Drop bookkeeping for worktrees whose directories are gone.
+
+    The caller deletes the throwaway directory itself, so this only tidies
+    `.git/worktrees`. `worktree remove` would need `--force` once a gate has
+    written build output there, and this module spells no destructive verb.
+    """
+    _run(repo, "worktree", "prune")

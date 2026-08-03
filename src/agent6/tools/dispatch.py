@@ -216,6 +216,69 @@ _COMMAND_TOOLS = frozenset(
 )
 
 
+def jail_policy(
+    root: Path,
+    config: Config,
+    isolation: IsolationLevel,
+    argv: tuple[str, ...],
+    *,
+    timeout_s: float | None = None,
+    extra_rw_paths: tuple[Path, ...] = (),
+    extra_protect_paths: tuple[Path, ...] = (),
+) -> JailPolicy:
+    """The sandbox policy every LLM-influenced argv runs under.
+
+    One owner, so every caller is confined identically: a foreground command, a
+    detached one (`run_background`), and the baseline gate re-run all get the
+    same protect paths, env, tool mounts and memory cap. The baseline once built
+    its own and inherited no PATH, so every real gate exited 127 and the run was
+    told its failure pre-existed.
+    """
+    # run_command reaches the network only under tool_network = "allow" (the
+    # jailed child then shares the host network instead of an empty namespace).
+    allow_network = config.sandbox.tool_network == "allow"
+    protect_paths: list[Path] = []
+    # `.git` is protected at BOTH isolation levels: strict re-binds it read-only,
+    # hardened carves it out of the Landlock RW grant. A writable `.git` is not
+    # merely "recoverable": a jailed command can plant a `filter.<n>.clean` in
+    # `.git/config` plus a `.gitattributes`, and agent6's own auto-commit then
+    # executes it on the HOST, outside the jail.
+    if config.sandbox.protect_git:
+        protect_paths.append((root / ".git").resolve())
+    protect_paths.extend(extra_protect_paths)
+    policy_kwargs: dict[str, Any] = {}
+    if timeout_s is not None:
+        policy_kwargs["timeout_s"] = timeout_s
+    env = passthrough_env()
+    # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
+    # cargo -> $CARGO_HOME, pip/uv likewise). The jail's /tmp is writable on both
+    # isolation levels, so point HOME there.
+    env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
+    env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    # `uv run` inside the jail must use the venv the operator already synced: the
+    # jail is offline and HOME is a fresh tmpfs, so a sync would re-resolve
+    # against an empty cache and fail.
+    env.setdefault("UV_NO_SYNC", "1")
+    # Make operator-installed tools reachable: a controlled PATH extending
+    # /usr/bin:/bin with the standard bin dirs, plus their real dirs as RO+exec
+    # mounts. Without this a `uv run` verify dies 127.
+    tool_path, tool_mounts = operator_tool_paths()
+    env["PATH"] = tool_path
+    return JailPolicy(
+        cwd=root,
+        argv=argv,
+        isolation=isolation,
+        env=tuple(sorted(env.items())),
+        allow_network=allow_network,
+        extra_protect_paths=tuple(protect_paths),
+        extra_ro_paths=tuple(Path(p) for p in config.sandbox.extra_read_paths),
+        extra_rw_paths=extra_rw_paths,
+        tool_paths=tool_mounts,
+        memory_limit_mb=config.sandbox.memory_limit_mb,
+        **policy_kwargs,
+    )
+
+
 def _roster(shells: BackgroundShells) -> tuple[str, ...]:
     return tuple(v.line() for v in shells.roster())
 
@@ -856,66 +919,14 @@ class ToolDispatcher:
         timeout_s: float | None = None,
         extra_rw_paths: tuple[Path, ...] = (),
     ) -> JailPolicy:
-        """The sandbox policy every LLM-influenced argv runs under.
-
-        One owner, so a detached command (`run_background`) is confined exactly
-        like a foreground one: same protect paths, same env, same tool mounts.
-        """
-        # run_command reaches the network only under tool_network = "allow"
-        # (the jailed child then shares the host network instead of getting an
-        # empty namespace of its own).
-        allow_network = self._config.sandbox.tool_network == "allow"
-        # Resolve symlinks so the launcher's strip_prefix(cwd) check sees
-        # canonical paths; the Rust side canonicalizes too as a backstop.
-        protect_paths: list[Path] = []
-        # `.git` is protected at BOTH isolation levels: strict re-binds it
-        # read-only, hardened carves it out of the Landlock RW grant. Hardened
-        # used to leave it writable (the carve also denies creating NEW
-        # top-level entries, which the system prompt already tells the model to
-        # work around), but a writable `.git` is not merely "recoverable": a
-        # jailed command can plant a `filter.<n>.clean` in `.git/config` plus a
-        # `.gitattributes`, and agent6's own auto-commit then executes it on the
-        # HOST, outside the jail, where the agent can read $HOME and reach the
-        # network.
-        if self._config.sandbox.protect_git:
-            protect_paths.append((self._root / ".git").resolve())
-        protect_paths.extend(self._extra_protect_paths)
-        # caller-provided timeout overrides the JailPolicy default
-        # (600s). Used by verify_command + metric_command for fast failure
-        # detection on pathological edits.
-        policy_kwargs: dict[str, Any] = {}
-        if timeout_s is not None:
-            policy_kwargs["timeout_s"] = timeout_s
-        env = passthrough_env()
-        # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
-        # cargo -> $CARGO_HOME or $HOME/.cargo, pip/uv likewise). The jail's /tmp
-        # is writable on both isolation levels (fresh tmpfs on strict, Landlock rw grant
-        # on hardened), so point HOME there. Without it `go test` fails outright
-        # and models burn whole budgets probing the sandbox for a writable spot.
-        env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
-        env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-        # `uv run` inside the jail must use the venv the operator already synced: the
-        # jail is offline (network is brokered to providers only) and HOME is a fresh
-        # tmpfs, so a sync/build would re-resolve against an empty cache and fail. Run
-        # against the existing env instead (a verify's `uv run ruff` then works).
-        env.setdefault("UV_NO_SYNC", "1")
-        # Make operator-installed tools (uv, ...) reachable: a controlled PATH that
-        # extends /usr/bin:/bin with the standard bin dirs, plus their real dirs as
-        # RO+exec mounts. Without this a `uv run` verify dies 127.
-        tool_path, tool_mounts = operator_tool_paths()
-        env["PATH"] = tool_path
-        return JailPolicy(
-            cwd=self._root,
-            argv=argv,
-            isolation=self._isolation,
-            env=tuple(sorted(env.items())),
-            allow_network=allow_network,
-            extra_protect_paths=tuple(protect_paths),
-            extra_ro_paths=tuple(Path(p) for p in self._config.sandbox.extra_read_paths),
+        return jail_policy(
+            self._root,
+            self._config,
+            self._isolation,
+            argv,
+            timeout_s=timeout_s,
             extra_rw_paths=extra_rw_paths,
-            tool_paths=tool_mounts,
-            memory_limit_mb=self._config.sandbox.memory_limit_mb,
-            **policy_kwargs,
+            extra_protect_paths=self._extra_protect_paths,
         )
 
     def _run_argv_in_jail(

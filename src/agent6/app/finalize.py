@@ -108,10 +108,16 @@ def _print_baseline(
     base_sha = ""
     with contextlib.suppress(ManifestError):
         base_sha = read_manifest(layout.run_dir).base_sha
+    # The PINNED gate, not the app-layer cfg: a run that adopted one mid-run
+    # rebinds the loop's config, never this one, so cfg would say "no gate".
+    pinned = ()
+    with contextlib.suppress(ManifestError):
+        pinned = read_manifest(layout.run_dir).workflow.verify_command
     baseline = gate_on_base(
         Path.cwd(),
         base_sha,
-        argv=tuple(cfg.workflow.verify_command),
+        argv=tuple(pinned) or tuple(cfg.workflow.verify_command),
+        config=cfg,
         isolation=isolation,
         timeout_s=cfg.workflow.verify_timeout_s,
     )

@@ -12,14 +12,17 @@ does not arise, and the answer would change nothing.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.git_ops import GitError, clone_repo, rollback_to_known_good
+from agent6.config import Config
+from agent6.git_ops import GitError, add_worktree, prune_worktrees
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.tools.dispatch import jail_policy
+from agent6.types import IsolationLevel
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,30 +46,44 @@ def gate_on_base(
     base_sha: str,
     *,
     argv: tuple[str, ...],
+    config: Config,
     isolation: IsolationLevel,
     timeout_s: float,
 ) -> Baseline:
-    """Run *argv* against *base_sha* in a throwaway clone.
+    """Run *argv* against *base_sha* in a throwaway worktree.
 
-    A clone, not the live checkout: the run's own work must not be disturbed to
-    answer a question about it, and the gate may write (caches, build output).
+    A worktree, not the live checkout: the run's own work must not be disturbed
+    to answer a question about it, and the gate may write. A worktree rather
+    than clone-and-reset, because `reset --mixed` leaves every file the run
+    ADDED on disk as untracked -- so a run that adds a failing test would poison
+    its own baseline and be told the failure came from somewhere else.
+
+    The policy is the one every other jailed command gets, or the gate runs with
+    no PATH and exits 127 whatever the code does.
     """
     if not (argv and base_sha):
         return Baseline(ran=False, returncode=None, detail="no gate or no base commit recorded")
     work = Path(tempfile.mkdtemp(prefix="agent6-baseline-"))
     dest = work / "base"
     try:
-        clone_repo(origin, dest)
-        # A fresh clone has nothing to lose, and this is the sanctioned
-        # primitive: the module refuses `reset --hard` outright.
-        rollback_to_known_good(dest, base_sha)
+        add_worktree(origin, dest, base_sha)
     except GitError as exc:
         shutil.rmtree(work, ignore_errors=True)
         return Baseline(ran=False, returncode=None, detail=str(exc))
     try:
-        res = run_in_jail(JailPolicy(cwd=dest, argv=argv, isolation=isolation, timeout_s=timeout_s))
+        res = run_in_jail(jail_policy(dest, config, isolation, argv, timeout_s=timeout_s))
     except JailUnavailableError as exc:
         return Baseline(ran=False, returncode=None, detail=str(exc))
     finally:
+        # Delete the directory first, then let git drop its bookkeeping: the
+        # gate leaves build output, and `worktree remove` would need --force.
         shutil.rmtree(work, ignore_errors=True)
+        with contextlib.suppress(GitError):
+            prune_worktrees(origin)
+    if res.exec_failed or res.returncode == 124:
+        return Baseline(
+            ran=False,
+            returncode=None,
+            detail=f"the gate could not run at the base commit (exit {res.returncode})",
+        )
     return Baseline(ran=True, returncode=res.returncode, detail="")

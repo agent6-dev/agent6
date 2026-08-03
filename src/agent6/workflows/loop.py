@@ -2887,11 +2887,14 @@ class Workflow:
     def _finish_reason(self, turn: _TurnState, state: _LoopState) -> RunReason:
         """What this finish is called.
 
-        A declared-stale gate names the end only when the run is NOT green:
-        over a green tree the truth is that it passed, and the proposal is
-        still recorded for the operator either way.
+        `gate_stale` needs a gate that is actually RED. Green means it passed,
+        truthfully. And `_tree_is_verify_green` returns None for a GATELESS run,
+        where there is no gate to be stale -- reading that as "not green" made a
+        gateless run declaring one end as passed, exit 0 and auto-merged, while
+        printing a `config set` line for a command nothing had run. The proposal
+        is recorded either way.
         """
-        if turn.finish_stale_gate and self._tree_is_verify_green(state) is not True:
+        if turn.finish_stale_gate and self._tree_is_verify_green(state) is False:
             return "gate_stale"
         return turn.finish_kind
 

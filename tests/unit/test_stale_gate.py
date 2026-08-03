@@ -25,9 +25,10 @@ def test_the_reason_reads_as_a_failure_with_its_cause() -> None:
     )
 
 
-def test_declaring_a_stale_gate_never_makes_a_run_pass() -> None:
-    """The whole point: the worker records a proposal, it does not certify
-    itself. A green tree is still the only thing that passes."""
+def test_a_green_tree_is_still_what_passes() -> None:
+    """`gate_stale` never reaches a green run (see _finish_reason), but the
+    word mapping is grounded on all_passed either way: the worker records a
+    proposal, it does not certify itself."""
     assert status_word(finished=True, all_passed=True, end_reason="gate_stale") == ("passed", "")
 
 
@@ -80,11 +81,14 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     [
         ("uv run pytest tests/unit", False, "gate_stale"),  # red + declared
         ("uv run pytest tests/unit", True, "finish_run"),  # green: it passed, truthfully
+        # None = GATELESS: no gate exists, so none can be stale. Reading this as
+        # "not green" made such a run pass, exit 0 and auto-merge.
+        ("uv run pytest tests/unit", None, "finish_run"),
         ("", False, "finish_run"),  # red with no declaration is an ordinary finish
     ],
 )
 def test_a_declaration_names_the_end_only_over_a_red_tree(
-    declared: str, green: bool, expected: str
+    declared: str, green: bool | None, expected: str
 ) -> None:
     from agent6.workflows.loop import (
         Workflow,
