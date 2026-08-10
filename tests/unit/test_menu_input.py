@@ -114,6 +114,44 @@ def test_history_recall_with_draft() -> None:
     assert line == "draft"
 
 
+def test_ctrl_r_searches_history_and_fills_the_line() -> None:
+    entries = ["fix the parser", "run the suite", "fix the tests"]
+    # Newest match first; Enter keeps it for editing (a second Enter sends).
+    line, out = _run(
+        ["history-search", *_chars("fix"), "enter", *_chars("!"), "enter"], list(entries)
+    )
+    assert line == "fix the tests!"
+    assert "search: " in out
+    assert "\x1b[7m" in out  # the selected match is highlighted
+    # Ctrl-R again moves to the next older match, skipping the non-match.
+    line, _ = _run(
+        ["history-search", *_chars("fix"), "history-search", "enter", "enter"], list(entries)
+    )
+    assert line == "fix the parser"
+
+
+def test_search_esc_restores_and_no_match_keeps_the_query() -> None:
+    history = ["deploy it"]
+    line, _ = _run([*_chars("draft"), "history-search", *_chars("dep"), "esc", "enter"], history)
+    assert line == "draft"
+    line, out = _run(["history-search", *_chars("zzz"), "enter", "enter"], history)
+    assert line == "zzz"
+    assert "(no match)" in out
+
+
+def test_search_needs_history_and_caps_the_rows() -> None:
+    line, out = _run(["history-search", *_chars("x"), "enter"], [])
+    assert line == "x" and "\a" in out  # no history: bell, stay in normal input
+    many = [f"steer {i}" for i in range(12)]
+    _, out = _run(["history-search", "esc", "enter"], many)
+    assert "steer 11" in out  # newest first
+    assert "… 4 more" in out  # 12 matches, 8 rendered
+    assert "steer 3" not in out
+    # Repeats collapse to their newest occurrence: one match, no overflow row.
+    _, out = _run(["history-search", "esc", "enter"], ["same"] * 12)
+    assert "more" not in out
+
+
 def test_eof_contract() -> None:
     with pytest.raises(EOFError):
         _run(["eof"])
@@ -173,6 +211,7 @@ def test_read_key_decodes_bytes_from_a_pipe() -> None:
             (b"\x1b[A", "up"),
             (b"\x1b[Z", "backtab"),
             (b"\x1b[3~", "delete"),
+            (b"\x12", "history-search"),
             (b"q", "char:q"),
             ("é".encode(), "char:é"),
         ]

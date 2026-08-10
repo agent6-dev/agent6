@@ -391,6 +391,54 @@ def test_pause_menu_compact_accepts_focus(
     assert pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"
 
 
+def test_pause_menu_seeds_recall_from_the_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Up/Ctrl-R history is seeded once per session from logs.jsonl (task,
+    then steers, newlines flattened for the one-line reader), so recall spans
+    process exits and other surfaces' steers; lines accepted in this process
+    survive a later pause, and a different session reseeds."""
+    import json
+
+    from agent6.ui.cli import _steer_menu
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "session.start", "user_task": "polish the\nTUI", "mode": "run"},
+                {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_steer_menu, "_RECALL", _steer_menu._Recall())  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(_steer_menu, "menu_capable", lambda: True)
+    seen: list[list[str]] = []
+
+    def fake_menu_input(prompt: str, commands: dict[str, str], history: list[str]) -> str:
+        seen.append(list(history))
+        history.append("/status")  # what accepting a line does
+        return "go"
+
+    monkeypatch.setattr(_steer_menu, "menu_input", fake_menu_input)
+    assert pause_menu(tmp_path) == "go"
+    assert seen[0] == ["polish the TUI", "focus on tests"]
+    # A later pause of the same session must not reseed away in-process lines.
+    assert pause_menu(tmp_path) == "go"
+    assert seen[1][-1] == "/status"
+    # A different session dir reseeds.
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "other task", "mode": "run"}) + "\n",
+        encoding="utf-8",
+    )
+    assert pause_menu(other) == "go"
+    assert seen[2] == ["other task"]
+
+
 def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

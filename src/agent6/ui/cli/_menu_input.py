@@ -5,8 +5,11 @@
 Type to steer; Tab previews the matching slash commands in a menu below the
 line (with their descriptions) and cycles through them, Shift-Tab cycles
 backwards, Up/Down move the selection, Esc restores what was typed. Without
-a menu open, Up/Down recall in-process history. Enter accepts, Ctrl-C stops
-the run, Ctrl-D on an empty line continues it.
+a menu open, Up/Down recall history, and Ctrl-R searches it: matches render
+below the line like the Tab menu, typing narrows the query, Ctrl-R/arrows
+move the selection, Enter or Tab keeps the highlighted message for editing,
+Esc restores what was typed. Enter accepts, Ctrl-C stops the run, Ctrl-D on
+an empty line continues it.
 
 Hand-rolled on termios because neither readline flavor can render this: GNU
 readline's menu-complete cycles blind (no list until a second Tab, never with
@@ -59,7 +62,12 @@ _CTRL = {
     b"\x17": "kill-word",  # Ctrl-W
     b"\x0b": "kill-to-end",  # Ctrl-K
     b"\x0c": "redraw",  # Ctrl-L
+    b"\x12": "history-search",  # Ctrl-R
 }
+
+# History search renders only the newest matches; typing narrows to the rest.
+_SEARCH_ROWS = 8
+_SEARCH_PROMPT = "search: "
 
 
 def menu_capable() -> bool:
@@ -135,6 +143,10 @@ class _Reader:
         self.stem = ""  # what was typed before the menu opened (Esc restores)
         self.hist_idx = len(history)
         self.draft = ""  # the unsubmitted line saved when history recall starts
+        self.searching = False  # Ctrl-R mode: the line is the query, hits render below
+        self.hits: list[str] = []
+        self.more = 0  # matches beyond the rendered cap
+        self.saved = ""  # the line before search began (Esc restores)
 
     # -- rendering ---------------------------------------------------------
 
@@ -144,27 +156,42 @@ class _Reader:
         # prompt first, then window the line into the remainder. An overflow
         # floor here wrapped the row on narrow terminals, and the wrapped row
         # broke the cursor-up arithmetic (garbling the menu every keystroke).
-        prompt = self.prompt[: width - 1]
+        prompt = (_SEARCH_PROMPT if self.searching else self.prompt)[: width - 1]
         avail = max(0, width - 1 - len(prompt))
         start = 0 if self.cur < avail else self.cur - avail + 1
         visible = self.line[start : start + avail]
         out = ["\r\x1b[J", prompt, visible]
-        if self.menu is not None:
-            pad = max(len(c) for c in self.menu)
-            for i, cmd in enumerate(self.menu):
+        rows, highlight = self._rows()
+        if rows:
+            pad = max(len(label) for label, _dim in rows)
+            for i, (label, dim) in enumerate(rows):
                 # Clamp the VISIBLE text to one row (a wrapped row would break
                 # the cursor-up arithmetic); the SGR codes take no columns and
                 # must never be sliced through.
-                label = f"  {cmd:<{pad}}  "[: width - 1]
-                desc = self.commands[cmd][: max(0, width - 1 - len(label))]
-                row = f"{label}\x1b[2m{desc}\x1b[22m"
-                if i == self.sel:
+                cell = "  " if not label else f"  {label:<{pad}}  "[: width - 1]
+                tail = dim[: max(0, width - 1 - len(cell))]
+                row = f"{cell}\x1b[2m{tail}\x1b[22m"
+                if i == highlight:
                     row = f"\x1b[7m{row}\x1b[27m"
                 out.append("\r\n" + row)
-            out.append(f"\x1b[{len(self.menu)}A")
+            out.append(f"\x1b[{len(rows)}A")
         col = len(prompt) + (self.cur - start)
         out.append("\r" + (f"\x1b[{col}C" if col else ""))
         write("".join(out))
+
+    def _rows(self) -> tuple[list[tuple[str, str]], int]:
+        """The rows under the input line as (label, dim tail) pairs, plus the
+        highlighted index (-1 none). Search markers are all-dim: empty label."""
+        if self.searching:
+            if not self.hits:
+                return [("", "(no match)")], -1
+            rows: list[tuple[str, str]] = [(hit, "") for hit in self.hits]
+            if self.more:
+                rows.append(("", f"… {self.more} more (type to narrow)"))
+            return rows, self.sel
+        if self.menu is not None:
+            return [(cmd, self.commands[cmd]) for cmd in self.menu], self.sel
+        return [], -1
 
     def close_rows(self, write: Callable[[str], None]) -> None:
         """Leave the accepted/abandoned line in scrollback with the menu erased."""
@@ -201,6 +228,58 @@ class _Reader:
             self.line = self.stem
             self.cur = len(self.line)
         self.menu = None
+
+    # -- history search ----------------------------------------------------
+
+    def open_search(self, write: Callable[[str], None]) -> None:
+        """Ctrl-R: search history, with the line as the live query."""
+        if not self.history:
+            write("\a")
+            return
+        if self.menu is not None:
+            self.dismiss_menu(restore=False)
+        self.saved = self.line
+        self.line = ""
+        self.cur = 0
+        self.searching = True
+        self.refilter()
+
+    def refilter(self) -> None:
+        """Newest-first case-insensitive substring matches; repeats collapse."""
+        q = self.line.lower()
+        matches = list(dict.fromkeys(h for h in reversed(self.history) if q in h.lower()))
+        self.hits = matches[:_SEARCH_ROWS]
+        self.more = len(matches) - len(self.hits)
+        self.sel = 0
+
+    def close_search(self, line: str) -> None:
+        self.line = line
+        self.cur = len(line)
+        self.searching = False
+        self.hits = []
+        self.more = 0
+
+    def _search_key(self, key: str) -> None:
+        """A key while searching: the line is the query. Enter/Tab keep the
+        highlighted match (the query itself when nothing matches); Esc and
+        Ctrl-D restore the pre-search line."""
+        if key in ("enter", "tab"):
+            self.close_search(self.hits[self.sel] if self.hits else self.line)
+        elif key in ("esc", "eof"):
+            self.close_search(self.saved)
+        elif key in ("history-search", "down"):
+            if self.hits:
+                self.sel = (self.sel + 1) % len(self.hits)
+        elif key in ("up", "backtab"):
+            if self.hits:
+                self.sel = (self.sel - 1) % len(self.hits)
+        elif key.startswith("char:"):
+            self.insert(key[5:])
+            self.refilter()
+        elif key in self._EDIT_KEYS:
+            self.edit(key)
+            self.refilter()
+        # anything else (redraw, unknown): repaint only
 
     # -- editing -----------------------------------------------------------
 
@@ -264,6 +343,9 @@ class _Reader:
         if key == "interrupt":
             write("\r\n\x1b[J")
             raise KeyboardInterrupt
+        if self.searching:
+            self._search_key(key)
+            return False
         if key == "eof":
             if self.menu is not None or self.line:
                 write("\a")
@@ -281,7 +363,9 @@ class _Reader:
 
     def _apply(self, key: str, write: Callable[[str], None]) -> None:
         """A non-terminal key: menu navigation, history recall, or an edit."""
-        if key == "tab" or (key == "backtab" and self.menu is None):
+        if key == "history-search":
+            self.open_search(write)
+        elif key == "tab" or (key == "backtab" and self.menu is None):
             if self.menu is None:
                 self.open_menu(write)
             else:
@@ -317,8 +401,10 @@ def menu_input(
     raises EOFError on Ctrl-D at an empty line, KeyboardInterrupt on Ctrl-C
     (via SIGINT in cbreak mode, or the ``\\x03`` byte where signals are off).
     Accepted non-empty lines are appended to *history* (deduped against the
-    last entry). *read_key*/*write* are injectable for tests; the real
-    terminal is put in cbreak mode only when *read_key* is None.
+    last entry); Ctrl-R searches *history* (Enter/Tab keep the highlighted
+    match for editing, Esc cancels). *read_key*/*write* are injectable for
+    tests; the real terminal is put in cbreak mode only when *read_key* is
+    None.
     """
 
     def restore() -> None:

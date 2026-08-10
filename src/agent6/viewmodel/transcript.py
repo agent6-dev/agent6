@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -94,6 +94,26 @@ _BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
     # A side question's answer: not the run's output, so it never joins its prose.
     "btw.answered": ("marker", "block"),
 }
+
+# Where the operator's own words live in the journal: the opening task, then
+# every steer. Sibling of `_BETWEEN_TURNS` (renders steers) and of
+# `tools.sessions._SPEAKER` (quotes them across sessions).
+_OPERATOR_TEXT = {"session.start": "user_task", "loop.steer.injected": "text"}
+
+
+def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
+    """The operator's typed messages, oldest first, consecutive repeats
+    collapsed. Fed from the on-disk journal, so it spans resume legs and every
+    surface's steers; input-history recall and search read it."""
+    out: list[str] = []
+    for event in events:
+        field = _OPERATOR_TEXT.get(str(event.get("type", "")))
+        if field is None:
+            continue
+        text = str(event.get(field, "")).strip()
+        if text and (not out or out[-1] != text):
+            out.append(text)
+    return out
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,8 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The interactive pause menu for a foreground CLI run (Ctrl-C, then decide).
 
-Line input comes from ``_menu_input`` on Unix: editing, in-process history
-(recall an earlier steer with Up), and a fish-style Tab preview of the slash
+Line input comes from ``_menu_input`` on Unix: editing, history recall (Up
+recalls, Ctrl-R searches; seeded from the session journal, so it spans resumes
+and steers typed on other surfaces), and a fish-style Tab preview of the slash
 commands (Tab cycles the matches, descriptions shown). Windows has no termios,
 so it keeps the plain one-line prompt (``_steer`` gates on
 :func:`agent6.ui.cli._menu_input.menu_capable`). Info commands answer from the
@@ -33,6 +34,7 @@ repeat the exact `/parallel` token to queue more tasks in one message. See
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent6.config.layer import load_effective
@@ -45,7 +47,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.background import roster_from_dir
 from agent6.ui.cli._menu_input import menu_capable, menu_input
-from agent6.viewmodel import fold_session, status_for_session_dir, tail_events
+from agent6.viewmodel import fold_session, operator_inputs, status_for_session_dir, tail_events
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
 from agent6.viewmodel.state import SessionState, status_facts
 
@@ -120,12 +122,27 @@ def normalize_steer_choice(line: str | None) -> str | None:
     return choice
 
 
-# Steer lines accepted this process, for Up-arrow recall across pauses.
-_HISTORY: list[str] = []
+@dataclass(slots=True)
+class _Recall:
+    """The pause prompt's history (Up recalls, Ctrl-R searches): seeded once
+    per session from its journal, then grown with the lines accepted this
+    process."""
+
+    lines: list[str] = field(default_factory=list)
+    seeded_from: str | None = None
+
+    def seed(self, session_dir: Path) -> None:
+        """The task, then every steer, newlines flattened for the one-line
+        reader. A session seeds once; reseeding a later pause would drop the
+        lines accepted since."""
+        if self.seeded_from == str(session_dir):
+            return
+        self.seeded_from = str(session_dir)
+        recorded = operator_inputs(tail_events(session_dir / LOGS_NAME, follow=False))
+        self.lines[:] = [" ".join(text.split()) for text in recorded]
 
 
-def _menu_read(prompt: str) -> str:
-    return menu_input(prompt, MENU_COMMANDS, _HISTORY)
+_RECALL = _Recall()
 
 
 def _fold(session_dir: Path) -> SessionState:
@@ -194,6 +211,7 @@ def _print_help(offered: dict[str, str]) -> None:
         print(f"  {cmd:<{width}}  {what}")
     print("  anything else is sent to the run as a steering instruction")
     print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
+    print("  Up recalls this session's messages · Ctrl-R searches them · Tab previews commands")
 
 
 # Starts a btw and delivers the finished answer to the console view. The menu
@@ -263,8 +281,9 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
         if menu_capable():
+            _RECALL.seed(session_dir)
             display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
-            input_fn = lambda p: menu_input(p, display, _HISTORY)  # noqa: E731
+            input_fn = lambda p: menu_input(p, display, _RECALL.lines)  # noqa: E731
         else:
             input_fn = input
     while True:

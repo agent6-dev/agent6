@@ -86,6 +86,7 @@ from agent6.viewmodel.transcript import (
     TranscriptFold,
     TranscriptItem,
     fold_transcript,
+    operator_inputs,
     salient_arg,
 )
 
@@ -132,6 +133,7 @@ __all__ = [
     "newest_session_dir",
     "newest_state_log",
     "notification_key",
+    "operator_inputs",
     "produced_result",
     "read_complete_lines",
     "salient_arg",
