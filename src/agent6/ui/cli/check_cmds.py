@@ -34,7 +34,30 @@ from agent6.sandbox.detect import (
     resolve_isolation,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
-from agent6.types import CommandResult, JailPolicy, SandboxReport
+from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
+
+
+def _isolation_means(isolation: IsolationLevel) -> str:
+    """One line on what this level bounds, for someone diagnosing a tool.
+
+    States the boundaries, not their consequences for any particular program: a
+    reader who knows a command runs with its own filesystem, its own network and
+    a filtered syscall set can work out why it behaves differently here, and
+    knows which words to search the docs for.
+    """
+    if isolation == "strict":
+        return (
+            "commands get their own filesystem view (only granted paths exist),"
+            " the run's own network, a private /proc and PID namespace, and a"
+            " filtered syscall set. See docs/security.md."
+        )
+    if isolation == "hardened":
+        return (
+            "commands share this host's filesystem, network and /proc, bounded"
+            " by Landlock path rules and a filtered syscall set. No namespaces,"
+            " so nothing here is private to the run. See docs/security.md."
+        )
+    return "NOTHING is confined: commands run as you, on this host. See docs/security.md."
 
 
 def _cmd_check_sandbox() -> int:
@@ -62,6 +85,10 @@ def _cmd_check_sandbox() -> int:
 
     isolation = resolve_isolation("auto", detect_env())
     print(f"  effective isolation (auto): {isolation}")
+    # What that level GIVES, in general terms rather than a catalogue of cases:
+    # someone whose tool misbehaves needs to know which boundaries exist here
+    # before they can guess why, and these words are what to search the docs for.
+    print(f"  {_isolation_means(isolation)}")
     notes = tool_mount_notes()
     if notes.exposes_home_dir:
         # Where someone is actually asking. Not a per-run warning: on a normal

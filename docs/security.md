@@ -279,7 +279,7 @@ fixed argv depending only on operator input, never LLM output.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment,
   transcript text on stdin.
 
-### 3. Profile selection
+### 3. Isolation-level selection
 
 You set `sandbox.isolation`; it resolves against the host to the *effective*
 isolation level. No silent downgrade: a request the host can't meet is refused, and

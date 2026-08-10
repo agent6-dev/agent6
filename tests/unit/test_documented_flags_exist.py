@@ -141,3 +141,58 @@ def test_every_config_leaf_is_documented() -> None:
         if not any(named_key == leaf or leaf.endswith(f".{named_key}") for named_key in named)
     )
     assert not missing, f"undocumented config leaves in docs/config.md: {missing}"
+
+
+def test_every_documented_default_is_the_real_default() -> None:
+    """The column that rots quietly.
+
+    A wrong default reads as a promise the code does not keep, and nothing else
+    checks it: `config show` prints the real value, but only for someone who
+    runs it. Rows whose second cell is a single backticked literal are the ones
+    making a checkable claim (`0`, `"auto"`, `false`, `[]`); prose defaults
+    ("the newest run") are left to the reader.
+    """
+    import json
+
+    text = (ROOT / "docs" / "config.md").read_text(encoding="utf-8")
+    actual = {
+        leaf: value
+        for leaf, value in _config_defaults().items()
+        # A section that is None until configured has no leaf defaults to check.
+        if value is not None
+    }
+    wrong: list[str] = []
+    for line in text.splitlines():
+        row = re.match(r"\|\s*`([A-Za-z_][\w.<>-]*)`\s*\|\s*`([^`]+)`", line)
+        if not row:
+            continue
+        key, claimed = row.group(1), row.group(2)
+        matches = [leaf for leaf in actual if leaf == key or leaf.endswith(f".{key}")]
+        if len(matches) != 1:  # ambiguous or not a config leaf: not a claim we can check
+            continue
+        real = actual[matches[0]]
+        rendered = json.dumps(real) if not isinstance(real, tuple) else json.dumps(list(real))
+        if claimed not in (rendered, str(real), rendered.strip('"')):
+            wrong.append(f"{matches[0]}: docs say {claimed}, code says {rendered}")
+    assert not wrong, "docs/config.md defaults do not match the model:\n  " + "\n  ".join(wrong)
+
+
+def _config_defaults() -> dict[str, object]:
+    """Every leaf's real default, from a default-constructed Config."""
+    from pydantic import BaseModel
+
+    from agent6.config import Config
+
+    out: dict[str, object] = {}
+
+    def walk(model: BaseModel, prefix: str) -> None:
+        for name in type(model).model_fields:
+            value = getattr(model, name, None)
+            path = f"{prefix}{name}"
+            if isinstance(value, BaseModel):
+                walk(value, f"{path}.")
+            elif not isinstance(value, dict):
+                out[path] = value
+
+    walk(Config(), "")
+    return out

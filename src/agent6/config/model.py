@@ -399,7 +399,7 @@ class SandboxConfig(BaseModel):
     # denial of service against your own machine, and the kernel already
     # handles that. DEFAULT 0 (off) because a cap costs real builds (a large
     # link, a test matrix) more than it buys; set one when a specific task
-    # needs bounding. No effect under profile `none`.
+    # needs bounding. No effect under `isolation = "none"`.
     memory_limit_mb: int = Field(default=0, ge=0)
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
     # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
@@ -408,7 +408,7 @@ class SandboxConfig(BaseModel):
     # data dir. Each entry is an absolute path; it is granted read+execute
     # (not write) under `hardened`/`strict`. This LOOSENS confinement (the child
     # can read more of the host), so list only what the build/test actually
-    # needs. Empty by default. Has no effect under the `none` profile.
+    # needs. Empty by default. No effect under `isolation = "none"`.
     extra_read_paths: tuple[str, ...] = ()
 
     @field_validator("extra_read_paths")
