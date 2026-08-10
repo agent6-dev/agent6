@@ -1624,6 +1624,35 @@ def test_run_command_passes_extra_read_paths_to_policy(
     assert "/opt/miniconda3" in captured["ro"]
 
 
+def test_run_command_passes_extra_write_paths_to_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sandbox.extra_write_paths must reach the JailPolicy as extra_rw_paths (a
+    # writable bind mount at the real location, so write implies read).
+    from agent6.config import load_config
+    from agent6.sandbox.jail import CommandResult
+
+    body = _VALID_TOML.replace(
+        'run_commands = "no"',
+        'run_commands = "yes"\nextra_write_paths = ["/var/cache/shared"]',
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(body, encoding="utf-8")
+    cfg = load_config(p)
+    captured: dict[str, tuple[str, ...]] = {}
+
+    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+        captured["rw"] = tuple(str(x) for x in policy.extra_rw_paths)
+        return CommandResult(
+            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch("run_command", {"argv": ["echo", "hi"]})
+    assert "/var/cache/shared" in captured["rw"]
+
+
 # --- stringified-JSON argument coercion --------------------------------------
 # A weak model sends a structured argument as a JSON string (sometimes with
 # trailing junk). The dispatcher parses the head and retries once instead of

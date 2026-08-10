@@ -424,6 +424,24 @@ class SandboxConfig(BaseModel):
                 raise ValueError(f"sandbox.extra_read_paths must not contain '..': {p!r}")
         return v
 
+    # Extra absolute paths a jailed command may READ AND WRITE, mounted at
+    # their real locations: a build cache, an output dir, a sibling checkout
+    # the task legitimately edits. Write implies read (a writable bind mount
+    # is readable). This loosens confinement further than extra_read_paths,
+    # so list only what the task actually writes. Empty by default; no effect
+    # under `none`.
+    extra_write_paths: tuple[str, ...] = ()
+
+    @field_validator("extra_write_paths")
+    @classmethod
+    def _check_extra_write_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for p in v:
+            if not p.startswith("/"):
+                raise ValueError(f"sandbox.extra_write_paths must be absolute: {p!r}")
+            if ".." in Path(p).parts:
+                raise ValueError(f"sandbox.extra_write_paths must not contain '..': {p!r}")
+        return v
+
 
 class GitCommitCheckpointConfig(BaseModel):
     """Message style for the per-step commits a run makes on its branch."""

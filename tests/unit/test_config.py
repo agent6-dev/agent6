@@ -140,6 +140,22 @@ def test_extra_read_paths_rejects_relative(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_extra_write_paths_accepts_absolute_rejects_relative_and_traversal(
+    tmp_path: Path,
+) -> None:
+    body = _VALID_TOML.replace(
+        "protect_git = true", 'protect_git = true\nextra_write_paths = ["/var/cache/shared"]'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.sandbox.extra_write_paths == ("/var/cache/shared",)
+    for bad in ("var/cache", "/var/../etc"):
+        body = _VALID_TOML.replace(
+            "protect_git = true", f'protect_git = true\nextra_write_paths = ["{bad}"]'
+        )
+        with pytest.raises(ConfigError, match=r"extra_write_paths"):
+            load_config(_write(tmp_path, body))
+
+
 def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
     # FINDING 2: extra_read_paths are bind-mounted read+EXECUTE into the jail, so
     # a `..` component (which could traverse outside the apparent target) must be

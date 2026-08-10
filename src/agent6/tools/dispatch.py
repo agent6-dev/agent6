@@ -292,7 +292,10 @@ def jail_policy(
         allow_network=allow_network,
         extra_protect_paths=tuple(protect_paths),
         extra_ro_paths=tuple(Path(p) for p in config.sandbox.extra_read_paths),
-        extra_rw_paths=extra_rw_paths,
+        extra_rw_paths=(
+            *(Path(p) for p in config.sandbox.extra_write_paths),
+            *extra_rw_paths,
+        ),
         tool_paths=tool_mounts,
         memory_limit_mb=config.sandbox.memory_limit_mb,
         **policy_kwargs,
