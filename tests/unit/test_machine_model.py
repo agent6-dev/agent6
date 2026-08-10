@@ -507,6 +507,15 @@ def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: Path) -> None:
     assert any("run_repo_hooks" in p for p in problems)
 
 
+def test_machine_overlay_cannot_enable_repo_filters(tmp_path: Path) -> None:
+    # git.run_repo_filters honors the repo's own content drivers (filter.*,
+    # merge.*.driver) -- host code on a mode="run" auto-commit/merge, the same
+    # RCE class as run_repo_hooks. A machine file must not be able to flip it on.
+    body = VALID_MACHINE + "\n[config.git]\nrun_repo_filters = true\n"
+    problems = _problems(tmp_path, body)
+    assert any("run_repo_filters" in p for p in problems)
+
+
 def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: Path) -> None:
     # A [config.git.commit] override is a harmless overlay knob and stays allowed
     # (the forbid is surgical to git.run_repo_hooks, not the whole [git] table).

@@ -695,6 +695,22 @@ class _HungGit:
         self.calls.append("kill")
 
 
+def _hang_the_op_only(fake: _HungGit) -> object:
+    """A Popen replacement that hangs only the actual git OP. `_run` first runs
+    the driver-neutralization enumeration (`git config --get-regexp`, a real,
+    fast git that this test repo answers empty); letting that through keeps the
+    fake's one-call state clean, so only the op being timed out is `_HungGit`."""
+    real = git_ops.subprocess.Popen
+
+    def fake_popen(*a: object, **k: object) -> object:
+        argv = a[0] if a else k.get("args", [])
+        if isinstance(argv, list | tuple) and "--get-regexp" in [str(x) for x in argv]:
+            return real(*a, **k)  # type: ignore[arg-type]
+        return fake
+
+    return fake_popen
+
+
 def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: Path) -> None:
     """A timed-out git gets SIGTERM, and git's TERM handler removes its own
     lockfiles; SIGKILL only follows an ignored TERM. After a graceful TERM
@@ -704,8 +720,7 @@ def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: Path) -> 
     lock = tmp_path / ".git" / "index.lock"
     fake = _HungGit(lock=lock)
 
-    def fake_popen(*_a: object, **_k: object) -> _HungGit:
-        return fake
+    fake_popen = _hang_the_op_only(fake)
 
     with (
         mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
@@ -725,8 +740,7 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: Path) -> None:
     lock.write_text("held by a concurrent git\n", encoding="utf-8")
     fake = _HungGit(ignores_term=True)
 
-    def fake_popen(*_a: object, **_k: object) -> _HungGit:
-        return fake
+    fake_popen = _hang_the_op_only(fake)
 
     with (
         mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
@@ -744,8 +758,7 @@ def test_timeout_clears_the_lock_its_own_child_created(tmp_path: Path) -> None:
     lock = tmp_path / ".git" / "index.lock"
     fake = _HungGit(lock=lock, ignores_term=True)
 
-    def fake_popen(*_a: object, **_k: object) -> _HungGit:
-        return fake
+    fake_popen = _hang_the_op_only(fake)
 
     with (
         mock.patch.object(git_ops.subprocess, "Popen", fake_popen),

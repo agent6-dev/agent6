@@ -21,7 +21,7 @@ from agent6.config import (
     MCPServerEntry,
 )
 from agent6.events import EventSink
-from agent6.git_ops import set_provider_key_env, set_repo_hook_policy
+from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_repo_hook_policy
 from agent6.models.cache import list_models
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
@@ -133,11 +133,14 @@ def apply_git_egress_policy(cfg: Config) -> None:
 
     - Repo `.git/hooks/*` fire only under `git.run_repo_hooks` (default off): a
       hook is repo-controlled host code, an RCE vector on an untrusted repo.
+    - Repo content drivers (`filter.*`, `merge.*.driver`) run only under
+      `git.run_repo_filters` (default off) -- same threat, the Git-LFS opt-in.
     - The configured provider-key env vars are stripped from git's environment:
       git never needs a provider key, and a git subprocess (a credential
       helper, a content driver we could not neutralize) should not inherit one.
     """
     set_repo_hook_policy(cfg.git.run_repo_hooks)
+    set_repo_filter_policy(cfg.git.run_repo_filters)
     set_provider_key_env(p.api_key_env for p in cfg.providers.values() if p.api_key_env)
 
 

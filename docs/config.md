@@ -183,6 +183,7 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 | `auto_merge` | `false` | After a run with nothing red, land the run's work on its base automatically (never over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. On conflict nothing moves and instructions are printed. |
 | `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A squash-merged branch is reported with the `-D` line, never force-deleted. Requires `auto_merge`; no-op without a run branch. |
 | `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is repo-controlled host code, an RCE vector on an untrusted repo. `core.fsmonitor`/`diff.external` are always neutralized. |
+| `run_repo_filters` | `false` | Honor the repo's own content drivers — `filter.<n>.clean/smudge/process` and `merge.<n>.driver` — during agent6's git ops. Off: a driver defined in `.git/config` is repo-controlled host code that runs on the auto-commit's `git add` (or a chain merge), the same RCE class as a hook. agent6 neutralizes each by name. Turn on to support **Git-LFS** (its clean/smudge filters are exactly these) or another content driver. |
 
 ### `[git.commit]`
 

@@ -134,10 +134,10 @@ def _git() -> str:
 # end). The edit tools already refuse writes into `.git` under protect_git, but a
 # repo cloned with a pre-poisoned `.git/config` would otherwise execute its
 # payload the first time agent6 ran git here.
-# NOTE: content-semantic drivers a commit/merge legitimately runs -- clean/smudge
-# `filter.*` and `merge.*.driver` -- are deliberately NOT disabled: blanket-
-# disabling them would silently corrupt commits in repos that use them (Git LFS
-# is the common case). They are per-name with no blanket `-c` off switch.
+# Content-semantic drivers a commit/merge legitimately runs -- clean/smudge
+# `filter.*` and `merge.*.driver` -- are the same RCE class but have no blanket
+# `-c` off switch, so `_repo_driver_overrides` neutralizes each by NAME, gated
+# by `run_repo_filters` (the Git-LFS opt-in, since LFS uses exactly these).
 _GIT_EGRESS_HARDENING: tuple[str, ...] = (
     "-c",
     "core.fsmonitor=false",
@@ -174,6 +174,94 @@ def set_provider_key_env(names: Iterable[str]) -> None:
     """The provider-key env var names `_run` strips from git's environment."""
     _provider_key_env.clear()
     _provider_key_env.update(n for n in names if n)
+
+
+# Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
+# and `merge.<n>.driver` -- run during agent6's git ops (the auto-commit's
+# `git add`, the chain merge's `merge-tree`). Default false: a driver defined
+# in `.git/config` is a host command, an RCE vector for a cloned poisoned repo.
+# Git-LFS is why they exist, so honoring them is the LFS opt-in. Same shape as
+# _hook_policy; there is no blanket `-c` off switch, so `_run` neutralizes each
+# repo-defined driver by NAME.
+_filter_policy: dict[str, bool] = {"honor_repo_filters": False}
+
+
+def set_repo_filter_policy(honor: bool) -> None:
+    """Configure whether agent6's git ops honor the repo's own content drivers
+    (`filter.*`, `merge.*.driver`); false neutralizes each by name."""
+    _filter_policy["honor_repo_filters"] = honor
+
+
+# The config keys that name a driver command. Scoped to the repo's own config
+# and the files IT includes (see `--local --includes` below): a Git-LFS filter
+# the operator installed in ~/.gitconfig is theirs and trusted; the untrusted
+# surface is the repo's `.git/config` (which a jailed command can write under
+# hardened, and which a cloned repo brings pre-poisoned) and anything it pulls
+# in via `[include]`.
+_DRIVER_KEY_RE = r"^(filter\..*\.(clean|smudge|process)|merge\..*\.driver)$"
+
+
+def _repo_driver_overrides(cwd: Path) -> tuple[str, ...]:
+    """`-c` flags that blank every repo-defined content driver, or () when the
+    policy honors them or the repo defines none.
+
+    Read the driver NAMES from the repo's own config (reading names runs
+    nothing) and emit an empty override per name: an empty `filter.<n>.clean`
+    is a pass-through, and an empty `merge.<n>.driver` makes the merge report a
+    conflict rather than run the command -- both stop the host command without
+    a blanket switch git does not provide. Re-read per call so a driver written
+    mid-run (hardened, where a jailed command can write `.git/config`) is caught
+    too."""
+    if _filter_policy["honor_repo_filters"]:
+        return ()
+    try:
+        proc = subprocess.run(
+            [
+                _git(),
+                "-C",
+                str(cwd),
+                "config",
+                "--local",
+                # Follow the repo's OWN includes: `--local` alone stops at
+                # `.git/config`, but a git OP follows an `[include]` there to a
+                # repo-controlled file, so a driver hidden behind one would run
+                # while this enumeration missed it. `--includes` matches what
+                # the op sees; `--local` still keeps the operator's trusted
+                # global `~/.gitconfig` (and its includes) out of scope.
+                "--includes",
+                "--name-only",
+                "--get-regexp",
+                _DRIVER_KEY_RE,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    # Dedup by name first: a filter with both clean and smudge yields two keys
+    # for one driver, and the last `-c` wins anyway.
+    filters: set[str] = set()
+    merges: set[str] = set()
+    for key in proc.stdout.split():
+        if key.startswith("filter."):
+            filters.add(key[len("filter.") : key.rindex(".")])
+        elif key.startswith("merge."):
+            merges.add(key[len("merge.") : key.rindex(".")])
+    overrides: list[str] = []
+    for name in sorted(filters):
+        overrides += [
+            "-c",
+            f"filter.{name}.clean=",
+            "-c",
+            f"filter.{name}.smudge=",
+            "-c",
+            f"filter.{name}.process=",
+        ]
+    for name in sorted(merges):
+        overrides += ["-c", f"merge.{name}.driver="]
+    return tuple(overrides)
 
 
 # Flags that force git's builtin diff/show renderer so a poisoned `.git/config`
@@ -219,7 +307,10 @@ def _run(
     argv = list(args)
     if argv and argv[0] in ("diff", "show"):
         argv[1:1] = DIFF_SHOW_SAFETY_FLAGS
-    full_argv = (_git(), *hardening, *argv)
+    # Blank the repo's own content drivers on EVERY op, not a guessed list of
+    # driver-running subcommands: enumerating which git verbs run a clean/smudge
+    # /merge driver is enumerating badness, and missing one reopens the RCE.
+    full_argv = (_git(), *hardening, *_repo_driver_overrides(cwd), *argv)
     index_lock = cwd / ".git" / "index.lock"
     lock_preexisted = index_lock.exists()
     proc = subprocess.Popen(

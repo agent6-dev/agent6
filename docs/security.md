@@ -400,6 +400,12 @@ syscall for hardened), never guessed from the kernel version.
     - `core.fsmonitor` and `diff.external` are always off; `.git/hooks/*` run only
       under `git.run_repo_hooks = true` (default false; `core.hooksPath` points
       away so a hook can't fire on agent6's auto-commit).
+    - **Content drivers** — `filter.<n>.clean/smudge/process` and
+      `merge.<n>.driver` — are the same RCE class (the clean filter runs on the
+      auto-commit's `git add`, the merge driver on the chain merge's
+      `merge-tree`; a cloned poisoned repo fires either with no model action).
+      Off by default (`git.run_repo_filters`), neutralized per name since git
+      has no blanket switch. `true` honors them — the **Git-LFS** opt-in.
     - Defense in depth on top of `protect_git`: those settings bound what a
       poisoned `.git/config` could do, and `protect_git` stops the model
       writing one in the first place.
@@ -608,9 +614,11 @@ More fail-closed properties:
 
 - **Operator-gated policy.** `network` is read only from the
   operator's config; a machine's `[config]` overlay is rejected at load if it
-  declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, or `git.run_repo_hooks`.
+  declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `git.run_repo_hooks`,
+  or `git.run_repo_filters`.
     - Otherwise a strategy preset or a host `[machine.notify]` argv could splice
-      into the resolved config, and `run_repo_hooks` would run repo `.git/hooks`
+      into the resolved config, and `run_repo_hooks`/`run_repo_filters` would run
+      repo `.git/hooks` or a content driver
       on the host on a `mode="run"` commit. A `tool` only *declares*
       `network`; honoring `allow` is the operator's call, and every conflict
       is refused at startup naming the state.

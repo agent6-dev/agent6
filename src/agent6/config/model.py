@@ -592,6 +592,15 @@ class GitConfig(BaseModel):
     # way `core.fsmonitor`/`diff.external` stay neutralized (those fire on
     # status/diff and have no legitimate use here).
     run_repo_hooks: bool = False
+    # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
+    # and `merge.<n>.driver` -- run during agent6's OWN git operations. Default
+    # false: like a hook, a driver defined in `.git/config` is repo-controlled
+    # code that executes on the HOST, outside the jail, when agent6 stages or
+    # merges (a host-RCE vector for a repo cloned with a poisoned `.git/config`).
+    # agent6 neutralizes each repo-defined driver by name. Set true to honor
+    # them -- the setting a Git-LFS repo needs, since LFS's clean/smudge filters
+    # are exactly these drivers.
+    run_repo_filters: bool = False
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
 
     @model_validator(mode="after")
