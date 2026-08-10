@@ -506,7 +506,7 @@ def read_answer(
     (defaults to ``session_dir``). A machine agent state reads answers from its
     per-state dir but the front-end registers on the instance dir, so it passes
     the instance dir here."""
-    target = approvals_dir(session_dir) / f"{prompt_id}.answer"
+    target = _answer_path(approvals_dir(session_dir), prompt_id)
     txt = _await_answer(
         target,
         live_dir or session_dir,
@@ -551,7 +551,7 @@ def read_question_answers(
     questions), or None on timeout or once the front-end has stayed dead past
     ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir (see
     :func:`read_answer`)."""
-    target = questions_dir(session_dir) / f"{question_id}.answer"
+    target = _answer_path(questions_dir(session_dir), question_id)
     raw = _await_answer(
         target,
         live_dir or session_dir,
