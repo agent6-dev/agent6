@@ -1165,11 +1165,20 @@ class JailSession:
     next, which per-command launchers cannot offer. Closing the session shuts
     stdin, and the PID namespace takes everything inside it down.
 
+    Every isolation level serves, `none` included: the capture and background
+    lifecycle are one implementation rather than one per level. Only `strict`
+    has the PID namespace, so elsewhere the launcher sweeps what it backgrounded
+    at EOF and this side sweeps each command's escapees (below).
+
     Not thread-safe: one loop drives it, one command at a time.
     """
 
     _proc: subprocess.Popen[bytes]
     _binary: Path
+    # Whether the launcher's PID namespace bounds what a command leaves running.
+    # Without one, a `setsid` escapee reparents to this process (a subreaper),
+    # so each command's own sweep has to run here instead.
+    _pid_namespaced: bool
     # The run's cap, carried on every request: the launcher's own default
     # applies to what a request omits, which would ignore the operator's.
     _memory_limit_mb: int
@@ -1217,6 +1226,7 @@ class JailSession:
         return cls(
             _proc=proc,
             _binary=binary,
+            _pid_namespaced=policy.isolation == "strict",
             _memory_limit_mb=policy.memory_limit_mb,
             startup_stderr=startup_stderr,
         )
@@ -1228,17 +1238,28 @@ class JailSession:
         env: tuple[tuple[str, str], ...] = (),
         timeout_s: float = 600.0,
     ) -> CommandResult:
-        """Run one command to completion in this session's namespaces."""
+        """Run one command to completion in this session's namespaces.
+
+        Without a PID namespace the command's escapees (a `setsid` daemon, a
+        double-fork) survive the launcher's process-group kill and reparent to
+        this process, so they are swept here -- the bound a per-command launcher
+        used to provide.
+        """
         start = time.monotonic()
-        answer = self._request(
-            {
-                "kind": "run",
-                "argv": list(argv),
-                "env": [list(p) for p in env],
-                "timeout_s": timeout_s,
-                "memory_limit_mb": self._memory_limit_mb,
-            }
-        )
+        before = frozenset() if self._pid_namespaced else frozenset(_own_children())
+        try:
+            answer = self._request(
+                {
+                    "kind": "run",
+                    "argv": list(argv),
+                    "env": [list(p) for p in env],
+                    "timeout_s": timeout_s,
+                    "memory_limit_mb": self._memory_limit_mb,
+                }
+            )
+        finally:
+            if not self._pid_namespaced:
+                _kill_escapees(before | {self._proc.pid})
         return _result_from_json(answer, argv, time.monotonic() - start)
 
     def start_background(

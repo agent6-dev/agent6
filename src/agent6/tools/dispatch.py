@@ -1039,17 +1039,20 @@ class ToolDispatcher:
     def _run_session(self) -> JailSession | None:
         """The run's jail process, or None to give each command its own.
 
-        STRICT only: the other levels have no PID namespace to bound what a
-        command leaves running. A session that cannot start (an older bundled
-        launcher, a host without namespaces) answers None once and is not
-        retried, so the per-command path is the fallback rather than the run
-        failing.
+        Every isolation level, `none` included: the launcher owns output
+        capture and the background lifecycle, so serving them from one process
+        keeps that one implementation instead of a per-level copy, and hardened
+        stops paying Landlock + seccomp setup on every command. A session that
+        cannot start (an older bundled launcher, a platform with no launcher at
+        all) answers None once and is not retried, so the per-command path --
+        and, under `none`, the plain subprocess -- remains the fallback rather
+        than the run failing.
 
         Its confinement is fixed when it opens, so the policy is the run's, not
         the first command's: every command in the run gets the same one, and
         the background log root is granted before any command asks for it.
         """
-        if not self._use_session or self._isolation != "strict":
+        if not self._use_session:
             return None
         if self._session is None and not self._session_failed:
             rw = () if self._shells is None else (self._shells.log_root,)

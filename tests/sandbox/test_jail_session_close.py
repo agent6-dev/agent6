@@ -42,7 +42,9 @@ class _FakeProc:
 
 
 def _session(proc: Any) -> JailSession:
-    return JailSession(_proc=proc, _binary=Path("/nonexistent"), _memory_limit_mb=0)
+    return JailSession(
+        _proc=proc, _binary=Path("/nonexistent"), _pid_namespaced=True, _memory_limit_mb=0
+    )
 
 
 def test_close_swallows_the_closed_stdin_flush_valueerror() -> None:

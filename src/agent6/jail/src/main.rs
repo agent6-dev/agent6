@@ -266,6 +266,7 @@ fn main() {
     match policy.isolation.as_str() {
         "strict" => run_strict(&policy, join),
         "hardened" => run_hardened(&policy),
+        "none" => run_unconfined(&policy),
         other => die(format!("unknown sandbox isolation: {other}")),
     }
 }
@@ -318,6 +319,42 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
     }
 }
 
+fn run_unconfined(policy: &Policy) -> ! {
+    // `isolation = "none"`: the operator's explicit opt-out, or a host with no
+    // confinement mechanism at all. NOTHING here confines the child -- no
+    // namespaces, no Landlock, no seccomp -- so this branch must stay reachable
+    // ONLY for the literal string "none" (the match above is the whole gate).
+    //
+    // The launcher runs anyway so that output capture, the check-in and the
+    // background lifecycle have ONE implementation at every isolation level
+    // rather than one per level plus a Python copy. It costs the invariant that
+    // "the launcher ran" implied "confinement was applied", so the warning
+    // below is loud and the Python side surfaces it as `jail.degraded`.
+    eprintln!(
+        "[agent6-jail] WARNING: running UNCONFINED (isolation = \"none\"): no namespaces, \
+         no Landlock, no seccomp, no memory cap. Commands run with this process's own access."
+    );
+    let _ = io::stderr().flush();
+    // Still worth doing without a sandbox: in serve mode the launcher answers
+    // every request on its stdout, and a command that opened /proc/<pid>/fd/1
+    // could write a result line the agent reads as its own.
+    if let Err(e) = hide_from_children() {
+        die(format!("PR_SET_DUMPABLE failed: {e}"));
+    }
+    if policy.mode == "serve" {
+        serve(&policy.cwd, false);
+    }
+    let run = if policy.mode == "exec" {
+        run_child_exec
+    } else {
+        run_child
+    };
+    if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
+        die(format!("child execution failed: {e}"));
+    }
+    std::process::exit(0);
+}
+
 fn run_hardened(policy: &Policy) -> ! {
     // No namespaces, no pivot_root. Landlock confines the FS; seccomp +
     // NO_NEW_PRIVS bound the syscall surface; we still operate on the real cwd
@@ -363,10 +400,17 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
     }
     let stdin = io::stdin();
     let mut line = String::new();
+    // Backgrounded pids, for the EOF sweep when no PID namespace bounds them.
+    let mut backgrounded: Vec<i32> = Vec::new();
     loop {
         line.clear();
         match stdin.lock().read_line(&mut line) {
-            Ok(0) => std::process::exit(0),
+            Ok(0) => {
+                if !pid_namespaced {
+                    sweep_backgrounded(&backgrounded);
+                }
+                std::process::exit(0)
+            }
             Ok(_) => {}
             Err(e) => die(format!("serve: reading request failed: {e}")),
         }
@@ -380,10 +424,7 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
         let outcome = match request {
             Request::Run(child) => run_child(&child.child_spec(), cwd),
             Request::Background(child) => {
-                if !pid_namespaced {
-                    die("serve: background requests need the PID namespace (strict)");
-                }
-                spawn_detached(&child.child_spec(), cwd)
+                spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push(pid))
             }
             Request::Status { pid } => answer_status(pid),
             Request::Stop { pid } => answer_stop(pid),
@@ -1985,10 +2026,11 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Start a command and answer at once, leaving it running in this session's
-/// namespaces: no wait, and no process-group kill, so a server survives the
-/// request that started it. The PID namespace remains the bound -- when the
-/// session's stdin closes, everything in it dies with the namespace.
+/// Start a command and answer at once with its pid, leaving it running in this
+/// session's namespaces: no wait, and no process-group kill, so a server
+/// survives the request that started it. Under a PID namespace that namespace
+/// is the bound -- closing the session's stdin takes everything in it down;
+/// without one the pid is swept by `sweep_backgrounded` at EOF.
 /// Version 3 of the capset ABI: two 32-bit words per set.
 const LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
 
@@ -2132,7 +2174,7 @@ fn answer_stop(pid: i32) -> io::Result<()> {
     io::stdout().flush()
 }
 
-fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
@@ -2161,15 +2203,38 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
         cmd.pre_exec(|| drop_capabilities());
     }
     let child = cmd.spawn()?;
+    let pid = child.id() as i32;
     let result = serde_json::json!({
         "returncode": 0,
         "stdout": "",
         "stderr": "",
-        "pid": child.id(),
+        "pid": pid,
     });
     println!("{result}");
     io::stdout().flush()?;
-    Ok(())
+    Ok(pid)
+}
+
+/// Kill the groups of commands still running when the request channel closed.
+///
+/// A PID namespace does this by construction: the launcher is its init, and
+/// tearing the namespace down takes everything in it. Without one -- hardened,
+/// or unconfined -- a backgrounded command would outlive the run, so the pids
+/// are tracked and swept here.
+///
+/// `waitid` with WNOWAIT first: a pid that is no longer our child was already
+/// reaped, and the number may have been recycled onto an unrelated process by
+/// now. Only a live child of ours is signalled.
+fn sweep_backgrounded(pids: &[i32]) {
+    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    for pid in pids {
+        if let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(Pid::from_raw(*pid)), flags) {
+            unsafe {
+                libc::killpg(*pid, libc::SIGKILL);
+            }
+            let _ = waitpid(Pid::from_raw(*pid), Some(WaitPidFlag::WNOHANG));
+        }
+    }
 }
 
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
