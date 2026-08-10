@@ -39,6 +39,8 @@ from agent6.sessions.ipc import (
     MCP_SCOPE_PREFIX,
     effective_run_commands,
     session_deny_set,
+    steer_answer_is_abort,
+    stop_request_pending,
 )
 from agent6.sessions.layout import session_layout
 from agent6.skills import (
@@ -885,6 +887,17 @@ class ToolDispatcher:
             background_id=view.id,
         )
 
+    def _operator_wants_out(self) -> bool:
+        """Whether the operator has asked this run to stop or abort.
+
+        Only consulted to cut a WAIT short. The run still ends at its own
+        boundary; this just stops a tool call from sitting on the request for
+        up to the whole check-in interval.
+        """
+        if self._session_dir is None:
+            return False
+        return stop_request_pending(self._session_dir) or steer_answer_is_abort(self._session_dir)
+
     def _background(self) -> BackgroundShells:
         if self._shells is None:
             raise ToolError("background commands need a run directory; none was wired")
@@ -942,7 +955,12 @@ class ToolDispatcher:
             return BackgroundResult(shells=_roster(shells))
         wait_s = self._config.workflow.command_checkin_s if args.wait_s is None else args.wait_s
         try:
-            _view, output = shells.read(args.id, tail_lines=args.tail_lines, wait_s=wait_s)
+            _view, output = shells.read(
+                args.id,
+                tail_lines=args.tail_lines,
+                wait_s=wait_s,
+                interrupted=self._operator_wants_out,
+            )
         except BackgroundError as exc:
             raise ToolError(str(exc)) from exc
         return BackgroundResult(shells=_roster(shells), output=output)

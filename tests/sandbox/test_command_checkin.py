@@ -213,3 +213,39 @@ def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
             d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
     finally:
         d.close()
+
+
+def test_an_operator_stop_cuts_a_wait_short(tmp_path: Path) -> None:
+    """Stop is a marker file polled at a STEP boundary, and a tool call in
+    flight reaches no boundary -- so a Stop pressed during a wait sat unread for
+    the whole wait (measured: the full 10s of a 10s wait, and the default wait
+    is 900). The wait was already a poll loop; it just needed a second reason
+    to end."""
+    from agent6.sessions.ipc import request_stop
+
+    d = _dispatcher(tmp_path, checkin=900.0)
+    session_dir = tmp_path / "session"
+    try:
+        d.dispatch("run_command", {"argv": ["/bin/sh", "-c", "sleep 60"], "background": True})
+        request_stop(session_dir)
+        started = time.monotonic()
+        d.dispatch("read_background", {"id": "bg1", "wait_s": 10})
+        waited = time.monotonic() - started
+        assert waited < 3.0, f"the stop was ignored for {waited:.1f}s of a 10s wait"
+        d.dispatch("stop_background", {"id": "bg1"})
+    finally:
+        d.close()
+
+
+def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
+    """The negative control: without a stop marker the wait runs to the
+    command's end, or the early return above would be meaningless."""
+    d = _dispatcher(tmp_path, checkin=900.0)
+    try:
+        d.dispatch("run_command", {"argv": ["/bin/sh", "-c", "sleep 2"], "background": True})
+        started = time.monotonic()
+        d.dispatch("read_background", {"id": "bg1", "wait_s": 30})
+        waited = time.monotonic() - started
+        assert 1.0 < waited < 15.0, f"waited {waited:.1f}s; expected to wait for the ~2s command"
+    finally:
+        d.close()

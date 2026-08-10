@@ -245,13 +245,26 @@ class BackgroundShells:
         for shell in self._shells.values():
             shell.job.status()
 
-    def read(self, shell_id: str, *, tail_lines: int, wait_s: float = 0.0) -> tuple[ShellView, str]:
+    def read(
+        self,
+        shell_id: str,
+        *,
+        tail_lines: int,
+        wait_s: float = 0.0,
+        interrupted: Callable[[], bool] = lambda: False,
+    ) -> tuple[ShellView, str]:
         """What the command has printed, optionally after waiting for it to end.
 
         `wait_s` turns N polls into one call: a caller that wants the result
         asks for it once instead of spinning, which for an LLM is the
         difference between one tool call and a dozen turns of tokens. Returns
         as soon as the command ends, so waiting never costs more than it saves.
+
+        `interrupted` cuts the wait short. The operator's Stop is a marker file
+        polled at a STEP boundary, and a tool call in flight reaches no
+        boundary -- so without this a Stop pressed during a 15-minute wait sits
+        unread for 15 minutes. The wait is already a poll loop; this only gives
+        it a second reason to end.
         """
         shell = self._get(shell_id)
         if wait_s > 0:
@@ -260,6 +273,8 @@ class BackgroundShells:
             # and a command worth waiting on is not worth 3600 of them.
             pause = 0.1
             while shell.job.status().running and time.monotonic() < deadline:
+                if interrupted():
+                    break
                 time.sleep(min(pause, max(0.0, deadline - time.monotonic())))
                 pause = min(pause * 1.5, 2.0)
         try:
