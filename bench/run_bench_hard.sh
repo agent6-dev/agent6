@@ -62,6 +62,9 @@ init_repo() {
   mkdir -p "$dir"
   ( cd "$dir" && git init -q && git config user.email bench@agent6 && git config user.name bench )
   common_toml > "$dir/agent6.toml"
+  # Fail on a dead config key here, in 200ms, not after a task's spend:
+  # `config show` loads the same merged layers the run will.
+  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
   cat > "$dir/.gitignore" <<'GIT'
 .agent6/
 __pycache__/

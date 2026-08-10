@@ -310,6 +310,9 @@ EOF
     continue
   fi
   emit_toml "$verify_cmd_json" "$metric_block" > "$dir/agent6.toml"
+  # Fail on a dead config key here, in 200ms, not after a task's spend:
+  # `config show` loads the same merged layers the run will.
+  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
   # agent6.toml is now untracked; add it to .gitignore so it doesn't dirty the tree.
   # Ensure a trailing newline before appending (some upstream .gitignores end
   # without one, which would join our pattern to the previous line).

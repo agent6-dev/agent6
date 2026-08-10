@@ -177,6 +177,10 @@ max_usd = $MAX_USD
 max_tokens_fallback = $MAX_TOKENS_FALLBACK
 EOF
 
+# Fail on a dead config key here, in 200ms, not after the run's spend:
+# `config show` loads the same merged layers the run will.
+( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
+
 {
   echo "agent6.toml"
   echo "TASK.md"

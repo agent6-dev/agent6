@@ -435,6 +435,14 @@ def one_sequence(
 
     cfg = workdir / "_run_config.toml"
     cfg.write_text(_provider_block(provider, model) + cond.toml, encoding="utf-8")
+    # Fail on a dead config key here, in 200ms, not after a task's spend:
+    # `config show` loads the same merged layers the run will.
+    subprocess.run(
+        [AGENT6_BIN, "--config", str(cfg), "config", "show"],
+        cwd=workdir,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
 
     _git(workdir, "init", "-q")
     _git(workdir, "config", "user.email", "bench@bench")
