@@ -20,6 +20,7 @@ from typing import ClassVar
 import pytest
 
 import agent6.app._session as session_mod
+import agent6.app.preflight as preflight_mod
 import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
 from agent6.config import (
@@ -85,9 +86,9 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
 
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
-    monkeypatch.setattr(app_run_mod, "apply_git_egress_policy", _noop)
+    monkeypatch.setattr(preflight_mod, "apply_git_egress_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
-    monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
+    monkeypatch.setattr(preflight_mod, "verify_git_identity", _noop)
 
 
 def test_dirty_tree_refused_with_default_config(

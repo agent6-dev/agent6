@@ -344,6 +344,7 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
     ran AFTER the drop, re-gated the leg from AGENTS.md, and the pin labelled
     the inferred command "configured"."""
     import agent6.app._session as session_mod
+    import agent6.app.preflight as preflight_mod
     import agent6.app.run as run_mod
     from agent6.app.reporter import Reporter
 
@@ -377,7 +378,7 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
     monkeypatch.setattr(session_mod, "check_network_support", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(session_mod, "build_role_provider", _provider)
-    monkeypatch.setattr(run_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(preflight_mod, "verify_git_identity", _none)
     monkeypatch.setattr(run_mod, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []

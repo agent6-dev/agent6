@@ -22,7 +22,11 @@ from agent6.app.confine import (
     check_workspace_outside_private_dirs,
     warn_sandbox_gaps,
 )
-from agent6.app.preflight import budget_preflight, warn_if_prompt_override_incomplete
+from agent6.app.preflight import (
+    SessionRefused,
+    budget_preflight,
+    warn_if_prompt_override_incomplete,
+)
 from agent6.app.providers import (
     InstrumentedProvider,
     build_critic_provider,
@@ -47,15 +51,6 @@ from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel, session_kind
 from agent6.workflows.review import ReviewSeat
-
-
-class SessionRefused(Exception):
-    """A preflight refusal already reported through the Reporter; the caller
-    returns ``rc`` as the process exit code."""
-
-    def __init__(self, rc: int) -> None:
-        super().__init__(f"session refused (exit {rc})")
-        self.rc = rc
 
 
 def select_isolation(

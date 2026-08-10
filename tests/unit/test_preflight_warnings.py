@@ -54,14 +54,16 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     front-end that calls the lifecycle directly (`agent6 acp`) left a repo that
     opted into its own hooks with them silently off. It fails SAFE, which is
     how a knob `config show` reports went ignored on one surface unnoticed."""
+    from agent6.app import preflight as preflight_mod
     from agent6.app import run as lifecycle
+    from agent6.app.frontend import FrontendCapabilities
 
     seen: list[bool] = []
 
     def _capture(captured: Config) -> None:
         seen.append(captured.git.run_repo_hooks)
 
-    monkeypatch.setattr(lifecycle, "apply_git_egress_policy", _capture)
+    monkeypatch.setattr(preflight_mod, "apply_git_egress_policy", _capture)
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
@@ -71,7 +73,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
 
     front = acp_frontend(
         ask=lambda _p, _o, _s: None,
-        capabilities=lifecycle.FrontendCapabilities(),
+        capabilities=FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _rid: "",
     )

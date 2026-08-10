@@ -8,8 +8,11 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app._setup import apply_git_egress_policy
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
@@ -18,11 +21,29 @@ from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
-from agent6.git_ops import is_git_repo
+from agent6.git_ops import (
+    CommitIdentity,
+    GitError,
+    GitStatus,
+    is_git_repo,
+    verify_git_identity,
+)
+from agent6.git_ops import (
+    status as git_status,
+)
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+
+
+class SessionRefused(Exception):
+    """A preflight refusal already reported through the Reporter; the caller
+    returns ``rc`` as the process exit code."""
+
+    def __init__(self, rc: int) -> None:
+        super().__init__(f"session refused (exit {rc})")
+        self.rc = rc
 
 
 def budget_preflight(cfg: Config) -> str | None:
@@ -93,6 +114,68 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
             "contracts. Inspect the assembled prompt with `agent6 prompt show`.",
             file=sys.stderr,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class GitPreflight:
+    """Where the run starts: HEAD + branch at submission (empty for ask, which
+    is read-only and may run outside a repo), and the pre-run status the tree
+    policy reads."""
+
+    base_sha: str
+    base_branch: str
+    pre_status: GitStatus | None
+
+
+def git_preflight(
+    cwd: Path,
+    cfg: Config,
+    mode: str,
+    *,
+    confirm_run_on_run_branch: Callable[[str], bool],
+    reporter: Reporter,
+) -> GitPreflight:
+    """The git checks a session needs before it creates anything, raising
+    :class:`SessionRefused` on each already-reported refusal.
+
+    The auto-commit-on-verify-pass behaviour requires a clean working tree, so
+    the same git assumptions apply; skipping these left first-time runs
+    crashing on dirty-tree or missing-identity errors deep into a paid run.
+    The egress policy is applied by the lifecycle's own config, not whichever
+    front-end got here: `ui/cli` set it and `agent6 acp` did not, so a repo
+    that opted into its own hooks silently kept them off under an editor -- a
+    knob `config show` reports and one surface ignored.
+    """
+    apply_git_egress_policy(cfg)
+    identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+    # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
+    # so it skips the commit-oriented git pre-flight entirely.
+    if mode == "ask":
+        return GitPreflight(base_sha="", base_branch="", pre_status=None)
+    try:
+        verify_git_identity(cwd, identity)
+        # Captured BEFORE a run branch exists, so `agent6 sessions diff <id>`
+        # knows where the run started.
+        pre_status = git_status(cwd)
+    except GitError as exc:
+        reporter.err(f"ERROR: {exc}")
+        raise SessionRefused(2) from exc
+    # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
+    # usually a slip -- the operator forgot to merge or switch back -- so the new
+    # run would pile on top of an unmerged one. Confirm; they may instead intend
+    # to continue that line with a fresh session, in which case proceed.
+    if (
+        mode == "run"
+        and pre_status.branch.startswith("agent6/")
+        and not confirm_run_on_run_branch(pre_status.branch)
+    ):
+        reporter.err(
+            "[agent6] aborted. Merge (agent6 sessions merge) or switch branches first, then re-run."
+        )
+        raise SessionRefused(2)
+    return GitPreflight(
+        base_sha=pre_status.head_sha, base_branch=pre_status.branch, pre_status=pre_status
+    )
 
 
 def git_repo_refusal(cwd: Path) -> str | None:

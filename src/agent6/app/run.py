@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app._session import (
-    SessionRefused,
     build_session_providers,
     build_session_tools,
     select_isolation,
@@ -27,7 +26,6 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
-    apply_git_egress_policy,
     start_mcp_manager_if_enabled,
     wants_session_network,
 )
@@ -52,7 +50,9 @@ from agent6.app.manifest import (
     write_session_manifest,
 )
 from agent6.app.preflight import (
+    SessionRefused,
     drop_gate_if_unrunnable,
+    git_preflight,
     headless_approval_refusal,
     infer_verify_if_unset,
 )
@@ -65,17 +65,12 @@ from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
-    CommitIdentity,
     GitError,
     auto_stash_message,
     chain_ref_for,
     dirty_paths,
     render_commit_trailer,
     stash_all,
-    verify_git_identity,
-)
-from agent6.git_ops import (
-    status as git_status,
 )
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
@@ -206,53 +201,18 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     except SessionRefused as refusal:
         return refusal.rc
 
-    # Git pre-flight (verify identity).
-    # The auto-commit-on-verify-pass behaviour requires a clean working tree,
-    # so the same git assumptions apply. Skipping these left first-time runs
-    # crashing on dirty-tree or missing-identity errors deep into a paid run.
     cwd = Path.cwd()
-    # The lifecycle's own config decides this, not whichever front-end got
-    # here: `ui/cli` set it and `agent6 acp` did not, so a repo that opted
-    # into its own hooks silently kept them off under an editor -- a knob
-    # `config show` reports and one surface ignored.
-    apply_git_egress_policy(cfg)
-    identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
-    # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
-    # so it skips the commit-oriented git pre-flight entirely.
-    base_sha = ""
-    base_branch = ""
-    pre_status = None  # set below for run/plan; stays None for read-only ask
-    if mode != "ask":
-        # The not-a-git-repo guard already ran up front, before require_runnable.
-        try:
-            verify_git_identity(cwd, identity)
-        except GitError as exc:
-            reporter.err(f"ERROR: {exc}")
-            return 2
-
-        # Capture base sha + branch BEFORE we (optionally) cut a run branch
-        # so `agent6 sessions diff <run-id>` knows where the run started.
-        try:
-            pre_status = git_status(cwd)
-        except GitError as exc:
-            reporter.err(f"ERROR: {exc}")
-            return 2
-        base_sha = pre_status.head_sha
-        base_branch = pre_status.branch
-        # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
-        # usually a slip -- the operator forgot to merge or switch back -- so the new
-        # run would pile on top of an unmerged one. Confirm; they may instead intend
-        # to continue that line with a fresh session, in which case proceed.
-        if (
-            mode == "run"
-            and base_branch.startswith("agent6/")
-            and not frontend.confirm_run_on_run_branch(base_branch)
-        ):
-            reporter.err(
-                "[agent6] aborted. Merge (agent6 sessions merge) or switch branches"
-                " first, then re-run."
-            )
-            return 2
+    try:
+        git = git_preflight(
+            cwd,
+            cfg,
+            mode,
+            confirm_run_on_run_branch=frontend.confirm_run_on_run_branch,
+            reporter=reporter,
+        )
+    except SessionRefused as refusal:
+        return refusal.rc
+    base_sha, base_branch, pre_status = git.base_sha, git.base_branch, git.pre_status
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
     # live under the per-repo state dir (asks subdir) to stay separate from real runs.

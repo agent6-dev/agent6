@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 
 from agent6.app._session import (
-    SessionRefused,
     build_session_providers,
     build_session_tools,
     select_isolation,
@@ -44,6 +43,7 @@ from agent6.app.frontend import (
 )
 from agent6.app.manifest import pin_gate
 from agent6.app.preflight import (
+    SessionRefused,
     drop_gate_if_unrunnable,
     headless_approval_refusal,
     require_git_repo,
