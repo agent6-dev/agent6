@@ -39,6 +39,7 @@ _ANSI = {
     "reset": "\033[0m",
     "bold": "\033[1m",
     "cyan": "\033[36m",
+    "blue": "\033[34m",
     "green": "\033[32m",
     "red": "\033[31m",
     "yellow": "\033[33m",
@@ -51,8 +52,10 @@ _ANSI = {
 # element is coloured live in ONE place and can't drift.
 _STYLE_ANSI: dict[StyleName, str] = {
     "thinking": _ANSI["dim"],
+    "think-marker": _ANSI["blue"],
     "text": "",
     "call": _ANSI["bold"] + _ANSI["cyan"],
+    "verify": _ANSI["bold"] + _ANSI["yellow"],
     "arg": _ANSI["dim"],
     "ok": _ANSI["green"],
     "fail": _ANSI["red"],

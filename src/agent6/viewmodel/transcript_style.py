@@ -30,8 +30,10 @@ from agent6.viewmodel.transcript import (
 
 StyleName = Literal[
     "thinking",
+    "think-marker",
     "text",
     "call",
+    "verify",
     "arg",
     "ok",
     "fail",
@@ -66,7 +68,8 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     longer inherits the fail colour). Collapsed, a long multi-line detail (a failed
     tool's error dump) is clipped to its first line + a "+N more lines" note so it
     can't dominate; expanded, the full detail is shown, indented and still neutral."""
-    head: Line = [(f"{CALL} {item.name}", "call")]
+    head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"
+    head: Line = [(f"{CALL} {item.name}", head_style)]
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
     glyph: StyleName = "ok" if item.ok else "fail"
@@ -105,14 +108,14 @@ def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     still says what the model is thinking about."""
     if expanded:
         body_lines = item.body.split("\n")
-        out: list[Line] = [[(f"{THINK} {body_lines[0]}", "thinking")]]
+        out: list[Line] = [[(f"{THINK} ", "think-marker"), (body_lines[0], "thinking")]]
         out.extend([(f"  {ln}", "thinking")] for ln in body_lines[1:])
         return out
     n = item.body.count("\n") + 1
     first = next((ln.strip() for ln in item.body.split("\n") if ln.strip()), "")
     if len(first) > DETAIL_CLIP:
         first = first[: DETAIL_CLIP - 1] + "…"
-    line: Line = [(f"{THINK} {first}", "thinking")]
+    line: Line = [(f"{THINK} ", "think-marker"), (first, "thinking")]
     if n > 1:
         line.append((f"  (+{n - 1} more line{'' if n == 2 else 's'})", "more"))
     return [line]

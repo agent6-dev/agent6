@@ -156,7 +156,9 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 /* hover-capable devices only: on touch, a tap left the hover background stuck */
 @media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
 .conv .s-thinking { color: var(--muted); font-style: italic; }
+.conv .s-think-marker { color: var(--accent); }
 .conv .s-call { color: var(--accent); font-weight: 600; }
+.conv .s-verify { color: var(--warn); font-weight: 600; }
 .conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
 .conv .s-more, .conv .s-marker { color: var(--muted); font-style: italic; }
 .conv .s-ok { color: var(--ok); }

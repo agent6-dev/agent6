@@ -77,18 +77,21 @@ def test_thinking_detail_levels() -> None:
     item = TranscriptItem("thinking", body="plan the fix\nb\nc")
     assert item_lines(item, detail="hidden") == []  # omitted entirely
     collapsed = item_lines(item, detail="collapsed")
-    # Collapsed = the FIRST LINE of the reasoning as a summary + a more-count,
-    # so it still says what the model is thinking about.
-    assert collapsed[0][0][1] == "thinking" and "plan the fix" in collapsed[0][0][0]
-    assert "b" not in collapsed[0][0][0].split("plan the fix")[-1]  # only the first line
-    assert collapsed[0][1][1] == "more" and "+2 more lines" in collapsed[0][1][0]
+    # Collapsed = the marker (its own accent span) + the FIRST LINE of the
+    # reasoning as a summary + a more-count, so it still says what the model
+    # is thinking about.
+    assert collapsed[0][0][1] == "think-marker"
+    assert collapsed[0][1][1] == "thinking" and "plan the fix" in collapsed[0][1][0]
+    assert "b" not in collapsed[0][1][0].split("plan the fix")[-1]  # only the first line
+    assert collapsed[0][2][1] == "more" and "+2 more lines" in collapsed[0][2][0]
     # A single-line thought has no more-count; a long first line is clipped.
     single = item_lines(TranscriptItem("thinking", body="only line"), detail="collapsed")
-    assert len(single[0]) == 1 and "only line" in single[0][0][0]
+    assert len(single[0]) == 2 and "only line" in single[0][1][0]
     long = item_lines(TranscriptItem("thinking", body="x" * 400), detail="collapsed")
-    assert long[0][0][0].endswith("…") and len(long[0][0][0]) < 200
+    assert long[0][1][0].endswith("…") and len(long[0][1][0]) < 200
     expanded = item_lines(item, detail="expanded")
-    assert expanded[0][0][1] == "thinking" and expanded[0][0][0].endswith("plan the fix")
+    assert expanded[0][0][1] == "think-marker"
+    assert expanded[0][1][1] == "thinking" and expanded[0][1][0] == "plan the fix"
     assert [line[0][0].strip() for line in expanded[1:]] == ["b", "c"]
 
 
@@ -136,3 +139,12 @@ def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
     # The dialogue kinds stay at every level.
     assert item_lines(TranscriptItem("text", body="hello"), detail="hidden")
     assert item_lines(TranscriptItem("operator", body="go on"), detail="hidden")
+
+
+def test_verify_head_has_its_own_style() -> None:
+    """The gate reads differently from ordinary tools: run_verify_command's
+    call head styles as "verify", everything else as "call"."""
+    verify = TranscriptItem("tool", name="run_verify_command", ok=True, detail="✓ pass · 0.2s")
+    assert item_lines(verify, detail="collapsed")[0][0][1] == "verify"
+    other = TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="ok")
+    assert item_lines(other, detail="collapsed")[0][0][1] == "call"

@@ -93,8 +93,10 @@ def _tail(text: str, n: int) -> str:
 # place (transcript_style) and can't drift.
 _STYLE_RICH: dict[StyleName, str] = {
     "thinking": "#6C7086",
+    "think-marker": "blue",
     "text": "",
     "call": "bold cyan",
+    "verify": "bold yellow",
     "arg": "dim",
     "ok": "green",
     "fail": "red",
