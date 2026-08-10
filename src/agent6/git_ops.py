@@ -187,6 +187,7 @@ def _run(
     *args: str,
     check: bool = True,
     env_extra: dict[str, str] | None = None,
+    stdin_text: str | None = None,
 ) -> CommandResult:
     # GIT_TERMINAL_PROMPT=0: a git op that would otherwise block on a
     # username/password prompt (a network remote without cached creds) fails
@@ -208,6 +209,7 @@ def _run(
     proc = subprocess.Popen(
         full_argv,
         cwd=cwd,
+        stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
         # Bytes, decoded lossily below: git diff/show emit raw file bytes,
         # so a changed non-UTF-8 text file (latin-1 has no NULs, so git does
         # not classify it binary) would make a strict text=True decode raise
@@ -222,7 +224,8 @@ def _run(
         # A local git op is fast; a bound turns a pathological hang (a wedged
         # NFS/filesystem, an index.lock held by a crashed process) into a
         # loud error instead of a silent freeze with no feedback.
-        out, err = proc.communicate(timeout=_GIT_TIMEOUT_S)
+        stdin_bytes = stdin_text.encode() if stdin_text is not None else None
+        out, err = proc.communicate(input=stdin_bytes, timeout=_GIT_TIMEOUT_S)
     except subprocess.TimeoutExpired as exc:
         # SIGTERM first: git's TERM handler unlinks its own lockfiles
         # (index.lock included), so a terminated child cleans up after itself
@@ -877,118 +880,156 @@ class CommitRow:
     message: str  # full %B
 
 
-def _conflicted_paths(path: Path) -> tuple[str, ...]:
-    res = _run(path, "diff", "--name-only", "--diff-filter=U", check=False)
-    return tuple(p for p in res.stdout.splitlines() if p.strip())
-
-
-def _untracked_files(path: Path) -> frozenset[str]:
-    res = _run(path, "ls-files", "--others", "--exclude-standard", "-z", check=False)
-    return frozenset(p for p in res.stdout.split("\x00") if p)
-
-
 def fetch_branch(path: Path, remote_path: Path, refspec: str) -> None:
     """`git fetch <remote_path> <refspec>` into *path*, e.g. `"b:b"` to land a
     same-named local branch from another repo without adding a remote."""
     _run(path, "fetch", str(remote_path), refspec)
 
 
-def merge_branch(
+def plumb_merge(
     path: Path,
-    branch: str,
+    target: str,
+    merge_rev: str,
     *,
-    ff_only: bool = False,
+    strategy: str,
     message: str | None = None,
     identity: CommitIdentity | None = None,
 ) -> MergeResult:
-    """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`, with
-    *message* and *identity*, including identity.trailer) keeps the run's
-    per-step history; *ff_only* instead fast-forwards and raises if the target
-    has moved (no commit is created, so message and identity do not apply). On
-    conflict, `git merge --abort` (not a history rewrite) leaves the tree clean
-    and the result reports the conflicts."""
-    if ff_only:
-        args: tuple[str, ...] = ("merge", "--ff-only", branch)
-        env_extra = None
+    """Land *merge_rev* on branch *target* with plumbing only: `merge-tree` +
+    `commit-tree` + a compare-and-swap ref update. No checkout and no
+    clean-tree requirement -- the operator's worktree is never the medium, so
+    a worktree that (as after every run) carries the run's own work does not
+    block the landing. When *target* is the checked-out branch, index entries
+    the merge changed and the operator did not are brought forward so `git
+    status` stays truthful.
+
+    *strategy*: "merge" (two-parent commit), "squash" (one single-parent
+    commit), "ff" (the ref moves to *merge_rev*; raises when not
+    fast-forwardable). A *merge_rev* the target already contains is a clean
+    no-op returning the unchanged tip. On conflict nothing moves and the
+    conflicted paths are reported."""
+    ref = f"refs/heads/{target}"
+    ours = _run(path, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip()
+    theirs = _run(path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}").stdout.strip()
+    if _run(path, "merge-base", "--is-ancestor", theirs, ours, check=False).returncode == 0:
+        return MergeResult(ours, False, ())
+    ff_able = _run(path, "merge-base", "--is-ancestor", ours, theirs, check=False).returncode == 0
+    if strategy == "ff":
+        if not ff_able:
+            raise GitError(f"{target!r} has moved; a fast-forward to {merge_rev!r} is impossible")
+        sha = theirs
     else:
-        text = message
+        if ff_able:
+            tree = _run(path, "rev-parse", f"{theirs}^{{tree}}").stdout.strip()
+        else:
+            res = _run(path, "merge-tree", "--write-tree", "--name-only", ours, theirs, check=False)
+            lines = res.stdout.splitlines()
+            if res.returncode == 1:
+                return MergeResult("", True, tuple(p for p in lines[1:] if p.strip()))
+            if res.returncode != 0 or not lines:
+                raise GitError(f"merge-tree failed: {res.stderr.strip() or 'exit'}")
+            tree = lines[0].strip()
+        if tree == _run(path, "rev-parse", f"{ours}^{{tree}}").stdout.strip():
+            return MergeResult(ours, False, ())  # content-identical: nothing to land
+        text = message or f"Merge {merge_rev}"
         trailer = identity.trailer if identity else None
-        if trailer:
-            base = text or f"Merge {branch}"
-            text = base if trailer in base else f"{base}\n\n{trailer}"
-        msg_args = ("-m", text) if text else ("--no-edit",)
-        args = ("merge", "--no-ff", *msg_args, branch)
-        env_extra = _identity_env(identity)
-    res = _run(path, *args, check=False, env_extra=env_extra)
-    if res.ok:
-        return MergeResult(_run(path, "rev-parse", "HEAD").stdout.strip(), False, ())
-    conflicts = _conflicted_paths(path)
-    _run(path, "merge", "--abort", check=False)
-    if not conflicts:
-        raise GitError(f"merge failed: {res.stderr.strip() or res.stdout.strip() or 'exit'}")
-    return MergeResult("", True, conflicts)
-
-
-def squash_merge(
-    path: Path,
-    branch: str,
-    message: str | None,
-    *,
-    identity: CommitIdentity | None,
-) -> MergeResult:
-    """Squash *branch* into HEAD as ONE commit. `git merge --squash` stages the
-    branch's cumulative tree without committing or moving HEAD (not a rebase or
-    reset, so policy-clean); we then commit once with *message* plus
-    identity.trailer (once, however many per-step commits carried it). A squash
-    with nothing to merge is a clean no-op (returns HEAD). On conflict, restore
-    the pre-merge tree (reset --mixed + checkout, plus removing only the files
-    this squash newly staged, which otherwise survive as untracked; never
-    reset --hard, as a squash leaves no MERGE_HEAD to --abort) and report the
-    conflicted paths."""
-    head = _run(path, "rev-parse", "HEAD").stdout.strip()
-    pre_untracked = _untracked_files(path)
-    res = _run(path, "merge", "--squash", branch, check=False)
-    if not res.ok:
-        conflicts = _conflicted_paths(path)
-        rollback_to_known_good(path, head)
-        # A conflicted squash also stages new files from the branch; reset --mixed
-        # demotes them to untracked and checkout cannot remove them. Clean only the
-        # files this merge introduced, so the user's pre-existing untracked files
-        # are untouched (and still never reset --hard).
-        stray = tuple(sorted(_untracked_files(path) - pre_untracked))
-        if stray:
-            _run(path, "clean", "-fdq", "--", *stray, check=False)
-        if not conflicts:
-            raise GitError(
-                f"squash merge failed: {res.stderr.strip() or res.stdout.strip() or 'exit'}"
-            )
-        return MergeResult("", True, conflicts)
-    if _run(path, "diff", "--cached", "--quiet", check=False).ok:
-        # Nothing staged: the branch was already up to date / an ancestor. A clean
-        # no-op, matching merge_branch's "Already up to date" behavior.
-        return MergeResult(head, False, ())
-    if message is None:
-        # The `combine` style: git's own squash message, written to SQUASH_MSG
-        # by `merge --squash`.
-        msg_path = Path(_run(path, "rev-parse", "--git-path", "SQUASH_MSG").stdout.strip())
-        if not msg_path.is_absolute():
-            msg_path = path / msg_path
-        try:
-            message = msg_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            message = f"Squash {branch}"
-    try:
-        sha = _commit(path, message, trailers=None, identity=identity)
-    except GitError:
-        # The squash already staged a tree; if the commit step itself fails (a
-        # rejecting hook, say), restore the clean pre-merge tree rather than leave
-        # the index staged. Mirrors the conflict cleanup above.
-        rollback_to_known_good(path, head)
-        stray = tuple(sorted(_untracked_files(path) - pre_untracked))
-        if stray:
-            _run(path, "clean", "-fdq", "--", *stray, check=False)
-        raise
+        if trailer and trailer not in text:
+            text = f"{text}\n\n{trailer}"
+        parent_args = ["-p", ours] if strategy == "squash" else ["-p", ours, "-p", theirs]
+        sha = _run(
+            path,
+            "commit-tree",
+            tree,
+            *parent_args,
+            "-m",
+            text,
+            env_extra=_identity_env(identity),
+        ).stdout.strip()
+    # Compare-and-swap: refuses (GitError) if the target moved concurrently.
+    _run(path, "update-ref", ref, sha, ours)
+    _bring_index_forward(path, target, ours, sha)
     return MergeResult(sha, False, ())
+
+
+def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) -> None:
+    """After moving the CHECKED-OUT branch's ref from *old_tip* to *new_tip*
+    without a checkout, bring the shared index and the worktree forward for
+    the paths the move changed -- each only where it still matches *old_tip*,
+    so anything the operator staged or edited themselves is left exactly as
+    they had it. Without the index half, `git status` shows a phantom staged
+    reversal of the landed work; without the worktree half, a merge landed
+    onto a reverted checkout would leave the files behind. A worktree that
+    already holds the new content (as after every run) needs and gets no
+    writes."""
+    head = _run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    if head != target:
+        return
+    changed = _run(path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip).stdout
+    staged = {
+        entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()
+        for entry in _run(path, "ls-files", "--stage", "-z").stdout.split("\x00")
+        if "\t" in entry
+    }  # path -> [mode, sha, stage]
+    updates: list[str] = []
+    records = changed.split("\x00")
+    i = 0
+    while i + 1 < len(records):
+        meta, rel = records[i], records[i + 1]
+        i += 2
+        if not meta.startswith(":"):
+            continue
+        old_mode, new_mode, old_sha, new_sha, _status = meta[1:].split(" ")[:5]
+        entry = staged.get(rel)
+        if (entry is None and old_mode == "000000") or (
+            entry is not None and entry[0] == old_mode and entry[1] == old_sha
+        ):
+            # mode 000000 removes the entry (a merge-side deletion).
+            updates.append(f"{new_mode} {new_sha}\t{rel}")
+        _bring_worktree_file_forward(path, rel, old_mode, old_sha, new_mode, new_sha)
+    if updates:
+        _run(path, "update-index", "-z", "--index-info", stdin_text="\x00".join(updates) + "\x00")
+
+
+def _bring_worktree_file_forward(
+    path: Path, rel: str, old_mode: str, old_sha: str, new_mode: str, new_sha: str
+) -> None:
+    """Move ONE worktree file from the old tip's content to the new tip's,
+    only when it still matches the old tip (absent counts as matching a
+    deletion or a not-yet-added path); regular files only -- symlinks and
+    submodule pointers are left to the operator."""
+    file = path / rel
+    if new_mode in ("120000", "160000") or old_mode in ("120000", "160000"):
+        return
+    try:
+        if old_mode == "000000":
+            current_matches = not file.exists()
+        elif not file.is_file() or file.is_symlink():
+            current_matches = False
+        else:
+            current_matches = (
+                _run(path, "hash-object", "--", rel, check=False).stdout.strip() == old_sha
+            )
+        if not current_matches:
+            return
+        if new_mode == "000000":
+            file.unlink(missing_ok=True)
+            return
+        file.parent.mkdir(parents=True, exist_ok=True)
+        # Bytes straight from git to the file: _run decodes lossily (str), which
+        # would corrupt a binary blob.
+        with file.open("wb") as out:
+            subprocess.run(
+                [_git(), *git_hardening_flags(), "cat-file", "blob", new_sha],
+                cwd=path,
+                stdout=out,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=_GIT_TIMEOUT_S,
+            )
+        if new_mode == "100755":
+            file.chmod(file.stat().st_mode | 0o111)
+    except (GitError, OSError, subprocess.SubprocessError):
+        return  # best-effort: an unwritable path leaves truthful dirt, never a crash
 
 
 def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[CommitRow, ...]:

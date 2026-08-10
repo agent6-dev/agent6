@@ -33,13 +33,12 @@ from agent6.git_ops import (
     is_git_repo,
     list_run_commits,
     make_run_branch_name,
-    merge_branch,
+    plumb_merge,
     recent_log,
     reset_to,
     restore_stash,
     set_repo_hook_policy,
     slugify,
-    squash_merge,
     stash_all,
     status,
     unignored,
@@ -742,7 +741,9 @@ class _HungGit:
         self.ignores_term = ignores_term
         self.calls: list[str] = []
 
-    def communicate(self, timeout: float | None = None) -> tuple[bytes, bytes]:
+    def communicate(
+        self, input: bytes | None = None, timeout: float | None = None
+    ) -> tuple[bytes, bytes]:
         if "kill" in self.calls:
             return b"", b""
         if "terminate" in self.calls:
@@ -856,68 +857,121 @@ def _commit_file(repo: Path, name: str, content: str, msg: str) -> str:
     return status(repo).head_sha
 
 
-def test_merge_branch_no_ff_clean(tmp_path: Path) -> None:
+def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) -> None:
+    """A no-ff merge is pure ref plumbing: the target branch gains a two-parent
+    commit carrying the trailer once, and a worktree already holding the run's
+    files (as after every run) is no obstacle -- afterwards `git status` shows
+    no phantom dirt because the index was brought forward."""
     _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
-    create_branch(tmp_path, "main")  # idempotent checkout back to base
-    res = merge_branch(tmp_path, "agent6/r1")
-    assert not res.conflicted
-    assert res.merged_sha
-    assert (tmp_path / "feat.txt").read_text(encoding="utf-8") == "x\n"
-    assert "add feat" in recent_log(tmp_path, 10)
+    base = status(tmp_path).head_sha
+    run_tip = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
+    )
+    (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")  # worktree carries the work
 
-
-def test_merge_branch_conflict_aborts_clean(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "README.md", "run change\n", "agent6 iter 1: edit")
-    create_branch(tmp_path, "main")
-    _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
-    res = merge_branch(tmp_path, "agent6/r1")
-    assert res.conflicted
-    assert "README.md" in res.conflicts
-    assert status(tmp_path).is_clean  # merge --abort left a clean tree
-
-
-def test_merge_branch_ff_only_fast_forwards(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
-    create_branch(tmp_path, "main")  # base is an ancestor of r1, so ff is possible
-    res = merge_branch(tmp_path, "agent6/r1", ff_only=True)
-    assert not res.conflicted
-    assert res.merged_sha == status(tmp_path).head_sha
-    assert (tmp_path / "feat.txt").read_text(encoding="utf-8") == "x\n"
-
-
-def test_merge_branch_ff_only_refuses_when_diverged(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
-    create_branch(tmp_path, "main")
-    _commit_file(tmp_path, "other.txt", "y\n", "main diverges")  # base moved, no ff
-    with pytest.raises(GitError):
-        merge_branch(tmp_path, "agent6/r1", ff_only=True)
-    assert status(tmp_path).is_clean  # a refused ff leaves the tree clean
-
-
-def test_merge_branch_no_ff_carries_the_trailer(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
-    create_branch(tmp_path, "main")
-    res = merge_branch(
-        tmp_path, "agent6/r1", identity=CommitIdentity(trailer="Co-authored-by: Op <op@x>")
+    res = plumb_merge(
+        tmp_path,
+        "main",
+        "refs/agent6/r1",
+        strategy="merge",
+        message="Merge refs/agent6/r1",
+        identity=CommitIdentity(trailer="Assisted-by: agent6:m1"),
     )
     assert not res.conflicted
+    assert _rev(tmp_path, "main") == res.merged_sha
+    parents = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%P", res.merged_sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert parents == [base, run_tip]
     head_msg = subprocess.run(
-        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B", res.merged_sha],
         capture_output=True,
         text=True,
         check=True,
     ).stdout
-    assert "Co-authored-by: Op <op@x>" in head_msg  # the merge commit credits the operator
+    assert head_msg.count("Assisted-by: agent6:m1") == 1
+    assert status(tmp_path).is_clean  # main is checked out: index brought forward
+
+
+def test_plumb_merge_conflict_moves_nothing(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
+    _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
+    main_tip = status(tmp_path).head_sha
+    res = plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None)
+    assert res.conflicted
+    assert "README.md" in res.conflicts
+    assert _rev(tmp_path, "main") == main_tip  # nothing moved
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
+
+
+def test_plumb_merge_ff_moves_the_ref_and_refuses_divergence(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
+    res = plumb_merge(tmp_path, "main", theirs, strategy="ff")
+    assert res.merged_sha == theirs == _rev(tmp_path, "main")
+    assert status(tmp_path).is_clean
+
+    diverged = _lane_commit(tmp_path, base, "other.txt", "y\n")
+    with pytest.raises(GitError):
+        plumb_merge(tmp_path, "main", diverged, strategy="ff")
+    assert _rev(tmp_path, "main") == theirs  # a refused ff moves nothing
+
+
+def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    step1 = _lane_commit(tmp_path, base, "a.txt", "a\n")
+    step2 = _lane_commit(tmp_path, step1, "b.txt", "b\n")
+    for name, content in (("a.txt", "a\n"), ("b.txt", "b\n")):
+        (tmp_path / name).write_text(content, encoding="utf-8")
+    res = plumb_merge(
+        tmp_path,
+        "main",
+        step2,
+        strategy="squash",
+        message="the task",
+        identity=CommitIdentity(trailer="Assisted-by: agent6:m1"),
+    )
+    assert not res.conflicted
+    parents = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%P", res.merged_sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert parents == [base]  # ONE commit, single parent
+    assert status(tmp_path).is_clean
+    # Landing the same rev again is a clean no-op returning the unchanged tip.
+    again = plumb_merge(tmp_path, "main", step2, strategy="squash", message="again")
+    assert again.merged_sha == res.merged_sha and not again.conflicted
+
+
+def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: Path) -> None:
+    """Index entries the operator staged themselves survive the bring-forward
+    exactly as staged; only entries still matching the old tip move."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("operator wip\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
+    res = plumb_merge(tmp_path, "main", theirs, strategy="squash", message="land")
+    assert not res.conflicted
+    staged = subprocess.run(
+        ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert staged == ["README.md"]  # their staging intent, nothing else
 
 
 def test_clone_repo_local_clone(tmp_path: Path) -> None:
@@ -1028,33 +1082,6 @@ def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: 
     assert len(subject) <= 72 and subject.endswith("…")
 
 
-def test_squash_merge_emits_the_identity_trailer_once(tmp_path: Path) -> None:
-    """However many checkpoints carried the trailer, the squash commit gets it
-    exactly once: git trailers are a set."""
-    _init_repo(tmp_path)
-    base = status(tmp_path).head_sha
-    create_branch(tmp_path, "agent6/r1")
-    line = "Assisted-by: agent6:m1"
-    _commit_file(tmp_path, "a.txt", "a\n", f"agent6 iter 1: add a\n\n{line}")
-    _commit_file(tmp_path, "b.txt", "b\n", f"agent6 iter 2: add b\n\n{line}")
-    create_branch(tmp_path, "main")
-    rows = list_run_commits(tmp_path, base, "agent6/r1")
-    message = condense_commit_message(rows, subject="the task")
-    res = squash_merge(tmp_path, "agent6/r1", message, identity=CommitIdentity(trailer=line))
-    assert not res.conflicted
-    assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
-    head_msg = subprocess.run(
-        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert head_msg.count(line) == 1  # once, not per checkpoint
-    # ONE squash commit on main since base (not the two per-step commits)
-    main_commits = list_run_commits(tmp_path, base, "main")
-    assert len(main_commits) == 1
-
-
 def test_commit_all_appends_the_identity_trailer_once(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
@@ -1080,39 +1107,6 @@ def test_render_commit_trailer_joins_the_code_writers() -> None:
     # dropped: the primary worker stays first.
     got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1", "", "m2", "m1"))
     assert got == "Assisted-by: agent6:m1, m2"
-
-
-def test_squash_merge_conflict_rolls_back_clean(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    # The run commit BOTH edits a shared file (conflict) AND adds a new file --
-    # the conflicted squash stages the add, which a naive reset --mixed + checkout
-    # would leave behind as an untracked stray.
-    (tmp_path / "README.md").write_text("run change\n", encoding="utf-8")
-    (tmp_path / "added_by_run.txt").write_text("new\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "agent6 iter 1: edit+add"], check=True
-    )
-    create_branch(tmp_path, "main")
-    _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line conflicts
-    res = squash_merge(tmp_path, "agent6/r1", "msg", identity=None)
-    assert res.conflicted
-    assert "README.md" in res.conflicts
-    assert status(tmp_path).is_clean  # rolled back AND the merge-added stray removed
-    assert not (tmp_path / "added_by_run.txt").exists()
-    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
-
-
-def test_squash_merge_noop_when_nothing_to_merge(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    head = status(tmp_path).head_sha
-    create_branch(tmp_path, "agent6/r1")  # identical to main, no new commits
-    create_branch(tmp_path, "main")
-    res = squash_merge(tmp_path, "agent6/r1", "msg", identity=None)
-    assert not res.conflicted
-    assert res.merged_sha == head  # clean no-op, not a "nothing to commit" raise
-    assert status(tmp_path).is_clean
 
 
 def test_diff_of_non_utf8_file_does_not_crash(tmp_path: Path) -> None:
@@ -1170,25 +1164,6 @@ def test_conventional_subject_derives_type_and_scope() -> None:
     assert got == "fix(git_ops): trailer emitted once"
     # No changes at all still yields a valid subject.
     assert conventional_commit_subject([], summary="tidy") == "chore: tidy"
-
-
-def test_squash_merge_combine_uses_gits_own_message(tmp_path: Path) -> None:
-    """message=None commits with git's MERGE_MSG (the concatenated per-step
-    log), the `combine` style."""
-    _init_repo(tmp_path)
-    create_branch(tmp_path, "agent6/r1")
-    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
-    create_branch(tmp_path, "main")
-    res = squash_merge(tmp_path, "agent6/r1", None, identity=None)
-    assert not res.conflicted
-    head_msg = subprocess.run(
-        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert "Squashed commit of the following" in head_msg
-    assert "agent6 iter 1: add a" in head_msg
 
 
 def _rev(path: Path, ref: str) -> str:
