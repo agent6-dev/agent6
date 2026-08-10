@@ -1765,6 +1765,63 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     assert private["ordinary"] in mounts, "a legitimate tool mount was dropped"
 
 
+def test_a_tool_mount_never_contains_a_private_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test above pins mounts INSIDE a private dir; containment fails the
+    other way round too. A symlink out to `<dir>/x.sh` mounts `<dir>` whole --
+    and a `<dir>` holding the config dir grants secrets.toml from above."""
+    from agent6.sandbox.jail import operator_tool_paths
+
+    home = tmp_path / "home"
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    holder = tmp_path / "xdg"  # not home and not an ancestor of it
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(holder / "agent6-config"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(holder / "agent6-state"))
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(holder / "agent6-data"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(holder / "agent6-cache"))
+    (holder / "agent6-config").mkdir(parents=True)
+
+    target = holder / "x.sh"
+    target.write_text("#!/bin/sh\n", encoding="utf-8")
+    target.chmod(0o755)
+    (bin_dir / "x").symlink_to(target)
+
+    _, mounts = operator_tool_paths()
+    assert holder not in mounts, "a mount containing the config dir grants secrets.toml"
+
+
+def test_home_and_its_ancestors_are_never_tool_mounts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even with every agent6 dir elsewhere, $HOME holds ~/.ssh and every
+    credential the operator owns. A plain `~/.local/bin/x -> ~/x.sh` makes
+    `real.parent` the whole home dir; an ancestor contains home in turn."""
+    from agent6.sandbox.jail import operator_tool_paths
+
+    home = tmp_path / "home"
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    elsewhere = tmp_path / "elsewhere"
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(elsewhere / "config"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(elsewhere / "state"))
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(elsewhere / "data"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(elsewhere / "cache"))
+
+    for name, target_dir in {"home-tool": home, "ancestor-tool": tmp_path}.items():
+        target = target_dir / f"{name}.sh"
+        target.write_text("#!/bin/sh\n", encoding="utf-8")
+        target.chmod(0o755)
+        (bin_dir / name).symlink_to(target)
+
+    _, mounts = operator_tool_paths()
+    assert home not in mounts, "a symlink to ~/x.sh mounted the whole home dir"
+    assert tmp_path not in mounts, "a symlink target above home mounted homes ancestor"
+
+
 def test_edit_tools_name_a_directory_like_their_siblings_do(tmp_path: Path) -> None:
     """`read_file` on a directory says "Not a file: x". apply_edit/apply_patch
     leaked the raw errno instead ("[Errno 21] Is a directory: /abs/path"), which

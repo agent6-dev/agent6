@@ -130,9 +130,11 @@ no run) each command gets its own launcher. Under `strict` it:
   dirs join as read+exec `tool_paths` mounts (standard bin dirs that exist, the
   real dirs their symlinks resolve to, uv-managed CPythons), derived by
   `sandbox.jail.operator_tool_paths` -- which never mounts agent6's OWN config,
-  state, data or cache dirs however a tool symlink resolves into them, so
-  `secrets.toml` and the run history stay outside the jail by construction
-  rather than by directory layout. A tool dir whose read-only remount fails is
+  state, data or cache dirs however a tool symlink resolves, a dir CONTAINING
+  one of them, or `$HOME` and its ancestors (a `~/.local/bin/x -> ~/x.sh`
+  symlink would otherwise mount the whole home dir), so `secrets.toml`,
+  `~/.ssh` and the run history stay outside the jail by construction rather
+  than by directory layout. A tool dir whose read-only remount fails is
   detached, and a failed detach refuses the run: best-effort means unreachable,
   never writable. run_command/verify jails and machine tool jails share that one
   computation, and `machine check` probes the same PATH.

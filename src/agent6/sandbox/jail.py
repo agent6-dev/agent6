@@ -55,18 +55,27 @@ def _under_system_root(p: Path) -> bool:
     return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
 
 
-def _is_agent6_private(p: Path) -> bool:
-    """agent6's own config/state/data/cache dirs, which never belong in a jail
-    mount however a tool symlink resolves into them.
+def _never_mounted(p: Path) -> bool:
+    """Dirs that never belong in a jail mount, however a tool symlink
+    resolves.
 
     ``operator_tool_paths`` mounts ``real.parent`` for every symlink in a bin
     dir, so one resolving into the config dir mounted ``secrets.toml`` -- the
     provider API keys -- read-only into the jail, and one into the state dir
-    mounted notes, memories and transcripts. Denied by identity rather than by
-    inspecting what the file is. Read per call: the XDG vars are per-process.
+    mounted notes, memories and transcripts. Containment cuts both ways: a
+    mount CONTAINING a private dir grants the same reads from above, and a
+    plain ``~/.local/bin/x -> ~/x.sh`` makes ``real.parent`` the whole home
+    dir. So agent6's config/state/data/cache dirs are refused in either
+    direction, and $HOME and its ancestors outright: mounting home or a dir
+    above it would hand the jail ``~/.ssh`` and every credential the operator
+    owns. A mount BELOW home (a tool target's own subdir) stays allowed; that
+    is what keeps ``~/.local/bin`` tools working. Denied by identity rather
+    than by inspecting contents. Read per call: the XDG vars are per-process.
     """
+    if Path.home().is_relative_to(p):
+        return True
     private = (global_config_dir(), state_base(), data_dir(), cache_dir())
-    return any(p == d or p.is_relative_to(d) for d in private)
+    return any(p.is_relative_to(d) or d.is_relative_to(p) for d in private)
 
 
 # The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
@@ -98,7 +107,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
         if not d.is_dir():
             continue
         path_dirs.append(str(d))
-        if not _under_system_root(d) and not _is_agent6_private(d):
+        if not _under_system_root(d) and not _never_mounted(d):
             mounts.add(d)  # real binaries in a non-system dir need the dir itself
         try:
             entries = list(d.iterdir())
@@ -111,11 +120,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
                 real = entry.resolve()
             except OSError:
                 continue
-            if (
-                real.is_file()
-                and not _under_system_root(real)
-                and not _is_agent6_private(real.parent)
-            ):
+            if real.is_file() and not _under_system_root(real) and not _never_mounted(real.parent):
                 mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
     # Interpreter toolchains a repo venv's python may symlink to: uv-managed
     # CPython lives under XDG data, not any bin dir. Without this mount the
