@@ -633,3 +633,62 @@ def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
     assert open_fds() <= baseline + 1, (
         f"descriptors leaked: {baseline} before, {open_fds()} after 8 open/close"
     )
+
+
+def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
+    """Runs are isolated from each other, not just from the machine.
+
+    Two runs on one box -- two `--parallel` lanes, or two terminals -- each get
+    a network of their own, so a server in one cannot reach a dev server in the
+    other even though both are agent6 and both are the same user.
+    """
+    port = _PORT + 5
+    first, second = SessionNetwork.open(), SessionNetwork.open()
+    listener = None
+    try:
+        script = (
+            "import socket,time;s=socket.socket();"
+            "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1);"
+            f"s.bind(('127.0.0.1',{port}));s.listen(1);print('UP',flush=True);time.sleep(60)"
+        )
+        listener = spawn_in_jail(
+            jail_policy(
+                tmp_path,
+                Config(),
+                "strict",
+                ("/usr/bin/python3", "-u", "-c", script),
+                network="session",
+            ),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            session_net=first,
+        )
+        assert listener.stdout is not None
+        assert b"UP" in listener.stdout.readline()
+
+        probe = (
+            "import socket\n"
+            "try:\n"
+            f"    socket.create_connection(('127.0.0.1',{port}),timeout=4);print('REACHED')\n"
+            "except OSError as exc:\n"
+            "    print('REFUSED',type(exc).__name__)\n"
+        )
+        intruder = spawn_in_jail(
+            jail_policy(
+                tmp_path, Config(), "strict", ("/usr/bin/python3", "-c", probe), network="session"
+            ),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            session_net=second,  # the OTHER run's network
+        )
+        out, _ = intruder.communicate(timeout=30)
+        assert b"REACHED" not in out, f"a run reached another run's service: {out!r}"
+        assert b"REFUSED" in out, out
+    finally:
+        if listener is not None:
+            listener.kill()
+            listener.wait(timeout=10)
+        first.close()
+        second.close()
