@@ -357,8 +357,8 @@ syscall for hardened), never guessed from the kernel version.
     - **`protect_git` is strict-only, and hardened leaves `.git` writable.**
       The threat is real there: a jailed command can plant a
       `filter.<n>.clean` plus a `.gitattributes`, and agent6's own auto-commit
-      -- `git add -A` on the HOST, outside the jail -- then runs it, reaching
-      `$HOME` and the network.
+      (a temp-index `git add -A` on the HOST, outside the jail) then runs it,
+      reaching `$HOME` and the network.
       Hardened has no mount namespace, so the only tool is Landlock, and
       Landlock cannot express this. Two of its properties close the door
       together: a grant on a directory is RECURSIVE (no "this directory
@@ -446,9 +446,10 @@ each spawn subordinate work. Nothing here loosens the sandbox:
   (clone/fetch/merge) goes through `git_ops.py` and lane spawning goes through
   `ui/spawn.py`, both already on the §2b allowlist. The
   `tests/security/test_subprocess_allowlist.py` pin needed no new entry.
-- **Dirty-tree refusal, not auto-stash.** A lane clones committed HEAD only,
-  so `--parallel` refuses a dirty origin under `git.require_clean_worktree`
-  (the same policy and message shape `agent6 run` uses) rather than carrying
+- **Dirty-tree refusal, not auto-stash.** A lane starts from committed state
+  only (the fan-out clones HEAD; a coordinator dispatch cuts lanes at the
+  run's chain tip after chain-committing any changes), so `--parallel` refuses
+  a dirty origin under `git.require_clean_worktree` rather than carrying
   uncommitted work into a lane it cannot see.
 
 ### 7. No agent-owned network surface (except opt-in `agent6 web`)

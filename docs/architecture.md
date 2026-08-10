@@ -106,8 +106,11 @@ Notes:
   interrupted run can be replayed deterministically up to the model
   call that comes next.
 - **Per-step commits** fire when `run_verify_command` returns 0, via
-  `git_ops.py` from outside the jail, onto the run branch (or your current
-  branch when `branch_per_run` is off). Every passing step commits, so a run
+  `git_ops.py` from outside the jail, onto the run's detached chain
+  (`refs/agent6/<id>`, staged through a temp index; `branch_per_run` also
+  advances a visible `agent6/<id>` branch). HEAD, your index, and your
+  checkout are never touched, so operator or model git activity mid-run
+  cannot collide with the run's record. Every passing step commits, so a run
   stays resumable and forkable; how those commits consolidate onto your branch
   is chosen later at `agent6 sessions merge` time via `git.merge_strategy`
   (`squash` / `merge` / `ff`).
@@ -310,10 +313,11 @@ pipelines composed over the engine, never importing `agent6.ui`.
   (`build_coordinator_spawner`) and wire it in for a `run`-mode workflow only.
   A steer message starting with the exact `/parallel` token (Ctrl-C pause menu,
   or any steer surface) dispatches a sibling group: the loop blocks (no provider
-  calls while lanes run), commits a dirty worktree first (lanes clone committed
-  HEAD only), expands each segment into its lanes (`spec` -> one model per lane),
-  then clones + spawns + awaits + imports every lane and joins each branch into
-  the run branch sequentially in dispatch order (`join_branch`). Like the
+  calls while lanes run), chain-commits a changed worktree first (lanes cut
+  from the chain tip only), expands each segment into its lanes (`spec` -> one
+  model per lane), then clones + spawns + awaits + imports every lane and
+  merges each branch onto the run's chain sequentially in dispatch order
+  (`chain_merge`, which also syncs the merged files into the worktree). Like the
   fan-out, each lane's session dir is symlinked into `<origin_state>/sessions/runs/` while it
   runs, so coordinator lanes appear in the hubs like fan-out lanes and their
   approvals/asks are answered there. Each SEGMENT (task) gets one DAG node
@@ -406,8 +410,8 @@ later read never observes a node that was never persisted.
 
 One live run-mode worker per CHECKOUT is the level above (`sessions/lock.py`, a
 repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working
-tree, so a second one would interleave auto-commits onto whatever HEAD points
-at. A second `agent6 run` refuses loudly and PARKS the submitted task verbatim
+tree, so a second one would interleave the two runs' edits into each other's
+chain commits. A second `agent6 run` refuses loudly and PARKS the submitted task verbatim
 in a new run's manifest (`parked_task`; listings show "parked"); the refusal
 prints the two follow-ups -- `agent6 resume <id>` once the checkout is free
 (resume runs the parked task as written), or a `/parallel 1 <task>` steer that

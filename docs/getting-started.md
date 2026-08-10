@@ -33,8 +33,9 @@ cd your-repo
 agent6 run "add a --json output mode to the CLI"
 ```
 
-agent6 works on a per-run branch, edits files, runs the verify command, and commits each
-step that passes. It stops when the model calls `finish_session` or a budget ceiling is hit.
+agent6 edits files, runs the verify command, and commits each passing step to a
+per-run commit chain (plus an `agent6/<id>` branch by default); your checkout
+is never touched. It stops when the model calls `finish_session` or a budget ceiling is hit.
 
 At a terminal the session then asks for the next input rather than ending: type
 the next instruction to continue in the same session (no `agent6 resume` to
@@ -63,8 +64,8 @@ argument everywhere (an exact id or an unambiguous prefix); omit it for the most
 agent6 attach              # follow the conversation live; --raw, --tui, or --json instead
 agent6 sessions show          # status, iteration, elapsed, cost; --json for scripts
 agent6 sessions diff          # the git diff the run produced
-agent6 sessions commits       # the per-step commits on the run branch
-agent6 sessions merge         # merge the run branch into your branch (squash/merge/ff)
+agent6 sessions commits       # the run's per-step commits
+agent6 sessions merge         # land the run's work on your branch (squash/merge/ff)
 agent6 sessions prune         # delete safely-merged agent6/* run branches; report the rest
 agent6 sessions dir           # where this repo's run history lives (one line, scriptable)
 agent6 sessions rm            # delete one run's history; --asks clears every saved ask
