@@ -34,7 +34,7 @@ from agent6.sandbox.detect import (
     resolve_isolation,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
-from agent6.tools.policy import resolve_network
+from agent6.tools.policy import resolve_network, workspace_for
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
 
 
@@ -297,6 +297,12 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
             f"  -> selected isolation: {selected}"
             f"  commands' network: {resolve_network(cfg, selected)}"
         )
+        # The tools' file boundary is NOT the selected isolation's: it follows
+        # the config values at every level, so print it beside them rather than
+        # leaving the operator to infer it from the level.
+        ws = workspace_for(cfg, Path.cwd())
+        grants = len({*ws.read_roots, *ws.write_roots})
+        print(f"  -> tools' files: {ws.root}  (+{grants} granted, -{len(ws.denied)} hidden)")
         out.append(
             _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
         )
