@@ -462,6 +462,20 @@ fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<(
         flags |= CloneFlags::CLONE_NEWNET;
     }
     unshare(flags).map_err(io_err)?;
+
+    // Map current uid/gid into the new user namespace so we appear as root
+    // inside (required to mount, but capabilities are still confined to this
+    // namespace). BEFORE touching the new netns: until the map is written this
+    // process is the overflow uid there, and inside a container that costs the
+    // loopback ioctl its permission -- strict failed outright under
+    // `docker --security-opt seccomp=unconfined` with EACCES, while the
+    // netns holder, which maps first, worked on the same host.
+    fs::write("/proc/self/setgroups", "deny").ok();
+    fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
+        .map_err(|e| io::Error::other(format!("uid_map: {e}")))?;
+    fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
+        .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
+
     if network != "host" {
         // An empty netns has `lo` DOWN, so nothing inside can reach even
         // itself. Loopback in a namespace with no other interface and no route
@@ -469,14 +483,6 @@ fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<(
         // jail's own commands can talk to, never what they can leave to.
         bring_loopback_up()?;
     }
-
-    // Map current uid/gid into the new user namespace so we appear as root inside
-    // (required to mount, but capabilities are still confined to this namespace).
-    fs::write("/proc/self/setgroups", "deny").ok();
-    fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
-        .map_err(|e| io::Error::other(format!("uid_map: {e}")))?;
-    fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
-        .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
 
     make_mounts_private()
 }
@@ -1031,8 +1037,17 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
         Some(""),
     ) {
+        // Naming the cost, not just the cause: an empty /proc is safe (never the
+        // outer one, which would leak processes across the PID namespace) but
+        // the dynamic loader resolves $ORIGIN through /proc/self/exe, so a
+        // relocatable toolchain -- a downloaded python, node or conda -- fails
+        // to start with "cannot open shared object file" and nothing to link it
+        // to this. Measured inside rootless podman, which refuses the mount
+        // because its own /proc is partly masked.
         eprintln!(
-            "[agent6-jail] warning: fresh /proc mount failed ({e}); /proc will be empty inside the jail"
+            "[agent6-jail] warning: fresh /proc mount failed ({e}); /proc will be empty inside \
+             the jail, so binaries that find their libraries relative to themselves ($ORIGIN) \
+             will not start"
         );
     }
 

@@ -33,18 +33,28 @@ from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 
 def detect_env() -> Environment:
-    """`detect()` with an authoritative userns re-check via the jail binary.
+    """`detect()` with an authoritative strict re-check via the jail binary.
 
-    `detect.probe_userns_supported` uses `unshare -U -r true`, which
-    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where an AppArmor
-    profile grants the *agent6-jail* binary userns but not `/usr/bin/unshare`. When the
-    cheap probe says "no" on a Linux host, confirm with the real jail binary so
-    a correctly-profiled host gets `strict` instead of silently dropping to
-    `hardened`. Every CLI isolation-selection path uses this instead of `detect()`.
+    `detect.probe_userns_supported` runs `unshare -U -r true`, which answers a
+    narrower question than "can the jail set up a strict sandbox", and is wrong
+    in BOTH directions:
+
+    - It under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a
+      profile grants the *agent6-jail* binary userns but not `/usr/bin/unshare`.
+    - It over-reports inside Docker with a relaxed seccomp profile, where
+      `unshare` succeeds and the default AppArmor profile then denies the jail's
+      `mount`. Measured: every command died with a raw "namespace setup failed:
+      EACCES" instead of the run degrading to `hardened`.
+
+    So the real jail binary settles it either way. It costs one short jail spawn
+    at startup, cached for the process lifetime.
     """
     env = detect()
-    if env.sandbox_available and not env.userns_supported and strict_namespaces_work():
-        return replace(env, userns_supported=True)
+    if not env.sandbox_available:
+        return env
+    works = strict_namespaces_work()
+    if works != env.userns_supported:
+        return replace(env, userns_supported=works)
     return env
 
 
