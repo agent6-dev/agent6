@@ -32,7 +32,8 @@ class ReadFileInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_file"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a text file from the repository. `path` is repo-root-relative "
-        "(e.g. 'src/foo.py', NOT '/abs/...'). Returns the "
+        "(e.g. 'src/foo.py'); an absolute path works only inside a directory "
+        "the operator granted the run. Returns the "
         "UTF-8 decoded contents. Optional `start_line` (1-based, matching"
         " every line number this harness reports; default 1) and `limit`"
         " (max lines to return, default all). Fails when: path is outside"

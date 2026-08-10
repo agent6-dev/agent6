@@ -76,26 +76,52 @@ class Workspace:
     that widened what the tools may read would invert the whole degrade rule.
 
     ``denied`` (``[sandbox].hide_paths`` plus agent6's own private dirs) is
-    refused for reads and writes alike. A path is reached THROUGH a workspace;
-    the tools that deliberately read another tree (a skill, the bundled docs,
-    the run's own state) name their own base with :func:`contain`.
+    refused for reads and writes alike, and beats every grant. The grants are
+    the operator's ``extra_read_paths`` / ``extra_write_paths``: the same values
+    the jail mounts for commands, so a tool and a command reach the same trees.
+    A relative path is always the workspace's; an absolute one is allowed only
+    inside a grant, which is the only way to name a granted tree at all.
+
+    A path is reached THROUGH a workspace; the tools that deliberately read
+    another tree (a skill, the bundled docs, the run's own state) name their own
+    base with :func:`contain`.
     """
 
     root: Path
     denied: tuple[Path, ...] = ()
+    # extra_read_paths + extra_write_paths (write implies read).
+    read_roots: tuple[Path, ...] = ()
+    write_roots: tuple[Path, ...] = ()
 
     def is_denied(self, abs_path: Path) -> bool:
         return any(path_within(abs_path, d) for d in self.denied)
 
     def resolve_read(self, candidate: str) -> SafePath:
-        sp = resolve_in_root(self.root, candidate)
+        return self._resolve(candidate, (self.root, *self.read_roots))
+
+    def resolve_write(self, candidate: str) -> SafePath:
+        return self._resolve(candidate, (self.root, *self.write_roots))
+
+    def _resolve(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
+        sp = (
+            self._in_grant(candidate, bases)
+            if candidate.startswith("/")
+            else resolve_in_root(self.root, candidate)
+        )
         self._refuse_denied(sp, candidate)
         return sp
 
-    def resolve_write(self, candidate: str) -> SafePath:
-        sp = resolve_in_root(self.root, candidate)
-        self._refuse_denied(sp, candidate)
-        return sp
+    def _in_grant(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
+        """An absolute path, contained against the deepest grant holding it.
+
+        Deepest first, so a grant nested inside another walks from the one that
+        really bounds it rather than from an ancestor that also matches.
+        """
+        target = Path(candidate).resolve()
+        for base in sorted(bases, key=lambda b: len(b.parts), reverse=True):
+            if path_within(target, base):
+                return SafePath(base=base, rel_path=target.relative_to(base), abs_path=target)
+        raise ToolError(f"Absolute paths are only allowed inside a granted path: {candidate!r}")
 
     def _refuse_denied(self, sp: SafePath, candidate: str) -> None:
         # Refused, not answered empty: the jail masks because a command cannot

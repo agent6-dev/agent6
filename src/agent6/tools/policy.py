@@ -32,8 +32,16 @@ def workspace_for(config: Config, root: Path) -> Workspace:
     (auto falling back to hardened or none, macOS having no jail at all) must
     never WIDEN what the tools may touch.
     """
-    denied = hidden_paths(Path(p) for p in config.sandbox.hide_paths)
-    return Workspace(root=root.resolve(), denied=tuple(p.resolve() for p in denied))
+    sb = config.sandbox
+    denied = hidden_paths(Path(p) for p in sb.hide_paths)
+    writable = tuple(Path(p).resolve() for p in sb.extra_write_paths)
+    return Workspace(
+        root=root.resolve(),
+        denied=tuple(p.resolve() for p in denied),
+        # Write implies read, matching the grants the jail mounts.
+        read_roots=(*(Path(p).resolve() for p in sb.extra_read_paths), *writable),
+        write_roots=writable,
+    )
 
 
 def resolve_network(

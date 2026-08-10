@@ -179,3 +179,97 @@ def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
     ordinary = tmp_path / "project"
     ordinary.mkdir()
     assert check_workspace_outside_private_dirs(ordinary) is None
+
+
+# --- operator grants ---------------------------------------------------------
+
+
+def _granting(read: Path | None = None, write: Path | None = None) -> Config:
+    sb: dict[str, Any] = {}
+    if read is not None:
+        sb["extra_read_paths"] = [str(read)]
+    if write is not None:
+        sb["extra_write_paths"] = [str(write)]
+    return Config.model_validate({"sandbox": sb})
+
+
+def test_an_absolute_path_inside_a_grant_is_readable(tmp_path: Path) -> None:
+    """The tools reach the trees the jail mounts for commands. An absolute path
+    is the only way to name one, so grants would otherwise be unreachable."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    sdk = tmp_path / "sdk"
+    sdk.mkdir()
+    (sdk / "h.h").write_text("granted header\n", encoding="utf-8")
+    out = _dispatch(root, _granting(read=sdk), "read_file", {"path": str(sdk / "h.h")})
+    assert out["content"] == "granted header\n"
+
+
+@pytest.mark.parametrize("target", ["ungranted", "/etc/passwd"])
+def test_an_absolute_path_outside_every_grant_is_refused(tmp_path: Path, target: str) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    sdk = tmp_path / "sdk"
+    sdk.mkdir()
+    outside = tmp_path / "ungranted"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("NOT granted\n", encoding="utf-8")
+    path = "/etc/passwd" if target.startswith("/") else str(outside / "secret.txt")
+    with pytest.raises(ToolError, match="Absolute"):
+        _dispatch(root, _granting(read=sdk), "read_file", {"path": path})
+
+
+def test_a_read_grant_is_not_writable(tmp_path: Path) -> None:
+    """`extra_read_paths` grants reading only, exactly as the jail mounts it."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    sdk = tmp_path / "sdk"
+    sdk.mkdir()
+    target = sdk / "h.h"
+    target.write_text("granted header\n", encoding="utf-8")
+    with pytest.raises(ToolError, match="Absolute"):
+        _dispatch(
+            root,
+            _granting(read=sdk),
+            "apply_edit",
+            {"path": str(target), "edits": [{"old_string": "granted", "new_string": "PWNED"}]},
+        )
+    assert target.read_text(encoding="utf-8") == "granted header\n"
+
+
+def test_a_write_grant_is_writable_and_readable(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    out_dir = tmp_path / "artifacts"
+    out_dir.mkdir()
+    target = out_dir / "report.txt"
+    target.write_text("before\n", encoding="utf-8")
+    cfg = _granting(write=out_dir)
+    _dispatch(
+        root,
+        cfg,
+        "apply_edit",
+        {"path": str(target), "edits": [{"old_string": "before", "new_string": "after"}]},
+    )
+    assert target.read_text(encoding="utf-8") == "after\n"
+    assert _dispatch(root, cfg, "read_file", {"path": str(target)})["content"] == "after\n"
+
+
+def test_denied_beats_a_grant(tmp_path: Path) -> None:
+    """A hide inside a granted region wins: the same precedence the jail uses
+    when it masks a hidden path out of a broader mount."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    granted = tmp_path / "granted"
+    (granted / "keys").mkdir(parents=True)
+    (granted / "keys" / "id_rsa").write_text("PRIVATE\n", encoding="utf-8")
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "extra_read_paths": [str(granted)],
+                "hide_paths": [str(granted / "keys")],
+            }
+        }
+    )
+    with pytest.raises(ToolError, match="hidden from this run"):
+        _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
