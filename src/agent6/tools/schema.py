@@ -372,7 +372,11 @@ class DagAddTaskInput(_ToolInput):
         " `after` places the new task directly after that sibling instead of"
         " last, which is how work is inserted between two existing steps."
         " `depends_on` lists task ULIDs that must pass before this one is"
-        " surfaced. Returns the new task's 26-char ULID."
+        " surfaced. `standing=true` makes a STANDING task: the run's"
+        " never-finishing fallback goal, worked only when no ordinary task"
+        " is ready; it never passes (retire it with skipped/obsolete) and"
+        " the run re-enters it instead of ending."
+        " Returns the new task's 26-char ULID."
     )
 
     title: str = Field(min_length=1)
@@ -385,6 +389,7 @@ class DagAddTaskInput(_ToolInput):
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
     depends_on: tuple[Ulid, ...] = ()
+    standing: bool = False
 
 
 class DagUpdateTaskInput(_ToolInput):

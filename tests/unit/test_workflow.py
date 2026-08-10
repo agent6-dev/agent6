@@ -6184,3 +6184,27 @@ def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
     curator.nodes.return_value = _typed({"a": {}})  # no standing node
     wf = _wf(mode="run", curator=curator, budget=None)
     assert wf._standing_absorb(_state(), reason="silent_finish", iteration=1) is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
+    """`run --standing` reaches the graph: one standing child under the root,
+    created as steering (the operator's word, not the worker's)."""
+    curator = MagicMock()
+    root = _tn("a")
+    curator.add_subtask.side_effect = [root, _tn("b", parent_id="a", standing=True)]
+    curator.nodes.return_value = _typed({"a": {}})
+    provider = MagicMock()
+    provider.call.return_value = _resp("done")
+    wf = _wf(
+        mode="run",
+        curator=curator,
+        standing_goal="keep hunting bugs",
+        budget=None,
+        provider=provider,
+    )
+    wf.run("t")
+    drafts = [c.args[0].draft for c in curator.add_subtask.call_args_list]
+    assert len(drafts) == 2  # the root, then the standing goal
+    assert drafts[1].standing is True
+    assert drafts[1].title == "keep hunting bugs"
+    assert drafts[1].created_by == "steering"

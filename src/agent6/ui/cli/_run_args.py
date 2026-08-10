@@ -136,6 +136,17 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     run_parallel_flag.completer = _complete_parallel_models  # type: ignore[attr-defined]
+    run_p.add_argument(
+        "--standing",
+        default="",
+        metavar="GOAL",
+        help=(
+            "A standing goal for this run: a never-finishing fallback task the run"
+            " re-enters whenever the ordinary queue drains or the worker tries to"
+            " stop. New work always outranks it. The run ends on its budget, an"
+            " operator stop, or --max-iterations."
+        ),
+    )
     _add_budget_flags(run_p)
     _add_sandbox_flags(run_p)
 

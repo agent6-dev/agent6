@@ -22,6 +22,7 @@
       "parent_id": "anyOf[null,string]",
       "rationale": "string",
       "relevant_paths": "array[string]",
+      "standing": "boolean",
       "title": "string"
     }
   },

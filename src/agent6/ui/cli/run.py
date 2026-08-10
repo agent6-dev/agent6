@@ -261,6 +261,7 @@ def _cmd_run(  # noqa: PLR0911
     sandbox_overrides: SandboxOverrides | None = None,
     preset: str = "",
     parallel_spec: str = "",
+    standing_goal: str = "",
     pins: tuple[str, ...] = (),
 ) -> int:
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
@@ -341,5 +342,6 @@ def _cmd_run(  # noqa: PLR0911
         sandbox_overrides=sandbox_overrides,
         preset=preset,
         pins=pins,
+        standing_goal=standing_goal,
         explicit_leaves=explicit_leaves,
     )

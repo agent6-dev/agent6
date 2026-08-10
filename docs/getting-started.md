@@ -107,6 +107,13 @@ agent6 ask "how does the task-graph curator work?"
   lanes and prints a ranked comparison; the same fan-out spawns from the
   TUI/web composers or mid-run with the `/parallel [spec] <task>` steer
   directive. Details: [configuration](config.md#parallel).
+- `agent6 run "task" --standing "hunt and fix bugs"` adds a standing goal:
+  a never-finishing fallback task the run re-enters whenever the ordinary
+  queue drains or the worker tries to stop. New work always outranks it
+  (insert it with `add_task`; the model can also create one with
+  `add_task(standing=true)`), a standing task never passes (retire it with
+  skipped/obsolete), and the run still ends on its budget, an operator
+  stop, or its iteration cap.
 
 ## Configuration
 

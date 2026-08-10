@@ -713,6 +713,9 @@ class Workflow:
     # provider the prior run used. Atomic write (tmp + rename) so a crash
     # mid-write leaves the prior snapshot intact.
     resume_state_path: Path | None = None
+    # The operator's standing goal (`run --standing`): seeded as a standing
+    # task under the root at run start. "" = none.
+    standing_goal: str = ""
     # Plan mode. When ``mode="plan"``, the workflow uses the
     # planning system prompt + plan-mode tool list (no apply_edit /
     # apply_patch; finish_planning replaces finish_session), skips auto-
@@ -797,6 +800,18 @@ class Workflow:
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
             self._log(f"LOOP: DAG root task seeded: {root_id}")
+            if self.standing_goal.strip() and self.curator is not None:
+                node = self.curator.add_subtask(
+                    AddSubtaskIntent(
+                        parent_id=root_id,
+                        draft=TaskNodeDraft(
+                            title=self.standing_goal.strip(),
+                            standing=True,
+                            created_by="steering",
+                        ),
+                    )
+                )
+                self._log(f"LOOP: standing goal seeded: {node.id}")
             self._emit_graph_snapshot()  # show the root in the live task view
 
         self._log(

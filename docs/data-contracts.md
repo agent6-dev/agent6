@@ -84,6 +84,7 @@ How a session ends and how it resumes: the SessionResult the workflow returns, t
 | `last_verify_ok` | `bool | None` | `None` |
 | `edited_since_verify` | `bool` | `False` |
 | `baseline_ok` | `bool | None` | `None` |
+| `standing_tools_mark` | `int` | `-1` |
 | `parallel_groups_dispatched` | `int` | `0` |
 | `pins` | `tuple[str, ...]` | `()` |
 | `head_sha` | `str` | `''` |
@@ -178,6 +179,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | `created_by` | `NodeActor` | required |
 | `commit_sha` | `str` | `''` |
 | `notes` | `str` | `''` |
+| `standing` | `bool` | `False` |
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, _parallel_dispatch, loop}

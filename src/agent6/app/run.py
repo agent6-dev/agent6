@@ -127,6 +127,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     interactive: bool = False,
     tui: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
+    standing_goal: str = "",
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     preset: str = "",
@@ -508,6 +509,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             wf = Workflow(
                 root=cwd,
                 config=cfg,
+                standing_goal=standing_goal,
                 initial_pins=tuple(pins),
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)

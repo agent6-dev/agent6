@@ -250,6 +250,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         parallel_spec=getattr(args, "parallel", ""),
+        standing_goal=getattr(args, "standing", ""),
         pins=tuple(args.pins),
     )
     # A fan-out ends in its own compare summary and the TUI owns its screen,

@@ -42,6 +42,7 @@ def add_task(
         acceptance=args.acceptance,
         relevant_paths=args.relevant_paths,
         depends_on=args.depends_on,
+        standing=args.standing,
         created_by="worker",
     )
     intent = AddSubtaskIntent(parent_id=parent_id, draft=draft, after=args.after)
