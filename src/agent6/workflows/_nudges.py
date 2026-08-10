@@ -307,3 +307,16 @@ def ends_with_question(text: str) -> bool:
     ask_user."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     return bool(lines) and lines[-1].endswith("?")
+
+
+def standing_resume_nudge(reason: str, task_id: str, title: str) -> str:
+    """The soft-end conversion for a run with a standing task: instead of
+    ending, the loop re-enters the standing goal with this notice."""
+    return (
+        f"[harness] The run would have ended here ({reason}), but the standing"
+        f" task ({task_id}: {title}) continues. Re-enter it now: pick the next"
+        " piece of that goal, insert any new work you discover with add_task"
+        " (ordinary tasks always run first), and write decisions down rather"
+        " than asking questions. The run ends on its budget or an operator"
+        " stop."
+    )

@@ -5870,7 +5870,7 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
         edited_since_verify=True,  # the green verify predates the last edit
     )
     with patch.object(wf, "_worktree_dirty", return_value=False):
-        result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is False
@@ -5900,7 +5900,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
         edited_since_verify=False,
     )
     with patch.object(wf, "_worktree_dirty", return_value=False):
-        result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
+        result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is True
@@ -6123,3 +6123,64 @@ def test_steer_undo_signal() -> None:
     assert result == "undo"
     assert cleared == [True]
     assert messages == [], "/undo must not inject a message"
+
+
+def _standing_nodes() -> Any:
+    """root -> one standing child, ready (the queue is empty)."""
+    return _typed(
+        {
+            "a": {"children": ("b",)},
+            "b": {"parent_id": "a", "standing": True},
+        }
+    )
+
+
+def test_standing_task_converts_silent_finish_into_reentry() -> None:
+    """A run with a ready standing task does not end on going quiet: the
+    nudge re-enters the goal. A SECOND quiet turn with no tool call since is
+    a spin, and the original end is honoured."""
+    curator = MagicMock()
+    curator.nodes.return_value = _standing_nodes()
+    wf = _wf(mode="run", curator=curator, budget=None)
+    conv = Conversation()
+    state = _state(ever_edited=True, verify_ever_passed=True)
+    first = wf._handle_silent_finish("Done.", conv, state, iteration=3)  # pyright: ignore[reportPrivateUsage]
+    assert first is None  # absorbed: the run continues
+    assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
+    # No tool call happened since: the spin guard honours the end.
+    second = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    assert second is not None and second.reason == "silent_finish"
+    # A tool call re-arms the absorb.
+    state.tool_calls += 1
+    third = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    assert third is None
+
+
+def test_standing_task_gates_finish_session_and_soft_stops() -> None:
+    curator = MagicMock()
+    curator.nodes.return_value = _standing_nodes()
+    wf = _wf(mode="run", curator=curator, budget=None)
+    state = _state()
+    turn = _turn(iteration=2)
+    turn.finish_signal = "all done"
+    turn.finish_kind = "finish_session"
+    wf._gate_standing_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.finish_signal is None  # revoked: the goal continues
+    assert any("standing task" in getattr(n, "text", "") for n in turn.tool_results)
+    # Soft stop: verify_settled absorbs and clears its streak.
+    state.tool_calls += 1
+    turn2 = _turn(iteration=3)
+    turn2.verify_settled_stop = True
+    state.verify_settled_idle = 9
+    conv = Conversation()
+    wf._absorb_soft_stop(state, turn2, conv)  # pyright: ignore[reportPrivateUsage]
+    assert turn2.verify_settled_stop is False
+    assert state.verify_settled_idle == 0
+    assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
+
+
+def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
+    curator = MagicMock()
+    curator.nodes.return_value = _typed({"a": {}})  # no standing node
+    wf = _wf(mode="run", curator=curator, budget=None)
+    assert wf._standing_absorb(_state(), reason="silent_finish", iteration=1) is None  # pyright: ignore[reportPrivateUsage]

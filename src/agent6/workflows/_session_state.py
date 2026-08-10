@@ -184,6 +184,9 @@ class SessionSnapshot(BaseModel):
     last_verify_ok: bool | None = None
     edited_since_verify: bool = False
     baseline_ok: bool | None = None
+    # Standing-goal spin guard (see _LoopState.standing_tools_mark). Additive:
+    # an old snapshot without it restores the never-absorbed default.
+    standing_tools_mark: int = -1
     # /parallel groups dispatched so far. Run-lifetime, not leg-lifetime: lane
     # ids and their imported branches embed the group number
     # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior

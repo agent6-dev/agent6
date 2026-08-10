@@ -51,7 +51,7 @@ def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     return False
 
 
-def _ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """An open SUBTASK whose dependencies are satisfied and whose children are
     all settled (a decomposed parent is not itself a unit of work)."""
     if node.parent_id is None or node.status not in OPEN_STATUSES:
@@ -66,7 +66,7 @@ def _ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
 def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """A ready ORDINARY subtask. Standing tasks are excluded here: they are
     the fallback, selected only when nothing ordinary is ready."""
-    return not node.standing and _ready_subtask(nodes, node)
+    return not node.standing and ready_subtask(nodes, node)
 
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
@@ -89,7 +89,7 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
             return nid
     for nid in tree_order(nodes):
         node = nodes[nid]
-        if node.standing and _ready_subtask(nodes, node):
+        if node.standing and ready_subtask(nodes, node):
             return nid
     return None
 

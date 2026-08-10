@@ -124,6 +124,7 @@ from agent6.workflows._dag_focus import (
     current_task_banner,
     current_task_id,
     initial_dag_hint,
+    ready_subtask,
     stuck_on_task_nudge,
 )
 from agent6.workflows._metric import (
@@ -175,6 +176,7 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     ends_with_question,
+    standing_resume_nudge,
     tool_error_signature,
     verify_did_not_run,
     verify_failure_signature,
@@ -376,6 +378,10 @@ class _LoopState:
     gateless_ever_committed: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
+    # Spin guard for the standing-goal re-entry: the tool-call count at the
+    # last absorption. A re-entry with no tool call since is a spin, not work,
+    # and the original end is honoured instead. -1 = never absorbed.
+    standing_tools_mark: int = -1
     run_budget_nudged: bool = False
     # Cross-run memory write nudges (run mode, memory store wired): one flip
     # advisory when verify first goes green after failing, one deferred
@@ -947,6 +953,7 @@ class Workflow:
         or red. ``baseline_ok`` is about the BASE commit, which resume never
         moves: it carries unconditionally."""
         state.baseline_ok = snap.baseline_ok
+        state.standing_tools_mark = snap.standing_tools_mark
         if snap.last_verify_ok is None or not snap.head_sha:
             return
         try:
@@ -1087,7 +1094,7 @@ class Workflow:
                 root_task_id=root_task_id,
                 state=state,
             )
-            result = self._turn_stop_checks(state, turn)
+            result = self._turn_stop_checks(state, turn, conversation)
             if result is not None:
                 return result
             outcome = self._operator_boundary(conversation, iteration, state)
@@ -1761,6 +1768,7 @@ class Workflow:
         self._gate_verify_green(state, turn)
         self._gate_spec_recheck(state, turn)
         self._gate_memory_finish(state, turn)
+        self._gate_standing_finish(state, turn)
 
     def _gate_before_finish_critic(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
@@ -1878,6 +1886,24 @@ class Workflow:
             iteration=turn.iteration,
             nudges_used=state.task_finish_nudges_used,
         )
+
+    def _gate_standing_finish(self, state: _LoopState, turn: _TurnState) -> None:
+        """While a ready standing task exists, finish_session re-enters it
+        instead of ending the run (uncapped -- the goal is deliberate; the
+        absorb still refuses on spent budget or a spin, so the finish then
+        goes through)."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_session"
+            and self.mode == "run"
+        ):
+            return
+        nudge = self._standing_absorb(state, reason="finish_session", iteration=turn.iteration)
+        if nudge is None:
+            return
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append(Notice(nudge))
 
     def _gate_verify_green(self, state: _LoopState, turn: _TurnState) -> None:
         """Opt-in hard finish gate: refuse finish_session while verify is red or
@@ -2242,13 +2268,80 @@ class Workflow:
             turn.tool_results.append(Notice(NO_PROGRESS_NUDGE))
             self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=1)
 
+    def _standing_task(self) -> tuple[str, str] | None:
+        """The ready standing task's (id, title), if this run has one."""
+        if self.curator is None:
+            return None
+        try:
+            nodes = self.curator.nodes()
+        except Exception:
+            return None
+        for nid, node in nodes.items():
+            if node.standing and ready_subtask(nodes, node):
+                return nid, node.title[:120]
+        return None
+
+    def _standing_absorb(self, state: _LoopState, *, reason: str, iteration: int) -> str | None:
+        """The standing-goal conversion for a soft end: the nudge text to
+        inject when the run should re-enter the standing task instead of
+        ending, else None. None when there is no ready standing task, when the
+        budget is spent (the hard bounds always win), or on a spin -- a
+        re-entry with no tool call since the last one means the goal is not
+        producing work, and the original end is honoured."""
+        st = self._standing_task()
+        if st is None:
+            return None
+        remaining = self._budget_fraction_remaining()
+        if remaining is not None and remaining <= 0.0:
+            return None
+        if state.tool_calls == state.standing_tools_mark:
+            self._log(f"  standing: no tool call since the last re-entry; honouring {reason}")
+            return None
+        state.standing_tools_mark = state.tool_calls
+        nid, title = st
+        self._log(f"  standing re-entry ({reason}) -> {nid} at iter {iteration}")
+        self._emit("loop.standing.resumed", reason=reason, task_id=nid, iteration=iteration)
+        return standing_resume_nudge(reason, nid, title)
+
+    def _absorb_soft_stop(
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
+    ) -> None:
+        """A standing task converts the soft out-of-work endings into
+        re-entry: the pending stop flag is cleared and the standing nudge
+        joins the conversation. Faults (tool_error), the loop guard, and
+        every hard bound still end the run; the absorb itself refuses on
+        spent budget or a spin."""
+        soft = (
+            "verify_settled"
+            if turn.verify_settled_stop
+            else "no_progress"
+            if turn.no_progress_stop
+            else "metric_plateau"
+            if turn.plateau_should_stop
+            else None
+        )
+        if soft is None or turn.tool_error_stop:
+            return
+        nudge = self._standing_absorb(state, reason=soft, iteration=turn.iteration)
+        if nudge is None:
+            return
+        turn.verify_settled_stop = False
+        turn.no_progress_stop = False
+        turn.plateau_should_stop = False
+        state.verify_settled_idle = 0
+        state.verify_fail_streak = 0
+        state.no_progress_nudges_used = 0
+        state.plateau_nudges_used = 0
+        conversation.notice(nudge)
+
     def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
-        self, state: _LoopState, turn: _TurnState
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
         ``messages`` and the post-tools snapshot is written, in precedence
         order: verify-settled stop, metric-plateau stop, loop-guard kill, then
         honouring a finish call that survived the gates."""
+        self._absorb_soft_stop(state, turn, conversation)
         if turn.tool_error_stop:
             self._log(
                 f"LOOP: tool_error stop at iter {turn.iteration} (streak {state.tool_error_streak})"
@@ -2646,7 +2739,7 @@ class Workflow:
             return self._handle_silent_finish(text, conversation, state, iteration=iteration)
         return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
 
-    def _handle_silent_finish(
+    def _handle_silent_finish(  # noqa: PLR0911 - a gate chain of early bounces
         self, text: str, conversation: Conversation, state: _LoopState, *, iteration: int
     ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
@@ -2748,6 +2841,14 @@ class Workflow:
             self._emit("loop.question_nudge", iteration=iteration)
             conversation.notice(QUESTION_NUDGE)
             return None
+        # A run with a standing task does not end on going quiet: re-enter the
+        # goal instead (refused on spent budget or a spin, and never in ask
+        # mode, where the prose IS the answer).
+        if self.mode == "run":
+            nudge = self._standing_absorb(state, reason="silent_finish", iteration=iteration)
+            if nudge is not None:
+                conversation.notice(nudge)
+                return None
         # In ask mode a prose answer with no tool call is the NORMAL success (the
         # answer IS the text), so end as "answered", not "silent_finish" -- the
         # latter read as a failure diagnostic on a perfectly good answer. run/plan
@@ -2919,6 +3020,11 @@ class Workflow:
                 nudges_max=effective_max_nudges,
             )
             return None
+        if self.mode == "run":
+            nudge = self._standing_absorb(state, reason="went_quiet", iteration=iteration)
+            if nudge is not None:
+                conversation.notice(nudge)
+                return None
         self._final_checkpoint(iteration)
         self._emit(
             "session.end",
@@ -3273,6 +3379,7 @@ class Workflow:
             last_verify_ok=state.last_verify_ok,
             edited_since_verify=state.edited_since_verify,
             baseline_ok=state.baseline_ok,
+            standing_tools_mark=state.standing_tools_mark,
             head_sha=self._checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
         )
@@ -3673,7 +3780,7 @@ class Workflow:
             # check-off, mirroring the finish-gate and surface rules. The root is
             # the whole-run container, so a mid-run summary must not mark it
             # passed and end the run early.
-            if node.parent_id is None:
+            if node.parent_id is None or node.standing:
                 continue
             if node.status in ("pending", "in_progress"):
                 out.append((nid, node.title[:120]))
@@ -3737,7 +3844,11 @@ class Workflow:
         open_subtasks = [
             (nid, node.title[:120])
             for nid, node in self.curator.nodes().items()
-            if node.parent_id is not None and node.status in ("pending", "in_progress")
+            if node.parent_id is not None
+            and node.status in ("pending", "in_progress")
+            # A standing task is not unfinished work: it gates the finish via
+            # its own re-entry, never via this capped nudge.
+            and not node.standing
         ]
         if not open_subtasks:
             return None
