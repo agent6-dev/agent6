@@ -72,7 +72,7 @@ from agent6.machine.template import (
 from agent6.portable import atomic_write
 from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
 from agent6.sessions.layout import LOGS_NAME
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 __all__ = [
     "AgentExecResult",
@@ -218,7 +218,7 @@ class World(Protocol):
     """Everything the engine is allowed to observe from the outside."""
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
     ) -> ToolExecResult: ...
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult: ...
@@ -315,13 +315,13 @@ class LiveWorld:
     hide_paths: tuple[Path, ...] = ()
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
     ) -> ToolExecResult:
         # The engine is the host-netns supervisor, so an opt-in tool's jail
         # gets the host network (it inherits the engine's netns); a non-opt-in
         # tool gets a fresh empty netns. Whether opt-in is permitted at all is
-        # gated by the CLI at startup (sandbox.tool_network), so by the time we
-        # run, `allow_network` is authoritative.
+        # gated by the CLI at startup (sandbox.network), so by the time we
+        # run, `network` is authoritative.
         env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
         # The jail-correct PATH plus the RO+exec mounts that make it true: ONE
         # computation shared with run_command/verify's jail and the `machine
@@ -351,10 +351,7 @@ class LiveWorld:
             argv=argv,
             isolation=self.isolation,
             env=tuple(env_list),
-            # A machine tool has no run-wide private network to join: its
-            # states are separate launchers, so "its own, alone" is the
-            # offline answer here.
-            network="host" if allow_network else "none",
+            network=network,
             extra_protect_paths=self.protect_paths,
             extra_rw_paths=extra_rw,
             tool_paths=tool_mounts,
@@ -650,12 +647,15 @@ def _execute(
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
         # Under the explicit-only model a tool reaches the network iff it set
-        # allow_network = "allow" (the operator-set ceiling + hardened limits are
+        # network = "host" (the operator-set ceiling + hardened limits are
         # enforced as machine-run startup refusals). "auto"/"block" → isolated.
         result = world.run_tool(
             tuple(argv),
             float(state.timeout_secs),
-            allow_network=state.allow_network == "allow",
+            # `auto` resolves to a network of its own: a machine state's
+            # processes die with the state, so there is never a sibling to
+            # share one with (see StateSpec.network).
+            network="host" if state.network == "host" else "none",
         )
         if result.timed_out:
             label = "timeout"

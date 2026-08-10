@@ -142,7 +142,7 @@ def run_offline_tests(
     enforce the no-network contract on model-authored code. Skipped, with a loud
     "NOT run" note and the static checks still applied, on ``none`` (no jail at
     all) and ``hardened`` (a jail, but no network namespace, so
-    ``allow_network=False`` is silently ignored and the scripts would reach the
+    ``network=False`` is silently ignored and the scripts would reach the
     host network). Each test gets a fresh writable ``$AGENT6_MACHINE_DATA_DIR``
     so record-style scripts can be exercised. Tests run under the default
     ``JailPolicy`` memory cap (these are offline mocks; the operator's
@@ -155,7 +155,7 @@ def run_offline_tests(
         return []
     if isolation != "strict":
         # none: no jail to confine model-authored code in. hardened: a jail, but
-        # no network namespace, so allow_network=False is silently ignored and
+        # no network namespace, so network=False is silently ignored and
         # the scripts would run with the host network -- exfil or pull-and-exec
         # of model-authored code during `machine create`. Only strict can honor
         # the no-network contract. Skipping is the only safe option on the rest,

@@ -7,7 +7,7 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.tool_network = "auto"``,
+(``sandbox.network = "auto"``,
 ``sandbox.run_commands = "ask"``, ``sandbox.protect_git = true``; git push,
 ``--force``, and history rewrites are refused unconditionally by ``git_ops``,
 with no config override at all). This means a config can be layered (global ``$XDG_CONFIG_HOME``
@@ -353,18 +353,18 @@ class SandboxConfig(BaseModel):
     #    is no netns, so the child shares the host network and a once-per-run
     #    warning says so. The secure-by-default option that still runs
     #    everywhere (see AGENTS.md "Secure by default, degrade or refuse").
-    #  - `private`: ENFORCE the run's own network -- the commands see each
+    #  - `session`: ENFORCE the run's own network -- the commands see each
     #    other (a dev server one starts answers the next) and nothing off the
     #    box. Refuses to run where there is no netns, naming what is
     #    unsupported and how to change it, never silently ineffective.
     #  - `only_explicit_states`: private, EXCEPT machine `tool` states that opt
-    #    in with `allow_network = "allow"` (audited, deterministic commands);
+    #    in with `network = "host"` (audited, deterministic commands);
     #    `run_command` stays private. `strict`-only, refused elsewhere.
     #  - `host`: the machine's own network (a package install, a real service).
     # There is no per-command `none`: the run's commands share one launcher,
     # and isolating them from each other costs the dev server for no security
     # -- the model can chain them into a single script anyway.
-    tool_network: Literal["auto", "private", "only_explicit_states", "host"] = "auto"
+    network: Literal["auto", "session", "only_explicit_states", "host"] = "auto"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
     # none: every fetch is a prompt. `"*"` allows any host, written down so the
@@ -373,7 +373,7 @@ class SandboxConfig(BaseModel):
     # URL prefixes: a prefix invites `evil.com/docs.python.org`.
     #
     # `fetch` exists because a jailed command has no network; it is hidden when
-    # `tool_network = "host"`, where the worker can already run curl. It is
+    # `network = "host"`, where the worker can already run curl. It is
     # still an egress channel a model drives -- a GET can encode data in its
     # path -- so a host not listed here is asked about, and an absent operator
     # is a no.
@@ -1063,7 +1063,7 @@ class MCPSandbox(BaseModel):
     #                     off the box (a browser server driving the app under
     #                     test is the case this exists for)
     #   host              the machine's network
-    network: Literal["auto", "none", "private", "host"] = "auto"
+    network: Literal["auto", "none", "session", "host"] = "auto"
     # No confinement at all: the server runs as the operator, with their whole
     # filesystem and network. For a server whose job IS arbitrary host access.
     unconfined: bool = False

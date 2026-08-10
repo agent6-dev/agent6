@@ -305,21 +305,26 @@ class ToolState(BaseModel):
     capture: Capture | None = None
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
-    # This tool's network stance for its jailed subprocess:
-    #  - ``auto`` (default): no network; isolated (empty netns) where the isolation level
-    #    can (``strict``), tolerant where it can't (``hardened`` shares the host
-    #    netns), the deterministic, offline default that runs anywhere.
-    #  - ``allow``: wants the host network. Granted only if the operator permits
-    #    it via ``sandbox.tool_network`` (``only_explicit_states`` or ``allow``);
-    #    under ``block`` the run is refused naming this state. Enforceable because
-    #    the machine engine is a host-netns supervisor: the tool's jail can reach
-    #    the network while the agent states stay confined to the provider API.
-    #  - ``block``: no network, REQUIRED, refuse on ``hardened`` (which can't
-    #    guarantee per-tool isolation), unlike ``auto`` which tolerates it.
-    # The tool only *declares*; whether ``allow`` is granted is the operator's
-    # call (``sandbox.tool_network``, read from global/repo config, never a
-    # machine overlay).
-    allow_network: Literal["auto", "allow", "block"] = "auto"
+    # Which network this tool's jailed subprocess joins, in the vocabulary the
+    # sandbox and MCP servers use:
+    #  - ``auto`` (default): one of its own, where the isolation level can give
+    #    one (``strict``); where it cannot (``hardened`` has no namespaces) the
+    #    tool shares the host's and a warning says so. Runs anywhere.
+    #  - ``host``: the machine's network. Granted only if the operator permits
+    #    it via ``sandbox.network`` (``only_explicit_states`` or ``host``);
+    #    otherwise the run is refused naming this state. Enforceable because the
+    #    machine engine is a host-netns supervisor: this tool's jail can reach
+    #    the network while everything else stays off it.
+    #  - ``none``: one of its own, REQUIRED -- refuse on ``hardened`` rather than
+    #    run connected, unlike ``auto`` which tolerates it.
+    # There is no ``session`` here: a machine state's processes die with the
+    # state (no background commands, no MCP servers, escapees swept), so a
+    # shared network would never have a second member. Add it if machines ever
+    # get a run-scoped jail session.
+    # The tool only *declares*; whether ``host`` is granted is the operator's
+    # call (``sandbox.network``, read from global/repo config, never a machine
+    # overlay).
+    network: Literal["auto", "host", "none"] = "auto"
 
 
 class WaitState(BaseModel):

@@ -72,7 +72,7 @@ def test_config_get_does_not_offer_keys_it_rejects(
     """A completer must offer what the command accepts, and nothing else.
 
     `[presets.*]` tables are stripped before validation, so they are not
-    effective-config leaves: `config get presets.mine.sandbox.tool_network`
+    effective-config leaves: `config get presets.mine.sandbox.network`
     errors with "is not a config leaf". The shared completer offered exactly
     those keys, so TAB proposed an input the command refuses. They stay on the
     write verbs, where they ARE accepted.

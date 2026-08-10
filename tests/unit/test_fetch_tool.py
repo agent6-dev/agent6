@@ -156,11 +156,11 @@ def test_an_allowed_host_is_never_prompted_for(
 
 
 def test_the_tool_is_hidden_when_commands_already_have_the_network(tmp_path: Path) -> None:
-    """With `tool_network = "host"` the worker can run curl. Two ways to do
+    """With `sandbox.network = "host"` the worker can run curl. Two ways to do
     one thing is the thing we do not do."""
     blocked = ToolDispatcher(root=tmp_path, config=Config())
     allowed = ToolDispatcher(
-        root=tmp_path, config=Config.model_validate({"sandbox": {"tool_network": "host"}})
+        root=tmp_path, config=Config.model_validate({"sandbox": {"network": "host"}})
     )
     assert "fetch" in blocked.available_tool_names()
     assert "fetch" not in allowed.available_tool_names()
@@ -233,7 +233,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
 def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
     """Every other hiding rule has a matching refusal in dispatch; this one had
     none, so exposure and enforcement could drift."""
-    cfg = Config.model_validate({"sandbox": {"tool_network": "host"}})
+    cfg = Config.model_validate({"sandbox": {"network": "host"}})
     d = ToolDispatcher(root=tmp_path, config=cfg)
     assert "fetch" not in d.available_tool_names()
     with pytest.raises(ToolError, match="not available"):

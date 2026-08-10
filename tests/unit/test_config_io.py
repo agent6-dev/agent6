@@ -33,7 +33,7 @@ def test_writers_go_through_atomic_write_and_never_truncate(
 
 def test_write_leaves_no_temp_siblings(tmp_path: Path) -> None:
     cfg = tmp_path / "config.toml"
-    io.upsert_toml_leaf(cfg, "sandbox.tool_network", "auto")
+    io.upsert_toml_leaf(cfg, "sandbox.network", "auto")
     io.upsert_toml_leaf(cfg, "sandbox.protect_git", False)
-    assert 'tool_network = "auto"' in cfg.read_text(encoding="utf-8")
+    assert 'network = "auto"' in cfg.read_text(encoding="utf-8")
     assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # tmp files cleaned up

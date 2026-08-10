@@ -30,7 +30,7 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
     start_mcp_manager_if_enabled,
-    wants_private_network,
+    wants_session_network,
 )
 from agent6.app.finalize import (
     auto_merge_eligible,
@@ -75,7 +75,7 @@ from agent6.git_ops import (
 )
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
-from agent6.sandbox.jail import PrivateNetwork
+from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
@@ -631,19 +631,19 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Spawned inside the try so the finally below tears it down even if a
         # spawn (MCP) fails.
         mcp_manager = None
-        private_net: PrivateNetwork | None = None
+        session_net: SessionNetwork | None = None
         try:
             reporter.err(f"[agent6] session id: {effective_session_id}")
 
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
             # owns its subprocesses; we close it in the finally block.
-            # The run's private network, before its first member: the
+            # The run's session network, before its first member: the
             # commands and any server that joins it share this one.
-            if wants_private_network(cfg, isolation):
-                private_net = PrivateNetwork.open()
+            if wants_session_network(cfg, isolation):
+                session_net = SessionNetwork.open()
             mcp_manager = start_mcp_manager_if_enabled(
-                cfg, cwd, isolation, reporter=reporter, events=events, private_net=private_net
+                cfg, cwd, isolation, reporter=reporter, events=events, session_net=session_net
             )
 
             loop_log = frontend.loop_logger(mode)
@@ -659,7 +659,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 questioner=frontend.build_questioner(layout.session_dir, events),
                 loop_log=loop_log,
                 mcp_manager=mcp_manager,
-                private_net=private_net,
+                session_net=session_net,
                 rm_role=session.rm_role,
             )
             curator = tools.curator
@@ -785,10 +785,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 dispatcher.close()
             if mcp_manager is not None:
                 mcp_manager.close()
-            if private_net is not None:
+            if session_net is not None:
                 # The last handles on the run's network: closing them is what
                 # lets the kernel reclaim it.
-                private_net.close()
+                session_net.close()
             if (
                 not interrupted
                 and result is not None

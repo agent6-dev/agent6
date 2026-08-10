@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from typing import IO, Any
 
 from agent6.child_env import curated_env
-from agent6.sandbox.jail import JailUnavailableError, PrivateNetwork, spawn_in_jail
+from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, spawn_in_jail
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError
 from agent6.types import JailPolicy
 
@@ -180,7 +180,7 @@ def _spawn_server(
     command: tuple[str, ...],
     policy: JailPolicy | None,
     pass_env: tuple[str, ...],
-    private_net: PrivateNetwork | None = None,
+    session_net: SessionNetwork | None = None,
 ) -> subprocess.Popen[bytes]:
     """Start one stdio server: through the jail when it has a policy, as a
     plain subprocess when the operator opted it out.
@@ -204,7 +204,7 @@ def _spawn_server(
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            private_net=private_net,
+            session_net=session_net,
         )
     return subprocess.Popen(
         command,
@@ -289,8 +289,8 @@ class _MCPServer:
     # The sandbox this server runs under; None is the operator's explicit
     # `unconfined = true`.
     policy: JailPolicy | None = None
-    # The run's private network, for a server whose policy joins it.
-    private_net: PrivateNetwork | None = None
+    # The run's session network, for a server whose policy joins it.
+    session_net: SessionNetwork | None = None
     # Set instead of `command` for a server the OPERATOR runs: agent6 connects
     # rather than spawning, so it owns none of that server's environment,
     # lifetime or confinement.
@@ -327,7 +327,7 @@ class _MCPServer:
             return
         try:
             self._proc = _spawn_server(
-                self.command, self.policy, self.pass_env, private_net=self.private_net
+                self.command, self.policy, self.pass_env, session_net=self.session_net
             )
         except (OSError, FileNotFoundError, JailUnavailableError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc
@@ -633,7 +633,7 @@ class MCPManager:
         configs: Iterable[MCPServerSpec],
         *,
         logger: Callable[[str], None] | None = None,
-        private_net: PrivateNetwork | None = None,
+        session_net: SessionNetwork | None = None,
     ) -> MCPManager:
         mgr = cls()
         failures: list[MCPStartFailure] = []
@@ -649,7 +649,7 @@ class MCPManager:
                 pass_env=spec.pass_env,
                 http=spec.http,
                 policy=spec.policy,
-                private_net=private_net,
+                session_net=session_net,
             )
             try:
                 srv.start()
@@ -665,7 +665,12 @@ class MCPManager:
                 continue
             mgr._servers[name] = srv
             if logger is not None:
-                logger(f"[mcp] started {name!r} ({len(srv.tools)} tools)")
+                # The RESOLVED network, not the configured word: `auto` means
+                # nothing to a reader wondering why their browser server cannot
+                # see the app. Named every time, for every server, so nobody has
+                # to know to go looking.
+                where = "unconfined" if srv.policy is None else srv.policy.network
+                logger(f"[mcp] started {name!r} ({len(srv.tools)} tools, network: {where})")
         mgr.failures = tuple(failures)
         return mgr
 

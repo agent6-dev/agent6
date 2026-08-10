@@ -51,9 +51,9 @@ struct Policy {
     argv: Vec<String>,
     #[serde(default)]
     env: Vec<(String, String)>,
-    /// Which network this child joins: "host" (the machine's), "private" (the
+    /// Which network this child joins: "host" (the machine's), "session" (the
     /// run's own, shared with its siblings, no route off the box) or "none" (its
-    /// own, alone). "private" needs --userns-fd/--netns-fd naming the run's
+    /// own, alone). "session" needs --userns-fd/--netns-fd naming the run's
     /// holder; joining is why those two arrive together (see join_network).
     #[serde(default = "default_network")]
     network: String,
@@ -180,27 +180,27 @@ fn die(msg: impl AsRef<str>) -> ! {
     std::process::exit(2);
 }
 
-/// `--hold-netns`: create the run's private network and hold it open until
+/// `--hold-netns`: create the run's session network and hold it open until
 /// stdin closes. It runs no child and confines nothing -- the run opens
 /// /proc/<pid>/ns/{user,net} once "ready" appears, and those descriptors are
 /// what keep the namespaces alive, so this process may exit immediately after.
 fn hold_netns() -> ! {
     let (uid, gid) = (getuid(), getgid());
     if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNET) {
-        die(format!("private network: unshare failed: {e}"));
+        die(format!("session network: unshare failed: {e}"));
     }
     fs::write("/proc/self/setgroups", "deny").ok();
     if let Err(e) = fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
         .and_then(|()| fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid)))
     {
-        die(format!("private network: id map failed: {e}"));
+        die(format!("session network: id map failed: {e}"));
     }
     if let Err(e) = bring_loopback_up() {
-        die(format!("private network: loopback failed: {e}"));
+        die(format!("session network: loopback failed: {e}"));
     }
     println!("ready");
     if io::stdout().flush().is_err() {
-        die("private network: could not report readiness");
+        die("session network: could not report readiness");
     }
     let mut sink = String::new();
     let _ = io::stdin().lock().read_line(&mut sink);
@@ -247,15 +247,15 @@ fn main() {
         Err(e) => die(format!("invalid policy JSON: {e}")),
     };
 
-    if !matches!(policy.network.as_str(), "host" | "private" | "none") {
+    if !matches!(policy.network.as_str(), "host" | "session" | "none") {
         die(format!("unknown network: {}", policy.network));
     }
-    // "private" is the run's shared network, and the only way in is the pair of
+    // "session" is the run's shared network, and the only way in is the pair of
     // descriptors naming its holder. Refuse rather than silently running in a
     // namespace of our own, which would look identical and be isolated.
     let join = match (policy.network.as_str(), userns_fd, netns_fd) {
-        ("private", Some(u), Some(n)) => Some((u, n)),
-        ("private", _, _) => die("network = private needs --userns-fd and --netns-fd"),
+        ("session", Some(u), Some(n)) => Some((u, n)),
+        ("session", _, _) => die("network = session needs --userns-fd and --netns-fd"),
         _ => None,
     };
     match policy.isolation.as_str() {
@@ -417,7 +417,7 @@ fn bring_loopback_up() -> io::Result<()> {
     Ok(())
 }
 
-/// Enter the run's private network: its user namespace first, because
+/// Enter the run's session network: its user namespace first, because
 /// setns(CLONE_NEWNET) needs CAP_SYS_ADMIN in the namespace that OWNS the
 /// target netns, and an unprivileged joiner only has that inside it. The
 /// caller therefore does NOT create a user namespace of its own; it is already

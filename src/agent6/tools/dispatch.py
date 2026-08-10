@@ -30,7 +30,7 @@ from agent6.paths import data_dir
 from agent6.sandbox.jail import (
     JailSession,
     JailUnavailableError,
-    PrivateNetwork,
+    SessionNetwork,
     jail_search_path,
     run_in_jail,
 )
@@ -271,7 +271,7 @@ class ToolDispatcher:
         state_dir: Path | None = None,
         session_dir: Path | None = None,
         use_jail_session: bool = False,
-        private_net: PrivateNetwork | None = None,
+        session_net: SessionNetwork | None = None,
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -316,8 +316,8 @@ class ToolDispatcher:
         # dispatcher (a one-off tool, an embedder) has no run to scope it to
         # and keeps the per-command launcher.
         self._use_session = use_jail_session
-        self._private_net = private_net
-        self._own_private_net: PrivateNetwork | None = None
+        self._session_net = session_net
+        self._own_session_net: SessionNetwork | None = None
         self._session: JailSession | None = None
         self._session_failed = False
         # The run's dir, for the effective command policy: the operator's
@@ -418,9 +418,9 @@ class ToolDispatcher:
         if not self._config.workflow.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
         # `fetch` exists because a jailed command has no network. Where one
-        # DOES (`tool_network = "host"`), the worker can already run curl, and
+        # DOES (`network = "host"`), the worker can already run curl, and
         # two ways to do one thing is the thing we do not do.
-        if self._config.sandbox.tool_network == "host":
+        if self._config.sandbox.network == "host":
             names = [n for n in names if n != FetchInput.TOOL_NAME]
         # Python-only LSP tools are dead weight on a non-Python repo or with no
         # ty/uvx installed: hide them rather than offer tools that only error.
@@ -536,7 +536,7 @@ class ToolDispatcher:
             raise ToolError(f"Unknown tool: {name}")
         if name in _COMMAND_TOOLS and self.command_policy() == "no":
             raise ToolError(f"{name} is not available (run_commands = 'no')")
-        if name == FetchInput.TOOL_NAME and self._config.sandbox.tool_network == "host":
+        if name == FetchInput.TOOL_NAME and self._config.sandbox.network == "host":
             raise ToolError(f"{name} is not available (a jailed command has the network)")
         if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1" and name in {
             OutlineInput.TOOL_NAME,
@@ -700,9 +700,9 @@ class ToolDispatcher:
         if self._shells is not None:
             self._shells.stop_all()
         self.close_jail_session()
-        if self._own_private_net is not None:  # never the run's; that is its own to close
-            self._own_private_net.close()
-            self._own_private_net = None
+        if self._own_session_net is not None:  # never the run's; that is its own to close
+            self._own_session_net.close()
+            self._own_session_net = None
         if self._lsp is not None:
             self._lsp.close()
             self._lsp = None
@@ -1012,20 +1012,20 @@ class ToolDispatcher:
             extra_protect_paths=self._extra_protect_paths,
         )
 
-    def _net(self) -> PrivateNetwork | None:
-        """The private network this dispatcher's commands join, or None.
+    def _net(self) -> SessionNetwork | None:
+        """The session network this dispatcher's commands join, or None.
 
         The RUN owns one when there is a run, so its commands and its MCP
         servers share it. A dispatcher built without one (a machine agent
         state, `agent6 review`, agent6-as-an-MCP-server, a test) makes its own
         rather than refusing: its commands still reach each other, which is
-        what `private` promises, and nothing else can reach in.
+        what `session` promises, and nothing else can reach in.
         """
-        if self._private_net is not None:
-            return self._private_net
-        if self._own_private_net is None:
-            self._own_private_net = PrivateNetwork.open()
-        return self._own_private_net
+        if self._session_net is not None:
+            return self._session_net
+        if self._own_session_net is None:
+            self._own_session_net = SessionNetwork.open()
+        return self._own_session_net
 
     def _run_session(self) -> JailSession | None:
         """The run's jail process, or None to give each command its own.
@@ -1046,8 +1046,8 @@ class ToolDispatcher:
             rw = () if self._shells is None else (self._shells.log_root,)
             try:
                 policy = self._jail_policy(("true",), extra_rw_paths=rw)
-                net = self._net() if policy.network == "private" else None
-                self._session = JailSession.open(policy, private_net=net)
+                net = self._net() if policy.network == "session" else None
+                self._session = JailSession.open(policy, session_net=net)
             except (JailUnavailableError, OSError):
                 self._session_failed = True
         return self._session
@@ -1072,7 +1072,7 @@ class ToolDispatcher:
                 session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
                 if session is not None
                 else run_in_jail(
-                    policy, private_net=self._net() if policy.network == "private" else None
+                    policy, session_net=self._net() if policy.network == "session" else None
                 )
             )
         except JailUnavailableError as exc:

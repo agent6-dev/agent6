@@ -5,7 +5,7 @@
 #
 # Runs under the default sandbox config (tool states get their own network
 # namespace on strict). On a hardened-only host a tool state is refused under the
-# default `sandbox.tool_network = "block"`; agent6 prints the opt-in to apply.
+# default `sandbox.network = "session"`; agent6 prints the opt-in to apply.
 #
 # Usage:  bash bench/machines/triage-inbox/run.sh [workdir]
 set -euo pipefail

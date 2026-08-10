@@ -40,7 +40,7 @@ Under that adversary, agent6 aims to hold:
       partial mitigation that reads as a guarantee: code executing there could
       write `~/.ssh/authorized_keys` or a cron entry and exfiltrate on its own
       schedule regardless. agent6 does not ship that non-claim (§1).
-    - What IS bounded is what a COMMAND reaches: `sandbox.tool_network`
+    - What IS bounded is what a COMMAND reaches: `sandbox.network`
       (default `auto`; §8). That boundary is per-jailed-child and unchanged.
 
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
@@ -133,7 +133,7 @@ no run) each command gets its own launcher. Under `strict` it:
       choice the operator may mean, and real protection remains (writes stay
       confined to the workspace, `/root` and the rest of the host stay
       unreadable, seccomp applies). An explicit `hide_paths` entry it cannot
-      mask does refuse -- the same rule `tool_network` follows, where a
+      mask does refuse -- the same rule `network` follows, where a
       default degrades and a written-down value enforces.
 - Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
@@ -188,13 +188,13 @@ can't expand it.
     - Every command tool -- `run_command`, `run_verify_command`,
       `run_background`, `stop_background` -- answers to `run_commands` and runs
       jailed. They just can't install new tools, and a networked build step
-      needs `tool_network` loosened.
+      needs `network` loosened.
     - The verify gate is a command like any other: `run_commands = "no"`
       withholds it too, and such a run starts gateless rather than chasing a
       green it can never reach.
 - **Provisioning is operator-first.** Install toolchains, venvs, and deps
   yourself before/outside agent6; widen access via config, never sudo
-  (`extra_read_paths`, `tool_network`, `[providers.*].base_url`, all in
+  (`extra_read_paths`, `network`, `[providers.*].base_url`, all in
   `config show`).
 - **Running agent6 as root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`) **weakens
   the boundary.**
@@ -320,7 +320,7 @@ syscall for hardened), never guessed from the kernel version.
 
 ### 4. Fixed tool surface
 
-- **`fetch` is the model's only egress, and it is narrow.** One https URL, GET, no redirects followed, no credential, text only, 1 MiB. Hosts on `sandbox.fetch_hosts` are read without asking; any other host prompts, and an absent operator is a no. It exists because a jailed command has no route off the box, so it is hidden entirely when `tool_network = "host"`. A GET can still carry data out in its path -- the allow-list is empty by default for that reason. Nothing resolves before that gate either: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
+- **`fetch` is the model's only egress, and it is narrow.** One https URL, GET, no redirects followed, no credential, text only, 1 MiB. Hosts on `sandbox.fetch_hosts` are read without asking; any other host prompts, and an absent operator is a no. It exists because a jailed command has no route off the box, so it is hidden entirely when `network = "host"`. A GET can still carry data out in its path -- the allow-list is empty by default for that reason. Nothing resolves before that gate either: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
 - **An MCP server's tools are approved per call, on their own scope.** A
   server does fixed things, but the model chooses the arguments, so each
   `mcp__<server>__<tool>` call prompts with those arguments
@@ -526,47 +526,47 @@ each spawn subordinate work. Nothing here loosens the sandbox:
 ### 8. State-machine egress + script bundles
 
 - **`machine run` is a supervisor that makes no network calls.**
-    - Each `tool` state is jailed, so a per-tool `allow_network` sets its netns
+    - Each `tool` state is jailed, so a per-tool `network` sets its netns
       independently.
     - This lets a machine keep agents on the provider API while one reviewed,
       fixed-argv `tool` reaches the network: unlike `run_command` (LLM-chosen
       argv), a `tool` isn't a free exfil channel.
 
-Egress = `tool_network` × per-tool `allow_network`; the effective isolation
-level decides what's enforceable. Neither `private` nor `none` reaches off the
+Egress = `network` × per-tool `network`; the effective isolation
+level decides what's enforceable. Neither `session` nor `none` reaches off the
 box; they differ only in who else is in there.
 
 **Agent egress is unconfined at every isolation level** (claim 3). Only jailed
 commands have a network boundary.
 
 **Which network a jailed child joins.** Three answers, one vocabulary: `host`
-(the machine's), `private` (the run's own — its members reach each other and
+(the machine's), `session` (the run's own — its members reach each other and
 nothing off the box), `none` (its own, alone). `auto` is the default everywhere
 and picks the safest that works.
 
-The run owns ONE private network. A holder process creates it, the run keeps it
+The run owns ONE session network. A holder process creates it, the run keeps it
 alive with an open descriptor on `/proc/<holder>/ns/{user,net}`, and every child
 that asks joins those. Entering a network namespace needs CAP_SYS_ADMIN in the
 user namespace that owns it, so a joiner enters that user namespace too; it
 still gets its own mount, PID, IPC and UTS namespaces, so two members cannot see
 or signal each other.
 
-By `tool_network` (cells = `strict`, the only level with namespaces to give):
+By `network` (cells = `strict`, the only level with namespaces to give):
 
-| jailed command | `auto` *(def)* | `private` | `only_explicit_states` | `host` |
+| jailed command | `auto` *(def)* | `session` | `only_explicit_states` | `host` |
 |---|---|---|---|---|
-| `run_command` | the run's private network | same | same | host network |
-| `tool`, `allow_network` `auto`(def)/`block` | own, alone | own, alone | own, alone | own, alone |
-| `tool`, `allow_network = allow` | ⛔ refuse | ⛔ refuse | host network | host network |
+| `run_command` | the run's session network | same | same | host network |
+| `tool`, `network` `auto`(def)/`block` | own, alone | own, alone | own, alone | own, alone |
+| `tool`, `network = host` | ⛔ refuse | ⛔ refuse | host network | host network |
 
 An MCP server takes the same vocabulary per server, defaulting to `none`; a
-server set to `private` joins the run's network, which is how a browser server
+server set to `session` joins the run's network, which is how a browser server
 reaches the dev server a `run_background` started.
 
 `auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
-default, degrade or refuse"): on `strict` it is the private network above; on
+default, degrade or refuse"): on `strict` it is the session network above; on
 `hardened` (no netns) there is none to give, so a jailed child inherits the
-agent process's network and a once-per-run warning says so. `private` and
+agent process's network and a once-per-run warning says so. `session` and
 `none` are the ENFORCE forms — they refuse on `hardened` rather than run
 under-confined. (On `none` isolation nothing is enforced or refused: it is the
 explicit unsandboxed opt-out with its own loud warning, below.)
@@ -575,34 +575,34 @@ explicit unsandboxed opt-out with its own loud warning, below.)
 
 | Configuration | When |
 |---|---|
-| a `tool` sets `allow_network = allow` under `tool_network` `auto`/`private` | machine start |
-| `tool_network = only_explicit_states`, or explicit `tool_network = private` | run start, `hardened` ¹ |
-| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`private` | machine start, `hardened` ¹ |
+| a `tool` sets `network = host` under `network` `auto`/`session` | machine start |
+| `network = only_explicit_states`, or explicit `network = private` | run start, `hardened` ¹ |
+| a machine with `tool` states, or a `tool` with `network = none`, under `network` `auto`/`session` | machine start, `hardened` ¹ |
 
 - ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
   nothing refused, loud warning.
 
 - ¹ a network namespace is `strict`-only. On `hardened` a jailed child shares
   the host network. The secure default `auto` degrades there with a warning; an
-  EXPLICIT enforce (`private`, `none`, `only_explicit_states`) refuses rather
+  EXPLICIT enforce (`session`, `none`, `only_explicit_states`) refuses rather
   than run silently under-confined.
 
 More fail-closed properties:
 
-- **Operator-gated policy.** `tool_network` is read only from the
+- **Operator-gated policy.** `network` is read only from the
   operator's config; a machine's `[config]` overlay is rejected at load if it
   declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, or `git.run_repo_hooks`.
     - Otherwise a strategy preset or a host `[machine.notify]` argv could splice
       into the resolved config, and `run_repo_hooks` would run repo `.git/hooks`
       on the host on a `mode="run"` commit. A `tool` only *declares*
-      `allow_network`; honoring `allow` is the operator's call, and every conflict
+      `network`; honoring `allow` is the operator's call, and every conflict
       is refused at startup naming the state.
 - **Bundle confinement.** Scripts live in a reviewed `scripts/` beside the
   `.asm.toml`; `machine check` verifies every entry and static reference resolves
   inside the bundle (escaping symlinks rejected).
     - Scripts are operator-authored and committed, never fetched/generated at run
       time, and the `.asm.toml` + `scripts/` are RO in every jail during a run, so
-      a state can't rewrite its own logic or add an `allow_network` flag.
+      a state can't rewrite its own logic or add an `network` flag.
 - **Notifications don't widen the agent's surface.** Front-ends render
   `machine.notify` as an overlay, and `attach`/TUI call `notify-send` with a FIXED
   argv (no shell), so a model message is inert data.

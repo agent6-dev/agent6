@@ -74,9 +74,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     config_get = _sub(
         config_sub, "get", help="Print a leaf's effective value and which layer set it."
     )
-    config_get_key = config_get.add_argument(
-        "key", help="Dotted leaf path, e.g. sandbox.tool_network."
-    )
+    config_get_key = config_get.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
     # `get` reads effective leaves, and `[presets.*]` are stripped before
     # validation, so offering them would propose an input it refuses.
     config_get_key.completer = partial(  # type: ignore[attr-defined]
@@ -98,7 +96,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ("remove", "Remove a value from a list field."),
     ):
         p = _sub(config_sub, verb, help=blurb)
-        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.tool_network.")
+        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
         key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
         if verb != "unset":
             val_arg = p.add_argument("value", help="Value (TOML-typed; bare text is a string).")

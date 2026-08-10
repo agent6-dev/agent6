@@ -28,7 +28,7 @@ def _env(landlock_abi: int) -> Environment:
 
 def _cfg(tool_network: str = "auto") -> Config:
     return Config(
-        sandbox=SandboxConfig(tool_network=tool_network)  # type: ignore[arg-type]
+        sandbox=SandboxConfig(network=tool_network)  # type: ignore[arg-type]
     )
 
 
@@ -89,18 +89,18 @@ def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
 
 
 def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[str]) -> None:
-    """tool_network='auto' (the secure default) can't be offline on hardened
+    """network='auto' (the secure default) can't be offline on hardened
     (no netns), so it degrades to sharing the host network -- and must SAY so,
     never silently."""
     warn_sandbox_gaps("hardened", _env(4), _cfg("auto"))
     err = capsys.readouterr().err
-    assert "WARNING" in err and "tool_network" in err and "network namespace" in err
+    assert "WARNING" in err and "network" in err and "network namespace" in err
 
 
 def test_hardened_allow_says_nothing_about_the_network(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # An operator who set tool_network='allow' asked for the tool to have the
+    # An operator who set network='allow' asked for the tool to have the
     # network, so no degrade warning for it. `.git` is a separate degrade and
     # is expected here: hardened cannot protect it at all.
     warn_sandbox_gaps("hardened", _env(4), _cfg("host"))
@@ -110,16 +110,16 @@ def test_hardened_allow_says_nothing_about_the_network(
 
 
 def test_explicit_block_refuses_on_hardened() -> None:
-    """tool_network='private' is an ENFORCE setting: it needs a netns only strict
+    """network='session' is an ENFORCE setting: it needs a netns only strict
     provides, so on hardened we refuse (name what's unsupported + the fix)
     rather than run silently under-confined. 'auto' degrades instead."""
-    err = check_network_support(_cfg("private"), "hardened")
+    err = check_network_support(_cfg("session"), "hardened")
     assert err is not None
-    assert "tool_network = 'private'" in err and "auto" in err and "strict" in err
+    assert "sandbox.network = 'session'" in err and "auto" in err and "strict" in err
     # auto is NOT refused (it degrades with a warning) -> None.
     assert check_network_support(_cfg("auto"), "hardened") is None
     # On strict, block is enforceable -> no refusal.
-    assert check_network_support(_cfg("private"), "strict") is None
+    assert check_network_support(_cfg("session"), "strict") is None
 
 
 def test_scanner_separates_unreachable_from_home_exposing(
@@ -223,7 +223,7 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     ws.mkdir()
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(tool_network="host", protect_git=False))
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
     warn_sandbox_gaps("hardened", _env(4), cfg)
     assert capsys.readouterr().err == ""
     assert check_hide_paths_support(cfg, "hardened") is None

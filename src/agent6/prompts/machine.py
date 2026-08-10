@@ -175,9 +175,9 @@ data. So:
   - Read SECRETS (API tokens/keys) from the ENVIRONMENT — `os.environ["X_TOKEN"]`
     — never hard-coded in a script and never written into the `.asm.toml`. The
     operator exports them when they run the machine.
-  - A tool that touches the network MUST set `allow_network = "allow"` on its
+  - A tool that touches the network MUST set `network = "host"` on its
     state; without it the tool is network-isolated and the call fails. (The
-    operator still has to permit egress via `sandbox.tool_network`; if their
+    operator still has to permit egress via `sandbox.network`; if their
     config blocks it, `agent6 machine run` explains the one-line fix and offers
     to apply it.)
   - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR` (the workspace is
@@ -225,7 +225,7 @@ labels, and your wiring decides whether one bad tick kills the machine:
 ## Worked example: watch a live price feed, record a threshold crossing
 
 A complete, valid, PRODUCTION machine: `fetch_price` makes a real HTTP call
-(hence `allow_network = "allow"`); `record_buy` appends to the data dir. Each
+(hence `network = "host"`); `record_buy` appends to the data dir. Each
 script ships a `*_test.py` that mocks its seam so the whole machine simulates
 offline.
 
@@ -260,7 +260,7 @@ offline.
     [states.fetch_price]
     kind = "tool"
     command = ["python3", "scripts/fetch_price.py", "{{ feed_url }}"]
-    allow_network = "allow"                 # this tool reaches the real API
+    network = "host"                 # this tool reaches the real API
     output_schema = "price_result"          # types `result` so result.price works
     capture = { set = { price = "{{ result.price }}" } }
     timeout_secs = 15
@@ -291,7 +291,7 @@ Real, typed scripts plus an offline test per seam (the network seam in
 # Fetch the current price from an HTTP JSON feed. Prints {"price": <float>}.
 # The feed URL is argv[1] (an operator var); an optional bearer token comes from
 # the PRICE_FEED_TOKEN env var -- secrets belong in the environment, never in the
-# machine file. The tool state must set allow_network = "allow".
+# machine file. The tool state must set network = "host".
 from __future__ import annotations
 
 import json
@@ -435,7 +435,7 @@ if __name__ == "__main__":
 ## Common mistakes (each fails `machine check`/`create` or silently misbehaves)
   - Hardcoding `model = "..."` on an `agent` state — omit it (defaults to
     "inherit" = the worker model) unless pinning one on purpose.
-  - A `tool` that calls the network but forgets `allow_network = "allow"` — it
+  - A `tool` that calls the network but forgets `network = "host"` — it
     runs network-isolated and the call fails.
   - Hardcoding a secret/token in a script or the `.asm.toml` — read it from the
     environment (`os.environ[...]`) instead.

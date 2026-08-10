@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""tool_network: isolation compatibility, machine refusals, and
+"""sandbox.network: isolation compatibility, machine refusals, and
 the supervisor subprocess that runs a machine `agent` state self-confined."""
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from agent6.machine.model import ToolState
 from agent6.types import IsolationLevel
 
 
-def _cfg(tool_network: str = "private") -> Config:
-    return validate_config({"sandbox": {"tool_network": tool_network}})
+def _cfg(network: str = "session") -> Config:
+    return validate_config({"sandbox": {"network": network}})
 
 
 # --- _is_loopback ----------------------------------------------------------
@@ -39,7 +39,7 @@ def _cfg(tool_network: str = "private") -> Config:
 def test_check_network_support_allows_off_hardened(isolation: IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_support(_cfg("private"), isolation) is None
+    assert check_network_support(_cfg("session"), isolation) is None
     assert check_network_support(_cfg("only_explicit_states"), isolation) is None
 
 
@@ -51,17 +51,13 @@ def test_check_network_support_refuses_only_explicit_states_on_hardened() -> Non
 # --- _machine_network_refusal ----------------------------------------------
 
 _TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
-_NET_TOOL = ToolState(
-    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, allow_network="allow"
-)
-_BLOCK_TOOL = ToolState(
-    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, allow_network="block"
-)
+_NET_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="host")
+_BLOCK_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, network="none")
 
 
 def test_refusal_networked_tool_under_block() -> None:
-    msg = machine_network_refusal(_cfg("private"), "strict", [_NET_TOOL])
-    assert msg is not None and "allow_network" in msg
+    msg = machine_network_refusal(_cfg("session"), "strict", [_NET_TOOL])
+    assert msg is not None and "network" in msg
 
 
 def test_refusal_providers_explicit_states_strict_ok() -> None:
@@ -70,26 +66,26 @@ def test_refusal_providers_explicit_states_strict_ok() -> None:
 
 
 def test_refusal_block_tools_on_hardened() -> None:
-    msg = machine_network_refusal(_cfg("private"), "hardened", [_TOOL])
+    msg = machine_network_refusal(_cfg("session"), "hardened", [_TOOL])
     assert msg is not None and "strict" in msg
 
 
-def test_refusal_explicit_block_state_on_hardened() -> None:
-    # tool_network=allow runs auto/allow tools on hardened, but an explicit
-    # allow_network="block" demand can't be honored there -> refuse.
+def test_refusal_explicit_none_state_on_hardened() -> None:
+    # sandbox.network = host runs auto/host tools on hardened, but a state that
+    # explicitly demands `none` cannot be honoured there -> refuse.
     msg = machine_network_refusal(_cfg("host"), "hardened", [_BLOCK_TOOL])
-    assert msg is not None and "block" in msg  # the machine state's own word
+    assert msg is not None and "none" in msg
 
 
 def test_refusal_networked_tool_under_the_auto_default() -> None:
-    """`auto` is the DEFAULT tool_network, and it intends no tool network, so a
-    state demanding allow_network="allow" is refused on both isolation levels -- and the
+    """`auto` is the DEFAULT sandbox.network, and it intends no tool network, so a
+    state demanding network="host" is refused on both isolation levels -- and the
     message names the ACTUAL value. Every other case here pins block/allow/
     only_explicit_states, leaving the default path unexercised."""
     for isolation in ("strict", "hardened"):
         msg = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
-        assert msg is not None and "allow_network" in msg
-        assert "'auto'" in msg  # not a hardcoded "private"
+        assert msg is not None and "network" in msg
+        assert "'auto'" in msg  # not a hardcoded "session"
 
 
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:

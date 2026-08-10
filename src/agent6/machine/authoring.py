@@ -80,7 +80,7 @@ def build_authoring_prompt(
         "Make each script PRODUCTION-READY for the real task: it reads live inputs"
         " from their real source (real HTTP via stdlib `urllib`), reads any"
         " secrets from the environment (never hard-coded), sets"
-        ' `allow_network = "allow"` on its state if it touches the network, prints'
+        ' `network = "host"` on its state if it touches the network, prints'
         " ONE JSON object on stdout matching its `output_schema`, and exits 0 on"
         " success. Type-annotate it and keep it lint-clean — `machine create` runs"
         " ruff + ty and rejects it otherwise. For every script with an external"

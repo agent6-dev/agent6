@@ -296,33 +296,33 @@ A `list`-typed variable spliced as a bare argv element
 `scan-inbox` here is an illustrative stand-in; a `tool` state runs
 whatever audited command the operator names.
 
-**Network (opt-in, default off).** A `tool`'s `allow_network` is one of
+**Network (opt-in, default off).** A `tool`'s `network` is one of
 `"auto"` (default, no network), `"allow"` (wants the host network), or
 `"block"` (no network, *required*; refuses to run on `hardened`, which can't
-isolate a single tool). A tool reaches the network only when it sets `allow_network =
+isolate a single tool). A tool reaches the network only when it sets `network =
 "allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
 state runs in its own subprocess; see §9), an opt-in `tool` can reach the host
 network while every other jailed command stays offline. A
 `tool` command is fixed and operator-reviewed, so it is not a free exfiltration
 channel the way a networked `run_command` would be. Whether the opt-in is
-honored is the operator's call via `sandbox.tool_network` (read from the
+honored is the operator's call via `sandbox.network` (read from the
 global/repo config, never the machine overlay):
 
-| `sandbox.tool_network` | jailed commands | `tool` w/ `allow_network="allow"` |
+| `sandbox.network` | jailed commands | `tool` w/ `network="host"` |
 |---|---|---|
 | `auto` *(def)* | no host network on `strict` | ⛔ refuse to run |
-| `private` | the same (refuses on `hardened`) | ⛔ refuse to run |
+| `session` | the same (refuses on `hardened`) | ⛔ refuse to run |
 | `only_explicit_states` | no host network | **host network** |
 | `host` | host network | host network (and `run_command`) |
 
 So the headline setup (offline commands + one operator-reviewed networked tool)
-is `sandbox.tool_network = "only_explicit_states"` and `allow_network = "allow"`
+is `sandbox.network = "only_explicit_states"` and `network = "host"`
 on that one state.
-`only_explicit_states` (and `private`) need `strict` isolation; a networked tool
-under `sandbox.tool_network = "private"`, or a tool-network config the isolation
+`only_explicit_states` (and `session`) need `strict` isolation; a networked tool
+under `sandbox.network = "session"`, or a tool-network config the isolation
 level can't honor, refuses to run at startup naming the state. A machine's tool
 states each get a network of their OWN when offline: they are separate
-launchers, so there is no run-wide private network for them to share.
+launchers, so there is no run-wide session network for them to share.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
 optional sibling `scripts/` directory holding operator-reviewed helper
@@ -652,7 +652,7 @@ states what it wants to change. Two hard rules:
   `[config.presets.*]`, or `[config.mcp.*]` block, or any of
   `git.run_repo_hooks`, `machine.notify`, `notify.on_complete`, is a
   *load-time* error. Provider endpoints, api-key env names, and secret values
-  live in the global config / secrets store; sandbox policy (`tool_network`,
+  live in the global config / secrets store; sandbox policy (`network`,
   `run_commands`, `.git` protection), the strategy presets that define it, the
   MCP servers that widen the tool surface, and every hook that runs an argv on
   the host outside the jail (the repo's `.git/hooks` on a `mode="run"` commit,

@@ -99,7 +99,7 @@ def test_jail_runs_true(jail_bin: Path, tmp_path: Path) -> None:
 
 
 def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> None:
-    """A connect() to a REAL host listener is denied without allow_network and
+    """A connect() to a REAL host listener is denied without network and
     succeeds with it. The positive control is the point: a DNS probe fails in
     the jail (no /etc/resolv.conf) and on any offline host either way, so it
     passed whether or not confinement existed."""

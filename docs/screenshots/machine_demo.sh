@@ -45,7 +45,7 @@ mkdir -p "$AGENT6_CONFIG_HOME"
 # The agent state inherits the worker model, which points at the proxy. open
 cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
 [sandbox]
-tool_network = "block"
+network = "session"
 run_commands = "yes"
 protect_git = true
 [git]

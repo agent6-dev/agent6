@@ -185,7 +185,7 @@ def test_offline_tests_skipped_on_none_profile(
 def test_offline_tests_skipped_on_hardened_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # hardened has a jail but no network namespace, so allow_network=False cannot
+    # hardened has a jail but no network namespace, so network=False cannot
     # be honored: model-authored scripts would reach the host network. They must
     # NOT run (skipped with a note), like the `none` case.
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")

@@ -47,10 +47,10 @@ export AGENT6_DEMO_REPO="$DEMO_REPO"
 mkdir -p "$AGENT6_CONFIG_HOME"
 
 # Provider points at the proxy; the demo never reaches a real model in replay.
-# can reach the loopback proxy. tool_network stays blocked.
+# can reach the loopback proxy. the tool network stays private.
 cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
 [sandbox]
-tool_network = "block"
+network = "session"
 run_commands = "yes"
 protect_git = true
 [git]

@@ -105,7 +105,7 @@ full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a
 Config is layered: built-in secure defaults, then the global `~/.config/agent6/config.toml`,
 then the per-repo config (out of the workspace, per-machine, not committed), then an
 explicit `--config FILE`. Every field has a default; security-sensitive fields default to
-the safe value (`tool_network = "auto"`,
+the safe value (`network = "auto"`,
 `run_commands = "ask"`, `protect_git = true`), and `git_ops.py`
 refuses `push`, `--force`, and history rewrites unconditionally.
 

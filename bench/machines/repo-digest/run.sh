@@ -4,7 +4,7 @@
 #
 # Runs under the default sandbox config: the `tool` states get their own network
 # namespace (strict). On a host that supports only the hardened profile, a tool
-# state is refused under the default `sandbox.tool_network = "block"` and agent6
+# state is refused under the default `sandbox.network = "session"` and agent6
 # prints the one-line opt-in to apply.
 #
 # Usage:  bash bench/machines/repo-digest/run.sh [workdir]

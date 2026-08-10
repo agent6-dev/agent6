@@ -45,14 +45,14 @@ def test_the_words_mean_the_same_on_both_sides() -> None:
     a single process can be and a group of commands cannot."""
     from agent6.config import SandboxConfig
 
-    for value in ("auto", "none", "private", "host"):
+    for value in ("auto", "none", "session", "host"):
         cfg = _server({"network": value})
         sandbox = cfg.mcp.servers["s"].sandbox
         assert sandbox is not None and sandbox.network == value
     with pytest.raises(ValueError, match="network"):
         _server({"network": "only_explicit_states"})  # a machine-tool concept
-    with pytest.raises(ValueError, match="tool_network"):
-        SandboxConfig(tool_network="none")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="network"):
+        SandboxConfig(network="none")  # type: ignore[arg-type]
 
 
 def test_explicit_block_refuses_where_there_is_no_namespace() -> None:
@@ -91,7 +91,7 @@ def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
     assert "MCP server" not in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("value", ["auto", "private", "host"])  # the shared words
+@pytest.mark.parametrize("value", ["auto", "session", "host"])  # the shared words
 @pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
 def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isolation: str) -> None:
     """One axis, one vocabulary, one set of rules. They drifted: the
@@ -104,7 +104,7 @@ def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isola
 
     per_server = check_mcp_network_support(_server({"network": value}), isolation)  # type: ignore[arg-type]
     global_knob = check_network_support(
-        Config(sandbox=SandboxConfig(tool_network=value)),  # type: ignore[arg-type]
+        Config(sandbox=SandboxConfig(network=value)),  # type: ignore[arg-type]
         isolation,  # type: ignore[arg-type]
     )
     assert (per_server is None) == (global_knob is None), (

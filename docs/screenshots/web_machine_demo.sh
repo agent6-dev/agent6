@@ -46,7 +46,7 @@ mkdir -p "$AGENT6_CONFIG_HOME"
 # proxy on loopback, so the jailed agent needs open agent egress; tools blocked.
 cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
 [sandbox]
-tool_network = "block"
+network = "session"
 run_commands = "yes"
 protect_git = true
 [git]

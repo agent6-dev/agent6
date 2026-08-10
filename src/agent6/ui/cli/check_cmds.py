@@ -12,8 +12,9 @@ from typing import Literal
 from agent6.app._setup import (
     check_provider_keys,
     detect_env,
+    mcp_server_policy,
     start_mcp_manager_if_enabled,
-    wants_private_network,
+    wants_session_network,
 )
 from agent6.config import (
     Config,
@@ -32,7 +33,7 @@ from agent6.sandbox.detect import (
     apparmor_userns_restricted,
     resolve_isolation,
 )
-from agent6.sandbox.jail import PrivateNetwork, tool_mount_notes
+from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
 from agent6.types import CommandResult, JailPolicy, SandboxReport
 
 
@@ -135,7 +136,7 @@ def _cmd_check_sandbox() -> int:
                 ok=True,
                 detail=(
                     "n/a under hardened: no per-command network namespace; jailed"
-                    " commands share the host network (tool_network degrades with"
+                    " commands share the host network (sandbox.network degrades with"
                     " a warning)"
                 ),
             )
@@ -250,7 +251,7 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     print(f"  Landlock ABI: {abi_str}")
     print(
         f"  sandbox.isolation = {cfg.sandbox.isolation}"
-        f"  tool_network = {cfg.sandbox.tool_network}"
+        f"  network = {cfg.sandbox.network}"
         f"  run_commands = {cfg.sandbox.run_commands}"
     )
     out: list[_DoctorCheck] = []
@@ -284,14 +285,14 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
         ]
     isolation = resolve_isolation("auto", detect_env())
-    # A server set to `private` joins the run's network, so `check` has to make
+    # A server set to `session` joins the run's network, so `check` has to make
     # one the same way a run does -- otherwise checking such a server reports a
     # failure that only `check` would ever see.
-    private_net = PrivateNetwork.open() if wants_private_network(cfg, isolation) else None
-    manager = start_mcp_manager_if_enabled(cfg, Path.cwd(), isolation, private_net=private_net)
+    session_net = SessionNetwork.open() if wants_session_network(cfg, isolation) else None
+    manager = start_mcp_manager_if_enabled(cfg, Path.cwd(), isolation, session_net=session_net)
     if manager is None:
-        if private_net is not None:
-            private_net.close()
+        if session_net is not None:
+            session_net.close()
         return [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     out: list[_DoctorCheck] = []
     try:
@@ -300,6 +301,15 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         for d in descriptors:
             by_server.setdefault(d.server_name, []).append(d.tool_name)
         configured = {name for name, srv in cfg.mcp.servers.items() if srv.enabled}
+        # What `auto` RESOLVED to on this host, which is the whole reason to run
+        # a check: `config show` can only report the word the operator wrote.
+        networks = {
+            name: "unconfined"
+            if (pol := mcp_server_policy(cfg, Path.cwd(), isolation, srv)) is None
+            else pol.network
+            for name, srv in cfg.mcp.servers.items()
+            if srv.enabled
+        }
         why_missing = {f.name: f.error for f in manager.failures}
         for name in sorted(configured):
             tools = by_server.get(name, [])
@@ -307,7 +317,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             # A server that never started is not one that "exposed no tools":
             # the reason the operator needs is the spawn error, not a symptom.
             detail = (
-                f"{len(tools)} tool(s)"
+                f"{len(tools)} tool(s), network: {networks.get(name, '?')}"
                 if ok
                 else why_missing.get(name, "started but exposed no tools")
             )
@@ -317,8 +327,8 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
     finally:
         manager.close()
-        if private_net is not None:
-            private_net.close()
+        if session_net is not None:
+            session_net.close()
     return out
 
 

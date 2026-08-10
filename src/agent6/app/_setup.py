@@ -24,7 +24,7 @@ from agent6.events import EventSink
 from agent6.models.cache import list_models
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
-from agent6.sandbox.jail import PrivateNetwork
+from agent6.sandbox.jail import SessionNetwork
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
@@ -153,7 +153,7 @@ def check_provider_keys(cfg: Config) -> str | None:
     return None
 
 
-def wants_private_network(cfg: Config, isolation: IsolationLevel) -> bool:
+def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
     """Whether this run needs its own network: any child that would join one.
 
     Asked once, before anything spawns, because the network has to exist before
@@ -162,10 +162,10 @@ def wants_private_network(cfg: Config, isolation: IsolationLevel) -> bool:
     """
     if isolation != "strict":
         return False
-    if cfg.sandbox.tool_network != "host":
+    if cfg.sandbox.network != "host":
         return True
     return cfg.mcp.enabled and any(
-        srv.enabled and srv.sandbox is not None and srv.sandbox.network == "private"
+        srv.enabled and srv.sandbox is not None and srv.sandbox.network == "session"
         for srv in cfg.mcp.servers.values()
     )
 
@@ -193,7 +193,7 @@ def mcp_server_policy(
     write_paths = sandbox.write_paths if sandbox else ()
     # auto and none both mean "a network of its own"; they differ only in what
     # happens when the host cannot provide one (warn vs refuse, which preflight
-    # owns). `private` is the run's shared one; `host` is the machine's.
+    # owns). `session` is the run's shared one; `host` is the machine's.
     configured = sandbox.network if sandbox else "auto"
     network: NetworkMode = "none" if configured == "auto" else configured
     return jail_policy(
@@ -215,7 +215,7 @@ def start_mcp_manager_if_enabled(
     *,
     reporter: Reporter = STDIO_REPORTER,
     events: EventSink | None = None,
-    private_net: PrivateNetwork | None = None,
+    session_net: SessionNetwork | None = None,
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
@@ -247,7 +247,7 @@ def start_mcp_manager_if_enabled(
     if not configs:
         return None
     _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
-    manager = MCPManager.start(configs, logger=reporter.err, private_net=private_net)
+    manager = MCPManager.start(configs, logger=reporter.err, session_net=session_net)
     if events is not None:
         for failure in manager.failures:
             events.emit("mcp.server_unavailable", server=failure.name, error=failure.error)

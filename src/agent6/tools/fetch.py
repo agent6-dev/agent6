@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Read one URL, for a worker whose commands have no network.
 
-Under the default `tool_network`, a jailed command has no network at all, so
+Under the default `network`, a jailed command has no network at all, so
 the worker cannot read a linked spec, an API's docs or a changelog. Its only
 move is to ask the operator and wait. This runs in the AGENT process, which
 already has egress, and hands the bytes back as a tool result.

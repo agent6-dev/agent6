@@ -47,8 +47,8 @@ instead) — the tool jails keep their per-tool isolation regardless.
 
 On a host that supports **only** the hardened profile (no per-tool network
 namespace at all), a `tool` state is refused under the default
-`sandbox.tool_network = "block"`. agent6 prints the exact one-line config opt-in
-to apply (`sandbox.tool_network = "allow"` + `sandbox.agent_network = "open"`,
+`sandbox.network = "session"`. agent6 prints the exact one-line config opt-in
+to apply (`sandbox.network = "host"` + `sandbox.agent_network = "open"`,
 letting tools share the host network) and never relaxes the sandbox unattended.
 The pure-agent machines (hello, council) and the pure-timer machine (wait-clock)
 have no tool states and run confined on any profile.

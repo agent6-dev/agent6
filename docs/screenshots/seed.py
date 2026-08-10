@@ -38,7 +38,7 @@ preset = "standard"
 
 [sandbox]
 isolation = "auto"
-tool_network = "block"
+network = "session"
 run_commands = "ask"
 protect_git = true
 

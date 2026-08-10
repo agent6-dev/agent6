@@ -245,26 +245,26 @@ def _suggested_network_fix(
     ON THIS PROFILE, or None if no config change can (a tool that REQUIRES network
     isolation needs `strict`, which config can't conjure).
 
-    Two refusals this resolves: a tool that opted in (`allow_network = "allow"`)
+    Two refusals this resolves: a tool that opted in (`network = "host"`)
     under a config that blocks egress, and -- on `hardened`, which can't give any
-    tool its own netns -- a plain tool refused under `tool_network = "private"`. The
+    tool its own netns -- a plain tool refused under `network = "session"`. The
     returned dict is applied in order
     so `config set`-style sequential writes never trip the combo validator."""
     if not tool_states:
         return None
-    has_allow = any(s.allow_network == "allow" for s in tool_states)
-    has_block = any(s.allow_network == "block" for s in tool_states)
+    has_allow = any(s.network == "host" for s in tool_states)
+    has_block = any(s.network == "none" for s in tool_states)
     if has_block:
         # A tool REQUIRES no network; only strict's per-tool netns isolates it.
         return None
     if isolation == "strict":
         # Plain no-network tools already run on strict; only a tool that opted
         # into the network needs the explicit-per-tool egress mode.
-        return {"sandbox.tool_network": "only_explicit_states"} if has_allow else None
+        return {"sandbox.network": "only_explicit_states"} if has_allow else None
     if isolation == "hardened":
         # hardened can't isolate one tool's netns, so EVERY tool (networked or
         # not) shares the host network; the combo validator then requires
-        return {"sandbox.tool_network": "host"}
+        return {"sandbox.network": "host"}
     return None
 
 

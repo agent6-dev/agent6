@@ -148,7 +148,7 @@ model = "$MODEL"
 [sandbox]
 isolation = "auto"
 agent_network = "providers"
-tool_network = "block"
+network = "session"
 run_commands = "yes"
 protect_git = true
 

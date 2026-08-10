@@ -186,7 +186,7 @@ def test_a_submount_inside_a_grant_carries_the_floor_too(tmp_path: Path) -> None
             "--map-root-user",
             "--mount",
             "--propagation",
-            "private",
+            "private",  # the unshare(1) flag value, not our network vocabulary
             sys.executable,
             "-c",
             inner,
@@ -279,7 +279,7 @@ def test_a_protect_path_with_its_own_submount_still_jails(tmp_path: Path) -> Non
             "--map-root-user",
             "--mount",
             "--propagation",
-            "private",
+            "private",  # the unshare(1) flag value, not our network vocabulary
             sys.executable,
             "-c",
             inner,
@@ -353,7 +353,7 @@ def test_a_locked_flag_on_a_system_bind_source_is_carried_not_cleared(tmp_path: 
             "--map-root-user",
             "--mount",
             "--propagation",
-            "private",
+            "private",  # the unshare(1) flag value, not our network vocabulary
             sys.executable,
             "-c",
             inner,

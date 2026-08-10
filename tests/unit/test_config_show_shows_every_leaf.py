@@ -28,7 +28,7 @@ _POPULATED: dict[str, Any] = {
         "servers": {
             "notes": {
                 "command": ["true"],
-                "sandbox": {"read_paths": ["/usr"], "network": "private"},
+                "sandbox": {"read_paths": ["/usr"], "network": "session"},
             }
         },
     },
@@ -73,7 +73,7 @@ def test_the_new_mcp_network_knob_is_among_them() -> None:
     ("path", "safe"),
     [
         ("sandbox.run_commands", "ask"),
-        ("sandbox.tool_network", "auto"),
+        ("sandbox.network", "auto"),
         ("sandbox.isolation", "auto"),
         ("sandbox.protect_git", True),
         ("mcp.enabled", False),

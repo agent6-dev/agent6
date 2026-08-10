@@ -45,14 +45,14 @@ def jail_policy(
     system dirs, the operator's tool dirs, a writable /tmp as HOME -- is here,
     so nobody has to know where their interpreter lives.
     """
-    # A command joins the host network only under tool_network = "host"; every
+    # A command joins the host network only under network = "host"; every
     # other setting puts it on the run's private one. A caller that answers for
     # itself passes `network`: an MCP server's reachability is the operator's
     # per-server choice, not the tool policy.
     if network is None:
-        network = "host" if config.sandbox.tool_network == "host" else "private"
+        network = "host" if config.sandbox.network == "host" else "session"
     # Only strict has namespaces to give, so that is the only level where
-    # "private" or "none" means anything. Everywhere else the child shares this
+    # "session" or "none" means anything. Everywhere else the child shares this
     # process's network and the policy says so rather than describing a
     # confinement it will not get; preflight has already refused an EXPLICIT
     # setting it cannot honour and warned about an automatic one.

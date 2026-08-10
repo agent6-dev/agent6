@@ -44,9 +44,9 @@ def warn_sandbox_gaps(
     per run, not in the launcher: a per-spawn stderr warning would land in
     every tool result and prompt the model to fight the sandbox.
 
-    `tool_network = "auto"` DEGRADES on a netns-less isolation: with no network
-    namespace there is no private network to give, so a jailed run_command
-    shares the host's, and we say so once per run. Explicit `private` never
+    `network = "auto"` DEGRADES on a netns-less isolation: with no network
+    namespace there is no session network to give, so a jailed run_command
+    shares the host's, and we say so once per run. Explicit `session` never
     reaches here (check_network_support refused it on hardened).
 
     `protect_git` degrades the same way: strict-only, because it is a read-only
@@ -76,13 +76,13 @@ def warn_sandbox_gaps(
             "A jailed command can write .git here; the in-process edit tools "
             "still refuse to. Use 'strict' for the real thing."
         )
-    if isolation == "hardened" and cfg.sandbox.tool_network == "auto":
+    if isolation == "hardened" and cfg.sandbox.network == "auto":
         reporter.err(
             "[agent6] WARNING: 'hardened' has no network namespace, so "
-            "sandbox.tool_network = 'auto' cannot give the run its own private "
+            "sandbox.network = 'auto' cannot give the run its own session "
             "network: jailed commands share this process's host network, which "
-            "hardened does not confine. Run on 'strict' for a private tool "
-            "network, or set sandbox.tool_network = 'private' to refuse rather "
+            "hardened does not confine. Run on 'strict' for a session "
+            "network, or set sandbox.network = 'session' to refuse rather "
             "than run here."
         )
     for hidden, region in unmaskable_exposures(cfg, isolation):
@@ -188,9 +188,9 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
     """A refusal when a server EXPLICITLY named a network this host cannot
     give it, else None.
 
-    Per-server, same rule and same vocabulary as `[sandbox].tool_network`, and
+    Per-server, same rule and same vocabulary as `[sandbox].network`, and
     therefore the same guard: a network namespace needs user namespaces, which
-    only `strict` has, so `none` and `private` refuse on `hardened` while the
+    only `strict` has, so `none` and `session` refuse on `hardened` while the
     `auto` default degrades with a warning. Under `none` nothing is confined at all
     and the blanket unsandboxed warning covers it -- the same answer
     `protect_git` and `memory_limit_mb` give, and the same answer the sibling
@@ -200,7 +200,7 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
     if isolation != "hardened":
         return None
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.sandbox is not None and srv.sandbox.network in ("none", "private"):
+        if srv.enabled and srv.sandbox is not None and srv.sandbox.network in ("none", "session"):
             return (
                 f"MCP server {name!r} sets sandbox.network = {srv.sandbox.network!r},"
                 " which needs a network namespace and so the strict isolation; this"
@@ -214,8 +214,8 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     """A refusal message if the network config EXPLICITLY enforces something
     this isolation cannot provide, else None.
 
-    Only jailed commands have a network boundary. ``tool_network =
-    "only_explicit_states"`` (singling one tool out) and ``"private"`` (the
+    Only jailed commands have a network boundary. ``network =
+    "only_explicit_states"`` (singling one tool out) and ``"session"`` (the
     run's own network, with no route off the box) both need a network
     namespace, which only ``strict`` provides. On ``hardened`` we refuse rather than silently
     under-confine, naming what is unsupported and the fix; ``"auto"`` is the
@@ -225,15 +225,15 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     if isolation != "hardened":
         return None
     sb = cfg.sandbox
-    if sb.tool_network == "only_explicit_states":
+    if sb.network == "only_explicit_states":
         return (
-            "sandbox.tool_network = 'only_explicit_states' requires the strict"
+            "sandbox.network = 'only_explicit_states' requires the strict"
             " isolation (network namespaces), but this host supports only"
             " 'hardened'. Use 'auto' or 'host'."
         )
-    if sb.tool_network == "private":
+    if sb.network == "session":
         return (
-            "sandbox.tool_network = 'private' requires the strict isolation (a"
+            "sandbox.network = 'session' requires the strict isolation (a"
             " network namespace), but this host supports only 'hardened', where"
             " a jailed command shares this process's network. Use 'auto' to run"
             " with a warning, or 'host' to accept it."

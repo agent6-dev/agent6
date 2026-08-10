@@ -67,13 +67,13 @@ def test_remove_toml_leaf_deletes_whole_multiline_array(tmp_path: Path) -> None:
     (and `config fix` then reported the file it 'repaired' as invalid)."""
     path = tmp_path / "c.toml"
     path.write_text(
-        '[sandbox]\nallow_urls = [\n  "http://x",\n  "http://y",\n]\ntool_network = "private"\n'
+        '[sandbox]\nallow_urls = [\n  "http://x",\n  "http://y",\n]\ntool_network = "session"\n'
     )
     assert remove_toml_leaf(path, "sandbox.allow_urls") is True
     out = path.read_text()
     tomllib.loads(out)  # must stay valid TOML
     assert "allow_urls" not in out
-    assert 'tool_network = "private"' in out  # sibling + header preserved
+    assert 'tool_network = "session"' in out  # sibling + header preserved
 
 
 def test_remove_toml_leaf_deletes_whole_multiline_string(tmp_path: Path) -> None:

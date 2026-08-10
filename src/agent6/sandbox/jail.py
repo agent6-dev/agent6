@@ -264,14 +264,14 @@ def _read_available(pipe: IO[bytes] | None, budget_s: float = 0.5) -> bytes:
 
 
 @dataclass(frozen=True, slots=True)
-class PrivateNetwork:
-    """The run's own network, held open by two file descriptors.
+class SessionNetwork:
+    """The run's session network, held open by two file descriptors.
 
     One per run, created before anything that might join it. A holder process
     makes the namespaces and reports readiness; we open
     ``/proc/<holder>/ns/{user,net}`` and let it exit, because an open
     descriptor is what keeps a namespace alive, not a live process. Every
-    jailed child whose policy says ``network = "private"`` is handed these and
+    jailed child whose policy says ``network = "session"`` is handed these and
     joins them, so the run's commands and its private MCP servers share one
     loopback with no route off the box.
 
@@ -284,7 +284,7 @@ class PrivateNetwork:
     netns_fd: int
 
     @classmethod
-    def open(cls) -> PrivateNetwork:
+    def open(cls) -> SessionNetwork:
         binary = _require_jail_binary()
         proc = subprocess.Popen(
             [str(binary), "--hold-netns"],
@@ -304,7 +304,7 @@ class PrivateNetwork:
                 proc.kill()  # it is either wedged or not the launcher we think
                 err = _read_available(proc.stderr)
                 raise JailUnavailableError(
-                    "the private network could not be created: "
+                    "the session network could not be created: "
                     + (
                         err.decode(errors="replace")[-400:]
                         if err.strip()
@@ -320,7 +320,7 @@ class PrivateNetwork:
                 with contextlib.suppress(OSError):
                     os.close(fd)
             proc.kill()
-            raise JailUnavailableError(f"the private network could not be held: {exc}") from exc
+            raise JailUnavailableError(f"the session network could not be held: {exc}") from exc
         finally:
             if proc.stdin is not None:
                 proc.stdin.close()  # tells the holder to go; the fds outlive it
@@ -338,7 +338,7 @@ class PrivateNetwork:
         return (self.userns_fd, self.netns_fd)
 
     def close(self) -> None:
-        """Drop the run's network. Nothing can join it afterwards, and the
+        """Drop the run's session network. Nothing can join it afterwards, and the
         kernel reclaims it once the last member exits."""
         for fd in self.fds():
             with contextlib.suppress(OSError):
@@ -346,21 +346,21 @@ class PrivateNetwork:
 
 
 def _join_args(
-    policy: JailPolicy, private_net: PrivateNetwork | None
+    policy: JailPolicy, session_net: SessionNetwork | None
 ) -> tuple[list[str], tuple[int, ...]]:
     """The launcher flags and inherited fds for this policy's network.
 
-    A ``private`` policy with no network to join is a bug in the caller, not a
+    A ``session`` policy with no network to join is a bug in the caller, not a
     reason to run isolated: the child would look confined and be alone, which
     is a different sandbox than the operator asked for.
     """
-    if policy.network != "private":
+    if policy.network != "session":
         return [], ()
-    if private_net is None:
+    if session_net is None:
         raise JailUnavailableError(
-            "network = 'private' needs the run's private network; none was wired"
+            "network = 'session' needs the run's session network; none was wired"
         )
-    return private_net.args(), private_net.fds()
+    return session_net.args(), session_net.fds()
 
 
 def _policy_to_json(policy: JailPolicy) -> str:
@@ -615,7 +615,7 @@ def spawn_in_jail(
     stdin: int | None = None,
     stdout: int | None = None,
     stderr: int | None = None,
-    private_net: PrivateNetwork | None = None,
+    session_net: SessionNetwork | None = None,
 ) -> subprocess.Popen[bytes]:
     """Start `policy.argv` inside the sandbox and hand back the live process.
 
@@ -650,7 +650,7 @@ def spawn_in_jail(
     _become_subreaper()
     # pass_fds keeps the descriptor's NUMBER in the child, so the launcher is
     # told the number we actually got rather than a hardcoded 3.
-    join_args, join_fds = _join_args(policy, private_net)
+    join_args, join_fds = _join_args(policy, session_net)
     policy_r, policy_w = os.pipe()
     try:
         with _sweep_lock:
@@ -676,7 +676,7 @@ def spawn_in_jail(
     return proc
 
 
-def run_in_jail(policy: JailPolicy, *, private_net: PrivateNetwork | None = None) -> CommandResult:
+def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> CommandResult:
     """Run `policy.argv` inside the sandbox.
 
     Raises JailUnavailableError if the launcher binary is missing or setup fails.
@@ -696,7 +696,7 @@ def run_in_jail(policy: JailPolicy, *, private_net: PrivateNetwork | None = None
     if policy.isolation == "none":
         return _run_unsandboxed(policy)
     binary = _require_jail_binary()
-    join_args, join_fds = _join_args(policy, private_net)
+    join_args, join_fds = _join_args(policy, session_net)
     spec = _policy_to_json(policy)
     start = time.monotonic()
     _become_subreaper()
@@ -1137,11 +1137,11 @@ class JailSession:
     _memory_limit_mb: int
 
     @classmethod
-    def open(cls, policy: JailPolicy, *, private_net: PrivateNetwork | None = None) -> JailSession:
+    def open(cls, policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> JailSession:
         """Start a serving launcher confined by *policy* (its argv is ignored;
         each command arrives as a request)."""
         binary = _require_jail_binary()
-        join_args, join_fds = _join_args(policy, private_net)
+        join_args, join_fds = _join_args(policy, session_net)
         _become_subreaper()
         with _sweep_lock:
             proc = subprocess.Popen(

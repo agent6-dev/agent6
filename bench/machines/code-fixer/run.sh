@@ -8,7 +8,7 @@
 # Runs under the default sandbox config: tool states get their own network
 # namespace (strict, from the jail launcher) and the agent confines its egress
 # to the provider API. On a host that supports only the hardened profile, a
-# tool state is refused under the default `sandbox.tool_network = "block"`, and
+# tool state is refused under the default `sandbox.network = "session"`, and
 # agent6 prints the one-line config opt-in to apply (it never relaxes the
 # sandbox unattended). Nothing here touches your global config.
 #

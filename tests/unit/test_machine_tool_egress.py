@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Machine tool egress: per-state allow_network, bundle validation, and the
+"""Machine tool egress: per-state network, bundle validation, and the
 running machine's files made read-only in run jails (immutability)."""
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from agent6.app.machine import (
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
+from agent6.types import NetworkMode
 from agent6.ui.cli.machine_cmds import (
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
@@ -37,7 +38,7 @@ max_transitions = 100
 kind = "tool"
 command = ["scripts/fetch.sh"]
 timeout_secs = 5
-allow_network = "allow"
+network = "host"
 on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.store]
@@ -89,36 +90,36 @@ def _write(tmp_path: Path, text: str, name: str = "m.asm.toml") -> Path:
     return f
 
 
-# --- ToolState.allow_network field -----------------------------------------
+# --- ToolState.network field -----------------------------------------
 
 
-def test_tool_allow_network_defaults_auto(tmp_path: Path) -> None:
-    text = NET_MACHINE.replace('allow_network = "allow"\n', "")
+def test_tool_network_defaults_auto(tmp_path: Path) -> None:
+    text = NET_MACHINE.replace('network = "host"\n', "")
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
-    assert fetch.allow_network == "auto"
+    assert fetch.network == "auto"
 
 
-def test_tool_allow_network_roundtrips(tmp_path: Path) -> None:
+def test_tool_network_roundtrips(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     fetch = spec.states["fetch"]
     store = spec.states["store"]
-    assert isinstance(fetch, ToolState) and fetch.allow_network == "allow"
-    assert isinstance(store, ToolState) and store.allow_network == "auto"
+    assert isinstance(fetch, ToolState) and fetch.network == "host"
+    assert isinstance(store, ToolState) and store.network == "auto"
 
 
-# --- engine threads allow_network through to the World ----------------------
+# --- engine threads network through to the World ----------------------
 
 
 @dataclass
 class _RecordingWorld:
-    net_calls: list[tuple[tuple[str, ...], bool]]
+    net_calls: list[tuple[tuple[str, ...], NetworkMode]]
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
     ) -> ToolExecResult:
-        self.net_calls.append((argv, allow_network))
+        self.net_calls.append((argv, network))
         return ToolExecResult(exit_code=0, stdout="", timed_out=False)
 
     def run_agent(self, request: Any) -> Any:  # pragma: no cover - no agent states here
@@ -139,19 +140,19 @@ class _RecordingWorld:
         pass
 
 
-def test_engine_passes_per_state_allow_network(tmp_path: Path) -> None:
+def test_engine_passes_per_state_network(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     journal = MachineJournal(tmp_path / "inst")
     world = _RecordingWorld(net_calls=[])
     result = drive(spec, journal, world, live=True)
     assert result.status == "ok"
     # fetch opted in (True); store did not (False).
-    assert world.net_calls == [(("scripts/fetch.sh",), True), (("store",), False)]
+    assert world.net_calls == [(("scripts/fetch.sh",), "host"), (("store",), "none")]
 
 
-# --- LiveWorld (supervisor) honors the per-state allow_network flag --------
+# --- LiveWorld (supervisor) honors the per-state network flag --------
 # The engine is the host-netns supervisor; whether an opt-in is permitted at
-# all is gated at machine-run startup (sandbox.tool_network), so LiveWorld just
+# all is gated at machine-run startup (sandbox.network), so LiveWorld just
 # passes the per-state flag straight through to the jail.
 
 
@@ -179,7 +180,7 @@ def test_liveworld_non_network_tool_is_isolated(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
-    world.run_tool(("true",), 5.0, allow_network=False)
+    world.run_tool(("true",), 5.0, network="none")
     assert seen[-1].network == "none"
 
 
@@ -193,7 +194,7 @@ def test_liveworld_grants_data_dir_rw_and_env(
     world = LiveWorld(
         cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened", data_dir=data
     )
-    world.run_tool(("true",), 5.0, allow_network=False)
+    world.run_tool(("true",), 5.0, network="none")
     policy = seen[-1]
     assert data in policy.extra_rw_paths
     # Exported to match where the jail mounts the dir: the real host abspath on
@@ -208,7 +209,7 @@ def test_liveworld_no_data_dir_grants_no_extra_rw(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
-    world.run_tool(("true",), 5.0, allow_network=False)
+    world.run_tool(("true",), 5.0, network="none")
     assert seen[-1].extra_rw_paths == ()
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 
@@ -218,7 +219,7 @@ def test_liveworld_disables_python_bytecode(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
-    world.run_tool(("python3", "-m", "unittest"), 5.0, allow_network=False)
+    world.run_tool(("python3", "-m", "unittest"), 5.0, network="none")
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
 
@@ -387,8 +388,8 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
 
 
 def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
-    # allow_network="block" REQUIRES isolation only strict provides -> no config fix.
-    text = NET_MACHINE.replace('allow_network = "allow"', 'allow_network = "block"')
+    # network="none" REQUIRES isolation only strict provides -> no config fix.
+    text = NET_MACHINE.replace('network = "host"', 'network = "none"')
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
@@ -398,7 +399,7 @@ def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
 def test_resolve_network_refusal_unfixable_points_to_simulate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    text = NET_MACHINE.replace('allow_network = "allow"', 'allow_network = "block"')
+    text = NET_MACHINE.replace('network = "host"', 'network = "none"')
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)

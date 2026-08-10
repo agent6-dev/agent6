@@ -30,6 +30,7 @@ from agent6.machine.journal import (
     StepEvent,
     ToolFact,
 )
+from agent6.types import NetworkMode
 
 # A minimal tool/branch/terminal machine: scan -> (branch on items) -> record -> stop.
 COUNTER = """
@@ -377,7 +378,7 @@ class FakeWorld:
     wakes: list[WaitWake] = field(default_factory=list)
     clock: float = 1000.0
     calls: list[tuple[str, ...]] = field(default_factory=list)
-    net_calls: list[tuple[tuple[str, ...], bool]] = field(default_factory=list)
+    net_calls: list[tuple[tuple[str, ...], NetworkMode]] = field(default_factory=list)
     agent_results: list[AgentExecResult] = field(default_factory=list)
     agent_calls: list[AgentRequest] = field(default_factory=list)
     sleep_deadlines: list[float | None] = field(default_factory=list)
@@ -385,10 +386,10 @@ class FakeWorld:
     notifications: list[tuple[str, str, str, str]] = field(default_factory=list)
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
     ) -> ToolExecResult:
         self.calls.append(argv)
-        self.net_calls.append((argv, allow_network))
+        self.net_calls.append((argv, network))
         return self.tool_results[argv[0]]
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:
