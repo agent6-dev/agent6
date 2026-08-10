@@ -536,6 +536,23 @@ function growGrip(ta) {
   return g;
 }
 
+// Fill a composer through an edit the browser records, so the native undo
+// stack (Ctrl-Z / Cmd-Z) survives programmatic fills like history recall and
+// slash completion. execCommand is deprecated but remains the only widely
+// implemented way to write a textarea's value AS a user edit; the fallback
+// keeps the fill working, minus undo.
+function fillAsEdit(ta, text) {
+  ta.focus();
+  ta.setSelectionRange(0, ta.value.length);
+  let ok = false;
+  try { ok = document.execCommand('insertText', false, text); } catch (_) { ok = false; }
+  if (!ok) {
+    ta.value = text;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
 // The steer directives a session composer can complete, with one-line help:
 // a verbatim mirror of agent6.directive.STEER_COMMANDS (drift-pinned by
 // tests/web/test_steer_completion.py). /compact only acts on a live session,
@@ -558,10 +575,8 @@ function attachCommandSuggest(ta, root, liveNow) {
   };
   const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
   const insert = (cmd) => {
-    ta.value = cmd + ' ';
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    close(); ta.focus();
-    ta.dispatchEvent(new Event('input', { bubbles: true })); // the /parallel model popup takes over
+    fillAsEdit(ta, cmd + ' '); // an undoable edit; its input event hands the /parallel popup over
+    close();
   };
   const render = () => {
     const w = word();
@@ -721,9 +736,7 @@ function makeComposer(id) {
           if (line && !seen.has(line)) { seen.add(line); entries.push(line); }
         }
         if (!entries.length) { toast('no past messages this session yet', true); return; }
-        openHistorySearch(entries, (text) => {
-          ta.value = text; ta.focus(); ta.setSelectionRange(text.length, text.length);
-        });
+        openHistorySearch(entries, (text) => fillAsEdit(ta, text));
       }).catch(err => toast(err.message, true));
       return;
     }
