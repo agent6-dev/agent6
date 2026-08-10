@@ -146,6 +146,10 @@ def forward(
         )
         return 2
     listener.listen(16)
+    # Wake up between connections so the loop can notice the run ending: a
+    # bridge that outlives its session accepts connections and drops them,
+    # which looks exactly like a broken server on the other side.
+    listener.settimeout(2.0)
     bound = listener.getsockname()[1]
     print(
         f"agent6 forward: http://127.0.0.1:{bound} -> port {remote_port} inside"
@@ -154,7 +158,16 @@ def forward(
     )
     try:
         while True:
-            conn, _ = listener.accept()
+            try:
+                conn, _ = listener.accept()
+            except TimeoutError:
+                if read_session_netns_pid(layout.session_dir) is None:
+                    print(
+                        f"agent6 forward: {layout.session_id} ended; nothing left to reach.",
+                        file=out,
+                    )
+                    return 0
+                continue
             child = os.fork()
             if child == 0:  # pragma: no cover - one process per connection
                 listener.close()

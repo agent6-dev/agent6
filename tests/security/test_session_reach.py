@@ -158,3 +158,35 @@ def test_forward_refuses_a_run_with_no_network_instead_of_waiting(tmp_path: Path
     out = io.StringIO()
     assert forward(layout, 3000, 3000, out=out) == 2
     assert "sandbox.network" in out.getvalue()
+
+
+def test_forward_stops_when_its_session_ends(tmp_path: Path) -> None:
+    """A bridge that outlives its run keeps accepting connections and dropping
+    them, which reads as a broken server rather than a finished session.
+    Observed against a real run: the run ended, `ss` still showed the listener,
+    and curl got nothing."""
+    import io
+    import threading
+
+    from agent6.sandbox.jail import SessionNetwork
+    from agent6.sessions.ipc import clear_session_netns_pid, write_session_netns_pid
+    from agent6.ui.cli.net_cmds import forward
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="ends-mid-forward", subdir="runs")
+    layout.session_dir.mkdir(parents=True)
+    net = SessionNetwork.open()
+    write_session_netns_pid(layout.session_dir, net.holder_pid)
+    out = io.StringIO()
+    result: list[int] = []
+    thread = threading.Thread(
+        target=lambda: result.append(forward(layout, _PORT + 6, _PORT + 106, out=out)),
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(1.0)
+    assert thread.is_alive(), "the bridge should still be waiting while the run lives"
+    net.close()
+    clear_session_netns_pid(layout.session_dir)  # the run's teardown
+    thread.join(timeout=15)
+    assert not thread.is_alive(), "the bridge outlived its session"
+    assert result == [0] and "ended" in out.getvalue(), out.getvalue()
