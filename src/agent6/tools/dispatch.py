@@ -251,6 +251,29 @@ _COMMAND_TOOLS = frozenset(
     }
 )
 
+# Bench / A-B arms for the symbol-tool surface, keyed by AGENT6_SYMBOL_TOOLS:
+# "treesitter" hides the LSP pair even where it would be useful, "none" hides
+# all five symbol tools (the rg-via-run_command floor). Unset or unknown hides
+# nothing (the full surface); the bench harness validates the arm name, so a
+# stray value cannot silently select an arm.
+_SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
+    "treesitter": frozenset({FindDefinitionLspInput.TOOL_NAME, FindReferencesLspInput.TOOL_NAME}),
+    "none": frozenset(
+        {
+            OutlineInput.TOOL_NAME,
+            FindDefinitionInput.TOOL_NAME,
+            FindReferencesInput.TOOL_NAME,
+            FindDefinitionLspInput.TOOL_NAME,
+            FindReferencesLspInput.TOOL_NAME,
+        }
+    ),
+}
+
+
+def symbol_tools_hidden() -> frozenset[str]:
+    """The symbol tools the AGENT6_SYMBOL_TOOLS bench switch hides right now."""
+    return _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset())
+
 
 def _roster(shells: BackgroundShells) -> tuple[str, ...]:
     return tuple(v.line() for v in shells.roster())
@@ -438,16 +461,11 @@ class ToolDispatcher:
         if not self._lsp_tools_useful:
             lsp_names = {FindDefinitionLspInput.TOOL_NAME, FindReferencesLspInput.TOOL_NAME}
             names = [n for n in names if n not in lsp_names]
-        # Bench / A-B harness: hide the tree-sitter index tools when this env
-        # var is set so we can compare cost/quality with and without them
-        # without rebuilding agent6.
-        if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1":
-            hidden = {
-                OutlineInput.TOOL_NAME,
-                FindDefinitionInput.TOOL_NAME,
-                FindReferencesInput.TOOL_NAME,
-            }
-            names = [n for n in names if n not in hidden]
+        # Bench / A-B harness: constrain the symbol-tool surface without a
+        # rebuild (see _SYMBOL_TOOL_ARMS).
+        hidden_symbols = symbol_tools_hidden()
+        if hidden_symbols:
+            names = [n for n in names if n not in hidden_symbols]
         # Bench probe for the "tool-surface fit"
         # hypothesis. Hide `apply_edit` so the only edit primitive is
         # `apply_patch` (unified-diff). Lets us measure whether models
@@ -551,12 +569,8 @@ class ToolDispatcher:
             raise ToolError(f"{name} is not available (run_commands = 'no')")
         if name == FetchInput.TOOL_NAME and self._config.sandbox.network == "host":
             raise ToolError(f"{name} is not available (a jailed command has the network)")
-        if os.environ.get("AGENT6_DISABLE_INDEX_TOOLS") == "1" and name in {
-            OutlineInput.TOOL_NAME,
-            FindDefinitionInput.TOOL_NAME,
-            FindReferencesInput.TOOL_NAME,
-        }:
-            raise ToolError(f"{name} is disabled (AGENT6_DISABLE_INDEX_TOOLS=1)")
+        if name in symbol_tools_hidden():
+            raise ToolError(f"{name} is disabled (AGENT6_SYMBOL_TOOLS)")
         if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1" and name == ApplyEditInput.TOOL_NAME:
             raise ToolError(
                 f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"

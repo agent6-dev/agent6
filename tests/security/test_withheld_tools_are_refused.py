@@ -79,10 +79,23 @@ def test_tools_withheld_by_a_bench_switch_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A measurement the model can contaminate measures nothing."""
-    monkeypatch.setenv("AGENT6_DISABLE_INDEX_TOOLS", "1")
+    monkeypatch.setenv("AGENT6_SYMBOL_TOOLS", "none")
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     d = ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
     _assert_withheld_are_refused(d, {"outline", "find_definition", "find_references", "apply_edit"})
+
+
+def test_treesitter_arm_withholds_only_the_lsp_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The "treesitter" arm hides the LSP pair at the list AND the call gate,
+    while the tree-sitter trio stays live -- the arm must change the surface it
+    claims to change and nothing else."""
+    monkeypatch.setenv("AGENT6_SYMBOL_TOOLS", "treesitter")
+    d = ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
+    _assert_withheld_are_refused(d, {"find_definition_lsp", "find_references_lsp"})
+    offered = {t.name for t in tool_definitions(d)}
+    assert {"outline", "find_definition", "find_references"} <= offered
 
 
 def test_tools_withheld_by_the_mode_are_refused(tmp_path: Path) -> None:

@@ -5,9 +5,11 @@
 # repo shallowly at the pinned commit, sets up a per-task venv, applies the
 # breakage, then runs `agent6 run` and records cost / wall / verify-pass.
 #
-# Toolset comparison: set AGENT6_REALWORLD_TOOLSET to "baseline" (no
-# tree-sitter index tools — sets AGENT6_DISABLE_INDEX_TOOLS=1) or "index"
-# (default) and run twice; the results filename includes the toolset.
+# Toolset comparison: set AGENT6_REALWORLD_TOOLSET to "index" (default: the
+# full symbol-tool surface), "treesitter" (LSP pair hidden), or "baseline"
+# (no symbol tools at all — the rg-via-run_command floor) and run once per
+# arm; the results filename includes the toolset. The arms map onto the
+# AGENT6_SYMBOL_TOOLS switch the dispatcher reads.
 #
 # Usage:
 #   ANTHROPIC_API_KEY=... bash bench/realworld/run_realworld.sh
@@ -213,13 +215,24 @@ PY
 
 # ----- main loop --------------------------------------------------------------
 
-if [ "$TOOLSET" = "baseline" ]; then
-  export AGENT6_DISABLE_INDEX_TOOLS=1
-  echo "Toolset: BASELINE (tree-sitter index tools disabled)"
-else
-  unset AGENT6_DISABLE_INDEX_TOOLS
-  echo "Toolset: INDEX (tree-sitter index tools enabled)"
-fi
+case "$TOOLSET" in
+  index)
+    unset AGENT6_SYMBOL_TOOLS
+    echo "Toolset: INDEX (full symbol-tool surface)"
+    ;;
+  treesitter)
+    export AGENT6_SYMBOL_TOOLS=treesitter
+    echo "Toolset: TREESITTER (LSP pair hidden)"
+    ;;
+  baseline)
+    export AGENT6_SYMBOL_TOOLS=none
+    echo "Toolset: BASELINE (no symbol tools)"
+    ;;
+  *)
+    echo "unknown AGENT6_REALWORLD_TOOLSET: $TOOLSET (index|treesitter|baseline)" >&2
+    exit 2
+    ;;
+esac
 
 total_cost=0
 total_wall=0

@@ -46,9 +46,10 @@ Per-task budget is capped via `[budget]` in the generated `agent6.toml`
 and via agent6's own internal accounting. Total spend is bounded by the
 number of tasks × per-task cap.
 
-For an A/B comparison of tools-on vs tools-off, set
-`AGENT6_REALWORLD_TOOLSET=baseline` or `=index` and run twice; the
-results file name includes the toolset.
+For a symbol-tool arm comparison, set `AGENT6_REALWORLD_TOOLSET` to
+`index` (full surface, default), `treesitter` (LSP pair hidden), or
+`baseline` (no symbol tools) and run once per arm; the results file
+name includes the toolset.
 
 ### Filtering tasks + routing controls
 
