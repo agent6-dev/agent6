@@ -18,7 +18,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.tools.dispatch import ToolDispatcher
 
-_COMMAND_TOOLS = {"run_command", "run_verify_command", "run_background", "stop_background"}
+_COMMAND_TOOLS = {"run_command", "run_verify_command", "stop_background"}
 
 
 @pytest.mark.parametrize("configured", ["yes", "no"])

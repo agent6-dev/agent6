@@ -107,7 +107,8 @@
       "argv"
     ],
     "properties": {
-      "argv": "array[string]"
+      "argv": "array[string]",
+      "background": "boolean"
     }
   },
   {
@@ -129,20 +130,12 @@
     }
   },
   {
-    "name": "run_background",
-    "required": [
-      "argv"
-    ],
-    "properties": {
-      "argv": "array[string]"
-    }
-  },
-  {
     "name": "read_background",
     "required": [],
     "properties": {
       "id": "string",
-      "tail_lines": "integer"
+      "tail_lines": "integer",
+      "wait_s": "anyOf[null,number]"
     }
   },
   {

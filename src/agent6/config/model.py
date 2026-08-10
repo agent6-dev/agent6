@@ -1076,7 +1076,7 @@ class MCPSandbox(BaseModel):
     #   auto    (default) a network of its own where the host can give one,
     #                     degrading to the host's with a warning where it cannot
     #   none              a network of its own, alone; refuses where impossible
-    #   private           the run's network: the dev server a `run_background`
+    #   private           the run's network: the dev server a background command
     #                     started answers this server too, and still nothing
     #                     off the box (a browser server driving the app under
     #                     test is the case this exists for)

@@ -63,7 +63,7 @@ def test_a_command_tool_withheld_by_policy_is_refused(tmp_path: Path) -> None:
         config=Config.model_validate({"sandbox": {"run_commands": "no"}}),
         isolation="none",
     )
-    _assert_withheld_are_refused(d, {"run_command", "run_background", "stop_background"})
+    _assert_withheld_are_refused(d, {"run_command", "stop_background"})
 
 
 def test_fetch_withheld_because_commands_have_the_network_is_refused(tmp_path: Path) -> None:
@@ -90,9 +90,7 @@ def test_tools_withheld_by_the_mode_are_refused(tmp_path: Path) -> None:
     not only of the list it advertises. (It keeps `run_command`: read-only,
     approval-gated investigation is the mode's whole job.)"""
     d = ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="ask")
-    _assert_withheld_are_refused(
-        d, {"apply_edit", "apply_patch", "run_background", "stop_background"}, mode="ask"
-    )
+    _assert_withheld_are_refused(d, {"apply_edit", "apply_patch", "stop_background"}, mode="ask")
 
 
 def test_a_machine_state_reaches_neither_the_repo_nor_the_network(tmp_path: Path) -> None:

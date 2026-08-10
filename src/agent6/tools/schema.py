@@ -188,9 +188,17 @@ class RunCommandInput(_ToolInput):
         " what to do the way your instructions say -- poll it with"
         " `read_background`, stop it with `stop_background`, or carry on and check"
         " later. The output it printed before the hand-back comes back with it."
+        " Pass `background: true` to skip the wait entirely and get that handle"
+        " immediately -- for a server, a watcher, or anything you want running"
+        " while you work. Under the default isolation a run's commands share one"
+        " PRIVATE network, so a server you start here answers a later run_command"
+        " at the address it prints, and nothing outside the run reaches it. Every"
+        " background command is killed when the run ends, so never use one for"
+        " work whose result you need afterwards."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)
+    background: bool = False
 
 
 class FetchInput(_ToolInput):
@@ -222,36 +230,24 @@ class ReadSessionInput(_ToolInput):
     max_chars: int = Field(default=20_000, ge=500, le=200_000)
 
 
-class RunBackgroundInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "run_background"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Start a long-running command in the sandbox WITHOUT waiting for it: a long build, a"
-        " test suite, a file watcher. Same sandbox, PATH and approval as run_command; argv must"
-        " be an array of strings (no shell). Returns the new command's id and the state of every"
-        " background command this run started. Its output goes to a log you read with"
-        " read_background -- nothing here ever blocks, so poll instead of waiting. Under the"
-        " default isolation this run's commands share one PRIVATE network, so a server you start"
-        " here answers a later run_command at the address it prints (this is how you run a dev"
-        " server and then curl it) and nothing outside the run reaches it. Where the host has no"
-        " network namespaces they share the machine's network instead. Every background command"
-        " is killed when the run"
-        " ends, so never use this for work whose result you need after the run."
-    )
-
-    argv: tuple[str, ...] = Field(min_length=1)
-
-
 class ReadBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read what a background command has printed so far. Always returns the state of every"
         " background command this run started (running / exited with its code / stopped / died),"
         " so a command that ended on its own is visible the next time you look. Omit `id` for"
-        " that roster alone. Never blocks."
+        " that roster alone, which never waits."
+        " With an `id`, this WAITS for that command to finish (up to `wait_s`, default: the"
+        " run's configured check-in) and returns as soon as it does -- ask once rather than"
+        " polling in a loop. Pass `wait_s: 0` to look without waiting."
     )
 
     id: str = ""
     tail_lines: int = Field(default=200, ge=1, le=2000)
+    # None = the operator's configured check-in; 0 = look without waiting. The
+    # interval has ONE owner ([workflow].command_checkin_s), so the default is
+    # resolved by the dispatcher rather than duplicated here.
+    wait_s: float | None = Field(default=None, ge=0.0)
 
 
 class StopBackgroundInput(_ToolInput):
@@ -662,7 +658,6 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     RunCommandInput,
     ReadSessionInput,
     FetchInput,
-    RunBackgroundInput,
     ReadBackgroundInput,
     StopBackgroundInput,
 )
@@ -773,7 +768,6 @@ def mode_tools(mode: str) -> ModeTools:
         # other mode is a short read-only pass, and a command killed at its end
         # would be started for nothing.
         blocked |= {
-            RunBackgroundInput.TOOL_NAME,
             ReadBackgroundInput.TOOL_NAME,
             StopBackgroundInput.TOOL_NAME,
         }

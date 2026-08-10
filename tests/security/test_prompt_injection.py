@@ -144,7 +144,7 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
 
     `resolve_in_root` cleared the path, then every caller re-opened it BY NAME
     -- and these tools run IN-PROCESS, outside the jail, as the operator. A
-    jailed `run_background` loop can swap the leaf for a symlink in that window
+    jailed background command's loop can swap the leaf for a symlink in that window
     (the workspace is writable and a symlink needs no access to its target).
     Raced against the unguarded write, model-controlled content landed outside
     the workspace on the 7th attempt; 3000 attempts after the fix left the
@@ -172,7 +172,7 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
 
 
 def _swap_parent_for_a_link_out(root: Path, outside: Path) -> None:
-    """What a jailed `run_background` can do to the workspace: rename a
+    """What a jailed background command can do to the workspace: rename a
     directory away and plant a symlink out of the workspace at its name."""
     if not (root / "sub").is_symlink():
         (root / "sub").rename(root / "sub-moved")

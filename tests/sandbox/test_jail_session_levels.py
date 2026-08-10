@@ -168,30 +168,57 @@ def _ask(proc: subprocess.Popen[bytes], request: dict[str, object]) -> dict[str,
 def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: Path) -> None:
     """Whether a long command is stuck or working is a judgement, so it goes to
     whoever can make one. The output so far comes back with it, split by stream,
-    and continues in the log merged and in order."""
+    and the log keeps filling after the hand-back.
+
+    The two early lines are asserted as a SET, not a sequence: two writes
+    microseconds apart arrive on two drain threads, so their relative order is
+    not guaranteed -- the same limit a shared `2>&1` fd has, where the writer's
+    own buffering decides. What IS guaranteed is that output produced a second
+    later lands after both, which is the property the log is for.
+    """
     logs = tmp_path / "logs"
     logs.mkdir()
+    go = tmp_path / "go"
     proc = _serve_raw(tmp_path)
     try:
         answer = _ask(
             proc,
             {
                 "kind": "run",
-                "argv": ["/bin/sh", "-c", "echo out1; echo err1 >&2; sleep 1; echo out2; sleep 20"],
+                "argv": [
+                    "/bin/sh",
+                    "-c",
+                    # Gated rather than timed: the hand-back must land after the
+                    # early output and before the late output, whatever the host
+                    # is doing.
+                    f"echo out1; echo err1 >&2; while [ ! -f {go} ]; do sleep 0.05; done;"
+                    " echo out2; sleep 20",
+                ],
                 "timeout_s": 0,
-                "checkin_s": 0.4,
+                "checkin_s": 1.0,
                 "log_dir": str(logs),
             },
         )
         assert answer["backgrounded"] is True
+        # Per-stream renders, so these are exact however the two interleaved.
         assert answer["stdout"] == "out1\n"
         assert answer["stderr"] == "err1\n"
         pid = answer["pid"]
         assert isinstance(pid, int) and _running(pid), "the command was killed, not handed back"
         log = Path(str(answer["log"]))
         assert log.name == f"converted-{pid}.log"
-        time.sleep(1.5)
-        assert log.read_text(encoding="utf-8") == "out1\nerr1\nout2\n", "the log stopped filling"
+
+        go.touch()
+        deadline = time.monotonic() + 10.0
+        lines: list[str] = []
+        while time.monotonic() < deadline:
+            lines = log.read_text(encoding="utf-8").split()
+            if "out2" in lines:
+                break
+            time.sleep(0.05)
+        assert set(lines) == {"out1", "err1", "out2"}, "the log stopped filling"
+        assert lines[-1] == "out2", "output written after the hand-back landed out of order"
+
         # The launcher keeps serving, and the handed-back pid is pollable.
         assert (
             _ask(proc, {"kind": "run", "argv": ["/bin/echo", "next"], "timeout_s": 10})["stdout"]

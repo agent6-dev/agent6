@@ -182,7 +182,7 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     hop relative to the one before it. Returns an fd the caller owns.
 
     A :class:`SafePath` resolves and contains a path; opening it again by its
-    full path is a second lookup, and a jailed ``run_background`` loop can
+    full path is a second lookup, and a jailed background command's loop can
     swap a component for a symlink out of the workspace in between (the
     workspace is writable, a symlink needs no access to its target, and these
     tools run IN-PROCESS, outside the jail, as the operator). For a write

@@ -112,9 +112,9 @@ it can be reached: the tools are the front door, the jail is the fence.
 ### 2. `agent6-jail` (Rust), for every child command
 
 `apply_edit` is in-process; every `run_verify_command`/`run_command` runs in
-`agent6-jail`, as does every `run_background`. Under `strict` a RUN's commands
+`agent6-jail`, as does every backgrounded command. Under `strict` a RUN's commands
 are served by ONE launcher process, so they share its netns, PID namespace and
-private `/tmp`: a server `run_background` starts is reachable by the next
+private `/tmp`: a server a background command starts is reachable by the next
 command on loopback, and closing the run's request channel takes the PID
 namespace and everything in it down. Its confinement is fixed when it opens, so
 the policy is the run's rather than the first command's, and it grants the
@@ -222,7 +222,7 @@ can't expand it.
   (denied).
 - **Compiling and running host-installed toolchains works.**
     - Every command tool -- `run_command`, `run_verify_command`,
-      `run_background`, `stop_background` -- answers to `run_commands` and runs
+      `stop_background` -- answers to `run_commands` and runs
       jailed. They just can't install new tools, and a networked build step
       needs `network` loosened.
     - The verify gate is a command like any other: `run_commands = "no"`
@@ -607,7 +607,7 @@ By `network` (cells = `strict`, the only level with namespaces to give):
 
 An MCP server takes the same vocabulary per server, defaulting to `none`; a
 server set to `session` joins the run's network, which is how a browser server
-reaches the dev server a `run_background` started.
+reaches the dev server a background command started.
 
 `auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
 default, degrade or refuse"): on `strict` it is the session network above; on

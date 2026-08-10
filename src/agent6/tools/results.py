@@ -312,6 +312,8 @@ class MetricResult(ToolResult):
 
     @classmethod
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
+        if res.returncode is None:  # pragma: no cover - the gate sets no check-in
+            raise ValueError("a metric command cannot be handed back: a score needs a verdict")
         return cls(
             returncode=res.returncode,
             stdout=res.stdout,

@@ -16,6 +16,7 @@ import contextlib
 import json
 import os
 import shlex
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -244,8 +245,23 @@ class BackgroundShells:
         for shell in self._shells.values():
             shell.job.status()
 
-    def read(self, shell_id: str, *, tail_lines: int) -> tuple[ShellView, str]:
+    def read(self, shell_id: str, *, tail_lines: int, wait_s: float = 0.0) -> tuple[ShellView, str]:
+        """What the command has printed, optionally after waiting for it to end.
+
+        `wait_s` turns N polls into one call: a caller that wants the result
+        asks for it once instead of spinning, which for an LLM is the
+        difference between one tool call and a dozen turns of tokens. Returns
+        as soon as the command ends, so waiting never costs more than it saves.
+        """
         shell = self._get(shell_id)
+        if wait_s > 0:
+            deadline = time.monotonic() + wait_s
+            # Backs off to 2s: the status probe is a round trip to the launcher,
+            # and a command worth waiting on is not worth 3600 of them.
+            pause = 0.1
+            while shell.job.status().running and time.monotonic() < deadline:
+                time.sleep(min(pause, max(0.0, deadline - time.monotonic())))
+                pause = min(pause * 1.5, 2.0)
         try:
             size = os.lseek(shell.log_fd, 0, os.SEEK_END)
             start = max(size - _TAIL_BYTES, 0)

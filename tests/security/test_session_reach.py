@@ -58,7 +58,9 @@ def _serving(
         f"socketserver.TCPServer(('127.0.0.1',{port}),"
         "http.server.SimpleHTTPRequestHandler).serve_forever()"
     )
-    dispatcher.dispatch("run_background", {"argv": ["/usr/bin/python3", "-c", serve]})
+    dispatcher.dispatch(
+        "run_command", {"argv": ["/usr/bin/python3", "-c", serve], "background": True}
+    )
     time.sleep(2.0)
     return dispatcher, net, layout
 

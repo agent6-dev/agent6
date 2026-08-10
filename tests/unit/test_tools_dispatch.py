@@ -1661,7 +1661,7 @@ def test_every_jail_tool_answers_to_run_commands(tmp_path: Path) -> None:
     same reach as run_command -- its argv is INFERRED from a file the model can
     edit whenever it is not configured -- so it answers to the same knob rather
     than running while `run_commands = "no"` disables everything else."""
-    gated = {"run_command", "run_verify_command", "run_background", "stop_background"}
+    gated = {"run_command", "run_verify_command", "stop_background"}
     denied = ToolDispatcher(root=tmp_path, config=_config_with_run_commands(tmp_path, "no"))
     assert gated.isdisjoint(denied.available_tool_names())
     for name in sorted(gated):

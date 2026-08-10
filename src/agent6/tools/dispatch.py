@@ -116,7 +116,6 @@ from agent6.tools.schema import (
     ReadFileInput,
     ReadNotesInput,
     ReadSessionInput,
-    RunBackgroundInput,
     RunCommandInput,
     RunMetricInput,
     RunVerifyInput,
@@ -246,7 +245,6 @@ _COMMAND_TOOLS = frozenset(
     {
         RunCommandInput.TOOL_NAME,
         RunVerifyInput.TOOL_NAME,
-        RunBackgroundInput.TOOL_NAME,
         StopBackgroundInput.TOOL_NAME,
     }
 )
@@ -346,7 +344,6 @@ class ToolDispatcher:
             RunCommandInput.TOOL_NAME: self._run_command,
             ReadSessionInput.TOOL_NAME: self._read_session,
             FetchInput.TOOL_NAME: self._fetch,
-            RunBackgroundInput.TOOL_NAME: self._run_background,
             ReadBackgroundInput.TOOL_NAME: self._read_background,
             StopBackgroundInput.TOOL_NAME: self._stop_background,
             # run_metric: LLM-exposed via LOOP_EXTRA_TOOLS so the
@@ -810,7 +807,40 @@ class ToolDispatcher:
                 # an unattended run, so the message blames neither and names
                 # the knob.
                 raise ToolDenied("run_command not approved (sandbox.run_commands='ask')")
+        if args.background:
+            return self._start_detached(args.argv)
         return self._run_model_command(args.argv)
+
+    def _start_detached(self, argv: tuple[str, ...]) -> ExecResult:
+        """`background: true` -- the same hand-back, at a check-in of zero.
+
+        Only a session that EDITS owns a background command's lifetime: every
+        other mode is a short read-only pass, and a command killed at its end
+        would have been started for nothing. Derived from the same tool set that
+        withholds read_background there, so the two cannot disagree.
+        """
+        if ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted:
+            raise ToolError(
+                f"background commands are not available in {self._mode} mode:"
+                " nothing there could read or stop one before the run ends"
+            )
+        shells = self._background()
+        try:
+            view = shells.start(
+                argv,
+                lambda a, rw: self._jail_policy(a, extra_rw_paths=rw),
+                session=self._run_session(),
+            )
+        except BackgroundError as exc:
+            raise ToolError(str(exc)) from exc
+        return ExecResult(
+            returncode=None,
+            stdout="",
+            stderr="",
+            duration_s=0.0,
+            exec_failed=False,
+            background_id=view.id,
+        )
 
     def _run_model_command(self, argv: tuple[str, ...]) -> ExecResult:
         """A command the MODEL chose: no wall-clock kill, and a hand-back
@@ -905,30 +935,14 @@ class ToolDispatcher:
             sessions=lines, conversation=conversation(layout, max_chars=args.max_chars)
         )
 
-    def _run_background(self, raw: dict[str, Any]) -> BackgroundResult:
-        args = RunBackgroundInput.model_validate(raw)
-        shells = self._background()
-        if self.command_policy() == "ask" and not self._approver(
-            f"Allow run_background: {shlex.join(args.argv)}", scope=COMMAND_SCOPE
-        ):
-            raise ToolDenied("run_background not approved (sandbox.run_commands='ask')")
-        try:
-            shells.start(
-                args.argv,
-                lambda argv, rw: self._jail_policy(argv, extra_rw_paths=rw),
-                session=self._run_session(),
-            )
-        except BackgroundError as exc:
-            raise ToolError(str(exc)) from exc
-        return BackgroundResult(shells=_roster(shells))
-
     def _read_background(self, raw: dict[str, Any]) -> BackgroundResult:
         args = ReadBackgroundInput.model_validate(raw)
         shells = self._background()
         if not args.id:
             return BackgroundResult(shells=_roster(shells))
+        wait_s = self._config.workflow.command_checkin_s if args.wait_s is None else args.wait_s
         try:
-            _view, output = shells.read(args.id, tail_lines=args.tail_lines)
+            _view, output = shells.read(args.id, tail_lines=args.tail_lines, wait_s=wait_s)
         except BackgroundError as exc:
             raise ToolError(str(exc)) from exc
         return BackgroundResult(shells=_roster(shells), output=output)

@@ -254,7 +254,7 @@ def test_the_dev_server_case_end_to_end(tmp_path: Path) -> None:
             f"socketserver.TCPServer(('127.0.0.1',{_PORT + 2}),"
             "http.server.SimpleHTTPRequestHandler).serve_forever()"
         )
-        d.dispatch("run_background", {"argv": ["/usr/bin/python3", "-c", serve]})
+        d.dispatch("run_command", {"argv": ["/usr/bin/python3", "-c", serve], "background": True})
         time.sleep(2.0)
         got = d.dispatch(
             "run_command",
@@ -368,7 +368,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     tmp_path: Path, server_network: str, sees_dev_server: bool, sees_host: bool
 ) -> None:
     """The case this feature exists for, and its boundaries, against two real
-    listeners: one INSIDE the run's network (a `run_background` dev server) and
+    listeners: one INSIDE the run's network (a backgrounded dev server) and
     one on the machine's (this test process). A server sees exactly one of
     them, and `auto` sees neither -- which is also the proof that the two
     networks are distinct in both directions, without needing the internet."""
@@ -433,7 +433,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
             f"socketserver.TCPServer(('127.0.0.1',{port}),"
             "http.server.SimpleHTTPRequestHandler).serve_forever()"
         )
-        d.dispatch("run_background", {"argv": ["/usr/bin/python3", "-c", serve]})
+        d.dispatch("run_command", {"argv": ["/usr/bin/python3", "-c", serve], "background": True})
         time.sleep(2.0)
         dev = str(d.dispatch("mcp__browser__load", {"url": f"http://127.0.0.1:{port}/"}).to_wire())
         host = str(
@@ -528,7 +528,9 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
     ]
     try:
         for run in runs:
-            run.dispatch("run_background", {"argv": ["/usr/bin/python3", "-c", serve]})
+            run.dispatch(
+                "run_command", {"argv": ["/usr/bin/python3", "-c", serve], "background": True}
+            )
         time.sleep(2.5)
         for i, run in enumerate(runs, 1):
             got = run.dispatch("run_command", {"argv": ["/usr/bin/python3", "-c", check]})

@@ -286,7 +286,7 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: 
 
 
 def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(tmp_path: Path) -> None:
-    """What a run's own jail process is for: `run_background` starts a dev
+    """What a run's own jail process is for: a background command starts a dev
     server and a later `run_command` reaches it on loopback. Per-command
     launchers put each in its own empty netns, so the address was unreachable
     however long the server ran."""
@@ -309,7 +309,9 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(tmp_path: 
             "s.bind(('127.0.0.1',8741));s.listen(1);"
             "c,_=s.accept();c.sendall(b'alive');c.close()"
         )
-        started = d.dispatch("run_background", {"argv": ["python3", "-c", listener]}).to_wire()
+        started = d.dispatch(
+            "run_command", {"argv": ["python3", "-c", listener], "background": True}
+        ).to_wire()
         assert "running" in str(started), started
         probe = d.dispatch(
             "run_command",

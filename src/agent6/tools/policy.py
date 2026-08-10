@@ -83,7 +83,7 @@ def jail_policy(
     """The sandbox policy every LLM-influenced argv runs under.
 
     One owner, so every caller is confined identically: a foreground command, a
-    detached one (`run_background`), the baseline gate re-run, and a spawned
+    detached one (`background: true`), the baseline gate re-run, and a spawned
     MCP server all get the same protect paths, env, tool mounts and memory cap.
     The baseline once built its own and inherited no PATH, so every real gate
     exited 127 and the run was told its failure pre-existed; MCP servers had a

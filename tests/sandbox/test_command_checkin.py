@@ -21,6 +21,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.errors import ToolError
 
 
 def _dispatcher(tmp_path: Path, checkin: float) -> ToolDispatcher:
@@ -147,3 +148,68 @@ def test_nothing_a_handed_back_command_started_outlives_the_run(
     except (OSError, IndexError):
         state = "gone"
     assert state in ("gone", "Z")
+
+
+# --- one exec tool -----------------------------------------------------------
+
+
+def test_background_true_returns_the_same_shape_immediately(tmp_path: Path) -> None:
+    """`background: true` is a check-in of zero, so it is one parameter rather
+    than a second tool with a second return shape."""
+    d = _dispatcher(tmp_path, checkin=900.0)
+    try:
+        out = d.dispatch(
+            "run_command", {"argv": ["/bin/sh", "-c", "echo up; sleep 30"], "background": True}
+        ).to_wire()
+        assert out["returncode"] is None
+        assert out["still_running"] is True
+        assert out["background_id"] == "bg1"
+        # The command has only just started, so poll briefly for its first
+        # line rather than assuming it has already reached the log.
+        deadline = time.monotonic() + 5.0
+        output = ""
+        while time.monotonic() < deadline and "up" not in output:
+            output = str(
+                d.dispatch("read_background", {"id": "bg1", "wait_s": 0}).to_wire()["output"]
+            )
+            if "up" not in output:
+                time.sleep(0.1)
+        assert "up" in output
+        d.dispatch("stop_background", {"id": "bg1"})
+    finally:
+        d.close()
+
+
+def test_the_background_flag_replaced_the_second_tool(tmp_path: Path) -> None:
+    """One exec tool plus read + kill, matching what models are trained on."""
+    d = _dispatcher(tmp_path, checkin=900.0)
+    try:
+        names = d.available_tool_names()
+        assert "run_background" not in names
+        assert {"run_command", "read_background", "stop_background"} <= set(names)
+    finally:
+        d.close()
+
+
+def test_a_read_only_mode_cannot_background(tmp_path: Path) -> None:
+    """Only a session that edits owns a background command's lifetime; every
+    other mode is a short read-only pass and would kill it at the end. Derived
+    from the same tool set that withholds read_background there."""
+    root = tmp_path / "repo"
+    root.mkdir(exist_ok=True)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir(exist_ok=True)
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    d = ToolDispatcher(
+        root=root,
+        config=cfg,
+        isolation="none",
+        mode="ask",
+        session_dir=session_dir,
+        use_jail_session=True,
+    )
+    try:
+        with pytest.raises(ToolError, match="not available in ask mode"):
+            d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
+    finally:
+        d.close()
