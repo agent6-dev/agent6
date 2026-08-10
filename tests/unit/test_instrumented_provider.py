@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 from agent6.app.providers import InstrumentedProvider
 from agent6.budget import BudgetTracker
 from agent6.providers import ProviderResponse
@@ -125,3 +127,53 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: Path) -> None:
         if json.loads(line)["type"] == "role.result"
     ]
     assert [e["text"] for e in settled] == ["the answer"]
+
+
+def test_a_failed_call_still_reports_what_it_spent(tmp_path: Path) -> None:
+    """A cut stream is billed, and `budget.update` is the only path that spend
+    takes to a surface.
+
+    The providers record what a dead stream already cost, but the emission sat
+    on the success path only, so those dollars reached the USD ceiling and
+    nothing else: not the live cost meters, not `sessions list`, and not the
+    machine spend ledger, which rebuilds a state's cost from the last such event
+    in its log. The end-of-run summary prints to the terminal and is never
+    journalled, so the under-report was permanent.
+    """
+    from agent6.events import EventSink
+    from agent6.providers import ProviderError
+
+    events = EventSink(tmp_path / "logs.jsonl")
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000)
+
+    def _cut_stream(**_: object) -> ProviderResponse:
+        budget.record(
+            model="anthropic/claude-haiku-4.5",
+            input_tokens=50_000,
+            output_tokens=120,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+        raise ProviderError("stream cut before completion")
+
+    inner = MagicMock()
+    inner.call.side_effect = _cut_stream
+    wrapper = InstrumentedProvider(
+        inner=inner,
+        role="worker",
+        model="anthropic/claude-haiku-4.5",
+        provider_name="anthropic",
+        events=events,
+        budget=budget,
+    )
+
+    with pytest.raises(ProviderError):
+        wrapper.call(system="s", messages=[])
+
+    updates = [
+        json.loads(line)
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["type"] == "budget.update"
+    ]
+    assert [(e["input_total"], e["output_total"]) for e in updates] == [(50_000, 120)]
+    assert updates[0]["usd_total"] > 0.0

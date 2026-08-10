@@ -271,6 +271,7 @@ class InstrumentedProvider:
         except Exception as exc:
             if self.events is not None:
                 self.events.emit("role.result", role=self.role, ok=False, error=str(exc)[:200])
+            self._emit_budget()
             raise
         if self.events is not None:
             self.events.emit(
@@ -290,19 +291,34 @@ class InstrumentedProvider:
                 cache_creation=resp.cache_creation_tokens,
                 stop_reason=resp.stop_reason,
             )
-            snap = self.budget.snapshot()
-            usd_total, usd_partial = self.budget.estimate_usd()
-            self.events.emit(
-                "budget.update",
-                input_total=snap.input_total,
-                output_total=snap.output_total,
-                usd_total=usd_total,
-                usd_partial=usd_partial,
-                usd_cap=snap.max_usd,
-                tokens_unmetered=snap.unmetered_tokens,
-                tokens_fallback_cap=snap.max_tokens_fallback,
-            )
+        self._emit_budget()
         return resp
+
+    def _emit_budget(self) -> None:
+        """Cumulative spend after a call, whether it returned or RAISED.
+
+        A stream cut after the provider reported usage is still billed, and the
+        providers record it. These events are the only path that spend takes to
+        a surface: the live cost meters fold them, and a machine's spend ledger
+        (`app.machine._spend`) reconstructs a state's cost from the last one in
+        its log. Emitting only on success left a failed call's real dollars out
+        of every one of them, and out of the journal for good, since the
+        end-of-run summary prints to the terminal and is never journalled.
+        """
+        if self.events is None:
+            return
+        snap = self.budget.snapshot()
+        usd_total, usd_partial = self.budget.estimate_usd()
+        self.events.emit(
+            "budget.update",
+            input_total=snap.input_total,
+            output_total=snap.output_total,
+            usd_total=usd_total,
+            usd_partial=usd_partial,
+            usd_cap=snap.max_usd,
+            tokens_unmetered=snap.unmetered_tokens,
+            tokens_fallback_cap=snap.max_tokens_fallback,
+        )
 
 
 def build_critic_provider(
