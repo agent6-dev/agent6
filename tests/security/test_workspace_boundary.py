@@ -160,3 +160,22 @@ def test_the_config_a_later_run_loads_cannot_be_written(
             },
         )
     assert 'isolation = "strict"' in conf.read_text(encoding="utf-8")
+
+
+def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every tool call would refuse, so the run is told why up front instead of
+    failing on every path. One exactly-known case, not an enumeration."""
+    from agent6.app.confine import check_workspace_outside_private_dirs
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg" / "agent6"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state" / "agent6"))
+    inside = tmp_path / "state" / "agent6" / "somerepo"
+    inside.mkdir(parents=True)
+    refusal = check_workspace_outside_private_dirs(inside)
+    assert refusal is not None and "private" in refusal
+
+    ordinary = tmp_path / "project"
+    ordinary.mkdir()
+    assert check_workspace_outside_private_dirs(ordinary) is None

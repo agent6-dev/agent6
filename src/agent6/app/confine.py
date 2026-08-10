@@ -16,7 +16,7 @@ from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.paths import is_root, private_dirs
+from agent6.paths import hidden_paths, is_root, private_dirs
 from agent6.sandbox.detect import Environment
 from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import IsolationLevel
@@ -129,6 +129,28 @@ def warn_sandbox_gaps(
         # `agent6 check` lists it, where someone is asking.
 
 
+def check_workspace_outside_private_dirs(root: Path) -> str | None:
+    """A refusal message when the workspace IS or sits inside one of agent6's
+    own private dirs, else None.
+
+    Those dirs are denied to the in-process tools, so a run rooted inside one
+    could not read or write its own workspace: every tool call would refuse.
+    Refusing up front names the reason instead of leaving a run that fails on
+    every path. Not an isolation-level question -- it is wrong everywhere.
+    """
+    resolved = root.resolve()
+    for private in private_dirs():
+        p = private.resolve()
+        if resolved == p or resolved.is_relative_to(p):
+            return (
+                f"the workspace {str(resolved)!r} is inside agent6's own private"
+                f" directory {str(p)!r}, which is hidden from every tool: the run"
+                " could not read or write its own files. Work in a directory"
+                " outside it."
+            )
+    return None
+
+
 def check_protect_git_support(
     cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool
 ) -> str | None:
@@ -173,7 +195,7 @@ def unmaskable_exposures(cfg: Config, isolation: IsolationLevel) -> tuple[tuple[
         Path.cwd(),
         *(Path(p) for p in (*sb.extra_read_paths, *sb.extra_write_paths)),
     )
-    hidden = (*(Path(p) for p in sb.hide_paths), *private_dirs())
+    hidden = hidden_paths(Path(p) for p in sb.hide_paths)
     return tuple((h, region) for region in regions for h in hidden if h.is_relative_to(region))
 
 

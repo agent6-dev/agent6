@@ -19,6 +19,7 @@ from agent6.app.confine import (
     check_mcp_network_support,
     check_network_support,
     check_protect_git_support,
+    check_workspace_outside_private_dirs,
     warn_sandbox_gaps,
 )
 from agent6.app.preflight import budget_preflight, warn_if_prompt_override_incomplete
@@ -66,7 +67,8 @@ def select_isolation(
 ) -> IsolationLevel:
     """The isolation preflight: pick the sandbox isolation for this environment,
     confirm an unconfined autorun, and refuse configs the isolation cannot honor
-    (network mode, strict egress, budget). Raises :class:`SessionRefused`."""
+    (network mode, strict egress, budget) or a workspace no tool could read.
+    Raises :class:`SessionRefused`."""
     env = detect_env()
     try:
         selected = resolve_isolation(cfg.sandbox.isolation, env)
@@ -88,6 +90,10 @@ def select_isolation(
     hide_err = check_hide_paths_support(cfg, selected)
     if hide_err is not None:
         reporter.err(f"REFUSING: {hide_err}")
+        raise SessionRefused(2)
+    ws_err = check_workspace_outside_private_dirs(Path.cwd())
+    if ws_err is not None:
+        reporter.err(f"REFUSING: {ws_err}")
         raise SessionRefused(2)
     # A DEFAULT degrades with the warning above; a value the operator wrote
     # down refuses, because they asked for something this host cannot give.
