@@ -127,3 +127,31 @@ def test_repeated_undo_follows_the_fork_lineage(tmp_path: Path) -> None:
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-p", 1)
     assert target.undone_text == "first steer"
+
+
+def test_a_cyclic_lineage_does_not_crash(tmp_path: Path) -> None:
+    """A corrupt/hand-edited manifest whose parent_session_id points at itself
+    (or forms a cycle) must not recurse forever: the lineage walk ends on a
+    revisited id and /undo refuses cleanly instead of a RecursionError."""
+    layout = _layout(tmp_path, "cyclic-run")
+    # Only the task in the checkpoint, so the resolver must walk to the parent.
+    _checkpoint(layout, 0, [_task("do the thing"), _steer("focus the parser")])
+    write_session_manifest(
+        layout,
+        session_id="cyclic-run",
+        user_task="do the thing",
+        base_sha="",
+        base_branch="",
+        run_branch=None,
+        cfg=Config(),
+        mode="run",
+        effective_preset="",
+        preset_from_flag=False,
+        parent_session_id="cyclic-run",  # points at itself
+    )
+    said: list[str] = []
+    from agent6.app.reporter import Reporter
+
+    reporter = Reporter(out=said.append, err=said.append)
+    assert undo_target(tmp_path, "cyclic-run", reporter=reporter) is None
+    assert any("nothing to undo" in line for line in said)

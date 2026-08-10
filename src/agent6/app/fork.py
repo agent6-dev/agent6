@@ -329,11 +329,18 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
     return UndoTarget(target[0], target[1], ops[-1])
 
 
-def _newest_checkpoint_below(layout: SessionLayout, current_ops: int) -> tuple[str, int] | None:
+def _newest_checkpoint_below(
+    layout: SessionLayout, current_ops: int, *, seen: frozenset[str] = frozenset()
+) -> tuple[str, int] | None:
     """The newest checkpoint of *layout* -- or, following fork lineage, of an
     ancestor -- whose conversation holds fewer operator messages than
     *current_ops*. A fork carries one seed checkpoint, so walking back past it
-    means resolving in the parent it was cut from."""
+    means resolving in the parent it was cut from.
+
+    *seen* stops a cyclic lineage: forks always point at an OLDER run, so a
+    cycle only exists in a corrupt or hand-edited manifest, and following one
+    would recurse until the stack blows. A revisited id ends the walk (no
+    resolvable ancestor) instead of crashing."""
     for turn in sorted(list_checkpoint_turns(layout), reverse=True):
         ops = _ops_at(layout, turn)
         if ops is not None and ops < current_ops:
@@ -342,14 +349,14 @@ def _newest_checkpoint_below(layout: SessionLayout, current_ops: int) -> tuple[s
         parent = read_manifest(layout.session_dir).parent_session_id
     except ManifestError:
         return None
-    if not parent:
+    if not parent or parent in seen:
         return None
     parent_layout = SessionLayout(
         state_dir=layout.state_dir, session_id=parent, subdir=layout.subdir
     )
     if not parent_layout.session_dir.is_dir():
         return None
-    return _newest_checkpoint_below(parent_layout, current_ops)
+    return _newest_checkpoint_below(parent_layout, current_ops, seen=seen | {layout.session_id})
 
 
 def undo_fork(
