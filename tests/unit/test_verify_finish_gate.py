@@ -87,6 +87,39 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     assert _verified(_wf(verify=False), last_verify_ok=None) == "not_applicable"
 
 
+def test_a_gateless_end_and_its_verdict_agree() -> None:
+    """`_emit_run_end_grounded` turned the gateless None into all_passed=True
+    (`is not False`) while `_verification` mapped the same None to
+    not_applicable: the run read "passed" on every surface though nothing ever
+    gated it, and the docstring claimed the two could never disagree. The
+    sibling gateless end (settled) reads "finished - unverified"; match it:
+    all_passed only for an OBSERVED green."""
+    emitted: list[dict[str, Any]] = []
+
+    def _capture(_type: str, **fields: Any) -> None:
+        emitted.append(fields)
+
+    for verify, state_kw, all_passed, verdict in (
+        (False, {"last_verify_ok": None}, False, "not_applicable"),
+        (True, {"last_verify_ok": True, "edited_since_verify": False}, True, "passed"),
+        (True, {"last_verify_ok": False}, False, "failed"),
+    ):
+        wf = _wf(verify=verify)
+        wf.events = MagicMock(emit=_capture)
+        wf.events.emit = _capture  # type: ignore[method-assign]
+        state = _LoopState(original_task="t", tool_calls=0, **state_kw)
+        emitted.clear()
+        wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
+            reason="finish_session", iteration=1, state=state
+        )
+        assert emitted and emitted[-1]["all_passed"] is all_passed
+        assert wf._verification(state) == verdict  # pyright: ignore[reportPrivateUsage]
+        # The invariant the docstring promises: the event and the result agree.
+        assert (emitted[-1]["all_passed"] is True) == (
+            wf._verification(state) == "passed"  # pyright: ignore[reportPrivateUsage]
+        )
+
+
 def test_plan_and_ask_are_never_gated_on_verify() -> None:
     """plan/ask end clean whatever the tree looks like -- finish_planning and
     the ask answer both emit session.end all_passed=True -- so they have no verify
