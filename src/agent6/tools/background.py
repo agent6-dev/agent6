@@ -12,6 +12,7 @@ dead the next time anyone looks. Nothing here blocks: there is no wait.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shlex
@@ -270,6 +271,14 @@ class BackgroundShells:
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
 
 
+def _stopped(raw: str) -> bool:
+    """Whether the outcome record says the command was stopped rather than
+    that it reported an exit code."""
+    with contextlib.suppress(ValueError, IndexError, TypeError):
+        return bool(json.loads(raw.splitlines()[-1]).get("stopped"))
+    return False
+
+
 def roster_from_dir(root: Path) -> list[str]:
     """The run's background commands, read off disk.
 
@@ -296,9 +305,13 @@ def roster_from_dir(root: Path) -> list[str]:
             lines.append(f"[{d.name}] still running (or the run that owns it ended): {command}")
             continue
         try:
-            code = int(json.loads(raw.splitlines()[-1])["returncode"])
-        except (ValueError, IndexError, KeyError):
-            lines.append(f"[{d.name}] ended without a result: {command}")
+            record = json.loads(raw.splitlines()[-1])
+            code = int(record["returncode"])
+        except (ValueError, IndexError, KeyError, TypeError):
+            # A stop kills the launcher before it can report a code, so the
+            # stopper records THAT rather than inventing a number.
+            word = "stopped" if _stopped(raw) else "ended without a result"
+            lines.append(f"[{d.name}] {word}: {command}")
             continue
         lines.append(f"[{d.name}] exited {code}: {command}")
     return lines

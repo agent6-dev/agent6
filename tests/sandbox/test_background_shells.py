@@ -545,6 +545,25 @@ def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> Non
     assert not any("still running" in line for line in lines), lines
 
 
+def test_a_stopped_jailed_command_records_its_ending(
+    shells: BackgroundShells, tmp_path: Path
+) -> None:
+    """A stop SIGKILLs the launcher before it can write the exit code down, so
+    the owning run read "stopped" while every other surface read "still running
+    (or the run that owns it ended)" -- for the rest of the run and after it.
+
+    The code is NOT invented: the launcher never reported one, so the record
+    says the command was stopped rather than claiming a number nobody saw."""
+    from agent6.tools.background import roster_from_dir
+
+    view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
+    assert _wait_state(shells, view.id, "running") == "running"
+    shells.stop(view.id)
+    lines = roster_from_dir(tmp_path / "shells")
+    assert not any("still running" in line for line in lines), lines
+    assert any(f"[{view.id}] stopped" in line for line in lines), lines
+
+
 def test_settle_records_an_ending_nobody_asked_about(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:

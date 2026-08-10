@@ -600,6 +600,23 @@ def _write_outcome(outcome_dir: Path, returncode: int) -> None:
         )
 
 
+def _write_stopped(outcome_dir: Path) -> None:
+    """Record that the command was STOPPED, for a launcher that was killed
+    before it could report an exit code.
+
+    No number is invented: nobody observed one, and a made-up 137 would be a
+    surface stating the one thing an operator acts on, wrongly. Written only
+    when no real result landed -- a command that exited moments before the kill
+    keeps the code its launcher wrote.
+    """
+    result = outcome_dir / _RESULT_NAME
+    with contextlib.suppress(OSError):
+        if result.read_text(errors="replace").strip():
+            return
+    with contextlib.suppress(OSError):
+        result.write_text(json.dumps({"stopped": True}), encoding="utf-8")
+
+
 def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int]) -> bool:
     """Kill *proc*'s group and sweep what it left behind; True when it is gone.
 
@@ -709,9 +726,14 @@ class BackgroundJob:
         Answers "" when the command is gone, else why it might not be: a
         surface that prints "stopped" over a live process is stating the one
         thing an operator acts on, wrongly.
+
+        The kill takes the launcher down before it can write the exit code, so
+        the ending is recorded here -- otherwise a surface in another process
+        goes on reading a stopped command as maybe-still-running.
         """
         if not _stop_detached(self._proc, self._descendants):
             return f"the sandbox launcher {self._proc.pid} did not exit after SIGKILL"
+        _write_stopped(self._outcome_dir)
         return ""
 
     def _unregister(self) -> None:
