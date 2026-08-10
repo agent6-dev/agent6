@@ -311,6 +311,12 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
     assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
     line = _discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})
     assert line is not None and "grep" in line.plain
+    # The verdict goes through the shared coercion (tool_result_ok), never
+    # bool(): a historical stringified "False" would have painted a green tick.
+    bad = _discrete_log_line({"type": "tool.result", "ok": "False", "summary": "boom"})
+    assert bad is not None and "✗" in bad.plain
+    good = _discrete_log_line({"type": "tool.result", "ok": "True", "summary": "fine"})
+    assert good is not None and "✓" in good.plain
 
 
 def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object) -> None:

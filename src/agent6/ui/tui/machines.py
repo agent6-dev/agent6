@@ -76,6 +76,7 @@ from agent6.viewmodel import (
     newest_state_log,
     tail_events,
 )
+from agent6.viewmodel.events import tool_result_ok
 
 
 def find_machine_files(repo_cwd: Path) -> list[Path]:
@@ -111,7 +112,7 @@ def _discrete_log_line(evt: dict[str, object]) -> Text | None:
             args = args[:77] + "…"
         return Text(f"  ⚙ {evt.get('name', '')} {args}", style="yellow")
     if t == "tool.result":
-        ok = bool(evt.get("ok"))
+        ok = tool_result_ok(evt.get("ok"))
         mark = "✓" if ok else "✗"
         return Text(f"  {mark} {evt.get('summary', '')}", style="green" if ok else "red")
     return None
