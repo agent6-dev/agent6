@@ -316,9 +316,10 @@ class BudgetTracker:
     def estimate_usd(self) -> tuple[float, bool]:
         """Estimate cumulative USD spend across all recorded calls.
 
-        Returns ``(usd_total, any_unknown)`` where ``any_unknown`` is
-        True iff at least one model in the per-model breakdown is missing
-        from the pricing table (so the figure is a lower bound).
+        Returns ``(usd_total, any_unknown)`` where ``any_unknown`` is True
+        when any recorded call could not be priced: a model absent from the
+        pricing table, or a priced model with unpriced calls. Either way the
+        figure is a lower bound.
 
         Shared between the end-of-run text summary, the live TUI cost
         meter, and the in-record USD ceiling so they all quote the same
