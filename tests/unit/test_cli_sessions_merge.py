@@ -146,7 +146,7 @@ def test_runs_merge_refuses_when_no_branch_recorded(
     assert rc == 2
     err = capsys.readouterr().err
     assert "no branch to merge" in err
-    assert "branch_per_run was off, so the work already landed on your current branch" in err
+    assert "this run recorded no commits" in err
 
 
 def test_runs_merge_refuses_dirty_tree(
@@ -493,18 +493,21 @@ def _set_manifest_field(tmp_path: Path, session_id: str, **fields: str) -> None:
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
 
 
-def test_diff_of_a_branch_per_run_off_run_shows_the_work_on_head(
+def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    """branch_per_run off records no run branch and the run commits onto the
-    checked-out branch, so diff (alone among the branch verbs) falls back to
-    base..HEAD."""
+    """branch_per_run off records no run branch; the run's commits live on its
+    hidden chain ref and diff reads base..refs/agent6/<id> -- never base..HEAD,
+    which is the operator's line."""
+    from agent6.git_ops import chain_commit
+
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-HEADF1", commits=[], run_branch=None)
     _set_manifest_field(tmp_path, "run-HEADF1", mode="run")
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 1: work on HEAD")
+    chain_commit(
+        tmp_path, "agent6 iter 1: work", ref="refs/agent6/run-HEADF1", fallback_parent="HEAD"
+    )
 
     rc = main(["sessions", "diff", "run-HEADF1"])
     assert rc == 0
@@ -513,26 +516,25 @@ def test_diff_of_a_branch_per_run_off_run_shows_the_work_on_head(
     assert "made no commits" not in out
 
 
-def test_commits_of_a_branch_per_run_off_run_lists_from_head_like_diff(
+def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions diff` falls back to base..HEAD for a branch_per_run=off run;
-    `sessions commits` refused the SAME session. Both verbs now accept the same
-    ref, and commits states the caveat (base..HEAD may include operator
-    commits) instead of refusing."""
+    """`sessions commits` and `sessions diff` accept the same branchless run,
+    both reading its chain ref."""
+    from agent6.git_ops import chain_commit
+
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-HEADF2", commits=[], run_branch=None)
     _set_manifest_field(tmp_path, "run-HEADF2", mode="run")
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 1: work on HEAD")
+    chain_commit(
+        tmp_path, "agent6 iter 1: work", ref="refs/agent6/run-HEADF2", fallback_parent="HEAD"
+    )
 
     assert main(["sessions", "commits", "run-HEADF2"]) == 0
     captured = capsys.readouterr()
-    assert "agent6 iter 1: work on HEAD" in captured.out
-    assert "branch_per_run was off, so the work already landed on your current branch" in (
-        captured.err
-    )
+    assert "agent6 iter 1: work" in captured.out
+    assert "refs/agent6/run-HEADF2" in captured.err
 
 
 def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(

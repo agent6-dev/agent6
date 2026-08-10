@@ -23,7 +23,9 @@ from agent6.git_ops import (
     GitError,
     branch_exists,
     branch_tip_sha,
+    chain_tip,
     delete_branch_if_merged,
+    delete_ref,
     diff_range,
     force_delete_squash_merged_branch,
     git_hardening_flags,
@@ -190,7 +192,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
             print(pruned)
             return 0
 
-    ref = _commits_ref(manifest)
+    ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
         print(f"[agent6] {ref.reason}.")
         return 0
@@ -271,19 +273,20 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
 @dataclass(frozen=True, slots=True)
 class _CommitsRef:
     """Where a session's commits end (``base_sha..head_ref``): the run branch,
-    "HEAD" for a run with branch_per_run off (it committed onto the checked-out
-    branch), or "" when the session made none. ``reason`` says why there is no
-    run branch, and is "" exactly when ``head_ref`` is one -- so the branch
-    verbs (commits/merge) refuse on ``reason`` while diff reads ``head_ref``."""
+    the hidden chain ref for a run with branch_per_run off, or "" when the
+    session made none. ``reason`` says why there is no ref, and is "" exactly
+    when ``head_ref`` is one -- so the branch verbs (commits/merge) refuse on
+    ``reason`` while diff reads ``head_ref``."""
 
     head_ref: str
     reason: str
 
 
-def _commits_ref(manifest: SessionManifest) -> _CommitsRef:
-    """The one owner of the branch/HEAD fallback. HEAD only for a run with
-    branch_per_run off: for any other branchless session, ``base..HEAD`` is the
-    OPERATOR'S work presented as the session's."""
+def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
+    """The one owner of the ref fallback: the visible run branch when the
+    manifest records one, else the run's hidden chain ref when it exists (the
+    chain is created lazily by the first commit, so a missing ref means the
+    run recorded nothing)."""
     if manifest.run_branch:
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
     if manifest.parked_task:
@@ -299,10 +302,10 @@ def _commits_ref(manifest: SessionManifest) -> _CommitsRef:
             head_ref="",
             reason=f"{article} {manifest.mode} does not write to the repo, so it made no commits",
         )
-    return _CommitsRef(
-        head_ref="HEAD",
-        reason="branch_per_run was off, so the work already landed on your current branch",
-    )
+    chain = f"refs/agent6/{manifest.session_id}"
+    if chain_tip(cwd, chain) is None:
+        return _CommitsRef(head_ref="", reason="this run recorded no commits")
+    return _CommitsRef(head_ref=chain, reason="")
 
 
 def _resolve_session_manifest(
@@ -400,18 +403,13 @@ def _cmd_commits(*, session_id: str) -> int:
     if isinstance(res, int):
         return res
     _layout, manifest = res
-    ref = _commits_ref(manifest)
+    ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
         print(
             f"ERROR: this session has no branch to list commits from ({ref.reason}).",
             file=sys.stderr,
         )
         return 2
-    if ref.reason:
-        # A resolvable ref with a caveat (branch_per_run off -> base..HEAD):
-        # `sessions diff` accepts exactly this run, and refusing here made the
-        # two verbs disagree about the same session. Say the caveat instead.
-        print(f"[agent6] {ref.reason}.", file=sys.stderr)
     base_sha = manifest.base_sha
     if not base_sha:
         print("ERROR: manifest has no base_sha; nothing to list commits from", file=sys.stderr)
@@ -475,7 +473,7 @@ def _plan_merge(  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
-    ref = _commits_ref(manifest)
+    ref = _commits_ref(cwd, manifest)
     if ref.reason:
         print(f"ERROR: this session has no branch to merge ({ref.reason}).", file=sys.stderr)
         return 2
@@ -505,8 +503,10 @@ def _plan_merge(  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
-    if not branch_exists(cwd, run_branch):
-        print(f"ERROR: run branch {run_branch!r} no longer exists.", file=sys.stderr)
+    # chain_tip resolves both shapes head_ref takes: a branch name and the
+    # hidden refs/agent6/<id> chain ref.
+    if chain_tip(cwd, run_branch) is None:
+        print(f"ERROR: run ref {run_branch!r} no longer exists.", file=sys.stderr)
         return 2
     if not branch_exists(cwd, target):
         print(
@@ -863,10 +863,12 @@ def _cmd_sessions_dir() -> int:
 
 
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
-    """Delete run history from the state dir.
+    """Delete run history from the state dir, plus the run's hidden chain ref
+    (`refs/agent6/<id>`, the gc anchor -- meaningless once the record is gone,
+    and left behind it would pin the run's objects forever).
 
-    Only history: the run's branch and its commits are git's, and are left
-    alone (`sessions prune` is the branch verb). `--asks` clears the asks made in
+    The run's visible branch and its commits are git's, and are left alone
+    (`sessions prune` is the branch verb). `--asks` clears the asks made in
     THIS directory -- an ask is keyed by the directory it ran in, so asks made
     elsewhere are untouched."""
     cwd = Path.cwd()
@@ -896,5 +898,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         )
         return 2
     shutil.rmtree(layout.session_dir, ignore_errors=True)
-    print(f"removed {layout.session_id}")
+    note = ""
+    chain = f"refs/agent6/{layout.session_id}"
+    try:
+        if chain_tip(cwd, chain) is not None:
+            branch_kept = branch_exists(cwd, f"agent6/{layout.session_id}")
+            delete_ref(cwd, chain)
+            # With no visible branch the ref was the commits' only anchor.
+            note = " and its chain ref" + ("" if branch_kept else " (its commits are now loose)")
+    except GitError:
+        pass  # not a repo here, or git unreadable: state-dir removal stands
+    print(f"removed {layout.session_id}{note}")
     return 0
