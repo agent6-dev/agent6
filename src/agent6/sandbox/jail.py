@@ -606,13 +606,19 @@ def _write_stopped(outcome_dir: Path) -> None:
 
     No number is invented: nobody observed one, and a made-up 137 would be a
     surface stating the one thing an operator acts on, wrongly. Written only
-    when no real result landed -- a command that exited moments before the kill
-    keeps the code its launcher wrote.
+    over a result READ as empty -- a command that exited moments before the kill
+    keeps the code its launcher wrote, and a read that FAILED says nothing about
+    what is on disk, so it is not grounds to overwrite it either.
     """
     result = outcome_dir / _RESULT_NAME
-    with contextlib.suppress(OSError):
-        if result.read_text(errors="replace").strip():
-            return
+    try:
+        existing = result.read_text(errors="replace").strip()
+    except FileNotFoundError:
+        existing = ""  # the launcher never opened it
+    except OSError:
+        return
+    if existing:
+        return
     with contextlib.suppress(OSError):
         result.write_text(json.dumps({"stopped": True}), encoding="utf-8")
 

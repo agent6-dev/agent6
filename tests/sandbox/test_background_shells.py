@@ -564,6 +564,47 @@ def test_a_stopped_jailed_command_records_its_ending(
     assert any(f"[{view.id}] stopped" in line for line in lines), lines
 
 
+def test_stopping_an_already_exited_command_keeps_its_exit_code(
+    shells: BackgroundShells, tmp_path: Path
+) -> None:
+    """`stop_all` stops every shell, exited ones included (one can still have
+    left a detached child behind), so the stop-record runs over a result the
+    launcher already wrote. It must not replace a real code with "stopped"."""
+    from agent6.tools.background import roster_from_dir
+
+    view = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path))
+    assert _wait_state(shells, view.id, "exited") == "exited"
+    shells.stop_all()
+    lines = roster_from_dir(tmp_path / "shells")
+    assert any(f"[{view.id}] exited 42" in line for line in lines), lines
+
+
+def test_an_unreadable_result_is_never_clobbered_by_a_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stop-record only overwrites a result it READ as empty. A read that
+    fails says nothing about what is on disk, so writing anyway would replace a
+    real exit code with "stopped" on the strength of a failed read."""
+    import agent6.sandbox.jail as jail_mod
+
+    outcome = tmp_path / "bg"
+    outcome.mkdir()
+    result = outcome / "result.json"
+    result.write_text('{"returncode": 42}', encoding="utf-8")
+
+    real_read = Path.read_text
+
+    def _unreadable(self: Path, *a: object, **k: object) -> str:
+        if self == result:
+            raise OSError(5, "Input/output error")
+        return real_read(self, *a, **k)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(Path, "read_text", _unreadable)
+    jail_mod._write_stopped(outcome)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.undo()
+    assert result.read_text(encoding="utf-8") == '{"returncode": 42}'
+
+
 def test_settle_records_an_ending_nobody_asked_about(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
