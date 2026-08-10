@@ -9,7 +9,22 @@ open-ended agent loop.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 
-[![agent6: one sandboxed coding agent across the CLI, the TUI, and the web](https://agent6.dev/screenshots/out/hero.gif)](https://agent6.dev/tour/)
+<table>
+  <tr>
+    <td align="center" width="34%" valign="top">
+      <a href="https://agent6.dev/screenshots/out/hero-tui.gif"><img src="https://agent6.dev/screenshots/out/hero-tui.gif" alt="the run TUI: conversation streaming, an approval modal, verify + auto-commit, the hub receipt"></a>
+      <br><sub><b>the TUI</b><br>the full agent, as a live dashboard</sub>
+    </td>
+    <td align="center" width="33%" valign="top">
+      <a href="https://agent6.dev/screenshots/out/hero-cli.gif"><img src="https://agent6.dev/screenshots/out/hero-cli.gif" alt="the CLI: a failing suite, one command, the run streams to a green verify and a diff"></a>
+      <br><sub><b>the CLI</b><br>the full agent, in any terminal</sub>
+    </td>
+    <td align="center" width="33%" valign="top">
+      <a href="https://agent6.dev/screenshots/out/hero-web.gif"><img src="https://agent6.dev/screenshots/out/hero-web.gif" alt="the web UI: the hub, a session view with expanded tool detail, the sandbox config"></a>
+      <br><sub><b>the web UI</b><br>the full agent, desktop or phone</sub>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
