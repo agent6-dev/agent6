@@ -45,7 +45,13 @@ Enter
 Sleep 2.5s
 Type@55ms `agent6 run "Find and fix the failing test in tests/test_stats.py"`
 Enter
-Sleep 10s
+# The replayed run streams to its summary, then waits at the follow-up prompt
+# ("next (/exit to finish):"); typing the next command earlier would steer the
+# run instead of the shell and garble the scroll.
+Sleep 14s
+Type@55ms "/exit"
+Enter
+Sleep 1.5s
 
 # 2. The fix it made: base -> run branch, one minimal diff.
 Type@55ms "agent6 sessions diff"
