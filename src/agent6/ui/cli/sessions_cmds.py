@@ -23,6 +23,7 @@ from agent6.git_ops import (
     GitError,
     branch_exists,
     branch_tip_sha,
+    chain_ref_for,
     chain_tip,
     delete_branch_if_merged,
     delete_ref,
@@ -304,7 +305,7 @@ def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
             head_ref="",
             reason=f"{article} {manifest.mode} does not write to the repo, so it made no commits",
         )
-    chain = f"refs/agent6/{manifest.session_id}"
+    chain = chain_ref_for(manifest.session_id)
     if chain_tip(cwd, chain) is None:
         return _CommitsRef(head_ref="", reason="this run recorded no commits")
     return _CommitsRef(head_ref=chain, reason="")
@@ -498,7 +499,7 @@ def _plan_merge(  # noqa: PLR0911
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     # chain_tip resolves both shapes head_ref takes: a branch name and the
-    # hidden refs/agent6/<id> chain ref.
+    # hidden refs/agent6/<id>/head chain ref.
     if chain_tip(cwd, run_branch) is None:
         print(f"ERROR: run ref {run_branch!r} no longer exists.", file=sys.stderr)
         return 2
@@ -675,9 +676,6 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
         print("ERROR: not a git repository", file=sys.stderr)
         return 2
     branches = list_run_branches(cwd)
-    if not branches:
-        print("[agent6] no agent6/* run branches to prune.")
-        return 0
     try:
         current = git_status(cwd).branch
     except GitError as exc:
@@ -716,7 +714,14 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
             squashed_deleted += 1
         else:
             merged_kept += 1
+    # Chain refs are pruned whether or not any run BRANCH survives: with
+    # `branch_per_run` off there is never one, and once prune has deleted the
+    # last branch the refs it kept for a later pass would be unreachable by
+    # this command forever.
     refs_deleted, refs_kept = _prune_chain_refs(cwd, state_dir, delete_squashed=delete_squashed)
+    if not branches and not (refs_deleted or refs_kept):
+        print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
+        return 0
     kept = merged_kept + unmerged_kept
     total_deleted = deleted + squashed_deleted
     squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""
@@ -733,7 +738,7 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
 
 
 def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> tuple[int, int]:
-    """Drop `refs/agent6/<id>` chain refs whose manifest confirms the run
+    """Drop `refs/agent6/<id>/head` chain refs whose manifest confirms the run
     merged, under the same safety rules as branches: reachable-from-base
     deletes outright; a squash-merge (content in the base commit, ref
     unreachable) deletes only with --delete-squashed AND only while the ref
@@ -753,7 +758,7 @@ def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> t
         if not (manifest.merged and manifest.merged.sha):
             continue
         into = manifest.merged.into
-        ref = f"refs/agent6/{sid}"
+        ref = chain_ref_for(sid)
         if branch_exists(cwd, into) and is_ancestor(cwd, sha, into):
             delete_ref(cwd, ref)
             refs_deleted += 1
@@ -897,7 +902,7 @@ def _cmd_sessions_dir() -> int:
 
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir, plus the run's hidden chain ref
-    (`refs/agent6/<id>`, the gc anchor -- meaningless once the record is gone,
+    (`refs/agent6/<id>/head`, the gc anchor -- meaningless once the record is gone,
     and left behind it would pin the run's objects forever).
 
     The run's visible branch and its commits are git's, and are left alone
@@ -932,7 +937,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         return 2
     shutil.rmtree(layout.session_dir, ignore_errors=True)
     note = ""
-    chain = f"refs/agent6/{layout.session_id}"
+    chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:
             branch_kept = branch_exists(cwd, f"agent6/{layout.session_id}")

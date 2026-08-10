@@ -55,6 +55,7 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    chain_ref_for,
     render_commit_trailer,
 )
 from agent6.git_ops import status as git_status
@@ -396,7 +397,7 @@ def run_one(
         # instance dir name is its session-unique id. Read-only states never
         # commit (mode gate), so the refs stay None there.
         chain_ref=(
-            f"refs/agent6/machine-{req.transcript_dir.parent.name}" if not read_only else None
+            chain_ref_for(f"machine-{req.transcript_dir.parent.name}") if not read_only else None
         ),
         chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
         commit_per_step=cfg.git.commit_per_step,

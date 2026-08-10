@@ -550,7 +550,7 @@ class GitConfig(BaseModel):
     # the stash with a message rather than risk a conflicted auto-apply.
     auto_stash_pop: bool = False
     # Per-step commits land on the run's own detached chain
-    # (refs/agent6/<session>), parented on HEAD at run start; HEAD, the
+    # (refs/agent6/<session>/head), parented on HEAD at run start; HEAD, the
     # operator's index, and the checkout are never touched. branch_per_run
     # additionally advances a visible agent6/<slug> branch ref to the chain
     # tip (off = the hidden ref only). Forced on for --parallel lanes (work

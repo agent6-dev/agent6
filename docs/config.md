@@ -177,7 +177,7 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 | `require_clean_worktree` | `true` | Refuse to start on a dirty worktree. |
 | `auto_stash` | `false` | Stash uncommitted changes before the run; restored per `auto_stash_pop`, else the `git stash apply <sha>` line is printed (by sha, never silently left). |
 | `auto_stash_pop` | `false` | Pop the stash back at run end when safe (clean tree, conflict-free apply). On any doubt, leave it and print how to restore. Never `reset --hard`. |
-| `branch_per_run` | `true` | Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden `refs/agent6/<id>` ref only). Forced on for `--parallel` lanes (work is imported by branch). |
+| `branch_per_run` | `true` | Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden `refs/agent6/<id>/head` ref only). Forced on for `--parallel` lanes (work is imported by branch). |
 | `commit_per_step` | `true` | Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). Off: agent6 never commits -- work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |
 | `merge_strategy` | `"squash"` | `agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps per-step history), `ff`. Governs consolidation only; per-step commits always land on the run's chain. |
 | `auto_merge` | `false` | After a run with nothing red, land the run's work on its base automatically (never over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. On conflict nothing moves and instructions are printed. |

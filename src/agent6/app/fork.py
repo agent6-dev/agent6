@@ -35,7 +35,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.git_ops import GitError, create_branch_at, set_ref
+from agent6.git_ops import GitError, chain_ref_for, create_branch_at, set_ref
 from agent6.graph.replay import graph_at_version, journal_prefix
 from agent6.graph.storage import (
     append_jsonl,
@@ -403,7 +403,7 @@ def _materialize_fork(
     # operator's checkout: the hidden ref always, the visible branch per
     # [git].branch_per_run (both additive ref writes, never a checkout).
     try:
-        set_ref(cwd, f"refs/agent6/{dst.session_id}", forked_from_sha)
+        set_ref(cwd, chain_ref_for(dst.session_id), forked_from_sha)
         if run_branch is not None:
             create_branch_at(cwd, run_branch, forked_from_sha)
     except GitError as exc:
@@ -424,7 +424,7 @@ def _materialize_fork(
             ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         ),
     )
-    at = f"(branch {run_branch} " if run_branch else f"(refs/agent6/{dst.session_id} "
+    at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
     reporter.err(
         f"[agent6] forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
         f"{at}at {forked_from_sha[:12]})"

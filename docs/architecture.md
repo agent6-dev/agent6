@@ -107,7 +107,7 @@ Notes:
   call that comes next.
 - **Per-step commits** fire when `run_verify_command` returns 0, via
   `git_ops.py` from outside the jail, onto the run's detached chain
-  (`refs/agent6/<id>`, staged through a temp index; `branch_per_run` also
+  (`refs/agent6/<id>/head`, staged through a temp index; `branch_per_run` also
   advances a visible `agent6/<id>` branch). HEAD, your index, and your
   checkout are never touched, so operator or model git activity mid-run
   cannot collide with the run's record. Every passing step commits, so a run

@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
@@ -760,7 +761,7 @@ def test_resume_diverged_branch_refuses_without_checkout(
     # with the operator's checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
-    sp.run(["git", "update-ref", "refs/agent6/divg-AAAA11", base], cwd=repo, check=True)
+    sp.run(["git", "update-ref", chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
     (repo / "seed.txt").write_text("moved on\n")
     sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
     new_head = sp.run(

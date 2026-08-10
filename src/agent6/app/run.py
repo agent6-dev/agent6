@@ -65,6 +65,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     auto_stash_message,
+    chain_ref_for,
     dirty_paths,
     render_commit_trailer,
     stash_all,
@@ -688,7 +689,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
-                chain_ref=f"refs/agent6/{effective_session_id}" if mode == "run" else None,
+                chain_ref=chain_ref_for(effective_session_id) if mode == "run" else None,
                 chain_branch=run_branch,
                 chain_fallback_parent=base_sha or None,
                 commit_per_step=cfg.git.commit_per_step,

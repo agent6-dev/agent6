@@ -65,6 +65,7 @@ from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    chain_ref_for,
     chain_tip,
     is_ancestor,
     render_commit_trailer,
@@ -130,7 +131,7 @@ def snapshot_head_mismatch(
     on DIVERGED from the run's last snapshot, else None.
 
     The head compared is the one resume will commit on top of: the chain ref's
-    current value (`refs/agent6/<id>`); an unborn ref resumes from the snapshot
+    current value (`refs/agent6/<id>/head`); an unborn ref resumes from the snapshot
     head itself, so there is nothing to compare.
 
     Divergence, not mere movement: the run's own per-step commits advance the
@@ -415,7 +416,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # ("" when git was unreadable at write time); skip the check then, and
         # let the loud snapshot load below handle a corrupt file.
         mismatch = (
-            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=f"refs/agent6/{session_id}")
+            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=chain_ref_for(session_id))
             if writes_code
             else None
         )
@@ -602,7 +603,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
-                chain_ref=f"refs/agent6/{session_id}" if mode == "run" else None,
+                chain_ref=chain_ref_for(session_id) if mode == "run" else None,
                 chain_branch=run_branch or None,
                 chain_fallback_parent=resume_base_sha or None,
                 commit_per_step=cfg.git.commit_per_step,

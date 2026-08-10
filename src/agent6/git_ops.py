@@ -612,9 +612,28 @@ def create_branch(path: Path, name: str, *, start_point: str | None = None) -> N
         _run(path, "checkout", "-b", name)
 
 
+_CHAIN_NS = "refs/agent6"
+_CHAIN_KIND = "head"
+
+
+def chain_ref_for(session_id: str) -> str:
+    """The ref holding a session's commit chain: ``refs/agent6/<id>/head``.
+
+    The session id is a NAMESPACE, not the ref itself, which is what keeps the
+    short name ``agent6/<id>`` the visible branch's alone: git resolves
+    ``refs/<name>`` before ``refs/heads/<name>``, so a ref sitting AT
+    ``refs/agent6/<id>`` shadows the branch the operator means, and every
+    `git log|diff|checkout agent6/<id>` reports the name as ambiguous. The kind
+    under the id follows ``refs/pull/<n>/head``; it also leaves room for a
+    second per-session ref, which a ref at the id itself could not (git refuses
+    a ref inside a ref).
+    """
+    return f"{_CHAIN_NS}/{session_id}/{_CHAIN_KIND}"
+
+
 def set_ref(path: Path, ref: str, sha: str) -> None:
     """Point *ref* at *sha* (plain `update-ref`, no checkout). For agent6's own
-    refs (`refs/agent6/<id>`); branches go through create_branch_at."""
+    refs (:func:`chain_ref`); branches go through create_branch_at."""
     _run(path, "update-ref", ref, sha)
 
 
@@ -624,13 +643,15 @@ def delete_ref(path: Path, ref: str) -> None:
 
 
 def list_chain_refs(path: Path) -> tuple[tuple[str, str], ...]:
-    """(session_id, sha) for every `refs/agent6/<id>` chain ref, sorted by id."""
-    out = _run(path, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/agent6/").stdout
+    """(session_id, sha) for every chain ref, sorted by id. Globbed on the
+    kind, so a future per-session ref beside it is not mistaken for a chain."""
+    pattern = f"{_CHAIN_NS}/*/{_CHAIN_KIND}"
+    out = _run(path, "for-each-ref", "--format=%(refname)%00%(objectname)", pattern).stdout
     rows: list[tuple[str, str]] = []
     for line in out.splitlines():
         ref, _, sha = line.partition("\x00")
-        if ref.startswith("refs/agent6/") and sha:
-            rows.append((ref.removeprefix("refs/agent6/"), sha))
+        if sha and ref.startswith(f"{_CHAIN_NS}/") and ref.endswith(f"/{_CHAIN_KIND}"):
+            rows.append((ref[len(_CHAIN_NS) + 1 : -(len(_CHAIN_KIND) + 1)], sha))
     return tuple(sorted(rows))
 
 
@@ -821,7 +842,7 @@ def chain_commit(
     so resume and concurrent runs compose without bookkeeping. When the ref
     does not exist yet the parent is *fallback_parent* (HEAD at run start;
     None = a root commit in an unborn repo). Advances *ref*
-    (`refs/agent6/<session>`, the gc anchor) and, when *also_branch* is set,
+    (:func:`chain_ref`, the gc anchor) and, when *also_branch* is set,
     `refs/heads/<also_branch>` -- a plain ref move, never a checkout. Returns
     the new sha, or None when the tree is identical to the parent's (nothing
     to record). Tolerant of concurrent model or operator git activity by

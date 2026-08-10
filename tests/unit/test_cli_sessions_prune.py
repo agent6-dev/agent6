@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.git_ops import chain_ref_for
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
@@ -395,7 +396,7 @@ def test_runs_rm_asks_clears_the_bucket(
 
 
 def _chain_ref_exists(repo: Path, session_id: str) -> bool:
-    return bool(_git(repo, "for-each-ref", f"refs/agent6/{session_id}", check=False))
+    return bool(_git(repo, "for-each-ref", chain_ref_for(session_id), check=False))
 
 
 def test_prune_drops_chain_refs_of_confirmed_merged_runs(
@@ -417,26 +418,26 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     # merged-reachable: work committed on main itself (a merge landed it).
     _make_branch(tmp_path, "run-RCH111", "a.txt")
     _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-RCH111")
-    _git(tmp_path, "update-ref", "refs/agent6/run-RCH111", "agent6/run-RCH111")
+    _git(tmp_path, "update-ref", chain_ref_for("run-RCH111"), "agent6/run-RCH111")
     _manifest(tmp_path, "run-RCH111", base, merged=True)
     # squash-merged: content in main via squash; the ref is unreachable.
     _make_branch(tmp_path, "run-SQH111", "b.txt")
-    _git(tmp_path, "update-ref", "refs/agent6/run-SQH111", "agent6/run-SQH111")
+    _git(tmp_path, "update-ref", chain_ref_for("run-SQH111"), "agent6/run-SQH111")
     _git(tmp_path, "branch", "-D", "agent6/run-SQH111")
     _manifest(
         tmp_path,
         "run-SQH111",
         base,
         merged=True,
-        merged_tip=_git(tmp_path, "rev-parse", "refs/agent6/run-SQH111"),
+        merged_tip=_git(tmp_path, "rev-parse", chain_ref_for("run-SQH111")),
     )
     # unmerged: the ref is the work's only anchor; must survive both passes.
     _make_branch(tmp_path, "run-UNM111", "c.txt")
-    _git(tmp_path, "update-ref", "refs/agent6/run-UNM111", "agent6/run-UNM111")
+    _git(tmp_path, "update-ref", chain_ref_for("run-UNM111"), "agent6/run-UNM111")
     _git(tmp_path, "branch", "-D", "agent6/run-UNM111")
     _manifest(tmp_path, "run-UNM111", base, merged=False)
     # machine chain: no run manifest; never touched, never mentioned.
-    _git(tmp_path, "update-ref", "refs/agent6/machine-box1", base)
+    _git(tmp_path, "update-ref", chain_ref_for("machine-box1"), base)
 
     assert main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
@@ -444,10 +445,58 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     assert _chain_ref_exists(tmp_path, "run-SQH111")  # squash needs the flag
     assert _chain_ref_exists(tmp_path, "run-UNM111")
     assert _chain_ref_exists(tmp_path, "machine-box1")
-    assert "deleted refs/agent6/run-RCH111" in out
+    assert f"deleted {chain_ref_for('run-RCH111')}" in out
     assert "machine-box1" not in out
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     assert not _chain_ref_exists(tmp_path, "run-SQH111")
     assert _chain_ref_exists(tmp_path, "run-UNM111")
     assert _chain_ref_exists(tmp_path, "machine-box1")
+
+
+def test_prune_reaches_chain_refs_with_no_run_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Chain refs are prunable whether or not a run BRANCH survives.
+
+    The command returned early on an empty branch list, so with
+    `branch_per_run` off -- where there is never one -- a merged run's chain ref
+    could not be pruned at all, and neither could the refs an earlier pass kept
+    once it had deleted the last branch.
+    """
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    # A merged run whose branch is already gone: the chain ref is all that is left.
+    _make_branch(tmp_path, "run-NOBR11", "a.txt")
+    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-NOBR11")
+    _git(tmp_path, "update-ref", chain_ref_for("run-NOBR11"), "agent6/run-NOBR11")
+    _git(tmp_path, "branch", "-D", "agent6/run-NOBR11")
+    _manifest(tmp_path, "run-NOBR11", base, merged=True)
+    assert not _git(tmp_path, "branch", "--list", "agent6/*")
+
+    assert main(["sessions", "prune"]) == 0
+
+    assert not _chain_ref_exists(tmp_path, "run-NOBR11")
+    assert f"deleted {chain_ref_for('run-NOBR11')}" in capsys.readouterr().out
+
+
+def test_prune_with_nothing_at_all_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A repo with neither run branches nor chain refs still answers plainly."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+
+    assert main(["sessions", "prune"]) == 0
+    assert "nothing to prune" in capsys.readouterr().out

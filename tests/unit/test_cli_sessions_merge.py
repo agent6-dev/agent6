@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.git_ops import chain_ref_for
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
@@ -512,7 +513,7 @@ def test_diff_of_a_branch_per_run_off_run_reads_the_chain(
     _set_manifest_field(tmp_path, "run-HEADF1", mode="run")
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
     chain_commit(
-        tmp_path, "agent6 iter 1: work", ref="refs/agent6/run-HEADF1", fallback_parent="HEAD"
+        tmp_path, "agent6 iter 1: work", ref=chain_ref_for("run-HEADF1"), fallback_parent="HEAD"
     )
 
     rc = main(["sessions", "diff", "run-HEADF1"])
@@ -534,13 +535,13 @@ def test_commits_of_a_branch_per_run_off_run_lists_the_chain_like_diff(
     _set_manifest_field(tmp_path, "run-HEADF2", mode="run")
     (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
     chain_commit(
-        tmp_path, "agent6 iter 1: work", ref="refs/agent6/run-HEADF2", fallback_parent="HEAD"
+        tmp_path, "agent6 iter 1: work", ref=chain_ref_for("run-HEADF2"), fallback_parent="HEAD"
     )
 
     assert main(["sessions", "commits", "run-HEADF2"]) == 0
     captured = capsys.readouterr()
     assert "agent6 iter 1: work" in captured.out
-    assert "refs/agent6/run-HEADF2" in captured.err
+    assert chain_ref_for("run-HEADF2") in captured.err
 
 
 def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(

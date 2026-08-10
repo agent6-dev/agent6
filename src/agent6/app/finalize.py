@@ -23,6 +23,7 @@ from agent6.git_ops import (
     auto_stash_message,
     branch_exists,
     branch_tip_sha,
+    chain_ref_for,
     chain_tip,
     create_branch,
     delete_branch_if_merged,
@@ -334,7 +335,7 @@ def finalize_auto_merge(
     base_branch = manifest.base_branch
     # The visible branch when there is one, else the run's chain ref; a run
     # that recorded no commits (unborn ref) has nothing to land.
-    run_branch = manifest.run_branch or f"refs/agent6/{manifest.session_id}"
+    run_branch = manifest.run_branch or chain_ref_for(manifest.session_id)
     if not base_branch or chain_tip(cwd, run_branch) is None:
         return
     identity = CommitIdentity(

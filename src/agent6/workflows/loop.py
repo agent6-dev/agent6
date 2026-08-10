@@ -540,7 +540,7 @@ class Workflow:
     # to every commit this loop makes. None = no trailer configured.
     commit_trailer: str | None = None
     # The run's detached commit chain. Per-step commits land on chain_ref
-    # (`refs/agent6/<session>`, the gc anchor) via a temp index: HEAD, the
+    # (`refs/agent6/<session>/head`, the gc anchor) via a temp index: HEAD, the
     # operator's index, and the checkout are never touched, so operator or
     # model git activity mid-run cannot collide with the run's own record.
     # None (plan/ask, unit-test embedders) = the loop never commits.

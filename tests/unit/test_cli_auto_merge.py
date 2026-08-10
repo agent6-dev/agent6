@@ -13,6 +13,7 @@ import pytest
 from agent6.app import finalize as finmod
 from agent6.app.reporter import STDIO_REPORTER
 from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.git_ops import chain_ref_for
 from agent6.sessions.layout import SessionLayout
 
 
@@ -109,7 +110,7 @@ def test_auto_merge_lands_the_hidden_chain_ref(
         commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
         run_branch=None,
     )
-    _git(tmp_path, "update-ref", "refs/agent6/run-AMREF1", "agent6/run-AMREF1")
+    _git(tmp_path, "update-ref", chain_ref_for("run-AMREF1"), "agent6/run-AMREF1")
     _git(tmp_path, "checkout", "-q", "--detach")
     _git(tmp_path, "branch", "-D", "agent6/run-AMREF1")  # only the chain ref remains
     _git(tmp_path, "checkout", "-q", "main")
