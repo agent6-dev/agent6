@@ -203,6 +203,34 @@ def test_a_server_block_names_only_what_is_extra(tmp_path: Path) -> None:
     assert policy.cwd == tmp_path
 
 
+def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: Path) -> None:
+    """Additive means additive TO THAT SERVER. Each gets its own policy and its
+    own launcher, so a browser server granted the network and a data dir leaves
+    the memory server beside it with neither."""
+    from agent6.app._setup import mcp_server_policy
+
+    cfg = Config.model_validate(
+        {
+            "mcp": {
+                "enabled": True,
+                "servers": {
+                    "browser": {
+                        "command": ["npx", "browser"],
+                        "sandbox": {"read_paths": ["/srv/profile"], "network": "allow"},
+                    },
+                    "memory": {"command": ["npx", "memory"]},
+                },
+            }
+        }
+    )
+    browser = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["browser"])
+    memory = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["memory"])
+    assert browser is not None and memory is not None
+    assert Path("/srv/profile") in browser.extra_ro_paths and browser.allow_network
+    assert Path("/srv/profile") not in memory.extra_ro_paths
+    assert not memory.allow_network
+
+
 def test_no_block_still_confines(tmp_path: Path) -> None:
     """Absent block is the secure default now, not an opt-out: the server is
     confined exactly like a command."""
