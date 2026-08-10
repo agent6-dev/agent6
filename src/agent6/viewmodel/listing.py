@@ -388,6 +388,31 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
     return last_good
 
 
+def finished_needs_new_work(session_dir: Path) -> bool:
+    """Whether resuming this run would have nothing to do.
+
+    True only when the agent ENDED it by calling `finish_session`: the resumed
+    leg spends a call, answers in prose with no tool use, records a
+    silent_finish, and leaves a run that passed reading as failed for a tree
+    nobody touched. Every other ending -- budget_exhausted, provider_error,
+    steer_abort, a red verify -- is exactly what resume is for. Read through
+    the same fold the listing uses, so a refusal and the status it contradicts
+    cannot disagree.
+    """
+    scan = scan_session_log(session_dir / LOGS_NAME)
+    return scan.finished and scan.end_reason == "finish_session"
+
+
+def needs_new_work_refusal(session_id: str) -> str:
+    """The one wording for it, so `agent6 resume` and the web composer refuse a
+    finished run in the same words."""
+    return (
+        f"run {session_id!r} already finished (the agent called finish_session)."
+        " Give it new work with:\n"
+        f'    agent6 resume {session_id} --steer "<what to do next>"'
+    )
+
+
 def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
     """Fold ``logs.jsonl`` into a :class:`LogScan`: session.start (mode/task), the
     last session.end (un-finished again by a later resume), the running per-leg

@@ -490,3 +490,42 @@ def test_an_unknown_machine_is_named_as_unknown_not_as_stopped(
     assert "no machine 'ghost'" in msg, f"{label} misdescribed an unknown machine: {msg!r}"
     assert "not running" not in msg, f"{label} implied the machine exists: {msg!r}"
     assert "agent state" not in msg, f"{label} pointed at a state that never existed: {msg!r}"
+
+
+def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run the agent ENDED has nothing to continue, and the web spawn is
+    DETACHED -- the same refusal from `agent6 resume` would land on a process
+    nobody reads, so the composer would report "resuming" for a run that never
+    started. Refused here instead, in the same words, and an instruction still
+    goes straight through.
+    """
+    import json
+
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": "done-WEB111", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        encoding="utf-8",
+    )
+    spawned: list[str] = []
+
+    def _spawn(_cwd: Path, _session_id: str, *, steer: str = "") -> str:
+        spawned.append(steer)
+        return ""
+
+    monkeypatch.setattr(actions, "spawn_detached_resume", _spawn)
+
+    ok, msg = actions.resume_run(tmp_path, "done-WEB111")
+    assert ok is False
+    assert "already finished" in msg and "--steer" in msg
+    assert spawned == []
+
+    ok, _ = actions.resume_run(tmp_path, "done-WEB111", "do more")
+    assert ok is True
+    assert spawned == ["do more"]

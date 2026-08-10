@@ -651,13 +651,19 @@ function makeComposer(id) {
   const ta = el('textarea', 'field');
   const hint = el('div', 'hint');
   let finished = null; // unknown until the first SSE frame
+  // A run the AGENT ended has nothing to continue, so resume takes an
+  // instruction or is refused; every other ending resumes bare.
+  let needsWork = false;
   let busy = false;
   const suggest = attachCommandSuggest(ta, root, () => finished === false);
   const models = attachParallelSuggest(ta, root); // the spec token after `/parallel `
   const apply = () => {
     ta.disabled = busy;
     if (busy) { hint.textContent = 'resuming…'; return; }
-    if (finished) {
+    if (finished && needsWork) {
+      ta.placeholder = 'what should it do next…';
+      hint.textContent = 'This session finished: Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages';
+    } else if (finished) {
       ta.placeholder = 'continue this session…';
       hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages';
     } else {
@@ -725,6 +731,7 @@ function makeComposer(id) {
   // that predates it.
   root.setState = (s) => {
     if (busy) return;
+    needsWork = s.finished === true && s.end_reason === 'finish_session';
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
     else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)
   };

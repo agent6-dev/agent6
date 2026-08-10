@@ -42,6 +42,7 @@ from agent6.ui.spawn import (
 )
 from agent6.ui.web import model
 from agent6.viewmodel import newest_state_log, session_is_live
+from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
@@ -249,6 +250,11 @@ def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:
         return False, f"no session {session_id!r}"
     if session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
+    if not text.strip() and finished_needs_new_work(session_dir):
+        # The spawn is DETACHED, so the same refusal from `agent6 resume` would
+        # land on a process nobody is reading and the composer would report
+        # "resuming" for a run that never started.
+        return False, needs_new_work_refusal(session_id)
     err = spawn_detached_resume(cwd, session_dir.name, steer=text)
     return (err == ""), (err or "resuming")
 

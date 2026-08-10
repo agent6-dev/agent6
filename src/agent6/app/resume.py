@@ -105,7 +105,8 @@ from agent6.sessions.lock import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_kind
-from agent6.viewmodel import newest_session_dir, scan_session_log
+from agent6.viewmodel import newest_session_dir
+from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 from agent6.workflows._session_state import SessionEndReason, load_session_snapshot
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
@@ -260,16 +261,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # other ending (budget_exhausted, provider_error, steer_abort, a red
     # verify) is exactly what resume exists for. Read through the same fold the
     # listing uses, so the refusal and the status can never disagree.
-    if not steer.strip():
-        scan = scan_session_log(layout.logs_path)
-        if scan.finished and scan.end_reason == "finish_session":
-            reporter.err(
-                f"REFUSING: run {session_id!r} already finished (the agent called"
-                " finish_session). Give it new work with:\n"
-                f'    agent6 resume {session_id} --steer "<what to do next>"'
-            )
-            release_single_writer(worker_lock_fd)
-            return 2
+    if not steer.strip() and finished_needs_new_work(layout.session_dir):
+        reporter.err(f"REFUSING: {needs_new_work_refusal(session_id)}")
+        release_single_writer(worker_lock_fd)
+        return 2
     # Drop a prior session's stale answer files (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.session_dir)
