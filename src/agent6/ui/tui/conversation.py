@@ -42,6 +42,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
+from agent6.directive import STEER_COMMANDS
 from agent6.sessions.ipc import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -136,6 +137,60 @@ def composer_labels(*, live: bool) -> tuple[str, str]:
     return ("continue this session", "Enter resumes · Ctrl-J newline")
 
 
+def steer_suggestion_rows(text: str, *, live: bool) -> list[tuple[str, str]]:
+    """The steer directives matching the composer's first word while it is
+    still being typed (`/…`, no whitespace yet): (command, help) rows, empty
+    for ordinary text. /compact acts only on a live session, so a resume
+    composer does not offer it."""
+    if not text.startswith("/") or any(ch.isspace() for ch in text):
+        return []
+    offered = (
+        STEER_COMMANDS if live else {c: h for c, h in STEER_COMMANDS.items() if c != "/compact"}
+    )
+    return [(c, h) for c, h in offered.items() if c.startswith(text)]
+
+
+def complete_steer(text: str, *, live: bool) -> str | None:
+    """Tab in a composer: the completed command word, or None when Tab should
+    keep its focus-move meaning. A unique match completes with a trailing
+    space; several matches advance to their longest common prefix, returning
+    *text* unchanged when there is no progress so Tab never yanks focus away
+    mid-command."""
+    rows = steer_suggestion_rows(text, live=live)
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0][0] + " "
+    lcp = os.path.commonprefix([c for c, _h in rows])
+    return lcp if len(lcp) > len(text) else text
+
+
+class SteerSuggest(Static):
+    """The command hints above a composer (the run views' analogue of the
+    hub's model-suggestion line): one row per matching steer directive while
+    the first word is being typed, hidden otherwise. Tab in the composer
+    completes (see SteerInput.on_key)."""
+
+    ALLOW_SELECT = False
+    DEFAULT_CSS = """
+    SteerSuggest { display: none; height: auto; padding: 0 1; background: $surface; }
+    """
+
+    def show_for(self, text: str, *, live: bool) -> None:
+        rows = steer_suggestion_rows(text, live=live)
+        if rows:
+            body = Text()
+            for i, (cmd, help_) in enumerate(rows):
+                if i:
+                    body.append("\n")
+                body.append(cmd, style="bold")
+                body.append(f"  {help_}", style="dim")
+            self.update(body)
+        show = bool(rows)
+        if self.display != show:
+            self.display = show
+
+
 class _ChromeStatic(Static):
     """A Static that never joins a text selection, so dragging over the title or
     the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
@@ -206,12 +261,14 @@ class SteerInput(TextArea):
         self._resize()
 
     policy = ""  # viewmodel.session_policy(...).short(), set once the run dir is known
+    mode_live = True  # which steer directives apply (see steer_suggestion_rows)
 
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
         """Relabel for the session's state: steering (live) vs resuming
         (finished), plus the context-window fill when known, right where you
         type. Only writes on a real change: this runs on every heartbeat, and
         same-value style writes still cost a refresh."""
+        self.mode_live = live
         title, keys = composer_labels(live=live)
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         # The run's policy sits where the eye already goes for status, from the
@@ -235,6 +292,14 @@ class SteerInput(TextArea):
             event.prevent_default()
             event.stop()
             self.insert("\n")
+        elif event.key == "tab":
+            completed = complete_steer(self.text, live=self.mode_live)
+            if completed is not None:  # else Tab keeps its focus-move meaning
+                event.prevent_default()
+                event.stop()
+                if completed != self.text:
+                    self.load_text(completed)
+                    self.move_cursor(self.document.end)
 
     def on_text_area_changed(self, _event: TextArea.Changed) -> None:
         self._resize()
@@ -428,6 +493,7 @@ class ConversationScreen(Screen[None]):
                 # selectable; only the tail is ever re-rendered).
                 yield Static(id="conv-tail", classes="conv-chunk")
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
+        yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
         yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
@@ -730,6 +796,14 @@ class ConversationScreen(Screen[None]):
 
     def action_history_search(self) -> None:
         open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id != "conv-input":
+            return
+        with contextlib.suppress(NoMatches):
+            self.query_one("#conv-suggest", SteerSuggest).show_for(
+                event.text_area.text, live=self._host_live()
+            )
 
     # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:

@@ -48,6 +48,7 @@ try:
         Footer,
         RichLog,
         Static,
+        TextArea,
         Tree,
     )
 except ImportError as e:  # pragma: no cover - clear runtime message
@@ -78,6 +79,7 @@ from agent6.ui.tui.conversation import (
     RUN_MENU,
     ConversationScreen,
     SteerInput,
+    SteerSuggest,
     open_history_search,
 )
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -329,6 +331,7 @@ class DashboardScreen(Screen[None]):
             )
             with _ScrollPane(id="diff"):
                 yield Static("", id="diff-body")
+        yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield SteerInput(id="dash-input")
         yield Footer()
 
@@ -345,6 +348,14 @@ class DashboardScreen(Screen[None]):
 
     def action_history_search(self) -> None:
         open_history_search(self, self.query_one("#dash-input", SteerInput), self._tui.logs_path)
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id != "dash-input":
+            return
+        with contextlib.suppress(NoMatches):
+            self.query_one("#dash-suggest", SteerSuggest).show_for(
+                event.text_area.text, live=self._tui.session_controllable()
+            )
 
     def action_toggle_dashboard(self) -> None:
         self._tui.action_toggle_dashboard()

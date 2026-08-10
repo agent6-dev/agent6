@@ -179,3 +179,14 @@ def _parse_segment(raw: str) -> Segment:
             f"/parallel {parts[0]} needs a task, e.g. `/parallel {parts[0]} fix the bug`"
         )
     return Segment(spec=spec, task=task)
+
+
+# The directives a composer can complete, with one-line help: exactly what the
+# TUI/web composers and the loop parse out of steer text (`/btw` stays a CLI
+# pause-menu command, and that menu keeps its own richer table). The web client
+# mirrors these strings verbatim, drift-pinned by tests/web.
+STEER_COMMANDS: dict[str, str] = {
+    "/pin": "pin an instruction that survives compaction: /pin <text>",
+    "/compact": "compact the context now; /compact <focus> steers the summary",
+    "/parallel": "fan out lanes: /parallel [N|models] <task> (repeat to queue more)",
+}
