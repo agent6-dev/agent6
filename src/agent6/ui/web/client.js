@@ -597,7 +597,8 @@ function attachCommandSuggest(ta, root, liveNow) {
 // task, then every steer -- journal-read via the conversation payload, so
 // resumes and steers typed on other surfaces appear). Newest first, one line
 // each, repeats collapsed: the same list the CLI and TUI searches show.
-// Picking fills the composer for editing; nothing is sent.
+// Picking fills the composer for editing (Enter keeps the highlighted match,
+// or the typed text itself when nothing matches); nothing is sent.
 function openHistorySearch(entries, onPick) {
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
@@ -627,7 +628,7 @@ function openHistorySearch(entries, onPick) {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) pick(items[active]); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(items.length ? items[active] : field.value); }
   }
   activeOverlayClose = close; // navigating away dismisses it
   document.addEventListener('keydown', onKey);

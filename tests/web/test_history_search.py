@@ -21,3 +21,9 @@ def test_composer_intercepts_ctrl_r_only() -> None:
 def test_history_reads_the_payload_key_and_advertises_the_chord() -> None:
     assert "operator_inputs" in CLIENT_JS  # the conversation payload key
     assert CLIENT_JS.count("Ctrl-R past messages") == 2  # both composer hints
+
+
+def test_enter_keeps_the_typed_text_when_nothing_matches() -> None:
+    # One accept rule on every surface: the highlighted match, else the query
+    # itself (the CLI and TUI searches behave the same way).
+    assert "pick(items.length ? items[active] : field.value)" in CLIENT_JS
