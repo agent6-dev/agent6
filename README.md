@@ -9,7 +9,7 @@ open-ended agent loop.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 
-[![agent6: one sandboxed coding agent across the CLI, the TUI, and the web](https://agent6.dev/screenshots/out/cover.png)](https://agent6.dev/tour/)
+[![agent6: one sandboxed coding agent across the CLI, the TUI, and the web](https://agent6.dev/screenshots/out/hero.gif)](https://agent6.dev/tour/)
 
 ## Features
 

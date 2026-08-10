@@ -113,8 +113,18 @@ OVERLAY_INIT_SCRIPT = r"""
 """
 
 
+# Whether the narration banner is drawn. Mutated, never rebound, so every
+# call site sees main()'s choice without a `global` statement.
+_narration: dict[str, bool] = {"show": True}
+
+
 def toast(page: Page, msg: str, ms: int = 2400, after: int = 450) -> None:
-    page.evaluate(f"window.__a6Toast({json.dumps(msg)}, {ms})")
+    """Narrate one step, unless `--no-narration` asked for a bare recording.
+
+    The wait happens either way, so a bare take is paced exactly like a
+    narrated one and a clip cut from either lines up frame for frame."""
+    if _narration["show"]:
+        page.evaluate(f"window.__a6Toast({json.dumps(msg)}, {ms})")
     if after:
         page.wait_for_timeout(after)
 
@@ -292,8 +302,14 @@ def main() -> None:
     ap.add_argument("--url", required=True)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--mode", choices=list(VIEWPORTS), default="desktop")
+    ap.add_argument(
+        "--no-narration",
+        action="store_true",
+        help="Record without the narration banner (for the README hero, which carries no overlay).",
+    )
     args = ap.parse_args()
 
+    _narration["show"] = not args.no_narration
     vp = VIEWPORTS[args.mode]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     tmp_dir = args.out.parent / f"_web_{args.mode}_raw"

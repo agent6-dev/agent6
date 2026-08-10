@@ -49,6 +49,18 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
+# `hero` records the desktop tour WITHOUT the narration banner, for the README
+# hero (hero.sh), which carries no overlay of any kind.
+if [ "${1:-}" = "hero" ]; then
+  rm -f "$OUT"/hero-web.webm
+  "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/hero-web.webm" \
+    --mode desktop --no-narration
+  rm -rf "$OUT"/_web_desktop_raw
+  [ -s "$OUT/hero-web.webm" ] || { echo "web_demo.sh: failed to produce hero-web.webm" >&2; exit 1; }
+  echo "web_demo: done -> $OUT/hero-web.webm"
+  exit 0
+fi
+
 rm -f "$OUT"/web-desktop.webm "$OUT"/web-phone.webm
 "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/web-desktop.webm" --mode desktop
 "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/web-phone.webm" --mode phone

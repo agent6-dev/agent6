@@ -3,7 +3,9 @@
 # hub -> event log (l) -> config -> search -> help -> quit. The whole tour
 # stays inside the TUI (a run is opened with Enter, not a new shell command).
 # No Screenshots, which would stall the video clock; generate.sh records this
-# and overlays keystroke toasts with keystroke_overlay.py.
+# and overlays keystroke toasts with keystroke_overlay.py to make tour.webm.
+# This bare recording is kept as hero-tui.webm: the README hero (hero.sh) uses
+# it because it carries no toasts.
 #
 # Recorded at 1280x720 / Framerate 8: the live dashboard redraws ~5x/s, and at
 # this resolution vhs's capture keeps up, so the recording stays at real time
@@ -14,7 +16,7 @@
 # dashboard, and config; short on the hub, help, and the transits back. Inside
 # the run app the composer bar owns plain letters, so only its priority chords
 # (Ctrl+D, Esc) are used. generate.sh exports the seeded AGENT6_* env.
-Output docs/screenshots/out/_reel-raw.webm
+Output docs/screenshots/out/hero-tui.webm
 
 Require agent6
 

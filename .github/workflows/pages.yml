@@ -102,6 +102,13 @@ jobs:
           /tmp/pw/bin/playwright install --with-deps chromium
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_machine_demo.sh
+          WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh hero
+
+      - name: Build the README hero
+        # Cuts the three bare recordings (no keystroke toasts, no narration
+        # banner) into one ~20s tour: out/hero.webm for the site, out/hero.gif
+        # for the README, which GitHub animates through its image proxy.
+        run: bash docs/screenshots/hero.sh
 
       - name: Compose the README cover image
         # Splices the CLI / TUI / web stills into one cover (out/cover.png),
