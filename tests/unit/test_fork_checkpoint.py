@@ -666,66 +666,6 @@ def _current_branch(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _layout_with_run_branch(
-    state_dir: Path, session_id: str, run_branch: str | None
-) -> SessionLayout:
-    layout = SessionLayout(state_dir=state_dir, session_id=session_id)
-    layout.ensure()
-    body: dict[str, Any] = {"version": 2, "session_id": session_id, "mode": "run"}
-    if run_branch is not None:
-        body["run_branch"] = run_branch
-    layout.manifest_path.write_text(json.dumps(body), encoding="utf-8")
-    return layout
-
-
-def test_ensure_on_run_branch_checks_out_the_fork_branch(tmp_path: Path) -> None:
-    # Reproduces the fork bug: the branch exists (cut additively) but HEAD is on
-    # the operator's branch, so resume must switch onto it before committing.
-    from agent6.app.resume import ensure_on_run_branch
-
-    repo = tmp_path / "repo"
-    head = _git_repo(repo)
-    sp.run(["git", "branch", "agent6/child", head], cwd=repo, check=True)
-    assert _current_branch(repo) == "main"
-
-    layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    assert ensure_on_run_branch(repo, layout) is None
-    assert _current_branch(repo) == "agent6/child"
-
-
-def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
-    from agent6.app.resume import ensure_on_run_branch
-
-    repo = tmp_path / "repo"
-    head = _git_repo(repo)
-    sp.run(["git", "branch", "agent6/child", head], cwd=repo, check=True)
-    (repo / "seed.txt").write_text("dirty\n")  # uncommitted change
-
-    layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    err = ensure_on_run_branch(repo, layout)
-    assert err is not None and "uncommitted changes" in err
-    assert _current_branch(repo) == "main", "must not switch with modified tracked files"
-
-
-def test_ensure_on_run_branch_allows_untracked_files(tmp_path: Path) -> None:
-    # Untracked files are carried across a checkout, so they must NOT block the
-    # switch (only modified tracked files do).
-    from agent6.app.resume import ensure_on_run_branch
-
-    repo = tmp_path / "repo"
-    head = _git_repo(repo)
-    sp.run(["git", "branch", "agent6/child", head], cwd=repo, check=True)
-    (repo / "scratch.txt").write_text("untracked\n")  # untracked only
-
-    layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    assert ensure_on_run_branch(repo, layout) is None
-    assert _current_branch(repo) == "agent6/child"
-    assert (repo / "scratch.txt").exists()  # untracked file preserved
-
-
-# --- resume/fork accept an omitted run id (most recent) --------------------
-
-
 def test_fork_without_id_forks_most_recent_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -789,20 +729,6 @@ def test_resume_without_id_and_no_runs_errors_cleanly(
     assert "nothing to resume" in capsys.readouterr().err
 
 
-def test_ensure_on_run_branch_noop_without_run_branch(tmp_path: Path) -> None:
-    # branch_per_run was off: no run_branch recorded, so HEAD is left alone.
-    from agent6.app.resume import ensure_on_run_branch
-
-    repo = tmp_path / "repo"
-    _git_repo(repo)
-    layout = _layout_with_run_branch(tmp_path / "state", "child", None)
-    assert ensure_on_run_branch(repo, layout) is None
-    assert _current_branch(repo) == "main"
-
-
-# --- resume preflight refusals leave the checkout untouched -------------------
-
-
 def test_resume_config_refusal_leaves_checkout_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -830,11 +756,11 @@ def test_resume_config_refusal_leaves_checkout_untouched(
 def test_resume_diverged_branch_refuses_without_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The head guard reads the run BRANCH's tip: a diverged run branch refuses
-    # with HEAD still on the operator's branch, not parked on agent6/<id>.
+    # The head guard reads the CHAIN ref's tip: a rewritten chain refuses
+    # with the operator's checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
-    sp.run(["git", "branch", "agent6/divg-AAAA11", base], cwd=repo, check=True)
+    sp.run(["git", "update-ref", "refs/agent6/divg-AAAA11", base], cwd=repo, check=True)
     (repo / "seed.txt").write_text("moved on\n")
     sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
     new_head = sp.run(

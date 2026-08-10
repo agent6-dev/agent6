@@ -51,7 +51,13 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
-from agent6.git_ops import CommitIdentity, render_commit_trailer, set_repo_hook_policy
+from agent6.git_ops import (
+    CommitIdentity,
+    GitError,
+    render_commit_trailer,
+    set_repo_hook_policy,
+)
+from agent6.git_ops import status as git_status
 from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import Provider, TranscriptSink
 from agent6.sessions.ipc import (
@@ -108,6 +114,15 @@ class MachineAgentRequest(BaseModel):
     # (mode="agent"/"machine") states.
     commit_identity: CommitIdentity | None = None
     request: AgentRequest
+
+
+def _machine_head_sha(root: Path) -> str | None:
+    """HEAD at state start, the chain's first parent; None when unreadable
+    (an unborn repo roots the chain)."""
+    try:
+        return git_status(root).head_sha or None
+    except (GitError, OSError):
+        return None
 
 
 def _result(
@@ -372,6 +387,14 @@ def run_one(
         dispatcher=dispatcher,
         logger=reporter.err,
         mode=mode if mode in ("machine", "agent") else "run",
+        # A mode="run" state commits on its own chain like any run; the
+        # instance dir name is its session-unique id. Read-only states never
+        # commit (mode gate), so the refs stay None there.
+        chain_ref=(
+            f"refs/agent6/machine-{req.transcript_dir.parent.name}" if not read_only else None
+        ),
+        chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
+        commit_per_step=cfg.git.commit_per_step,
         state_dir=resolved_state_dir(req.root),
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,

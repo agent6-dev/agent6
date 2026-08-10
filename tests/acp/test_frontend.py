@@ -94,19 +94,6 @@ def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
     assert denied.confirm_unconfined_autorun("none", dangerous) is False
 
 
-def test_the_configured_branch_start_point_is_honoured() -> None:
-    """`None` means "stack on whatever is checked out", which for
-    `branch_from = "base"` is the opposite of what the operator configured --
-    and can carry another run's unmerged branch into this run's diff."""
-    from agent6.config import Config
-
-    front, _asked = _frontend()
-    for setting, expected in (("base", "main"), ("ask", "main"), ("current", None)):
-        cfg = Config.model_validate({"git": {"branch_from": setting}})
-        choice = front.choose_branch_start_point(cfg, Path("/repo"), "main")
-        assert choice.start_point == expected, setting
-
-
 def test_an_approval_that_must_not_be_remembered_says_so() -> None:
     """`standing=False` is the fetch tool's off-list host, where a GET can
     carry data out in its path. An editor that offers "always allow" needs

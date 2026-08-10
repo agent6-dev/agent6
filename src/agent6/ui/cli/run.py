@@ -55,7 +55,6 @@ from agent6.ui.cli._live import (
     tui_session,
 )
 from agent6.ui.cli._preflight import (
-    choose_branch_start_point,
     confirm_run_on_run_branch,
     confirm_unconfined_autorun,
 )
@@ -165,7 +164,6 @@ def session_frontend() -> SessionFrontend:
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,
-        choose_branch_start_point=choose_branch_start_point,
         prompt_detach_away_mode=prompt_detach_away_mode,
         select_revised_prompt=lambda original, revised, questions: select_revised_prompt(
             original, revised, questions, console_cell[0]

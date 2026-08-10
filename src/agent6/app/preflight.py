@@ -8,7 +8,6 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.providers import (
@@ -23,7 +22,6 @@ from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
-from agent6.sessions.manifest import manifest_for_branch
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 
@@ -168,42 +166,6 @@ def headless_approval_refusal(
         "  - attended: start it from a terminal, or set an away-mode"
         " (AGENT6_DETACHED_AWAY=wait|deny) so an absent operator's intent is known"
     )
-
-
-_RUN_BRANCH_PREFIX = "agent6/"
-
-
-@dataclass(frozen=True, slots=True)
-class BranchChoice:
-    """Where a run's branch is cut from (``git.branch_from``). ``start_point`` is
-    a branch/sha to cut from, or None to cut from the current HEAD (stack).
-    ``abort`` is set when the operator declined at the ``ask`` prompt."""
-
-    start_point: str | None
-    abort: bool = False
-
-
-def _manifest_base_branch(state_dir: Path, branch: str) -> str | None:
-    """The base branch the session that cut *branch* recorded it came from."""
-    manifest = manifest_for_branch(state_dir, branch)
-    return (manifest.base_branch or None) if manifest is not None else None
-
-
-def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
-    """Walk the run-branch chain down to the base line: the nearest ancestor
-    branch that is NOT an ``agent6/*`` run branch. A run records the branch it
-    was cut from, so we follow those manifests (guarding against a cycle) until a
-    non-run branch or the chain breaks. Returns *current_branch* unchanged when
-    it is already a base branch."""
-    branch = current_branch
-    seen: set[str] = set()
-    while branch.startswith(_RUN_BRANCH_PREFIX) and branch not in seen:
-        seen.add(branch)
-        base = _manifest_base_branch(state_dir, branch)
-        if not base:
-            break
-        branch = base
-    return branch
 
 
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:

@@ -47,7 +47,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
 from agent6.directive import parse_spec
-from agent6.git_ops import GitError, diff_since
+from agent6.git_ops import GitError, checkout_detached, diff_since
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
@@ -192,6 +192,7 @@ def bridge_spawner(
     origin: Path,
     max_usd: float | None,
     auto_approve: bool = False,
+    at: str | None = None,
     runtime: LaneRuntime,
 ) -> LaneResult:
     """Clone the origin, spawn a detached `agent6 run` in the clone, and return a
@@ -207,7 +208,13 @@ def bridge_spawner(
     branch = f"agent6/{spec.session_id}"
     try:
         clone_workspace(origin, spec.workdir)
-    except SubrunError as exc:
+        if at is not None:
+            # Coordinator dispatch cuts lanes at the run's chain tip, not the
+            # cloned HEAD (the operator's checkout, which the run never moves).
+            # A local clone hardlinks the whole odb, so the chain's commits are
+            # present without their refs.
+            checkout_detached(spec.workdir, at)
+    except (SubrunError, GitError) as exc:
         return LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
@@ -330,6 +337,7 @@ def run_lane_to_completion(
     max_usd: float | None = None,
     auto_approve: bool = False,
     spawner: LaneSpawner | None = None,
+    at: str | None = None,
     import_lock: threading.Lock | None = None,
     poll_interval_s: float = _POLL_INTERVAL_S,
     reporter: Reporter = STDIO_REPORTER,
@@ -364,6 +372,7 @@ def run_lane_to_completion(
             origin=origin,
             max_usd=max_usd,
             auto_approve=auto_approve,
+            at=at,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -454,7 +463,7 @@ def build_lane_spawner(
     (depth 1 by construction). `auto_approve` forwards the coordinator's own
     `--auto-approve` to every lane, same as `max_usd`."""
 
-    def dispatch(lanes: list[LaneTask], group: str) -> list[LaneResult]:
+    def dispatch(lanes: list[LaneTask], group: str, *, at: str | None = None) -> list[LaneResult]:
         # The documented hard cap on lanes per fan-out binds here too: the
         # /parallel steer uses the same grammar as run --parallel (which
         # build_lane_specs refuses up front), so a fat-fingered `/parallel 40`
@@ -503,6 +512,7 @@ def build_lane_spawner(
                 spec,
                 lane.task,
                 pins=lane.pins,
+                at=at,
                 cfg=cfg,
                 origin=origin,
                 origin_state=origin_state,

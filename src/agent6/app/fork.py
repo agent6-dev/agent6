@@ -35,7 +35,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.git_ops import GitError, create_branch_at
+from agent6.git_ops import GitError, create_branch_at, set_ref
 from agent6.graph.replay import graph_at_version, journal_prefix
 from agent6.graph.storage import (
     append_jsonl,
@@ -381,7 +381,7 @@ def _materialize_fork(
     atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=graph_version)
 
-    run_branch = f"agent6/{dst.session_id}"
+    run_branch = f"agent6/{dst.session_id}" if cfg.git.branch_per_run else None
     write_session_manifest(
         dst,
         session_id=dst.session_id,
@@ -399,14 +399,17 @@ def _materialize_fork(
         gate=gate,
     )
 
-    # Cut the fork's branch at the historical sha WITHOUT touching the operator's
-    # checkout (additive `git branch <name> <sha>`).
+    # Seed the fork's chain at the historical sha WITHOUT touching the
+    # operator's checkout: the hidden ref always, the visible branch per
+    # [git].branch_per_run (both additive ref writes, never a checkout).
     try:
-        create_branch_at(cwd, run_branch, forked_from_sha)
+        set_ref(cwd, f"refs/agent6/{dst.session_id}", forked_from_sha)
+        if run_branch is not None:
+            create_branch_at(cwd, run_branch, forked_from_sha)
     except GitError as exc:
-        reporter.err(f"ERROR: could not cut fork branch {run_branch}: {exc}")
+        reporter.err(f"ERROR: could not cut fork refs at {forked_from_sha[:12]}: {exc}")
         # The fork dir was just materialized; don't leave an orphan run dir +
-        # manifest (and a lineage gap) when the branch couldn't be cut.
+        # manifest (and a lineage gap) when the refs couldn't be cut.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 
@@ -421,8 +424,9 @@ def _materialize_fork(
             ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         ),
     )
+    at = f"(branch {run_branch} " if run_branch else f"(refs/agent6/{dst.session_id} "
     reporter.err(
         f"[agent6] forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
-        f"(branch {run_branch} at {forked_from_sha[:12]})"
+        f"{at}at {forked_from_sha[:12]})"
     )
     return 0

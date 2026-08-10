@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app.preflight import BranchChoice
 from agent6.app.run import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
 from agent6.config import Config
@@ -111,17 +110,6 @@ def acp_frontend(
             standing=False,
         )
 
-    def _branch_choice(cfg: Config, _cwd: Path, base: str) -> BranchChoice:
-        """`git.branch_from`, honoured rather than discarded.
-
-        `None` means "stack on whatever is checked out", which for
-        `branch_from = "base"` is the opposite of what the operator configured
-        -- and can carry another run's unmerged branch into this run's diff.
-        With no terminal to ask on, `ask` takes the CLI's own headless
-        fallback: the clean base.
-        """
-        return BranchChoice(start_point=None if cfg.git.branch_from == "current" else base)
-
     def _steer(
         _events: EventSink, _session_dir: Path, _facts: Callable[[], SessionFacts]
     ) -> SteerHooks:
@@ -157,7 +145,6 @@ def acp_frontend(
         confirm_run_on_run_branch=lambda branch: _approve(
             f"Continue this run on {branch!r}, which is already a run branch?"
         ),
-        choose_branch_start_point=_branch_choice,
         prompt_detach_away_mode=lambda _session_dir: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,
         build_repl_hook=_no_repl,

@@ -515,17 +515,17 @@ class GitConfig(BaseModel):
     # back to the base branch first under branch_per_run), and otherwise leaves
     # the stash with a message rather than risk a conflicted auto-apply.
     auto_stash_pop: bool = False
+    # Per-step commits land on the run's own detached chain
+    # (refs/agent6/<session>), parented on HEAD at run start; HEAD, the
+    # operator's index, and the checkout are never touched. branch_per_run
+    # additionally advances a visible agent6/<slug> branch ref to the chain
+    # tip (off = the hidden ref only). Forced on for --parallel lanes (work
+    # is imported by branch).
     branch_per_run: bool = True
-    # Where a run's branch is cut from when you are NOT on the base branch (e.g.
-    # you are still on a previous run's `agent6/*` branch, having not merged it):
-    #   "current" (default) -- cut from HEAD, STACKING the new run on the current
-    #      branch's work. Serial runs pile up; deliberate if you are iterating.
-    #   "base" -- cut from the base branch (the nearest non-run branch this branch
-    #      descends from), so each run starts from a clean line, not the last run.
-    #   "ask" -- prompt when you are not on the base branch (stack / from base /
-    #      abort); non-interactive falls back to "base" (the un-surprising choice).
-    # No effect when you are already on the base branch (nothing to stack on).
-    branch_from: Literal["current", "base", "ask"] = "current"
+    # Off = no per-step commits at all: sessions diff/commits/merge, fork
+    # rollback, and the compare judge honestly degrade to "no step history";
+    # resume still works from snapshots.
+    commit_per_step: bool = True
     # Default strategy for `agent6 sessions merge`: how the run branch lands on
     # your branch. `squash` (one combined commit), `merge` (a
     # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).

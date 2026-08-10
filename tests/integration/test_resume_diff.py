@@ -2,9 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Tests for the resume head guard (`snapshot_head_mismatch`) against a real git repo.
 
-The guard is what makes `agent6 resume` refuse when the workspace HEAD moved
-since the run's last `loop_state.json` write. It reads the snapshot's
-`head_sha` field directly (best-effort) and compares it to the current HEAD.
+The guard is what makes `agent6 resume` refuse when the run's chain ref
+(`refs/agent6/<id>`) moved OFF the line recorded by the last `loop_state.json`
+write. It reads the snapshot's `head_sha` field directly (best-effort) and
+compares it to the chain tip; the operator's checkout is never read or touched.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import subprocess
 from pathlib import Path
 
 from agent6.app.resume import snapshot_head_mismatch
+
+_REF = "refs/agent6/r1"
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -38,61 +41,71 @@ def _init_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _commit(repo: Path, name: str, content: str, msg: str) -> str:
+    (repo / name).write_text(content)
+    _git(repo, "add", name)
+    _git(repo, "commit", "-q", "-m", msg)
+    return _git(repo, "rev-parse", "HEAD")
+
+
 def _write_snapshot(tmp_path: Path, payload: object) -> Path:
     path = tmp_path / "loop_state.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
-def test_aligned_head_passes(tmp_path: Path) -> None:
+def test_aligned_chain_tip_passes(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", _REF, head)
     snap = _write_snapshot(tmp_path, {"head_sha": head})
-    assert snapshot_head_mismatch(snap, repo) is None
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_own_forward_commit_is_allowed(tmp_path: Path) -> None:
-    # The run's own per-step commit advances HEAD forward from the snapshot on
-    # the same line (a kill after the commit but before the next snapshot
-    # refresh). HEAD is a descendant of snap_head, so resume must proceed.
+    # The run's own per-step commit advances the chain forward from the
+    # snapshot on the same line (a kill after the commit but before the next
+    # snapshot refresh). The tip descends from snap_head, so resume proceeds.
     repo = _init_repo(tmp_path)
     old_head = _git(repo, "rev-parse", "HEAD")
     snap = _write_snapshot(tmp_path, {"head_sha": old_head})
-    (repo / "b.txt").write_text("new\n")
-    _git(repo, "add", "b.txt")
-    _git(repo, "commit", "-q", "-m", "the run's own step commit")
-    assert snapshot_head_mismatch(snap, repo) is None
+    tip = _commit(repo, "b.txt", "new\n", "the run's own step commit")
+    _git(repo, "update-ref", _REF, tip)
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
-def test_diverged_head_is_reported(tmp_path: Path) -> None:
-    # An amend rewrites HEAD to a new sha and orphans the snapshot commit, so
-    # HEAD is NOT a descendant of snap_head: genuine divergence, refuse.
+def test_replaced_chain_is_reported(tmp_path: Path) -> None:
+    # The ref points at a commit that does NOT descend from the snapshot head
+    # (someone rewrote or replaced the chain): genuine divergence, refuse.
     repo = _init_repo(tmp_path)
     old_head = _git(repo, "rev-parse", "HEAD")
     snap = _write_snapshot(tmp_path, {"head_sha": old_head})
     (repo / "a.txt").write_text("rewritten\n")
     _git(repo, "add", "a.txt")
     _git(repo, "commit", "-q", "--amend", "-m", "amended init")
-    mismatch = snapshot_head_mismatch(snap, repo)
-    assert mismatch is not None
-    snap_head, current_head = mismatch
-    assert snap_head == old_head
-    assert current_head == _git(repo, "rev-parse", "HEAD")
+    other_line = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", _REF, other_line)
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) == (old_head, other_line)
 
 
 def test_reset_backward_is_reported(tmp_path: Path) -> None:
-    # Operator reset the branch back: HEAD is an ancestor of snap_head, not a
-    # descendant, so the snapshot's work is no longer present. Refuse.
+    # The ref was moved back to an ancestor: the snapshot's work is no longer
+    # on the chain. Refuse.
     repo = _init_repo(tmp_path)
-    (repo / "b.txt").write_text("second\n")
-    _git(repo, "add", "b.txt")
-    _git(repo, "commit", "-q", "-m", "second")
-    snap_head = _git(repo, "rev-parse", "HEAD")
+    base = _git(repo, "rev-parse", "HEAD")
+    snap_head = _commit(repo, "b.txt", "second\n", "second")
     snap = _write_snapshot(tmp_path, {"head_sha": snap_head})
-    _git(repo, "reset", "--hard", "HEAD~1")
-    mismatch = snapshot_head_mismatch(snap, repo)
-    assert mismatch is not None
-    assert mismatch[0] == snap_head
+    _git(repo, "update-ref", _REF, base)
+    mismatch = snapshot_head_mismatch(snap, repo, chain_ref=_REF)
+    assert mismatch == (snap_head, base)
+
+
+def test_missing_ref_skips_check(tmp_path: Path) -> None:
+    # An unborn chain (the run never committed, or a pre-chain session):
+    # resume continues from the snapshot head itself, nothing to compare.
+    repo = _init_repo(tmp_path)
+    snap = _write_snapshot(tmp_path, {"head_sha": _git(repo, "rev-parse", "HEAD")})
+    assert snapshot_head_mismatch(snap, repo, chain_ref="refs/agent6/gone") is None
 
 
 def test_blank_head_sha_skips_check(tmp_path: Path) -> None:
@@ -100,13 +113,13 @@ def test_blank_head_sha_skips_check(tmp_path: Path) -> None:
     # refuse, resume proceeds.
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, {"head_sha": ""})
-    assert snapshot_head_mismatch(snap, repo) is None
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_pre_head_sha_snapshot_skips_check(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, {"version": 1, "messages": []})
-    assert snapshot_head_mismatch(snap, repo) is None
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
 def test_corrupt_snapshot_skips_check(tmp_path: Path) -> None:
@@ -115,71 +128,27 @@ def test_corrupt_snapshot_skips_check(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     snap = tmp_path / "loop_state.json"
     snap.write_text("{not json", encoding="utf-8")
-    assert snapshot_head_mismatch(snap, repo) is None
-    assert snapshot_head_mismatch(tmp_path / "missing.json", repo) is None
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert snapshot_head_mismatch(tmp_path / "missing.json", repo, chain_ref=_REF) is None
 
 
 def test_non_dict_snapshot_skips_check(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, ["not", "a", "dict"])
-    assert snapshot_head_mismatch(snap, repo) is None
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
 
 
-# --- run-branch tip comparison (the guard needs no checkout) -------------------
-
-
-def test_run_branch_tip_is_checked_without_checkout(tmp_path: Path) -> None:
-    # With a run_branch the guard reads the BRANCH tip, not HEAD: divergence is
-    # detected while the operator's checkout sits on another branch, before any
-    # workspace mutation.
+def test_guard_never_reads_the_checkout(tmp_path: Path) -> None:
+    """Divergence is detected from the ref alone while HEAD sits anywhere: the
+    operator's checkout is on a rewritten main, the chain is aligned, and the
+    guard still passes (an implementation comparing HEAD would refuse)."""
     repo = _init_repo(tmp_path)
     base = _git(repo, "rev-parse", "HEAD")
-    _git(repo, "branch", "agent6/r1", base)
-    (repo / "a.txt").write_text("moved on\n")
-    _git(repo, "commit", "-aqm", "advance main")
-    new_head = _git(repo, "rev-parse", "HEAD")
-    # The snapshot recorded main's new head; the run branch still points at the
-    # base commit, which is not a descendant of it.
-    snap = _write_snapshot(tmp_path, {"head_sha": new_head})
-    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/r1") == (new_head, base)
-    assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
-
-
-def test_run_branch_aligned_tip_passes_from_another_branch(tmp_path: Path) -> None:
-    """The run branch tip matches the snapshot: no refusal, even though HEAD is
-    on a DIVERGED line (not merely ahead) -- an implementation that compared
-    HEAD instead of the branch tip would refuse here."""
-    repo = _init_repo(tmp_path)
-    base = _git(repo, "rev-parse", "HEAD")
-    _git(repo, "branch", "agent6/r2", base)
+    _git(repo, "update-ref", _REF, base)
     (repo / "a.txt").write_text("moved on\n")
     _git(repo, "commit", "-aqm", "advance main")
     (repo / "a.txt").write_text("rewritten\n")
     _git(repo, "commit", "-aqm", "rewrite main", "--amend")  # HEAD now diverged
     snap = _write_snapshot(tmp_path, {"head_sha": base})
-    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/r2") is None
-
-
-def test_missing_run_branch_falls_back_to_head(tmp_path: Path) -> None:
-    """A recorded branch that no longer exists: the checkout step re-cuts it at
-    HEAD, so the guard compares the snapshot against HEAD -- and must REFUSE
-    when HEAD diverged. With snapshot == HEAD both the real fallback and a stub
-    that returns None on any unresolvable branch answer None, so the aligned
-    case alone proved nothing."""
-    repo = _init_repo(tmp_path)
-    aligned = _git(repo, "rev-parse", "HEAD")
-    assert (
-        snapshot_head_mismatch(
-            _write_snapshot(tmp_path, {"head_sha": aligned}), repo, run_branch="agent6/gone"
-        )
-        is None
-    )
-
-    # Rewrite history so HEAD is no longer a descendant of the snapshot head.
-    (repo / "a.txt").write_text("diverged\n")
-    _git(repo, "commit", "-aqm", "amended line", "--amend")
-    diverged = _git(repo, "rev-parse", "HEAD")
-    assert diverged != aligned
-    assert snapshot_head_mismatch(
-        _write_snapshot(tmp_path, {"head_sha": aligned}), repo, run_branch="agent6/gone"
-    ) == (aligned, diverged)
+    assert snapshot_head_mismatch(snap, repo, chain_ref=_REF) is None
+    assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"

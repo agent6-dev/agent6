@@ -46,7 +46,6 @@ from agent6.app.manifest import (
     write_session_manifest,
 )
 from agent6.app.preflight import (
-    BranchChoice,
     drop_gate_if_unrunnable,
     headless_approval_refusal,
     infer_verify_if_unset,
@@ -64,7 +63,6 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     auto_stash_message,
-    create_branch,
     dirty_paths,
     render_commit_trailer,
     set_repo_hook_policy,
@@ -212,7 +210,6 @@ class SessionFrontend:
     make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
-    choose_branch_start_point: Callable[[Config, Path, str], BranchChoice]
     prompt_detach_away_mode: Callable[[Path], None]
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None]
     # `run -i` / `ask -i`
@@ -504,48 +501,20 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
     run_branch: str | None = None
-    branch_start_point: str | None = None
     detach_requested = False
     try:
-        # A fresh branch named after the run id is 1:1 with the run (find it
-        # from any run id, `agent6 sessions diff <id>`, or just delete the branch to
-        # discard everything the agent did). The name is the unique run id,
-        # never a timestamp+task-slug that collides into a pile of near-
-        # duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
-        # `run` mode branches: `plan`/`ask` make no commits, so a branch for
-        # them is pure litter. Decided here; the CUT happens below, after every
-        # refusal-capable preflight step.
+        # A visible branch named after the run id is 1:1 with the run (find it
+        # from any run id, `agent6 sessions diff <id>`, or delete the branch to
+        # drop the pointer). The name is the unique run id. Only real `run`
+        # mode branches: `plan`/`ask` make no commits. The ref itself is
+        # advanced by the first chain commit; nothing is cut or checked out.
         if cfg.git.branch_per_run and mode == "run":
             run_branch = f"agent6/{effective_session_id}"
-            # git.branch_from decides whether to cut from HEAD (stack) or from the
-            # base line when you are on a previous run's branch (see BranchChoice).
-            branch_choice = frontend.choose_branch_start_point(cfg, layout.state_dir, base_branch)
-            if branch_choice.abort:
-                reporter.err("[agent6] aborted; nothing was started.")
-                clear_worker_pid(layout.session_dir)
-                release_single_writer(repo_lock_fd)
-                release_single_writer(worker_lock_fd)
-                discard_husk_dir(layout.session_dir)
-                return 0
-            branch_start_point = branch_choice.start_point
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
         warn_install_inside_workspace(cwd, reporter=reporter)
-
-        # Cut the run branch, then write the manifest that records it. The cut
-        # is the ONLY workspace mutation in preflight and deliberately its LAST
-        # step (mirroring resume): every refusal above -- and a failed cut
-        # itself -- exits with the operator's checkout untouched and the run
-        # dir still a discardable husk, not a manifest'd "(no logs)" ghost.
-        if run_branch is not None:
-            try:
-                create_branch(cwd, run_branch, start_point=branch_start_point)
-            except GitError as exc:
-                reporter.err(f"ERROR: could not cut run branch {run_branch}: {exc}")
-                discard_husk_dir(layout.session_dir)
-                return 2
 
         # Write the run manifest. This is the canonical record of where the
         # run started (base_sha + base_branch), which model+provider drove
@@ -682,6 +651,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
+                chain_ref=f"refs/agent6/{effective_session_id}" if mode == "run" else None,
+                chain_branch=run_branch,
+                chain_fallback_parent=base_sha or None,
+                commit_per_step=cfg.git.commit_per_step,
                 provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,
@@ -849,12 +822,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.session_dir)
         if stashed:
             if detach_requested:
-                # The run is NOT over: the detached resume needs the checkout
-                # left on the run branch, and popping the stash now would
-                # either kill it (tracked dirt -> ensure_on_run_branch refuses
-                # with stderr at /dev/null: a silent dead continuation) or,
-                # for untracked-only dirt, feed the user's pre-run files into
-                # the agent's auto-commits. Leave the stash and say so.
+                # The run is NOT over: popping the stash now would feed the
+                # user's pre-run files into the detached continuation's
+                # auto-commits. Leave the stash and say so.
                 # By sha, never by position: this hint has the LONGEST window of
                 # any -- the operator reads it now and runs it after a
                 # background run that may take hours, by which point a

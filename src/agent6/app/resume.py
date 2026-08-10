@@ -57,15 +57,11 @@ from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    branch_tip_sha,
-    create_branch,
+    chain_tip,
     is_ancestor,
     render_commit_trailer,
     set_repo_hook_policy,
     verify_git_identity,
-)
-from agent6.git_ops import (
-    status as git_status,
 )
 from agent6.paths import (
     chown_to_real_user,
@@ -86,7 +82,7 @@ from agent6.sessions.ipc import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout, session_matches
+from agent6.sessions.layout import bucket_dir, session_layout, session_matches
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -116,70 +112,24 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
     ]
 
 
-def ensure_on_run_branch(cwd: Path, layout: SessionLayout) -> str | None:
-    """Check out the run's branch if HEAD isn't already on it.
-
-    The loop's per-step commits land on whatever branch HEAD points at, so a
-    resume must be on the run's branch. ``run_task`` checks it out up front, but
-    two paths reach resume off the run branch: ``agent6 fork`` cuts
-    ``agent6/<id>`` additively (never switching to it), and an operator may have
-    moved branches since the original run. Either way, without this the work
-    silently lands on the operator's current branch and the run branch stays
-    empty (so ``sessions diff`` shows nothing).
-
-    Reads ``run_branch`` from the manifest. Returns None when there's nothing to
-    do (no branch recorded, or already on it) or after a clean checkout; returns
-    an error string when a switch is needed but the working tree is dirty.
-    """
-    try:
-        manifest = read_manifest(layout.session_dir)
-    except ManifestError:
-        return None
-    run_branch = manifest.run_branch
-    try:
-        st = git_status(cwd)
-    except GitError:
-        st = None
-    # Nothing to do: branch_per_run was off (no run_branch), git unreadable, or
-    # already on the run branch. Commits then land on HEAD as before.
-    if not run_branch or st is None or st.branch == run_branch:
-        return None
-    # Only MODIFIED tracked files block the switch; untracked files are carried
-    # across a checkout fine (and a rare untracked-vs-target collision is caught
-    # by the create_branch error below), so don't refuse on those.
-    if st.modified_count > 0:
-        return (
-            f"ERROR: resume needs to switch to this run's branch {run_branch!r}, but the "
-            "working tree has uncommitted changes to tracked files. Commit or stash them "
-            f"(or run `git checkout {run_branch}` yourself), then resume."
-        )
-    try:
-        create_branch(cwd, run_branch)  # idempotent: checks out the existing branch
-    except GitError as exc:
-        return f"ERROR: could not switch to run branch {run_branch!r}: {exc}"
-    return None
-
-
 def snapshot_head_mismatch(
-    snapshot_path: Path, repo_root: Path, *, run_branch: str = ""
+    snapshot_path: Path, repo_root: Path, *, chain_ref: str
 ) -> tuple[str, str] | None:
-    """(snapshot head, resume-onto head) when the code resume would continue on
-    DIVERGED from the run's last snapshot, else None.
+    """(snapshot head, resume-onto head) when the chain resume would continue
+    on DIVERGED from the run's last snapshot, else None.
 
-    The head compared is the one resume will commit on top of: the run branch's
-    tip when *run_branch* resolves, so the guard needs NO checkout and runs
-    before any workspace mutation; the current HEAD otherwise (branch_per_run
-    off, or a deleted branch the checkout step re-cuts at HEAD).
+    The head compared is the one resume will commit on top of: the chain ref's
+    current value (`refs/agent6/<id>`); an unborn ref resumes from the snapshot
+    head itself, so there is nothing to compare.
 
     Divergence, not mere movement: the run's own per-step commits advance the
-    branch forward from the snapshot between snapshot writes (a turn commits,
+    chain forward from the snapshot between snapshot writes (a turn commits,
     then a critic/metric call runs before the next snapshot), so a kill in that
     window leaves the tip ahead of the recorded head_sha on the SAME line. That
     must resume cleanly. Only refuse when the tip is not a descendant of the
-    snapshot head -- an operator commit on another line, a rebase, a reset, or a
-    snapshot commit that git-gc made unreachable -- i.e. the model would resume
-    against code that changed under it. Working-tree (uncommitted) divergence
-    is not checked; only committed history.
+    snapshot head -- someone rewrote or replaced the chain ref -- i.e. the
+    model would resume against a record that changed under it. Working-tree
+    (uncommitted) divergence is not checked; only committed history.
 
     Best-effort: the snapshot records head_sha as "" when git was unreadable at
     write time (skip), a corrupt snapshot file is left for the loud
@@ -195,13 +145,11 @@ def snapshot_head_mismatch(
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None
-    current_head = branch_tip_sha(repo_root, run_branch) if run_branch else None
-    if current_head is None:
-        try:
-            current_head = git_status(repo_root).head_sha
-        except GitError:
-            return None
-    if not current_head or current_head == snap_head:
+    try:
+        current_head = chain_tip(repo_root, chain_ref)
+    except GitError:
+        return None
+    if current_head is None or current_head == snap_head:
         return None
     if is_ancestor(repo_root, snap_head, current_head):
         # The tip moved forward from the snapshot on the same line (the run's
@@ -324,7 +272,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `preset` (resume
         # has no --preset flag), `base_sha` (the review-panel diff base), and
-        # `run_branch` (the head guard + the checkout below). Read FIRST: a
+        # `run_branch` (the visible ref the chain keeps advancing). Read FIRST: a
         # PARKED run (manifest carries parked_task, no snapshot exists) is
         # started fresh below instead of hitting the no-snapshot refusal.
         # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
@@ -439,16 +387,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
 
-        # Safety check: refuse when the code resume would continue on DIVERGED
-        # from the run's last snapshot (a rebase, reset, or a commit on another
-        # line would leave the model reasoning about code that changed under
-        # it). Compared against the run branch's tip, so no checkout is needed;
+        # Safety check: refuse when the chain resume would continue on DIVERGED
+        # from the run's last snapshot (a rewritten or replaced chain ref would
+        # leave the model reasoning about a record that changed under it);
         # plain forward movement on the same line -- the run's own per-step
         # commits -- resumes cleanly. The snapshot records head_sha best-effort
         # ("" when git was unreadable at write time); skip the check then, and
         # let the loud snapshot load below handle a corrupt file.
         mismatch = (
-            snapshot_head_mismatch(snapshot_path, cwd, run_branch=run_branch)
+            snapshot_head_mismatch(snapshot_path, cwd, chain_ref=f"refs/agent6/{session_id}")
             if writes_code
             else None
         )
@@ -505,18 +452,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         warn_install_inside_workspace(cwd, reporter=reporter)
-
-        # Get onto the run's branch so the loop's commits land there (a fork
-        # cuts agent6/<id> without checking it out; the operator may have moved
-        # branches since the original run). This is the ONLY workspace mutation
-        # in preflight, and deliberately the LAST step: every refusal above
-        # exits with the operator's checkout untouched. From here on a failure
-        # is a failed RUN, parked on the run branch like any crashed run (the
-        # end-of-run banner says how to switch back).
-        branch_err = ensure_on_run_branch(cwd, layout) if writes_code else None
-        if branch_err is not None:
-            reporter.err(branch_err)
-            return 2
 
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         refusal = headless_approval_refusal(
@@ -625,6 +560,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
+                chain_ref=f"refs/agent6/{session_id}" if mode == "run" else None,
+                chain_branch=run_branch or None,
+                chain_fallback_parent=resume_base_sha or None,
+                commit_per_step=cfg.git.commit_per_step,
                 provider=session.provider,
                 dispatcher=dispatcher,
                 logger=loop_log,

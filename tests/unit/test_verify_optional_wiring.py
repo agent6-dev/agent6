@@ -321,7 +321,6 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     monkeypatch.setattr(session_mod, "build_role_provider", _provider)
     monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
     monkeypatch.setattr(resume_mod, "pin_gate", _capture_pin(pinned))
 
     said: list[str] = []

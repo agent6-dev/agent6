@@ -124,17 +124,17 @@ def test_dirty_tree_auto_stashed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     cfg = _runnable_cfg(GitConfig(auto_stash=True))
     _patch_common(monkeypatch, cfg)
 
-    # Stop the run at the very next step after the guard (cutting the run
-    # branch) so we don't build providers / spawn a curator: a successful stash
-    # leaves a clean tree, which we assert from inside the stub.
+    # Stop the run at the very next step after the stash so we don't build
+    # providers / spawn a curator: a successful stash leaves a clean tree,
+    # which we assert from inside the stub.
     class _Stop(Exception):
         pass
 
-    def _branch_stub(*_a: object, **_k: object) -> object:
+    def _sink_stub(*_a: object, **_k: object) -> object:
         assert git_status(repo).is_clean, "tree should be clean after auto-stash"
         raise _Stop
 
-    monkeypatch.setattr(app_run_mod, "create_branch", _branch_stub)
+    monkeypatch.setattr(app_run_mod, "TranscriptSink", _sink_stub)
 
     with pytest.raises(_Stop):
         run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]

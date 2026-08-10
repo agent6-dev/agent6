@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The interactive pre-run confirm prompts `agent6 run`/`resume` inject into
-the lifecycle: run-on-run-branch, unconfined autorun, and the
-``git.branch_from`` start-point choice. The non-interactive guards live in
-`agent6.app.preflight`."""
+the lifecycle: run-on-run-branch and unconfined autorun. The non-interactive
+guards live in `agent6.app.preflight`."""
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-from agent6.app.preflight import BranchChoice, resolve_base_branch
 from agent6.config import Config
 from agent6.types import IsolationLevel
 from agent6.ui.cli._steer import tty_prompt
@@ -59,40 +56,3 @@ def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
         return True
     answer = tty_prompt("Continue? [y/N]: ")
     return (answer or "").strip().lower() in {"y", "yes"}
-
-
-def _ask_branch_start_point(current_branch: str, base: str) -> BranchChoice:
-    """The ``branch_from = "ask"`` prompt: on a terminal, choose base / stack /
-    abort; headless falls back to the clean base (the un-surprising choice)."""
-    if not sys.stdin.isatty():
-        return BranchChoice(start_point=base)
-    print(
-        f"[agent6] You are on {current_branch!r}, not the base branch {base!r}.",
-        file=sys.stderr,
-    )
-    ans = tty_prompt(
-        f"  Cut this run from: [b]ase {base!r} (clean start) /"
-        f" [s]tack on {current_branch!r} / [a]bort? [b]: ",
-        fall_back_to_stdin=False,
-    )
-    choice = (ans or "").strip().lower()
-    if choice in {"s", "stack"}:
-        return BranchChoice(start_point=None)
-    if choice in {"a", "abort"}:
-        return BranchChoice(start_point=None, abort=True)
-    return BranchChoice(start_point=base)
-
-
-def choose_branch_start_point(cfg: Config, state_dir: Path, current_branch: str) -> BranchChoice:
-    """Decide where the run branch is cut from, per ``git.branch_from``:
-    ``current`` stacks on HEAD; ``base`` cuts from the resolved base line;
-    ``ask`` prompts (base / stack / abort) when you are not already on the base.
-    No decision to make when the current branch IS the base."""
-    if cfg.git.branch_from == "current":
-        return BranchChoice(start_point=None)
-    base = resolve_base_branch(state_dir, current_branch)
-    if current_branch == base:
-        return BranchChoice(start_point=None)  # already on the base; nothing to stack on
-    if cfg.git.branch_from == "base":
-        return BranchChoice(start_point=base)
-    return _ask_branch_start_point(current_branch, base)

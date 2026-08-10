@@ -262,9 +262,9 @@ def print_session_end(
         reporter.out(f"\nchanges are on {run_branch}")
         reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
-        # The run left the checkout ON its branch (branch_per_run cuts it and
-        # never switches back). Say so + how to leave, or the next run stacks on
-        # it (see git.branch_from) and merge/prune defaults quietly shift.
+        # The chain never switches branches, but an operator who checked the
+        # run branch out themselves should know how to leave it, or the next
+        # run stacks on it and merge/prune defaults quietly shift.
         current = ""
         with contextlib.suppress(GitError):
             current = git_status(Path.cwd()).branch
