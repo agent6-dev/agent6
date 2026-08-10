@@ -35,9 +35,6 @@ def is_valid_skill_name(name: str) -> bool:
     return bool(_NAME_RE.match(name))
 
 
-SKILL_STATES = ("enabled", "disabled", "always")
-
-
 @dataclass(frozen=True, slots=True)
 class Skill:
     """One discovered skill: identity plus the full SKILL.md text."""
