@@ -251,7 +251,7 @@ def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str
     if session_dir is None:
         return None, f"no session {session_id!r}"
     if session_is_live(session_dir):
-        return None, "the session is still running; stop it first, then /undo"
+        return None, "the session is live; /undo rides the steer channel from the composer"
     said: list[str] = []
     reporter = Reporter(out=said.append, err=said.append)
     result = undo_fork(None, session_dir.name, cwd=cwd, reporter=reporter)

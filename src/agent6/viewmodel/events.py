@@ -264,6 +264,15 @@ class SessionEnd:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionUndone:
+    """session.undone: /undo forked this run; surfaces follow the child with
+    the undone text back in the composer."""
+
+    new_session_id: str
+    undone_text: str
+
+
+@dataclass(frozen=True, slots=True)
 class RawEvent:
     """Any event the fold does not structurally consume (the ~65 loop.* telemetry
     types, unknown/future types, a line with no `type`). Carries the raw dict so the
@@ -299,6 +308,7 @@ Event = (
     | CompactSummarised
     | SteerRequested
     | SessionEnd
+    | SessionUndone
     | RawEvent
 )
 
@@ -442,6 +452,11 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return CompactSummarised()
         case "session.steer_requested":
             return SteerRequested()
+        case "session.undone":
+            return SessionUndone(
+                new_session_id=str(raw.get("new_session_id", "") or ""),
+                undone_text=str(raw.get("undone_text", "") or ""),
+            )
         case "session.end":
             return SessionEnd(
                 all_passed=bool(raw.get("all_passed", False)),

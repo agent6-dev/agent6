@@ -638,6 +638,10 @@ class Workflow:
     # steer feedback and continue -- never a crash. Depth 1: the ui side tags lane
     # spawns AGENT6_SUBRUN=1 and run.py leaves this None inside a lane.
     lane_spawner: GroupLaneSpawner | None = None
+    # `/undo`: forks this session at the state before its last operator
+    # message (app.fork.undo_fork, injected -- workflows never import app) and
+    # returns (new_session_id, undone_text), or None with the reason printed.
+    undo_forker: Callable[[], tuple[str, str] | None] | None = None
     # critic-in-loop. When `critic_provider` is set AND
     # `critic_mode != "off"`, the workflow invokes the critic at the
     # configured trigger (verify-failure / before finish_session / every
@@ -4180,6 +4184,21 @@ class Workflow:
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )
+        if steer_result == "undo":
+            forked = self.undo_forker() if self.undo_forker is not None else None
+            if forked is None:
+                # The forker printed why (or no forker is wired); keep running.
+                self._log("  /undo: nothing to undo; continuing")
+                return None
+            new_id, undone_text = forked
+            self._emit("session.undone", new_session_id=new_id, undone_text=undone_text)
+            return SessionResult(
+                completed=False,
+                reason="undone",
+                summary=f"operator undid the last message at iter {iteration}; forked to {new_id}",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
         if steer_result == "detach":
             # Not an end: the caller respawns a detached `resume` that appends to this
             # same log, so a persistent viewer follows straight through (no session.end).
@@ -4193,7 +4212,7 @@ class Workflow:
             )
         return None
 
-    def _maybe_handle_steer(
+    def _maybe_handle_steer(  # noqa: PLR0911 - one return per steer verb
         self,
         conversation: Conversation,
         iteration: int,
@@ -4229,6 +4248,10 @@ class Workflow:
             self._emit("loop.steer.aborted")
             self._log("  abort - halting the run")
             return "abort"
+        if steer_text.lower() == "/undo":
+            self._emit("loop.steer.undo")
+            self._log("  /undo - forking back before the last message")
+            return "undo"
         if steer_text.lower() == "detach":
             self._emit("loop.steer.detached")
             self._log("  detach - stopping to resume in the background")

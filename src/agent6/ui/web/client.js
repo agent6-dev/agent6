@@ -762,7 +762,15 @@ function makeComposer(id) {
     }
     if (text === '/undo') {
       // Fork at the state before the last message; follow the fork with the
-      // undone text back in the composer to edit and resend.
+      // undone text back in the composer to edit and resend. A live run does
+      // it at its next boundary (the steer channel); the SSE paint follows
+      // the session.undone the loop emits. A finished run forks right here.
+      if (!finished) {
+        postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
+          .then(() => { toast('undo requested; applies at the next step'); ta.value = ''; })
+          .catch(err => toast(err.message, true));
+        return;
+      }
       postJSON('/api/session/' + encodeURIComponent(id) + '/undo', {})
         .then(d => {
           toast('undone: forked to ' + d.new_session_id);
@@ -961,6 +969,13 @@ async function renderRun(id, opts, gen) {
   let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+    if (s.undone_to) {
+      // /undo landed: follow the fork with the undone text back to edit.
+      toast('undone: forked to ' + s.undone_to);
+      pendingComposerFill = s.undone_text || '';
+      location.hash = '#session/' + encodeURIComponent(s.undone_to);
+      return;
+    }
     paintRun(cards, s);
     hbState.spin++;
     if (s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); return; }

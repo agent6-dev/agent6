@@ -592,6 +592,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             curator = tools.curator
             dispatcher = tools.dispatcher
             cfg = tools.cfg
+            undo_outcome: list[tuple[str, str]] = []
+
+            def _undo_forker() -> tuple[str, str] | None:
+                # Lazy: app.fork imports this module (see run.py's twin).
+                from agent6.app.fork import undo_fork  # noqa: PLC0415
+
+                got = undo_fork(config_path, session_id, cwd=cwd, reporter=reporter)
+                if got is not None:
+                    undo_outcome.append(got)
+                return got
+
             wf = Workflow(
                 root=cwd,
                 config=cfg,
@@ -618,6 +629,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 stop_requested=lambda: stop_request_pending(layout.session_dir),
                 stop_clear=lambda: clear_stop_request(layout.session_dir),
                 should_abort=steer_state.abort_pending,
+                undo_forker=_undo_forker,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
                 # (None in plan resume, and inside a lane -- depth 1). Under a
@@ -738,6 +750,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(budget.format_summary())
             return 0 if result.completed else 1
 
+        if result.reason == "undone" and undo_outcome:
+            new_id, undone_text = undo_outcome[-1]
+            reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
+            reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
+            return 0
         if result.reason == "detached":
             detach_requested = True
             reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")

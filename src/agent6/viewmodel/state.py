@@ -174,6 +174,8 @@ class SessionState:
     finished: bool = False
     all_passed: bool | None = None
     end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
+    undone_to: str = ""  # /undo's fork: the child session id surfaces follow
+    undone_text: str = ""  # the message /undo took back (composer refill)
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
@@ -509,6 +511,9 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
 
         case events.SessionEnd(all_passed=all_passed, reason=reason):
             return replace(state, finished=True, all_passed=all_passed, end_reason=reason)
+
+        case events.SessionUndone(new_session_id=new_id, undone_text=text):
+            return replace(state, undone_to=new_id, undone_text=text)
 
         case events.RawEvent():
             return state

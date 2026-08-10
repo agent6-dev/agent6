@@ -267,6 +267,19 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     stashed = False
     run_branch: str | None = None
     detach_requested = False
+    # /undo's outcome, captured by the injected forker so the undone-reason
+    # handling below can name the fork and hand the text back.
+    undo_outcome: list[tuple[str, str]] = []
+
+    def _undo_forker() -> tuple[str, str] | None:
+        # Lazy: app.fork imports app.resume, which imports this module.
+        from agent6.app.fork import undo_fork  # noqa: PLC0415
+
+        got = undo_fork(None, effective_session_id, cwd=cwd, reporter=reporter)
+        if got is not None:
+            undo_outcome.append(got)
+        return got
+
     try:
         # Drop stale approve/ask/steer answers from a prior session (the
         # id counters reset on resume, so an old answer must not be read instead of
@@ -519,6 +532,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 stop_requested=lambda: stop_request_pending(layout.session_dir),
                 stop_clear=lambda: clear_stop_request(layout.session_dir),
                 should_abort=steer_state.abort_pending,
+                undo_forker=_undo_forker,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
                 # (None in plan/ask, and inside a lane -- depth 1).
@@ -642,6 +656,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(budget.format_summary())
             return 0 if result.completed else 1
 
+        if result.reason == "undone" and undo_outcome:
+            new_id, undone_text = undo_outcome[-1]
+            reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
+            reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
+            return 0
         if result.reason == "detached":
             # Keep going in the background: the outer finally releases this run's
             # worker lock, then spawns a detached `resume` that picks it up.

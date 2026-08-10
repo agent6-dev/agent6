@@ -166,7 +166,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     """
     if not finished:
         return "running", ""
-    if end_reason in ("steer_abort", "interrupted", "interactive_stop"):
+    if end_reason in ("steer_abort", "interrupted", "interactive_stop", "undone"):
         return "stopped", ""  # each is the operator's own act, not a failure
     # A clean exit that verified nothing gets its own word, never "passed": a
     # plan pass ends via finish_planning, an ask by answering, and a gateless

@@ -38,6 +38,7 @@ SessionEndReason = Literal[
     "interrupted",  # KeyboardInterrupt; emitted by the app layer, not the loop
     "crashed",  # the loop escaped with a fault; also app-layer only
     "steer_abort",
+    "undone",  # /undo forked back before the last message; the fork continues
     "detached",
     "prompt_revision_failed",
     "plan_unreadable",
@@ -88,6 +89,8 @@ class SessionResult:
       loop_guard_killed - identical tool call repeated past the kill threshold.
       interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
       steer_abort       - operator typed "abort" at a steering prompt.
+      undone            - operator sent /undo; the leg ended after forking a
+                          child at the state before their last message.
       detached          - operator chose "detach"; the CLI respawns a detached
                           `resume` to continue the run in the background.
       prompt_revision_failed - revise_prompt failed before the worker loop.

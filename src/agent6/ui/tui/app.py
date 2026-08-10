@@ -1069,7 +1069,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         unstarted; the hub lists the fork and the undone text is reported. A
         live run is refused: stop it first, then undo."""
         if self.session_controllable():
-            self.notify("the run is still going: stop it first, then /undo", severity="warning")
+            # The loop forks at its next boundary and emits session.undone;
+            # the fold's undone_to hands the follow-up to this app.
+            self._seed_steer("/undo")
+            self.notify("undo requested; applies at the next step")
             return
         said: list[str] = []
         result = undo_fork(

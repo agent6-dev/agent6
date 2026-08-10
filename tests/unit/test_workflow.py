@@ -6108,3 +6108,18 @@ def test_the_frontier_walks_depth_first_through_children() -> None:
         }
     )
     assert first_ready_subtask(nodes) == "p2"
+
+
+def test_steer_undo_signal() -> None:
+    """`/undo` typed as a steer -> the "undo" sentinel, no injected message."""
+    cleared: list[bool] = []
+    wf = _wf(
+        steer_requested=lambda: True,
+        steer_clear=lambda: cleared.append(True),
+        steer_prompt=lambda: "/undo",
+    )
+    messages: list[dict[str, Any]] = []
+    result = _steer_via_wire(wf, messages, iteration=4, state=_state())
+    assert result == "undo"
+    assert cleared == [True]
+    assert messages == [], "/undo must not inject a message"

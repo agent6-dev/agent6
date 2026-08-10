@@ -161,6 +161,8 @@
   "finished": true,
   "all_passed": true,
   "end_reason": "finish_session",
+  "undone_to": "",
+  "undone_text": "",
   "finish_summary": "all green",
   "latest_diff": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",
   "steer_requests": 1,

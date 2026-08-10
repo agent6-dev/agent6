@@ -68,6 +68,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
     "/shells": "background commands this run started, and how they ended",
     "/restate": "restate the conversation since your last message",
+    "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
     "/detach": "keep the run going in the background",
@@ -248,7 +249,13 @@ def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
 
 
 # Commands that end the menu, mapped to the canonical steer action.
-_ACTIONS: dict[str, str] = {"/continue": "", "/stop": "abort", "/detach": "detach"}
+_ACTIONS: dict[str, str] = {
+    "/continue": "",
+    "/stop": "abort",
+    "/detach": "detach",
+    # Verbatim: the loop parses the directive itself (fork + session.undone).
+    "/undo": "/undo",
+}
 
 
 def _run_info_command(cmd: str, session_dir: Path, btw_runner: BtwRunner | None = None) -> None:
