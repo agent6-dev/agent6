@@ -352,6 +352,15 @@ fn run_hardened(policy: &Policy) -> ! {
 /// prints. Exits when stdin closes, which takes the PID namespace (and any
 /// backgrounded server in it) down with it.
 fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
+    // Setup (mounts, /proc, Landlock, seccomp) is complete by the time we are
+    // called, so any warning it emitted is already on our stderr. Signal that
+    // with one line the client consumes before its first request: it gives
+    // JailSession.open() a known point to read those warnings off stderr,
+    // instead of guessing with a timeout whether setup has flushed yet.
+    println!("{{\"ready\":true}}");
+    if io::stdout().flush().is_err() {
+        die("serve: the request channel is gone");
+    }
     let stdin = io::stdin();
     let mut line = String::new();
     loop {

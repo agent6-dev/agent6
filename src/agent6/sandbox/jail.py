@@ -1175,6 +1175,10 @@ class JailSession:
     # The run's cap, carried on every request: the launcher's own default
     # applies to what a request omits, which would ignore the operator's.
     _memory_limit_mb: int
+    # Anything the launcher wrote to stderr during setup (a refused /proc mount,
+    # a skipped grant): the jail came up degraded but still runs. The caller
+    # surfaces it once; "" when setup was clean.
+    startup_stderr: str = ""
 
     @classmethod
     def open(cls, policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> JailSession:
@@ -1196,10 +1200,28 @@ class JailSession:
             _live_launchers.add(proc.pid)
         spec = json.loads(_policy_to_json(policy))
         spec["mode"] = "serve"
-        assert proc.stdin is not None
+        assert proc.stdin is not None and proc.stdout is not None
         proc.stdin.write((json.dumps(spec) + "\n").encode())
         proc.stdin.flush()
-        return cls(_proc=proc, _binary=binary, _memory_limit_mb=policy.memory_limit_mb)
+        # The launcher prints one ready line once setup is done; consuming it
+        # before the first request keeps the request/answer lockstep AND marks
+        # the point where any setup warning (a refused /proc mount, a skipped
+        # grant) is on stderr. Read it there, once -- a degraded jail that still
+        # runs otherwise says so instead of only surfacing as a puzzling command
+        # failure later. A launcher that died in setup gives EOF here.
+        ready = proc.stdout.readline()
+        if not ready:
+            with _sweep_lock:
+                _live_launchers.discard(proc.pid)
+            err = _lossy_text(_read_available(proc.stderr)).strip()
+            raise JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
+        startup_stderr = _lossy_text(_read_available(proc.stderr, budget_s=0.1)).strip()
+        return cls(
+            _proc=proc,
+            _binary=binary,
+            _memory_limit_mb=policy.memory_limit_mb,
+            startup_stderr=startup_stderr,
+        )
 
     def run(
         self,

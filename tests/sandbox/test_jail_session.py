@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -158,11 +159,20 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: Path) -> None:
     """Every caller is written against JailUnavailableError. A raw OSError from
     the pipe escapes all of them: past the dispatcher's jail handler, past
     SessionJob's status, and out of ToolDispatcher.close() before teardown has
-    stopped the shells or closed the LSP."""
+    stopped the shells or closed the LSP.
+
+    The whole GROUP is killed, not just the launcher we hold: under strict the
+    request-serving process is a namespaced child the launcher forked, and it
+    keeps the pipes if only its parent dies. (Normal teardown never kills
+    either -- `close()` shuts stdin and the serve loop exits on EOF.)"""
+    import os
+    import signal
+
     session = _session(tmp_path)
     proc = session._proc  # pyright: ignore[reportPrivateUsage]
     try:
-        proc.kill()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait(timeout=10.0)
         with pytest.raises(JailUnavailableError):
             for _ in range(3):  # the first write can still buffer
@@ -324,5 +334,19 @@ def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> 
         after = session.run(("cat", "/tmp/timeout-marker"))
         assert after.returncode == 0, after.stderr
         assert "before" in after.stdout, "the session lost its namespaces"
+    finally:
+        session.close()
+
+
+def test_a_clean_session_reports_no_startup_warning(tmp_path: Path) -> None:
+    """open() reads the launcher's setup stderr at the ready handshake and
+    stores it. A jail that came up cleanly (this host) has nothing to say, so
+    the field is empty -- only a degraded setup (a refused /proc mount under
+    rootless podman, a skipped grant) fills it, and the dispatcher surfaces it
+    once."""
+    session = _session(tmp_path)
+    try:
+        assert session.run(("/bin/echo", "ok")).stdout.strip() == "ok"
+        assert session.startup_stderr == "", session.startup_stderr
     finally:
         session.close()

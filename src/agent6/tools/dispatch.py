@@ -1059,6 +1059,12 @@ class ToolDispatcher:
                 policy = self._jail_policy(("true",), extra_rw_paths=rw)
                 net = self._net() if policy.network == "session" else None
                 self._session = JailSession.open(policy, session_net=net)
+                if self._session.startup_stderr:
+                    # The run's jail came up degraded but runs (e.g. rootless
+                    # podman refusing the /proc mount, so $ORIGIN toolchains
+                    # will not start). Say so ONCE, here at the run's single
+                    # session open -- not per command, where it would repeat.
+                    self._emit("jail.degraded", detail=self._session.startup_stderr)
             except (JailUnavailableError, OSError):
                 self._session_failed = True
         return self._session
