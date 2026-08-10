@@ -12,8 +12,10 @@ command's escapees.
 
 from __future__ import annotations
 
+import json
 import os
 import signal
+import subprocess
 import time
 from pathlib import Path
 
@@ -130,3 +132,94 @@ def test_a_confined_level_stays_silent_on_startup(tmp_path: Path) -> None:
         assert "UNCONFINED" not in session.startup_stderr
     finally:
         session.close()
+
+
+# --- handing a still-running command back ------------------------------------
+
+
+def _serve_raw(cwd: Path) -> subprocess.Popen[bytes]:
+    """A serving launcher driven directly: the check-in is not on the Python
+    session API yet, so the request is written by hand."""
+    from agent6.sandbox.jail import _require_jail_binary  # pyright: ignore[reportPrivateUsage]
+
+    proc = subprocess.Popen(
+        [str(_require_jail_binary())],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+    spec = {"cwd": str(cwd), "argv": ["true"], "isolation": "none", "mode": "serve"}
+    proc.stdin.write((json.dumps(spec) + "\n").encode())
+    proc.stdin.flush()
+    proc.stdout.readline()  # ready line
+    return proc
+
+
+def _ask(proc: subprocess.Popen[bytes], request: dict[str, object]) -> dict[str, object]:
+    assert proc.stdin is not None and proc.stdout is not None
+    proc.stdin.write((json.dumps(request) + "\n").encode())
+    proc.stdin.flush()
+    return json.loads(proc.stdout.readline())
+
+
+def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: Path) -> None:
+    """Whether a long command is stuck or working is a judgement, so it goes to
+    whoever can make one. The output so far comes back with it, split by stream,
+    and continues in the log merged and in order."""
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    proc = _serve_raw(tmp_path)
+    try:
+        answer = _ask(
+            proc,
+            {
+                "kind": "run",
+                "argv": ["/bin/sh", "-c", "echo out1; echo err1 >&2; sleep 1; echo out2; sleep 20"],
+                "timeout_s": 0,
+                "checkin_s": 0.4,
+                "log_dir": str(logs),
+            },
+        )
+        assert answer["backgrounded"] is True
+        assert answer["stdout"] == "out1\n"
+        assert answer["stderr"] == "err1\n"
+        pid = answer["pid"]
+        assert isinstance(pid, int) and _running(pid), "the command was killed, not handed back"
+        log = Path(str(answer["log"]))
+        assert log.name == f"converted-{pid}.log"
+        time.sleep(1.5)
+        assert log.read_text(encoding="utf-8") == "out1\nerr1\nout2\n", "the log stopped filling"
+        # The launcher keeps serving, and the handed-back pid is pollable.
+        assert (
+            _ask(proc, {"kind": "run", "argv": ["/bin/echo", "next"], "timeout_s": 10})["stdout"]
+            == "next\n"
+        )
+        assert _ask(proc, {"kind": "status", "pid": pid})["running"] is True
+        assert _ask(proc, {"kind": "stop", "pid": pid})["stopped"] is True
+    finally:
+        assert proc.stdin is not None
+        proc.stdin.close()
+        proc.wait(timeout=10)
+
+
+def test_a_non_positive_timeout_never_kills(tmp_path: Path) -> None:
+    """The wall-clock kill is what the check-in replaces; a positive one still
+    kills, so an operator gate that sets a number keeps its meaning."""
+    proc = _serve_raw(tmp_path)
+    try:
+        unbounded = _ask(
+            proc,
+            {"kind": "run", "argv": ["/bin/sh", "-c", "sleep 1; echo survived"], "timeout_s": 0},
+        )
+        assert unbounded["returncode"] == 0
+        assert unbounded["stdout"] == "survived\n"
+        killed = _ask(
+            proc, {"kind": "run", "argv": ["/bin/sh", "-c", "sleep 10"], "timeout_s": 0.5}
+        )
+        assert killed["returncode"] == 124
+    finally:
+        assert proc.stdin is not None
+        proc.stdin.close()
+        proc.wait(timeout=10)

@@ -17,9 +17,10 @@
 
 use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
-use std::fs;
+use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -127,6 +128,10 @@ struct ChildRequest {
     timeout_s: f64,
     #[serde(default = "default_memory_limit_mb")]
     memory_limit_mb: u64,
+    #[serde(default)]
+    checkin_s: f64,
+    #[serde(default)]
+    log_dir: String,
 }
 
 impl ChildRequest {
@@ -136,6 +141,8 @@ impl ChildRequest {
             env: &self.env,
             memory_limit_mb: self.memory_limit_mb,
             timeout_s: self.timeout_s,
+            checkin_s: self.checkin_s,
+            log_dir: &self.log_dir,
         }
     }
 }
@@ -305,12 +312,14 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
             if policy.mode == "serve" {
                 serve(&policy.cwd, true);
             }
-            let run = if policy.mode == "exec" {
-                run_child_exec
+            // A one-shot launcher never hands a command back (its spec sets
+            // no check-in), so there is no pid to carry out of here.
+            let outcome = if policy.mode == "exec" {
+                run_child_exec(&policy.child_spec(), &policy.cwd)
             } else {
-                run_child
+                run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
             };
-            if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
+            if let Err(e) = outcome {
                 die(format!("child execution failed: {e}"));
             }
             std::process::exit(0);
@@ -344,12 +353,14 @@ fn run_unconfined(policy: &Policy) -> ! {
     if policy.mode == "serve" {
         serve(&policy.cwd, false);
     }
-    let run = if policy.mode == "exec" {
-        run_child_exec
+    // A one-shot launcher never hands a command back (its spec sets no
+    // check-in), so there is no pid to carry out of here.
+    let outcome = if policy.mode == "exec" {
+        run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child
+        run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
     };
-    if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
+    if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
@@ -373,12 +384,14 @@ fn run_hardened(policy: &Policy) -> ! {
     if policy.mode == "serve" {
         serve(&policy.cwd, false);
     }
-    let run = if policy.mode == "exec" {
-        run_child_exec
+    // A one-shot launcher never hands a command back (its spec sets no
+    // check-in), so there is no pid to carry out of here.
+    let outcome = if policy.mode == "exec" {
+        run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child
+        run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
     };
-    if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
+    if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
@@ -421,8 +434,14 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
             Ok(r) => r,
             Err(e) => die(format!("serve: invalid request JSON: {e}")),
         };
-        let outcome = match request {
-            Request::Run(child) => run_child(&child.child_spec(), cwd),
+        let outcome: io::Result<()> = match request {
+            // A run that was handed back keeps running, so it is swept and
+            // polled exactly like one that started in the background.
+            Request::Run(child) => run_child(&child.child_spec(), cwd).map(|handed_back| {
+                if let Some(pid) = handed_back {
+                    backgrounded.push(pid);
+                }
+            }),
             Request::Background(child) => {
                 spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push(pid))
             }
@@ -1795,7 +1814,16 @@ struct ChildSpec<'a> {
     argv: &'a [String],
     env: &'a [(String, String)],
     memory_limit_mb: u64,
+    /// Wall-clock kill. <= 0 disables it: a command is bounded by the model or
+    /// the operator stopping it, not by a number that cannot know whether a
+    /// 20-minute build is stuck or working.
     timeout_s: f64,
+    /// Hand the command back after this long instead of waiting on it. <= 0, or
+    /// an empty `log_dir`, means wait (a one-shot launcher has nobody to hand
+    /// it back TO).
+    checkin_s: f64,
+    /// Where a handed-back command's output continues, as a log.
+    log_dir: &'a str,
 }
 
 impl Policy {
@@ -1805,6 +1833,10 @@ impl Policy {
             env: &self.env,
             memory_limit_mb: self.memory_limit_mb,
             timeout_s: self.timeout_s,
+            // A one-shot launcher exits with its command, so there would be
+            // nobody left to poll a handed-back one.
+            checkin_s: 0.0,
+            log_dir: "",
         }
     }
 }
@@ -1901,7 +1933,7 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     std::process::exit(status.code().unwrap_or(128 + libc::SIGKILL));
 }
 
-fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<Option<i32>> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
@@ -1916,7 +1948,9 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
 
     let mut child = cmd.spawn()?;
     let child_pid = child.id() as i32; // == pgid, since process_group(0)
-    let timeout = Duration::from_secs_f64(spec.timeout_s);
+    let timeout = Duration::from_secs_f64(spec.timeout_s.max(0.0));
+    let checkin = Duration::from_secs_f64(spec.checkin_s.max(0.0));
+    let converts = spec.checkin_s > 0.0 && !spec.log_dir.is_empty();
     let start = std::time::Instant::now();
 
     // Drain stdout/stderr on background threads so a child that writes more
@@ -1958,9 +1992,43 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     // reaped) or an unexpected wait error both proceed to the unified teardown
     // + real reap below.
     while let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(child_wait), wait_flags) {
-        if start.elapsed() > timeout {
+        if spec.timeout_s > 0.0 && start.elapsed() > timeout {
             timed_out = true;
             break;
+        }
+        if converts && start.elapsed() > checkin {
+            // Hand the command back rather than kill it: whether a long command
+            // is stuck or working is a judgement, so it goes to whoever can
+            // make one. Render BEFORE spilling -- the answer carries the output
+            // so far, and spilling clears the retained capture.
+            let (out, err) = {
+                let buf = captured.lock().unwrap_or_else(|e| e.into_inner());
+                (buf.render(Some(Stream::Out)), buf.render(Some(Stream::Err)))
+            };
+            let log = converted_log_path(spec.log_dir, child_pid);
+            let file = File::options()
+                .write(true)
+                .create_new(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&log)?;
+            captured
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .spill_to(file)?;
+            let answer = serde_json::json!({
+                "backgrounded": true,
+                "pid": child_pid,
+                "log": log,
+                "stdout": out,
+                "stderr": err,
+            });
+            let mut stream = io::stdout().lock();
+            writeln!(stream, "{answer}")?;
+            stream.flush()?;
+            // No killpg, no reap: the drain threads keep appending to the log
+            // and the caller polls the pid through `status`/`stop`.
+            std::mem::forget(child);
+            return Ok(Some(child_pid));
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -2018,7 +2086,16 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     });
     let mut out = io::stdout().lock();
     writeln!(out, "{result}")?;
-    Ok(())
+    Ok(None)
+}
+
+/// Where a handed-back command's output continues.
+///
+/// Named for the pid, which no command can predict, and created with O_EXCL |
+/// O_NOFOLLOW below: the log root is granted read-write to every command in the
+/// run, so a predictable name could be pre-planted as a symlink.
+fn converted_log_path(log_dir: &str, pid: i32) -> String {
+    format!("{log_dir}/converted-{pid}.log")
 }
 
 /// Start a command and answer at once with its pid, leaving it running in this
@@ -2281,10 +2358,18 @@ struct Capture {
     // stderr result that lost nothing.
     dropped_out: u64,
     dropped_err: u64,
+    /// Once the command is handed back, its output stops being a result and
+    /// becomes a log: chunks go straight to the file, merged.
+    spill: Option<File>,
 }
 
 impl Capture {
     fn push(&mut self, stream: Stream, bytes: &[u8]) {
+        if let Some(file) = self.spill.as_mut() {
+            let _ = file.write_all(bytes);
+            let _ = file.flush();
+            return;
+        }
         if self.head_bytes < STREAM_RETAIN_HEAD {
             self.head_bytes += bytes.len();
             self.head.push((stream, bytes.to_vec()));
@@ -2337,6 +2422,22 @@ impl Capture {
             }
         }
         String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// Hand the capture over to a log: write what arrived so far, merged and in
+    /// order, then append there instead of retaining. No seam to stitch -- the
+    /// merged view already exists, because the order was recorded as it arrived.
+    fn spill_to(&mut self, mut file: File) -> io::Result<()> {
+        file.write_all(self.render(None).as_bytes())?;
+        file.flush()?;
+        self.head.clear();
+        self.tail.clear();
+        self.head_bytes = 0;
+        self.tail_bytes = 0;
+        self.dropped_out = 0;
+        self.dropped_err = 0;
+        self.spill = Some(file);
+        Ok(())
     }
 }
 
