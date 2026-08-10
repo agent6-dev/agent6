@@ -27,6 +27,7 @@ import datetime as _dt
 import json
 import shutil
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -231,6 +232,150 @@ def _snapshot_turn(path: Path) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+_STEER_NOTICE = "OPERATOR STEERING"
+
+
+def _text_of(content: object) -> str:
+    """The plain text of an anthropic-shaped message content (str or blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            str(block.get("text", ""))
+            for block in content  # pyright: ignore[reportUnknownVariableType]
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(part for part in parts if part)
+    return ""
+
+
+def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
+    """The operator's words in a restored conversation: the opening task, then
+    every steer notice with its wrapper line stripped. Tool results and other
+    harness notices stay out."""
+    out: list[str] = []
+    for i, message in enumerate(messages):
+        if message.get("role") != "user":
+            continue
+        text = _text_of(message.get("content"))
+        if not text:
+            continue
+        if i == 0:
+            out.append(text)
+        elif text.startswith(_STEER_NOTICE):
+            body = text.partition("\n")[2].strip()
+            out.append(body or text)
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class UndoTarget:
+    """Where `/undo` forks a session: *source*'s checkpoint at *at_turn*, with
+    the message it takes back (composer-refill text)."""
+
+    source_session_id: str
+    at_turn: int
+    undone_text: str
+
+
+def _ops_at(layout: SessionLayout, turn: int) -> int | None:
+    """Operator-message count in the checkpoint at *turn*, None if unreadable."""
+    try:
+        snap = load_session_snapshot(layout.checkpoint_path(turn))
+    except (OSError, ValueError):
+        return None
+    return len(_operator_messages(snap.messages))
+
+
+def undo_target(  # noqa: PLR0911 - each refusal names its own reason
+    state_dir: Path, session_id: str, *, reporter: Reporter = STDIO_REPORTER
+) -> UndoTarget | None:
+    """Resolve `/undo` for *session_id*: the newest checkpoint -- in this
+    session or up its fork lineage -- whose restored conversation ends before
+    the session's last operator message. With only the opening task, the
+    earliest checkpoint (start over, task back in the composer). None, with
+    the reason printed, when nothing qualifies."""
+    src = _resolve_source(state_dir, session_id, reporter=reporter)
+    if src is None:
+        return None
+    turns = sorted(list_checkpoint_turns(src))
+    if not turns:
+        reporter.err(f"nothing to undo: {src.session_id} has no checkpoints.")
+        return None
+    newest = turns[-1]
+    try:
+        snap = load_session_snapshot(src.checkpoint_path(newest))
+    except (OSError, ValueError) as exc:
+        reporter.err(f"ERROR: cannot read checkpoint {newest} of {src.session_id}: {exc}")
+        return None
+    ops = _operator_messages(snap.messages)
+    if len(ops) <= 1:
+        # Only the opening task: /undo means start over from the first
+        # checkpoint, with the task back in the composer to edit.
+        if len(turns) < 2:
+            reporter.err(f"nothing to undo: {src.session_id} is at its opening message.")
+            return None
+        try:
+            task = read_manifest(src.session_dir).user_task
+        except ManifestError:
+            task = ops[0] if ops else ""
+        return UndoTarget(src.session_id, turns[0], task)
+    target = _newest_checkpoint_below(src, len(ops))
+    if target is None:
+        reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
+        return None
+    return UndoTarget(target[0], target[1], ops[-1])
+
+
+def _newest_checkpoint_below(layout: SessionLayout, current_ops: int) -> tuple[str, int] | None:
+    """The newest checkpoint of *layout* -- or, following fork lineage, of an
+    ancestor -- whose conversation holds fewer operator messages than
+    *current_ops*. A fork carries one seed checkpoint, so walking back past it
+    means resolving in the parent it was cut from."""
+    for turn in sorted(list_checkpoint_turns(layout), reverse=True):
+        ops = _ops_at(layout, turn)
+        if ops is not None and ops < current_ops:
+            return layout.session_id, turn
+    try:
+        parent = read_manifest(layout.session_dir).parent_session_id
+    except ManifestError:
+        return None
+    if not parent:
+        return None
+    parent_layout = SessionLayout(
+        state_dir=layout.state_dir, session_id=parent, subdir=layout.subdir
+    )
+    if not parent_layout.session_dir.is_dir():
+        return None
+    return _newest_checkpoint_below(parent_layout, current_ops)
+
+
+def undo_fork(
+    config_path: Path | None,
+    session_id: str,
+    *,
+    cwd: Path,
+    reporter: Reporter = STDIO_REPORTER,
+) -> tuple[str, str] | None:
+    """`/undo`: fork *session_id* at its undo target, unstarted. Returns
+    ``(child_id, undone_text)`` -- the text goes back in the composer to edit
+    and resend -- or None with the reason already printed."""
+    state_dir = resolved_state_dir(cwd)
+    target = undo_target(state_dir, session_id, reporter=reporter)
+    if target is None:
+        return None
+    child, rc = create_fork(
+        config_path,
+        target.source_session_id,
+        at_turn=target.at_turn,
+        cwd=cwd,
+        reporter=reporter,
+    )
+    if rc != 0:
+        return None
+    return child, target.undone_text
 
 
 def create_fork(  # noqa: PLR0911
