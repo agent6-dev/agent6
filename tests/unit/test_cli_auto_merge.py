@@ -97,6 +97,39 @@ def test_auto_merge_squashes_and_lands_on_base(
     assert m["merged"]["sha"]
 
 
+def test_auto_merge_lands_the_hidden_chain_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """branch_per_run off records no branch; auto_merge merges the run's
+    refs/agent6/<id> chain ref into the base instead."""
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run_on_branch(
+        tmp_path,
+        "run-AMREF1",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch=None,
+    )
+    _git(tmp_path, "update-ref", "refs/agent6/run-AMREF1", "agent6/run-AMREF1")
+    _git(tmp_path, "checkout", "-q", "--detach")
+    _git(tmp_path, "branch", "-D", "agent6/run-AMREF1")  # only the chain ref remains
+    _git(tmp_path, "checkout", "-q", "main")
+    cfg = load_effective(tmp_path, None).config
+    git2 = cfg.git.model_copy(update={"auto_merge": True})
+    finmod.finalize_auto_merge(
+        tmp_path,
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AMREF1"),
+        cfg=cfg.model_copy(update={"git": git2}),
+        reporter=STDIO_REPORTER,
+    )
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
+    m = json.loads(
+        (
+            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-AMREF1" / "manifest.json"
+        ).read_text()
+    )
+    assert m["merged"]["into"] == "main"
+
+
 def test_auto_merge_noop_without_run_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

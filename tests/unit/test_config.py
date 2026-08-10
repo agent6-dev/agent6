@@ -103,10 +103,12 @@ def test_invalid_enum_literal(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_auto_merge_requires_branch_per_run(tmp_path: Path) -> None:
+def test_auto_merge_works_without_branch_per_run(tmp_path: Path) -> None:
+    """auto_merge lands the hidden chain ref when no visible branch exists, so
+    the combination is valid config."""
     body = "[git]\nauto_merge = true\nbranch_per_run = false\n"
-    with pytest.raises(ConfigError, match="auto_merge requires"):
-        load_config(_write(tmp_path, body))
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.git.auto_merge and not cfg.git.branch_per_run
 
 
 def test_auto_prune_requires_auto_merge(tmp_path: Path) -> None:

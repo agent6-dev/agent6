@@ -23,6 +23,7 @@ from agent6.git_ops import (
     auto_stash_message,
     branch_exists,
     branch_tip_sha,
+    chain_tip,
     create_branch,
     delete_branch_if_merged,
     find_stash,
@@ -322,17 +323,20 @@ def finalize_auto_merge(
     """After a successful run, land the run branch on its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
     run + resume share it. Ref plumbing only: the checkout is never switched and
-    the worktree (which carries the run's work) is no obstacle. Non-fatal and
-    best-effort: on conflict or error the run branch is left intact and the
-    message says how to merge by hand. No-op when branch_per_run was off."""
+    the worktree (which carries the run's work) is no obstacle. With
+    branch_per_run off the hidden chain ref is merged instead. Non-fatal and
+    best-effort: on conflict or error the run's refs are left intact and the
+    message says how to merge by hand."""
     try:
         manifest = read_manifest(layout.session_dir)
     except ManifestError:
         return
-    run_branch = manifest.run_branch
     base_branch = manifest.base_branch
-    if not run_branch or not base_branch:
-        return  # branch_per_run was off (auto_merge requires it)
+    # The visible branch when there is one, else the run's chain ref; a run
+    # that recorded no commits (unborn ref) has nothing to land.
+    run_branch = manifest.run_branch or f"refs/agent6/{manifest.session_id}"
+    if not base_branch or chain_tip(cwd, run_branch) is None:
+        return
     identity = CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
@@ -374,7 +378,9 @@ def finalize_auto_merge(
                 f"[agent6] merge record could not be written: {outcome.stamp_error};"
                 " `sessions prune` will call this branch unmerged"
             )
-        if cfg.git.auto_prune:
+        # auto_prune is a branch verb: with branch_per_run off there is no
+        # branch, and the chain ref stays as the run's record (sessions rm).
+        if cfg.git.auto_prune and manifest.run_branch:
             if delete_branch_if_merged(cwd, run_branch):
                 reporter.err(
                     f"[agent6] auto_pruned {run_branch}",
@@ -389,8 +395,8 @@ def finalize_auto_merge(
     elif outcome.status == "conflict":
         reporter.err(
             f"[agent6] auto_merge into {base_branch} hit conflicts "
-            f"({', '.join(outcome.conflicts)}); left a clean tree on {base_branch} with the run "
-            f"branch {run_branch} intact. Merge by hand:\n    git merge {run_branch}"
+            f"({', '.join(outcome.conflicts)}); nothing was moved and {run_branch} is "
+            f"intact. Merge by hand:\n    git merge {run_branch}"
         )
     else:
         reporter.err(

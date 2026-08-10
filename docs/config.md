@@ -176,8 +176,8 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 | `branch_per_run` | `true` | Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden `refs/agent6/<id>` ref only). Forced on for `--parallel` lanes (work is imported by branch). |
 | `commit_per_step` | `true` | Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and your checkout are never touched). Off: agent6 never commits -- work stays only in the worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from a changed tree degrade. |
 | `merge_strategy` | `"squash"` | `agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps per-step history), `ff`. Governs consolidation only; per-step commits always land on the run's chain. |
-| `auto_merge` | `false` | After a run with nothing red, land the run branch on its base automatically (never over a red/stale verify). Requires `branch_per_run`. On conflict the branch is left with instructions. |
-| `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A squash-merged branch is reported with the `-D` line, never force-deleted. Requires `auto_merge`. |
+| `auto_merge` | `false` | After a run with nothing red, land the run's work on its base automatically (never over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. On conflict nothing moves and instructions are printed. |
+| `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A squash-merged branch is reported with the `-D` line, never force-deleted. Requires `auto_merge`; no-op without a run branch. |
 | `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is repo-controlled host code, an RCE vector on an untrusted repo. `core.fsmonitor`/`diff.external` are always neutralized. |
 
 ### `[git.commit]`

@@ -532,17 +532,20 @@ class GitConfig(BaseModel):
     # The per-step commits always happen on the run branch during the run; this
     # only governs how they are consolidated when you merge.
     merge_strategy: Literal["squash", "merge", "ff"] = "squash"
-    # After a successful run, automatically run `merge_strategy` to land the run
-    # branch on its base (what `agent6 sessions merge` does, run for you). Default off:
-    # the run branch is kept until you choose to merge. Requires branch_per_run
-    # (without a run branch there is nothing to merge). With auto_stash_pop the
-    # merge lands first, then your stashed pre-run changes go back on top.
+    # After a successful run, automatically run `merge_strategy` to land the
+    # run's work on its base (what `agent6 sessions merge` does, run for you).
+    # Default off: the run's refs are kept until you choose to merge. Works
+    # with branch_per_run off too (the hidden chain ref is merged). With
+    # auto_stash_pop the merge lands first, then your stashed pre-run changes
+    # go back on top.
     auto_merge: bool = False
     # After auto_merge, delete the run branch when it is safely deletable
     # (`git branch -d`: reachable-merged, so merge/ff strategies). A squash-merged
     # branch is unreachable and is reported with the `git branch -D` to remove it by
-    # hand, never force-deleted. Requires auto_merge. With both on, run branches
-    # stop accumulating, so agent6 looks like a direct-to-branch agent while keeping
+    # hand, never force-deleted. Requires auto_merge; no-op when branch_per_run
+    # is off (there is no branch, and the hidden chain ref stays as the run's
+    # record until `sessions rm`). With both on, run branches stop
+    # accumulating, so agent6 looks like a direct-to-branch agent while keeping
     # the per-step commits during the run. Default off.
     auto_prune: bool = False
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
@@ -563,11 +566,6 @@ class GitConfig(BaseModel):
             raise ValueError(
                 "git.auto_stash_pop requires git.auto_stash: with nothing stashed "
                 "pre-run there is nothing to restore at run end."
-            )
-        if self.auto_merge and not self.branch_per_run:
-            raise ValueError(
-                "git.auto_merge requires git.branch_per_run: with no run branch there is "
-                "nothing to merge (the run commits straight onto your branch)."
             )
         if self.auto_prune and not self.auto_merge:
             raise ValueError(
