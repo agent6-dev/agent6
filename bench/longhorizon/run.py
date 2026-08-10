@@ -47,7 +47,7 @@ RESULTS_DIR = ROOT / "results"
 AGENT6_BIN = os.environ.get("AGENT6_BIN") or shutil.which("agent6") or "agent6"
 RUNS_ROOT = Path(os.environ.get("LONGHORIZON_RUNS", str(Path.home() / "longhorizon-runs")))
 
-READ_TOOLS = {"read_file", "grep", "outline", "find_definition", "find_references", "list_dir"}
+READ_TOOLS = {"read_file", "outline", "find_definition", "find_references", "list_dir"}
 EDIT_TOOLS = {"apply_edit", "apply_patch"}
 ULID_RE = re.compile(r"\b[0-9A-HJKMNP-TV-Z]{26}\b")
 

@@ -248,7 +248,7 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
     seen_calls: set[str] = set()
     seen_paths: set[str] = set()
     compacted = False
-    read_tools = {"read_file", "grep", "outline", "find_definition", "find_references", "list_dir"}
+    read_tools = {"read_file", "outline", "find_definition", "find_references", "list_dir"}
     for e in events:
         t = e.get("type")
         if t == "budget.update":
