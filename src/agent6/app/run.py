@@ -689,41 +689,47 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     finally:
         # Single owner of worker.pid, both writer locks, and auto-stash
         # finalization, for EVERY exit path: preflight refusals, Ctrl-C during
-        # verify inference, and setup-window crashes included.
-        frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        clear_worker_pid(layout.session_dir)
-        if stashed:
-            if detach_requested:
-                # The run is NOT over: popping the stash now would feed the
-                # user's pre-run files into the detached continuation's
-                # auto-commits. Leave the stash and say so.
-                # By sha, never by position: this hint has the LONGEST window of
-                # any -- the operator reads it now and runs it after a
-                # background run that may take hours, by which point a
-                # positional pop restores whatever else was stashed meanwhile.
-                hint = stash_recovery_hint(
-                    cwd, session_id=effective_session_id, base_branch=base_branch
-                )
-                reporter.err(
-                    "[agent6] pre-run changes remain stashed while the run continues"
-                    " in the background; after it ends, restore them with:"
-                    f" {hint}"
-                    if hint
-                    else "[agent6] pre-run changes remain stashed while the run continues"
-                    " in the background, but the stash could not be located; check"
-                    " `git stash list`"
-                )
-            else:
-                finalize_auto_stash(
-                    cwd,
-                    base_branch=base_branch,
-                    run_branch=run_branch,
-                    auto_pop=cfg.git.auto_stash_pop,
-                    session_id=layout.session_id,
-                    reporter=reporter,
-                )
-        release_single_writer(repo_lock_fd)
-        release_single_writer(worker_lock_fd)
+        # verify inference, and setup-window crashes included. worker.pid and
+        # the stash pop happen UNDER the locks, so the releases come after --
+        # nested, because they must survive a teardown raise: the ACP front-end
+        # calls run_task in-process, where a leaked flock refuses every later
+        # run on the session until the server restarts.
+        try:
+            frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
+            clear_worker_pid(layout.session_dir)
+            if stashed:
+                if detach_requested:
+                    # The run is NOT over: popping the stash now would feed the
+                    # user's pre-run files into the detached continuation's
+                    # auto-commits. Leave the stash and say so.
+                    # By sha, never by position: this hint has the LONGEST window of
+                    # any -- the operator reads it now and runs it after a
+                    # background run that may take hours, by which point a
+                    # positional pop restores whatever else was stashed meanwhile.
+                    hint = stash_recovery_hint(
+                        cwd, session_id=effective_session_id, base_branch=base_branch
+                    )
+                    reporter.err(
+                        "[agent6] pre-run changes remain stashed while the run continues"
+                        " in the background; after it ends, restore them with:"
+                        f" {hint}"
+                        if hint
+                        else "[agent6] pre-run changes remain stashed while the run continues"
+                        " in the background, but the stash could not be located; check"
+                        " `git stash list`"
+                    )
+                else:
+                    finalize_auto_stash(
+                        cwd,
+                        base_branch=base_branch,
+                        run_branch=run_branch,
+                        auto_pop=cfg.git.auto_stash_pop,
+                        session_id=layout.session_id,
+                        reporter=reporter,
+                    )
+        finally:
+            release_single_writer(repo_lock_fd)
+            release_single_writer(worker_lock_fd)
         if detach_requested:
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so

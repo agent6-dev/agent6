@@ -24,6 +24,7 @@ from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.lock import (
     acquire_repo_writer,
+    acquire_single_writer,
     release_single_writer,
     repo_writer_held,
     repo_writer_holder,
@@ -356,3 +357,35 @@ def test_run_task_seeds_initial_steer_after_its_stale_state_clear(repo: Path) ->
     d = SessionLayout(state_dir=state, session_id="run-STEERSEED").session_dir
     assert steer_request_pending(d)
     assert read_steer_answer(d) == "focus on tests"
+
+
+def test_teardown_raise_still_releases_both_writer_locks(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raise inside run_task's teardown must still release both writer
+    flocks. A CLI exit drops them with the process anyway, but the ACP
+    front-end calls run_task IN-PROCESS and outlives the run, where a leaked
+    flock refused every later run on the session/checkout until the server
+    restarted."""
+    from agent6.app import run as run_mod
+
+    def boom(*a: Any, **kw: Any) -> None:
+        raise RuntimeError("fail with both writer locks held")
+
+    # The first call past BOTH lock acquisitions on the clean-tree path.
+    monkeypatch.setattr(run_mod, "write_session_manifest", boom)
+    frontend = MagicMock()
+    frontend.close_console_view.side_effect = OSError("teardown raise")
+    with pytest.raises(OSError, match="teardown raise"):
+        run_mod.run_task(
+            _load_cfg(), "do a thing", frontend=frontend, session_id="run-TD", mode="run"
+        )
+    # Both flocks are free for the next in-process run: the checkout's...
+    state = resolved_state_dir(repo)
+    fd = acquire_repo_writer(state, "run-NEXT")
+    assert fd is not None
+    release_single_writer(fd)
+    # ...and the run dir's.
+    fd2 = acquire_single_writer(SessionLayout(state_dir=state, session_id="run-TD").session_dir)
+    assert fd2 is not None
+    release_single_writer(fd2)
