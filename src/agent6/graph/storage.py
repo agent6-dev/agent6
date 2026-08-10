@@ -157,6 +157,8 @@ def _dump_frontmatter(node: TaskNode) -> str:
     fm.append(f"updated_at: {_yaml_quote(node.updated_at.isoformat())}")
     fm.append(f"created_by: {_yaml_quote(node.created_by)}")
     fm.append(f"commit_sha: {_yaml_quote(node.commit_sha)}")
+    if node.standing:
+        fm.append('standing: "true"')
     fm.append("---")
     fm.append("")
     fm.append(node.notes if node.notes else "")
@@ -247,6 +249,7 @@ def _parse_frontmatter(text: str) -> TaskNode:
         created_by=_str("created_by"),  # type: ignore[arg-type]
         commit_sha=_str("commit_sha"),
         notes=notes,
+        standing=_str("standing") == "true",
     )
 
 

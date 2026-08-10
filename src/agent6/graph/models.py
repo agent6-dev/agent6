@@ -58,6 +58,9 @@ class TaskNodeDraft(BaseModel):
     relevant_paths: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     created_by: NodeActor
+    # A standing task is the run's fallback: it never passes, and the focus
+    # frontier selects it only when no ordinary subtask is ready.
+    standing: bool = False
 
 
 class TaskNode(BaseModel):
@@ -81,6 +84,8 @@ class TaskNode(BaseModel):
     created_by: NodeActor
     commit_sha: str = ""
     notes: str = ""
+    # See TaskNodeDraft.standing: the never-passing fallback node.
+    standing: bool = False
 
     @field_validator("id")
     @classmethod

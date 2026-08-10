@@ -100,3 +100,57 @@ def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: Path) -
     listed = [t["id"] for t in list_tasks(cur, {}).to_wire()["tasks"]]
     assert listed == tree_order(cur.nodes()), "the model reads a different order than it planned"
     assert listed == [root, first, middle, last]
+
+
+def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: Path) -> None:
+    """A standing task runs only when every ordinary subtask is settled:
+    pending work always outranks it, new work preempts it (the cursor on a
+    standing node yields to a fresh ordinary task), and it never passes."""
+    import pytest
+
+    from agent6.graph.curator import CuratorError
+    from agent6.graph.models import TaskNodeDraft, UpdateStatusIntent
+    from agent6.workflows._dag_focus import current_task_id, first_ready_subtask
+
+    cur = _curator(tmp_path)
+    root = _add(cur, None, "root")
+    standing = cur.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(title="keep testing", created_by="worker", standing=True),
+        )
+    ).id
+    work = _add(cur, root, "real work")
+    # Ordinary work outranks the standing node.
+    assert first_ready_subtask(cur.nodes()) == work
+    cur.update_status(UpdateStatusIntent(id=work, new_status="passed"))
+    # The queue drained: the standing node is the fallback.
+    assert first_ready_subtask(cur.nodes()) == standing
+    # New work preempts it, even with the cursor parked on the standing node.
+    late = _add(cur, root, "late arrival")
+    assert current_task_id(cur.nodes(), standing) == late
+    # It never passes; retiring is skipped/obsolete.
+    with pytest.raises(CuratorError, match="never passes"):
+        cur.update_status(UpdateStatusIntent(id=standing, new_status="passed"))
+    cur.update_status(UpdateStatusIntent(id=late, new_status="passed"))
+    cur.update_status(UpdateStatusIntent(id=standing, new_status="skipped"))
+    assert first_ready_subtask(cur.nodes()) is None
+
+
+def test_standing_survives_the_storage_round_trip(tmp_path: Path) -> None:
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import TaskNodeDraft
+
+    cur = _curator(tmp_path)
+    root = _add(cur, None, "root")
+    sid = cur.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root,
+            draft=TaskNodeDraft(title="hunt bugs", created_by="worker", standing=True),
+        )
+    ).id
+    # A fresh curator over the same layout re-reads the files from disk.
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="runny-one-AAAAAA")
+    reloaded = GraphCurator(layout)
+    assert reloaded.nodes()[sid].standing is True
+    assert reloaded.nodes()[root].standing is False

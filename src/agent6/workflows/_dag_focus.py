@@ -51,10 +51,9 @@ def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     return False
 
 
-def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
-    """An open SUBTASK ready to work: not the auto-root, open, dependencies all
-    satisfied, and no open child (a decomposed parent is not itself a unit of
-    work)."""
+def _ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+    """An open SUBTASK whose dependencies are satisfied and whose children are
+    all settled (a decomposed parent is not itself a unit of work)."""
     if node.parent_id is None or node.status not in OPEN_STATUSES:
         return False
     for dep in node.depends_on:
@@ -62,6 +61,12 @@ def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
         if d is None or d.status not in DEPS_SATISFIED_STATUSES:
             return False  # a missing or not-yet-done dependency blocks the subtask
     return not has_open_child(nodes, node)
+
+
+def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+    """A ready ORDINARY subtask. Standing tasks are excluded here: they are
+    the fallback, selected only when nothing ordinary is ready."""
+    return not node.standing and _ready_subtask(nodes, node)
 
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
@@ -73,10 +78,18 @@ def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     Roots (and any node an ancestor does not reach, e.g. a stale parent
     reference) fall back to id order: ids are time-sortable ULIDs, so that is
     creation order even on a resumed run, where the nodes dict arrives in
-    filesystem order. Returns None when nothing is ready (no subtasks, all
-    done, or all blocked / waiting on open children)."""
+    filesystem order.
+
+    When nothing ordinary is ready, the first ready STANDING task is the
+    fallback: ordinary pending work always outranks it, so a run drains real
+    tasks first and returns to the standing goal when the queue empties.
+    Returns None when nothing at all is ready."""
     for nid in tree_order(nodes):
         if is_focusable_subtask(nodes, nodes[nid]):
+            return nid
+    for nid in tree_order(nodes):
+        node = nodes[nid]
+        if node.standing and _ready_subtask(nodes, node):
             return nid
     return None
 

@@ -228,6 +228,7 @@ class GraphCurator:
                 acceptance=intent.draft.acceptance,
                 relevant_paths=intent.draft.relevant_paths,
                 depends_on=intent.draft.depends_on,
+                standing=intent.draft.standing,
                 children=(),
                 status="pending",
                 created_at=now,
@@ -262,6 +263,11 @@ class GraphCurator:
             if node.status == "passed" and intent.new_status not in ("obsolete",):
                 raise CuratorError(
                     f"cannot transition passed node {intent.id} to {intent.new_status}"
+                )
+            if node.standing and intent.new_status == "passed":
+                raise CuratorError(
+                    f"a standing task never passes ({intent.id}); mark it skipped or"
+                    " obsolete to retire it"
                 )
             updated = node.model_copy(
                 update={
