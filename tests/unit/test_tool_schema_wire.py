@@ -108,10 +108,11 @@ def test_status_pattern_bytes_are_pinned() -> None:
     from agent6.tools.schema import DagListTasksInput, DagUpdateTaskInput
 
     expected = "^(pending|in_progress|passed|failed|skipped|obsolete)$"
-    update = DagUpdateTaskInput.model_json_schema()["properties"]["status"]
-    assert update["pattern"] == expected
-    anyof = DagListTasksInput.model_json_schema()["properties"]["status"]["anyOf"]
-    assert [s.get("pattern") for s in anyof if s.get("type") == "string"] == [expected]
+    # Both statuses are optional (update_task may carry only depends_on), so
+    # the pattern sits on the string arm of an anyOf in each.
+    for cls in (DagUpdateTaskInput, DagListTasksInput):
+        anyof = cls.model_json_schema()["properties"]["status"]["anyOf"]
+        assert [s.get("pattern") for s in anyof if s.get("type") == "string"] == [expected], cls
 
 
 def test_add_task_parent_id_carries_the_ulid_constraint() -> None:

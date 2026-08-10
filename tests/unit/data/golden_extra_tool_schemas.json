@@ -1,16 +1,5 @@
 [
   {
-    "name": "add_dependency",
-    "required": [
-      "depends_on",
-      "id"
-    ],
-    "properties": {
-      "depends_on": "string",
-      "id": "string"
-    }
-  },
-  {
     "name": "add_memory",
     "required": [
       "body",
@@ -29,6 +18,7 @@
     "properties": {
       "acceptance": "string",
       "after": "anyOf[null,string]",
+      "depends_on": "array[string]",
       "parent_id": "anyOf[null,string]",
       "rationale": "string",
       "relevant_paths": "array[string]",
@@ -110,13 +100,13 @@
   {
     "name": "update_task",
     "required": [
-      "id",
-      "status"
+      "id"
     ],
     "properties": {
+      "depends_on": "array[string]",
       "id": "string",
       "note": "string",
-      "status": "string"
+      "status": "anyOf[null,string]"
     }
   },
   {

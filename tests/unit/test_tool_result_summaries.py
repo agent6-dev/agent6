@@ -25,7 +25,6 @@ import pytest
 
 from agent6.tools import results as results_mod
 from agent6.tools.results import (
-    AddDependencyResult,
     AddMemoryResult,
     AddTaskResult,
     AnswersResult,
@@ -182,7 +181,6 @@ CASES: list[tuple[str, ToolResult, str]] = [
         f"pending: {_LONG_TITLE[:60]}",
     ),
     ("update_task", UpdateTaskResult(id="01A", status="done", title="t"), "done: t"),
-    ("add_dependency", AddDependencyResult(id="01A", title="t", depends_on=("01B",)), "ok"),
     ("list_tasks", ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
     # operator knowledge
     ("read_notes", NotesResult(content="# open\n- x\n", chars=10), "10 chars"),

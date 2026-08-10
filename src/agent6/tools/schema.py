@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cache
-from typing import Any, ClassVar, Literal, get_args
+from typing import Annotated, Any, ClassVar, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from agent6.graph.models import NodeStatus
 from agent6.notes import NOTES_MAX_CHARS
@@ -19,6 +19,9 @@ from agent6.types import session_kind
 # the LLM-facing pattern bytes are unchanged; pinned in
 # tests/unit/test_tool_schema_wire.py.
 _STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
+
+# A task id as the DAG tools accept it: ULIDs are exactly 26 chars.
+Ulid = Annotated[str, StringConstraints(min_length=26, max_length=26)]
 
 
 class _ToolInput(BaseModel):
@@ -368,7 +371,8 @@ class DagAddTaskInput(_ToolInput):
         " imperative; `acceptance` is the verify-able condition."
         " `after` places the new task directly after that sibling instead of"
         " last, which is how work is inserted between two existing steps."
-        " Returns the new task's 26-char ULID."
+        " `depends_on` lists task ULIDs that must pass before this one is"
+        " surfaced. Returns the new task's 26-char ULID."
     )
 
     title: str = Field(min_length=1)
@@ -380,20 +384,24 @@ class DagAddTaskInput(_ToolInput):
     rationale: str = ""
     acceptance: str = ""
     relevant_paths: tuple[str, ...] = ()
+    depends_on: tuple[Ulid, ...] = ()
 
 
 class DagUpdateTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Change a task's status. `id` is the ULID returned from add_task."
-        " `status` is one of pending | in_progress | passed | failed |"
-        " skipped | obsolete. Mark in_progress when starting a subtask and"
-        " passed (only) after verify confirms it."
+        "Update a task: set `status` (pending | in_progress | passed |"
+        " failed | skipped | obsolete) and/or append `depends_on` edges"
+        " (task ULIDs this task must wait on; the harness only surfaces a"
+        " task once every dependency has passed, and a cycle is rejected)."
+        " Mark in_progress when starting a subtask and passed (only) after"
+        " verify confirms it. Pass at least one of status / depends_on."
     )
 
     id: str = Field(min_length=26, max_length=26)
-    status: str = Field(pattern=_STATUS_PATTERN)
+    status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
     note: str = ""
+    depends_on: tuple[Ulid, ...] = ()
 
 
 class DagListTasksInput(_ToolInput):
@@ -409,22 +417,6 @@ class DagListTasksInput(_ToolInput):
     # The same status enum update_task uses, so a typo is a schema rejection
     # rather than an empty result.
     status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
-
-
-class DagAddDependencyInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "add_dependency"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Declare that task `id` cannot start until task `depends_on` has"
-        " passed. The harness only surfaces a task as the current focus once"
-        " every dependency has passed, so use this when subtasks must land in"
-        " a specific order (B edits code A must create first) instead of"
-        " encoding order in titles. Both ids are 26-char ULIDs from add_task /"
-        " list_tasks. Rejected if it would create a cycle. Returns the updated"
-        " task with its full depends_on list."
-    )
-
-    id: str = Field(min_length=26, max_length=26)
-    depends_on: str = Field(min_length=26, max_length=26)
 
 
 # Cross-run memory surface. Lets the agent persist repo-scoped notes
@@ -660,7 +652,6 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,
-    DagAddDependencyInput,
     AddMemoryInput,
     InvalidateMemoryInput,
     ReadNotesInput,
@@ -679,7 +670,6 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,
-    DagAddDependencyInput,
     FinishPlanningInput,
 )
 

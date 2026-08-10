@@ -410,22 +410,18 @@ class UpdateTaskResult(ToolResult):
     id: str
     status: str
     title: str
+    depends_on: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
-        return {"id": self.id, "status": self.status, "title": self.title}
+        return {
+            "id": self.id,
+            "status": self.status,
+            "title": self.title,
+            "depends_on": list(self.depends_on),
+        }
 
     def summary(self) -> str:
         return f"{self.status}: {str(self.title)[:60]}"
-
-
-@dataclass(frozen=True, slots=True)
-class AddDependencyResult(ToolResult):
-    id: str
-    title: str
-    depends_on: tuple[str, ...]
-
-    def to_wire(self) -> dict[str, Any]:
-        return {"id": self.id, "title": self.title, "depends_on": list(self.depends_on)}
 
 
 @dataclass(frozen=True, slots=True)

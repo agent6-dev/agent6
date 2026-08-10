@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""DAG-as-tool handlers: add_task, update_task, add_dependency, list_tasks.
-All raise ToolError if no curator was wired so standalone test instantiation
-works unchanged."""
+"""DAG-as-tool handlers: add_task, update_task, list_tasks. All raise
+ToolError if no curator was wired so standalone test instantiation works
+unchanged."""
 
 from __future__ import annotations
 
@@ -18,13 +18,11 @@ from agent6.graph.models import (
 from agent6.graph.order import tree_order
 from agent6.tools.errors import ToolError
 from agent6.tools.results import (
-    AddDependencyResult,
     AddTaskResult,
     ListTasksResult,
     UpdateTaskResult,
 )
 from agent6.tools.schema import (
-    DagAddDependencyInput,
     DagAddTaskInput,
     DagListTasksInput,
     DagUpdateTaskInput,
@@ -43,6 +41,7 @@ def add_task(
         rationale=args.rationale,
         acceptance=args.acceptance,
         relevant_paths=args.relevant_paths,
+        depends_on=args.depends_on,
         created_by="worker",
     )
     intent = AddSubtaskIntent(parent_id=parent_id, draft=draft, after=args.after)
@@ -59,24 +58,23 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     if curator is None:
         raise ToolError("update_task: DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
-    intent = UpdateStatusIntent(
-        id=args.id,
-        new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal
-        note=args.note,
+    node = None
+    if args.status is not None:
+        intent = UpdateStatusIntent(
+            id=args.id,
+            new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal
+            note=args.note,
+        )
+        node = curator.update_status(intent)
+    # Unknown ids and cycles are rejected by the curator; dispatch()'s generic
+    # wrapper surfaces that rejection to the model as a ToolError.
+    for dep in args.depends_on:
+        node = curator.add_dependency(AddDependencyIntent(id=args.id, depends_on=dep))
+    if node is None:
+        raise ToolError("update_task: pass status and/or depends_on")
+    return UpdateTaskResult(
+        id=node.id, status=node.status, title=node.title, depends_on=tuple(node.depends_on)
     )
-    node = curator.update_status(intent)
-    return UpdateTaskResult(id=node.id, status=node.status, title=node.title)
-
-
-def add_dependency(curator: GraphCurator | None, raw: dict[str, Any]) -> AddDependencyResult:
-    if curator is None:
-        raise ToolError("add_dependency: DAG curator not available in this run")
-    args = DagAddDependencyInput.model_validate(raw)
-    intent = AddDependencyIntent(id=args.id, depends_on=args.depends_on)
-    # Unknown ids and cycles are rejected by the curator; dispatch()'s
-    # generic wrapper surfaces that rejection to the model as a ToolError.
-    node = curator.add_dependency(intent)
-    return AddDependencyResult(id=node.id, title=node.title, depends_on=tuple(node.depends_on))
 
 
 def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksResult:

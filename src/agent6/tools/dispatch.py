@@ -50,7 +50,7 @@ from agent6.skills import (
     skill_search_dirs,
 )
 from agent6.tools._control_tools import ask_user, finish_planning, finish_session
-from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, update_task
+from agent6.tools._dag_tools import add_task, list_tasks, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
 from agent6.tools._memory_tools import (
     add_memory,
@@ -99,7 +99,6 @@ from agent6.tools.schema import (
     ApplyEditInput,
     ApplyPatchInput,
     AskUserInput,
-    DagAddDependencyInput,
     DagAddTaskInput,
     DagListTasksInput,
     DagUpdateTaskInput,
@@ -323,7 +322,7 @@ class ToolDispatcher:
         self._events = events
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
-        # update_task / list_tasks / add_dependency.
+        # update_task / list_tasks.
         self._curator = curator
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
@@ -390,7 +389,6 @@ class ToolDispatcher:
             DagAddTaskInput.TOOL_NAME: self._dag_add_task,
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
             DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
-            DagAddDependencyInput.TOOL_NAME: self._dag_add_dependency,
             # Cross-run memory. Handlers raise ToolError if no
             # state_dir was wired.
             AddMemoryInput.TOOL_NAME: self._add_memory,
@@ -1012,9 +1010,6 @@ class ToolDispatcher:
 
     def _dag_update_task(self, raw: dict[str, Any]) -> ToolResult:
         return update_task(self._curator, raw)
-
-    def _dag_add_dependency(self, raw: dict[str, Any]) -> ToolResult:
-        return add_dependency(self._curator, raw)
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> ToolResult:
         return list_tasks(self._curator, raw)
