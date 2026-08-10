@@ -8,11 +8,13 @@ pull in curated context the dispatcher may not have wired for this run
 Memory writes go through trusted code (agent6.memory) to fixed markdown files
 under <state_dir>/memories/, outside the workspace and the jail; the LLM
 controls only the scope (schema-validated literal) and the note text, which
-is inert data. Skill file reads stay inside the skill's own directory
-(``resolve()`` collapses ``../``/symlinks before the containment check)."""
+is inert data. Skill file reads stay inside the skill's own directory,
+through the same component-walked descriptor the workspace tools use (no
+hop may be a symlink)."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ from agent6.memory import MemoryStoreError
 from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
 from agent6.skills import ResolvedSkills
+from agent6.tools._path_safety import open_contained
 from agent6.tools.errors import ToolError
 from agent6.tools.results import AddMemoryResult, InvalidateMemoryResult, NotesResult, SkillResult
 from agent6.tools.schema import (
@@ -68,19 +71,29 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
         )
     if args.file is None:
         return SkillResult(skill=skill.name, file="SKILL.md", content=skill.text)
-    # Supplementary files stay inside the skill's own directory: resolve()
-    # collapses ../ and symlinks BEFORE the containment check, so neither
-    # traversal nor a symlink pointing out of the directory can escape.
-    base = skill.dir.resolve()
-    target = (base / args.file).resolve()
-    if not target.is_relative_to(base):
-        raise ToolError(f"use_skill: {args.file!r} escapes the skill directory")
-    if not target.is_file():
-        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}")
-    if target.stat().st_size > 262_144:
+    # Supplementary files stay inside the skill's own directory, opened with
+    # the same component walk the workspace tools use (open_contained): the
+    # containment check and the read are one lookup, and no hop traverses a
+    # symlink -- a skill shipping `reference.md -> secrets.toml` serves a
+    # refusal, not the operator's keys.
+    try:
+        fd = open_contained(skill.dir, Path(args.file), os.O_RDONLY)
+    except FileNotFoundError:
+        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
+    except ToolError as exc:  # absolute, `..`, or a symlink component
+        raise ToolError(f"use_skill: {args.file!r} escapes the skill directory") from exc
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            data = handle.read(262_145)
+    except IsADirectoryError:
+        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
+    except OSError as exc:
+        raise ToolError(f"use_skill: cannot read {args.file!r}: {exc}") from exc
+    if len(data) > 262_144:
         raise ToolError(f"use_skill: {args.file!r} exceeds the 256 KiB cap")
-    content = target.read_text(encoding="utf-8", errors="replace")
-    return SkillResult(skill=skill.name, file=args.file, content=content)
+    return SkillResult(
+        skill=skill.name, file=args.file, content=data.decode("utf-8", errors="replace")
+    )
 
 
 def read_notes(state_dir: Path | None, _raw: dict[str, Any]) -> NotesResult:
