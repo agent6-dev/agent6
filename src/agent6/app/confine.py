@@ -188,13 +188,16 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
     """A refusal when a server EXPLICITLY demanded no network and this host
     cannot give it one, else None.
 
-    Per-server, same rule and same vocabulary as `[sandbox].tool_network`: a
-    network namespace needs user namespaces, which only `strict` has, so
-    `block` refuses here and the `auto` default degrades with a warning
-    (`warn_sandbox_gaps`). `none` has no jail at all; the blanket unsandboxed
-    warning covers it.
+    Per-server, same rule and same vocabulary as `[sandbox].tool_network`, and
+    therefore the same guard: a network namespace needs user namespaces, which
+    only `strict` has, so `block` refuses on `hardened` while the `auto`
+    default degrades with a warning. Under `none` nothing is confined at all
+    and the blanket unsandboxed warning covers it -- the same answer
+    `protect_git` and `memory_limit_mb` give, and the same answer the sibling
+    knob gives, which this did not until a matrix of the two side by side
+    showed them disagreeing.
     """
-    if isolation == "strict":
+    if isolation != "hardened":
         return None
     for name, srv in sorted(cfg.mcp.servers.items()):
         if srv.enabled and srv.sandbox is not None and srv.sandbox.network == "block":

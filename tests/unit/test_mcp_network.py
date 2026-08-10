@@ -79,3 +79,26 @@ def test_allow_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> 
     assert check_mcp_network_support(cfg, "hardened") is None
     start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
     assert "MCP server" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["auto", "allow", "block"])
+@pytest.mark.parametrize("isolation", ["strict", "hardened", "none"])
+def test_the_per_server_knob_answers_exactly_like_tool_network(value: str, isolation: str) -> None:
+    """One axis, one vocabulary, one set of rules. They drifted: the
+    per-server guard read `if isolation == "strict"` where the sibling reads
+    `if isolation != "hardened"`, so `block` refused under `none` -- where
+    nothing is confined anyway and the blanket unsandboxed warning covers it.
+    A table of the two side by side is what caught it, so here is the table."""
+    from agent6.app.confine import check_network_support
+    from agent6.config import SandboxConfig
+
+    per_server = check_mcp_network_support(_server({"network": value}), isolation)  # type: ignore[arg-type]
+    global_knob = check_network_support(
+        Config(sandbox=SandboxConfig(tool_network=value)),  # type: ignore[arg-type]
+        isolation,  # type: ignore[arg-type]
+    )
+    assert (per_server is None) == (global_knob is None), (
+        f"{value!r} on {isolation!r}: per-server says"
+        f" {'refuse' if per_server else 'run'}, tool_network says"
+        f" {'refuse' if global_knob else 'run'}"
+    )
