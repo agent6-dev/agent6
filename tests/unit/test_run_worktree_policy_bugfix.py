@@ -81,7 +81,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
 
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
-    monkeypatch.setattr(app_run_mod, "set_repo_hook_policy", _noop)
+    monkeypatch.setattr(app_run_mod, "apply_git_egress_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
 

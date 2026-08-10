@@ -57,7 +57,11 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     from agent6.app import run as lifecycle
 
     seen: list[bool] = []
-    monkeypatch.setattr(lifecycle, "set_repo_hook_policy", seen.append)
+
+    def _capture(captured: Config) -> None:
+        seen.append(captured.git.run_repo_hooks)
+
+    monkeypatch.setattr(lifecycle, "apply_git_egress_policy", _capture)
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
