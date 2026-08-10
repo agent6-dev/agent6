@@ -2,65 +2,41 @@
 
 agent6 is **secure by default**: every field has a default (security-sensitive
 ones default to the safe value), so you only set what you want to change. This
-is the field reference; for the security model behind the `[sandbox]` and `[git]`
-fields see [security.md](security.md).
+is the field reference; the security model behind `[sandbox]` and `[git]` is
+[security.md](security.md).
 
 ## Where config lives (layered, lowest precedence first)
 
 | Layer | Path | Set with |
 |---|---|---|
 | built-in defaults | (none) | (secure defaults, always present) |
-| global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` (default `~/.config/agent6/config.toml`; or set `AGENT6_CONFIG_HOME`) | `agent6 connect`, `agent6 model` |
+| global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` (`AGENT6_CONFIG_HOME` overrides) | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | explicit | `--config FILE` | `agent6 run --config FILE` |
 
-The per-repo config lives in the per-repo state dir out of the workspace
-(`$XDG_STATE_HOME/agent6/<repo-id>/`; see `[agent6].state_dir` below), so it
-is per-machine and not committed or shared. It can be empty -- even absent --
-when the global config supplies a provider + model. `workflow.verify_command`
-is optional: `agent6 run`/`plan` infer one per run when it is unset (see the
-table below), so a repo needs nothing repo-specific to run.
+The per-repo config lives in the state dir, out of the workspace: per-machine,
+never committed. It can be empty or absent when the global config supplies a
+provider + model; `workflow.verify_command` is inferred per run when unset.
 
 ## Creating & inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
 - `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
-- `agent6 init`: an OPTIONAL, granular setup wizard. Step by step it creates the
-  per-repo `config.toml` (in the state dir) if missing, sets a `verify_command`
-  inferred from the repo, adds `.gitignore` entries, and creates/updates
-  `AGENTS.md` -- each step asks first and never overwrites your files.
+- `agent6 init`: optional setup wizard (per-repo config, inferred
+  `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
 - `agent6 config show`: every effective value and which layer set it.
-- A leaf whose value must move with a sibling (the `[context]` compaction
-  thresholds) is set as one inline table on the section key:
+- `agent6 config get|set|unset|add|remove <dotted.key> [value]` (`--repo`, or
+  `--machine-file FILE` for a machine `[config]` overlay). Every edit is
+  re-validated and rolled back if invalid. A sibling pair that must move
+  together is set as one inline table:
   `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
-  The pair is written and validated in one edit, so a half-set config never
-  lands; the same form works for any section (`workflow.metric`, a provider
-  entry).
-- `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
-  (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay). Every edit is
-  re-validated and rolled back if it would produce an invalid config. Edits
-  serialize on a sibling `config.toml.lock` (removed on release) that FAILS
-  OPEN: when it cannot be taken (a stale root-owned lock a killed `sudo` write
-  left), the edit still runs, and a rollback is skipped rather than risk
-  erasing a concurrent edit -- the write is kept and the error says "kept as
-  written", pointing at `agent6 config fix`. Publishes are atomic, so a torn
-  file is impossible; the worst case is one lost update.
-- `agent6 config fill`: materialize defaults plus your global config into the
-  global config file, so every value is explicit. The repo layer is not read
-  (its overrides belong to one repo; baking them into the global file would
-  follow you everywhere), and a selected preset is neither applied nor
-  dropped: the `preset = "..."` line and any `[presets.*]` tables you authored
-  survive, so the preset keeps applying over the filled values at runtime and
-  stays editable.
-- A config file that is a **symlink** (dotfiles) stays one: edits follow the
-  link and rewrite its target, provided that target is yours. A symlink to a
-  file another user owns is refused, naming both paths, so `sudo agent6 config
-  set` cannot be redirected through it.
-- `agent6 config fix`: drop invalid entries (unknown keys, stale values left by a
-  schema change) from the global and repo config, printing each and whether it was
-  global or repo. Use `--machine-file FILE` to repair a machine `[config]` overlay
-  instead. Removals apply immediately (no dry-run); an entry it cannot drop as a
-  plain leaf (a non-absolute `state_dir`) is reported, not silently left.
+- Writes are atomic and the edit lock FAILS OPEN (a blocked lock never blocks
+  the write; worst case one lost update, the error says "kept as written").
+  A config file that is a symlink is followed only when you own the target.
+- `agent6 config fill`: materialize defaults + global config into the global
+  file. The repo layer and any selected preset are left as-is.
+- `agent6 config fix`: drop invalid entries (unknown keys, stale values),
+  naming each; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without running.
 
 ---
@@ -70,41 +46,31 @@ table below), so a repo needs nothing repo-specific to run.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version (must be `1`). |
-| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base path for all per-repo state, out of the workspace. Each repo gets `<state_dir>/<repo-id>/` (`<repo-id>` = `<the repo's path, `/` as `-`>-<short hash of that path>`, keyed on the nearest enclosing `.git` so a subdirectory reaches the same state) holding `config.toml`, `sessions/` (one bucket per session mode: `runs/`, `plans/`, `asks/`, `machines/` for `machine create` authoring), `machines/` (live machine instances), `memories/`, and `lineage.jsonl` (the fork forest: one `{child,parent,turn,sha}` edge per line). **Global-config only** (it locates the per-repo config). Override with the `AGENT6_STATE_HOME` env var. Devcontainer tip: the XDG state base is inside the container and ephemeral, so mount a volume at the state dir or set this to a persisted out-of-cwd path to keep run state across rebuilds. |
+| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the workspace. Global-config only; `AGENT6_STATE_HOME` overrides. In a devcontainer the default is ephemeral: point it at a persisted volume to keep runs across rebuilds. |
 
 ## `[providers.<name>]`
 
-One backend per block; `<name>` is yours to pick and is referenced from
-`[models.<role>]`. At least one provider is required. Three orthogonal choices
-describe any backend:
-
-- **`api_format`**: the wire dialect (the only field that selects code).
-- **`deployment`**: a named profile for the URL / model-placement / version
-  quirks of *where* that format is hosted.
-- **auth**: `auth_style` plus a static `api_key_env` or a refreshable
-  `token_command`.
-
-So Claude-on-Vertex and Gemini-on-Vertex differ only in `api_format` (both
-`deployment = "vertex"`). A minimal block is just `api_format` (plus `base_url`
-for a non-default host); everything else defaults.
+One backend per block; `<name>` is referenced from `[models.<role>]`. Three
+orthogonal choices describe any backend: **`api_format`** (the wire dialect,
+the only field that selects code), **`deployment`** (URL/placement quirks of
+where it is hosted), and **auth** (`auth_style` + `api_key_env` or
+`token_command`). A minimal block is just `api_format` (plus `base_url` for a
+non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | `"anthropic"` (Anthropic Messages) or `"openai"` (OpenAI Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
-| `deployment` | `"direct"` | `"direct"`, `"vertex"` (Vertex AI), or `"azure"` (Azure OpenAI; `openai` only). Selects the URL shape + model/version placement. |
-| `base_url` | per (format, deployment) | Endpoint host+path prefix. Defaults to the official endpoint for `direct`; **required** for vertex/azure (it carries project/resource/region). Its host is the only network destination the confined agent may dial. |
-| `auth_style` | per (format, deployment) | `"x_api_key"` (Anthropic header), `"bearer"` (`Authorization: Bearer`), `"api_key_header"` (Azure's `api-key`), or `"none"` (local). Defaulted from format+deployment, so you rarely set it. |
-| `api_key_env` | none | Env var holding the key. Omit to use the key stored by `agent6 connect` (secrets.toml), or for unauthenticated local endpoints. The env var (when set) takes precedence. |
-| `token_command` | none | Command (argv) run to mint a short-lived bearer (printed to stdout) instead of a static key. Re-run on a TTL and once on a `401`/`403`. Takes precedence over `api_key_env`. See below. |
-| `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output before re-running it. |
-| `extra_headers` | `{}` | Extra HTTP headers on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). Not for secrets; use the auth fields. |
-| `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See below. |
-| `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). No secrets here. |
-| `prompt_caching` | `true` | (`anthropic`) Enable Anthropic prompt caching: the system prompt, tool list, and (via rolling breakpoints the loop advances each turn) the growing conversation are all re-read from cache at 0.1x input price. |
-| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read), seconds. Lower it to fail fast on a stuck endpoint. |
-
-Each endpoint gets its own block, so OpenAI and OpenRouter run side-by-side
-under different `<name>`s.
+| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
+| `deployment` | `"direct"` | `"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + model/version placement. |
+| `base_url` | per (format, deployment) | Endpoint host + path prefix; required for vertex/azure. Its host is the only network destination the agent dials for this provider. |
+| `auth_style` | per (format, deployment) | `"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). Rarely set by hand. |
+| `api_key_env` | none | Env var holding the key (wins over `secrets.toml`). Omit for `agent6 connect` keys or unauthenticated local endpoints. |
+| `token_command` | none | argv that prints a short-lived bearer to stdout; re-run on TTL and once on `401`/`403`. Wins over `api_key_env`. See below. |
+| `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output. |
+| `extra_headers` | `{}` | Extra HTTP headers on every request. Not for secrets. |
+| `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See OpenRouter below. |
+| `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
+| `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
+| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read). |
 
 ### Deployments
 
@@ -120,15 +86,15 @@ deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/endpoints/openapi"
 token_command = ["gcloud", "auth", "print-access-token"]
 
-# Claude on Vertex (Anthropic Messages over Vertex: model goes in the URL,
-# anthropic_version in the body, handled for you by deployment = "vertex")
+# Claude on Vertex (model in the URL, anthropic_version in the body: handled
+# by deployment = "vertex")
 [providers.vertex-claude]
 api_format = "anthropic"
 deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/publishers/anthropic/models"
 token_command = ["gcloud", "auth", "print-access-token"]
 
-# Azure OpenAI (the model id IS the deployment name; api-version is required)
+# Azure OpenAI (the model id IS the deployment name; api-version required)
 [providers.azure]
 api_format = "openai"
 deployment = "azure"
@@ -139,255 +105,189 @@ extra_query = { "api-version" = "2024-06-01" }
 
 ### OpenRouter routing & caching (`extra_body`)
 
-OpenRouter fans a model across multiple backends whose speed and prompt
-caching differ a lot. Its default routing is not deterministic, so the
-re-sent system prompt may or may not be cached call-to-call. Pin the behaviour
-with `extra_body.provider` ([OpenRouter routing docs](https://openrouter.ai/docs/features/provider-routing)):
+OpenRouter's default routing is not deterministic, so prompt caching may or
+may not engage call-to-call. Pin it with `extra_body.provider`
+([routing docs](https://openrouter.ai/docs/features/provider-routing)):
 
 ```toml
 [providers.openrouter]
 api_format = "openai"
 base_url = "https://openrouter.ai/api/v1"
-# Prefer the fastest backend; for kimi-k2.6 this lands on one that caches the
-# prompt prefix, so the re-sent system prompt is near-free (cache_r in the cost
-# summary jumps from ~0 to most of the input). Recommended.
-extra_body = { provider = { sort = "throughput" } }
-# Alternatives: pin a specific backend  { order = ["DeepInfra"], allow_fallbacks = true }
-#               cap price               { max_price = { prompt = 1, completion = 2 } }
+extra_body = { provider = { sort = "throughput" } }  # prefer fast, caching backends
+# Alternatives: { order = ["DeepInfra"], allow_fallbacks = true }
+#               { max_price = { prompt = 1, completion = 2 } }
 ```
-
-Set it without hand-editing: it's a table value, so pass the whole thing (the
-CLI completes common presets after `extra_body`):
 
 ```bash
 agent6 config set providers.openrouter.extra_body '{ provider = { sort = "throughput" } }'
 ```
 
-This is the lever to pay for a faster/caching backend. Caching matters more
-than payload size: the large per-call input is the same prefix every turn, so a
-caching backend makes it cheap without trimming anything. Watch `cache_r` in the
-run's cost summary to confirm it's engaging.
+Caching matters more than payload size: the large per-call input is the same
+prefix every turn. Watch `cache_r` in the cost summary to confirm it engages.
 
 ### Short-lived bearer tokens (`token_command`)
 
-Some endpoints authenticate with a short-lived bearer that has to be refreshed
-rather than a static key (Vertex's Google OAuth access token, internal OIDC/STS
-gateways). Point `token_command` at any command that prints a current token to
-stdout, e.g. `["gcloud", "auth", "print-access-token"]`, or for Azure AD
+For endpoints authenticated by a refreshed bearer rather than a static key
+(Vertex OAuth, OIDC/STS gateways): point `token_command` at anything that
+prints a current token, e.g. `["gcloud", "auth", "print-access-token"]` or
 `["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"]`.
-agent6 runs it, caches the token for `token_command_ttl_s`, re-runs it when that
-elapses, and re-runs it once more on a `401`/`403` so an expired token
-self-heals. It works for either `api_format` (the Deployments examples above use
-it for Vertex). `token_command` takes precedence over `api_key_env`.
-
-The command runs in agent6's own process (outside any run sandbox) with your
-environment, the same trust level as an `[mcp.servers.<name>]` command, so it is an
-operator-only knob. Whatever it prints to stdout is sent as the auth header
-(`Authorization: Bearer <token>` for `auth_style = "bearer"`); a non-zero exit,
-a timeout, or empty output surfaces as a
-provider error.
+Cached `token_command_ttl_s` seconds, re-run once on `401`/`403`. It runs in
+agent6's own process with your environment (operator-only, same trust as an
+MCP `command`); non-zero exit, timeout, or empty output surfaces as a provider
+error.
 
 ## `[models.<role>]`
 
-Role routing. Three roles, all optional: **`worker`** drives `agent6 run` /
-`resume` (its model's pricing also drives the USD→token budget conversion);
-**`planner`** drives `agent6 plan`; **`reviewer`** drives `agent6 review` + the
-in-loop critic. `planner` and `reviewer` fall back to `worker` when unset. Any
-provider may serve any role (cross-vendor mixes are fine).
+Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the
+USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`**
+drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
+`worker`. Cross-vendor mixes are fine.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `provider` | *(required)* | A `[providers.*]` name. |
 | `model` | *(required)* | Model id at that provider. |
-| `temperature` | `0.0` | Sampling temperature pinned per call (`0.0`–`2.0`). `0.0` keeps the tool-use loop stable; some open-weights models degenerate at high temperature. |
-| `thinking` | none | Reasoning effort: `off` / `low` / `medium` / `high`. OpenAI-compatible reasoning models get a reasoning-effort knob; Anthropic maps it onto an extended-thinking budget (low/medium/high ≈ 4k/8k/16k tokens). Non-reasoning models ignore it. |
+| `temperature` | `0.0` | Pinned per call (`0.0`–`2.0`). `0.0` keeps tool use stable. |
+| `thinking` | none | Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget (≈ 4k/8k/16k tokens); non-reasoning models ignore it. |
 
 ## `[sandbox]`
 
-The security boundary. Profiles and the network model are specified in
-[security.md](security.md) (§3 isolation, §1b/§8 network); this is a summary.
+The security boundary; the model is [security.md](security.md) (§3 isolation,
+§8 network). This is the field summary.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `isolation` | `"auto"` | `auto` picks the strongest isolation the host supports (`strict`, else `hardened`), falling to `none` with a loud warning only when the host offers no confinement mechanism at all; explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED (self-authorizing, loud warning); the per-invocation forms are `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. See SECURITY §3. |
-| `tool_network` | `"auto"` | Jailed-command egress. `auto`: no tool network, enforced on `strict` (per-child netns), degraded with a warning on `hardened`/`none`; `block`: enforced, refuses isolation levels that cannot provide it; `only_explicit_states`: strict-only, machine `tool` states may opt in; `allow`: the jailed child shares the host network. SECURITY §8. |
-| `run_commands` | `"ask"` | Whether the LLM may run commands at all -- `run_command`, `run_verify_command`, `run_background`, `stop_background` alike: `yes` (auto-approve; also `--auto-approve`) / `no` (withheld) / `ask` (prompt each call). `yes` skips approval; confinement still depends on `sandbox.isolation`. `agent6 ask` CLAMPS this: `yes` becomes `ask`, because a question with the operator sitting there must never execute anything unwatched. It only ever tightens -- `no` stays refused. Per-invocation pins: `--auto-approve` (to `yes`, but never over a configured `no`) and `--no-commands` (to `no`, always allowed -- tightening needs no permission). Approval is one decision for all four tools, since it is the same adversary either way. A plain y/n answers ONE call; only the session choices persist, and they mirror each other -- allow-for-session makes it `yes`, deny-for-session makes it `no`. `no` WITHDRAWS the tools rather than refusing each call, which is the same wiring `--no-commands` and an away-mode of `deny` use, so the model never spends turns on a door that will not open; the gate goes with them, so such a run starts gateless rather than chasing a green it can never reach. A run with no terminal, no TUI and no away-mode REFUSES to start rather than waiting forever for an approval nobody can give. |
-| `fetch_hosts` | `[]` | Hosts the `fetch` tool may read WITHOUT asking. `fetch` reads one https URL and returns its text, for a worker whose commands have no network; it is hidden when `tool_network = "allow"`, where the worker can already run curl. Empty (the default) means no host is pre-approved, so every fetch prompts; `["*"]` allows any host, written down so the opt-out reads as a choice here rather than as an absent setting. A leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL prefixes -- a prefix would let `evil.com/docs.python.org` through. A host not listed asks the operator; "allow every command for this session" does NOT cover it, because that answer was about commands. Refused regardless: a URL carrying credentials (`https://a@b/`, which is both a disguised host and a model-chosen Authorization header), anything but https, a host resolving to a non-public address (loopback, the LAN, the cloud metadata endpoint), a non-text body, a compressed body (a small one expands past the cap before it can be counted), anything over 1 MiB, and a response still arriving after 20s. The gate runs before any of the network work: a host off the list prompts before its name is even resolved, since the DNS query hands that name to whoever runs its authoritative server. A redirect is not followed: its Location comes back for the model to decide on. The connection is pinned to the address that was vetted, with the name carried in SNI, so no second DNS answer can move it. Withheld entirely from machine/agent states. A fetch sends no credential and carries no model-chosen header. It is still an egress channel a model drives: a GET can encode data in its path, which is why the allow-list is empty by default. |
-| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands. Without it a jailed command can plant a git filter that agent6's own host-side auto-commit would execute outside the jail. **STRICT-ONLY**: it is a read-only bind, which needs a mount namespace. `hardened` has none, and Landlock cannot substitute -- a grant on a directory is recursive and stacked rulesets only intersect, so denying `.git` means not granting the workspace root either, which denies every `touch`/`mkdir` at the root. On `hardened` the default therefore degrades with a loud warning; an explicitly-set `true` REFUSES to run, naming the fix. The in-process edit tools refuse `.git` writes at every isolation level regardless. |
-| `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute** (not write), beyond the system defaults (`/usr /bin /lib …`) and the workspace. Use it for a project whose toolchain/interpreter lives outside the repo: a system conda/virtualenv, a Go/Rust/Node toolchain, a shared data dir. Mounted at its real path at every isolation level, so the tool's own absolute paths and shebangs work. Granted under `hardened` **and** `strict`. Loosens confinement (the child can read more of the host), so list only what the build/test needs. |
-| `extra_write_paths` | `[]` | Extra absolute paths a jailed command may **read + write**, mounted at their real locations: a build cache, an output dir, a sibling checkout the task edits. Write implies read. Loosens confinement further than `extra_read_paths`; list only what the task actually writes. No effect under `none` (nothing is confined there). |
-| `memory_limit_mb` | `4096` | Per-process memory cap (MiB) on every jailed child, applied as `RLIMIT_DATA` and inherited by the child's descendants. A runaway allocation fails with ENOMEM (Python `MemoryError`) that the agent handles as an ordinary failed command, instead of driving the host to the OOM killer. `0` disables. Per process, not per tree; no effect under `isolation = "none"`. Raise it when a legitimate build/test needs more than 4 GiB in one process. |
+| `isolation` | `"auto"` | `auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse where unsupported, never downgrade. Explicit `none` runs UNSANDBOXED (also `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`). |
+| `tool_network` | `"auto"` | Jailed-command egress. `auto`: offline, enforced on `strict`, degraded with a warning on `hardened`/`none`; `block`: refuses where unenforceable; `only_explicit_states`: strict-only, machine `tool` states opt in; `allow`: the child shares the host network. |
+| `run_commands` | `"ask"` | May the LLM run commands (`run_command`, `run_verify_command`, `run_background`, `stop_background` — one decision for all four): `yes` (auto-approve) / `no` (tools withheld, and the verify gate with them) / `ask` (prompt per call; the session-wide allow/deny answers persist). `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` (never over a configured `no`), `--no-commands` (always allowed). A run that cannot ask anyone refuses to start rather than wait forever. |
+| `fetch_hosts` | `[]` | Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL prefixes. Everything else about fetch is fixed (SECURITY §4): https only, no credentials, text ≤ 1 MiB, no compression, redirects returned not followed, gate before DNS, connection pinned to the vetted address. Hidden when `tool_network = "allow"`; withheld from machine/agent states. A GET can still encode data in its path — why the default is empty. |
+| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands (else one can plant a git filter that agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount namespace, and Landlock cannot substitute (SECURITY §5). On `hardened` the default degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse `.git` writes everywhere regardless. |
+| `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute**, at their real locations — a toolchain/interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). Loosens confinement; list only what the build needs. |
+| `extra_write_paths` | `[]` | Extra absolute paths a jailed command may **read + write**, at their real locations — a build cache, an output dir, a sibling checkout the task edits. Write implies read. List only what the task writes. |
+| `memory_limit_mb` | `4096` | `RLIMIT_DATA` cap (MiB) per jailed process (inherited): a runaway allocation fails as an ordinary command error instead of reaching the OOM killer. `0` off. |
 
 ## `[git]`
 
 | Field | Default | Meaning |
 |---|---|---|
 | `require_clean_worktree` | `true` | Refuse to start on a dirty worktree. |
-| `auto_stash` | `false` | Stash uncommitted changes before the run. Restored at run end per `auto_stash_pop`; otherwise agent6 prints how to `git stash apply <sha>` them (by sha, so a stash pushed later cannot shift what you restore; never silently left). |
-| `auto_stash_pop` | `false` | When `auto_stash` stashed changes, pop them back at run end if it is safe: clean worktree and a conflict-free apply, switching back to the base branch first under `branch_per_run`. On any conflict or doubt, leave the stash and print how to restore it. Never `reset --hard`. |
-| `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). Forced on for `run --parallel` lanes: each lane's work is imported by branch, so a lane without one has nothing to compare or merge. |
-| `branch_from` | `"current"` | Where the run branch is cut from when you are **not** on the base branch (e.g. still on a previous run's `agent6/*` branch): `current` cuts from HEAD, stacking on it (serial runs pile up); `base` cuts from the base line (the nearest non-run branch this branch descends from), so each run starts clean; `ask` prompts (base / stack / abort), non-interactive falling back to `base`. No effect when you are already on a base branch. |
-| `merge_strategy` | `"squash"` | Default strategy for `agent6 sessions merge`: `squash` (one combined commit), `merge` (a --no-ff merge keeping the per-step history), or `ff` (fast-forward only). The per-step commits always happen on the run branch during the run; this only governs how they consolidate onto your branch. |
-| `auto_merge` | `false` | After a run that finished with nothing red (a red or stale verify is never auto-merged), run `merge_strategy` automatically to land the run branch on its base (what `agent6 sessions merge` does, for you). Requires `branch_per_run` (config refuses the pair otherwise: without a run branch there is nothing to merge). On conflict the run branch is left intact with instructions. With `auto_stash_pop`, the merge lands first, then your stashed pre-run changes. |
-| `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (reachable-merged, i.e. `merge`/`ff` strategies). A squash-merged branch is unreachable, so it is reported with the `git branch -D` to remove it by hand, never force-deleted. Requires `auto_merge` (config refuses it otherwise). With both on, run branches stop accumulating. |
-| `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the host (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo, and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
+| `auto_stash` | `false` | Stash uncommitted changes before the run; restored per `auto_stash_pop`, else the `git stash apply <sha>` line is printed (by sha, never silently left). |
+| `auto_stash_pop` | `false` | Pop the stash back at run end when safe (clean tree, conflict-free apply). On any doubt, leave it and print how to restore. Never `reset --hard`. |
+| `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). Forced on for `--parallel` lanes (work is imported by branch). |
+| `branch_from` | `"current"` | Where the run branch is cut when you are NOT on a base branch: `current` (stack on HEAD), `base` (the nearest non-run branch, each run starts clean), `ask` (prompt; non-interactive falls back to `base`). |
+| `merge_strategy` | `"squash"` | `agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps per-step history), `ff`. Governs consolidation only; per-step commits always land on the run branch. |
+| `auto_merge` | `false` | After a run with nothing red, land the run branch on its base automatically (never over a red/stale verify). Requires `branch_per_run`. On conflict the branch is left with instructions. |
+| `auto_prune` | `false` | After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A squash-merged branch is reported with the `-D` line, never force-deleted. Requires `auto_merge`. |
+| `run_repo_hooks` | `false` | Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is repo-controlled host code, an RCE vector on an untrusted repo. `core.fsmonitor`/`diff.external` are always neutralized. |
 
 ### `[git.commit]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` / `email` | none | Override the commit identity (else use the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
+| `name` / `email` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
 | `trailer` | `""` | Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) that wrote the code, `", "`-joined when several contributed. |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `checkpoint.message` | `"agent6"` | Style of the per-step commit messages: `agent6` (the `agent6 iter N:` subject), `conventional` (a `type(scope): subject` derived from the diff, no model call), or `model` (the model writes the message from git facts, degrading to `agent6` with a warning on any failure). |
-| `squash.message` | `"agent6"` | Style of the one squash-merge commit: as checkpoint's styles, plus `combine` (git's own squash message, the concatenated per-step log). |
+| `checkpoint.message` | `"agent6"` | Per-step message style: `agent6` (`agent6 iter N:`), `conventional` (derived from the diff, no model call), or `model` (model-written, degrading to `agent6` on failure). |
+| `squash.message` | `"agent6"` | Squash-commit style: checkpoint's styles plus `combine` (git's concatenated per-step log). |
 
 ## `preset` (top-level)
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `""` | Named **strategy preset** (see [Presets](#presets)). A bare top-level key (not inside any section) because it overrides every section. Set with `agent6 config set preset <name>` (`--repo` for this repo); the `--preset` CLI flag overrides it per run. |
+| `preset` | `""` | Named strategy preset (see [Presets](#presets)). Top-level because it overrides every section. `agent6 config set preset <name>` (`--repo`); `--preset` overrides per run. |
 
 ## `[workflow]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `verify_command` | `[]` | argv defining "a step succeeded" (run with no shell; wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run (AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call), inject it in-memory (never written to config), and print it. With none inferable, the run starts *gateless* (per-step commits, no green gate); if it then creates a recognizable project, the deterministic tiers re-run at each commit and the first hit whose runner resolves on the jail PATH is adopted for the rest of the run. Set it to pin a deterministic one. |
+| `verify_command` | `[]` | argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a && b"]`). Optional: unset infers per run (AGENTS.md `## Verify command` → repo manifests → a cheap model call), injected in-memory and printed. None inferable = the run starts gateless; a recognizable project created mid-run adopts the first resolvable inferred gate. Set it to pin one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
-| `require_verify_to_finish` | `false` | When true, `finish_session` is refused while the last verify is red (or a verify command is configured but never run): the worker must get verify green or explicitly stop. Bounded (a few nudges, then honoured). Independent of this flag, a finish over a red/stale verify is always reported honestly (`session.end all_passed=false` -> "finished", never "passed"). |
-| `spec_recheck_on_finish` | `false` | Bounce the FIRST `finish_session` over a green verify once, directing a re-check of every spec requirement. Measured A/B (bench/coreagent eventflow + textkit, n=6/arm, 3 models): no score gain beyond noise anywhere, a score DROP on mistral-small, and +38-88% cost from the extra verification loop the bounce triggers. Injecting a full debugging-methodology skill helps where this generic bounce does not; prefer that. Kept off; candidate for removal. |
+| `require_verify_to_finish` | `false` | Refuse `finish_session` while the last verify is red or never ran (bounded nudges). Regardless, a finish over red is always reported "finished", never "passed". |
+| `spec_recheck_on_finish` | `false` | Bounce the first finish over a green verify once for a spec re-check. Measured (n=6/arm, 3 models): no gain beyond noise, one score drop, +38-88% cost. Kept off; candidate for removal. |
 
 ## `[review]`
 
-The in-loop critic trigger plus the adversarial review panel (below).
-
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | Trigger for the in-loop **adversarial review panel**: `off` / `on_verify_fail` / `before_finish` / `periodic`. |
-| `period` | `10` | Iterations between reviews when `trigger = "periodic"`. |
-| `decision` | `"advisory"` | `advisory` (inject findings, never blocks) / `veto` / `quorum` / `all`. Only gates in-loop. |
-| `quorum` | `2` | K for `quorum` (counts **distinct models**, so same-model seats can't fake a quorum). |
-| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer that reads the broader repo to catch cross-file impact). |
+| `trigger` | `"off"` | In-loop review panel trigger: `off` / `on_verify_fail` / `before_finish` / `periodic`. |
+| `period` | `10` | Iterations between reviews for `periodic`. |
+| `decision` | `"advisory"` | `advisory` (inject findings, never block) / `veto` / `quorum` / `all`. |
+| `quorum` | `2` | K for `quorum`; counts distinct MODELS, so same-model seats can't fake it. |
+| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, cross-file). |
 | `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
-| `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory (anti-stall). |
-| `budget_fraction` | `0.25` | Budget floor: skip the in-loop panel once the run's remaining budget falls below this fraction (reviewing costs most when budget is scarce); `0.25` = no in-loop reviews in the last quarter. |
-| `seats` | `[]` | THE panel roster: `"persona"` seats route via `[models.reviewer]`; `"persona@provider/model"` pins a distinct model per seat. `agent6 review --reviewers N [--personas a,b,c]` synthesizes an in-memory equivalent. |
+| `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory. |
+| `budget_fraction` | `0.25` | Skip the in-loop panel once remaining budget falls below this fraction. |
+| `seats` | `[]` | Panel roster: `"persona"` routes via `[models.reviewer]`; `"persona@provider/model"` pins a model per seat. `agent6 review --reviewers N [--personas …]` synthesizes an equivalent. |
 
-### Adversarial review panel
-
-When `trigger != "off"`, the in-loop second opinion is a **grounded review panel**:
-the `seats` roster (the `reviewer` model per bare persona, or distinct
-models per seat) each scrutinize the run's diff (+ the last verify result) and
-return structured findings. The same panel runs post-hoc, read-only, via
-`agent6 review --reviewers N [--personas a,b,c]`.
-
-What keeps it from false-blocking correct work (the trap that retired the old
-in-loop reviewer): grounding is **mechanical, not prose**. A reviewer's `block`
-only gates if its `file:line` is actually in the diff AND its category is in a
-fixed allowed-block set (security / sandbox-bypass / off-topic-edit / data-loss /
-verify-uncovered-correctness). Taste, naming, "missing test", and uncited claims
-are downgraded to advisory and can never stall the run; a per-run rejection cap
-disarms the gate after a few blocks. `advisory` (the default) only injects
-findings as guidance. Enable `veto`/`quorum` to gate.
+Grounding is mechanical, not prose: a `block` gates only if its `file:line`
+is in the diff AND its category is in a fixed allowed set (security /
+sandbox-bypass / off-topic-edit / data-loss / verify-uncovered-correctness);
+everything else is advisory and cannot stall the run.
 
 ## `[context]`
 
-Tiered context-compaction thresholds (approximate chars; tokens ≈ chars/4).
+Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH thresholds to pin. |
-| `summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. Must be greater than `drop_at_chars`. |
-| `summary_max_tokens` | `2048` | Cap on the tier-2 summary (also caps a gist distillation call). |
-| `elision_gists` | `true` | Tier-1 decays a large `read_file` result to a placeholder carrying a model-written gist of the file (one batched reviewer-model call per drop event) before the bare marker; under continued pressure gists demote to bare so the byte bound holds. `false` = straight to bare markers, no distiller calls. |
+| `drop_at_chars` | _adaptive_ | Tier 1: oldest tool results become placeholders. Unset sizes from the worker's context window (~45%); set BOTH thresholds to pin. |
+| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset ≈ 80% of the window. Must exceed `drop_at_chars`. |
+| `summary_max_tokens` | `2048` | Cap on the tier-2 summary (and gist distillation calls). |
+| `elision_gists` | `true` | Tier 1 decays a large `read_file` to a model-written gist before the bare marker (demoted under continued pressure so the byte bound holds). `false` = straight to bare markers. |
 
 ## `[prompt]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file's contents (the dynamic verify / budget / repo-priors blocks still append). Validated to exist at config load; a startup warning fires if it omits the core tool names. |
-| `structural_priors` | `true` | Include the enriched `<repo-priors>` block (ranked hot symbols, git co-change, tree-sitter outline) in the system prompt. Set `false` for a leaner/cheaper prompt. |
+| `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file (dynamic blocks still append). Warned at startup if core tool names are missing. |
+| `structural_priors` | `true` | Include the `<repo-priors>` block (hot symbols, co-change, outline). `false` for a leaner prompt. |
 | `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
-| `decompose` | `"auto"` | Front-load task decomposition (run mode): `"auto"` \| `"on"` \| `"off"`. When on, swaps the "DAG is optional" guidance for a "decompose first" directive: the worker lays the task out as ordered subtasks before editing, then the surface-current-task + finish-gate machinery walks it one focused subtask at a time. Helps a small model that under-finishes multi-component implementation tasks (measured: mistral-small-3.2-24b textkit +0.53, rpn +0.13 score; flat on a debug task, where dropping-components isn't the failure mode); a capable model decomposes implicitly and only pays the overhead (~2-4x turns/cost). `"auto"` (default) resolves per worker model from the capability registry (`models/registry.py`): on only for model families with a measured win, off for everything else; `agent6 config show` displays the resolved value. `--decompose` on `agent6 run` forces it on for one run. No effect on plan/ask/machine/agent modes. |
+| `decompose` | `"auto"` | Front-load task decomposition (run mode): `on` helps small models that under-finish multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead). `auto` resolves per worker model from the capability registry; `config show` displays the resolved value. `--decompose` forces one run. |
 
 ## `[skills]`
 
-Operator-installed SKILL.md packs (the agentskills.io format superpowers,
-caveman, and most skill repos ship). Installed skills live under
-`$XDG_DATA_HOME/agent6/skills/<name>/`; `agent6 skills install <url>` accepts a
-direct SKILL.md URL, a git repository URL (installs every `skills/*/SKILL.md`),
-or a local path. Installed means enabled: run mode lists each enabled skill's
-name + description in a `<skills>` system-prompt index and the worker loads
-full content on demand with the read-only `use_skill` tool. Enabled skills also
-register as `/<name>` pause-menu commands (built-ins always win collisions) and
-work with `agent6 run --skill <name>`. See [security.md](security.md) for the
-trust model.
-
-The format is shared with Claude Code, Pi, and most agentskills.io tooling, so
-skills migrate in both directions: point `extra_dirs` at an existing collection
-(`~/.claude/skills`, `~/.pi/agent/skills`, `~/.agents/skills`) to load it
-as-is, or `agent6 skills install <path-or-git-url>` to copy it. Repo-local
-skill directories (`.claude/skills`, `.pi/skills`, `.agents/skills` inside a
-checkout) are deliberately NOT discovered: repo content is not config (a cloned
-repo must not inject commands into your pause menu); install or list them
-explicitly.
+Operator-installed SKILL.md packs (the agentskills.io format). Installed under
+`$XDG_DATA_HOME/agent6/skills/<name>/`; `agent6 skills install <url>` takes a
+SKILL.md URL, a git repo (every `skills/*/SKILL.md`), or a local path.
+Installed = enabled: an index in the system prompt, on-demand content via
+`use_skill`, a `/<name>` pause-menu command, and `run --skill <name>`. The
+format is shared with Claude Code and most agentskills.io tooling: point
+`extra_dirs` at an existing collection (`~/.claude/skills`, …) or install to
+copy. Repo-local skill dirs are deliberately NOT discovered (repo content is
+not config). Trust model: [security.md](security.md).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` | Master switch: off = no index block, no `use_skill` tool, no slash commands. |
-| `extra_dirs` | `[]` | Additional skill directories scanned BEFORE the installed dir (a local checkout under development wins over an installed copy). |
-| `state` | `{}` | Per-skill exceptions, one value per skill: `"disabled"` drops it everywhere; `"always"` injects the full SKILL.md text into the system prompt instead of indexing it. Absent = enabled. Layers merge the map key-wise, so a repo config can flip one skill. `agent6 skills enable/disable [--repo]` write it. |
+| `enabled` | `true` | Master switch: off = no index, no `use_skill`, no slash commands. |
+| `extra_dirs` | `[]` | Additional skill dirs, scanned BEFORE the installed dir. |
+| `state` | `{}` | Per-skill: `"disabled"` drops it; `"always"` injects the full text into the system prompt. Layers merge key-wise; `agent6 skills enable/disable [--repo]` writes it. |
 
-Measured while building (2026-07-10, n=3 + controls): on small open models
-(qwen3-coder-30b, mistral-small-3.2) the passive index alone never triggered an
-organic `use_skill` call, and system-prompt style instructions produced zero
-compliance (byte-verified delivery, MOOSE positive control). `always`, `/name`,
-and `--skill` are the reliable delivery paths for such models; an irrelevant
-index measurably distracted mistral-small. Prefer a small index on weak models.
-
-Re-measured on frontier open models (2026-07-18, task tailor-made for one
-installed skill, wire delivery verified): kimi-k2.6, kimi-k3, and glm-5.2 all
-0/3 organic invocations under the shipped index. An assertive header
-("your FIRST action is use_skill"), fronting the tool in the list, and both
-combined moved kimi to 1/12 total; glm-5.2 reached 4/9 only with both levers
-(neither alone: 0/9). No lever made invocation reliable, so none shipped; the
-delivery paths above remain the answer when a skill must apply.
+Measured (2026-07): small and frontier open models alike almost never invoke a
+skill organically from the passive index, and no prompt lever made it
+reliable. When a skill must apply, use `always`, `/name`, or `--skill`.
 
 ### Presets
 
-A preset fills in many settings at once so a task picks a strategy with one knob.
-`agent6 config presets` lists them all (built-in + user-defined) with the
-overrides each applies and which one is selected. Select with `--preset <name>`
-(on `run`/`plan`/`ask`), persistently with `agent6 config set preset <name>`
-(`--repo` for this repo; the key lives top-level in the **global or repo** config,
-a `--config FILE` or a machine `[config]` overlay cannot select one and rejects
-the key loudly), or the TUI new-work chooser. A preset **overrides** config rather than
-being a baseline: its preset is injected just above the config layer that selected
-it, so precedence (low → high) is
-
-    defaults < global config < [preset via global preset field]
-            < repo config < [preset via repo preset field]
-            < [preset via --preset flag] < --config FILE
-
-The most-specific source wins (`--preset` flag, else repo's `preset`,
-else global's; the presets never stack), and the preset beats the config at its
-scope. But a more-specific config layer, an explicit `--config FILE`, or an
-individual flag still beats the preset.
+A preset fills many settings at once. `agent6 config presets` lists them;
+select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`),
+or the TUI new-work chooser. A preset overrides config at the layer that
+selected it (most-specific source wins, presets never stack); a more-specific
+config layer, `--config FILE`, or an individual flag still beats it. A
+`--config FILE` or machine overlay cannot select one.
 
 | Preset | Bundles |
 |---|---|
 | `quick` | review off; fast/cheap. |
-| `standard` | the plain defaults (no review). The default. |
-| `ultra` | a 3-seat grounded `before_finish` veto panel; thorough review. |
+| `standard` | the plain defaults. The default. |
+| `ultra` | a 3-seat grounded `before_finish` veto panel. |
 | `paranoid` | 5 explore-tier seats, `before_finish` veto. |
 
-Define your own with a `[presets.<name>]` table (a partial config; edit leaves
-with `agent6 config set presets.<name>.<leaf> <value>`); a built-in's name
-**replaces** that built-in wholesale, not merges into it. Example:
+Define your own with a `[presets.<name>]` table (a partial config); a
+built-in's name replaces that built-in wholesale:
 
 ```toml
 preset = "myteam"
@@ -400,90 +300,59 @@ seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshota
 
 ### `[workflow.metric]` (optional)
 
-A continuous score for tasks with a measurable goal. `command` runs in the jail
-like `verify_command`; `pattern`'s first capture group is parsed as a number.
+A continuous score for measurable goals; `command` runs in the jail like
+`verify_command`.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `command` | *(required)* | argv to run for the metric. |
-| `pattern` | *(required)* | Regex; first capture group = the numeric metric. |
+| `command` | *(required)* | argv to run. |
+| `pattern` | *(required)* | Regex; first capture group = the number. |
 | `goal` | *(required)* | `"minimize"` or `"maximize"`. |
 
 ## `[budget]`
 
-Hard stops; on hit the run ends (exit 3) and is resumable (`agent6 resume
-<session-id>` starts a fresh leg with a fresh budget, from the last checkpoint).
-The other codes: `0` finished with nothing red, `4` finished over a red or
-stale verify, `1` anything else, `130` interrupted.
-
-Every provider call is bounded in exactly ONE currency: a call the meter can
-price (provider-reported cost, else cached price x tokens, cache-aware) counts
-against `max_usd`; a call with neither counts its input+output tokens against
-`max_tokens_fallback`. Both fields share one rule: `-1` = unlimited, `0` =
-refuse calls in that ledger up front (`max_tokens_fallback = 0` means never
-run an unmeterable model; `max_usd = 0` means run nothing metered), `> 0` =
-the cap.
+Hard stops; on hit the run ends (exit 3) and is resumable with a fresh budget.
+Every call is bounded in exactly one currency: priceable calls (reported cost,
+else cached price × tokens) count against `max_usd`; unpriceable calls count
+input+output tokens against `max_tokens_fallback`. Both: `-1` unlimited, `0`
+refuse that ledger up front, `> 0` the cap.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_usd` | `10.0` | The budget: caps metered spend (reported cost first, else price x tokens including cache reads/writes, per model). |
-| `max_tokens_fallback` | `2000000` | Input+output token cap for UNMETERED calls only (no reported cost, no price data -- local models, feed gaps). |
+| `max_usd` | `10.0` | Cap on metered spend (cache-aware, per model). |
+| `max_tokens_fallback` | `2000000` | Token cap for UNMETERED calls only (local models, price gaps). |
 
-The `--max-usd` / `--max-tokens-fallback` flags override the fields of the
-same name for one run. An unpriced role model is announced at startup with
-the fallback bound that covers it.
-
-Price data comes from provider model listings (today OpenRouter's; Anthropic's
-API publishes none), cached under `$XDG_CACHE_HOME/agent6/models/`. A
-direct-Anthropic model id is priced via its OpenRouter listing when that cache
-is present (`claude-opus-4-8` → `anthropic/claude-opus-4.8`, same list
-prices), so USD budgets and cost summaries work on direct Anthropic runs too.
-
-Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
-`--max-tokens-fallback` (on `run`, `plan`, `resume`).
-Passing `--max-usd` explicitly refuses to start when the worker model has no
-price data, since the flag could not be honored.
+`--max-usd` / `--max-tokens-fallback` override per run; an explicit
+`--max-usd` refuses to start when the worker has no price data. Prices come
+from provider listings (OpenRouter's; cached under
+`$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its
+OpenRouter listing.
 
 ## `[machine]`
 
-State-machine runtime knobs (`agent6 machine run`).
-
 | Field | Default | Meaning |
 |---|---|---|
-| `snapshot_keep` | `5` | Recent blackboard snapshots retained per machine instance. Recovery reads only the latest and `machine replay` rebuilds from the journal, so older snapshots are an audit convenience. `0` keeps every snapshot (one file per transition; budget disk for long-running machines). |
+| `snapshot_keep` | `5` | Blackboard snapshots kept per instance (recovery reads only the latest; `machine replay` rebuilds from the journal). `0` keeps all. |
 
 ### `[machine.notify]` (optional)
 
-Operator notify hook for a running machine, the out-of-band channel for a
-phone in a pocket. Runs an operator-controlled argv on the host outside the
-jail on every `machine.notify` (a state's `notify` message) and on the
-terminal `machine.end`, with `AGENT6_MACHINE_ID`, `AGENT6_MACHINE_DIR`,
-`AGENT6_MACHINE_EVENT` (`notify`/`end`), `AGENT6_MACHINE_STATE`,
-`AGENT6_MACHINE_MESSAGE`, and `AGENT6_MACHINE_LEVEL` (the level for a notify,
-the `ok`/`failed` status for an end). The hook gets a minimal environment
-(PATH/HOME/locale/desktop-bus plus the `AGENT6_*` vars), not your full one.
-Set it only in the global/repo config, never in a machine `[config]` overlay
-(rejected at load); the argv is never LLM output. Fan out to your own push
-channel (ntfy/Pushover/email/Telegram).
+Operator hook on every `machine.notify` and the terminal `machine.end`: an
+operator argv on the host with a minimal env (PATH/HOME/locale/desktop-bus +
+`AGENT6_MACHINE_ID/DIR/EVENT/STATE/MESSAGE/LEVEL`), never your full
+environment. Global/repo config only (a machine `[config]` overlay setting it
+is rejected). Fan out to ntfy/Pushover/email/Telegram yourself.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `on_event` | `[]` | argv to run on each notify/end (empty = disabled). |
+| `on_event` | `[]` | argv per notify/end (empty = disabled). |
 | `timeout_s` | `30.0` | Hook timeout. |
 
 ## `[notify]` (optional)
 
-Runs an operator-controlled argv after `agent6 run` / `resume` (success or
-failure), outside the jail as your user, with `AGENT6_SESSION_ID`,
-`AGENT6_SESSION_DIR`, `AGENT6_SESSION_OK` (`1`/`0`), `AGENT6_SESSION_VERIFIED`
-(`passed`/`failed`/`not_applicable`), `AGENT6_SESSION_REASON` set. Same
-minimal environment as `[machine.notify]`: PATH/HOME/locale/desktop-bus plus
-the `AGENT6_*` vars, never your full environment.
-
-`OK` and `VERIFIED` are different facts: `OK=1` means the agent stopped
-deliberately, `VERIFIED` is what the verify gate said. A finish over a red
-verify is `OK=1 VERIFIED=failed`, so a hook that wants "green" reads the
-second.
+Runs after `run`/`resume` with the same minimal env plus
+`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`. `OK=1` means the agent stopped
+deliberately; `VERIFIED` is what the gate said — a hook that wants "green"
+reads the second.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -492,65 +361,39 @@ second.
 
 ## `[web]`
 
-Bind for `agent6 web`, the browser front-end (see [the web UI](web.md)). Secure
-by default: loopback only. Remote access is expected behind `tailscale serve`, so
-there is no app-level auth; binding a non-loopback host exposes the write surface
-(spawn runs, answer prompts) and requires an explicit opt-in.
+Bind for `agent6 web` ([the web UI](web.md)). Loopback only by default, no
+app auth: remote access is expected behind `tailscale serve`.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `web.host` | `127.0.0.1` | Bind address. A non-loopback value requires `allow_non_loopback = true`. |
+| `web.host` | `127.0.0.1` | Bind address; non-loopback requires `allow_non_loopback = true`. |
 | `web.port` | `7658` | Listen port. |
-| `web.allow_non_loopback` | `false` | Opt-in to bind a non-loopback host. Off by default so a typo or copied config can never silently expose the agent. Prefer `tailscale serve` in front of a `127.0.0.1` bind instead. |
+| `web.allow_non_loopback` | `false` | Opt-in for a non-loopback bind, so a typo can never silently expose the write surface. |
 
 ## `[parallel]`
 
-Fan-out defaults for `agent6 run --parallel N` (or `--parallel model-a,model-b`).
-Each lane is a disposable clone of the repo that runs independently and lands its
-own `agent6/<id>` branch; the orchestrator symlinks the live lanes into `agent6
-runs` for visibility, then imports each and prints a ranked auto-comparison.
-Nothing is merged for you. `--max-usd` is per lane: total spend is up to
-`--max-usd` x lane count, and the orchestrator prints the
-`$X/lane x N = $Y total` line before spawning. `--auto-approve` forwards the
-same way: every lane inherits it, so a lane never sits on a `run_commands=ask`
-approval nothing detached can answer.
+Fan-out defaults for `run --parallel N|model-a,model-b`. Each lane is a
+disposable clone running its own `agent6/<id>` branch; lanes are imported and
+ranked, nothing merges for you. `--max-usd` is per lane (the total is printed
+before spawning); `--auto-approve` forwards to every lane. A live run
+dispatches lanes the same way via the `/parallel` steer directive (depth 1: a
+lane never fans out; headless surfaces without a dispatcher answer "not
+available").
 
 | Field | Default | Meaning |
 |---|---|---|
-| `parallel.max_lanes` | `4` | Hard cap on lanes per fan-out; `--parallel` over this refuses up front. |
-| `parallel.workdir` | `""` | Base dir for lane clones (`<workdir>/<fanout-id>/lane-<i>`). `""` = `<cache_dir>/parallel`, cleaned up after import. |
-
-A live run can also dispatch subordinate lanes mid-run: steer it (Ctrl-C) with a
-message starting with `/parallel [spec] <task>` (repeat the token to queue more
-tasks in one message; a spec is a lane count or model list, omitted = one lane;
-a first token with a comma or slash reads as the spec, a bare model name reads
-as task text).
-The coordinator commits its worktree, clones committed HEAD into each expanded
-lane, runs them to completion, joins each branch back in order (a conflict is
-reported for you to merge, never aborts the run), and continues informed by a
-per-lane summary. Lanes reuse the `[parallel]` workdir/cache above.
-Dispatch is depth 1: a lane can never itself fan out or dispatch. When the
-front-end does not wire a dispatcher (headless, plan/ask), `/parallel` answers
-"not available" and the run continues.
+| `parallel.max_lanes` | `4` | Hard cap per fan-out; more refuses up front. |
+| `parallel.workdir` | `""` | Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import. |
 
 ## `[mcp]` + `[mcp.servers.<name>]` (optional)
 
-Reach Model Context Protocol servers at run start -- spawned (`command`) or
-connected to (`url`) -- with their tools appearing to the LLM as
-`mcp__<name>__<tool>`. Each server runs as your user, outside the jail
-(the `command` is operator-controlled, never LLM-influenced); the LLM *can*
-influence the arguments it passes, so audit each server like a `run_command`
-allow-list. It gets the same curated environment a `[notify]` hook gets, plus
-whatever `pass_env` names -- never agent6's own, which carries your provider
-keys.
-
-Servers are a name-keyed map like `[providers.<name>]`: the table key is the
-tool prefix (`mcp__<name>__<tool>`), duplicates cannot exist, and a repo
-overlay can flip one server without restating the rest.
-
-`agent6 mcp connect` is the way in. It handshakes, prints the tools the server
-actually exposes, and only then writes the entry -- so config never names a
-server that turns out not to answer:
+MCP servers, spawned (`command`) or connected (`url`); tools appear as
+`mcp__<name>__<tool>`. A server runs as your user outside the jail with a
+curated env (never your provider keys; `pass_env` adds named vars). The LLM
+influences the ARGUMENTS it passes, so audit each server like a `run_command`
+allow-list. `agent6 mcp connect` handshakes first and only then writes the
+entry; a server that does not start is skipped with an
+`mcp.server_unavailable` journal event, never fatal.
 
 ```
 agent6 mcp connect files -- npx -y @modelcontextprotocol/server-filesystem .
@@ -558,16 +401,8 @@ agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
 agent6 mcp list
 ```
 
-It leaves `mcp.enabled` alone: that master switch stays your decision.
-
-A server that does not start is skipped, never fatal -- the run simply does not
-see its tools. It says so in the conversation (an `mcp.server_unavailable`
-journal event, so every surface shows it, editors included) rather than only on
-stderr, where a run under an editor looks normal while quietly missing the tools
-you configured. `agent6 check` reports the same reason.
-
-A spawned server runs as you, with your whole filesystem, until you say
-otherwise. A `[sandbox]` block is how:
+Confine a spawned server with a `[sandbox]` block — Landlock paths and/or a
+private network namespace, independent axes:
 
 ```toml
 [mcp.servers.notes]
@@ -576,46 +411,28 @@ command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
 [mcp.servers.notes.sandbox]
 read_paths  = ["/usr", "/etc", "~/notes"]
 write_paths = ["~/notes"]
-network     = "none"     # optional: loopback only, reaching nothing else
+network     = "none"     # loopback only, reaching nothing else
 ```
 
-The two axes are independent. `network = "none"` with no paths at all is a
-valid block: the server keeps your filesystem and loses the network.
-
-**What this bounds, and what it does not.** Landlock gates filesystem paths.
-It does not gate `connect()` to a unix socket, so a confined server that could
-still reach your session bus would simply ask the *unconfined* `systemd --user`
-to act for it -- proved, before the fix. A confined spawn therefore also loses
-`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY` and `WAYLAND_DISPLAY`.
-Anything else that reaches an unconfined process (a listening daemon the server
-can talk to, a path you granted that holds one) is still a way out: name the
-narrowest paths that work.
-
-`network = "none"` is the one namespace-level knob: it puts the server in a
-network namespace of its own, with a loopback that reaches only itself and no
-route anywhere else. It needs no launcher, because unsharing a namespace leaves
-the stdio pipes (file descriptors) untouched. `pivot_root` and `seccomp` DO
-need the jail launcher, which captures stdio and so cannot host a live MCP
-pipe; they have no knob here rather than one that quietly does nothing. A `url`
-server is your own process -- confine it where you start it. On a kernel with
-no Landlock the block degrades with a warning at run start; `require = true`
-refuses instead. `network = "none"` always refuses, on a host whose kernel
-forbids unprivileged user namespaces: it is an explicit enforce value, and a
-server you believe is offline must never quietly keep the network.
+A confined spawn also loses the desktop-session addresses
+(`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY`, `WAYLAND_DISPLAY`):
+Landlock does not gate unix-socket `connect()`, and an unconfined session
+daemon would act on the server's behalf. Anything else that reaches an
+unconfined process is still a way out — name the narrowest paths that work.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `mcp.enabled` | `false` | Master switch; `false` means zero `mcp__*` tools. |
-| `servers.<name>.command` | `[]` | argv for a stdio JSON-RPC server agent6 SPAWNS. Exactly one of this or `url`. |
-| `servers.<name>.url` | `""` | An http(s) endpoint of a server the OPERATOR runs -- their container, their sandbox, their credentials -- which agent6 only connects to. Exactly one of this or `command`. Connecting means agent6 owns none of that server's environment, lifetime or confinement, which is how anyone actually runs a server that wants a browser or a device. |
-| `servers.<name>.token_env` | `""` | For a `url` server: the env var holding the bearer token. Named, never inlined -- a secret in a config file is a secret in a backup. Never logged, never in an error. |
+| `mcp.enabled` | `false` | Master switch; `false` = zero `mcp__*` tools. |
+| `servers.<name>.command` | `[]` | argv for a stdio server agent6 spawns. Exactly one of this or `url`. |
+| `servers.<name>.url` | `""` | An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its environment or confinement. |
+| `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
-| `servers.<name>.sandbox.read_paths` | *(required in a block)* | Paths a SPAWNED server may read and execute (absolute, or `~`). Naming any path opts the server into a Landlock domain it and everything it spawns inherit, and drops its desktop-session addresses. **Absent block means unconfined** -- it runs as you, with your whole filesystem -- because agent6 cannot know what a given server needs and a guess that breaks it is worse than none. Required inside a block because Landlock grants read and execute together: a server that cannot read its own interpreter dies on startup with an import error that says nothing about the sandbox. The five inert `/dev` nodes the jail grants (`null zero urandom random full`; not `/dev/tty`) are granted read+write ahead of the named paths: no toolchain runs without `/dev/null`, and its absence surfaces as the server dying with nothing naming `/dev`. |
+| `servers.<name>.sandbox.read_paths` | *(required in a block)* | Read+execute paths for a spawned server (absolute or `~`). Naming any path opts into a Landlock domain the server and its children inherit. Absent block = unconfined (agent6 cannot guess what a server needs). The five inert `/dev` nodes are granted ahead of the named paths. |
 | `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. |
-| `servers.<name>.sandbox.require` | `false` | Refuse to start the server at all on a kernel with no Landlock, instead of running it unconfined with a warning. |
-| `servers.<name>.sandbox.network` | `"host"` | `"none"` runs the server in its own network namespace: loopback only, no LAN, no internet, no host loopback. Default is permissive because most servers exist to reach something, and a default that broke every one of them would just get turned off. Not called `auto`: everywhere else in agent6 that word means "the most secure option available, degrading with a warning", so it must not also mean permissive here. The server keeps your uid (the namespace maps it through) and gets its `lo` brought up, so nothing about it looks unusual from the inside. Usable on its own: a block with `network = "none"` and no paths confines the network and leaves the filesystem alone, for a server whose file needs you do not want to enumerate. |
-| `servers.<name>.pass_env` | `[]` | Environment variables this server needs, BY NAME (`["GITHUB_TOKEN"]`). Everything else is the curated base agent6 gives any child it spawns outside the jail: enough to run a program and reach the desktop bus, never the provider API keys. Naming each one is the point -- nobody writes a provider key down here. |
-| `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` handshake budget. |
+| `servers.<name>.sandbox.require` | `false` | Refuse to start on a kernel with no Landlock, instead of degrading with a warning. |
+| `servers.<name>.sandbox.network` | `"host"` | `"none"` = own network namespace: loopback only. An explicit enforce value — it refuses where userns is unavailable, never quietly keeps the network. (Not named `auto`: that word means secure-and-degrading elsewhere.) |
+| `servers.<name>.pass_env` | `[]` | Env vars the server needs, BY NAME. Everything else is the curated base. |
+| `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
 
 ---
@@ -624,12 +441,11 @@ server you believe is offline must never quietly keep the network.
 
 | Variable | Effect |
 |---|---|
-| `AGENT6_CONFIG_HOME` | Override the global config directory (default `$XDG_CONFIG_HOME/agent6`). |
-| `AGENT6_CACHE_HOME` | Override the cache directory (model-list cache, etc.). |
-| `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else the bundled one). |
+| `AGENT6_CONFIG_HOME` | Override the global config directory. |
+| `AGENT6_CACHE_HOME` | Override the cache directory. |
+| `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 
-A provider's `api_key_env`, when set, names the environment variable that
-supplies its key; omit it to read the key from `secrets.toml`.
-A few additional `AGENT6_*` toggles exist for testing/advanced use; see the
-source if you need them.
+A provider's `api_key_env` names the env var supplying its key; omit it to
+read `secrets.toml`. A few additional `AGENT6_*` toggles exist for
+testing/advanced use; see the source.
