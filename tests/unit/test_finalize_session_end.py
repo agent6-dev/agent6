@@ -169,6 +169,69 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
     assert "it proposes: pytest -q tests/" in out
 
 
+def test_end_banner_does_not_claim_merged_from_a_prior_legs_stamp(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resumed run keeps committing on its branch under the FIRST leg's
+    merged stamp (and this leg's auto-merge may have conflicted): the end block
+    read the stamp alone, claimed "changes merged into main" over unmerged
+    commits, and hid the merge command. The claim now holds only while the
+    branch still points at the tip the stamp recorded -- the same comparison
+    `sessions prune` trusts."""
+    import subprocess as sp
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("x\n", encoding="utf-8")
+    sp.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
+    sp.run(["git", "switch", "-qc", "agent6/r-leg2"], cwd=repo, check=True)
+    merged_tip = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "a.txt").write_text("leg 2 work\n", encoding="utf-8")
+    sp.run(["git", "commit", "-qam", "leg 2"], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+
+    layout = _layout(
+        tmp_path,
+        "r-leg2",
+        [
+            {"type": "session.start", "session_id": "r-leg2", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "run_branch": "agent6/r-leg2",
+                "base_branch": "main",
+                "merged": {
+                    "into": "main",
+                    "sha": "abc123def456",
+                    "ts": "2026-01-01T00:00:00Z",
+                    "tip": merged_tip,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = SessionResult(
+        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+    )
+    print_session_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "changes merged into" not in out
+    assert "merge with:" in out
+
+
 def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

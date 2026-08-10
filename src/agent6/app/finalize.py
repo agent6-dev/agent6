@@ -21,6 +21,7 @@ from agent6.git_ops import (
     GitError,
     auto_stash_message,
     branch_exists,
+    branch_tip_sha,
     create_branch,
     delete_branch_if_merged,
     find_stash,
@@ -177,6 +178,21 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
 
 
+def _stamp_covers_branch(run_branch: str, merged_tip: str) -> bool:
+    """Does the merged stamp still describe the branch? A resumed run keeps
+    committing on its branch under a PRIOR leg's stamp (and this leg's
+    auto-merge may have conflicted): "changes merged" holds only while the
+    branch still points at the merged tip -- the comparison `sessions prune`
+    trusts. A gone branch (auto_prune), unreadable git, or a pre-``tip`` stamp
+    keeps the claim."""
+    if not merged_tip or not run_branch:
+        return True
+    tip = None
+    with contextlib.suppress(GitError):
+        tip = branch_tip_sha(Path.cwd(), run_branch)
+    return tip is None or tip == merged_tip
+
+
 def print_session_end(
     result: SessionResult,
     *,
@@ -233,7 +249,7 @@ def print_session_end(
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None:
+        if manifest.merged is not None and _stamp_covers_branch(run_branch, manifest.merged.tip):
             merged_into = manifest.merged.into or base_branch
     if result.completed and run_branch and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may
