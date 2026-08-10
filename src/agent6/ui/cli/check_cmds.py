@@ -110,13 +110,11 @@ def _cmd_check_sandbox() -> int:
     except JailUnavailableError as exc:
         reports.append(SandboxReport(name="jail_true", ok=False, detail=str(exc)))
 
-    # Confirm child cannot reach the network. This is only a meaningful jail
-    # probe under `strict`, where `allow_network=False` puts the child in an
-    # empty network namespace. Under `hardened` the jail applies no network
-    # rule at all, a jailed command's egress is bounded by the agent-process
-    # Landlock applied at run time (SECURITY.md §1, §8 note 2), which this
-    # standalone probe does not set up, so testing it here would be testing
-    # the wrong thing. Report it as n/a rather than a misleading pass/fail.
+    # Confirm the child cannot reach the network. Only meaningful under
+    # `strict`, the one level with network namespaces: there a child that did
+    # not ask for `host` lands in one with no route out. `hardened` has none to
+    # give, so a jailed command shares this process's network and there is
+    # nothing to probe -- report n/a rather than a misleading pass/fail.
     if isolation == "strict":
         try:
             res = _jail("/usr/bin/getent", "hosts", "example.com")

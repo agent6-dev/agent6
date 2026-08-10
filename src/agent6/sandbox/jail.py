@@ -293,6 +293,7 @@ class PrivateNetwork:
             stderr=subprocess.PIPE,
             env=_LAUNCHER_ENV,
         )
+        fds: list[int] = []
         try:
             assert proc.stdout is not None
             # Bounded: a launcher that does not know --hold-netns reads a policy
@@ -312,16 +313,22 @@ class PrivateNetwork:
                     )
                 )
             # BEFORE the holder exits: /proc/<pid> is gone the moment it does.
-            fds = tuple(
-                os.open(f"/proc/{proc.pid}/ns/{kind}", os.O_RDONLY) for kind in ("user", "net")
-            )
+            for kind in ("user", "net"):
+                fds.append(os.open(f"/proc/{proc.pid}/ns/{kind}", os.O_RDONLY))
         except OSError as exc:
+            for fd in fds:  # the first may be open when the second fails
+                with contextlib.suppress(OSError):
+                    os.close(fd)
             proc.kill()
             raise JailUnavailableError(f"the private network could not be held: {exc}") from exc
         finally:
             if proc.stdin is not None:
                 proc.stdin.close()  # tells the holder to go; the fds outlive it
-        proc.wait(timeout=10)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:  # it should be gone with its stdin
+                proc.kill()
+                proc.wait(timeout=5)
         return cls(userns_fd=fds[0], netns_fd=fds[1])
 
     def args(self) -> list[str]:

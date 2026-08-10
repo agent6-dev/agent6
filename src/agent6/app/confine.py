@@ -44,10 +44,10 @@ def warn_sandbox_gaps(
     per run, not in the launcher: a per-spawn stderr warning would land in
     every tool result and prompt the model to fight the sandbox.
 
-    `tool_network = "auto"` DEGRADES on a netns-less isolation: with no per-child
-    network namespace, a jailed run_command shares the (agent-scoped) host
-    network instead of being offline, so say so once per run. Explicit `block`
-    never reaches here (check_network_support refused it on hardened).
+    `tool_network = "auto"` DEGRADES on a netns-less isolation: with no network
+    namespace there is no private network to give, so a jailed run_command
+    shares the host's, and we say so once per run. Explicit `private` never
+    reaches here (check_network_support refused it on hardened).
 
     `protect_git` degrades the same way: strict-only, because it is a read-only
     bind. An explicitly-set one refuses (check_protect_git_support).

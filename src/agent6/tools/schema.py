@@ -241,10 +241,11 @@ class RunBackgroundInput(_ToolInput):
         " be an array of strings (no shell). Returns the new command's id and the state of every"
         " background command this run started. Its output goes to a log you read with"
         " read_background -- nothing here ever blocks, so poll instead of waiting. Under the"
-        " default isolation this run's commands share one sandbox network, so a server you start"
-        " here is reachable by a later run_command at the address it prints (this is how you run"
-        " a dev server and then curl it); a weaker isolation gives each command its own, and"
-        " nothing outside reaches it either way. Every background command is killed when the run"
+        " default isolation this run's commands share one PRIVATE network, so a server you start"
+        " here answers a later run_command at the address it prints (this is how you run a dev"
+        " server and then curl it) and nothing outside the run reaches it. Where the host has no"
+        " network namespaces they share the machine's network instead. Every background command"
+        " is killed when the run"
         " ends, so never use this for work whose result you need after the run."
     )
 

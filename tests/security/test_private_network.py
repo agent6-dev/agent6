@@ -499,3 +499,76 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
             victim.kill()
             victim.wait(timeout=10)
         net.close()
+
+
+def test_two_runs_can_each_hold_the_same_port(tmp_path: Path) -> None:
+    """A property that falls out of per-run networks and that people will lean
+    on: two runs (or two `--parallel` lanes) each start a dev server on the
+    conventional port, and neither collides with the other or with the host."""
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    port = _PORT + 4
+    serve = (
+        "import http.server,socketserver;"
+        f"socketserver.TCPServer(('127.0.0.1',{port}),"
+        "http.server.SimpleHTTPRequestHandler).serve_forever()"
+    )
+    check = (
+        "import urllib.request;print(urllib.request.urlopen("
+        f"'http://127.0.0.1:{port}/', timeout=4).status)"
+    )
+    runs = [
+        ToolDispatcher(
+            root=tmp_path,
+            config=cfg,
+            isolation="strict",
+            session_dir=Path(tempfile.mkdtemp(prefix=f"run{i}-", dir=tmp_path)),
+            use_jail_session=True,
+        )
+        for i in (1, 2)
+    ]
+    try:
+        for run in runs:
+            run.dispatch("run_background", {"argv": ["/usr/bin/python3", "-c", serve]})
+        time.sleep(2.5)
+        for i, run in enumerate(runs, 1):
+            got = run.dispatch("run_command", {"argv": ["/usr/bin/python3", "-c", check]})
+            assert isinstance(got, ExecResult)
+            assert got.returncode == 0 and "200" in got.stdout, (
+                f"run {i} could not reach its own dev server: {got.stderr[-200:]}"
+            )
+    finally:
+        for run in runs:
+            run.close()
+
+
+def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> None:
+    """Sharing a network namespace shares its sysctls. Tampering used to hurt
+    only yourself; it would now hurt every sibling, so pin that the jail's
+    read-only /proc still refuses it."""
+    net = PrivateNetwork.open()
+    try:
+        probe = (
+            "import pathlib\n"
+            "p = pathlib.Path('/proc/sys/net/ipv4/ip_local_port_range')\n"
+            "print('READ', p.read_text().strip())\n"
+            "try:\n"
+            "    p.write_text('20000 20001\\n')\n"
+            "    print('RETUNED')\n"
+            "except OSError as exc:\n"
+            "    print('REFUSED', type(exc).__name__)\n"
+        )
+        argv = ("/usr/bin/python3", "-c", probe)
+        proc = spawn_in_jail(
+            jail_policy(tmp_path, Config(), "strict", argv, network="private"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            private_net=net,
+        )
+        out, _ = proc.communicate(timeout=30)
+        text = out.decode()
+        assert "READ" in text, f"the probe never ran: {text}"
+        assert "RETUNED" not in text, f"a member retuned the shared network: {text}"
+        assert "REFUSED" in text, text
+    finally:
+        net.close()
