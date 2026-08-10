@@ -86,6 +86,7 @@ from agent6.tools.results import (
     FetchResult,
     MetricResult,
     RawResult,
+    ReadFileResult,
     SessionsResult,
     ToolResult,
 )
@@ -175,14 +176,27 @@ _EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_N
 _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 
-def _output_tails(name: str, result: ToolResult) -> dict[str, str]:
-    """Capped stdout/stderr tails for an execution tool's result, else {}."""
-    if name not in _EXEC_OUTPUT_TOOLS or not isinstance(result, ExecResult | MetricResult):
-        return {}
-    return {
-        "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
-        "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
-    }
+_READ_HEAD_LINES = 6
+_READ_HEAD_CHARS = 300
+
+
+def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
+    """Capped output excerpts an execution/read tool's result carries into its
+    tool.result event, else {}. Commands get stdout/stderr tails; read_file
+    gets a head preview + the true line count, so a transcript can show what
+    was read without opening the transcripts."""
+    if isinstance(result, ExecResult | MetricResult) and name in _EXEC_OUTPUT_TOOLS:
+        return {
+            "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
+            "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
+        }
+    if isinstance(result, ReadFileResult):
+        head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
+        return {
+            "head_tail": head[:_READ_HEAD_CHARS],
+            "lines_total": result.lines_total,
+        }
+    return {}
 
 
 class Approver(Protocol):

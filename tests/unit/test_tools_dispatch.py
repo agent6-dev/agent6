@@ -1471,7 +1471,11 @@ def test_run_command_result_carries_output_tails(
     assert run["stdout_tail"].startswith("OUT-X") and len(run["stdout_tail"]) == 2000
     assert run["stderr_tail"].startswith("ERR-Y") and len(run["stderr_tail"]) == 2000
     read = next(e for e in results if e["name"] == "read_file")
-    assert "stdout_tail" not in read and "stderr_tail" not in read  # non-exec: summary only
+    assert "stdout_tail" not in read and "stderr_tail" not in read  # non-exec
+    # read_file carries its own excerpt instead: a head preview + the true
+    # line count, so a transcript can show what was read.
+    assert read["head_tail"] == "hi"
+    assert read["lines_total"] == 1
 
 
 def test_run_command_passes_extra_read_paths_to_policy(

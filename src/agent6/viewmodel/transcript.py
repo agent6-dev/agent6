@@ -154,6 +154,28 @@ def _clip(text: str, n: int = 60) -> str:
     return text if len(text) <= n else text[: n - 3] + "…"
 
 
+def _call_preview(name: str, args: Any) -> str:
+    """A bounded preview carried from the CALL side of a tool whose substance
+    is in its arguments: apply_edit's first hunk (the journal carries the edit
+    pairs nearly whole). Other tools carry none."""
+    if name != "apply_edit" or not isinstance(args, dict):
+        return ""
+    edits = args.get("edits")
+    if not isinstance(edits, (list, tuple)) or not edits:
+        return ""
+    first = edits[0]
+    if not isinstance(first, dict):
+        return ""
+    old = str(first.get("old_string", ""))
+    new = str(first.get("new_string", ""))
+    lines = [f"- {ln}" for ln in old.splitlines()[:3]]
+    lines += [f"+ {ln}" for ln in new.splitlines()[:3]]
+    more = len(edits) - 1
+    if more > 0:
+        lines.append(f"…(+{more} more edit{'' if more == 1 else 's'})")
+    return _clip("\n".join(lines), 400)
+
+
 def salient_arg(args: Any) -> str:
     """The one argument worth showing beside a tool name (best effort). Takes
     untrusted event data, so a non-dict `args` is tolerated, not assumed away."""
@@ -275,11 +297,12 @@ class TranscriptFold:
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
-        # Calls awaiting their result, keyed by the per-dispatch call_id (a
-        # concurrent explore-tier review panel shares one dispatcher across
-        # threads, so same-name calls interleave); an id-less historical event
-        # falls back to its name key (sequential pairing).
-        self._pending: dict[int | str, str] = {}
+        # Calls awaiting their result -- (salient arg, call-side preview) --
+        # keyed by the per-dispatch call_id (a concurrent explore-tier review
+        # panel shares one dispatcher across threads, so same-name calls
+        # interleave); an id-less historical event falls back to its name key
+        # (sequential pairing).
+        self._pending: dict[int | str, tuple[str, str]] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
@@ -353,7 +376,11 @@ class TranscriptFold:
                 self._finish = str((event.get("args") or {}).get("summary", "")).strip()
                 return out
             self._tools += 1
-            self._pending[_pending_key(event, name)] = salient_arg(event.get("args") or {})
+            args = event.get("args") or {}
+            self._pending[_pending_key(event, name)] = (
+                salient_arg(args),
+                _call_preview(name, args),
+            )
             self._verify = None
             return out
         if etype == "verify.end":
@@ -433,7 +460,7 @@ class TranscriptFold:
         key = _pending_key(event, name)
         if key not in self._pending:  # a finish tool's result, or an unmatched one
             return []
-        arg = self._pending.pop(key)
+        arg, call_preview = self._pending.pop(key)
         call_id = str(key)
         if name == "run_verify_command" and self._verify is not None:
             ok, detail = self._verify
@@ -441,15 +468,20 @@ class TranscriptFold:
         else:
             ok = tool_result_ok(event.get("ok"))
             detail = str(event.get("summary", "")).strip()
-        # A failed tool shows why (stderr, else stdout). run_command succeeds
-        # silently otherwise, so show a short stdout tail on success too: the
-        # operator asked to run it to SEE the output (git status, a version).
+        # A failed tool shows why (stderr, else stdout). On success the tail is
+        # the item's substance: command output (the operator ran it to SEE it),
+        # a read's head preview with the true line count, or the edit's hunk
+        # carried from the call side. Absent fields degrade to no tail.
         if not ok:
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "").strip()
         elif name in ("run_command", "run_metric_command"):
             tail = str(event.get("stdout_tail") or "").strip()
+        elif name == "read_file":
+            head = str(event.get("head_tail") or "").strip("\n")
+            total = event.get("lines_total")
+            tail = f"{head}\n…({total} lines)" if head and total else head
         else:
-            tail = ""
+            tail = call_preview
         return [
             TranscriptItem(
                 "tool",

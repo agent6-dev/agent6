@@ -405,3 +405,38 @@ def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> N
     ]
     done = next(it for it in fold_transcript(events) if it.kind == "done")
     assert done.detail == "1 tool · 0 commits"
+
+
+def test_tool_items_carry_bounded_previews() -> None:
+    """A successful read shows its head + true line count, and a successful
+    edit shows its hunk (carried from the CALL side, where the journal already
+    holds the edit pairs); an old journal without the fields folds to no tail."""
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {
+            "type": "tool.result",
+            "name": "read_file",
+            "ok": True,
+            "summary": "961 bytes",
+            "head_tail": "def f():\n    return 1",
+            "lines_total": 961,
+        },
+        {
+            "type": "tool.call",
+            "name": "apply_edit",
+            "args": {
+                "path": "a.py",
+                "edits": [
+                    {"old_string": "return 1", "new_string": "return 2"},
+                    {"old_string": "x", "new_string": "y"},
+                ],
+            },
+        },
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "old.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+    ]
+    tools = [it for it in fold_transcript(events) if it.kind == "tool"]
+    assert tools[0].tail == "def f():\n    return 1\n…(961 lines)"
+    assert tools[1].tail == "- return 1\n+ return 2\n…(+1 more edit)"
+    assert tools[2].tail == ""  # an old journal: no preview fields, no tail
