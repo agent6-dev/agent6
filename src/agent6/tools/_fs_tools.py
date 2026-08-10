@@ -436,7 +436,7 @@ def apply_patch(
             f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
             f"header path {derived_path!r}; emit them consistently or omit `path`"
         )
-    existing = _existing_text(root, sp, args.path)
+    existing = _existing_text(root, sp, target)
     try:
         if v4a:
             _, new_content = apply_v4a_text(args.patch, existing)
