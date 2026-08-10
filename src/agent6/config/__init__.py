@@ -7,6 +7,7 @@ and layering live at `agent6.config.io` / `agent6.config.layer`."""
 
 from __future__ import annotations
 
+from agent6.config._git import GitCommitConfig, GitConfig
 from agent6.config._providers import (
     AnthropicProviderEntry,
     OpenAIProviderEntry,
@@ -25,8 +26,6 @@ from agent6.config.model import (
     Config,
     ConfigError,
     ContextConfig,
-    GitCommitConfig,
-    GitConfig,
     MachineConfig,
     MachineNotifyConfig,
     MetricConfig,
