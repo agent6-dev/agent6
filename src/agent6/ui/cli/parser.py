@@ -18,7 +18,12 @@ from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _a
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
 from agent6.ui.cli._sessions_args import _add_sessions_parser
 from agent6.ui.cli._skills_args import _add_skills_parser
-from agent6.ui.cli._watch_args import _add_attach_parser, _add_tui_parser, _add_web_parser
+from agent6.ui.cli._watch_args import (
+    _add_attach_parser,
+    _add_net_parsers,
+    _add_tui_parser,
+    _add_web_parser,
+)
 from agent6.ui.cli.completers import _complete_session_ids
 
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
@@ -150,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_ask_parser(sub)
 
     _add_attach_parser(sub)
+    _add_net_parsers(sub)
 
     _add_sessions_parser(sub)
 

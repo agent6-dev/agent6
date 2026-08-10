@@ -349,8 +349,28 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         )
         tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
         print(f"usage:      {tokens}{leg_s}{cost_s}")
+    _print_listening_ports(target)
     _print_task_tree(target)
     return 0
+
+
+def _print_listening_ports(session_dir: Path) -> None:
+    """What the run is serving, and how to reach it.
+
+    A run's commands share a network with no way in from outside, so a dev
+    server the agent started is invisible here -- including the port it is on.
+    This is where someone asks "what is it doing", so it is where the answer
+    belongs, with the command that opens it.
+    """
+    from agent6.ui.cli.net_cmds import listening_ports  # noqa: PLC0415
+
+    with contextlib.suppress(Exception):
+        ports = listening_ports(session_dir)
+        if not ports:
+            return
+        listed = ", ".join(str(p) for p in ports)
+        print(f"serving:    {listed} (inside the run)")
+        print(f"            open one: agent6 forward {session_dir.name} {ports[0]}")
 
 
 def _print_task_tree(session_dir: Path) -> None:

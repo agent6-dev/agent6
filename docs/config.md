@@ -439,6 +439,24 @@ unconfined process is still a way out — name the narrowest paths that work.
 
 ---
 
+## Reaching a run's network
+
+A run's commands share one network with no route off the box, so a dev server
+the agent starts is invisible from here — that is the same property that keeps
+it off the internet. Two commands are the way in, both operator-only:
+
+```
+agent6 sessions show <id>        # what it is serving, and the command to open it
+agent6 forward <id>              # list the ports it is listening on
+agent6 forward <id> 3000         # bridge that port to one on this machine
+agent6 exec <id> -- curl ...     # run a command in the run's sandbox
+```
+
+`exec` runs in the whole sandbox — same mounts, same network — so what you see
+is what the agent sees. Neither is reachable by the model.
+
+---
+
 ## Environment variables
 
 | Variable | Effect |

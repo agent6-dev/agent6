@@ -23,6 +23,7 @@ from agent6.config.layer import (
     preset_catalog,
 )
 from agent6.config.write import PROVIDER_DEFAULTS
+from agent6.sessions.layout import session_layout
 from agent6.ui.cli._common import (
     _machines_dir,
     _plans_dir,
@@ -30,6 +31,7 @@ from agent6.ui.cli._common import (
     session_bucket_dirs,
 )
 from agent6.ui.cli.model import _connected_providers, _models_for
+from agent6.ui.cli.net_cmds import listening_ports
 from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 from agent6.viewmodel.config_view import build_config_view
 
@@ -217,6 +219,21 @@ def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
     return sorted(out)
+
+
+@_never_raises
+def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
+    """argcomplete: the ports that session is ACTUALLY listening on.
+
+    Offering every valid input rather than nothing: the whole difficulty of
+    reaching a run's dev server is not knowing its port, and only something
+    inside the run's network can see it.
+    """
+    target = str(getattr(parsed_args, "target", "") or "")
+    layout = session_layout(_state_dir(Path.cwd()), target) if target else None
+    if layout is None:
+        return []
+    return [str(p) for p in listening_ports(layout.session_dir) if str(p).startswith(prefix)]
 
 
 @_never_raises

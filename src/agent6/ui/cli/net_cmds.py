@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 exec` and `agent6 forward`: reach into a live run's session network.
+
+A run's commands share one network with no route off the box, which is what
+lets the agent start a dev server and curl it. The same property means nothing
+outside the run can reach that server -- including the operator. These two
+commands are the way in, and they are the operator's, never the model's:
+`exec` runs a command the way the agent would, `forward` bridges one of the
+run's ports to a port on this machine so a browser can open it.
+
+Both join through the holder pid the run publishes (`netns.pid`). Entering a
+network namespace needs capabilities in the user namespace that owns it, so
+each joins that first, exactly as the launcher does.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import os
+import selectors
+import socket
+import sys
+from pathlib import Path
+from typing import TextIO
+
+from agent6.app._setup import detect_env
+from agent6.config import Config
+from agent6.sandbox.detect import resolve_isolation
+from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, run_in_jail
+from agent6.sessions.ipc import read_session_netns_pid
+from agent6.sessions.layout import SessionLayout
+from agent6.tools.policy import jail_policy
+
+_JOIN_ORDER = (("user", os.CLONE_NEWUSER), ("net", os.CLONE_NEWNET))
+
+
+class SessionNetworkUnavailable(Exception):
+    """The run has no session network to join, and why."""
+
+
+def join_session_network(session_dir: Path) -> None:
+    """Put THIS process in the run's session network. Irreversible: seccomp
+    is not involved, but nothing here ever leaves a namespace it entered."""
+    pid = read_session_netns_pid(session_dir)
+    if pid is None:
+        raise SessionNetworkUnavailable(
+            "this session has no network of its own to join. A run only makes one"
+            " under the strict isolation with sandbox.network = auto|session;"
+            " with network = host its commands are already on this machine's."
+        )
+    for kind, flag in _JOIN_ORDER:
+        try:
+            fd = os.open(f"/proc/{pid}/ns/{kind}", os.O_RDONLY)
+        except OSError as exc:
+            raise SessionNetworkUnavailable(f"the session's network is gone: {exc}") from exc
+        try:
+            os.setns(fd, flag)
+        except OSError as exc:
+            raise SessionNetworkUnavailable(
+                f"could not join the session's {kind} namespace: {exc}"
+            ) from exc
+        finally:
+            os.close(fd)
+
+
+def listening_ports(session_dir: Path) -> list[int]:
+    """The TCP ports something in the run is listening on, or [].
+
+    Read from `/proc/<holder>/net/`, which is that process's OWN view: a
+    namespace's sockets are readable without entering it, so this needs no
+    fork and no setns. (It began as both, until the fork warned about doing
+    that from a threaded process -- the web server would have been next.)
+    """
+    pid = read_session_netns_pid(session_dir)
+    if pid is None:
+        return []
+    ports: set[int] = set()
+    for name in ("tcp", "tcp6"):
+        with contextlib.suppress(OSError):
+            for line in Path(f"/proc/{pid}/net/{name}").read_text(encoding="utf-8").splitlines():
+                cols = line.split()
+                # st == 0A is LISTEN; the local address is host:port in hex.
+                if len(cols) > 3 and cols[3] == "0A" and ":" in cols[1]:
+                    ports.add(int(cols[1].rsplit(":", 1)[1], 16))
+    return sorted(ports)
+
+
+def _pump(a: socket.socket, b: socket.socket) -> None:
+    """Shuttle bytes both ways until either side hangs up."""
+    sel = selectors.DefaultSelector()
+    sel.register(a, selectors.EVENT_READ, b)
+    sel.register(b, selectors.EVENT_READ, a)
+    try:
+        while True:
+            for key, _ in sel.select():
+                src, dst = key.fileobj, key.data
+                assert isinstance(src, socket.socket)
+                chunk = src.recv(65536)
+                if not chunk:
+                    return
+                dst.sendall(chunk)
+    except OSError:
+        return
+    finally:
+        sel.close()
+
+
+def forward(
+    layout: SessionLayout, remote_port: int, local_port: int, out: TextIO = sys.stderr
+) -> int:
+    """Bridge `remote_port` inside the run to `local_port` on this machine.
+
+    One forked child per connection: it joins the run's network and connects
+    there, then shuttles bytes over the socket it inherited. A child cannot
+    come back out of a namespace, and the parent must stay outside to keep
+    accepting, so the fork is the bridge rather than a design flourish.
+    """
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        listener.bind(("127.0.0.1", local_port))
+    except OSError as exc:
+        print(f"agent6 forward: cannot listen on 127.0.0.1:{local_port}: {exc}", file=out)
+        return 2
+    listener.listen(16)
+    bound = listener.getsockname()[1]
+    print(
+        f"agent6 forward: http://127.0.0.1:{bound} -> port {remote_port} inside"
+        f" {layout.session_id}. Ctrl-C to stop.",
+        file=out,
+    )
+    try:
+        while True:
+            conn, _ = listener.accept()
+            child = os.fork()
+            if child == 0:  # pragma: no cover - one process per connection
+                listener.close()
+                code = 0
+                try:
+                    join_session_network(layout.session_dir)
+                    inside = socket.create_connection(("127.0.0.1", remote_port), timeout=10)
+                    _pump(conn, inside)
+                except (SessionNetworkUnavailable, OSError):
+                    code = 1
+                finally:
+                    conn.close()
+                os._exit(code)
+            conn.close()  # the child owns it now
+            with contextlib.suppress(ChildProcessError):  # reap finished bridges
+                while os.waitpid(-1, os.WNOHANG)[0]:
+                    pass
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        listener.close()
+
+
+def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[str, ...]) -> int:
+    """Run *argv* the way the run's own commands run: same jail, same network.
+
+    The operator's command, not the model's, so it is not approved or logged as
+    a tool call -- but it is confined identically, which is the point: what you
+    see is what the agent sees.
+    """
+    pid = read_session_netns_pid(layout.session_dir)
+    isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
+    policy = jail_policy(cwd, cfg, isolation, argv, network="session" if pid else None)
+    if policy.network == "session":
+        # The run's network belongs to the run; borrow it through the holder
+        # rather than making one of our own, which would be a different place.
+        borrowed = SessionNetwork(
+            userns_fd=os.open(f"/proc/{pid}/ns/user", os.O_RDONLY),
+            netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
+            holder_pid=int(pid or 0),
+        )
+    else:
+        borrowed = None
+    try:
+        result = run_in_jail(policy, session_net=borrowed)
+    except JailUnavailableError as exc:
+        print(f"agent6 exec: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if borrowed is not None:
+            borrowed.close()
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode

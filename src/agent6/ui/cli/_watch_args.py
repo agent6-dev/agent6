@@ -9,7 +9,11 @@ from __future__ import annotations
 import argparse
 
 from agent6.ui.cli._common import _sub
-from agent6.ui.cli.completers import _complete_watch_targets
+from agent6.ui.cli.completers import (
+    _complete_session_ids,
+    _complete_session_ports,
+    _complete_watch_targets,
+)
 
 
 def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -98,4 +102,51 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--allow-non-loopback",
         action="store_true",
         help="Opt in to bind a non-loopback --host (else a non-loopback bind is refused).",
+    )
+
+
+def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """`exec` and `forward`: reach into a live run's session network.
+
+    Top-level verbs, like `attach`, because they are things you do TO a running
+    session -- and `exec` is the word every container tool already uses for it.
+    """
+    exec_p = _sub(
+        sub,
+        "exec",
+        help=(
+            "Run a command inside a live session's sandbox: same mounts, same"
+            " network, so you see what the agent sees. The command is yours, not"
+            " the model's, so it is never approved or recorded as a tool call."
+            " Put it after `--`."
+        ),
+    )
+    exec_target = exec_p.add_argument(
+        "target", nargs="?", default="", help="Session id (exact or prefix). Omit for the newest."
+    )
+    exec_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    exec_p.add_argument("argv", nargs=argparse.REMAINDER, help="The command, after `--`.")
+
+    fwd_p = _sub(
+        sub,
+        "forward",
+        help=(
+            "Bridge a port inside a live session's network to one on this"
+            " machine, so a browser can open the dev server the agent started."
+            " Without a port, lists what the session is listening on."
+        ),
+    )
+    fwd_target = fwd_p.add_argument(
+        "target", nargs="?", default="", help="Session id (exact or prefix). Omit for the newest."
+    )
+    fwd_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    fwd_port = fwd_p.add_argument(
+        "port", nargs="?", type=int, help="The port INSIDE the session. Omit to list them."
+    )
+    fwd_port.completer = _complete_session_ports  # type: ignore[attr-defined]
+    fwd_p.add_argument(
+        "--local-port",
+        type=int,
+        default=0,
+        help="The port on this machine (default: any free one, printed on start).",
     )

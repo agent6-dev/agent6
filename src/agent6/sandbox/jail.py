@@ -282,6 +282,12 @@ class SessionNetwork:
 
     userns_fd: int
     netns_fd: int
+    # The holder stays alive for the run, because /proc/<pid>/ns/* is the only
+    # way a SEPARATE process can name these namespaces: `agent6 exec` and
+    # `agent6 forward` join through this pid. The descriptors keep the
+    # namespaces alive; the pid keeps them nameable.
+    holder_pid: int
+    _holder: subprocess.Popen[bytes] | None = None
 
     @classmethod
     def open(cls) -> SessionNetwork:
@@ -321,15 +327,10 @@ class SessionNetwork:
                     os.close(fd)
             proc.kill()
             raise JailUnavailableError(f"the session network could not be held: {exc}") from exc
-        finally:
-            if proc.stdin is not None:
-                proc.stdin.close()  # tells the holder to go; the fds outlive it
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:  # it should be gone with its stdin
-                proc.kill()
-                proc.wait(timeout=5)
-        return cls(userns_fd=fds[0], netns_fd=fds[1])
+        except BaseException:
+            proc.kill()
+            raise
+        return cls(userns_fd=fds[0], netns_fd=fds[1], holder_pid=proc.pid, _holder=proc)
 
     def args(self) -> list[str]:
         return ["--userns-fd", str(self.userns_fd), "--netns-fd", str(self.netns_fd)]
@@ -338,8 +339,21 @@ class SessionNetwork:
         return (self.userns_fd, self.netns_fd)
 
     def close(self) -> None:
-        """Drop the run's session network. Nothing can join it afterwards, and the
-        kernel reclaims it once the last member exits."""
+        """Drop the run's session network. Nothing can join it afterwards, and
+        the kernel reclaims it once the last member exits.
+
+        Closing the holder's stdin is what ends it, so a run that dies without
+        reaching here still releases the namespace: the pipe breaks and the
+        holder exits on its own."""
+        if self._holder is not None:
+            if self._holder.stdin is not None:
+                with contextlib.suppress(OSError):
+                    self._holder.stdin.close()
+            try:  # reap it, or the run leaves a zombie holding a /proc entry
+                self._holder.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._holder.kill()
+                self._holder.wait(timeout=5)
         for fd in self.fds():
             with contextlib.suppress(OSError):
                 os.close(fd)

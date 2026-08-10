@@ -19,10 +19,12 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
 )
-from agent6.config.layer import resolved_state_dir
+from agent6.config import ConfigError
+from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
 from agent6.sessions.id import unused_session_id
+from agent6.sessions.layout import SessionLayout, session_layout
 from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
 from agent6.ui.cli._ask import (
@@ -34,6 +36,7 @@ from agent6.ui.cli._common import (
     _enforce_root_policy,
     _plans_dir,
     resolve_or_newest_layout,
+    session_bucket_dirs,
 )
 from agent6.ui.cli._session_prompt import end_of_session_prompt, prompting_is_possible
 from agent6.ui.cli.check_cmds import _cmd_check
@@ -78,6 +81,7 @@ from agent6.ui.cli.memory_cmds import (
     _cmd_memory_unpin,
 )
 from agent6.ui.cli.model import _cmd_model
+from agent6.ui.cli.net_cmds import exec_in_session, forward, listening_ports
 from agent6.ui.cli.notes_cmds import _cmd_notes_edit, _cmd_notes_show
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 from agent6.ui.cli.plan_watch import (
@@ -114,6 +118,7 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
+from agent6.viewmodel.listing import newest_session_dir
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -354,6 +359,52 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
     return _cmd_watch_target(
         args.target, tui=args.tui, json_out=args.json, since=args.since, raw=args.raw
     )
+
+
+def _resolve_target(target: str) -> SessionLayout | None:
+    """The named session, or the newest when the operator omitted one -- the
+    same resolution `attach` uses, so the verbs agree about "the session"."""
+    state_dir = resolved_state_dir(Path.cwd())
+    if target:
+        return session_layout(state_dir, target)
+    newest = newest_session_dir(session_bucket_dirs(Path.cwd()))
+    return session_layout(state_dir, newest.name) if newest is not None else None
+
+
+def _dispatch_exec(args: argparse.Namespace) -> int:
+    argv = tuple(a for a in args.argv if a != "--")
+    if not argv:
+        print("agent6 exec: give a command after `--`.", file=sys.stderr)
+        return 2
+    layout = _resolve_target(args.target)
+    if layout is None:
+        print(f"agent6 exec: no session {args.target!r}", file=sys.stderr)
+        return 2
+    try:
+        cfg = load_effective(Path.cwd(), None).config
+    except ConfigError as exc:
+        print(f"agent6 exec: {exc}", file=sys.stderr)
+        return 2
+    return exec_in_session(layout, cfg, Path.cwd(), argv)
+
+
+def _dispatch_forward(args: argparse.Namespace) -> int:
+    layout = _resolve_target(args.target)
+    if layout is None:
+        print(f"agent6 forward: no session {args.target!r}", file=sys.stderr)
+        return 2
+    if args.port is None:
+        ports = listening_ports(layout.session_dir)
+        if not ports:
+            print(
+                f"agent6 forward: {layout.session_id} is listening on nothing"
+                " (or has no network of its own to look in).",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
+        return 0
+    return forward(layout, args.port, args.local_port)
 
 
 def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
@@ -600,6 +651,8 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "plan": _dispatch_plan,
     "ask": _dispatch_ask,
     "attach": _dispatch_attach,
+    "exec": _dispatch_exec,
+    "forward": _dispatch_forward,
     "sessions": _dispatch_sessions,
     "tui": _dispatch_tui,
     "completions": _dispatch_completions,

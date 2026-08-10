@@ -41,6 +41,11 @@ APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 sessions show` liveness
+# The run's session-network holder. A separate process can only name a namespace
+# through a live /proc entry, so `agent6 exec` and `agent6 forward` join through
+# this pid. Absent when the run has no session network (a weaker isolation, or
+# everything on the host network).
+NETNS_PID_FILE = "netns.pid"
 STEER_ANSWER_FILE = "steer.answer"
 
 # How long the answer polls keep waiting after the front-end liveness gate goes
@@ -158,6 +163,30 @@ def _proc_start_time(pid: int) -> str:
         return ""
     rest = stat.rpartition(")")[2].split()
     return rest[19] if len(rest) > 19 else ""
+
+
+def write_session_netns_pid(session_dir: Path, pid: int) -> None:
+    """Publish the holder of this run's session network, for `agent6 exec`."""
+    atomic_write(session_dir / NETNS_PID_FILE, f"{pid}\n")
+
+
+def read_session_netns_pid(session_dir: Path) -> int | None:
+    """The live holder of this run's session network, or None.
+
+    A pid whose /proc entry is gone is a run that ended (or never had one), not
+    a network to join: the caller should say so rather than guess at a stale
+    number, which the kernel may have handed to someone else.
+    """
+    try:
+        pid = int((session_dir / NETNS_PID_FILE).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if Path(f"/proc/{pid}/ns/net").exists() else None
+
+
+def clear_session_netns_pid(session_dir: Path) -> None:
+    with contextlib.suppress(OSError):
+        (session_dir / NETNS_PID_FILE).unlink()
 
 
 def write_worker_pid(session_dir: Path, pid: int) -> None:

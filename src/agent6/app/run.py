@@ -84,6 +84,7 @@ from agent6.sessions.ipc import (
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
+    clear_session_netns_pid,
     clear_stop_request,
     clear_worker_pid,
     read_compact_request,
@@ -92,6 +93,7 @@ from agent6.sessions.ipc import (
     set_away_mode,
     set_session_allow,
     stop_request_pending,
+    write_session_netns_pid,
     write_steer_answer,
     write_worker_pid,
 )
@@ -642,6 +644,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # commands and any server that joins it share this one.
             if wants_session_network(cfg, isolation):
                 session_net = SessionNetwork.open()
+                # Published so `agent6 exec`/`forward` can join it: a separate
+                # process names a namespace only through a live /proc entry.
+                write_session_netns_pid(layout.session_dir, session_net.holder_pid)
             mcp_manager = start_mcp_manager_if_enabled(
                 cfg, cwd, isolation, reporter=reporter, events=events, session_net=session_net
             )
@@ -789,6 +794,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # The last handles on the run's network: closing them is what
                 # lets the kernel reclaim it.
                 session_net.close()
+                clear_session_netns_pid(layout.session_dir)
             if (
                 not interrupted
                 and result is not None
