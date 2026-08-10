@@ -103,14 +103,11 @@ def warn_sandbox_gaps(
                 " so it will not run inside sandboxed commands. Move the target"
                 " into its own subdirectory."
             )
-        for tool in notes.exposes_home_dir:
-            reporter.err(
-                f"[agent6] WARNING: tool {tool} resolves out of its bin dir, so"
-                " that target's whole directory is mounted READ-ONLY into the"
-                " jail and every file in it is readable by jailed commands."
-                " Point the symlink at a directory holding only what the tool"
-                " needs if that is not what you want."
-            )
+        # notes.exposes_home_dir is NOT warned per run: on a normal machine
+        # every uv-installed tool in ~/.local/bin points into ~/.local/share,
+        # so this fired a dozen times a run and buried the messages that
+        # mattered. It is the ordinary state of a dev box, not a surprise --
+        # `agent6 check` lists it, where someone is asking.
 
 
 def check_protect_git_support(

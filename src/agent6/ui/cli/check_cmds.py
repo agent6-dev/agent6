@@ -31,6 +31,7 @@ from agent6.sandbox.detect import (
     apparmor_userns_restricted,
     resolve_isolation,
 )
+from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import CommandResult, JailPolicy, SandboxReport
 
 
@@ -59,6 +60,18 @@ def _cmd_check_sandbox() -> int:
 
     isolation = resolve_isolation("auto", detect_env())
     print(f"  effective isolation (auto): {isolation}")
+    notes = tool_mount_notes()
+    if notes.exposes_home_dir:
+        # Where someone is actually asking. Not a per-run warning: on a normal
+        # machine every uv-installed tool in ~/.local/bin points into
+        # ~/.local/share, so it is the ordinary state of a dev box.
+        print(
+            f"  {len(notes.exposes_home_dir)} tool(s) resolve out of their bin dir, so those"
+            " target directories are\n  mounted read-only into the jail and readable by"
+            " jailed commands:"
+        )
+        for tool in notes.exposes_home_dir:
+            print(f"    {tool}")
     if isolation == "hardened" and apparmor_userns_restricted():
         print(
             "  NOTE: strict is unavailable because unprivileged user namespaces are\n"

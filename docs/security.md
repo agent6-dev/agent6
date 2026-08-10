@@ -105,8 +105,11 @@ no run) each command gets its own launcher. Under `strict` it:
     - A bin symlink resolving OUT of its bin dir mounts the target's whole
       directory read-only (`~/bin/x -> ~/.ssh/helper` exposes `~/.ssh`). That
       is allowed -- the operator placed the symlink, and guessing at which
-      directories hold keys would be enumerating badness -- and both it and a
-      tool the jail cannot reach at all are named at run start.
+      directories hold keys would be enumerating badness. `agent6 check` lists
+      them; it is not a per-run warning, because on a normal machine every
+      uv-installed tool resolves this way. A tool the jail cannot reach AT ALL
+      is different -- rare, and that tool silently will not run -- so that one
+      is named at run start.
 - **Hidden paths are masked last, after every bind**, so no grant exposes
   them from above: an empty tmpfs over a dir, `/dev/null` over a file, at the
   real path and the `/workspace` alias alike.

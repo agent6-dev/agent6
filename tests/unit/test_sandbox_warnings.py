@@ -71,20 +71,21 @@ def test_unreachable_tool_is_named_once(
     assert "never" in err and "mounted" in err
 
 
-def test_a_tool_dragging_a_home_dir_into_the_jail_is_named(
+def test_a_tool_dragging_a_home_dir_into_the_jail_is_not_a_per_run_warning(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`~/bin/x -> ~/.ssh/helper` mounts ~/.ssh read-only into the jail. That
-    stays ALLOWED -- the operator placed the symlink, and refusing dot-dirs
-    would be guessing at where keys live -- but the exposure is named."""
+    """`~/bin/x -> ~/.ssh/helper` mounts ~/.ssh read-only into the jail, which
+    stays ALLOWED (the operator placed the symlink, and guessing at which dirs
+    hold keys would be enumerating badness). It is not warned per run either:
+    on a normal machine every uv-installed tool in ~/.local/bin points into
+    ~/.local/share, so this fired a dozen times a run and buried the messages
+    that mattered. `agent6 check` lists it, where someone is asking."""
     monkeypatch.setattr(
         "agent6.app.confine.tool_mount_notes",
         lambda: ToolMountNotes(exposes_home_dir=("/home/op/.local/bin/x -> /home/op/.ssh/helper",)),
     )
     warn_sandbox_gaps("strict", _env(2), _cfg())
-    err = capsys.readouterr().err
-    assert "/home/op/.ssh/helper" in err
-    assert "READ-ONLY" in err and "readable" in err
+    assert capsys.readouterr().err == ""
 
 
 def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[str]) -> None:
