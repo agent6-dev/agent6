@@ -33,8 +33,14 @@ def _cfg(tool_network: str = "auto") -> Config:
 
 
 def test_none_warns_unsandboxed(capsys: pytest.CaptureFixture[str]) -> None:
+    """The list of what is absent has to be complete. Measured: with
+    `memory_limit_mb = 64` and isolation `none`, a command allocating 400 MB
+    succeeds -- the cap is a jailed-process rlimit and there is no jailed
+    process here. strict and hardened both stop it."""
     warn_sandbox_gaps("none", _env(4), _cfg())
-    assert "UNSANDBOXED" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "UNSANDBOXED" in err
+    assert "memory_limit_mb" in err
 
 
 def test_strict_without_landlock_warns(capsys: pytest.CaptureFixture[str]) -> None:

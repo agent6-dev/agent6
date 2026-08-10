@@ -61,7 +61,9 @@ def warn_sandbox_gaps(
             "[agent6] WARNING: running UNSANDBOXED (sandbox.isolation = 'none'). "
             "Commands -- including the LLM's run_command and verify_command -- "
             "and any spawned MCP server execute as plain subprocesses with NO "
-            "filesystem, network, or syscall confinement; the agent is contained "
+            "filesystem, network, or syscall confinement and no memory cap "
+            "(sandbox.memory_limit_mb bounds jailed processes, and there are "
+            "none here); the agent is contained "
             "only by the surrounding environment (e.g. the container it runs in). "
             "Use 'auto'/'strict'/'hardened' for kernel-enforced isolation."
         )
