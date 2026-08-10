@@ -119,11 +119,17 @@ def _default_auth_style(api_format: str, deployment: str) -> str:
     return "x_api_key" if api_format == "anthropic" else "bearer"
 
 
+_API_FORMAT_DESCRIPTION = (
+    '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
+    "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
+)
+
+
 class _ProviderBase(BaseModel):
     """Transport + auth fields shared by every provider, independent of format.
 
-    Three orthogonal concerns: ``api_format`` (the discriminator, on each
-    subclass) selects the wire dialect; ``deployment`` selects the URL /
+    Three orthogonal concerns: ``api_format`` (the discriminator) selects the
+    wire dialect; ``deployment`` selects the URL /
     model-placement profile; and the auth fields (``auth_style`` + a static
     ``api_key_env`` or a refreshable ``token_command``) select the credential.
     They compose freely -- e.g. Claude-on-Vertex and Gemini-on-Vertex differ
@@ -136,6 +142,11 @@ class _ProviderBase(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
+    # Declared on the base only to fix the FIELD ORDER: a redeclared field
+    # keeps its base position, so api_format leads every subclass's
+    # model_fields (the docs table and `config show` print that order). Each
+    # subclass narrows it to its own literal, which is what discriminates.
+    api_format: ApiFormat
     deployment: Deployment = Field(
         default="direct",
         description=(
@@ -249,11 +260,10 @@ class AnthropicProviderEntry(_ProviderBase):
     a Google-OAuth bearer via ``token_command``).
     """
 
-    api_format: Literal["anthropic"] = Field(
-        description=(
-            '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
-            "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
-        ),
+    # The narrowing override is sound: the model is frozen, so the attribute
+    # can never be written back through the wider base type.
+    api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        Field(description=_API_FORMAT_DESCRIPTION)
     )
     prompt_caching: bool = Field(
         default=True,
@@ -274,11 +284,8 @@ class OpenAIProviderEntry(_ProviderBase):
     header).
     """
 
-    api_format: Literal["openai"] = Field(
-        description=(
-            '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
-            "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
-        ),
+    api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        Field(description=_API_FORMAT_DESCRIPTION)
     )
 
 

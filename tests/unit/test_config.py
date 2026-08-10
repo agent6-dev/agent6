@@ -5,11 +5,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
-from agent6.config import Config, ConfigError, load_config
+from agent6.config import (
+    AnthropicProviderEntry,
+    Config,
+    ConfigError,
+    OpenAIProviderEntry,
+    load_config,
+)
 
 _VALID_TOML = """
 [agent6]
@@ -767,3 +774,23 @@ def test_the_skills_dir_can_be_granted_to_the_jail(
     body = f'[sandbox]\nextra_read_paths = ["{tmp_path / "state" / "repo"}"]\n'
     with pytest.raises(ConfigError, match="agent6-private"):
         load_config(_write(tmp_path, body))
+
+
+def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
+    """`api_format` routes a `[providers.*]` block to its entry class. It is
+    declared on the shared base so the field leads every entry's order, and
+    each subclass's annotation must stay the single-value literal: the union
+    discriminates on it and `config/write.py` reflects over it."""
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert isinstance(cfg.providers["anthropic"], AnthropicProviderEntry)
+
+    body = _VALID_TOML.replace('api_format = "anthropic"', 'api_format = "openai"').replace(
+        "prompt_caching = true\n", ""
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert isinstance(cfg.providers["anthropic"], OpenAIProviderEntry)
+
+    assert get_args(AnthropicProviderEntry.model_fields["api_format"].annotation) == ("anthropic",)
+    assert get_args(OpenAIProviderEntry.model_fields["api_format"].annotation) == ("openai",)
+    assert next(iter(AnthropicProviderEntry.model_fields)) == "api_format"
+    assert next(iter(OpenAIProviderEntry.model_fields)) == "api_format"

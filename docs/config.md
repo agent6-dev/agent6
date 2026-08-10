@@ -62,6 +62,7 @@ non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
+| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
 | `deployment` | `"direct"` | `"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + model/version placement. |
 | `base_url` | per (format, deployment) | Endpoint host + path prefix; required for vertex/azure. Its host is the only network destination the agent dials for this provider. |
 | `auth_style` | per (format, deployment) | `"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). Rarely set by hand. |
@@ -72,7 +73,6 @@ non-default host).
 | `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered), e.g. OpenRouter routing options. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read). |
-| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
 | `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
 
 ### Deployments
