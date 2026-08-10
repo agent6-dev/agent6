@@ -12,7 +12,6 @@ sanctioned exception is force_delete_squash_merged_branch. The config can
 from __future__ import annotations
 
 import contextlib
-import datetime as _dt
 import os
 import re
 import shutil
@@ -1329,46 +1328,6 @@ def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
     return res.stdout[:max_bytes]
 
 
-def reset_to(path: Path, sha: str, *, mode: str) -> None:
-    """Move HEAD (and optionally the index) to *sha* on the current branch.
-
-    *mode* must be ``"soft"`` (HEAD only; index + worktree unchanged) or
-    ``"mixed"`` (HEAD + index; worktree unchanged). ``"hard"`` is
-    intentionally not accepted here: this module never performs a
-    data-destroying reset, so a caller cannot accidentally obtain one.
-    The commits this reset orphans remain reachable via
-    reflog, so the operation is recoverable.
-    """
-    if mode not in {"soft", "mixed"}:
-        raise GitError(f"reset_to: mode must be 'soft' or 'mixed', got {mode!r}")
-    _run(path, "reset", f"--{mode}", sha)
-
-
-def rollback_to_known_good(path: Path, sha: str) -> None:
-    """Restore branch tip + worktree to *sha* after a regressing commit.
-
-    ``reset --mixed`` then ``checkout -- .``, deliberately two steps rather
-    than ``reset --hard``: the no-destructive-resets invariant means callers
-    never get a primitive that unconditionally clobbers uncommitted work.
-    Orphaned commits stay reachable in the reflog.
-    """
-    if not sha:
-        raise GitError("rollback_to_known_good: sha must be non-empty")
-    _run(path, "reset", "--mixed", sha)
-    _run(path, "checkout", "--", ".")
-
-
-def make_run_branch_name(prefix: str = "agent6", task_slug: str | None = None) -> str:
-    """Build a run branch name like ``agent6/20260526-120000-fix-bug``.
-
-    ``task_slug`` is the slugified user task; when omitted the slug falls
-    back to the prefix so the function remains useful for ad-hoc callers.
-    """
-    ts = _dt.datetime.now(tz=_dt.UTC).strftime("%Y%m%d-%H%M%S")
-    slug = task_slug if task_slug else slugify(prefix)
-    return f"{prefix}/{ts}-{slug}"
-
-
 def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
     """Return `git show --stat <sha>` truncated to *max_bytes* for telemetry.
 
@@ -1381,23 +1340,3 @@ def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
     if len(out) > max_bytes:
         return out[:max_bytes] + f"\n... [truncated, full size {len(out)} bytes]"
     return out
-
-
-def add_worktree(repo: Path, dest: Path, sha: str) -> None:
-    """Check *sha* out into *dest* as a detached worktree.
-
-    The exact tree of that commit and nothing else: a clone plus `reset --mixed`
-    leaves every file added after *sha* on disk as untracked, which silently
-    turns "the base commit" into "the base commit plus this run's new files".
-    """
-    _run(repo, "worktree", "add", "--detach", str(dest.absolute()), sha)
-
-
-def prune_worktrees(repo: Path) -> None:
-    """Drop bookkeeping for worktrees whose directories are gone.
-
-    The caller deletes the throwaway directory itself, so this only tidies
-    `.git/worktrees`. `worktree remove` would need `--force` once a gate has
-    written build output there, and this module spells no destructive verb.
-    """
-    _run(repo, "worktree", "prune")

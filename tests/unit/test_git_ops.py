@@ -32,10 +32,8 @@ from agent6.git_ops import (
     init_repo,
     is_git_repo,
     list_run_commits,
-    make_run_branch_name,
     plumb_merge,
     recent_log,
-    reset_to,
     restore_stash,
     set_repo_hook_policy,
     slugify,
@@ -296,11 +294,6 @@ def test_slugify_basic() -> None:
     assert len(slugify("a" * 100)) == 40
 
 
-def test_make_run_branch_name_format() -> None:
-    name = make_run_branch_name()
-    assert name.startswith("agent6/")
-
-
 def test_is_git_repo_false_for_tmp(tmp_path: Path) -> None:
     assert is_git_repo(tmp_path) is False
 
@@ -485,57 +478,6 @@ def test_commit_all_with_identity_overrides_author(tmp_path: Path) -> None:
     ).stdout
     assert "agent6|agent6@example.com|" in show
     assert "Co-authored-by: Alice <alice@example.com>" in show
-
-
-def test_reset_to_soft_keeps_index_and_worktree(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    start = status(tmp_path).head_sha
-    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
-    sha1 = commit_all(tmp_path, "add a")
-    (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
-    sha2 = commit_all(tmp_path, "add b")
-    assert sha2 != start
-    reset_to(tmp_path, start, mode="soft")
-    assert status(tmp_path).head_sha == start
-    # Worktree files survive.
-    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "a\n"
-    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "b\n"
-    # Soft reset leaves changes STAGED.
-    staged = subprocess.run(
-        ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.split()
-    assert set(staged) == {"a.txt", "b.txt"}
-    # Orphaned commit object is still alive (reflog keeps it from gc).
-    assert (
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "cat-file", "-t", sha1],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        == "commit"
-    )
-
-
-def test_reset_to_mixed_unstages(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    start = status(tmp_path).head_sha
-    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
-    commit_all(tmp_path, "add a")
-    reset_to(tmp_path, start, mode="mixed")
-    assert status(tmp_path).head_sha == start
-    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "a\n"
-    # Mixed reset leaves changes UNSTAGED (file shows as untracked).
-    assert status(tmp_path).untracked_count == 1
-
-
-def test_reset_to_rejects_hard(tmp_path: Path) -> None:
-    _init_repo(tmp_path)
-    with pytest.raises(GitError, match="mode must be 'soft' or 'mixed'"):
-        reset_to(tmp_path, status(tmp_path).head_sha, mode="hard")
 
 
 def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: Path) -> None:
