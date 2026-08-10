@@ -24,7 +24,7 @@ from agent6.memory import MemoryStoreError
 from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
 from agent6.skills import ResolvedSkills
-from agent6.tools._path_safety import contain, open_contained
+from agent6.tools._path_safety import NotRegularFile, contain, open_contained
 from agent6.tools.errors import ToolError
 from agent6.tools.results import AddMemoryResult, InvalidateMemoryResult, NotesResult, SkillResult
 from agent6.tools.schema import (
@@ -80,13 +80,15 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
         fd = open_contained(contain(skill.dir, args.file), os.O_RDONLY)
     except FileNotFoundError:
         raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
+    except NotRegularFile:
+        # A directory (or a FIFO a hostile skill dir planted): refused by the
+        # open itself, so it never reaches the read below.
+        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
     except ToolError as exc:  # absolute, `..`, or a symlink component
         raise ToolError(f"use_skill: {args.file!r} escapes the skill directory") from exc
     try:
         with os.fdopen(fd, "rb") as handle:
             data = handle.read(262_145)
-    except IsADirectoryError:
-        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
     except OSError as exc:
         raise ToolError(f"use_skill: cannot read {args.file!r}: {exc}") from exc
     if len(data) > 262_144:

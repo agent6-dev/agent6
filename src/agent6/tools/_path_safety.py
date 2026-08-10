@@ -22,6 +22,13 @@ from pathlib import Path
 from agent6.tools.errors import ToolError
 
 
+class NotRegularFile(ToolError):
+    """The leaf resolved and is inside the boundary, but is a directory, a FIFO
+    or a device. Its own type because callers word the two differently: this is
+    "wrong kind of file", not the containment refusal every other ToolError from
+    :func:`open_contained` reports."""
+
+
 @dataclass(frozen=True, slots=True)
 class SafePath:
     """A path that passed containment, carrying the base it was contained
@@ -195,6 +202,13 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     containment holds even for a hand-built one. Honest callers are unaffected,
     including one working through an in-repo symlink, whose resolved path names
     the real target.
+
+    Unless ``O_DIRECTORY`` is asked for, the leaf must be a REGULAR file, and
+    the check is ``fstat`` on the descriptor just opened -- never a stat by
+    name, which is a second lookup. ``O_NONBLOCK`` makes the open itself
+    unable to block: a jailed background command can swap the leaf for a FIFO
+    between any check and the open, and ``O_NOFOLLOW`` stops a symlink but not
+    that. The flag is cleared before the caller reads or writes.
     """
     rel_path = sp.rel_path
     if rel_path.is_absolute():
@@ -210,7 +224,17 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
             dir_fd = child
         # The root itself is the one path with no leaf to name.
         at = rel_path.name or "."
-        return os.open(at, flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+        if flags & os.O_DIRECTORY:
+            return os.open(at, flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+        fd = os.open(at, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=dir_fd)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise NotRegularFile(f"Not a regular file: {rel_path}")
+            os.set_blocking(fd, True)
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
     except NotADirectoryError as exc:
         # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP:
         # without this probe, a component swapped for a symlink mid-walk (the
@@ -225,6 +249,10 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise ToolError(f"Path became a symlink while it was being used: {rel_path}") from exc
+        if exc.errno == errno.ENXIO:
+            # O_WRONLY|O_NONBLOCK on a reader-less FIFO: the one non-regular
+            # leaf the open rejects itself, so the fstat never sees it.
+            raise NotRegularFile(f"Not a regular file: {rel_path}") from exc
         raise
     finally:
         os.close(dir_fd)

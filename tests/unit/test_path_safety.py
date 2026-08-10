@@ -5,11 +5,20 @@
 from __future__ import annotations
 
 import os
+import signal
 from pathlib import Path
 
 import pytest
 
-from agent6.tools._path_safety import SafePath, contain, open_contained
+from agent6.tools._path_safety import (
+    SafePath,
+    Workspace,
+    contain,
+    list_contained,
+    open_contained,
+    read_contained,
+    write_contained,
+)
 from agent6.tools.dispatch import ToolError
 
 
@@ -48,3 +57,39 @@ def test_open_contained_reads_a_contained_path(tmp_path: Path) -> None:
     fd = open_contained(contain(tmp_path / "root", "sub/f.txt"), os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8") as handle:
         assert handle.read() == "ok\n"
+
+
+def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
+    """`is_file()` then open is two lookups, and O_NOFOLLOW stops a symlink but
+    not a FIFO.
+
+    A jailed background command can swap a regular file for a FIFO in that
+    window; the read tools run IN-PROCESS as the operator, so opening one with
+    no writer parked the whole agent with nothing to show for it. The open is
+    O_NONBLOCK now and the kind is checked by `fstat` on the descriptor just
+    opened -- one lookup, so there is no window to swap in.
+    """
+    root = tmp_path / "ws"
+    root.mkdir()
+    os.mkfifo(root / "notes.txt")
+    ws = Workspace(root=root)
+
+    def _timeout(*_a: object) -> None:
+        raise AssertionError("the contained read blocked on a FIFO")
+
+    signal.signal(signal.SIGALRM, _timeout)
+    signal.alarm(5)
+    try:
+        with pytest.raises(ToolError, match="Not a regular file"):
+            read_contained(ws.resolve_read("notes.txt"))
+        # The write side blocks the same way (O_WRONLY on a reader-less FIFO).
+        with pytest.raises(ToolError, match="Not a regular file"):
+            write_contained(ws.resolve_write("notes.txt"), "payload")
+    finally:
+        signal.alarm(0)
+
+    # Regular files and directory listings are untouched.
+    (root / "ok.txt").write_text("hello\n", encoding="utf-8")
+    assert read_contained(ws.resolve_read("ok.txt")) == "hello\n"
+    (root / "sub").mkdir()
+    assert [e.name for e in list_contained(ws.resolve_read("sub"))] == []
