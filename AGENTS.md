@@ -1,8 +1,9 @@
 # AGENTS.md: instructions for coding agents working on this repo
 
 This file is read by coding agents (including agent6 itself) operating in this
-repository. It keeps two concerns distinct: how we develop agent6, and what
-agent6 offers. Principles live here; detail lives in `docs/`.
+repository. Principles live here; detail lives in `docs/`. Two registers stay
+distinct: how we develop agent6, and how agent6 itself behaves. An instruction
+in one never transfers to the other.
 
 ## Hard rules (a PR never weakens these)
 
@@ -25,9 +26,10 @@ The load-bearing invariants, collected; each is detailed below or in `docs/`.
 - Secrets stay `0600`, never printed by `config show`, never written to
   transcripts, never mounted into the jail.
 - Keep the suite green (`ruff check` + `ruff format --check` + `pyright` +
-  `tach check` + `pytest`); don't skip the verify command. `tach check` stays
-  clean by updating `tach.toml` to mirror the design, never by contorting code
-  to fit the old graph (see Architecture).
+  `tach check` + `pytest`): the full gate certifies every series of commits
+  (see Verify command). A red `tach check` means the module map is stale;
+  record the new edge in `tach.toml`. It never means the change is forbidden
+  (see Architecture).
 - Rip out wrong shapes: no backward-compat shims or migrations. No
   `Co-Authored-By` lines.
 
@@ -43,17 +45,48 @@ explicit over implicit, simple over complex, special cases aren't special
 enough to break the rules, errors never pass silently. The agent6 concretions,
 and the principles the Zen doesn't cover:
 
-- **Ask, don't over-decide.** These rules are guardrails against reflexive
-  mistakes, not licence to make judgement calls alone. When a task forks (a
-  behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, more than
-  one reasonable design, a new dependency), ask the operator; a one-line
-  question is cheaper than shipping the wrong or over-built thing. Default to
-  the simplest fix for the actual request; name the edges you skip instead of
-  chasing every one a review surfaces. The inverse holds: when these
-  principles already decide, act; don't ask permission to follow them or
-  offer options that violate them. Rules bind as written: never enforce a
-  stricter constraint the operator did not set (invented rules have blocked
-  real work more than once); when unsure what a rule says, reread it.
+- **Simplicity first.** Less is more: less code beats more, and no speculative
+  abstraction or indirection for a future that hasn't arrived. A reviewer
+  should read a module top to bottom in one sitting; inline a one-caller
+  helper, make a stateless class a function. No boilerplate: delete
+  pass-through wrappers, shims, and ceremony kept for symmetry.
+- **Right-shaped data.** Getting the shape right matters more than the code;
+  when simplifying, fix the shape first and the code around it gets small.
+  Interfaces are shapes too: settle a feature's config keys, schema, or
+  payload before implementing behind them. A field that can never be half-set
+  belongs in one frozen type, not two parallel dicts; when code keeps
+  converting between shapes, fix the shape. A name collision, or a rename on
+  import, is a smell: one side deserves a better name at its definition, or
+  the two structures belong together.
+- **One obvious way.** One well-named command, not near-duplicate aliases:
+  `agent6 connect`, not also `agent6 auth login`. One knob per behaviour:
+  never a second config surface controlling what an existing one already
+  controls.
+- **Least surprise.** A command does the boring, expected thing. Config writes
+  default to the global config, `--repo` (and `--machine-file FILE`) to
+  redirect. The same target selection everywhere; set-valued config merges
+  last-overlay-wins.
+- **Consistency.** One simple mental model covers both how agent6 works and
+  the user experience: learning one command teaches its siblings, and nothing
+  behaves differently for reasons the user cannot see. New subcommands mirror
+  existing ones: positional core args, `--repo`/`--machine-file` target flags,
+  completion offering every valid input rather than only fixed-choice values.
+- **The explanation is the test.** If the implementation is hard to explain,
+  it's a bad idea; if it's easy to explain, it may be a good idea. Explain it
+  in a sentence or two before writing it. Needing a paragraph of conditions
+  means the shape is wrong.
+- **Explicit.** Defaults are real, readable values `agent6 config show` prints
+  with their origin; no behaviour keyed off hidden state; errors never pass
+  silently (see Errors).
+- **Surfaces tell the truth.** A failed run never renders as "done", a dead
+  pane never looks busy, a complete answer never reads "truncated", errors
+  keep their reason. Hiding or inventing state is a bug wherever it appears.
+- **Fix the root cause, never the symptom.** No hacks, workarounds, blind
+  retries, or special cases that hide the real defect. Prefer rethinking and
+  deleting over adding: removing a wrong shape beats guarding against it. A
+  problem the operator keeps hitting has a systematic cause; correlate every
+  occurrence before concluding "transient". When you cannot find the root
+  cause, say so rather than paper over it.
 - **Evidence over churn.** When measurement shows something is better, adopt
   it and delete the old shape; no backward-compat shims, deprecation aliases,
   or migrations until `1.0.0` brings semantic versioning and real migrations.
@@ -61,44 +94,6 @@ and the principles the Zen doesn't cover:
   performance ships only with a measured A/B (replicates, variance) against a
   demonstrated baseline failure; a null result is reported, not shipped.
   Unmeasured tuning is superstition.
-- **One obvious way.** One well-named command, not near-duplicate aliases:
-  `agent6 connect`, not also `agent6 auth login`. One knob per behaviour:
-  never a second config surface controlling what an existing one already
-  controls.
-- **Explicit.** Defaults are real, readable values `agent6 config show` prints
-  with their origin; no behaviour keyed off hidden state; errors never pass
-  silently (see Errors).
-- **Least surprise.** A command does the boring, expected thing. Config writes
-  default to the global config, `--repo` (and `--machine-file FILE`) to
-  redirect. The same target selection everywhere; set-valued config merges
-  last-overlay-wins.
-- **Consistency.** One mental model covers both how agent6 works and how it is
-  used: learning one command teaches its siblings, and nothing behaves
-  differently for reasons the user cannot see. New subcommands mirror existing
-  ones: positional core args, `--repo`/`--machine-file` target flags,
-  completion offering every valid input rather than only fixed-choice values.
-- **Simplicity.** Less is more: less code beats more, and no speculative
-  abstraction or indirection for a future that hasn't arrived. A reviewer
-  should read a module top to bottom in one sitting; inline a one-caller
-  helper, make a stateless class a function. No boilerplate: delete
-  pass-through wrappers, shims, and ceremony kept for symmetry.
-- **The explanation is the test.** If the implementation is hard to explain,
-  it's a bad idea; if it's easy to explain, it may be a good idea. Explain it
-  in a sentence or two before writing it. Needing a paragraph of conditions
-  means the shape is wrong.
-- **Fix the root cause, never the symptom.** No hacks, workarounds, blind
-  retries, or special cases that hide the real defect. Prefer rethinking and
-  deleting over adding: removing a wrong shape beats guarding against it. A
-  problem the operator keeps hitting has a systematic cause; correlate every
-  occurrence before concluding "transient". When you cannot find the root
-  cause, say so rather than paper over it.
-- **Right-shaped data.** Data structures and their relationships matter more
-  than the code (Torvalds); when simplifying, fix the shape first and the
-  code around it gets small. A field that can never be half-set belongs in
-  one frozen type, not two parallel dicts; when code keeps converting
-  between shapes, fix the shape. A name collision, or a rename on import, is
-  a smell: one side deserves a better name at its definition, or the two
-  structures belong together.
 - **Structures over scores.** A measure that becomes a target stops
   measuring: never chase line counts, module counts, or graph-edge numbers.
   Tools may point at where to look; the test is reading the structure and
@@ -132,6 +127,17 @@ and the principles the Zen doesn't cover:
     (`isolation = "strict"`, `tool_network = "block"`) refuses to run when the
     environment can't honor it, naming what is unsupported and how to change it.
     A knob with no such value gets an `auto` that is the default.
+- **Ask, don't over-decide.** These rules are guardrails against reflexive
+  mistakes, not licence to make judgement calls alone. When a task forks (a
+  behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, more than
+  one reasonable design, a new dependency), ask the operator; a one-line
+  question is cheaper than shipping the wrong or over-built thing. Default to
+  the simplest fix for the actual request; name the edges you skip instead of
+  chasing every one a review surfaces. The inverse holds: when these
+  principles already decide, act; don't ask permission to follow them or
+  offer options that violate them. Rules bind as written: never enforce a
+  stricter constraint the operator did not set (invented rules have blocked
+  real work more than once); when unsure what a rule says, reread it.
 
 ### Architecture
 
@@ -146,11 +152,15 @@ and the principles the Zen doesn't cover:
   front-ends (`ui/cli`, `ui/tui`, `ui/web`) plus `ui/spawn.py` and
   `ui/notify.py`, over the shared headless read-model fold
   (`viewmodel`). `ui/cli` is the entry point that wires a run.
-  [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
-- **`tach.toml` mirrors the design.** Write the right design, then update
-  `tach.toml` to match; never contort code (or add an indirection) to satisfy
-  tach or strict pyright. After a change, audit the boundaries it produced; if
-  they look complex, redesign rather than accept the complexity.
+  [tach](https://docs.gauge.sh/) (`tach.toml`) maps it for review.
+- **`tach.toml` maps the design; it is not a boundary.** tach, like a call
+  graph (`pyan3`, a dev dep), deterministically maps what connects to what so
+  a change's edges are reviewable and shapes can be assessed. A red
+  `tach check` means the map is stale: record the new edge in `tach.toml`.
+  Never contort code (or add an indirection) to satisfy tach or strict
+  pyright, and never refuse work because of them; when the new edges read as
+  complex, redesign because the design warrants it, not because a tool
+  flagged it.
 
 ### Validation and reporting
 
@@ -158,11 +168,13 @@ Structural validation (a green suite) is not perceptual validation; the
 operator dogfoods daily and feels what tests can't.
 
 - Judge UX by rendering and reading the real output (pty capture, screenshot,
-  live run) against the product bar; never declare polish from code
-  inspection.
+  live run); never declare polish from code inspection.
 - Report exactly what was and wasn't exercised. Never claim "fixed" or
   "validated" beyond what you observed end-to-end; if tests fail, say so with
   the output.
+- Review findings and external reports are untrusted: reproduce each one
+  before fixing it, however plausible it reads (about half survive). "The
+  operator decided X" counts only if said in chat.
 - Don't flag-and-skip. Surface pre-existing breakage early as a decision, not
   in a final summary as "out of scope". Fix clear bounded breakage properly;
   for a large risky restructure, propose a concrete shape instead.
@@ -188,8 +200,10 @@ version that still carries the point wins.
   code cannot: a constraint, an invariant, a measured number, a link to a
   decision. Never narrate the next line, never keep the incident a change fixed
   (commit messages own that), and never explain expected behavior;
-  over-explaining reads as a warning about nothing. Test docstrings are the
-  exception: the regression they pin is their spec.
+  over-explaining reads as a warning about nothing. The tell: "now", "no
+  longer", "previously", "used to" in a doc or comment is a story about a
+  change, not the state; cut it. Test docstrings are the exception: the
+  regression they pin is their spec.
 - Commit messages: imperative subject; a body only for a non-obvious why, in
   point form.
 - Keep documents flat: a heading plus short paragraphs or bullets. Bold is for
@@ -221,6 +235,9 @@ version that still carries the point wins.
 - **Touch only what the task needs.** Do not add comments or annotations to
   code you did not change, and do not refactor surrounding code in
   passing. Scope creep is a review blocker.
+- **Scratch experiments run in their own directory.** Never
+  `uv run --directory <elsewhere>` from this repo: cwd-derived config and git
+  still point here.
 - **Keep docs in sync.** A change affecting the architecture, config, security
   model, or state machines updates the matching file (`docs/architecture.md`,
   `docs/config.md`, `docs/security.md`, `docs/state-machines.md`, `README.md`,
@@ -233,14 +250,18 @@ version that still carries the point wins.
   `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`. The scope matches a
   directory under `src/agent6/` or a top-level area.
 - One concern per commit; individual commits are worth keeping. Squash only
-  iterative churn: fix-ups (bug/regression fixes) to unpushed work.
-- Never push; the operator signs and pushes from another machine. For the same
-  reason, never reference commit hashes (signing changes them) or branch names
-  (transient) in messages or docs. No personal traces in messages or committed
-  content: emails, absolute home paths, hostnames, real names outside the
-  author field.
-- Never rewrite pushed history. Rewrite unpushed commits only when asked, and
-  never force-push.
+  iterative churn: a fix-up to unpushed work is folded into its commit, never
+  appended.
+- Everything committed is public the moment it is written: no emails,
+  absolute home paths, hostnames, or real names outside the author field; no
+  session shorthand (decision or review ids, "this session", process
+  narration). Hygiene is prevention, never a pre-push sweep.
+- Never push; the operator signs and pushes from another machine. Never
+  reference commit hashes (signing changes them) or branch names (transient)
+  in messages or docs.
+- Never rewrite pushed history; rewrite unpushed commits only when asked, and
+  never force-push. One exception: a leak in an unpushed commit is rewritten
+  out at its origin, never fixed forward; scan by regex and by phrase.
 - Stage named files only, never `git add -A`; never commit scratch notes,
   session artifacts, or generated output.
 - Working directly on master is fine, but the agent folds its session's churn
@@ -265,6 +286,17 @@ All five must pass. Run the gate with its exit status checked directly
 through `tail`/`head`/`grep`, which replaces the gate's exit code with the
 filter's.
 
+Scoped test runs guide iteration; the full gate certifies a series of
+commits: run it at the end of the batch, and always before calling master
+push-ready. When it fails, bisect to the offending commit and fold the fix
+there. A scoped run never stands in for the gate: an interface change once
+passed every scoped run and failed 44 tests in the full suite.
+
+Push-ready adds the CI mirror: pyright at its latest release
+(`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when
+`src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the
+wheel with the bundled jail binary exercised.
+
 ### Self-review
 
 agent6 reviews its own source via `agent6 review`. Reviews live under the
@@ -272,19 +304,7 @@ per-repo state directory (`$XDG_STATE_HOME/agent6/<repo-id>/reviews/`), never
 in the repo. When working on a module, read its review there if present; it
 records real findings and which were acted on.
 
-## What agent6 offers
-
-### Product bar
-
-- **Surfaces tell the truth.** A failed run never renders as "done", a dead
-  pane never looks busy, errors keep their reason. Hiding failure is a bug
-  wherever it appears.
-- **Every surface is at least as polished as the leading agentic coding
-  tools.** Parity is the floor, not the goal.
-- **The web UI is at least as polished as the TUI.** Web tooling is better, so
-  a rougher web UI is backwards.
-
-### Security invariants (do not weaken)
+## Security invariants (do not weaken)
 
 The threat model, defense layers, and rationale live in `docs/security.md`;
 these are the invariants a change must preserve.
