@@ -114,11 +114,10 @@ Notes:
   stays resumable and forkable; how those commits consolidate onto your branch
   is chosen later at `agent6 sessions merge` time via `git.merge_strategy`
   (`squash` / `merge` / `ff`).
-- **DAG-as-scaffold.** `add_task` / `update_task` /
-  `set_cursor` / `list_tasks` / `add_dependency` write to a curator-owned
-  side store: the worker's task breakdown, with explicit ordering edges
-  (`add_dependency` is cycle-checked by the curator). They do not pick
-  which tool runs
+- **DAG-as-scaffold.** `add_task` / `update_task` / `list_tasks` write to a
+  curator-owned side store: the worker's task breakdown, with explicit
+  ordering edges via `depends_on` (on `add_task` at creation or `update_task`
+  after; cycle-checked by the curator). They do not pick which tool runs
   next, but agent6 reads the DAG to keep a small or weak model focused on
   a long task. Each turn it surfaces the current task -- the cursor when it
   still points at an open subtask, else the first dependency-satisfied
@@ -133,6 +132,19 @@ Notes:
   nudge offers to split / pass / skip it -- re-firing periodically up to a
   small cap (a weak model was seen ignoring a single nudge); any progress
   resets the counter, so a healthy run never sees it.
+- **Standing tasks and the park.** A run can carry a STANDING task
+  (`run --standing "<goal>"`, or `add_task(standing=true)`): the frontier's
+  never-passing fallback, worked only when no ordinary subtask is ready --
+  new work always outranks it. While one exists, the soft out-of-work
+  endings (`finish_session`, the settled family, a quiet turn) convert into
+  re-entry; faults, operator verbs, the iteration cap, and a spent budget
+  still end the run, and a re-entry with no tool call since the last one is
+  a spin, honoured as the original end. Its sibling for a watched run: on an
+  INTERACTIVE run (`run -i` / `resume -i`), a quiet turn parks the same
+  in-memory conversation on the steer bridge instead of ending -- a steer
+  from any composer or the pause menu continues it in place, and
+  abort/undo/detach keep their meanings. One park-instead-of-exit
+  mechanism, two triggers.
 - **Context compaction.** Long runs are kept inside the model's context
   window in two tiers (thresholds in `[context]`): at
   `drop_at_chars` the oldest tool_results are replaced by a short
