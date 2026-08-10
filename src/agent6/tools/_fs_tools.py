@@ -69,6 +69,13 @@ from agent6.tools.schema import (
 # bounds the rest.
 MAX_GREP_WALL_S = 10.0
 
+# Upper bound on what read_file pulls into memory. read_contained loads the
+# whole file before slicing, so without this a large file (a checked-in blob, a
+# log, a file a command produced) OOM-crashes the unsandboxed agent. Generous
+# enough for any real source file; a bigger file returns its capped prefix with
+# truncated=True. Revisit if a legitimate read hits it.
+MAX_READ_CHARS = 5_000_000
+
 
 def agent6_docs(raw: dict[str, Any]) -> ToolResult:
     args = Agent6DocsInput.model_validate(raw)
@@ -94,9 +101,17 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
     try:
-        full = read_contained(root, sp.rel_path)
+        # Bounded read: the whole file was pulled into memory regardless of
+        # start_line/limit, so a multi-GB file (a checked-in blob, a log, a
+        # file a command produced) OOM-crashed the unsandboxed agent. Read one
+        # char past the cap to detect the overflow, then trim; pagination and
+        # the line counts operate on the capped prefix, and `truncated` says so.
+        full = read_contained(root, sp.rel_path, limit_chars=MAX_READ_CHARS + 1)
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
+    read_truncated = len(full) > MAX_READ_CHARS
+    if read_truncated:
+        full = full[:MAX_READ_CHARS]
     # A NUL byte is what "binary" means in practice, and some binary payloads
     # decode as UTF-8 -- so the description's promise needs this, not just the
     # decode error. Without it such a file went verbatim into the transcript.
@@ -108,7 +123,9 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     # past-EOF start_line yields an empty slice, never negative arithmetic).
     lines = full.splitlines(keepends=True)
     if args.start_line == 1 and args.limit is None:
-        return ReadFileResult(content=full, size=len(full), lines_total=len(lines))
+        return ReadFileResult(
+            content=full, size=len(full), lines_total=len(lines), truncated=read_truncated
+        )
     first = args.start_line - 1  # 1-based on the wire, 0-based slice
     end = len(lines) if args.limit is None else min(len(lines), first + args.limit)
     sliced = lines[first:end]
@@ -119,6 +136,7 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
         lines_total=len(lines),
         start_line=args.start_line,
         lines_returned=len(sliced),
+        truncated=read_truncated,
     )
 
 

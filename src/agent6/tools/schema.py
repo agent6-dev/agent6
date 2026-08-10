@@ -38,7 +38,9 @@ class ReadFileInput(_ToolInput):
         " (max lines to return, default all). Fails when: path is outside"
         " the repo, file does not exist, file is not UTF-8 decodable, or"
         " file is binary. Use `outline` instead when you only need a file's"
-        " structure, not every line."
+        " structure, not every line. A very large file is read only up to a"
+        " cap and the result sets `truncated: true`; grep or a narrower range"
+        " to reach the rest."
     )
 
     path: str = Field(min_length=1)

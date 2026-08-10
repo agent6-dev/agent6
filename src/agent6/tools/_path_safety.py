@@ -120,12 +120,20 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
         os.close(dir_fd)
 
 
-def read_contained(root: Path, rel_path: Path, *, errors: str = "strict") -> str:
+def read_contained(
+    root: Path, rel_path: Path, *, errors: str = "strict", limit_chars: int | None = None
+) -> str:
     """The file's text, read through a descriptor walked from *root*.
-    ``UnicodeDecodeError`` still reaches the caller, which reports it."""
+    ``UnicodeDecodeError`` still reaches the caller, which reports it.
+
+    ``limit_chars`` bounds the read: at most that many characters are pulled
+    into memory, so a multi-gigabyte file cannot OOM the (unsandboxed) agent.
+    The caller detects truncation by reading ``limit_chars + 1`` and checking
+    the length. None reads the whole file (for callers that must, like the
+    symbol index parsing a source file)."""
     fd = open_contained(root, rel_path, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
-        return handle.read()
+        return handle.read() if limit_chars is None else handle.read(limit_chars)
 
 
 def read_bytes_contained(root: Path, rel_path: Path) -> bytes:

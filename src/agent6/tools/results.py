@@ -77,6 +77,10 @@ class ReadFileResult(ToolResult):
     # full read omits both. None is the "full read" sentinel.
     start_line: int | None = None
     lines_returned: int | None = None
+    # The file was larger than the read cap; content and the line counts are of
+    # the capped prefix only. A reader must not treat lines_total as the file's
+    # true length when this is set.
+    truncated: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -87,10 +91,12 @@ class ReadFileResult(ToolResult):
         if self.start_line is not None:
             out["start_line"] = self.start_line
             out["lines_returned"] = self.lines_returned
+        if self.truncated:
+            out["truncated"] = True
         return out
 
     def summary(self) -> str:
-        return f"{self.size} bytes"
+        return f"{self.size} bytes{' (truncated)' if self.truncated else ''}"
 
 
 @dataclass(frozen=True, slots=True)
