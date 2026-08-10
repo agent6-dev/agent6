@@ -9,6 +9,8 @@ import os
 import time
 from pathlib import Path
 
+import pytest
+
 from agent6.sessions.manifest import CompareStamp
 from agent6.viewmodel import (
     is_session_husk,
@@ -473,6 +475,44 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) ->
     never_launched = _write_run(tmp_path, "runs", "husk", [])
     (never_launched / "worker.pid").unlink(missing_ok=True)
     assert summarize_session_dir(never_launched).status == "created"
+
+
+def test_a_forks_single_leg_is_one_leg(tmp_path: Path) -> None:
+    """A fork's log OPENS with loop.resume.start (resume() drives it; no
+    session.start ever lands), and the unconditional leg increment counted its
+    single leg as two: `sessions show` labelled its cost "(all 2 legs)" and its
+    tokens "(latest leg)". The first leg-start of any kind begins leg 1."""
+    from agent6.viewmodel.listing import scan_session_log
+
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "fork-1",
+        [
+            {"type": "loop.resume.start", "iteration": 1},
+            {"type": "budget.update", "usd_total": 0.05},
+            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        ],
+    )
+    scan = scan_session_log(rd / "logs.jsonl")
+    assert scan.legs == 1
+    assert scan.cost_usd == 0.05
+
+    # A real second leg still counts (and banks the first leg's spend).
+    rd2 = _write_run(
+        tmp_path,
+        "runs",
+        "fork-2",
+        [
+            {"type": "loop.resume.start", "iteration": 1},
+            {"type": "budget.update", "usd_total": 0.05},
+            {"type": "loop.resume.start", "iteration": 5},
+            {"type": "budget.update", "usd_total": 0.01},
+        ],
+    )
+    scan2 = scan_session_log(rd2 / "logs.jsonl")
+    assert scan2.legs == 2
+    assert scan2.cost_usd == pytest.approx(0.06)
 
 
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:

@@ -457,24 +457,27 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     all_passed = bool(ev.get("all_passed"))
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
+                    if saw_start:
+                        # A PRIOR leg exists: bank its budget and count a new
+                        # leg. Each resume leg starts a FRESH budget (usd_total
+                        # resets to 0), so bank the finished leg's total before
+                        # it does -- the displayed cost is then the true
+                        # cumulative spend across all legs (per-leg budgets stay
+                        # the enforcement mechanism). The typed fold applies the
+                        # same rule (state.BudgetView), so the hub row and the
+                        # run view can never disagree. Token counters reset too:
+                        # they are documented as the current leg's. A FORK's log
+                        # OPENS with this event -- that begins leg 1, and
+                        # counting it as 2 labelled a single leg's cost
+                        # "(all 2 legs)".
+                        usd_prior_legs += usd_leg
+                        usd_leg = 0.0
+                        input_tokens = output_tokens = None
+                        last_verify_rc = None  # leg-scoped, like the token counters
+                        legs += 1
                     saw_start = True  # a leg has begun; a fork's log has only this
                     finished = False  # a resume un-finishes the run
                     pending_prompts.clear()  # see session.start
-                    # Each resume leg starts a FRESH budget (usd_total resets to
-                    # 0), so bank the finished leg's total before it does -- the
-                    # displayed cost is then the true cumulative spend across all
-                    # legs, not just the latest leg's (per-leg budgets stay the
-                    # enforcement mechanism; only the shown total changes). The
-                    # typed fold applies the same rule (state.BudgetView), so the
-                    # hub row and the run view can never disagree. Token counters
-                    # reset too: they are documented as the current leg's, and
-                    # leftovers would wear the "(latest leg)" label falsely until
-                    # the resumed leg's first provider call lands.
-                    usd_prior_legs += usd_leg
-                    usd_leg = 0.0
-                    input_tokens = output_tokens = None
-                    last_verify_rc = None  # leg-scoped, like the token counters
-                    legs += 1
                 elif etype == "verify.end":
                     rc = ev.get("exit_code")
                     if isinstance(rc, int) and not isinstance(rc, bool):
