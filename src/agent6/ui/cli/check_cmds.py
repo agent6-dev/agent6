@@ -34,6 +34,7 @@ from agent6.sandbox.detect import (
     resolve_isolation,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
+from agent6.tools.policy import resolve_network
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
 
 
@@ -46,10 +47,15 @@ def _isolation_means(isolation: IsolationLevel) -> str:
     knows which words to search the docs for.
     """
     if isolation == "strict":
+        # The network clause is hedged because this section runs before any
+        # config is loaded (`agent6 check sandbox` needs none): strict CAN give
+        # the run its own network, and `sandbox.network = "host"` declines it.
+        # The config section prints what this project resolved to.
         return (
             "commands get their own filesystem view (only granted paths exist),"
-            " the run's own network, a private /proc and PID namespace, and a"
-            " filtered syscall set. See docs/security.md."
+            " a private /proc and PID namespace, a filtered syscall set, and --"
+            " unless sandbox.network says otherwise -- the run's own network."
+            " See docs/security.md."
         )
     if isolation == "hardened":
         return (
@@ -284,7 +290,13 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     out: list[_DoctorCheck] = []
     try:
         selected = resolve_isolation(cfg.sandbox.isolation, env)
-        print(f"  -> selected isolation: {selected}")
+        # The resolved values, not the configured ones: `auto` is the default on
+        # both knobs, and what it resolved to on THIS host is the answer someone
+        # runs `check` for.
+        print(
+            f"  -> selected isolation: {selected}"
+            f"  commands' network: {resolve_network(cfg, selected)}"
+        )
         out.append(
             _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
         )
@@ -343,8 +355,12 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             ok = bool(tools)
             # A server that never started is not one that "exposed no tools":
             # the reason the operator needs is the spawn error, not a symptom.
+            # `approve` belongs in a pre-flight for the same reason the network
+            # does: it is standing consent for every call this server's tools
+            # make, and the operator set it once, possibly a while ago.
             detail = (
-                f"{len(tools)} tool(s), network: {networks.get(name, '?')}"
+                f"{len(tools)} tool(s), network: {networks.get(name, '?')},"
+                f" approve: {cfg.mcp.servers[name].approve}"
                 if ok
                 else why_missing.get(name, "started but exposed no tools")
             )

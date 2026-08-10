@@ -18,6 +18,29 @@ from agent6.tools._result_format import passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 
+def resolve_network(
+    config: Config, isolation: IsolationLevel, *, override: NetworkMode | None = None
+) -> NetworkMode:
+    """The network a child actually gets.
+
+    A caller that answers for itself passes *override*: an MCP server's
+    reachability is the operator's per-server choice, not the tool policy.
+    Otherwise a command joins the host network only under `network = "host"`,
+    and every other setting puts it on the run's own.
+
+    Clamped to what the level can provide: only strict has namespaces, so
+    everywhere else the child shares this process's network and the policy says
+    so rather than describing a confinement it will not get (preflight has
+    already refused an EXPLICIT setting it cannot honour, and warned about an
+    automatic one).
+    """
+    if isolation != "strict":
+        return "host"
+    if override is not None:
+        return override
+    return "host" if config.sandbox.network == "host" else "session"
+
+
 def jail_policy(
     root: Path,
     config: Config,
@@ -45,19 +68,7 @@ def jail_policy(
     system dirs, the operator's tool dirs, a writable /tmp as HOME -- is here,
     so nobody has to know where their interpreter lives.
     """
-    # A command joins the host network only under network = "host"; every
-    # other setting puts it on the run's private one. A caller that answers for
-    # itself passes `network`: an MCP server's reachability is the operator's
-    # per-server choice, not the tool policy.
-    if network is None:
-        network = "host" if config.sandbox.network == "host" else "session"
-    # Only strict has namespaces to give, so that is the only level where
-    # "session" or "none" means anything. Everywhere else the child shares this
-    # process's network and the policy says so rather than describing a
-    # confinement it will not get; preflight has already refused an EXPLICIT
-    # setting it cannot honour and warned about an automatic one.
-    if isolation != "strict":
-        network = "host"
+    network = resolve_network(config, isolation, override=network)
     protect_paths: list[Path] = []
     # STRICT only. A writable `.git` is not merely "recoverable": a jailed
     # command can plant a `filter.<n>.clean` in `.git/config` plus a

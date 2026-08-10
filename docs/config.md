@@ -38,6 +38,9 @@ provider + model; `workflow.verify_command` is inferred per run when unset.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values),
   naming each; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without running.
+  `config show` prints what is SET (`network = "auto"`); `check` prints what
+  that resolved to on this host, for the isolation level, the commands'
+  network, and each MCP server's network and `approve`.
 
 ---
 
