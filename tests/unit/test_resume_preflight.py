@@ -422,3 +422,72 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     save_ask_transcript(layout, question="q", answer="second")
     text = (ask / "transcript.md").read_text(encoding="utf-8")
     assert "first" in text and "second" in text, "a later leg overwrote the answer"
+
+
+def test_resuming_a_finished_run_without_a_steer_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run the agent ENDED has nothing to continue.
+
+    Resuming one spent a provider call, got prose with no tool use, recorded a
+    `silent_finish`, and left a run that PASSED reading as failed for a tree
+    nobody touched. Refused before anything is spent or cleared; new work is
+    what `--steer` is for, and every other ending stays freely resumable.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = _state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": "done-BBBB22", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+    # A stale answer file proves the refusal lands before the stale-state
+    # clear: a refused resume must not touch the run's shared state.
+    approvals = session_dir / "approvals"
+    approvals.mkdir()
+    (approvals / "a1.answer").write_text("yes", encoding="utf-8")
+
+    rc = _cmd_resume(None, "done-BBBB22", force=False)
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "already finished" in err
+    assert "--steer" in err
+    assert (approvals / "a1.answer").exists()
+
+
+def test_a_finished_run_still_resumes_with_a_steer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal is narrow: `--steer` is new work, so it goes straight
+    through -- pinned by the run getting all the way to the snapshot check."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = _state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": "done-CCCC33", "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        encoding="utf-8",
+    )
+    rc = _cmd_resume(None, "done-CCCC33", force=False, steer="do more")
+
+    assert rc == 2  # this fixture has no snapshot; the point is WHICH refusal
+    err = capsys.readouterr().err
+    assert "already finished" not in err
+    assert "no resume snapshot" in err
