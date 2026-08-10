@@ -33,6 +33,7 @@ from agent6.viewmodel import (
     machine_word_for_dir,
     newest_state_log,
     operator_inputs,
+    restate,
     session_compare,
     session_state_as_dict,
     summarize_session_dir,
@@ -300,6 +301,12 @@ def conversation_payload(session_dir: Path) -> dict[str, Any]:
         "items": conversation_items(events),
         "operator_inputs": operator_inputs(events),
     }
+
+
+def restate_payload(session_dir: Path) -> dict[str, Any]:
+    """`/restate` for the web composer: the same fold-side renderer the CLI
+    pause menu prints, over the session's whole journal."""
+    return {"text": restate(list(tail_events(session_dir / LOGS_NAME, follow=False)))}
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:

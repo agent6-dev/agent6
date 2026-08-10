@@ -54,9 +54,10 @@ from agent6.ui.tui.menubar import (
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.tui.modals import HistorySearchModal
+from agent6.ui.tui.modals import HistorySearchModal, RestateModal
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
+from agent6.viewmodel import restate
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail, tail_events
@@ -784,6 +785,11 @@ class ConversationScreen(Screen[None]):
         submit = getattr(self.app, "submit_instruction", None)  # the Agent6TUI host
         if callable(submit):
             submit(message.text)
+            return
+        if message.text.strip() == "/restate":
+            self.app.push_screen(
+                RestateModal(restate(list(tail_events(self._logs_path, follow=False))))
+            )
             return
         if self._live:
             session_dir = self._logs_path.parent

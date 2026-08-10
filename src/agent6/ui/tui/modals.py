@@ -285,6 +285,46 @@ class ToolCallDetailModal(ModalScreen[None]):
         self.dismiss(None)
 
 
+class RestateModal(ModalScreen[None]):
+    """`/restate`: the conversation since the operator's last message, rendered
+    read-only and selectable. Informational, so Esc and the backdrop close it."""
+
+    DEFAULT_CSS = """
+    RestateModal { align: center middle; }
+    #restate-box {
+        width: 90%; max-width: 120; height: auto; max-height: 85%;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #restate-box TextArea {
+        height: auto; max-height: 32; border: round $primary; background: $surface;
+    }
+    """
+
+    BINDINGS: ClassVar = [
+        Binding("escape", "close", "Close", show=True),
+        Binding("q", "close", "Close", show=False),
+    ]
+
+    def __init__(self, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="restate-box"):
+            yield Static(Text("since your last message", style="bold"))
+            yield TextArea(self._text, read_only=True, soft_wrap=True, id="restate-text")
+
+    def on_mount(self) -> None:
+        self.query_one("#restate-text", TextArea).focus()
+
+    def on_click(self, event: events.Click) -> None:
+        if event.widget is self:
+            self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class TextInputModal(ModalScreen[str | None]):
     """A one-line text prompt (title + input). Enter submits the text; Esc
     dismisses with None (cancelled). Used for the machine `poke` message box."""

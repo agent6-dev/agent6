@@ -88,11 +88,12 @@ from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
     QuestionModal,
+    RestateModal,
     ToolCallDetailModal,
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
-from agent6.viewmodel import session_compare
+from agent6.viewmodel import restate, session_compare
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost, status_label
 from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir
 from agent6.viewmodel.state import (
@@ -1031,6 +1032,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call) -- the run keeps going.
         Finished: resume THIS run with the instruction as the follow-up."""
+        if text.strip() == "/restate":
+            # Local and free: rendered from the journal, nothing reaches the model.
+            self.push_screen(RestateModal(restate(list(tail_events(self.logs_path, follow=False)))))
+            return
         if self.session_controllable():
             focus = parse_compact(text)
             if focus is not None:

@@ -492,7 +492,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"values": model.config_suggestions(self.cwd, key)})
             return
         parts = path.strip("/").split("/")
-        # /api/session/<id>[/conversation|/events]
+        # /api/session/<id>[/conversation|/restate|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
             self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
             return
@@ -544,6 +544,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(model.session_snapshot(session_dir))
         elif sub == "conversation":
             self._send_json(model.conversation_payload(session_dir))
+        elif sub == "restate":
+            self._send_json(model.restate_payload(session_dir))
         elif sub == "events":
             self._sse_session(session_dir)
         else:

@@ -544,6 +544,7 @@ const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
   ['/parallel', 'fan out lanes: /parallel [N|models] <task> (repeat to queue more)'],
+  ['/restate', 'restate the conversation since your last message (local, no model call)'],
 ];
 // Slash-command completion for a session composer: while the FIRST word is
 // being typed (`/…`, no whitespace yet), the matching directives with their
@@ -599,6 +600,22 @@ function attachCommandSuggest(ta, root, liveNow) {
 // each, repeats collapsed: the same list the CLI and TUI searches show.
 // Picking fills the composer for editing (Enter keeps the highlighted match,
 // or the typed text itself when nothing matches); nothing is sent.
+function openRestate(text) {
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(720px, 92vw)';
+  box.appendChild(el('h2', null, 'since your last message'));
+  const pre = el('pre');
+  pre.textContent = text;
+  pre.style.whiteSpace = 'pre-wrap'; pre.style.maxHeight = '60vh';
+  pre.style.overflow = 'auto'; pre.style.margin = '0 0 10px';
+  box.appendChild(pre);
+  const close = el('button', null, 'Close');
+  close.onclick = () => back.remove();
+  box.appendChild(close);
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  back.appendChild(box); document.body.appendChild(back);
+}
+
 function openHistorySearch(entries, onPick) {
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
@@ -714,6 +731,13 @@ function makeComposer(id) {
     e.preventDefault();
     if (finished === null || busy) return;
     const text = ta.value.trim();
+    if (text === '/restate') {
+      // Local and free: rendered from the journal, nothing reaches the model.
+      getJSON('/api/session/' + encodeURIComponent(id) + '/restate')
+        .then(d => { openRestate(d.text || ''); ta.value = ''; })
+        .catch(err => toast(err.message, true));
+      return;
+    }
     if (!finished) {
       if (!text) return;
       // The server decides what the text WAS: `/compact [focus]` is an

@@ -87,6 +87,7 @@ from agent6.viewmodel.transcript import (
     TranscriptItem,
     fold_transcript,
     operator_inputs,
+    restate,
     salient_arg,
     worker_models,
 )
@@ -137,6 +138,7 @@ __all__ = [
     "operator_inputs",
     "produced_result",
     "read_complete_lines",
+    "restate",
     "salient_arg",
     "scan_session_log",
     "session_compare",

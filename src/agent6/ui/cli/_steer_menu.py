@@ -47,7 +47,13 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.background import roster_from_dir
 from agent6.ui.cli._menu_input import menu_capable, menu_input
-from agent6.viewmodel import fold_session, operator_inputs, status_for_session_dir, tail_events
+from agent6.viewmodel import (
+    fold_session,
+    operator_inputs,
+    restate,
+    status_for_session_dir,
+    tail_events,
+)
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
 from agent6.viewmodel.state import SessionState, status_facts
 
@@ -61,6 +67,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
     "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
     "/shells": "background commands this run started, and how they ended",
+    "/restate": "restate the conversation since your last message",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
     "/detach": "keep the run going in the background",
@@ -261,6 +268,8 @@ def _run_info_command(cmd: str, session_dir: Path, btw_runner: BtwRunner | None 
             print("[agent6] could not write the compaction request; nothing was requested")
     elif cmd == "/shells":
         _print_shells(session_dir)
+    elif cmd == "/restate":
+        print(restate(list(tail_events(session_dir / LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
 

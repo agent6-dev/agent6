@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import fold_transcript, salient_arg
+from agent6.viewmodel import fold_transcript, restate, salient_arg
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -336,3 +336,33 @@ def test_log_lines_carry_no_terminal_controls() -> None:
         }
     )
     assert "\x1b" not in line and "visible" in line
+
+
+def test_restate_compacts_since_the_last_operator_input() -> None:
+    """`/restate`: the last steer's text leads, assistant prose survives whole,
+    tools become one line with their outcome, and everything before the last
+    operator input stays out of frame."""
+    events: list[dict[str, object]] = [
+        {"type": "session.start", "user_task": "build the thing"},
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.text_delta", "text": "early work, out of frame"},
+        {"type": "role.result"},
+        {"type": "loop.steer.injected", "text": "focus on the parser"},
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.text_delta", "text": "on it"},
+        {"type": "role.result"},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "parser.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+        {"type": "tool.call", "name": "apply_edit", "args": {"path": "parser.py"}},
+        {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": "no match"},
+    ]
+    text = restate(events)
+    assert text.startswith("you said: focus on the parser")
+    assert "early work" not in text
+    assert "on it" in text
+    assert "[ok] read_file parser.py: 12 bytes" in text
+    assert "[FAILED] apply_edit parser.py: no match" in text
+
+
+def test_restate_with_no_operator_input_says_so() -> None:
+    assert restate([]).startswith("nothing to restate")

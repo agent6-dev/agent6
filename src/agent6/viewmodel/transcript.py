@@ -432,3 +432,38 @@ def fold_transcript(events: list[dict[str, Any]]) -> list[TranscriptItem]:
     for event in events:
         out.extend(fold.feed(event))
     return out
+
+
+def restate(events: list[dict[str, Any]]) -> str:
+    """The conversation since the operator's last prompt or steer, compacted:
+    their words, then assistant prose kept whole with tool calls and markers
+    one line each. Rendered from the journal, never a model call, so every
+    surface answers `/restate` locally and free."""
+    last: int | None = None
+    for i, event in enumerate(events):
+        if str(event.get("type", "")) in _OPERATOR_TEXT:
+            last = i
+    if last is None:
+        return "nothing to restate: this session has no operator input yet"
+    anchor = events[last]
+    said = str(anchor.get(_OPERATOR_TEXT[str(anchor["type"])], "")).strip()
+    lines = [f"you said: {_clip(said, 200)}"]
+    for item in fold_transcript(events[last:]):
+        if item.kind in ("thinking", "operator"):
+            continue
+        if item.kind == "text":
+            body = item.body.strip()
+            if body:
+                lines.extend(("", body))
+        elif item.kind == "tool":
+            outcome = "running" if item.ok is None else ("ok" if item.ok else "FAILED")
+            arg = f" {item.arg}" if item.arg else ""
+            detail = f": {_clip(item.detail, 80)}" if item.detail else ""
+            lines.append(f"  [{outcome}] {item.name}{arg}{detail}")
+        else:  # commit / marker / done
+            body = (item.body or item.detail).strip()
+            if body:
+                lines.append(f"  {body}")
+    if len(lines) == 1:
+        lines.append("(nothing has happened since)")
+    return "\n".join(lines)

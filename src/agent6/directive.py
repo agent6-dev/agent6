@@ -189,4 +189,5 @@ STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
     "/parallel": "fan out lanes: /parallel [N|models] <task> (repeat to queue more)",
+    "/restate": "restate the conversation since your last message (local, no model call)",
 }
