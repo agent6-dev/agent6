@@ -574,3 +574,41 @@ def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
     presets = filled["presets"]
     assert isinstance(presets, dict)
     assert "myteam" in presets
+
+
+def test_config_path_lists_every_directory_agent6_writes_to(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Four XDG bases each holding a different thing is correct and
+    unguessable, so one command answers "where did agent6 put that": the
+    config/repo/secrets files plus every directory, this repo's state dir
+    included."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(iso / "st"))
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(iso / "dt"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(iso / "ch"))
+    assert _run(["config", "path"]) == 0
+    out = capsys.readouterr().out
+    for label in ("global config", "repo config", "secrets", "config dir", "cache"):
+        assert f"{label}" in out
+    assert str(iso / "st") in out  # state base
+    assert str(resolved_state_dir(iso)) in out  # this repo's own dir
+    assert str(iso / "dt" / "skills") in out
+    assert str(iso / "ch") in out
+
+
+def test_top_level_help_names_the_directories(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Discoverable without knowing `config path` exists: `agent6 --help` ends
+    with the four XDG dirs, resolved, and points at the fuller listing."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(iso / "st"))
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(iso / "dt"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(iso / "ch"))
+    with pytest.raises(SystemExit) as exc:
+        _run(["--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "directories" in out
+    assert str(iso / "g") in out and str(iso / "st") in out
+    assert str(iso / "dt") in out and str(iso / "ch") in out
+    assert "agent6 config path" in out

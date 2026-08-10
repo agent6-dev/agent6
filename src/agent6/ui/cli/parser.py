@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 
 from agent6 import __version__
+from agent6.paths import cache_dir, data_dir, effective_user, global_config_path, state_base
 from agent6.ui.cli._common import _sub
 from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
 from agent6.ui.cli._machine_args import _add_machine_parser
@@ -84,8 +85,40 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
     return [*argv[: ci + 1], default_verb, *rest]
 
 
+def _directories_epilog() -> str:
+    """Where agent6 keeps things, resolved, for the bottom of `--help`.
+
+    Four XDG bases each holding a different kind of thing is correct and
+    unguessable; naming them here is the difference between "where did my run
+    history go" and reading the docs. Paths only (no file contents), and each
+    is a plain env/home lookup, so building the parser stays cheap.
+    """
+    user = effective_user()
+    rows = (
+        ("config", global_config_path(user).parent, "config.toml, secrets.toml (0600)"),
+        ("state", state_base(user), "per-repo run history, notes, memories, reviews"),
+        ("data", data_dir(user), "installed skill packs (skills/)"),
+        ("cache", cache_dir(user), "regenerable model lists"),
+    )
+    width = max(len(str(p)) for _n, p, _w in rows)
+    lines = [f"  {name:<6} {path!s:<{width}}  {what}" for name, path, what in rows]
+    return "\n".join(
+        [
+            "directories (XDG; override each with AGENT6_<NAME>_HOME):",
+            *lines,
+            "",
+            "`agent6 config path` adds this repo's own state dir and the config files.",
+        ]
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
-    parser = argparse.ArgumentParser(prog="agent6", description="Sandboxed coding agent.")
+    parser = argparse.ArgumentParser(
+        prog="agent6",
+        description="Sandboxed coding agent.",
+        epilog=_directories_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"agent6 {__version__}")
     parser.add_argument(
         "--config",

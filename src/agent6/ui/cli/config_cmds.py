@@ -31,6 +31,7 @@ from agent6.config.layer import (
     materialize,
     preset_catalog,
     repo_config_path_for,
+    resolved_state_dir,
 )
 from agent6.config.write import (
     keep_or_rollback,
@@ -50,11 +51,14 @@ from agent6.machine import (
 )
 from agent6.models import registry as models_registry
 from agent6.paths import (
+    cache_dir,
     chown_to_real_user,
+    data_dir,
     effective_user,
     global_config_path,
     mkdir_for_real_user,
     secrets_path,
+    state_base,
 )
 from agent6.portable import atomic_write, locked_file
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
@@ -83,13 +87,26 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") 
 
 
 def _cmd_config_path() -> int:
+    """Every file and directory agent6 reads or writes, resolved.
+
+    The four XDG bases each hold a different kind of thing and each has its
+    own override, so "where did agent6 put that" was four lookups across the
+    docs. One command answers it; `agent6 --help` carries the short form."""
     user = effective_user()
-    gp = global_config_path(user)
-    rp = repo_config_path_for(Path.cwd())
-    sp = secrets_path(user)
-    for label, p in (("global config", gp), ("repo config  ", rp), ("secrets      ", sp)):
-        note = "" if p.is_file() else "  (not present)"
-        print(f"{label}: {p}{note}")
+    rows: list[tuple[str, Path, bool]] = [
+        ("global config", global_config_path(user), True),
+        ("repo config", repo_config_path_for(Path.cwd()), True),
+        ("secrets", secrets_path(user), True),
+        ("config dir", global_config_path(user).parent, False),
+        ("state (all repos)", state_base(user), False),
+        ("state (this repo)", resolved_state_dir(Path.cwd()), False),
+        ("skills", data_dir(user) / "skills", False),
+        ("cache", cache_dir(user), False),
+    ]
+    width = max(len(label) for label, _p, _f in rows)
+    for label, p, is_file in rows:
+        present = p.is_file() if is_file else p.is_dir()
+        print(f"{label:<{width}}: {p}{'' if present else '  (not present)'}")
     return 0
 
 
