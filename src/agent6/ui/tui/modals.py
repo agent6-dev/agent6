@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Modal screens for the agent6 TUI: approval (y/n), steer (free text), and
-question (selectable options + free text).
+"""Modal screens for the agent6 TUI: approval (y/n), steer (free text),
+question (selectable options + free text), and history search (pick a past
+message to edit).
 
 These are pure textual widgets, they take a prompt and `dismiss()` a result.
 The app wires the result back through the file bridge (see frontend.approval); nothing
@@ -25,6 +26,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
 
+from agent6.ui.tui.widgets import TypeaheadField
 from agent6.viewmodel.state import Question
 
 # Uniform arrow-key focus navigation for every consequential modal: Tab already
@@ -304,6 +306,51 @@ class TextInputModal(ModalScreen[str | None]):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class HistorySearchModal(ModalScreen[str | None]):
+    """Ctrl-R: pick one of this session's past messages to edit and resend.
+    Type to narrow, ↓/↑ highlight, Enter keeps the highlighted match (the
+    typed text when none is highlighted); Esc or a backdrop click cancels.
+    Picking is never consequential -- sending still takes Enter in the
+    composer -- so unlike the consequential prompts above, the backdrop
+    closes it."""
+
+    DEFAULT_CSS = """
+    HistorySearchModal { align: center middle; }
+    #hs-box {
+        width: 80%; max-width: 100; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #hs-field { margin-top: 1; }
+    """
+
+    BINDINGS: ClassVar = [
+        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("enter", "submit", "Use", show=False),
+    ]
+
+    def __init__(self, entries: list[str]) -> None:
+        super().__init__()
+        self._entries = entries
+
+    def compose(self) -> ComposeResult:
+        with Container(id="hs-box"):
+            yield Static(Text("search this session's messages", style="bold"))
+            yield TypeaheadField("", self._entries, id="hs-field")
+
+    def on_mount(self) -> None:
+        self.query_one("#hs-field", TypeaheadField).focus()
+
+    def on_click(self, event: events.Click) -> None:
+        if event.widget is self:  # click on the backdrop (outside the box) = cancel
+            self.dismiss(None)
+
+    def action_submit(self) -> None:
+        self.dismiss(self.query_one("#hs-field", TypeaheadField).value or None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)

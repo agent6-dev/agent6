@@ -74,7 +74,12 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
-from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
+from agent6.ui.tui.conversation import (
+    RUN_MENU,
+    ConversationScreen,
+    SteerInput,
+    open_history_search,
+)
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
@@ -247,6 +252,7 @@ class DashboardScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("ctrl+d", "toggle_dashboard", "Conversation", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
+        Binding("ctrl+r", "history_search", "History", priority=True),
         Binding("escape", "to_hub", "Back", key_display="Esc", priority=True),
         Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
         Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
@@ -336,6 +342,9 @@ class DashboardScreen(Screen[None]):
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
         self._tui.submit_instruction(message.text)
+
+    def action_history_search(self) -> None:
+        open_history_search(self, self.query_one("#dash-input", SteerInput), self._tui.logs_path)
 
     def action_toggle_dashboard(self) -> None:
         self._tui.action_toggle_dashboard()

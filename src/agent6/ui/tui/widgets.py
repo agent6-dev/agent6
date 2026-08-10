@@ -351,7 +351,9 @@ class TypeaheadField(Widget, can_focus=True):
             total = sum(1 for m in self._all if q in m.lower())
             for i, m in enumerate(matches):
                 out.append("\n")
-                row = Text(f"  {m}")
+                # One row per match even for long entries (history search offers
+                # whole steers): the value stays intact, only the display clips.
+                row = Text(f"  {m}", no_wrap=True, overflow="ellipsis")
                 row.pad_right(max(0, width - row.cell_len))
                 if i == self._index:
                     row.stylize(bar)

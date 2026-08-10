@@ -27,7 +27,7 @@ import os
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from rich.text import Text
 from textual import events
@@ -53,15 +53,17 @@ from agent6.ui.tui.menubar import (
     MenuItem,
     menu_bindings,
 )
+from agent6.ui.tui.modals import HistorySearchModal
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SESSION_START_EVENTS
-from agent6.viewmodel.tail import LogTail
+from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
     THINK,
     TranscriptFold,
     TranscriptItem,
+    operator_inputs,
 )
 from agent6.viewmodel.transcript_style import DetailLevel, StyleName, item_lines
 
@@ -175,6 +177,7 @@ _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls inter
 RUN_MENU = Menu(
     "Run",
     (
+        MenuItem("Search past messages…", "history_search", "ctrl+r"),
         MenuItem("Compact context now", "compact"),
         MenuItem("Stop after this step", "stop_step"),
         MenuItem("Stop now", "stop_now"),
@@ -242,6 +245,29 @@ class SteerInput(TextArea):
         current = self.styles.height
         if current is None or current.value != height:  # only relayout on a real change
             self.styles.height = height
+
+
+def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path) -> None:
+    """Ctrl-R on a composer: pick one of this session's past messages (the
+    task, then every steer -- journal-read, so resumes and other surfaces'
+    steers appear) into *field* for editing. Newest first, flattened to one
+    line each, repeats collapsed: the same list every surface's search shows."""
+    if not field.display:
+        screen.notify("this view has no composer to fill", severity="warning")
+        return
+    recorded = operator_inputs(tail_events(logs_path, follow=False))
+    entries = list(dict.fromkeys(" ".join(t.split()) for t in reversed(recorded)))
+    if not entries:
+        screen.notify("no past messages this session yet", severity="warning")
+        return
+
+    def fill(text: str | None) -> None:
+        if text:
+            field.load_text(text)
+            field.move_cursor(field.document.end)
+            field.focus()
+
+    screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
 class _ConvCommands(Provider):
@@ -340,6 +366,7 @@ class ConversationScreen(Screen[None]):
         Binding("ctrl+c", "copy", "Copy", priority=True),
         # The thinking/tool-detail cycle: none -> collapsed -> expanded.
         Binding("ctrl+t", "cycle_detail", "Detail", priority=True),
+        Binding("ctrl+r", "history_search", "History", priority=True),
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
         Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
         Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
@@ -700,6 +727,9 @@ class ConversationScreen(Screen[None]):
             request_steer(session_dir)
             write_steer_answer(session_dir, message.text)
             self.notify("steering this session…")
+
+    def action_history_search(self) -> None:
+        open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)
 
     # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:
