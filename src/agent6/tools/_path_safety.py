@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -91,14 +92,25 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
     if ".." in rel_path.parts:
         raise ToolError(f"Path contains '..': {rel_path}")
     dir_fd = os.open(root, os.O_PATH | os.O_DIRECTORY)
+    at = "."  # the component the walk is on, for the error path below
     try:
-        for name in rel_path.parts[:-1]:
-            child = _open_dir(dir_fd, name, create=create_parents)
+        for at in rel_path.parts[:-1]:
+            child = _open_dir(dir_fd, at, create=create_parents)
             os.close(dir_fd)
             dir_fd = child
         # The root itself is the one path with no leaf to name.
-        return os.open(rel_path.name or ".", flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+        at = rel_path.name or "."
+        return os.open(at, flags | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
     except NotADirectoryError as exc:
+        # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP:
+        # without this probe, a component swapped for a symlink mid-walk (the
+        # race this walk exists to contain) read as the bland message below.
+        # One lstat, on the error path only.
+        with contextlib.suppress(OSError):
+            if stat.S_ISLNK(os.lstat(at, dir_fd=dir_fd).st_mode):
+                raise ToolError(
+                    f"Path became a symlink while it was being used: {rel_path}"
+                ) from exc
         raise ToolError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
         if exc.errno == errno.ELOOP:

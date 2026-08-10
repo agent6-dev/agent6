@@ -347,8 +347,10 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
     in that window listed a host directory straight back to the model
     (`{'entries': ['host-only.txt']}`, measured).
 
-    The walk refuses a swapped component as "not a directory": with
-    ``O_DIRECTORY``, ``O_NOFOLLOW`` on a symlink is ``ENOTDIR``, not ``ELOOP``.
+    The walk refuses a swapped component: with ``O_DIRECTORY``, ``O_NOFOLLOW``
+    on a symlink is ``ENOTDIR`` (not ``ELOOP``), and the ENOTDIR path probes
+    the component so the refusal names the swap rather than a bland "not a
+    directory".
     """
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
@@ -358,7 +360,7 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
 
     _swap_after_resolve(root, outside, monkeypatch)
     d = _dispatcher(root)
-    with pytest.raises(ToolError, match="not a directory"):
+    with pytest.raises(ToolError, match="became a symlink"):
         d.dispatch("list_dir", {"path": "sub"})
     assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
 
@@ -382,7 +384,7 @@ def test_a_directory_swapped_after_the_check_is_not_walked(
 
     _swap_after_resolve(root, outside, monkeypatch)
     d = _dispatcher(root)
-    with pytest.raises(ToolError, match="not a directory"):
+    with pytest.raises(ToolError, match="became a symlink"):
         d.dispatch("grep", {"path": "sub", "pattern": "NEEDLE"})
     assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
 
@@ -576,3 +578,26 @@ def test_injection_in_file_body_is_returned_inert(tmp_path: Path, body: str) -> 
     out = d.dispatch("read_file", {"path": "evil.md"}).to_wire()
     assert out["content"] == body
     assert out["size"] == len(body)
+
+
+def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(tmp_path: Path) -> None:
+    """O_NOFOLLOW|O_DIRECTORY on a symlinked component fails ENOTDIR on Linux
+    (not ELOOP), so the parent swap this walk exists to contain read as the
+    bland "Path component is not a directory" -- hiding the one fact an
+    operator acts on. One lstat, on the error path only, names it; an honest
+    non-directory component keeps the plain message."""
+    from agent6.tools._path_safety import read_contained
+
+    root = tmp_path / "ws"
+    (root / "sub").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "f.txt").write_text("HOST", encoding="utf-8")
+    _swap_parent_for_a_link_out(root, outside)
+
+    with pytest.raises(ToolError, match="became a symlink"):
+        read_contained(root, Path("sub/f.txt"))
+
+    (root / "plain").write_text("file", encoding="utf-8")
+    with pytest.raises(ToolError, match="not a directory"):
+        read_contained(root, Path("plain/f.txt"))
