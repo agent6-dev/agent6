@@ -452,9 +452,17 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
     deadline = time.monotonic() + _SWEEP_DEADLINE_S
     with _sweep_lock:
         while True:
+            children = _own_children()
+            # Prune the live-launcher set against reality first. A launcher we
+            # started is by definition our child, so a pid that is no longer
+            # one cannot be a live launcher -- and leaving it behind means the
+            # NEXT process to get that pid is skipped by the sweep. Derived
+            # rather than discarded per call site: every caller remembering to
+            # clean up is the bug, not the instance.
+            _live_launchers.intersection_update(children)
             escapees = {
                 pid
-                for pid, session in _own_children().items()
+                for pid, session in children.items()
                 if session != our_session
                 and pid not in exclude
                 and pid not in _live_launchers

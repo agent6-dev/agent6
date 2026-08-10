@@ -222,3 +222,27 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
     finally:
         proc.kill()
         proc.wait(timeout=10)
+
+
+def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
+    """The escapee sweep skips pids in `_live_launchers`. Every transport that
+    adds one used to have to remember to remove it -- and the MCP one did not,
+    so a dead server's pid stayed shielded and the NEXT process handed that pid
+    would have survived a sweep. The set is pruned against our real children
+    instead, so forgetting is no longer possible."""
+    from agent6.sandbox import jail as jail_mod
+
+    argv = ("/usr/bin/python3", "-c", "pass")
+    policy = jail_policy(tmp_path, Config(), "strict", argv)
+    proc = spawn_in_jail(
+        policy,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    pid = proc.pid
+    live = jail_mod._live_launchers  # pyright: ignore[reportPrivateUsage]
+    assert pid in live
+    proc.wait(timeout=20)
+    jail_mod._kill_escapees(frozenset())  # pyright: ignore[reportPrivateUsage]
+    assert pid not in live, "a dead launcher still shields its pid from the sweep"
