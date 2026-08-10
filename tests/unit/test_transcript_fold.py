@@ -440,3 +440,11 @@ def test_tool_items_carry_bounded_previews() -> None:
     assert tools[0].tail == "def f():\n    return 1\n…(961 lines)"
     assert tools[1].tail == "- return 1\n+ return 2\n…(+1 more edit)"
     assert tools[2].tail == ""  # an old journal: no preview fields, no tail
+
+
+def test_salient_arg_is_always_one_line() -> None:
+    """A multi-line arg value (a raw-arguments blob with embedded newlines)
+    split the tool head across lines on every skin; the clip flattens
+    whitespace so the head stays one line."""
+    arg = salient_arg({"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'})
+    assert "\n" not in arg

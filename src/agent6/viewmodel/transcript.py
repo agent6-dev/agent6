@@ -151,6 +151,10 @@ _PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "t
 
 
 def _clip(text: str, n: int = 60) -> str:
+    # One LINE by contract: every caller puts the clip on a single rendered
+    # line, and an embedded newline (a multi-line arg value) split the tool
+    # head in two on every skin.
+    text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "…"
 
 
@@ -168,12 +172,14 @@ def _call_preview(name: str, args: Any) -> str:
         return ""
     old = str(first.get("old_string", ""))
     new = str(first.get("new_string", ""))
-    lines = [f"- {ln}" for ln in old.splitlines()[:3]]
-    lines += [f"+ {ln}" for ln in new.splitlines()[:3]]
+    # Per-LINE clips: the preview is multi-line by design (the tail renders
+    # line-structured), while _clip's one-line contract caps each row.
+    lines = [_clip(f"- {ln}", 120) for ln in old.splitlines()[:3]]
+    lines += [_clip(f"+ {ln}", 120) for ln in new.splitlines()[:3]]
     more = len(edits) - 1
     if more > 0:
         lines.append(f"…(+{more} more edit{'' if more == 1 else 's'})")
-    return _clip("\n".join(lines), 400)
+    return "\n".join(lines)
 
 
 def salient_arg(args: Any) -> str:
