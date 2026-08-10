@@ -12,9 +12,13 @@ these checks warn or refuse instead of pretending.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
+from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
 from agent6.sandbox.detect import Environment
+from agent6.sandbox.jail import unreachable_tools
 from agent6.types import IsolationLevel
 
 
@@ -81,6 +85,14 @@ def warn_sandbox_gaps(
             "and provider-only agent egress, or set sandbox.tool_network = "
             "'block' to refuse rather than run here."
         )
+    if isolation in ("strict", "hardened"):
+        for tool in unreachable_tools():
+            reporter.err(
+                f"[agent6] WARNING: tool {tool} resolves into a dir that is never"
+                " mounted into the jail ($HOME itself, or agent6's private dirs),"
+                " so it will not run inside sandboxed commands. Move the target"
+                " into its own subdirectory."
+            )
 
 
 def check_protect_git_support(
@@ -109,6 +121,47 @@ def check_protect_git_support(
         " could only provide it by refusing every write at the workspace root."
         " Set sandbox.protect_git = false to run here, or use strict."
     )
+
+
+def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+    """A refusal message when hiding cannot be honored on this isolation, else
+    None.
+
+    Hiding is a mount-namespace mask, so `hardened` (Landlock has no deny
+    rules) cannot honor a hidden path that sits inside a granted region -- the
+    workspace or an extra grant. Leaving it readable would be silently
+    ineffective security, so refuse instead, naming the pair. Hidden means
+    agent6's own config/state/data/cache dirs plus `[sandbox].hide_paths`.
+
+    A hidden path nothing grants is trivially satisfied (Landlock never
+    granted it), so ordinary hardened runs are untouched. `none` has no jail
+    at all; its blanket unsandboxed warning covers this too.
+    """
+    if isolation != "hardened":
+        return None
+    sb = cfg.sandbox
+    regions = (
+        Path.cwd(),
+        *(Path(p) for p in (*sb.extra_read_paths, *sb.extra_write_paths)),
+    )
+    hidden = (
+        *(Path(p) for p in sb.hide_paths),
+        global_config_dir(),
+        state_base(),
+        data_dir(),
+        cache_dir(),
+    )
+    for region in regions:
+        for h in hidden:
+            if h.is_relative_to(region):
+                return (
+                    f"{str(h)!r} must stay hidden from jailed commands"
+                    " (agent6-private, or sandbox.hide_paths) but sits inside"
+                    f" {str(region)!r}, which they can read. Masking it needs the"
+                    " mount namespace only 'strict' has: use strict, or move one"
+                    " of the two."
+                )
+    return None
 
 
 def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:

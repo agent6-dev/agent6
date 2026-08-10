@@ -92,16 +92,8 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     just installed is picked up (dirs under a mounted system root only join PATH;
     dirs outside it, and the real dirs symlinks resolve out to, also need the
     RO+exec mount)."""
-    home = Path.home()
-    candidates = (
-        Path("/usr/local/bin"),
-        Path("/usr/local/sbin"),
-        home / ".local/bin",
-        home / ".cargo/bin",
-        Path("/opt/homebrew/bin"),
-        Path("/snap/bin"),
-    )
     path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
+    candidates = _tool_bin_dirs()
     mounts: set[Path] = set()
     for d in candidates:
         if not d.is_dir():
@@ -127,11 +119,47 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     # jail sees such a venv "linked to a non-existent interpreter" and an
     # in-jail `uv run` deletes and recreates the operator's .venv.
     # Mount-only, never a PATH entry.
-    data_home = Path(os.environ.get("XDG_DATA_HOME") or home / ".local/share")
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
     uv_pythons = data_home / "uv" / "python"
     if uv_pythons.is_dir():
         mounts.add(uv_pythons)
     return ":".join(path_dirs), tuple(sorted(mounts))
+
+
+def _tool_bin_dirs() -> tuple[Path, ...]:
+    """The bin dirs scanned for operator-installed tools (PATH + mounts)."""
+    home = Path.home()
+    return (
+        Path("/usr/local/bin"),
+        Path("/usr/local/sbin"),
+        home / ".local/bin",
+        home / ".cargo/bin",
+        Path("/opt/homebrew/bin"),
+        Path("/snap/bin"),
+    )
+
+
+def unreachable_tools() -> tuple[str, ...]:
+    """Bin-dir symlinks whose real target's dir is never mounted
+    (`_never_mounted`: $HOME itself, or agent6's private dirs), so the tool
+    resolves to nothing inside the jail. For the once-per-run preflight
+    warning; the mount refusal itself stays silent and absolute."""
+    dropped: list[str] = []
+    for d in _tool_bin_dirs():
+        try:
+            entries = list(d.iterdir()) if d.is_dir() else []
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.is_symlink():
+                continue
+            try:
+                real = entry.resolve()
+            except OSError:
+                continue
+            if real.is_file() and not _under_system_root(real) and _never_mounted(real.parent):
+                dropped.append(f"{entry} -> {real}")
+    return tuple(sorted(dropped))
 
 
 def jail_search_path() -> str:
@@ -197,6 +225,15 @@ def _policy_to_json(policy: JailPolicy) -> str:
             "extra_rw_paths": [str(p) for p in policy.extra_rw_paths],
             "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
             "tool_paths": [str(p) for p in policy.tool_paths],
+            # The builtin private set is unioned HERE, the one serialization
+            # choke point, so no policy constructor can omit it: secrets and
+            # state never enter the jail even under a $HOME-wide grant. A
+            # policy grant BENEATH a hidden root is re-bound through the mask
+            # by the launcher (the machine data contract).
+            "hide_paths": sorted(
+                {str(p) for p in policy.hide_paths}
+                | {str(global_config_dir()), str(state_base()), str(data_dir()), str(cache_dir())}
+            ),
             "timeout_s": policy.timeout_s,
             "memory_limit_mb": policy.memory_limit_mb,
         }
