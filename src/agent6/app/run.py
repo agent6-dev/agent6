@@ -439,107 +439,96 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if worker_lock_fd is None:
         reporter.err(SINGLE_WRITER_BUSY.format(rid=effective_session_id))
         return 2
-    # Drop stale approve/ask/steer answers from a prior session (the
-    # id counters reset on resume, so an old answer must not be read instead of
-    # re-prompting; dead front-end claims are pruned by the liveness probe).
-    clear_pending_answers(layout.session_dir)
-    if initial_steer.strip():
-        request_steer(layout.session_dir)
-        write_steer_answer(layout.session_dir, initial_steer.strip())
-    if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
-        clear_away_mode(layout.session_dir)
-    else:
-        apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
-    # Record this worker's pid so `agent6 sessions show` can probe liveness even while
-    # the worker is blocked in a long provider call (which emits no events).
-    write_worker_pid(layout.session_dir, os.getpid())
-
-    # One live run-mode worker per CHECKOUT, not just per run dir: auto-commits
-    # are `git add -A` on whatever HEAD points at, so a second concurrent run
-    # that checks out its own branch makes both workers commit each other's
-    # in-flight edits onto whichever branch won the last checkout. Taken BEFORE
-    # any tree mutation (auto-stash, branch cut). plan/ask are read-only and
-    # skip it. A refused submission is PARKED, not dropped: the manifest saves
-    # the verbatim task and `agent6 resume <id>` starts it once the checkout
-    # frees up.
     repo_lock_fd: int | None = None
-    # Bound before the lock scope so the teardown can report on the run whatever
-    # went wrong inside it.
+    # Bound before the try so its finally can report on the run whatever went
+    # wrong inside it.
     result: SessionResult | None = None
-    if mode == "run":
-        repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
-        if repo_lock_fd is None:
-            holder = repo_writer_holder(layout.state_dir) or "another run"
-            write_session_manifest(
-                layout,
-                session_id=effective_session_id,
-                user_task=task,
-                base_sha=base_sha,
-                base_branch=pre_status.branch if pre_status is not None else "",
-                run_branch=None,
-                cfg=cfg,
-                mode=mode,
-                # The CONFIG preset, not the sandbox one: resume feeds this
-                # back to load_effective, and a sandbox word ("strict") there
-                # made every parked resume die with "unknown preset".
-                effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
-                preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
-                parked_task=task,
-            )
-            reporter.err(
-                f"REFUSING: run {holder!r} is already driving this checkout; a second"
-                " run-mode worker would interleave auto-commits on the one working"
-                f" tree. Your task was parked as run {effective_session_id!r}:\n"
-                f"    agent6 resume {effective_session_id}    (start it once the checkout"
-                " is free)\n"
-                f"or hand it to the live run as an isolated lane by steering"
-                f" {holder!r} with:\n"
-                "    /parallel 1 <the same task>"
-            )
-            clear_worker_pid(layout.session_dir)
-            release_single_writer(worker_lock_fd)
-            return 2
-
-    # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
-    # branch is cut from a clean tree and the agent's per-step auto-commits
-    # (`git add -A`) never swallow the user's pre-existing uncommitted work.
-    # Only `run` makes commits; `plan`/`ask` are read-only (matching the
-    # branch_per_run guard below).
-    # Track an auto-stash so the run-end finalizer can restore or at least report
-    # it; otherwise the user's stashed pre-run work is silently left behind.
     stashed = False
-    base_branch = pre_status.branch if pre_status is not None else ""
-    if mode == "run" and pre_status is not None and not pre_status.is_clean:
-        if cfg.git.auto_stash:
-            try:
-                stash_all(cwd, auto_stash_message(effective_session_id))
-                stashed = True
-            except GitError as exc:
-                reporter.err(f"ERROR: could not auto-stash before run: {exc}")
-                clear_worker_pid(layout.session_dir)
-                release_single_writer(repo_lock_fd)
-                release_single_writer(worker_lock_fd)
-                discard_husk_dir(layout.session_dir)
-                return 2
-        elif cfg.git.require_clean_worktree:
-            dirty = dirty_paths(cwd)
-            listed = "\n".join(f"    {p}" for p in dirty)
-            more = "\n    ..." if len(dirty) >= 10 else ""
-            reporter.err(
-                "REFUSING: working tree is not clean:\n"
-                f"{listed}{more}\n"
-                "Commit, stash, or discard your changes, set [git].auto_stash=true, "
-                "or set [git].require_clean_worktree=false to override."
-            )
-            clear_worker_pid(layout.session_dir)
-            release_single_writer(repo_lock_fd)
-            release_single_writer(worker_lock_fd)
-            discard_husk_dir(layout.session_dir)
-            return 2
-
     run_branch: str | None = None
     detach_requested = False
     try:
+        # Drop stale approve/ask/steer answers from a prior session (the
+        # id counters reset on resume, so an old answer must not be read instead of
+        # re-prompting; dead front-end claims are pruned by the liveness probe).
+        clear_pending_answers(layout.session_dir)
+        if initial_steer.strip():
+            request_steer(layout.session_dir)
+            write_steer_answer(layout.session_dir, initial_steer.strip())
+        if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+            clear_away_mode(layout.session_dir)
+        else:
+            apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
+        # Record this worker's pid so `agent6 sessions show` can probe liveness even while
+        # the worker is blocked in a long provider call (which emits no events).
+        write_worker_pid(layout.session_dir, os.getpid())
+
+        # One live run-mode worker per CHECKOUT, not just per run dir: auto-commits
+        # are `git add -A` on whatever HEAD points at, so a second concurrent run
+        # that checks out its own branch makes both workers commit each other's
+        # in-flight edits onto whichever branch won the last checkout. Taken BEFORE
+        # any tree mutation (auto-stash, branch cut). plan/ask are read-only and
+        # skip it. A refused submission is PARKED, not dropped: the manifest saves
+        # the verbatim task and `agent6 resume <id>` starts it once the checkout
+        # frees up.
+        if mode == "run":
+            repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
+            if repo_lock_fd is None:
+                holder = repo_writer_holder(layout.state_dir) or "another run"
+                write_session_manifest(
+                    layout,
+                    session_id=effective_session_id,
+                    user_task=task,
+                    base_sha=base_sha,
+                    base_branch=pre_status.branch if pre_status is not None else "",
+                    run_branch=None,
+                    cfg=cfg,
+                    mode=mode,
+                    # The CONFIG preset, not the sandbox one: resume feeds this
+                    # back to load_effective, and a sandbox word ("strict") there
+                    # made every parked resume die with "unknown preset".
+                    effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
+                    preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
+                    parked_task=task,
+                )
+                reporter.err(
+                    f"REFUSING: run {holder!r} is already driving this checkout; a second"
+                    " run-mode worker would interleave auto-commits on the one working"
+                    f" tree. Your task was parked as run {effective_session_id!r}:\n"
+                    f"    agent6 resume {effective_session_id}    (start it once the checkout"
+                    " is free)\n"
+                    f"or hand it to the live run as an isolated lane by steering"
+                    f" {holder!r} with:\n"
+                    "    /parallel 1 <the same task>"
+                )
+                return 2
+
+        # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
+        # branch is cut from a clean tree and the agent's per-step auto-commits
+        # (`git add -A`) never swallow the user's pre-existing uncommitted work.
+        # Only `run` makes commits; `plan`/`ask` are read-only (matching the
+        # branch_per_run guard below).
+        if mode == "run" and pre_status is not None and not pre_status.is_clean:
+            if cfg.git.auto_stash:
+                try:
+                    stash_all(cwd, auto_stash_message(effective_session_id))
+                    stashed = True
+                except GitError as exc:
+                    reporter.err(f"ERROR: could not auto-stash before run: {exc}")
+                    discard_husk_dir(layout.session_dir)
+                    return 2
+            elif cfg.git.require_clean_worktree:
+                dirty = dirty_paths(cwd)
+                listed = "\n".join(f"    {p}" for p in dirty)
+                more = "\n    ..." if len(dirty) >= 10 else ""
+                reporter.err(
+                    "REFUSING: working tree is not clean:\n"
+                    f"{listed}{more}\n"
+                    "Commit, stash, or discard your changes, set [git].auto_stash=true, "
+                    "or set [git].require_clean_worktree=false to override."
+                )
+                discard_husk_dir(layout.session_dir)
+                return 2
+
         # A visible branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 sessions diff <id>`, or delete the branch to
         # drop the pointer). The name is the unique run id. Only real `run`
@@ -858,8 +847,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
         return session_exit_code(result)
     finally:
-        # Single owner of worker.pid, egress-broker, and auto-stash
-        # finalization, for EVERY exit path: refusal returns, Ctrl-C during
+        # Single owner of worker.pid, both writer locks, and auto-stash
+        # finalization, for EVERY exit path: preflight refusals, Ctrl-C during
         # verify inference, and setup-window crashes included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.session_dir)
