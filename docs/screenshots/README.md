@@ -38,18 +38,21 @@ framing the product in an unrelated theme's.
   `rsvg-convert` is found) via Textual's headless Pilot -- to "see" the TUI while
   iterating on it, without a terminal. `uv run python docs/screenshots/tui_snapshot.py
   <session_dir> <out.(svg|png)> [screen]`.
-- `hero.sh`: the README hero (`hero.webm` for the site, `hero.gif` for GitHub,
-  which animates a GIF through its image proxy but will not play a webm from
-  another host). Cuts one window out of each of the three BARE recordings
-  (`cli-demo.webm`, `hero-tui.webm`, `hero-web.webm` -- no keystroke toasts, no
-  narration banner) and stitches them into a ~20s tour in one ffmpeg pass.
+- `hero.sh`: the three per-surface heroes (`hero-tui`, `hero-cli`, `hero-web`,
+  each `.webm` for the site plus `.gif` for GitHub, which animates a GIF
+  through its image proxy but will not play a webm from another host). Cuts
+  windows out of the three BARE source recordings (`hero-src-tui.webm` from
+  `hero_run.sh`, `hero-src-cli.webm` from `hero_cli.sh`, `hero-src-web.webm`
+  from `web_demo.sh hero` -- no keystroke toasts, no narration banner) and
+  retimes each onto its target length in one ffmpeg pass per surface.
 - `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
   `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
   headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
   viewports, with an on-page caption banner per step (the browser analogue of
   `keystroke_overlay.py`); `web_demo.sh hero` records the desktop tour with
-  `--no-narration` to `hero-web.webm` for the hero. Each video is trimmed (ffmpeg) to drop the SPA
-  loading-screen head so it opens on the hub, the poster frame shown before play.
+  `--no-narration` to `hero-src-web.webm` for the hero. Each video is trimmed
+  (ffmpeg) to drop the SPA loading-screen head so it opens on the hub, the
+  poster frame shown before play.
   Deterministic, no key, no live LLM. Needs a Playwright-capable Python and
   ffmpeg; point `$WEB_DEMO_PY` at it (see the script header).
 
@@ -92,11 +95,13 @@ screen. The PNGs are captured separately at 1920x1080.
 
 ```sh
 # needs vhs + ttyd + ffmpeg + agent6 on PATH
-bash docs/screenshots/generate.sh        # -> 01-hub.png … tour.webm, hero-tui.webm
+bash docs/screenshots/generate.sh        # -> 01-hub.png … tour.webm
 bash docs/screenshots/cli_demo.sh        # -> cli-demo.webm (replay, no key)
 bash docs/screenshots/machine_demo.sh    # -> machine-demo.webm (replay, no key)
-WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh hero   # -> hero-web.webm
-bash docs/screenshots/hero.sh            # -> hero.webm + hero.gif (needs the three above)
+bash docs/screenshots/hero_run.sh        # -> hero-src-tui.webm (replay, no key)
+bash docs/screenshots/hero_cli.sh        # -> hero-src-cli.webm (replay, no key)
+WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh hero   # -> hero-src-web.webm
+bash docs/screenshots/hero.sh            # -> hero-{tui,cli,web}.webm + .gif (needs the three sources)
 ```
 
 vhs renders through a headless Chromium; on Ubuntu set

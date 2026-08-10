@@ -52,12 +52,12 @@ done
 # `hero` records the desktop tour WITHOUT the narration banner, for the README
 # hero (hero.sh), which carries no overlay of any kind.
 if [ "${1:-}" = "hero" ]; then
-  rm -f "$OUT"/hero-web.webm
-  "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/hero-web.webm" \
+  rm -f "$OUT"/hero-src-web.webm
+  "$PW_PY" docs/screenshots/web_demo.py --url "http://127.0.0.1:$PORT" --out "$OUT/hero-src-web.webm" \
     --mode desktop --no-narration
   rm -rf "$OUT"/_web_desktop_raw
-  [ -s "$OUT/hero-web.webm" ] || { echo "web_demo.sh: failed to produce hero-web.webm" >&2; exit 1; }
-  echo "web_demo: done -> $OUT/hero-web.webm"
+  [ -s "$OUT/hero-src-web.webm" ] || { echo "web_demo.sh: failed to produce hero-src-web.webm" >&2; exit 1; }
+  echo "web_demo: done -> $OUT/hero-src-web.webm"
   exit 0
 fi
 

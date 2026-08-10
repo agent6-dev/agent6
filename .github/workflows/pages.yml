@@ -78,15 +78,19 @@ jobs:
           source .venv/bin/activate
           bash docs/screenshots/generate.sh
 
-      - name: Generate demo videos (machine + CLI)
-        # Both run in replay mode (the default): a real agent6 run whose LLM
+      - name: Generate demo videos (machine + CLI + hero sources)
+        # All run in replay mode (the default): a real agent6 run whose LLM
         # calls are served from the committed cassette by llm_proxy.py, so no
         # API key is needed in CI. Re-recording a cassette (`… record`) is a
-        # local, key-bearing step, never run here.
+        # local, key-bearing step, never run here. hero_run/hero_cli record
+        # two of the three sources hero.sh cuts (the third is the web hero,
+        # from the Playwright step below).
         run: |
           source .venv/bin/activate
           bash docs/screenshots/machine_demo.sh
           bash docs/screenshots/cli_demo.sh
+          bash docs/screenshots/hero_run.sh
+          bash docs/screenshots/hero_cli.sh
 
       - name: Generate web-UI tour videos (Playwright)
         # Drives `agent6 web` in a headless Chromium: the hub tours at desktop +
@@ -104,9 +108,9 @@ jobs:
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_machine_demo.sh
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh hero
 
-      - name: Build the README hero
-        # Cuts the three bare recordings (no keystroke toasts, no narration
-        # banner) into one ~20s tour: out/hero.webm for the site, out/hero.gif
+      - name: Build the per-surface heroes
+        # Cuts the three bare source recordings (no keystroke toasts, no
+        # narration banner) into hero-{tui,cli,web}.webm + .gif -- the .gif
         # for the README, which GitHub animates through its image proxy.
         run: bash docs/screenshots/hero.sh
 

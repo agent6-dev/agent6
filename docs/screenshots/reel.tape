@@ -16,7 +16,7 @@
 # dashboard, and config; short on the hub, help, and the transits back. Inside
 # the run app the composer bar owns plain letters, so only its priority chords
 # (Ctrl+D, Esc) are used. generate.sh exports the seeded AGENT6_* env.
-Output docs/screenshots/out/hero-tui.webm
+Output docs/screenshots/out/tour-raw.webm
 
 Require agent6
 

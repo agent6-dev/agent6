@@ -53,12 +53,11 @@ rm -f "$OUT"/_capture.webm  # the throwaway video from the screenshot pass
 # stay aligned even though the live dashboard records a little fast (it redraws
 # faster than vhs captures at this resolution).
 echo "screenshots: recording reel.tape with vhs"
-rm -f "$OUT/hero-tui.webm"
+rm -f "$OUT/tour-raw.webm"
 vhs docs/screenshots/reel.tape
 python3 docs/screenshots/keystroke_overlay.py \
-  docs/screenshots/reel.tape "$OUT/hero-tui.webm" "$OUT/tour.webm"
+  docs/screenshots/reel.tape "$OUT/tour-raw.webm" "$OUT/tour.webm"
 [ -s "$OUT/tour.webm" ] || { echo "generate.sh: failed to build tour.webm" >&2; exit 1; }
-# The pre-overlay recording is kept, not deleted: it is the TUI segment of the
-# README hero (hero.sh), which carries no keystroke toasts.
+rm -f "$OUT/tour-raw.webm"  # overlay intermediate; hero sources come from hero_run/hero_cli
 
 echo "screenshots: done -> $OUT"
