@@ -921,10 +921,15 @@ function paintRun(cards, s) {
     const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
   };
   // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
-  // cap only when that ledger has traffic.
+  // cap only when that ledger has traffic. The cap re-arms each resume leg, so
+  // the bar meters THIS leg's spend (usd_total - usd_prior_legs) while the cost
+  // figure stays cumulative -- mirrors ui/tui/app.py render_heartbeat; keep in sync.
   const usdCap = b.usd_cap || 0;
-  const usdFrac = usdCap > 0 ? Math.min(1, (b.usd_total || 0) / usdCap) : 0;
-  const usdText = fmtUsd(b.usd_total, b.usd_partial) + (usdCap > 0 ? ' / $' + usdCap : (usdCap === -1 ? ' (unlimited)' : ''));
+  const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
+  const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
+  const usdText = fmtUsd(b.usd_total, b.usd_partial)
+    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / $' + usdCap : ' / $' + usdCap)
+                  : (usdCap === -1 ? ' (unlimited)' : ''));
   cards.budget.appendChild(barRow('cost', usdFrac, usdText));
   if (b.tokens_unmetered) {
     const fbCap = b.tokens_fallback_cap || 0;

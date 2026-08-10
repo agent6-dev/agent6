@@ -755,6 +755,30 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: An
     asyncio.run(scenario())
 
 
+def test_budget_meter_reads_this_legs_spend_not_the_runs_total(tmp_path: Path) -> None:
+    """The cap re-arms each resume leg while usd_total stays cumulative, so
+    dividing the cumulative spend by the CURRENT leg's cap showed a resumed run
+    at "budget: 100%" having used 20% of it."""
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
+            app._handle_event(_ev(type="role.call", role="worker", model="m"))
+            app._handle_event(_ev(type="budget.update", usd_total=2.0, usd_cap=2.5))
+            app._handle_event(_ev(type="loop.resume.start"))
+            app._handle_event(_ev(type="budget.update", usd_total=0.5, usd_cap=2.5))
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "budget: 20%" in top, top
+            assert "$2.50" in top  # the cost figure stays cumulative
+
+    asyncio.run(scenario())
+
+
 def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     """The Run menu's "Compact context now" drops the compact.request marker for
     the run to honor at its next boundary; a finished run refuses (nothing to

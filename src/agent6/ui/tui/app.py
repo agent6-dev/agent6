@@ -539,11 +539,13 @@ class DashboardScreen(Screen[None]):
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         finished = self._end_label(s)
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
-        # Consumption of the binding ledger: metered spend vs usd_cap, plus the
-        # unmetered-token fraction when that ledger has traffic.
+        # Consumption of the binding ledger: THIS leg's metered spend vs its
+        # usd_cap (resume re-arms the cap while usd_total stays cumulative),
+        # plus the unmetered-token fraction when that ledger has traffic.
         budget = ""
         if s.budget.usd_cap > 0:
-            budget = f"   budget: {min(s.budget.usd_total / s.budget.usd_cap, 1.0):.0%}"
+            leg_usd = s.budget.usd_total - s.budget.usd_prior_legs
+            budget = f"   budget: {min(leg_usd / s.budget.usd_cap, 1.0):.0%}"
         if s.budget.tokens_unmetered and s.budget.tokens_fallback_cap > 0:
             unmet = min(s.budget.tokens_unmetered / s.budget.tokens_fallback_cap, 1.0)
             budget += f"   unmetered: {unmet:.0%}"
