@@ -65,6 +65,42 @@ _MCP_PROTOCOL_VERSION = "2024-11-05"
 # response on a server with a few dozen tools.
 _MAX_LINE_BYTES = 8 * 1024 * 1024
 
+# Under the transport cap, a compromised (or buggy) operator-run server can
+# still emit multi-MiB tool descriptions and results. Unbounded, a description
+# rides in EVERY provider request's tools array and a result floods the
+# context: the run breaks every turn instead of degrading. Bound both at this
+# trust boundary; the marker says what was cut. The result cap matches
+# fetch.MAX_BYTES, the largest single payload any built-in tool returns.
+_MAX_INLINE_TEXT_CHARS = 2048  # tool descriptions + error detail
+_MAX_RESULT_CHARS = 1 << 20
+
+
+def _bounded_inline_text(text: str) -> str:
+    if len(text) <= _MAX_INLINE_TEXT_CHARS:
+        return text
+    return text[:_MAX_INLINE_TEXT_CHARS] + " …[agent6: truncated]"
+
+
+def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Degrade an oversized tools/call result instead of flooding the run:
+    keep the text content up to the cap, drop everything else, and say so."""
+    blob = json.dumps(result, ensure_ascii=False, default=str)
+    if len(blob) <= _MAX_RESULT_CHARS:
+        return result
+    content = result.get("content")
+    texts = [
+        c["text"]
+        for c in (content if isinstance(content, list) else ())
+        if isinstance(c, dict) and isinstance(c.get("text"), str)
+    ]
+    note = (
+        f"[agent6: this result was {len(blob)} chars serialized; text content kept up"
+        f" to {_MAX_RESULT_CHARS} chars, everything else dropped]"
+    )
+    kept = "\n".join(texts)[:_MAX_RESULT_CHARS]
+    return {"content": [{"type": "text", "text": f"{note}\n{kept}".rstrip()}]}
+
+
 # Prefix every MCP tool name with this + the server name so collisions
 # with built-in tools (and across servers) are structurally impossible.
 # Sonnet / GPT-4o / Kimi all accept ``[A-Za-z0-9_]+`` tool names of
@@ -308,7 +344,7 @@ class _MCPServer:
             qualified = MCPToolDescriptor(
                 server_name=self.name,
                 tool_name=tname,
-                description=str(desc) if desc is not None else "",
+                description=_bounded_inline_text(str(desc) if desc is not None else ""),
                 input_schema=schema,
             )
             if len(qualified.qualified_name) > _MAX_QUALIFIED_TOOL_NAME_LEN:
@@ -345,10 +381,9 @@ class _MCPServer:
                     for c in content
                     if isinstance(c, dict) and isinstance(c.get("text"), str)
                 ).strip()
-            raise MCPError(
-                f"server {self.name!r} tool {tool_name!r} reported error: {text or '(no detail)'}"
-            )
-        return result
+            detail = _bounded_inline_text(text) or "(no detail)"
+            raise MCPError(f"server {self.name!r} tool {tool_name!r} reported error: {detail}")
+        return _bounded_result(result)
 
     def close(self) -> None:
         """Best-effort shutdown. Idempotent. Never raises.

@@ -306,3 +306,56 @@ def test_a_server_is_not_handed_the_provider_keys(monkeypatch: pytest.MonkeyPatc
     finally:
         mgr.close()
     assert seen == ["MCP_PROBE_TOKEN"], "a server sees only what it named"
+
+
+def test_oversized_descriptions_and_results_degrade_instead_of_breaking_turns() -> None:
+    """LOW finding: under the 8 MiB transport cap, a compromised operator-run
+    server could still emit multi-MiB descriptions (riding in EVERY provider
+    request) and results (flooding the context), breaking every turn. Both are
+    bounded at the trust boundary with a marker."""
+    from agent6.tools.mcp_client import (
+        _MAX_INLINE_TEXT_CHARS,  # pyright: ignore[reportPrivateUsage]
+        _MAX_RESULT_CHARS,  # pyright: ignore[reportPrivateUsage]
+        _bounded_inline_text,  # pyright: ignore[reportPrivateUsage]
+        _bounded_result,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    desc = _bounded_inline_text("d" * (_MAX_INLINE_TEXT_CHARS * 4))
+    assert len(desc) <= _MAX_INLINE_TEXT_CHARS + 40 and "truncated" in desc
+    assert _bounded_inline_text("short") == "short"
+
+    huge = {
+        "content": [
+            {"type": "text", "text": "x" * (_MAX_RESULT_CHARS + 100)},
+            {"type": "image", "data": "A" * 1000},
+        ]
+    }
+    out = _bounded_result(huge)
+    assert len(json.dumps(out)) <= _MAX_RESULT_CHARS + 500
+    (block,) = out["content"]
+    assert block["type"] == "text" and "everything else dropped" in block["text"]
+
+    small = {"content": [{"type": "text", "text": "ok"}]}
+    assert _bounded_result(small) is small
+
+
+def test_an_oversized_echo_result_comes_back_bounded() -> None:
+    """The end-to-end path: a server whose result serializes past the cap
+    reaches the model as one bounded text block, not a context flood."""
+    from agent6.tools.mcp_client import _MAX_RESULT_CHARS  # pyright: ignore[reportPrivateUsage]
+
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=15.0
+            )
+        ],
+    )
+    try:
+        big = "y" * (_MAX_RESULT_CHARS + 10)
+        result = mgr.call(MCP_TOOL_PREFIX + "fake__echo", {"text": big})
+        assert len(json.dumps(result)) <= _MAX_RESULT_CHARS + 500
+        (block,) = result["content"]
+        assert "kept up to" in block["text"]
+    finally:
+        mgr.close()
