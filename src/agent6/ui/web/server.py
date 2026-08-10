@@ -192,6 +192,22 @@ class _IPv6WebServer(WebServer):
     address_family = socket.AF_INET6
 
 
+def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
+    """*payload* with the reasoning fold's idle age filled in from its epoch.
+
+    Server-computed, like the run stream's, so a browser on another machine
+    needs no clock agreement: the client anchors its "working... Ns" timer to
+    (its own now) - age and ticks locally. Anchoring to the frame's ARRIVAL
+    instead showed a state wedged for forty minutes as three seconds of work.
+    """
+    reasoning = payload.get("reasoning") or {}
+    ep = reasoning.get("last_event_ep")
+    if not isinstance(ep, (int, float)):
+        return payload
+    fresh = {**reasoning, "last_event_age_s": max(0.0, time.time() - ep)}
+    return {**payload, "reasoning": fresh}
+
+
 def _bind_host(host: str) -> str:
     """Normalize URL-style bracketed IPv6 literals to socket bind addresses."""
     stripped = host.strip()
@@ -734,7 +750,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             blob = json.dumps(payload, sort_keys=True)
             if blob != prev:
-                if not self._sse_send(payload):
+                # The age is derived at SEND time and deliberately outside the
+                # comparison above: it changes every poll, so including it would
+                # send a frame every poll. The epoch it comes from does not.
+                if not self._sse_send(_with_idle_age(payload)):
                     return
                 prev = blob
                 idle = 0.0
@@ -765,7 +784,7 @@ class _Handler(BaseHTTPRequestHandler):
                     "reason": "worker died",
                     "state": payload["machine"].get("current", ""),
                 }
-                self._sse_send(payload)
+                self._sse_send(_with_idle_age(payload))
                 return
             time.sleep(_MACHINE_POLL_S)
 

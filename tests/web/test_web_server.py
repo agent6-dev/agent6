@@ -963,6 +963,49 @@ def test_sse_run_parked_keeps_streaming(
     assert not eof, "the parked run's stream must stay open for a future resume"
 
 
+def test_sse_machine_frame_carries_the_idle_age(
+    server: tuple[WebServer, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The machine pane anchored its "agent working… Ns" timer to when the FRAME
+    arrived, so a state wedged for forty minutes read as three seconds of work
+    every time one landed. The frame carries a server-computed age, as the run
+    stream's does, and the client ticks from that."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_MACHINE_POLL_S", 0.05)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    capsys.readouterr()
+    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    log = next(inst.glob("states/*/logs.jsonl"), None)
+    if log is None:  # a pure wait/branch machine runs no agent state
+        log = inst / "states" / "0001-work" / "logs.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+    # An event 15 minutes old: the age must report the event's, not the frame's.
+    log.write_text(
+        json.dumps({"type": "role.call", "role": "agent", "model": "m", "ts": time.time() - 900})
+        + "\n",
+        encoding="utf-8",
+    )
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/machine/tiny/events")
+        resp = conn.getresponse()
+        seen = resp.read()
+    finally:
+        conn.close()
+    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+    assert frames, "the machine stream sent no frame"
+    payload = json.loads(frames[0][len(b"data:") :])
+    age = payload["reasoning"]["last_event_age_s"]
+    assert isinstance(age, (int, float)) and age >= 880, f"age reads as fresh: {age}"
+
+
 def test_sse_machine_dead_worker_frame_is_terminal(
     server: tuple[WebServer, int],
     tmp_path: Path,

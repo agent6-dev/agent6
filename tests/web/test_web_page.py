@@ -17,7 +17,7 @@ from agent6.ui.web.page import PAGE_HTML
 
 # sha256 of PAGE_HTML.encode("utf-8"). An edit to page.py, client.js, or
 # styles.css moves it; update it in the same commit as that edit.
-PAGE_SHA256 = "b6a542e98e59fd4d1745ee436769fbd14fde827ce8ac9421bb91865bd1115bdc"
+PAGE_SHA256 = "e6ae8518e4329a743b70f348b254e85a6439c3390f5b6e8b8589efa2a2a13d7f"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:

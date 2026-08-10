@@ -1267,7 +1267,9 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     // pane's rule; the machine snapshot is dir-less, so it reads the fold).
     active: !notRunning && !!r.last_role && !streaming && !r.operator_blocked,
     role: (r.last_role && r.last_role.role) || 'agent',
-    last: Date.now(),
+    // Server-computed age, as the run pane uses: anchoring to this frame's
+    // ARRIVAL showed a state wedged for forty minutes as "working… 3s".
+    last: Date.now() - 1000 * (r.last_event_age_s || 0),
     spin: hbState.spin,
   };
   hbTick();

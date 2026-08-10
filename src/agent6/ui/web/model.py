@@ -324,12 +324,22 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     client echoes it back when answering a prompt: prompt ids reset per state
     (``approval-1`` in every state), so routing an answer to whichever state is
     newest AT POST TIME would misdeliver it if the machine advanced meanwhile.
+
+    Also carries ``last_event_ep``, the epoch of the newest folded event, which
+    is what the stream turns into the age the client's "working… Ns" timer
+    anchors to. The EPOCH rides in the payload rather than the age because the
+    machine stream only sends a frame when the payload changes: an age would
+    differ on every poll and send one every time, while the epoch moves only
+    when something actually happened.
     """
     log = newest_state_log(machine_dir)
     if log is None:
         return {}
-    snap = session_state_as_dict(fold_session(tail_events(log, follow=False)))
+    state = fold_session(tail_events(log, follow=False))
+    snap = session_state_as_dict(state)
     snap["state_dir"] = log.parent.name
+    if state.last_event_ep is not None:
+        snap["last_event_ep"] = state.last_event_ep
     return snap
 
 
