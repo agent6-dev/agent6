@@ -182,6 +182,15 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
     )
     resume_p.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help=(
+            "Interactive resume, like `run -i`: when the model goes quiet the"
+            " run parks for your steer instead of ending."
+        ),
+    )
+    resume_p.add_argument(
         "--steer",
         default="",
         metavar="TEXT",

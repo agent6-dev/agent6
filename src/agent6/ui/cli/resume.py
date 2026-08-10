@@ -26,6 +26,7 @@ def _cmd_resume(
     sandbox_overrides: SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
+    interactive: bool = False,
 ) -> int:
     """Resume a paused/crashed run from its snapshot (see `app.resume`)."""
     return resume_task(
@@ -38,4 +39,5 @@ def _cmd_resume(
         sandbox_overrides=sandbox_overrides,
         preset=preset,
         steer=steer,
+        interactive=interactive,
     )

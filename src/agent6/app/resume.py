@@ -194,6 +194,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     sandbox_overrides: SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
+    interactive: bool = False,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
@@ -606,6 +607,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             wf = Workflow(
                 root=cwd,
                 config=cfg,
+                interactive=interactive,
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),

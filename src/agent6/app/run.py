@@ -510,6 +510,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 root=cwd,
                 config=cfg,
                 standing_goal=standing_goal,
+                interactive=interactive and mode == "run",
                 initial_pins=tuple(pins),
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)

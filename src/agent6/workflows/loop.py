@@ -716,6 +716,11 @@ class Workflow:
     # The operator's standing goal (`run --standing`): seeded as a standing
     # task under the root at run start. "" = none.
     standing_goal: str = ""
+    # An operator is watching and can steer live (a foreground CLI/TUI run or
+    # an interactive resume). A quiet turn then PARKS for a steer instead of
+    # ending: interactively, going quiet is the most normal thing an agent
+    # does, not a failure.
+    interactive: bool = False
     # Plan mode. When ``mode="plan"``, the workflow uses the
     # planning system prompt + plan-mode tool list (no apply_edit /
     # apply_patch; finish_planning replaces finish_session), skips auto-
@@ -2856,14 +2861,14 @@ class Workflow:
             self._emit("loop.question_nudge", iteration=iteration)
             conversation.notice(QUESTION_NUDGE)
             return None
-        # A run with a standing task does not end on going quiet: re-enter the
-        # goal instead (refused on spent budget or a spin, and never in ask
-        # mode, where the prose IS the answer).
-        if self.mode == "run":
-            nudge = self._standing_absorb(state, reason="silent_finish", iteration=iteration)
-            if nudge is not None:
-                conversation.notice(nudge)
-                return None
+        # A quiet run does not have to end: a standing goal re-enters, else an
+        # interactive run parks for a steer (never in ask mode, where the
+        # prose IS the answer).
+        cont = self._quiet_continuation(
+            conversation, state, iteration=iteration, reason="silent_finish"
+        )
+        if cont is not None:
+            return None if isinstance(cont, _NextTurn) else cont
         # In ask mode a prose answer with no tool call is the NORMAL success (the
         # answer IS the text), so end as "answered", not "silent_finish" -- the
         # latter read as a failure diagnostic on a perfectly good answer. run/plan
@@ -3035,11 +3040,11 @@ class Workflow:
                 nudges_max=effective_max_nudges,
             )
             return None
-        if self.mode == "run":
-            nudge = self._standing_absorb(state, reason="went_quiet", iteration=iteration)
-            if nudge is not None:
-                conversation.notice(nudge)
-                return None
+        cont = self._quiet_continuation(
+            conversation, state, iteration=iteration, reason="went_quiet"
+        )
+        if cont is not None:
+            return None if isinstance(cont, _NextTurn) else cont
         self._final_checkpoint(iteration)
         self._emit(
             "session.end",
@@ -4295,6 +4300,63 @@ class Workflow:
         return self._steer_outcome(
             self._maybe_handle_steer(conversation, iteration, state), iteration, state
         )
+
+    def _quiet_continuation(
+        self, conversation: Conversation, state: _LoopState, *, iteration: int, reason: str
+    ) -> SessionResult | _NextTurn | None:
+        """The run-mode continuations for a quiet turn, in priority order: a
+        standing goal re-enters (autonomy first), else an interactive run
+        parks for a steer. Returns _NEXT_TURN to continue the loop, a park's
+        terminal steer verb, or None when neither applies (the caller ends
+        the run as before)."""
+        if self.mode != "run":
+            return None
+        nudge = self._standing_absorb(state, reason=reason, iteration=iteration)
+        if nudge is not None:
+            conversation.notice(nudge)
+            return _NEXT_TURN
+        if self.interactive:
+            parked = self._park_for_steer(conversation, state, iteration=iteration, reason=reason)
+            return _NEXT_TURN if parked is None else parked
+        return None
+
+    def _park_for_steer(
+        self, conversation: Conversation, state: _LoopState, *, iteration: int, reason: str
+    ) -> SessionResult | None:
+        """The interactive turn boundary: the model went quiet, so the run
+        parks -- the SAME in-memory conversation, its snapshot already on
+        disk -- until the operator steers it from any composer or the pause
+        menu. Returns None when a steer (or a bare poke) continued the run,
+        or the steer verb's terminal result. No timeout: parked-until-steered
+        is the point; stop/abort are the exits."""
+        self._log(
+            f"LOOP: parked at iter {iteration} ({reason}) - waiting for your steer"
+            " (any composer or the pause menu; abort ends the run)"
+        )
+        self._emit("loop.parked", iteration=iteration, reason=reason)
+        while True:
+            if self.stop_requested():
+                self.stop_clear()
+                self._emit(
+                    "session.end", reason="steer_abort", iterations=iteration, all_passed=False
+                )
+                return SessionResult(
+                    completed=False,
+                    reason="steer_abort",
+                    summary=f"operator stopped the parked run{self._dirty_tree_note()}",
+                    iterations=iteration,
+                    tool_calls=state.tool_calls,
+                )
+            if self.should_abort():
+                return self._steer_outcome("abort", iteration, state)
+            if self.steer_requested():
+                verb = self._maybe_handle_steer(conversation, iteration, state)
+                if verb is not None:
+                    return self._steer_outcome(verb, iteration, state)
+                # Injected (or a bare poke): the run continues where it parked.
+                self._emit("loop.parked.resumed", iteration=iteration)
+                return None
+            time.sleep(0.5)
 
     def _steer_outcome(
         self, steer_result: str | None, iteration: int, state: _LoopState

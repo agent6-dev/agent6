@@ -6208,3 +6208,54 @@ def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
     assert drafts[1].standing is True
     assert drafts[1].title == "keep hunting bugs"
     assert drafts[1].created_by == "steering"
+
+
+def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -> None:
+    """G: interactively, going quiet is a TURN BOUNDARY. The run parks (same
+    in-memory conversation) and the operator's steer continues it -- no
+    resume leg; an "abort" steer ends it as steer_abort."""
+    steers = iter(["keep going: also cover sub()"])
+    wf = _wf(
+        mode="run",
+        interactive=True,
+        steer_requested=lambda: True,
+        steer_prompt=lambda: next(steers),
+    )
+    conv = Conversation()
+    state = _state(ever_edited=True, verify_ever_passed=True)
+    parked = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    assert parked is None  # steered onward, same conversation
+    wire = conv.to_wire()
+    assert "keep going: also cover sub()" in wire[-1]["content"][0]["text"]
+
+    aborts = iter(["abort"])
+    wf2 = _wf(
+        mode="run",
+        interactive=True,
+        steer_requested=lambda: True,
+        steer_prompt=lambda: next(aborts),
+    )
+    ended = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=4
+    )  # pyright: ignore[reportPrivateUsage]
+    assert ended is not None and ended.reason == "steer_abort"
+
+
+def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() -> None:
+    # Non-interactive: unchanged silent_finish end.
+    wf = _wf(mode="run", interactive=False)
+    ended = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=4
+    )  # pyright: ignore[reportPrivateUsage]
+    assert ended is not None and ended.reason == "silent_finish"
+    # A standing goal outranks the park: autonomy first, the absorb nudge (not
+    # a park) continues the run.
+    curator = MagicMock()
+    curator.nodes.return_value = _standing_nodes()
+    wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
+    conv = Conversation()
+    out = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "Done.", conv, _state(ever_edited=True, verify_ever_passed=True), iteration=4
+    )  # pyright: ignore[reportPrivateUsage]
+    assert out is None
+    assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
