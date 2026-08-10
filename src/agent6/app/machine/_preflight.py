@@ -31,9 +31,9 @@ def machine_network_refusal(
     """A refusal message if this machine's tool-network needs can't be honored.
 
     Layers machine-specific rules on top of `check_network_support` (which
-    handles agent_network=local / tool_network=only_explicit_states on
-    `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
-    rather than silently mis-confine, whenever isolation is *required*: by the
+    handles tool_network=only_explicit_states / block on `hardened`). On
+    `hardened` per-tool isolation is impossible, so we refuse, rather than
+    silently mis-confine, whenever isolation is *required*: by the
     operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
     A networked state under `tool_network` in {"block", "auto"} (both intend no
     tool network) is a config conflict and is refused on any isolation. Returns
@@ -55,8 +55,8 @@ def machine_network_refusal(
                 'a tool state sets allow_network = "allow" but sandbox.tool_network ='
                 f" {tn!r}. The hardened isolation cannot single out one tool's"
                 " network namespace; let tools share the host network with"
-                " sandbox.tool_network = 'allow' and sandbox.agent_network = 'open',"
-                " or run on strict for explicit per-tool egress."
+                " sandbox.tool_network = 'allow', or run on strict for explicit"
+                " per-tool egress."
             )
         return (
             'a tool state sets allow_network = "allow" but sandbox.tool_network ='
@@ -68,8 +68,7 @@ def machine_network_refusal(
             "isolating a machine's tool-state network requires the strict isolation"
             " (a per-tool network namespace); this host supports only 'hardened'."
             " Run on strict, or let tools share the host network with"
-            " sandbox.tool_network = 'allow' (which also requires"
-            " sandbox.agent_network = 'open')."
+            " sandbox.tool_network = 'allow'."
         )
     if has_block and isolation == "hardened":
         return (

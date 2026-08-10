@@ -323,9 +323,8 @@ def run_one(
             os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = name
         if email := req.commit_identity.email:
             os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = email
-    # Confine THIS process's egress per sandbox.agent_network (single-threaded
-    # here, as required by unshare). The engine already validated the combo, but
-    # re-check defensively and fail closed.
+    # The engine already validated the isolation against the config; re-check
+    # defensively and fail closed.
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
@@ -426,9 +425,10 @@ def build_machine_agent_runner(
     """Build the host-side runner an `agent` state uses to drive a confined loop.
 
     The machine engine is a host-netns supervisor; each `agent` state runs in
-    its OWN subprocess (`agent6.ui.cli.machine_agent`) which confines its egress
-    per `sandbox.agent_network` before running the loop (`run_one` above),
-    independently of the engine and of sibling `tool` states. The subprocess is
+    its OWN subprocess (`agent6.ui.cli.machine_agent`) driving the loop
+    (`run_one` above), independently of the engine and of sibling `tool`
+    states. Like every agent process it runs unconfined; the jail bounds the
+    commands it dispatches. The subprocess is
     spawned with a fixed argv (no LLM-derived content) and handed the request via
     a temp file; the operator-authored prompt travels in that file, never on the
     command line. ``timeout_secs`` is enforced by killing the subprocess's whole

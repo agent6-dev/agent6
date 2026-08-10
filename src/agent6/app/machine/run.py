@@ -260,8 +260,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     return 2
                 commit_identity = CommitIdentity(name=name, email=email)
             root = resolved_state_dir(cwd) / "machines" / spec.machine
-            # The engine is a host-netns supervisor; each agent state confines
-            # itself in its own subprocess per sandbox.agent_network.
+            # The engine is a host-netns supervisor; each agent state runs in
+            # its own subprocess.
             agent_runner = build_machine_agent_runner(
                 spec.config,
                 cwd,
