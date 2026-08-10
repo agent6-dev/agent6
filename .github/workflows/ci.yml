@@ -73,6 +73,13 @@ jobs:
           wheel=$(ls dist/agent6-*.whl)
           uv pip install --reinstall "$wheel"
 
+      - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
+        # The jail (and the session network it opens per run) creates user
+        # namespaces, which the default 24.04 AppArmor policy blocks with
+        # `uid_map: Operation not permitted` — same relaxation as the
+        # sandbox-smoke job below.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - run: uv run pytest -ra
 
   sandbox-smoke:
