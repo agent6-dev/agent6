@@ -318,6 +318,22 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # command unwatched, whether it is starting here or resuming -- unless the
     # operator granted this invocation, which lands after the clamp.
     cfg = session_config(cfg, mode, sandbox_overrides)
+    # Refuse an unanswerable run BEFORE anything is created. Refusing after the
+    # session dir and its manifest existed left a run that never started listed
+    # forever, and poisoned its own id: the operator applied the fix the message
+    # names, `--session-id` then answered "already exists, use resume", and
+    # resume found no snapshot. Everything this needs is known here; the clamp
+    # above is the last thing that can change `run_commands`.
+    tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
+    refusal = headless_approval_refusal(
+        cfg,
+        tui_enabled=tui_enabled,
+        away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+        can_ask=frontend.capabilities.can_ask,
+    )
+    if refusal is not None:
+        reporter.err(f"REFUSING: {refusal}")
+        return 2
     try:
         isolation = select_isolation(
             cfg,
@@ -554,16 +570,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             isolation=isolation,
         )
 
-        tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        refusal = headless_approval_refusal(
-            cfg,
-            tui_enabled=tui_enabled,
-            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
-            can_ask=frontend.capabilities.can_ask,
-        )
-        if refusal is not None:
-            reporter.err(f"REFUSING: {refusal}")
-            return 2
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
         # stdin. Skip revision for this run instead.

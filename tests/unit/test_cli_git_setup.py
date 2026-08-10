@@ -193,3 +193,58 @@ def test_init_refuses_without_tty_or_yes(
     assert "ERROR: no input" in capsys.readouterr().err
     assert not (tmp_path / "AGENTS.md").exists()
     assert not (tmp_path / ".gitignore").exists()
+
+
+def test_an_unanswerable_run_creates_no_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused start must leave nothing behind, or it poisons its own id.
+
+    The refusal names the fix (`--auto-approve`); applying it to the same
+    `--session-id` then answered "already exists, use resume", and resume found
+    no snapshot -- the id was unusable. The dir also sat in `agent6 sessions`
+    forever as a run that never ran. Refusing before anything is created is the
+    whole fix, so the pin is on the absence.
+    """
+    from agent6.config.layer import resolved_state_dir
+
+    init_repo(tmp_path)
+    for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(tmp_path), "config", key, value], check=True)
+    (tmp_path / "agent6.toml").write_text(
+        "\n".join(
+            (
+                "[agent6]",
+                "config_version = 1",
+                "[providers.anthropic]",
+                'api_format = "anthropic"',
+                'api_key_env = "ANTHROPIC_API_KEY"',
+                "[models.worker]",
+                'provider = "anthropic"',
+                'model = "x"',
+            )
+        ),
+        encoding="utf-8",
+    )
+    # Committed, so the dirty-tree refusal (which fires FIRST in the old order)
+    # cannot stand in for the one under test.
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "seed"], check=True)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(
+        [
+            "--config",
+            str(tmp_path / "agent6.toml"),
+            "run",
+            "do a thing",
+            "--session-id",
+            "picked-id",
+        ]
+    )
+
+    assert rc == 2
+    assert "needs someone to answer" in capsys.readouterr().err
+    assert not (resolved_state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()

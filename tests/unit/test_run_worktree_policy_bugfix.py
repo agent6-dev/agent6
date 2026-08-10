@@ -28,6 +28,7 @@ from agent6.config import (
     ModelsConfig,
     OpenAIProviderEntry,
     RoleModel,
+    SandboxConfig,
 )
 from agent6.git_ops import status as git_status
 
@@ -55,6 +56,9 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
         },
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
         git=git_cfg,
+        # Answerable, so the worktree policy under test is what refuses: the
+        # `ask` default has nobody to answer it here and is refused first.
+        sandbox=SandboxConfig(run_commands="yes"),
     )
 
 
