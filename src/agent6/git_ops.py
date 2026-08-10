@@ -277,6 +277,44 @@ def is_git_repo(path: Path) -> bool:
     return res.ok and res.stdout.strip() == "true"
 
 
+# One check-ignore per grep, however many files it walks; measured at 0.05s for
+# 1600 paths. A bound so a wedged filesystem cannot hold a read-only tool.
+_CHECK_IGNORE_TIMEOUT_S = 10.0
+
+
+def ignored_paths(repo_root: Path, rel_paths: Sequence[str]) -> frozenset[str]:
+    """Which of *rel_paths* the repo's own ignore rules exclude; empty outside a
+    repo or without git.
+
+    Git's answer, not a hand-rolled matcher and not a fixed `target`/
+    `node_modules` blocklist: `.gitignore` files nest, and the repo already
+    says what is not source. TRACKED files are never reported (git's default),
+    so a checked-in file matching an ignore pattern stays visible.
+
+    The paths ride on stdin, NUL-delimited -- never on argv, and a filename may
+    itself contain a newline. Empty on any failure: the caller then behaves as
+    it did before there was a filter.
+    """
+    if not rel_paths:
+        return frozenset()
+    payload = b"".join(p.encode() + b"\0" for p in rel_paths)
+    try:
+        proc = subprocess.run(
+            (_git(), *git_hardening_flags(), "check-ignore", "-z", "--stdin"),
+            cwd=repo_root,
+            input=payload,
+            capture_output=True,
+            check=False,
+            timeout=_CHECK_IGNORE_TIMEOUT_S,
+        )
+    except (GitError, OSError, subprocess.TimeoutExpired):
+        return frozenset()
+    # rc 1 is "none of them are ignored", not a failure; 128 is "not a repo".
+    if proc.returncode not in (0, 1):
+        return frozenset()
+    return frozenset(p.decode(errors="replace") for p in proc.stdout.split(b"\0") if p)
+
+
 def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
     """True iff any of ``rel_paths`` has uncommitted changes (untracked,
     modified, or staged) versus HEAD, i.e. a path-limited commit of just those

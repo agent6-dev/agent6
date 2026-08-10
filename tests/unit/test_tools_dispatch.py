@@ -908,6 +908,43 @@ def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path
     assert any(h["path"].endswith("ci.yml") for h in dot_hits)
 
 
+def test_grep_skips_what_the_repo_calls_not_source(tmp_path: Path) -> None:
+    """A grep spent its whole 10s deadline inside a gitignored build tree (718MB
+    of Rust `target/` reproduced it), then reported truncated=True over an answer
+    that was already complete -- and matched inside the compiled binaries. The
+    repo's own ignore rules say what is not source; a checked-in file matching
+    one of them is still searched."""
+    import subprocess as sp
+
+    sp.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("build/\n*.log\nkept.log\n", encoding="utf-8")
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "artifact.c").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "src.c").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "kept.log").write_text("needle\n", encoding="utf-8")
+    sp.run(["git", "add", "-f", ".gitignore", "src.c", "kept.log"], cwd=tmp_path, check=True)
+    sp.run(
+        ["git", "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-qm", "init"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
+    assert sorted(h["path"] for h in hits) == ["kept.log", "src.c"]
+
+
+def test_grep_outside_a_repo_searches_everything(tmp_path: Path) -> None:
+    """No repo, no ignore rules: the filter is the repo's answer or nothing at
+    all, never a guess about which directories are build output."""
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "artifact.c").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "src.c").write_text("needle\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
+    assert sorted(h["path"] for h in hits) == ["build/artifact.c", "src.c"]
+
+
 def test_grep_screen_flags_catastrophic_shapes_only() -> None:
     from agent6.tools._grep_safety import (
         _has_nested_unbounded_quantifier as nested,  # pyright: ignore[reportPrivateUsage]

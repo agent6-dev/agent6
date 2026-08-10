@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
+from agent6.git_ops import ignored_paths
 from agent6.tools._agent6_docs import list_agent6_docs, read_agent6_doc
 from agent6.tools._edit_diag import (
     edit_mismatch_error,
@@ -159,11 +160,17 @@ def _walk_contained_files(root: Path, rel_dir: Path) -> Iterator[Path]:
 def _grep_targets(root: Path, sp: SafePath, candidate: str) -> list[Path]:
     """The workspace-relative files a grep of *sp* scans: the visible files
     under the requested directory, or the file named directly -- which is
-    searched even when it is hidden."""
+    searched even when it is hidden.
+
+    A directory walk drops what the repo's own ignore rules exclude. Without
+    it a grep spent its entire wall-clock deadline inside a gitignored build
+    tree and then reported an already-complete answer as truncated."""
     if sp.abs_path.is_file():
         return [sp.rel_path]
     if sp.abs_path.is_dir():
-        return list(_walk_contained_files(root, sp.rel_path))
+        walked = list(_walk_contained_files(root, sp.rel_path))
+        ignored = ignored_paths(root, [str(p) for p in walked])
+        return [p for p in walked if str(p) not in ignored]
     # A walk of a missing path yields nothing, which would render as a
     # confident "searched, no matches"; error like the sibling fs tools.
     raise ToolError(f"No such path: {candidate}")

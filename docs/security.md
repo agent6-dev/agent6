@@ -373,6 +373,12 @@ syscall for hardened), never guessed from the kernel version.
       `push`, `reset --hard`, `commit --amend`, `rebase`,
       `filter-branch`/`filter-repo`, `branch -D`/`--force`, and any `--force`/`-f`
       on a destructive verb.
+    - `ignored_paths` is the one read-only query made on a TOOL's behalf: `grep`
+      asks the repo which walked paths its ignore rules exclude, so it does not
+      spend its deadline inside a build tree. Fixed argv
+      (`check-ignore -z --stdin`) under the same hardening; the paths ride on
+      stdin, NUL-delimited, never on argv. Empty answer outside a repo, so the
+      grep searches everything as it did before.
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
     - `protect_git` (default on) keeps `.git` unwritable under `strict`, which

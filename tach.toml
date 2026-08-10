@@ -269,9 +269,11 @@ path = "agent6.tools"
 # runs.layout + runs.manifest: read_session reads this project's other sessions
 # off disk, which needs the bucket layout and the typed manifest. runs.ipc: the
 # effective command policy (config + the operator's session choice + away-mode)
-# has one owner, and the dispatcher is where it is enforced. All leaf modules
+# has one owner, and the dispatcher is where it is enforced. git_ops: grep asks
+# the repo which paths its ignore rules exclude, and every git invocation in
+# agent6 (with its hardening) belongs to that one module. All leaf modules
 # over the filesystem, so the dependency runs downward.
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.notes", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.git_ops", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.notes", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
