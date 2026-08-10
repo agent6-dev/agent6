@@ -934,6 +934,28 @@ def test_grep_skips_what_the_repo_calls_not_source(tmp_path: Path) -> None:
     assert sorted(h["path"] for h in hits) == ["kept.log", "src.c"]
 
 
+def test_grep_does_not_match_inside_a_binary_file(tmp_path: Path) -> None:
+    """`read_file` refuses a file with NUL bytes and grep matched inside one, so
+    a committed image filled the 500-hit cap with raw bytes -- and the model was
+    handed those bytes plus a `truncated` flag over a complete answer."""
+    (tmp_path / "notes.txt").write_text("needle\n", encoding="utf-8")
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"needle\x00" * 200)
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    out = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()
+    assert [h["path"] for h in out["hits"]] == ["notes.txt"]
+    assert out["truncated"] is False
+
+
+def test_grep_on_a_named_binary_file_says_so(tmp_path: Path) -> None:
+    """Named directly it is an error, the same one `read_file` raises: skipping
+    it silently would answer "searched, no matches" over a file never read.
+    Skipping is only for the files a DIRECTORY walk sweeps up."""
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\x00needle")
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(ToolError, match="binary"):
+        d.dispatch("grep", {"pattern": "needle", "path": "logo.png"})
+
+
 def test_grep_outside_a_repo_searches_everything(tmp_path: Path) -> None:
     """No repo, no ignore rules: the filter is the repo's answer or nothing at
     all, never a guess about which directories are build output."""

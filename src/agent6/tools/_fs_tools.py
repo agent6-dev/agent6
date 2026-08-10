@@ -187,6 +187,9 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     deadline = time.monotonic() + MAX_GREP_WALL_S
     hits: list[dict[str, Any]] = []
     root_resolved = root.resolve()
+    # A binary file NAMED directly is an error, the same one `read_file` raises;
+    # one a directory walk swept up is skipped. Same split as hidden entries.
+    named_file = sp.abs_path.is_file()
     for path in _grep_targets(root, sp, args.path):
         # Contain each target like read_file contains its leaf: the walk yields
         # in-repo symlinks whose destination can be anywhere on the host, and
@@ -205,28 +208,32 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
             # hang the run. Report partial hits rather than stalling.
             return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
         try:
-            for lineno, line in enumerate(
-                read_contained(root, rel, errors="ignore").splitlines(),
-                start=1,
-            ):
-                # Re-check the wall-clock inside the line loop too: the
-                # between-files check alone can't bound a large single file.
-                # (It still can't interrupt one in-progress C-level match —
-                # the static screen above is the defence for that.)
-                if time.monotonic() > deadline:
-                    return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
-                if pat.search(line):
-                    hits.append(
-                        {
-                            "path": str(path),
-                            "line": lineno,
-                            "text": line[:500],
-                        }
-                    )
-                    if len(hits) >= 500:
-                        return GrepResult(hits=tuple(hits), truncated=True)
+            text = read_contained(root, rel, errors="ignore")
         except OSError:
             continue
+        if "\x00" in text:
+            # Raw bytes are not an answer: a committed image filled the hit cap
+            # with them and the model read `truncated` over a complete answer.
+            if named_file:
+                raise ToolError(f"File is binary (contains NUL bytes): {args.path}")
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            # Re-check the wall-clock inside the line loop too: the
+            # between-files check alone can't bound a large single file.
+            # (It still can't interrupt one in-progress C-level match —
+            # the static screen above is the defence for that.)
+            if time.monotonic() > deadline:
+                return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
+            if pat.search(line):
+                hits.append(
+                    {
+                        "path": str(path),
+                        "line": lineno,
+                        "text": line[:500],
+                    }
+                )
+                if len(hits) >= 500:
+                    return GrepResult(hits=tuple(hits), truncated=True)
     return GrepResult(hits=tuple(hits), truncated=False)
 
 
