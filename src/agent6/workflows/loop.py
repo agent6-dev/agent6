@@ -901,6 +901,7 @@ class Workflow:
         """
         if resume_from is not None:
             _restore_completion_state(state, resume_from)
+            self._carry_verify_verdict(state, resume_from)
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
             elided, gists = count_elisions(conversation)
             self._emit("loop.compact.restored", elided=elided, gists=gists)
@@ -915,6 +916,24 @@ class Workflow:
             self._emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
             if state.pins:
                 conversation.notice(pinned_block(state.pins))
+
+    def _carry_verify_verdict(self, state: _LoopState, snap: SessionSnapshot) -> None:
+        """Carry the prior leg's verify observation when it still describes THIS
+        tree: HEAD is the snapshot's and the worktree is clean. An operator
+        commit or edit between legs invalidates it -- fails closed, like the
+        baseline probe, so the leg starts unobserved rather than wrongly green
+        or red. ``baseline_ok`` is about the BASE commit, which resume never
+        moves: it carries unconditionally."""
+        state.baseline_ok = snap.baseline_ok
+        if snap.last_verify_ok is None or not snap.head_sha:
+            return
+        try:
+            status = git_status(self.root)
+        except (GitError, OSError):
+            return
+        if status.is_clean and status.head_sha == snap.head_sha:
+            state.last_verify_ok = snap.last_verify_ok
+            state.edited_since_verify = snap.edited_since_verify
 
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
@@ -3010,7 +3029,10 @@ class Workflow:
     def _verification(self, state: _LoopState) -> Verification:
         """The verify verdict for the SessionResult, from the same tri-state
         `session.end.all_passed` is grounded on, so the result and the event can
-        never disagree.
+        never disagree. Not-green splits on the last observation: "failed"
+        claims someone SAW a red gate, so a leg where no verify ran (or edits
+        landed after the last green) is "unverified" instead -- both exit 4,
+        but only one sends the operator chasing a red that never happened.
 
         Only a run is gated: plan and ask finish clean whatever the tree looks
         like (finish_planning and the ask answer both emit all_passed=True), and
@@ -3020,7 +3042,11 @@ class Workflow:
         if self.mode != "run":
             return "not_applicable"
         green = self._tree_is_verify_green(state)
-        return "not_applicable" if green is None else "passed" if green else "failed"
+        if green is None:
+            return "not_applicable"
+        if green:
+            return "passed"
+        return "failed" if state.last_verify_ok is False else "unverified"
 
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
         """Emit a successful ``session.end``, first auto-passing any still-pending
@@ -3214,6 +3240,9 @@ class Workflow:
             pins=tuple(state.pins),
             metric_best_score=best.score if best is not None else None,
             metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
+            last_verify_ok=state.last_verify_ok,
+            edited_since_verify=state.edited_since_verify,
+            baseline_ok=state.baseline_ok,
             head_sha=self._checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
         )

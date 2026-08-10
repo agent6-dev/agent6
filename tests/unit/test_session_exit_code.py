@@ -59,3 +59,30 @@ def test_exit_code_verified_finish_is_zero() -> None:
     assert (
         session_exit_code(_result(completed=True, reason="settled", verified="not_applicable")) == 0
     )
+
+
+def test_exit_code_unverified_finish_is_four() -> None:
+    """4 means "the tree is not green": a gated finish nothing observed (no
+    verify ran this leg, or edits landed after the last green) exits 4 like a
+    red one -- exiting 0 would let a worker pass by never running the gate."""
+    assert (
+        session_exit_code(_result(completed=True, reason="finish_session", verified="unverified"))
+        == 4
+    )
+
+
+def test_auto_merge_needs_a_vouched_for_tree() -> None:
+    """auto_merge lands only work the gate vouched for (or that had no gate):
+    a red OR unverified finish stays on its branch. The eligibility check is
+    one shared predicate, so run and resume cannot drift."""
+    from agent6.app.finalize import auto_merge_eligible
+
+    assert auto_merge_eligible(_result(completed=True, reason="finish_session", verified="passed"))
+    assert auto_merge_eligible(_result(completed=True, reason="settled", verified="not_applicable"))
+    for bad in ("failed", "unverified"):
+        assert not auto_merge_eligible(
+            _result(completed=True, reason="finish_session", verified=bad)  # pyright: ignore[reportArgumentType]
+        )
+    assert not auto_merge_eligible(
+        _result(completed=False, reason="max_iterations", verified="passed")
+    )

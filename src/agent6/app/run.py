@@ -32,6 +32,7 @@ from agent6.app._setup import (
     start_mcp_manager_if_enabled,
 )
 from agent6.app.finalize import (
+    auto_merge_eligible,
     finalize_auto_merge,
     finalize_auto_stash,
     fire_notify_hook,
@@ -797,10 +798,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             if (
                 not interrupted
                 and result is not None
-                and result.completed
-                # Never auto-merge a red gate: `completed` means the agent
-                # stopped deliberately, not that the work verified.
-                and result.verified != "failed"
+                and auto_merge_eligible(result)
                 and cfg.git.auto_merge
             ):
                 finalize_auto_merge(cwd, layout=layout, cfg=cfg, reporter=reporter)

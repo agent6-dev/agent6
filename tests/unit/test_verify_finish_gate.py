@@ -67,11 +67,22 @@ def _verified(wf: Workflow, **state_kw: Any) -> str:
 def test_verification_carries_the_same_verdict_the_event_does() -> None:
     """SessionResult.verified is the app layer's copy of session.end.all_passed's
     grounding, so exit code, auto-merge, and the notify hook read the verify
-    truth instead of `completed` (true for any deliberate finish)."""
+    truth instead of `completed` (true for any deliberate finish).
+
+    "failed" means someone OBSERVED a red gate. Folding "no verify ran this
+    leg" into it printed "the gate is red" over a gate that never ran and sent
+    the operator to bisect the base commit for a failure that never happened;
+    those finishes are "unverified"."""
     assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=False) == "passed"
     assert _verified(_wf(verify=True), last_verify_ok=False) == "failed"
-    # Green but edited since: stale, not verified.
-    assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=True) == "failed"
+    # Red, then edited without re-verifying: the red observation stands.
+    assert _verified(_wf(verify=True), last_verify_ok=False, edited_since_verify=True) == "failed"
+    # Green but edited since: no observation covers the final tree.
+    assert (
+        _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=True) == "unverified"
+    )
+    # Never observed this leg: not red, not green.
+    assert _verified(_wf(verify=True), last_verify_ok=None) == "unverified"
     # Gateless: nothing ever gated this run, so there is no verdict to claim.
     assert _verified(_wf(verify=False), last_verify_ok=None) == "not_applicable"
 
@@ -114,3 +125,81 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
     # invalidate the pass they just produced.
     assert dirty("run_verify_command") is False
     assert dirty("run_metric_command") is False
+
+
+def _git_seed(tmp_path: Path) -> str:
+    import subprocess as sp
+
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    sp.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
+    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
+    out = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
+    )
+    return out.stdout.strip()
+
+
+def _snap(**kw: Any) -> Any:
+    from agent6.workflows._session_state import SessionSnapshot
+
+    base: dict[str, Any] = {
+        "system": "s",
+        "messages": [],
+        "tool_calls": 0,
+        "next_iteration": 1,
+        "root_task_id": None,
+        "original_task": "t",
+        "verify_command": ("true",),
+    }
+    return SessionSnapshot(**{**base, **kw})
+
+
+def _resumed_state(wf: Workflow, snap: Any) -> _LoopState:
+    from agent6.workflows._conversation import Conversation
+
+    state = _LoopState(original_task="t", tool_calls=0)
+    wf._seed_carryover(state, Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
+    return state
+
+
+def test_a_resumed_leg_carries_the_verify_verdict_over_an_unmoved_tree(tmp_path: Path) -> None:
+    """last_verify_ok was leg-scoped, so resuming a green-finished run and
+    finishing without edits read "unverified" (previously: exit 4 claiming a
+    red gate) over the very tree the gate approved. The verdict carries when
+    HEAD is the snapshot's and the worktree is clean; baseline_ok is about the
+    base commit, which resume never moves, so it always carries."""
+    head = _git_seed(tmp_path)
+    wf = _wf(verify=True, root=tmp_path)
+    snap = _snap(head_sha=head, last_verify_ok=True, edited_since_verify=False, baseline_ok=False)
+    state = _resumed_state(wf, snap)
+    assert state.last_verify_ok is True
+    assert state.edited_since_verify is False
+    assert state.baseline_ok is False
+    assert wf._verification(state) == "passed"  # pyright: ignore[reportPrivateUsage]
+    # A red observation carries the same way: the resumed leg stays answerable.
+    assert _resumed_state(wf, _snap(head_sha=head, last_verify_ok=False)).last_verify_ok is False
+
+
+def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> None:
+    """An operator commit or edit between legs means no observation covers
+    THIS tree: the leg starts unobserved (fails closed, like the baseline
+    probe), never wrongly green or red."""
+    import subprocess as sp
+
+    head = _git_seed(tmp_path)
+    wf = _wf(verify=True, root=tmp_path)
+    green = {"last_verify_ok": True, "edited_since_verify": False, "baseline_ok": True}
+
+    # Worktree dirtied between legs.
+    (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    state = _resumed_state(wf, _snap(head_sha=head, **green))
+    assert state.last_verify_ok is None
+    assert state.baseline_ok is True  # the base commit did not move
+
+    # HEAD moved forward between legs.
+    sp.run(["git", "commit", "-qam", "operator work"], cwd=tmp_path, check=True)
+    assert _resumed_state(wf, _snap(head_sha=head, **green)).last_verify_ok is None
+
+    # No head recorded at write time: nothing to compare against.
+    assert _resumed_state(wf, _snap(head_sha="", **green)).last_verify_ok is None

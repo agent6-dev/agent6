@@ -51,9 +51,13 @@ SessionEndReason = Literal[
 # Whether the verify gate was green when the run ended, on its own axis: a
 # deliberate finish and a verified one are different facts, and collapsing them
 # into ``completed`` made a finish_session over a red verify exit 0 and auto-merge.
+# ``failed`` means a red gate was OBSERVED (the last verify ran and failed);
+# ``unverified`` means a gate exists but no observation covers the final tree
+# (no verify ran this leg, or edits landed after the last green) -- folding that
+# into ``failed`` printed "the gate is red" over a gate that never ran.
 # ``not_applicable`` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
-Verification = Literal["passed", "failed", "not_applicable"]
+Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +172,15 @@ class SessionSnapshot(BaseModel):
     gateless_ever_committed: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
+    # The last verify observation, so a resumed leg is not born amnesiac: a
+    # green finish resumed and finished untouched used to read "unverified"
+    # (and before that, "the gate is red"). Carried into the new leg only when
+    # head_sha still matches a clean worktree (see _carry_verify_verdict);
+    # baseline_ok is about the BASE commit, which resume never moves. Additive
+    # defaults: an older snapshot loads as "nothing observed", exactly its truth.
+    last_verify_ok: bool | None = None
+    edited_since_verify: bool = False
+    baseline_ok: bool | None = None
     # /parallel groups dispatched so far. Run-lifetime, not leg-lifetime: lane
     # ids and their imported branches embed the group number
     # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior

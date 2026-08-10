@@ -84,6 +84,91 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
     assert "passed" in out
 
 
+def _end_output(
+    tmp_path: Path,
+    session_id: str,
+    result: SessionResult,
+    capsys: pytest.CaptureFixture[str],
+    manifest: dict[str, object] | None = None,
+) -> str:
+    layout = _layout(
+        tmp_path,
+        session_id,
+        [
+            {"type": "session.start", "session_id": session_id, "user_task": "t"},
+            {"type": "session.end", "reason": result.reason, "all_passed": False},
+        ],
+    )
+    if manifest is not None:
+        (layout.session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    print_session_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    return capsys.readouterr().out
+
+
+def test_the_red_gate_errand_is_only_printed_over_a_real_red(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ "the gate is red, and nothing checked it before this run started" fired
+    on verified="failed", which used to include legs where NO verify ran: the
+    operator was sent to run the full gate at the base commit over a failure
+    nobody observed. An unverified finish now says what is missing instead."""
+    manifest: dict[str, object] = {
+        "version": 3,
+        "session_id": "r-red",
+        "mode": "run",
+        "user_task": "t",
+        "base_sha": "a" * 40,
+        "workflow": {"verify_command": ["pytest", "-q"], "verify_origin": "configured"},
+    }
+    result = SessionResult(
+        completed=True,
+        reason="finish_session",
+        summary="",
+        iterations=1,
+        tool_calls=1,
+        verified="failed",
+    )
+    out = _end_output(tmp_path, "r-red", result, capsys, manifest)
+    assert "the gate is red" in out
+
+    unverified = SessionResult(
+        completed=True,
+        reason="finish_session",
+        summary="",
+        iterations=1,
+        tool_calls=1,
+        verified="unverified",
+    )
+    out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest)
+    assert "the gate is red" not in out
+    assert "no verify ran this leg" in out
+
+
+def test_the_stale_gate_proposal_survives_an_unverified_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A worker may declare the gate stale because it CANNOT RUN AT ALL -- a
+    leg with no verify observation. Keying the proposal print on
+    verified="failed" alone would silently drop it there."""
+    result = SessionResult(
+        completed=True,
+        reason="gate_stale",
+        summary="",
+        iterations=1,
+        tool_calls=1,
+        stale_gate="pytest -q tests/",
+        verified="unverified",
+    )
+    out = _end_output(tmp_path, "r-stale", result, capsys)
+    assert "it proposes: pytest -q tests/" in out
+
+
 def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -52,16 +52,24 @@ def session_exit_code(result: SessionResult) -> int:
     """Map a finished run to its process exit code.
 
     0 finished (nothing to gate on, or the gate was green) / 3 budget /
-    4 finished over a RED verify / 1 else.
+    4 finished over a not-green verify / 1 else.
 
-    A gate that was already red before the run still exits 4: the tree is not
-    green, and that is what 4 means. WHOSE failure it is shows in the word and
-    the reason, not here -- a script reading 0 would take it as passing."""
+    4 covers red AND unverified: the tree is not green, and that is what 4
+    means -- exiting 0 on "no verify ran" would let a worker pass by never
+    running the gate. WHOSE failure it is shows in the word and the reason,
+    not here; a script reading 0 would take it as passing."""
     if result.completed:
-        return _EXIT_VERIFY_FAILED if result.verified == "failed" else 0
+        return _EXIT_VERIFY_FAILED if result.verified in ("failed", "unverified") else 0
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
+
+
+def auto_merge_eligible(result: SessionResult) -> bool:
+    """auto_merge lands only work the gate vouched for (or that had no gate):
+    a red or unverified finish stays on its branch for the operator. One
+    predicate for both lifecycles, so run and resume cannot drift."""
+    return result.completed and result.verified in ("passed", "not_applicable")
 
 
 def _sandbox_unreachable_tools(layout: SessionLayout) -> list[str]:
@@ -138,6 +146,17 @@ def _print_unknown_baseline(
     reporter.out(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
+def _print_unverified(result: SessionResult, *, layout: SessionLayout, reporter: Reporter) -> None:
+    """A gated finish nothing observed: say what is missing, not "red"."""
+    if result.verified != "unverified":
+        return
+    reporter.out(
+        "\nnothing verified the final tree: no verify ran this leg, or edits landed"
+        " after the last green."
+    )
+    reporter.out(f'  resume and run the gate:  agent6 resume {layout.session_id} --steer "verify"')
+
+
 def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     """Surface a proposed gate replacement, and say plainly that nothing moved.
 
@@ -145,10 +164,12 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     correct work to satisfy it. Applying the proposal is the operator's call,
     so this prints the exact command rather than doing anything.
 
-    Only over a RED gate: a proposal alongside a gate that just passed asks the
-    operator to replace something nothing found fault with.
+    Never over a GREEN gate: a proposal alongside a gate that just passed asks
+    the operator to replace something nothing found fault with. Red and
+    unverified both surface it -- "cannot run at all" is a stale claim from a
+    gate that never produced an observation.
     """
-    if not result.stale_gate or result.verified != "failed":
+    if not result.stale_gate or result.verified not in ("failed", "unverified"):
         return
     reporter.out("\nthe worker says this run's verify gate no longer matches the task:")
     reporter.out(f"  it proposes: {result.stale_gate}")
@@ -201,6 +222,7 @@ def print_session_end(
         reporter.out("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout, reporter=reporter)
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
+    _print_unverified(result, layout=layout, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
     reporter.out(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
