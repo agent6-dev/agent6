@@ -271,14 +271,6 @@ class BackgroundShells:
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
 
 
-def _stopped(raw: str) -> bool:
-    """Whether the outcome record says the command was stopped rather than
-    that it reported an exit code."""
-    with contextlib.suppress(ValueError, IndexError, TypeError):
-        return bool(json.loads(raw.splitlines()[-1]).get("stopped"))
-    return False
-
-
 def roster_from_dir(root: Path) -> list[str]:
     """The run's background commands, read off disk.
 
@@ -304,14 +296,19 @@ def roster_from_dir(root: Path) -> list[str]:
         if not raw:
             lines.append(f"[{d.name}] still running (or the run that owns it ended): {command}")
             continue
-        try:
+        record: object = None
+        with contextlib.suppress(ValueError, IndexError):
             record = json.loads(raw.splitlines()[-1])
-            code = int(record["returncode"])
-        except (ValueError, IndexError, KeyError, TypeError):
+        if not isinstance(record, dict):
+            lines.append(f"[{d.name}] ended without a result: {command}")
+            continue
+        code = record.get("returncode")
+        if isinstance(code, int):
+            lines.append(f"[{d.name}] exited {code}: {command}")
+        elif record.get("stopped"):
             # A stop kills the launcher before it can report a code, so the
             # stopper records THAT rather than inventing a number.
-            word = "stopped" if _stopped(raw) else "ended without a result"
-            lines.append(f"[{d.name}] {word}: {command}")
-            continue
-        lines.append(f"[{d.name}] exited {code}: {command}")
+            lines.append(f"[{d.name}] stopped: {command}")
+        else:
+            lines.append(f"[{d.name}] ended without a result: {command}")
     return lines
