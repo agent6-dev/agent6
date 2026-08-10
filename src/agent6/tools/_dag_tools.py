@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""DAG-as-tool handlers: add_task, update_task, set_cursor, add_dependency,
-list_tasks. All raise ToolError if no curator was wired so standalone
-test instantiation works unchanged."""
+"""DAG-as-tool handlers: add_task, update_task, add_dependency, list_tasks.
+All raise ToolError if no curator was wired so standalone test instantiation
+works unchanged."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
-    SetCursorIntent,
     TaskNodeDraft,
     UpdateStatusIntent,
 )
@@ -22,14 +21,12 @@ from agent6.tools.results import (
     AddDependencyResult,
     AddTaskResult,
     ListTasksResult,
-    SetCursorResult,
     UpdateTaskResult,
 )
 from agent6.tools.schema import (
     DagAddDependencyInput,
     DagAddTaskInput,
     DagListTasksInput,
-    DagSetCursorInput,
     DagUpdateTaskInput,
 )
 
@@ -69,14 +66,6 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     )
     node = curator.update_status(intent)
     return UpdateTaskResult(id=node.id, status=node.status, title=node.title)
-
-
-def set_cursor(curator: GraphCurator | None, raw: dict[str, Any]) -> SetCursorResult:
-    if curator is None:
-        raise ToolError("set_cursor: DAG curator not available in this run")
-    args = DagSetCursorInput.model_validate(raw)
-    curator.set_cursor(SetCursorIntent(id=args.id))
-    return SetCursorResult(cursor=args.id)
 
 
 def add_dependency(curator: GraphCurator | None, raw: dict[str, Any]) -> AddDependencyResult:

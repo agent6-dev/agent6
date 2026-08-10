@@ -109,21 +109,20 @@ takehomes that already ship a metric).
 # time. Aimed at small/open models that lose track of multi-part tasks; a capable
 # model needs neither, which is why this is opt-in (measured per model).
 DAG_RULES_OPTIONAL = """<dag-rules>
-The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-`list_tasks`, `add_dependency`) maintains a persistent task breakdown.
+The DAG-as-tool surface (`add_task`, `update_task`, `list_tasks`,
+`add_dependency`) maintains a persistent task breakdown.
 OPTIONAL - skip it entirely for one-shot fixes, single-file edits, or
 perf-takehome-style "make this number smaller" runs. Use it ONLY when
 the task naturally decomposes into 3+ subtasks worth tracking and
 humans watching the TUI benefit from seeing the breakdown.
 
 When you do use it: `add_task(title, parent_id?)` returns an id;
-`update_task(id, status="in_progress")` when you start a subtask;
+`update_task(id, status="in_progress")` when you start a subtask (this
+also moves the TUI's "current task" pointer);
 `update_task(id, status="passed")` only after verify confirms it.
 `add_dependency(id, depends_on)` when one subtask must land before
 another can start; the harness only surfaces a task once its
-dependencies have passed. `set_cursor(id)` is cosmetic - it updates
-the TUI's "current task" pointer; it is NOT the resume mechanism (the
-workflow snapshots its own state independently before each LLM call).
+dependencies have passed.
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
@@ -198,8 +197,8 @@ in the plan and leave verification for the execution pass.
 - `run_command` is allowed for read-only probes (`ls`, `cat`, `git log`,
   dependency-version checks, etc.). Do not invoke anything that mutates
   the working tree.
-- The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-  `list_tasks`) is exposed and useful as a scratchpad while you plan,
+- The DAG-as-tool surface (`add_task`, `update_task`, `list_tasks`,
+  `add_dependency`) is exposed and useful as a scratchpad while you plan,
   but the FINAL deliverable is the markdown you pass to
   `finish_planning` - not the DAG. The execution run started later via
   `agent6 run --from-plan` will build its own DAG from the plan text.

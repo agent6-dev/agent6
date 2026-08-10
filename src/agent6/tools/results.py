@@ -419,14 +419,6 @@ class UpdateTaskResult(ToolResult):
 
 
 @dataclass(frozen=True, slots=True)
-class SetCursorResult(ToolResult):
-    cursor: str | None
-
-    def to_wire(self) -> dict[str, Any]:
-        return {"acknowledged": True, "cursor": self.cursor}
-
-
-@dataclass(frozen=True, slots=True)
 class AddDependencyResult(ToolResult):
     id: str
     title: str

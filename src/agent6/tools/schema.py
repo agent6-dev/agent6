@@ -372,7 +372,7 @@ class DagAddTaskInput(_ToolInput):
     )
 
     title: str = Field(min_length=1)
-    # ULID is exactly 26 chars, like update_task/set_cursor; None still means
+    # ULID is exactly 26 chars, like update_task; None still means
     # "under the run root". "" silently attached to root before the constraint.
     parent_id: str | None = Field(default=None, min_length=26, max_length=26)
     # A sibling under the same parent; the task lands right after it.
@@ -394,19 +394,6 @@ class DagUpdateTaskInput(_ToolInput):
     id: str = Field(min_length=26, max_length=26)
     status: str = Field(pattern=_STATUS_PATTERN)
     note: str = ""
-
-
-class DagSetCursorInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "set_cursor"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Move the DAG's 'current task' pointer to `id` (or null to clear)."
-        " Purely organizational - shows up in the TUI and lets humans see"
-        " what you're working on. Not required for resume (the workflow"
-        " snapshots loop state separately)."
-    )
-
-    # ULID is exactly 26 chars, matching update_task; None clears the cursor.
-    id: str | None = Field(default=None, min_length=26, max_length=26)
 
 
 class DagListTasksInput(_ToolInput):
@@ -672,7 +659,6 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     AskUserInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
-    DagSetCursorInput,
     DagListTasksInput,
     DagAddDependencyInput,
     AddMemoryInput,
@@ -692,7 +678,6 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
-    DagSetCursorInput,
     DagListTasksInput,
     DagAddDependencyInput,
     FinishPlanningInput,

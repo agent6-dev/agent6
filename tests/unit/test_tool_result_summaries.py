@@ -50,7 +50,6 @@ from agent6.tools.results import (
     ReadFileResult,
     ReferencesResult,
     SessionsResult,
-    SetCursorResult,
     SkillResult,
     ToolResult,
     UpdateTaskResult,
@@ -183,7 +182,6 @@ CASES: list[tuple[str, ToolResult, str]] = [
         f"pending: {_LONG_TITLE[:60]}",
     ),
     ("update_task", UpdateTaskResult(id="01A", status="done", title="t"), "done: t"),
-    ("set_cursor", SetCursorResult(cursor="01A"), "ok"),
     ("add_dependency", AddDependencyResult(id="01A", title="t", depends_on=("01B",)), "ok"),
     ("list_tasks", ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
     # operator knowledge

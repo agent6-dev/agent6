@@ -50,7 +50,7 @@ from agent6.skills import (
     skill_search_dirs,
 )
 from agent6.tools._control_tools import ask_user, finish_planning, finish_session
-from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
+from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
 from agent6.tools._memory_tools import (
     add_memory,
@@ -102,7 +102,6 @@ from agent6.tools.schema import (
     DagAddDependencyInput,
     DagAddTaskInput,
     DagListTasksInput,
-    DagSetCursorInput,
     DagUpdateTaskInput,
     FetchInput,
     FindDefinitionInput,
@@ -324,7 +323,7 @@ class ToolDispatcher:
         self._events = events
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
-        # update_task / set_cursor / list_tasks.
+        # update_task / list_tasks / add_dependency.
         self._curator = curator
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
@@ -390,7 +389,6 @@ class ToolDispatcher:
             # wired (so standalone tests can omit it).
             DagAddTaskInput.TOOL_NAME: self._dag_add_task,
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
-            DagSetCursorInput.TOOL_NAME: self._dag_set_cursor,
             DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
             DagAddDependencyInput.TOOL_NAME: self._dag_add_dependency,
             # Cross-run memory. Handlers raise ToolError if no
@@ -1014,9 +1012,6 @@ class ToolDispatcher:
 
     def _dag_update_task(self, raw: dict[str, Any]) -> ToolResult:
         return update_task(self._curator, raw)
-
-    def _dag_set_cursor(self, raw: dict[str, Any]) -> ToolResult:
-        return set_cursor(self._curator, raw)
 
     def _dag_add_dependency(self, raw: dict[str, Any]) -> ToolResult:
         return add_dependency(self._curator, raw)

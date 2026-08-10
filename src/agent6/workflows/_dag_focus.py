@@ -22,7 +22,7 @@ from agent6.graph.order import tree_order
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
 # breakdown.
-DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
+DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "add_dependency"})
 
 OPEN_STATUSES = frozenset({"pending", "in_progress"})
 DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})

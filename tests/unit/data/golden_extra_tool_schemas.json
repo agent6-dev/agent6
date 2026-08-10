@@ -108,13 +108,6 @@
     "properties": {}
   },
   {
-    "name": "set_cursor",
-    "required": [],
-    "properties": {
-      "id": "anyOf[null,string]"
-    }
-  },
-  {
     "name": "update_task",
     "required": [
       "id",
