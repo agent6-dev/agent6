@@ -648,6 +648,11 @@ class _Handler(BaseHTTPRequestHandler):
             # resumes starts logging into this same stream, and the label (and
             # `live`) have to follow.
             d = {**session_state_as_dict(state, session_dir), **header}
+            if state.last_event_ep is not None:
+                # Server-computed so a browser on another machine needs no clock
+                # agreement: the client anchors its "working… Ns" timer to
+                # (its own now) - age, then ticks locally.
+                d["last_event_age_s"] = max(0.0, time.time() - state.last_event_ep)
             if dead:
                 # Transport signal, distinct from the fold's `finished`: this
                 # stream will send nothing more (dead worker, no session.end), so

@@ -533,7 +533,7 @@ class DashboardScreen(Screen[None]):
         beat = ""
         if active and role is not None:
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
-            beat = f" {spinner} {int(time.monotonic() - tui.last_event_at)}s"
+            beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
@@ -592,7 +592,7 @@ class DashboardScreen(Screen[None]):
             # No live deltas: the model is thinking, or a resume is rebuilding
             # context. A ticking heartbeat, never a stale "idle" or blank.
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
-            secs = int(time.monotonic() - tui.last_event_at)
+            secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "stale":
             # The composer below has focus and Enter resumes; there is no
@@ -859,9 +859,19 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 return
             self.call_from_thread(self._handle_event, event)
 
+    def seconds_since_event(self) -> int:
+        """Idle seconds for the "working… Ns" heartbeat, anchored to the last
+        EVENT's ts (the fold carries it), not to when this viewer folded it:
+        the catch-up replay sets an arrival anchor too, so attaching to a run
+        wedged 40 minutes read "working… 3s". Falls back to the fold time for
+        a log whose events carry no ts."""
+        if self.state.last_event_ep is None:
+            return int(time.monotonic() - self.last_event_at)
+        return max(0, int(time.time() - self.state.last_event_ep))
+
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
-        self.last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
+        self.last_event_at = time.monotonic()  # the ts-less fallback anchor
         if event.get("type") in SESSION_START_EVENTS:
             # A session boundary (fresh run OR a resumed leg -- a resume emits
             # only loop.resume.start, never a second session.start) restarts the

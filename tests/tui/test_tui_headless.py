@@ -755,6 +755,35 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: An
     asyncio.run(scenario())
 
 
+def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: Path) -> None:
+    """Replayed history bumped the idle anchor too, so attaching to a run
+    wedged 40 minutes read "working… 3s" -- the timer meant to tell "thinking"
+    from "hung" concealed the hang. The anchor is the last event's own ts."""
+
+    async def scenario() -> None:
+        from agent6.sessions.ipc import write_worker_pid
+
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())  # alive-but-wedged, not stale
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            wedged_at = time.time() - 2400
+            app._handle_event(
+                _ev(type="session.start", user_task="x", mode="run", ts=wedged_at - 5)
+            )
+            app._handle_event(_ev(type="role.call", role="worker", model="m", ts=wedged_at))
+            app._tick()
+            await pilot.pause()
+            assert app.seconds_since_event() >= 2399
+            top = str(app._dash.query_one("#top", Static).render())
+            import re
+
+            assert re.search(r" 2[34]\d\ds", top), top  # the visible beat reads the helper
+
+    asyncio.run(scenario())
+
+
 def test_budget_meter_reads_this_legs_spend_not_the_runs_total(tmp_path: Path) -> None:
     """The cap re-arms each resume leg while usd_total stays cumulative, so
     dividing the cumulative spend by the CURRENT leg's cap showed a resumed run

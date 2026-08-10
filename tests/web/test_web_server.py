@@ -619,10 +619,17 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
         _read_until(resp, lambda s: s.get("finished") is True)
         # A resume (from the CLI, say) appends to the same log.
         with logs.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
-            fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
+            fh.write(json.dumps({"type": "loop.resume.start", "ts": time.time()}) + "\n")
+            fh.write(
+                json.dumps({"type": "role.call", "role": "worker", "model": "m", "ts": time.time()})
+                + "\n"
+            )
         snap = _read_until(resp, lambda s: s.get("finished") is False)
         assert snap["user_task"] == "leg one"
+        # The frame carries a server-computed idle age so the browser's
+        # "working… Ns" needs no clock agreement (and replay reads its true age).
+        age = snap["last_event_age_s"]
+        assert isinstance(age, (int, float)) and 0 <= age < 60
     finally:
         conn.close()
 

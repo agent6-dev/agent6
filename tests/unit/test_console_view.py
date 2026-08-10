@@ -274,3 +274,26 @@ def test_pause_suspends_the_heartbeat_spinner() -> None:
         assert "working" in "".join(out.chunks[resume:])
     finally:
         view.close()
+
+
+def test_replayed_history_does_not_reset_the_idle_timer() -> None:
+    """`agent6 attach` replays the whole log through feed(): each replayed line
+    bumped the idle anchor to ARRIVAL time, so a run wedged 40 minutes read
+    "working… 3s" -- the timer meant to tell thinking from hung concealed the
+    hang. The anchor is the fed event's own ts."""
+    import time
+
+    out = _FakeTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        wedged_at = time.time() - 2400
+        view.feed({"type": "role.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
+        view.feed({"type": "tool.call", "name": "run_command", "args": {}, "ts": wedged_at})
+        idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
+        assert idle >= 2399, f"replay reset the idle timer to {idle:.1f}s"
+        # A ts-less (live, foreign) event keeps the arrival behaviour.
+        view.feed({"type": "tool.result", "name": "run_command", "ok": True, "summary": "ok"})
+        idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
+        assert idle < 5
+    finally:
+        view.close()

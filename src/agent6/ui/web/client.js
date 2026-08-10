@@ -971,7 +971,9 @@ function paintRun(cards, s) {
     // conversation shows its own waiting line, so the heartbeat must go quiet.
     active: !notLive(s) && !!s.last_role && !streaming && s.status !== 'waiting',
     role: (s.last_role && s.last_role.role) || 'worker',
-    last: Date.now(),
+    // Server-computed age: replayed history must not read as fresh activity
+    // (an arrival anchor showed a 40-minute-wedged run as "working… 3s").
+    last: Date.now() - 1000 * (s.last_event_age_s || 0),
     spin: 0,
   };
   hbTick();
@@ -1065,7 +1067,7 @@ async function renderConversation(id, gen) {
       // see paintRun: a "waiting" run is live but blocked, not working.
       active: !notLive(s) && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text) && s.status !== 'waiting',
       role: (s.last_role && s.last_role.role) || 'worker',
-      last: Date.now(),
+      last: Date.now() - 1000 * (s.last_event_age_s || 0), // see paintRun: age is server-computed
       spin: hbState.spin + 1,
     };
     hbTick();

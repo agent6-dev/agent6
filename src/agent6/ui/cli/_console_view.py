@@ -23,6 +23,7 @@ from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
 from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
+from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.transcript import (
     DONE,
     THINK,
@@ -105,6 +106,12 @@ class ConsoleView:
         # thread shows a spinner + "working… Ns" during silence so the run never
         # looks hung; only on a real terminal (no spinner in a pipe or a test).
         self._last_output_at = time.monotonic()
+        # The epoch ts of the event currently being fed (None between feeds or
+        # for a ts-less event): _bump_idle anchors the idle timer to it, so
+        # `agent6 attach` replaying history measures from when the run last
+        # spoke -- an arrival anchor made a run wedged 40 minutes read
+        # "working… 3s".
+        self._event_ep: float | None = None
         self._active = False  # run is between session.start and session.end (a turn or a tool)
         self._status_active = False  # a transient spinner line is on screen now
         self._paused = False  # True while an interactive /dev/tty prompt owns the line
@@ -131,9 +138,20 @@ class ConsoleView:
             self._line(block)
         self._btw.clear()
 
+    def _bump_idle(self) -> None:
+        """Reset the idle timer to the fed event's own age (its ts), or to now
+        for a ts-less event."""
+        age = 0.0 if self._event_ep is None else max(0.0, time.time() - self._event_ep)
+        self._last_output_at = time.monotonic() - age
+
     def feed(self, event: dict[str, Any]) -> None:
         etype = event.get("type", "")
         with self._lock:
+            # Anchor per EVENT, not only per rendered line: a replay can end on
+            # an event that renders nothing yet (a tool.call whose result never
+            # came -- the wedged case), and events between renders are activity.
+            self._event_ep = event_epoch(event.get("ts"))
+            self._bump_idle()
             # The heartbeat spins whenever the run is active and output has gone
             # silent -- covering BOTH a thinking provider call AND a long tool /
             # verify command running in the jail (which happens between role.result
@@ -187,7 +205,7 @@ class ConsoleView:
             self._phase = want
             self._raw("  " + (self._dim() + THINK + " " if thinking else ""))
             piece = piece.lstrip()
-        self._last_output_at = time.monotonic()  # a delta is real progress
+        self._bump_idle()  # a delta is real progress
         # keep wrapped lines under the block's indent; dim (thinking) spans them all
         self._raw(piece.replace("\n", "\n    " if thinking else "\n  "))
 
@@ -267,7 +285,7 @@ class ConsoleView:
         # Structural lines (tool call/result, commit, verdict) are discrete model
         # progress: show them at once and reset the idle timer.
         self._clear_status()
-        self._last_output_at = time.monotonic()
+        self._bump_idle()
         self._out.write(text)
         self._flush()
 

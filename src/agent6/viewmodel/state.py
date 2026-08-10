@@ -183,6 +183,10 @@ class SessionState:
     compact_gists_live: int = 0
     # Operator /pin instructions recorded so far (loop.pin.added), most-recent-last.
     pins: tuple[str, ...] = ()
+    # Epoch of the last folded event's own ts: the idle anchor every
+    # "working… Ns" timer measures from, so replayed history reads as its true
+    # age, never as fresh activity.
+    last_event_ep: float | None = None
 
 
 def initial_state() -> SessionState:
@@ -235,6 +239,12 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
     etype = event.get("type", "")
     if not state.session_id and event.get("session_id"):
         state = replace(state, session_id=str(event["session_id"]))
+    # The idle anchor for every "working… Ns" timer: the EVENT's own ts, so a
+    # viewer that replays history (attach, the web/TUI catch-up) measures from
+    # when the run last spoke, not from when it started watching -- an arrival
+    # anchor made a run wedged 40 minutes read "working… 3s".
+    if (ep := events.event_epoch(event.get("ts"))) is not None:
+        state = replace(state, last_event_ep=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
         # Deltas are live-stream only; noise mirrors add no readable field.
         # cursor_task_id is the focus task (graph.update lands before a turn's calls).
