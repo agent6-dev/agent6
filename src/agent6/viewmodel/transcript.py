@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
-from agent6.viewmodel.events import tool_result_ok
+from agent6.viewmodel.events import event_epoch, tool_result_ok
 
 # Terminal control sequences in MODEL-AUTHORED text and command output.
 # Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
@@ -284,9 +284,49 @@ class TranscriptFold:
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
         self._commits = 0
+        # Receipt state for the done item: cost from budget.update, wall time
+        # from the first/last event ts, the last auto-commit's subject. Each
+        # degrades to absent on a journal that never carried it.
+        self._usd = 0.0
+        self._first_ep: float | None = None
+        self._last_ep: float | None = None
+        self._commit_subject = ""
+
+    def _fold_receipt(self, event: dict[str, Any], etype: str) -> bool:
+        """Track the done item's receipt pieces (wall-clock span, cost, last
+        commit subject); True when the event carried only receipt state."""
+        if (ep := event_epoch(event.get("ts"))) is not None:
+            self._last_ep = ep
+            if self._first_ep is None:
+                self._first_ep = ep
+        if etype == "budget.update":
+            self._usd = float(event.get("usd_total", 0) or 0)
+            return True
+        if etype == "loop.auto_commit":
+            self._commit_subject = str(event.get("subject", "")).strip()
+            return True
+        return False
+
+    def _receipt_detail(self) -> str:
+        """The done item's detail: cost · wall · counts · commit subject, each
+        piece present only when the journal carried it, so the story ends
+        inside the surface instead of as post-exit shell text."""
+        tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
+        commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
+        parts = []
+        if self._usd:
+            parts.append(f"${self._usd:.4f}")
+        if self._first_ep is not None and self._last_ep is not None:
+            parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
+        parts.append(f"{tools} · {commits}")
+        if self._commit_subject:
+            parts.append(_clip(self._commit_subject, 60))
+        return " · ".join(parts)
 
     def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912
         etype = event.get("type", "")
+        if self._fold_receipt(event, etype):
+            return []
         if etype == "role.call":
             self._thinking.clear()
             self._text.clear()
@@ -346,9 +386,7 @@ class TranscriptFold:
             return out
         if etype == "session.end":
             out = self._flush_message()
-            tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
-            commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
-            counts = f"{tools} · {commits}"
+            counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
             # Pair the finish summary with the done line ONLY on a clean finish.
             # On a failure/stop the summary is from an EARLIER finish_session call and

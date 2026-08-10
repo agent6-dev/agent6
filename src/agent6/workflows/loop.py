@@ -1608,7 +1608,9 @@ class Workflow:
         try:
             sha = self._chain_commit(commit_subject)
             self._log(f"  auto-commit: {sha[:12]}")
-            self._emit("loop.auto_commit", iteration=turn.iteration, sha=sha)
+            self._emit(
+                "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
+            )
             turn.committed = bool(sha)
             if gateless and sha:
                 # Seed the idle-stop net for gateless runs (no green verify
@@ -3011,10 +3013,11 @@ class Workflow:
         if self.mode != "run" or not self.commit_per_step or not self._worktree_dirty():
             return
         try:
-            sha = self._chain_commit(f"checkpoint (iter {iteration})")
+            subject = f"checkpoint (iter {iteration})"
+            sha = self._chain_commit(subject)
             if sha:
                 self._log(f"  final checkpoint: {sha[:12]}")
-                self._emit("loop.auto_commit", iteration=iteration, sha=sha)
+                self._emit("loop.auto_commit", iteration=iteration, sha=sha, subject=subject)
                 # Also emit diff.updated so the commit is COUNTED: every fold
                 # (web/TUI/CLI) tallies commits and the latest diff from
                 # diff.updated alone, never from loop.auto_commit.

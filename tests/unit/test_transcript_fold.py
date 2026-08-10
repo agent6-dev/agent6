@@ -366,3 +366,42 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
 
 def test_restate_with_no_operator_input_says_so() -> None:
     assert restate([]).startswith("nothing to restate")
+
+
+def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
+    """The done item ends the story INSIDE the surface: cost, wall time, the
+    counts, and the last commit subject, each present only when the journal
+    carried it (an old journal folds to the bare counts as before)."""
+    events = [
+        {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
+        {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
+        {"type": "budget.update", "usd_total": 0.0112},
+        {
+            "type": "loop.auto_commit",
+            "sha": "abc123",
+            "subject": "fix median for even length",
+        },
+        {"type": "diff.updated", "sha": "abc123", "patch": "+x\n-y\n"},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": "Fixed."}},
+        {
+            "type": "session.end",
+            "ts": "2026-08-09T20:00:45+00:00",
+            "reason": "finish_session",
+            "all_passed": True,
+        },
+    ]
+    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    assert done.ok is True
+    assert done.body == "Fixed."
+    assert done.detail == "$0.0112 · 45s · 1 tool · 1 commit · fix median for even length"
+
+
+def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> None:
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    done = next(it for it in fold_transcript(events) if it.kind == "done")
+    assert done.detail == "1 tool · 0 commits"
