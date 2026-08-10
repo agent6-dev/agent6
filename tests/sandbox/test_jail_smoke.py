@@ -137,8 +137,10 @@ def test_jail_denies_write_outside_the_workspace(jail_bin: Path, tmp_path: Path)
     """Writes outside the workspace are DENIED (nonzero rc), not merely
     redirected. /tmp alone proves nothing: the in-jail /tmp is a fresh tmpfs,
     so the write there SUCCEEDS and only fails to reach the host -- an
-    assertion about remapping, not confinement."""
-    for target in ("/dev/shm/agent6-jail-escape", str(Path.home() / "agent6-jail-escape")):
+    assertion about remapping, not confinement. /dev/shm became a second such
+    tmpfs (a headless browser needs one), so the denial target here is $HOME,
+    which is neither remapped nor granted."""
+    for target in (str(Path.home() / "agent6-jail-escape"),):
         try:
             res = run_in_jail(
                 JailPolicy(

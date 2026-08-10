@@ -116,12 +116,22 @@ def forward(
     come back out of a namespace, and the parent must stay outside to keep
     accepting, so the fork is the bridge rather than a design flourish.
     """
+    # Same number on both sides unless told otherwise: that is what `kubectl
+    # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
+    # the number you are about to type into a browser. A random local port would
+    # be the same syntax with a different meaning, which is the surprising kind
+    # of different.
+    local_port = local_port or remote_port
     listener = socket.socket()
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         listener.bind(("127.0.0.1", local_port))
     except OSError as exc:
-        print(f"agent6 forward: cannot listen on 127.0.0.1:{local_port}: {exc}", file=out)
+        print(
+            f"agent6 forward: cannot listen on 127.0.0.1:{local_port}: {exc}."
+            " Pick another with --local-port.",
+            file=out,
+        )
         return 2
     listener.listen(16)
     bound = listener.getsockname()[1]

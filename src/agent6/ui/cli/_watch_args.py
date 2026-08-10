@@ -148,5 +148,5 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "--local-port",
         type=int,
         default=0,
-        help="The port on this machine (default: any free one, printed on start).",
+        help="The port on this machine (default: the same number, as kubectl/docker/ssh mean it).",
     )

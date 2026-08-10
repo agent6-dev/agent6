@@ -135,7 +135,11 @@ no run) each command gets its own launcher. Under `strict` it:
       unreadable, seccomp applies). An explicit `hide_paths` entry it cannot
       mask does refuse -- the same rule `network` follows, where a
       default degrades and a written-down value enforces.
-- Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
+- Exposes curated `/dev` (`null zero urandom random full`, plus a private
+  `shm` tmpfs — POSIX shared memory is ordinary for real toolchains and a
+  headless browser aborts without one. Strict only: there it is the jail's own,
+  while on hardened it would be the host's, shared with every other process of
+  this user); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
   host's, which would leak process info).

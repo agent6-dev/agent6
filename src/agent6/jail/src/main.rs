@@ -794,6 +794,19 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         )
         .map_err(io_err)?;
     }
+    // /dev/shm: a private tmpfs, like /tmp. POSIX shared memory is ordinary
+    // for real toolchains -- a headless chromium aborts outright without it --
+    // and it exposes nothing, being this mount namespace's own.
+    let shm = new_root.join("dev/shm");
+    fs::create_dir_all(&shm)?;
+    mount(
+        Some("tmpfs"),
+        &shm,
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Some("mode=1777"),
+    )
+    .map_err(io_err)?;
     // Bind the cwd RW, at its REAL path. Every mount in this root is at the
     // path it has outside -- tool dirs, operator grants, and the workspace
     // alike -- so a path means the same thing on both sides of the boundary.
@@ -1177,10 +1190,15 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // caches that key off $HOME or TMPDIR work (go-build, cargo, pip/uv); the
     // tmpfs is isolated, so RW here cannot reach the host. Mirrors the hardened
     // isolation level, which already grants /tmp RW.
-    if let Ok(fd) = PathFd::new("/tmp") {
-        ruleset = ruleset
-            .add_rule(PathBeneath::new(fd, access_all))
-            .map_err(|e| io::Error::other(format!("rule /tmp: {e}")))?;
+    // /dev/shm is the same deal: this jail's own tmpfs, and POSIX shared memory
+    // is ordinary for real toolchains (a headless chromium aborts without it).
+    // Mounting it without granting it would have been a mount that does nothing.
+    for writable in ["/tmp", "/dev/shm"] {
+        if let Ok(fd) = PathFd::new(writable) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
+                .map_err(|e| io::Error::other(format!("rule {writable}: {e}")))?;
+        }
     }
     // /proc is the jail's OWN freshly-mounted procfs (private PID namespace,
     // see setup_rootfs), so reading it reveals only jail-local processes and
@@ -1411,7 +1429,12 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
     }
 
-    // Read+write: /tmp and any explicitly granted rw paths.
+    // Read+write: /tmp and any explicitly granted rw paths. NOT /dev/shm, which
+    // strict grants: there it is the jail's own tmpfs, here it would be the
+    // HOST's, shared with every other process of this user. A hardened jail
+    // cannot run a browser regardless (no /proc grant, and granting that would
+    // hand a command the agent's own environ), so the compatibility it would
+    // buy is not there to buy.
     let mut rw_paths: Vec<PathBuf> = vec![PathBuf::from("/tmp")];
     for p in &policy.extra_rw_paths {
         rw_paths.push(p.clone());

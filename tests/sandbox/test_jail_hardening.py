@@ -607,3 +607,35 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path)
     namespaces = [v for v in results.values() if v.startswith("mnt:")]
     assert len(namespaces) == 4, results
     assert len(set(namespaces)) == 4, f"children shared a mount namespace: {namespaces}"
+
+
+def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
+    """POSIX shared memory is ordinary for real toolchains -- a headless
+    chromium aborts outright without it -- so the jail mounts /dev/shm and
+    GRANTS it. Mounting without granting would have been a mount that does
+    nothing, which is how the first attempt failed.
+
+    It is this mount namespace's own tmpfs, so what a command writes there is
+    invisible to the host and gone when the jail exits."""
+    from agent6.config import Config
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.tools.policy import jail_policy
+
+    marker = "agent6-shm-probe"
+    res = run_in_jail(
+        jail_policy(
+            tmp_path,
+            Config(),
+            "strict",
+            (
+                "sh",
+                "-c",
+                f"stat -f -c %T /dev/shm && echo x > /dev/shm/{marker} && ls /dev/shm",
+            ),
+            network="none",
+        )
+    )
+    assert res.returncode == 0, res.stderr[-400:]
+    assert "tmpfs" in res.stdout, res.stdout
+    assert marker in res.stdout, res.stdout
+    assert not Path(f"/dev/shm/{marker}").exists(), "the jail wrote the HOST's /dev/shm"
