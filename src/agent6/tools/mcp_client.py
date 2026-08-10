@@ -45,15 +45,16 @@ import contextlib
 import json
 import re
 import subprocess
-import sys
 import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import IO, Any
 
 from agent6.child_env import curated_env
+from agent6.sandbox.jail import JailUnavailableError, spawn_in_jail
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError
+from agent6.types import JailPolicy
 
 # MCP protocol version we speak. The spec is versioned by date string;
 # we negotiate this in `initialize` and accept whatever the server says
@@ -150,43 +151,78 @@ class MCPStartFailure:
     error: str
 
 
-@dataclass(frozen=True, slots=True)
-class MCPConfinement:
-    """What confining one spawned MCP server means, in one record.
+# What we keep of a server's stderr. Enough for a traceback or a launcher
+# setup failure, bounded because the writer is third-party code: capturing it
+# to a file let a hostile server write 1.8 GB in three seconds.
+_STDERR_KEEP_BYTES = 8192
 
-    A `(read, write, require)` tuple every call site had to unpack positionally;
-    the network knob would have been a fourth thing to count.
+
+def _spawn_server(
+    command: tuple[str, ...],
+    policy: JailPolicy | None,
+    pass_env: tuple[str, ...],
+) -> subprocess.Popen[bytes]:
+    """Start one stdio server: through the jail when it has a policy, as a
+    plain subprocess when the operator opted it out.
+
+    The confined path is `spawn_in_jail`, the same launcher and the same
+    JailPolicy a jailed command gets -- MCP had a second confinement stack of
+    its own, which is how it ended up without seccomp, without a private
+    /proc, and unable to mask a hidden path.
+
+    Stderr is a PIPE the caller drains, not /dev/null: everything that can go
+    wrong before the handshake -- a command that does not exist, a grant the
+    kernel refused, the launcher's own setup -- says so there and nowhere
+    else, and discarding it turned every one of those into the same "died
+    before responding to initialize". Drained rather than collected, and
+    capped: an undrained pipe blocks the writer at 64 KB, and a file grows
+    until the disk is gone.
     """
+    if policy is not None:
+        return spawn_in_jail(
+            policy,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    return subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
+        # A curated env, not this process's: the full one carries the provider
+        # API keys, and an MCP server is third-party code that may log or
+        # forward what it was given. A server that needs a token names it in
+        # `pass_env`.
+        env=curated_env(passthrough=pass_env, desktop=True),
+        # Its own session: a terminal Ctrl-C signals the foreground process
+        # group, and an MCP server that dies with it breaks its tools for the
+        # rest of the run.
+        start_new_session=True,
+    )
 
-    read_paths: tuple[str, ...] = ()
-    write_paths: tuple[str, ...] = ()
-    # Refuse to start rather than run the server with no Landlock domain.
-    require: bool = False
-    # "none" puts the server in a network namespace of its own: a loopback that
-    # reaches only itself, and nothing else. "host" leaves it on the operator's
-    # network, which is what most servers are for.
-    network: str = "host"
 
+def _drain_stderr(pipe: IO[bytes], keep: list[bytes]) -> None:
+    """Read a server's stderr forever, keeping only the tail.
 
-def _confined_argv(command: tuple[str, ...], confine: MCPConfinement | None) -> tuple[str, ...]:
-    """*command*, wrapped in the confinement shim when the operator asked for one.
-
-    A shim rather than `preexec_fn`: Landlock is restrict-self-then-exec and
-    inherited across the exec, and `preexec_fn` is unsafe in a process with
-    threads -- which this one has.
+    Forever, because a pipe nobody reads stops the writer at 64 KB -- a server
+    that logs would wedge itself. Only the tail, because the writer is
+    third-party code with no reason to be polite about volume.
     """
-    if confine is None:
-        return command
-    shim = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
-    for path in confine.read_paths:
-        shim += ["--read", path]
-    for path in confine.write_paths:
-        shim += ["--write", path]
-    if confine.require:
-        shim.append("--require")
-    if confine.network == "none":
-        shim.append("--no-network")
-    return (*shim, "--", *command)
+    with contextlib.suppress(OSError, ValueError):
+        while chunk := pipe.read(4096):
+            keep.append(chunk)
+            while len(keep) > 2:
+                keep.pop(0)
+
+
+def _stderr_tail(keep: list[bytes], limit: int = 400) -> str:
+    """The last of what the server (or the launcher) said, for a failure
+    message. Best-effort: a diagnostic must never raise over the failure it
+    is describing."""
+    text = b"".join(keep)[-_STDERR_KEEP_BYTES:].decode(errors="replace").strip()
+    return text[-limit:].strip() if text else ""
 
 
 def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
@@ -212,8 +248,10 @@ class MCPServerSpec:
     pass_env: tuple[str, ...] = ()
     # Set instead of `command` for a server the operator runs.
     http: HttpTransport | None = None
-    # Confinement for a spawned server, or None for an unconfined one.
-    confine: MCPConfinement | None = None
+    # The sandbox this server runs under, or None for an unconfined one
+    # (`[mcp.servers.<n>.sandbox].unconfined`). Built by the caller from the
+    # same `jail_policy` a command uses.
+    policy: JailPolicy | None = None
 
 
 @dataclass
@@ -227,14 +265,17 @@ class _MCPServer:
     startup_timeout_s: float
     call_timeout_s: float
     pass_env: tuple[str, ...] = ()
-    # Confinement for a spawned server. None is unconfined, which is what a
-    # server without a `[sandbox]` block gets.
-    confine: MCPConfinement | None = None
+    # The sandbox this server runs under; None is the operator's explicit
+    # `unconfined = true`.
+    policy: JailPolicy | None = None
     # Set instead of `command` for a server the OPERATOR runs: agent6 connects
     # rather than spawning, so it owns none of that server's environment,
     # lifetime or confinement.
     http: HttpTransport | None = None
     _proc: subprocess.Popen[bytes] | None = None
+    # The tail of this server's stderr, drained by a thread and read only to
+    # explain a failure.
+    _errors: list[bytes] = field(default_factory=list)
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
     # Serializes stdin writes: concurrent tools/call threads (explore-review
@@ -262,27 +303,8 @@ class _MCPServer:
             self._handshake()
             return
         try:
-            self._proc = subprocess.Popen(
-                _confined_argv(self.command, self.confine),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0,
-                # A curated env, not this process's: the full one carries the
-                # provider API keys, and an MCP server is third-party code that
-                # may log or forward what it was given. A server that needs a
-                # token names it in `pass_env`.
-                # A confined server loses the desktop addresses too: the
-                # session bus reaches an UNCONFINED `systemd --user` that runs
-                # commands on request, which is a way out of any Landlock
-                # domain we just built.
-                env=curated_env(passthrough=self.pass_env, desktop=self.confine is None),
-                # Its own session: a terminal Ctrl-C signals the foreground
-                # process group, and an MCP server that dies with it breaks its
-                # tools for the rest of the run.
-                start_new_session=True,
-            )
-        except (OSError, FileNotFoundError) as exc:
+            self._proc = _spawn_server(self.command, self.policy, self.pass_env)
+        except (OSError, FileNotFoundError, JailUnavailableError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc
         # Start the reader before issuing the first request so the
         # initialize response can't race the reader thread.
@@ -292,6 +314,13 @@ class _MCPServer:
             daemon=True,
         )
         self._reader.start()
+        if self._proc.stderr is not None:
+            threading.Thread(
+                target=_drain_stderr,
+                args=(self._proc.stderr, self._errors),
+                name=f"mcp-stderr[{self.name}]",
+                daemon=True,
+            ).start()
         self._handshake()
 
     def _handshake(self) -> None:
@@ -478,7 +507,14 @@ class _MCPServer:
                     # If the reader thread died (server crashed mid-call)
                     # we'd otherwise wait the full timeout for nothing.
                     if self._reader is not None and not self._reader.is_alive():
-                        raise MCPError(f"server {self.name!r} died before responding to {method}")
+                        # Its own words if it left any: a command that does not
+                        # exist, a refused grant, the launcher's setup failure
+                        # all read the same from out here otherwise.
+                        said = _stderr_tail(self._errors)
+                        detail = f": {said}" if said else ""
+                        raise MCPError(
+                            f"server {self.name!r} died before responding to {method}{detail}"
+                        )
                     self._pending_cv.wait(timeout=min(remaining, 0.25))
         finally:
             with self._pending_cv:
@@ -586,7 +622,7 @@ class MCPManager:
                 call_timeout_s=spec.call_timeout_s,
                 pass_env=spec.pass_env,
                 http=spec.http,
-                confine=spec.confine,
+                policy=spec.policy,
             )
             try:
                 srv.start()

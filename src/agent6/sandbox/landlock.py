@@ -18,9 +18,6 @@ import ctypes
 import ctypes.util
 import errno
 import os
-import struct
-from dataclasses import dataclass
-from pathlib import Path
 
 # syscall numbers (x86_64 / aarch64, Linux added these uniformly)
 _SYS_landlock_create_ruleset = 444
@@ -95,10 +92,6 @@ class LandlockError(Exception):
     """Landlock setup failed in an unexpected way."""
 
 
-class LandlockNotSupportedError(LandlockError):
-    """The running kernel does not support Landlock (ABI 0)."""
-
-
 def _libc() -> ctypes.CDLL:
     libc_path = ctypes.util.find_library("c") or "libc.so.6"
     return ctypes.CDLL(libc_path, use_errno=True)
@@ -138,109 +131,3 @@ def landlock_abi() -> int:
         if exc.errno in (errno.ENOSYS, errno.EOPNOTSUPP):
             return 0
         raise LandlockError(f"landlock_create_ruleset version probe failed: {exc}") from exc
-
-
-def _set_no_new_privs() -> None:
-    libc = _libc()
-    libc.prctl.restype = ctypes.c_int
-    if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        err = ctypes.get_errno()
-        raise LandlockError(f"prctl(PR_SET_NO_NEW_PRIVS) failed: {os.strerror(err)}")
-
-
-def _create_ruleset(handled_fs: int, abi: int) -> int:
-    # struct layout depends on ABI: v1-v3 = 1x u64, v4+ = 2x u64. The net field
-    # stays 0 -- agent6 handles no network access (see apply_landlock).
-    attr = struct.pack("=QQ", handled_fs, 0) if abi >= 4 else struct.pack("=Q", handled_fs)
-    buf = ctypes.create_string_buffer(attr, len(attr))
-    return _syscall(
-        _SYS_landlock_create_ruleset,
-        ctypes.addressof(buf),
-        len(attr),
-        0,
-    )
-
-
-def _add_path_rule(ruleset_fd: int, fd: int, allowed_fs: int) -> None:
-    # struct landlock_path_beneath_attr { __u64 allowed_access; __s32 parent_fd; }
-    attr = struct.pack("=Qi", allowed_fs, fd)
-    buf = ctypes.create_string_buffer(attr, len(attr))
-    _syscall(
-        _SYS_landlock_add_rule,
-        ruleset_fd,
-        1,  # LANDLOCK_RULE_PATH_BENEATH
-        ctypes.addressof(buf),
-        0,
-    )
-
-
-def _restrict_self(ruleset_fd: int) -> None:
-    _syscall(_SYS_landlock_restrict_self, ruleset_fd, 0)
-
-
-@dataclass(frozen=True, slots=True)
-class LandlockReport:
-    abi: int
-    fs_read: tuple[Path, ...]
-    fs_write: tuple[Path, ...]
-
-
-def apply_landlock(
-    *,
-    read_paths: tuple[Path, ...],
-    write_paths: tuple[Path, ...],
-) -> LandlockReport:
-    """Apply Landlock to the *current process*. Irrevocable.
-
-    Raises LandlockNotSupportedError at ABI 0.
-    """
-    abi = landlock_abi()
-    if abi <= 0:
-        raise LandlockNotSupportedError("Landlock is not available on this kernel (ABI 0).")
-
-    handled_fs = _FS_ALL_BITS
-    if abi < 3:
-        # TRUNCATE is an ABI-3 right; the kernel EINVALs any handled bit above
-        # its ABI, and pre-ABI-3 truncation is governed by WRITE_FILE anyway,
-        # so masking it loses no enforcement. Mirrors the net gating below.
-        handled_fs &= ~_LANDLOCK_ACCESS_FS_TRUNCATE
-    # No network access is handled. Landlock's net rules are port-based: it can
-    # deny CONNECT only as "any host on port N", which stops no exfiltration
-    # (one HTTPS endpoint suffices, and every host offers one) while breaking
-    # tools on other ports; and denying BIND blocks only inbound while outbound
-    # stays open -- it cost a dev server the model runs its listening socket and
-    # bought no boundary. Egress is bounded on `strict`, where the broker plus
-    # an empty netns make it structural. A listener still cannot outlive its
-    # command: the escapee sweep (sandbox.jail) kills what a command leaves.
-    _set_no_new_privs()
-    ruleset_fd = _create_ruleset(handled_fs, abi)
-
-    def _mask_for(path: Path, bits: int) -> int:
-        try:
-            is_dir = path.is_dir()
-        except OSError:
-            is_dir = False
-        return bits if is_dir else (bits & ~_DIR_ONLY_BITS)
-
-    try:
-        for path in read_paths:
-            fd = os.open(str(path), os.O_PATH | os.O_CLOEXEC)
-            try:
-                _add_path_rule(ruleset_fd, fd, _mask_for(path, _FS_READ_BITS & handled_fs))
-            finally:
-                os.close(fd)
-        for path in write_paths:
-            fd = os.open(str(path), os.O_PATH | os.O_CLOEXEC)
-            try:
-                _add_path_rule(ruleset_fd, fd, _mask_for(path, _FS_ALL_BITS & handled_fs))
-            finally:
-                os.close(fd)
-        _restrict_self(ruleset_fd)
-    finally:
-        os.close(ruleset_fd)
-
-    return LandlockReport(
-        abi=abi,
-        fs_read=tuple(read_paths),
-        fs_write=tuple(write_paths),
-    )

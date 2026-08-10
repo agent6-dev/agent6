@@ -1,96 +1,120 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`network = "none"` confines a server without handing it anything new.
+"""Network confinement for a SPAWNED MCP server, at the security level.
 
-Entering a user namespace is what gives an unprivileged process CAP_NET_ADMIN
-over its own netns -- enough to bring `lo` up. Those capabilities are real
-inside the shim, so what matters is that NONE of them survive into the server
-the shim becomes.
+`network = "block"` (the default) must leave the server with no way out, and
+must not pay for that by handing it anything else: the launcher holds a full
+capability set between `unshare` and `execve`, and a server that inherited it
+would have MORE power in exchange for losing its network.
+
+These assert the OUTCOME (no capabilities, a netns it cannot leave, no
+reachable host), never the mechanism, so they survived MCP moving from its own
+shim onto the shared jail launcher.
 """
 
 from __future__ import annotations
 
 import os
-import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-_SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
-_PROBE = (
-    "import re\n"
-    "s = open('/proc/self/status').read()\n"
-    "f = lambda k: re.search(rf'^{k}:\\s*(.*)$', s, re.M).group(1).split()[0]\n"
-    "from pathlib import Path\n"
-    "print(f('Uid'), f('Gid'), f('CapPrm'), f('CapEff'),"
-    " Path('/proc/self/ns/net').readlink())"
-)
+from agent6.config import Config
+from agent6.sandbox.jail import spawn_in_jail
+from agent6.tools.policy import jail_policy
+
+pytestmark = pytest.mark.needs_namespaces
 
 
-def _probe(*flags: str) -> list[str]:
-    got = subprocess.run(
-        [*_SHIM, *flags, "--", sys.executable, "-c", _PROBE],
-        capture_output=True,
-        text=True,
-        check=True,
+def _probe(script: str, cwd: Path, *, allow_network: bool = False) -> str:
+    """Run one probe as a SERVER would run: spawned through the jail with a
+    server policy, stdio inherited, output collected off its stdout pipe."""
+    argv = ("/usr/bin/python3", "-c", script)
+    policy = jail_policy(cwd, Config(), "strict", argv, allow_network=allow_network)
+    proc = spawn_in_jail(
+        policy,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    return got.stdout.split()
+    out, _err = proc.communicate(timeout=30)
+    return out.decode(errors="replace")
 
 
-def _ours() -> tuple[str, str]:
-    status = Path("/proc/self/status").read_text(encoding="utf-8")
+def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
+    """Confinement must never be a privilege trade: the launcher holds a full
+    capability set between `unshare` and `execve`, and any of it reaching the
+    server would be handing third-party code MORE power in exchange for taking
+    its network away.
 
-    def field(key: str) -> str:
-        found = re.search(rf"^{key}:\s*(.*)$", status, re.M)
-        assert found is not None
-        return found.group(1).split()[0]
+    The uid INSIDE is namespace-local root -- that is how the jail mounts its
+    own root -- so the identity question is answered outside: a file the
+    server creates belongs to the operator, and its capability sets, bounding
+    set included, are empty.
+    """
+    script = (
+        "import os, re\n"
+        "s = open('/proc/self/status').read()\n"
+        "f = lambda k: re.search(rf'^{k}:\\s*(.*)$', s, re.M).group(1).split()[0]\n"
+        "open('/workspace/made-by-server.txt', 'w').write('x')\n"
+        "print(f('CapPrm'), f('CapEff'), f('CapBnd'))\n"
+    )
+    caps = _probe(script, tmp_path).split()
+    assert len(caps) == 3, caps
+    assert all(int(c, 16) == 0 for c in caps), f"the server holds capabilities: {caps}"
+    made = tmp_path / "made-by-server.txt"
+    assert made.is_file(), "the probe did not run"
+    assert made.stat().st_uid == os.getuid(), "the server acted as someone other than the operator"
 
-    return field("CapPrm"), field("CapEff")
 
-
-@pytest.mark.needs_namespaces
-def test_a_network_confined_server_gains_no_capabilities() -> None:
-    """The shim holds a full capability set between `unshare` and `execve`.
-    If any of it reached the server, `network = "none"` would be handing third
-    party code MORE power in exchange for taking its network away."""
-    uid, gid, cap_prm, cap_eff, _netns = _probe("--no-network")
-    assert (uid, gid) == (str(os.getuid()), str(os.getgid())), "identity was remapped"
-    assert (cap_prm, cap_eff) == _ours(), "the server gained capabilities agent6 does not have"
-    assert int(cap_prm, 16) == 0
-
-
-@pytest.mark.needs_namespaces
-def test_the_server_lands_in_a_namespace_it_cannot_leave() -> None:
+def test_the_server_lands_in_a_namespace_it_cannot_leave(tmp_path: Path) -> None:
     """Rejoining the host network needs a handle on its namespace and
     CAP_SYS_ADMIN there. The server gets neither: a process in the parent user
     namespace fails the ptrace check, so `/proc/<ppid>/ns/net` will not even
     open -- and setns would refuse a capability-less process anyway."""
-    *_caps, netns = _probe("--no-network")
-    assert netns != str(Path("/proc/self/ns/net").readlink())
-
-    escape = subprocess.run(
-        [
-            *_SHIM,
-            "--no-network",
-            "--",
-            sys.executable,
-            "-c",
-            # The PARENT's netns: same uid, so only the namespace boundary can
-            # refuse it. Either failure mode is a refusal; "rejoined" is not.
-            "import ctypes, os\n"
-            "try:\n"
-            "    fd = os.open(f'/proc/{os.getppid()}/ns/net', os.O_RDONLY)\n"
-            "except OSError as exc:\n"
-            "    print('refused: no handle', exc.errno)\n"
-            "else:\n"
-            "    rc = ctypes.CDLL(None, use_errno=True).setns(fd, 0)\n"
-            "    print('rejoined' if rc == 0 else 'refused: setns')\n",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    script = (
+        "import os\n"
+        "print('NETNS', os.readlink('/proc/self/ns/net'))\n"
+        "try:\n"
+        "    fd = os.open(f'/proc/{os.getppid()}/ns/net', os.O_RDONLY)\n"
+        "    print('ESCAPE-OPENED')\n"
+        "except OSError as exc:\n"
+        "    print('ESCAPE-REFUSED', type(exc).__name__)\n"
     )
-    assert "rejoined" not in escape.stdout, escape.stdout + escape.stderr
-    assert escape.stdout.startswith("refused"), escape.stdout + escape.stderr
+    out = _probe(script, tmp_path)
+    assert "ESCAPE-REFUSED" in out, out
+    assert str(Path("/proc/self/ns/net").readlink()) not in out
+
+
+def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
+    """The positive control matters: a DNS probe fails inside any jail and on
+    any offline host either way, proving nothing. Connect to a REAL listener
+    on this machine -- denied without the network, allowed with it."""
+    import socket
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        script = (
+            "import socket, sys\n"
+            "s = socket.socket()\n"
+            "s.settimeout(3)\n"
+            f"print('CONNECT', s.connect_ex(('127.0.0.1', {port})))\n"
+        )
+        blocked = _probe(script, tmp_path, allow_network=False)
+        allowed = _probe(script, tmp_path, allow_network=True)
+    assert "CONNECT 0" not in blocked, f"a confined server reached the host: {blocked}"
+    assert "CONNECT 0" in allowed, f"network = allow did not reach the listener: {allowed}"
+
+
+def test_the_jail_binary_is_what_confines_a_server(tmp_path: Path) -> None:
+    """One implementation, asserted: a server is confined by the same launcher
+    a jailed command uses, so there is no second code path to keep in step.
+    (The Python Landlock shim MCP used to carry is gone; if it comes back,
+    this fails.)"""
+    assert not (Path(__file__).parents[2] / "src/agent6/sandbox/exec_confined.py").exists()
+    script = "print(open('/proc/self/cmdline','rb').read().split(b'\\0')[0].decode())\n"
+    out = _probe(script, tmp_path)
+    assert "python3" in out

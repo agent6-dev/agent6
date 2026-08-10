@@ -9,134 +9,14 @@ it spawns inherit.
 
 from __future__ import annotations
 
-import contextlib
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from agent6.app.reporter import Reporter
 from agent6.config import Config
-from agent6.tools.mcp_client import (
-    MCPConfinement,
-    _confined_argv,  # pyright: ignore[reportPrivateUsage]
-)
 
 _SHIM = [sys.executable, "-m", "agent6.sandbox.exec_confined"]
-
-
-def test_a_server_without_a_block_is_spawned_unchanged() -> None:
-    """Absent means unconfined: agent6 cannot know what a given server needs,
-    and a guess that breaks it is worse than none."""
-    assert _confined_argv(("npx", "server"), None) == ("npx", "server")
-
-
-def test_a_confined_server_is_wrapped_in_the_shim() -> None:
-    """A shim, not `preexec_fn`: Landlock is restrict-self-then-exec and
-    inherited across the exec, and preexec_fn is unsafe in a threaded process
-    -- which the MCP client is."""
-    argv = _confined_argv(
-        ("npx", "server"),
-        MCPConfinement(read_paths=("/usr", "/etc"), write_paths=("/tmp",)),
-    )
-    assert list(argv) == [
-        *_SHIM,
-        "--read",
-        "/usr",
-        "--read",
-        "/etc",
-        "--write",
-        "/tmp",
-        "--",
-        "npx",
-        "server",
-    ]
-
-
-def test_require_is_passed_through() -> None:
-    argv = _confined_argv(("x",), MCPConfinement(write_paths=("/tmp",), require=True))
-    assert "--require" in argv
-
-
-@pytest.mark.needs_namespaces
-def test_the_shim_really_confines_what_it_execs(tmp_path: Path) -> None:
-    """End to end: the domain is applied before the exec, so the server it
-    becomes inherits it."""
-    allowed = tmp_path / "allowed"
-    allowed.mkdir()
-    secret = tmp_path / "secret"
-    secret.mkdir()
-    (secret / "key").write_text("sk-DECOY\n", encoding="utf-8")
-
-    probe = (
-        "import sys\n"
-        "from pathlib import Path\n"
-        "p = Path(sys.argv[1])\n"
-        "print(p.read_text().strip() if p.exists() else 'unreadable')\n"
-    )
-    res = subprocess.run(
-        [
-            *_SHIM,
-            "--read",
-            "/usr",
-            "--read",
-            "/lib",
-            "--read",
-            "/lib64",
-            "--read",
-            str(allowed),
-            "--write",
-            str(allowed),
-            "--",
-            sys.executable,
-            "-c",
-            probe,
-            str(secret / "key"),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert "sk-DECOY" not in res.stdout, "the shim did not confine what it exec'd"
-
-
-@pytest.mark.needs_namespaces
-def test_a_confined_server_can_still_write_dev_null(tmp_path: Path) -> None:
-    """The opt-in grants exactly the operator's paths, and no toolchain runs
-    without /dev/null: `git` inside a confined server died "could not open
-    '/dev/null'", surfacing as "Bad git executable" with nothing naming /dev.
-    The five inert nodes the jail grants are granted here too; /dev/tty is not
-    one of them."""
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    res = subprocess.run(
-        [
-            *_SHIM,
-            *("--read", "/usr", "--read", "/bin", "--read", "/lib", "--read", "/lib64"),
-            *("--read", "/etc"),
-            "--write",
-            str(scratch),
-            "--",
-            "sh",
-            "-c",
-            ": > /dev/null && echo devnull-ok",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert res.returncode == 0 and "devnull-ok" in res.stdout, res.stderr
-
-
-def test_a_block_with_no_read_paths_is_refused() -> None:
-    """Landlock grants READ and EXECUTE together, so a server with no read path
-    cannot reach its own interpreter and dies on startup with an import error
-    that says nothing about the sandbox."""
-    with pytest.raises(ValueError, match="read_paths is required"):
-        Config.model_validate(
-            {"mcp": {"enabled": True, "servers": {"s": {"command": ["x"], "sandbox": {}}}}}
-        )
 
 
 @pytest.mark.parametrize("path", ["rel/path", "./x", "x"])
@@ -167,57 +47,6 @@ def test_a_connected_server_cannot_carry_a_sandbox_block() -> None:
         )
 
 
-def test_the_shim_reaches_the_spawn_from_config(tmp_path: Path) -> None:
-    """The whole path: config block -> spec -> the argv actually spawned."""
-    from agent6.app._setup import start_mcp_manager_if_enabled
-
-    cfg = Config.model_validate(
-        {
-            "mcp": {
-                "enabled": True,
-                "servers": {
-                    "s": {
-                        "command": [sys.executable, "-c", "pass"],
-                        "sandbox": {
-                            "read_paths": ["/usr", str(tmp_path)],
-                            "write_paths": [str(tmp_path)],
-                        },
-                    }
-                },
-            }
-        }
-    )
-    spawned: list[list[str]] = []
-
-    class _Proc:
-        pid = 4242
-        stdin = None
-        stdout = None
-
-        def poll(self) -> int:
-            return 0
-
-    def _capture(argv: list[str], **_kw: object) -> _Proc:
-        spawned.append(list(argv))
-        raise OSError("stop here; the argv is what this test is about")
-
-    import agent6.tools.mcp_client as client
-
-    original = client.subprocess.Popen
-    client.subprocess.Popen = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    try:
-        start_mcp_manager_if_enabled(cfg)
-    finally:
-        client.subprocess.Popen = original  # pyright: ignore[reportAttributeAccessIssue]
-
-    # The Landlock probe shells out to ldconfig on import, so pick the spawn
-    # this test is about rather than assuming it is the first.
-    servers = [argv for argv in spawned if argv[:3] == _SHIM]
-    assert servers, f"the server was not spawned through the shim: {spawned}"
-    assert "--read" in servers[0] and "/usr" in servers[0]
-    assert servers[0][-2:] == [sys.executable, "-c"] or "--" in servers[0]
-
-
 def test_a_confined_server_loses_the_session_bus() -> None:
     """PROVED escape: Landlock gates filesystem paths, not `connect()` to a
     unix socket. A server denied /etc/passwd directly could reach the session
@@ -239,79 +68,6 @@ def test_a_notify_hook_keeps_the_desktop_it_needs(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
     assert "DBUS_SESSION_BUS_ADDRESS" in curated_env()
-
-
-def test_only_a_confined_spawn_drops_the_desktop(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An unconfined MCP server is no more bounded than the operator's shell,
-    so taking its desktop away would break things for no gain."""
-    import agent6.tools.mcp_client as client
-
-    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
-    seen: list[dict[str, str]] = []
-
-    class _Proc:
-        pid = 1
-        stdin = None
-        stdout = None
-
-        def poll(self) -> int:
-            return 0
-
-    def _capture(_argv: object, **kw: object) -> _Proc:
-        env = kw["env"]
-        assert isinstance(env, dict)
-        seen.append(dict(env))
-        raise OSError("stop here")
-
-    original = client.subprocess.Popen
-    client.subprocess.Popen = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    try:
-        for confine in (None, MCPConfinement(read_paths=("/usr",))):
-            srv = client._MCPServer(  # pyright: ignore[reportPrivateUsage]
-                name="s",
-                command=("x",),
-                startup_timeout_s=1.0,
-                call_timeout_s=1.0,
-                confine=confine,
-            )
-            with contextlib.suppress(client.MCPError):
-                srv.start()
-    finally:
-        client.subprocess.Popen = original  # pyright: ignore[reportAttributeAccessIssue]
-
-    assert "DBUS_SESSION_BUS_ADDRESS" in seen[0], "an unconfined server keeps it"
-    assert "DBUS_SESSION_BUS_ADDRESS" not in seen[1], "a confined one must not"
-
-
-def test_a_kernel_without_landlock_is_reported_where_it_is_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The shim's stderr goes to /dev/null (a chatty server would spam every
-    run), so its degrade warning was discarded -- and the next line said the
-    server started, which reads as success."""
-    import agent6.app._setup as setup
-
-    monkeypatch.setattr(setup, "landlock_abi", lambda: 0)
-    said: list[str] = []
-    cfg = Config.model_validate(
-        {
-            "mcp": {
-                "enabled": True,
-                "servers": {
-                    "soft": {"command": ["x"], "sandbox": {"read_paths": ["/usr"]}},
-                    "hard": {
-                        "command": ["x"],
-                        "sandbox": {"read_paths": ["/usr"], "require": True},
-                    },
-                },
-            }
-        }
-    )
-    setup._warn_unconfinable(  # pyright: ignore[reportPrivateUsage]
-        cfg, reporter=Reporter(out=said.append, err=said.append)
-    )
-    assert any("'soft'" in line and "full filesystem" in line for line in said)
-    assert not any("'hard'" in line for line in said), "it refuses; that is not a degrade"
 
 
 def test_a_server_description_cannot_repaint_the_terminal(
@@ -422,3 +178,83 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
     assert rc != 0
     err = capsys.readouterr().err
     assert "OPENROUTER_API_KEY" in err and "provider API key" in err
+
+
+def _policy_for(body: dict[str, object] | None, tmp_path: Path):
+    from agent6.app._setup import mcp_server_policy
+
+    spec: dict[str, object] = {"command": ["npx", "server"]}
+    if body is not None:
+        spec["sandbox"] = body
+    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": spec}}})
+    return mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["s"])
+
+
+def test_a_server_block_names_only_what_is_extra(tmp_path: Path) -> None:
+    """The whole ergonomic point: a server gets the same sandbox a jailed
+    command gets -- system dirs, the operator's tool dirs, a writable HOME --
+    so the block names only its own data. Naming an interpreter used to be
+    required, and getting it wrong surfaced as an empty tool list."""
+    policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
+    assert policy is not None
+    assert Path("/srv/notes") in policy.extra_ro_paths
+    assert policy.tool_paths, "the operator's tool dirs come with the base"
+    assert dict(policy.env)["HOME"].startswith("/tmp"), "a writable HOME comes with the base"
+    assert policy.cwd == tmp_path
+
+
+def test_no_block_still_confines(tmp_path: Path) -> None:
+    """Absent block is the secure default now, not an opt-out: the server is
+    confined exactly like a command."""
+    policy = _policy_for(None, tmp_path)
+    assert policy is not None
+    assert policy.isolation == "strict"
+    assert not policy.allow_network
+
+
+def test_unconfined_is_the_only_way_out(tmp_path: Path) -> None:
+    assert _policy_for({"unconfined": True}, tmp_path) is None
+
+
+def test_unconfined_cannot_be_half_applied() -> None:
+    """`unconfined` contradicts every other field, so setting both is refused
+    rather than silently applying one of them."""
+    for body in (
+        {"unconfined": True, "read_paths": ["/srv"]},
+        {"unconfined": True, "network": "allow"},
+    ):
+        with pytest.raises(ValueError, match="unconfined"):
+            Config.model_validate(
+                {"mcp": {"enabled": True, "servers": {"s": {"command": ["x"], "sandbox": body}}}}
+            )
+
+
+def test_a_server_cannot_be_granted_the_private_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same refusal `[sandbox].extra_read_paths` gets: a server handed the
+    config dir would be handed secrets.toml, and there is no legitimate case."""
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    with pytest.raises(ValueError, match="agent6-private"):
+        Config.model_validate(
+            {
+                "mcp": {
+                    "enabled": True,
+                    "servers": {
+                        "s": {"command": ["x"], "sandbox": {"read_paths": [str(tmp_path / "cfg")]}}
+                    },
+                }
+            }
+        )
+
+
+def test_a_confined_server_gets_no_desktop_addresses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PROVED escape, re-pinned on the new path: the session bus reaches an
+    UNCONFINED `systemd --user` that runs commands on request, so a confined
+    server must not be handed its address."""
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+    policy = _policy_for({"read_paths": ["/srv/notes"]}, tmp_path)
+    assert policy is not None
+    assert "DBUS_SESSION_BUS_ADDRESS" not in dict(policy.env)

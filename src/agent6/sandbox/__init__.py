@@ -7,16 +7,12 @@ from __future__ import annotations
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail, strict_namespaces_work
 from agent6.sandbox.landlock import (
     LandlockError,
-    LandlockNotSupportedError,
-    apply_landlock,
     landlock_abi,
 )
 
 __all__ = [
     "JailUnavailableError",
     "LandlockError",
-    "LandlockNotSupportedError",
-    "apply_landlock",
     "landlock_abi",
     "run_in_jail",
     "strict_namespaces_work",

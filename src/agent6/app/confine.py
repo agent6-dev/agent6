@@ -56,10 +56,10 @@ def warn_sandbox_gaps(
         reporter.err(
             "[agent6] WARNING: running UNSANDBOXED (sandbox.isolation = 'none'). "
             "Commands -- including the LLM's run_command and verify_command -- "
-            "execute as plain subprocesses with NO filesystem, network, or syscall "
-            "confinement; the agent is contained only by the surrounding environment "
-            "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
-            "kernel-enforced isolation."
+            "and any spawned MCP server execute as plain subprocesses with NO "
+            "filesystem, network, or syscall confinement; the agent is contained "
+            "only by the surrounding environment (e.g. the container it runs in). "
+            "Use 'auto'/'strict'/'hardened' for kernel-enforced isolation."
         )
     elif isolation == "strict" and env.landlock_abi < 1:
         reporter.err(
@@ -180,6 +180,29 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
                 f" {str(region)!r} -- a region jailed commands can read. Masking it"
                 " needs the mount namespace only 'strict' has. Use strict, drop the"
                 " entry, or move one of the two."
+            )
+    return None
+
+
+def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+    """A refusal when a server EXPLICITLY demanded no network and this host
+    cannot give it one, else None.
+
+    Per-server, same rule and same vocabulary as `[sandbox].tool_network`: a
+    network namespace needs user namespaces, which only `strict` has, so
+    `block` refuses here and the `auto` default degrades with a warning
+    (`warn_sandbox_gaps`). `none` has no jail at all; the blanket unsandboxed
+    warning covers it.
+    """
+    if isolation == "strict":
+        return None
+    for name, srv in sorted(cfg.mcp.servers.items()):
+        if srv.enabled and srv.sandbox is not None and srv.sandbox.network == "block":
+            return (
+                f"MCP server {name!r} sets sandbox.network = 'block', which needs a"
+                " network namespace and so the strict isolation; this host resolved"
+                f" to {isolation!r}. Use 'auto' to run with a warning, or 'allow' to"
+                " accept the network."
             )
     return None
 

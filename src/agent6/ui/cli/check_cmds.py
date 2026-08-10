@@ -284,7 +284,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
                 detail="not configured (cfg.mcp.enabled=False or empty servers)",
             )
         ]
-    manager = start_mcp_manager_if_enabled(cfg)
+    manager = start_mcp_manager_if_enabled(cfg, Path.cwd(), resolve_isolation("auto", detect_env()))
     if manager is None:
         return [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     out: list[_DoctorCheck] = []

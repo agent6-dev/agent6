@@ -619,7 +619,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
             # owns its subprocesses; we close it in the finally block.
-            mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter, events=events)
+            mcp_manager = start_mcp_manager_if_enabled(
+                cfg, cwd, isolation, reporter=reporter, events=events
+            )
 
             loop_log = frontend.loop_logger(mode)
             tools = build_session_tools(

@@ -1035,7 +1035,6 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
     auditing, this test fails loudly.
     """
     from agent6.tools import _result_format
-    from agent6.tools import dispatch as _disp
 
     passthrough_keys: tuple[str, ...] = _result_format.PASSTHROUGH_ENV_KEYS
 
@@ -1053,7 +1052,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
         os.environ["LD_PRELOAD"] = "/tmp/evil.so"
         os.environ["LD_LIBRARY_PATH"] = "/tmp/evil"
         os.environ["PYTHONPATH"] = "/tmp/evil"
-        env = _disp.passthrough_env()  # pyright: ignore[reportPrivateUsage]
+        env = _result_format.passthrough_env()
         assert "LD_PRELOAD" not in env
         assert "LD_LIBRARY_PATH" not in env
         assert "PYTHONPATH" not in env

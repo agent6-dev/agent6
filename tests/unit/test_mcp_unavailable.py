@@ -30,7 +30,7 @@ def _cfg(command: list[str]) -> Config:
 def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: Path) -> None:
     """The manager knows which servers are missing; before this it only said so
     in passing, to a logger that may go nowhere."""
-    mgr = start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]))
+    mgr = start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]), tmp_path, "none")
     assert mgr is not None
     try:
         assert [f.name for f in mgr.failures] == ["notes"]
@@ -42,7 +42,9 @@ def test_a_server_that_cannot_spawn_is_recorded_not_just_logged(tmp_path: Path) 
 def test_the_failure_reaches_the_journal(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     events = EventSink(logs)
-    mgr = start_mcp_manager_if_enabled(_cfg(["/nonexistent/mcp-server"]), events=events)
+    mgr = start_mcp_manager_if_enabled(
+        _cfg(["/nonexistent/mcp-server"]), tmp_path, "none", events=events
+    )
     assert mgr is not None
     mgr.close()
 
@@ -65,7 +67,7 @@ def test_a_server_that_starts_emits_nothing(
 
     monkeypatch.setattr(mcp_client._MCPServer, "start", _ok)  # pyright: ignore[reportPrivateUsage]
     logs = tmp_path / "logs.jsonl"
-    mgr = start_mcp_manager_if_enabled(_cfg(["true"]), events=EventSink(logs))
+    mgr = start_mcp_manager_if_enabled(_cfg(["true"]), tmp_path, "none", events=EventSink(logs))
     assert mgr is not None
     mgr.close()
     assert not logs.exists() or "mcp.server_unavailable" not in logs.read_text(encoding="utf-8")

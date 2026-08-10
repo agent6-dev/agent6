@@ -31,7 +31,6 @@ from agent6.sandbox.jail import (
     JailSession,
     JailUnavailableError,
     jail_search_path,
-    operator_tool_paths,
     run_in_jail,
 )
 from agent6.sessions.ipc import effective_run_commands
@@ -61,7 +60,6 @@ from agent6.tools._nav_tools import (
 )
 from agent6.tools._result_format import (
     parse_metric_score,
-    passthrough_env,
     truncate_args,
 )
 from agent6.tools.background import BackgroundError, BackgroundShells
@@ -70,6 +68,7 @@ from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
+from agent6.tools.policy import jail_policy
 from agent6.tools.results import (
     BackgroundResult,
     ExecResult,
@@ -226,81 +225,6 @@ _COMMAND_TOOLS = frozenset(
         StopBackgroundInput.TOOL_NAME,
     }
 )
-
-
-def jail_policy(
-    root: Path,
-    config: Config,
-    isolation: IsolationLevel,
-    argv: tuple[str, ...],
-    *,
-    timeout_s: float | None = None,
-    extra_rw_paths: tuple[Path, ...] = (),
-    extra_protect_paths: tuple[Path, ...] = (),
-) -> JailPolicy:
-    """The sandbox policy every LLM-influenced argv runs under.
-
-    One owner, so every caller is confined identically: a foreground command, a
-    detached one (`run_background`), and the baseline gate re-run all get the
-    same protect paths, env, tool mounts and memory cap. The baseline once built
-    its own and inherited no PATH, so every real gate exited 127 and the run was
-    told its failure pre-existed.
-    """
-    # run_command reaches the network only under tool_network = "allow" (the
-    # jailed child then shares the host network instead of an empty namespace).
-    allow_network = config.sandbox.tool_network == "allow"
-    protect_paths: list[Path] = []
-    # STRICT only. A writable `.git` is not merely "recoverable": a jailed
-    # command can plant a `filter.<n>.clean` in `.git/config` plus a
-    # `.gitattributes`, and agent6's own auto-commit then executes it on the
-    # HOST, outside the jail. Strict re-binds `.git` read-only, which needs a
-    # mount namespace.
-    #
-    # Hardened has none, so the only tool is Landlock -- which has no deny
-    # rules. Protecting `.git` there meant not granting the workspace ROOT,
-    # because a Landlock grant is recursive and granting the root its own
-    # create/remove rights grants them over `.git` too. That cost every
-    # top-level write (`touch newfile`, `mkdir build`), which is too much to
-    # pay for a protection the operator can have properly by using strict.
-    # The in-process edit tools refuse `.git` writes on both isolation levels.
-    if config.sandbox.protect_git and isolation == "strict":
-        protect_paths.append((root / ".git").resolve())
-    protect_paths.extend(extra_protect_paths)
-    policy_kwargs: dict[str, Any] = {}
-    if timeout_s is not None:
-        policy_kwargs["timeout_s"] = timeout_s
-    env = passthrough_env()
-    # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
-    # cargo -> $CARGO_HOME, pip/uv likewise). The jail's /tmp is writable on both
-    # isolation levels, so point HOME there.
-    env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
-    env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
-    # `uv run` inside the jail must use the venv the operator already synced: the
-    # jail is offline and HOME is a fresh tmpfs, so a sync would re-resolve
-    # against an empty cache and fail.
-    env.setdefault("UV_NO_SYNC", "1")
-    # Make operator-installed tools reachable: a controlled PATH extending
-    # /usr/bin:/bin with the standard bin dirs, plus their real dirs as RO+exec
-    # mounts. Without this a `uv run` verify dies 127.
-    tool_path, tool_mounts = operator_tool_paths()
-    env["PATH"] = tool_path
-    return JailPolicy(
-        cwd=root,
-        argv=argv,
-        isolation=isolation,
-        env=tuple(sorted(env.items())),
-        allow_network=allow_network,
-        extra_protect_paths=tuple(protect_paths),
-        extra_ro_paths=tuple(Path(p) for p in config.sandbox.extra_read_paths),
-        extra_rw_paths=(
-            *(Path(p) for p in config.sandbox.extra_write_paths),
-            *extra_rw_paths,
-        ),
-        tool_paths=tool_mounts,
-        hide_paths=tuple(Path(p) for p in config.sandbox.hide_paths),
-        memory_limit_mb=config.sandbox.memory_limit_mb,
-        **policy_kwargs,
-    )
 
 
 def _roster(shells: BackgroundShells) -> tuple[str, ...]:

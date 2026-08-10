@@ -16,6 +16,7 @@ import agent6
 from agent6.app._setup import SandboxOverrides, detect_env
 from agent6.app.confine import (
     check_hide_paths_support,
+    check_mcp_network_support,
     check_network_support,
     check_protect_git_support,
     warn_sandbox_gaps,
@@ -78,6 +79,10 @@ def select_isolation(
     net_err = check_network_support(cfg, selected)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
+        raise SessionRefused(2)
+    mcp_net_err = check_mcp_network_support(cfg, selected)
+    if mcp_net_err is not None:
+        reporter.err(f"REFUSING: {mcp_net_err}")
         raise SessionRefused(2)
     hide_err = check_hide_paths_support(cfg, selected)
     if hide_err is not None:

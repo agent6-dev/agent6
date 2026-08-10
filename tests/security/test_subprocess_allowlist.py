@@ -46,7 +46,6 @@ ALLOWED = {
     "providers/token_command.py",
     "sessions/ipc.py",
     "sandbox/detect.py",
-    "sandbox/exec_confined.py",
     "sandbox/jail.py",
     "tools/lsp.py",
     "tools/mcp_client.py",

@@ -1031,66 +1031,73 @@ class NotifyConfig(BaseModel):
 
 
 class MCPSandbox(BaseModel):
-    """Filesystem confinement for one SPAWNED MCP server.
+    """What ONE spawned MCP server gets, on top of the sandbox a jailed
+    command gets.
 
-    Absent means unconfined -- the server runs as the operator, with their
-    whole filesystem, because agent6 cannot know what a given one needs and a
-    guess that breaks it is worse than none. Naming paths opts in.
+    A server is spawned by agent6 and fed model input, so it is confined the
+    same way and by the same launcher: the workspace, the system dirs, the
+    operator's tool dirs, a writable /tmp as HOME. This block names only what
+    is EXTRA -- which is why there is nothing to name for most servers, and
+    why nobody has to know where their interpreter lives.
 
-    The Landlock domain is applied to a shim which then becomes the server, so
-    it is inherited by the server and everything it spawns. ``network`` is the
-    one namespace-level knob: it needs no launcher, because unsharing a network
-    namespace leaves the stdio pipes (which are fds) untouched. pivot_root and
-    seccomp DO need the jail launcher, which captures stdio and so cannot host
-    a live MCP pipe; they have no knob here rather than one that does nothing.
+    Absent block: exactly those defaults. `unconfined = true` is the escape
+    hatch for a server that genuinely needs the host (a shell, a docker
+    driver); it contradicts every other field here, so setting both is
+    refused rather than silently half-applied.
     """
 
     model_config = _BASE_MODEL_CONFIG
 
-    # Readable+executable, and writable, for this server. `~` expands.
+    # Readable+executable, and writable, BEYOND the command sandbox. `~` expands.
     read_paths: tuple[str, ...] = ()
     write_paths: tuple[str, ...] = ()
-    # Refuse to start the server at all when the kernel has no Landlock,
-    # instead of running it unconfined with a warning.
-    require: bool = False
-    # "none" runs the server in a network namespace of its own: it keeps a
-    # loopback that reaches only itself, and nothing else -- no LAN, no
-    # internet, no host loopback. Default "host" is permissive because most
-    # servers exist to reach something. NOT called "auto": everywhere else in
-    # agent6 `auto` means "the most secure option available, degrading with a
-    # warning", and one word cannot also mean permissive. "none" is an explicit
-    # enforce value, so a host whose kernel forbids unprivileged user
-    # namespaces refuses the server rather than starting it connected.
-    network: Literal["host", "none"] = "host"
+    # Whether this server reaches the network, with `[sandbox].tool_network`'s
+    # exact vocabulary and meaning -- per-server because servers differ from
+    # commands and from each other: a browser or API server exists to reach
+    # something, a filesystem or memory server does not.
+    #   auto  (default) no network where the host can provide a namespace,
+    #                   degrading with a warning where it cannot
+    #   block           no network, refusing to start where that is impossible
+    #   allow           the host network
+    network: Literal["auto", "allow", "block"] = "auto"
+    # No confinement at all: the server runs as the operator, with their whole
+    # filesystem and network. For a server whose job IS arbitrary host access.
+    unconfined: bool = False
 
     @model_validator(mode="after")
-    def _reachable(self) -> MCPSandbox:
-        if not self.read_paths:
-            # Filesystem and network are independent axes. With no read path
-            # there is no Landlock domain -- which is a legitimate block when
-            # `network = "none"` is what the operator wanted, and an inert one
-            # otherwise. Landlock grants READ and EXECUTE together, so a domain
-            # with no read path cannot reach the server's own interpreter and
-            # dies on startup with an import error that says nothing about the
-            # sandbox; a write-only or require-only block is never what the
-            # operator meant.
-            if self.network == "none" and not self.write_paths and not self.require:
-                return self
-            raise ValueError(
-                "read_paths is required for filesystem confinement: a server"
-                " needs to READ its own runtime to start at all (its"
-                " interpreter, its libraries). Name those plus whatever data it"
-                " reads; write_paths is separate. For network confinement"
-                ' alone, set network = "none" and name no paths.'
+    def _escape_hatch_is_exclusive(self) -> MCPSandbox:
+        if not self.unconfined:
+            for group in (self.read_paths, self.write_paths):
+                for raw in group:
+                    if not Path(raw).expanduser().is_absolute():
+                        raise ValueError(
+                            f"sandbox paths must be absolute (or start with ~): {raw!r}."
+                            " A relative one would be resolved against whatever"
+                            " directory agent6 happened to start in."
+                        )
+            for raw in (*self.read_paths, *self.write_paths):
+                for private in private_dirs():
+                    if Path(raw).expanduser().is_relative_to(private):
+                        raise ValueError(
+                            f"sandbox path {raw!r} is inside the agent6-private dir"
+                            f" {str(private)!r} (secrets/state); it never enters a"
+                            " jail. Grant a different directory."
+                        )
+            return self
+        stated = [
+            name
+            for name, value in (
+                ("read_paths", self.read_paths),
+                ("write_paths", self.write_paths),
+                ("network", self.network != "auto"),
             )
-        for group in (self.read_paths, self.write_paths):
-            for raw in group:
-                if not Path(raw).expanduser().is_absolute():
-                    raise ValueError(
-                        f"sandbox paths must be absolute (or start with ~): {raw!r}."
-                        " A relative one would be resolved against whatever"
-                        " directory agent6 happened to start in."
-                    )
+            if value
+        ]
+        if stated:
+            raise ValueError(
+                f"unconfined = true means no sandbox at all, so {', '.join(stated)}"
+                " cannot also apply. Drop unconfined, or drop the rest."
+            )
         return self
 
 

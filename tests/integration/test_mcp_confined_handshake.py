@@ -18,13 +18,14 @@ change and fail loudly if it breaks the pipe.
 from __future__ import annotations
 
 import subprocess
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-from agent6.tools.mcp_client import MCPConfinement, MCPManager, MCPServerSpec
+from agent6.config import Config
+from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from agent6.tools.policy import jail_policy
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -81,21 +82,29 @@ def _reader_server_argv(probe: Path) -> tuple[str, ...]:
         """
     )
     _ = probe
-    return (sys.executable, "-c", script)
+    # The SYSTEM python, not sys.executable: a jailed command's binary has to
+    # exist inside the assembled root, and a venv interpreter in some other
+    # checkout does not. Real servers are `npx`/`node`/`python3` for the same
+    # reason -- found on the jail's PATH, or granted explicitly.
+    return ("/usr/bin/python3", "-c", script)
 
 
 def _call_cat(mgr: MCPManager, path: Path) -> str:
     return str(mgr.call("mcp__reader__cat", {"path": str(path)}))
 
 
-def _interpreter_paths() -> tuple[str, ...]:
-    """What the test server needs just to START: the system dirs, the venv it
-    is launched from, and the real interpreter prefix the venv points at (uv
-    keeps its CPython under XDG data, outside /usr). A confinement that omits
-    these fails at import with an error that says nothing about the sandbox --
-    the reason `read_paths` is required for a filesystem block."""
-    real = Path(sys.executable).resolve()
-    return ("/usr", "/etc", "/lib", "/lib64", sys.prefix, sys.base_prefix, str(real.parent))
+def _policy(argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), net: bool = False):
+    """A server policy exactly as production builds it: the same sandbox a
+    jailed command gets, plus this server's additive grants. Nothing here
+    names an interpreter -- that is the point of the shared base."""
+    return jail_policy(
+        cwd,
+        Config(),
+        "strict",
+        argv,
+        extra_ro_paths=read,
+        allow_network=net,
+    )
 
 
 @pytest.fixture
@@ -128,9 +137,8 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                confine=MCPConfinement(
-                    read_paths=(*_interpreter_paths(), str(visible.parent)),
-                    require=True,
+                policy=_policy(
+                    _reader_server_argv(visible), visible.parent.parent, read=(visible.parent,)
                 ),
             )
         ]
@@ -159,7 +167,9 @@ def test_a_network_confined_server_still_serves_its_tools(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                confine=MCPConfinement(network="none", require=True),
+                policy=_policy(
+                    _reader_server_argv(visible), visible.parent.parent, read=(visible.parent,)
+                ),
             )
         ]
     )
@@ -186,7 +196,7 @@ def test_closing_the_manager_leaves_no_confined_server_running(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                confine=MCPConfinement(read_paths=_interpreter_paths(), require=True),
+                policy=_policy(_reader_server_argv(visible), visible.parent.parent),
             )
         ]
     )

@@ -8,22 +8,27 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from pydantic import ValidationError
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6.child_env import curated_env
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
     ConfigError,
+    MCPServerEntry,
 )
 from agent6.events import EventSink
 from agent6.models.cache import list_models
-from agent6.sandbox import landlock_abi, strict_namespaces_work
+from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
-from agent6.tools.mcp_client import MCPConfinement, MCPManager, MCPServerSpec
+from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
+from agent6.tools.policy import jail_policy
+from agent6.types import IsolationLevel, JailPolicy
 
 
 def detect_env() -> Environment:
@@ -147,8 +152,49 @@ def check_provider_keys(cfg: Config) -> str | None:
     return None
 
 
+def mcp_server_policy(
+    cfg: Config, root: Path, isolation: IsolationLevel, srv: MCPServerEntry
+) -> JailPolicy | None:
+    """The sandbox for one spawned server, or None when the operator opted it
+    out with `unconfined = true`.
+
+    The same `jail_policy` a jailed command gets, plus this server's additive
+    grants -- so the block names only what is extra and never has to describe
+    the interpreter, the tool dirs, or a writable HOME.
+
+    Its env is the CURATED set rather than a command's passthrough: a server
+    is third-party code that may log or forward what it was given, so it gets
+    the base plus the variables named in `pass_env`, and never the desktop
+    addresses (the session bus reaches an unconfined `systemd --user` that
+    runs commands on request, which walks straight out of any sandbox).
+    """
+    sandbox = srv.sandbox
+    if sandbox is not None and sandbox.unconfined:
+        return None
+    read_paths = sandbox.read_paths if sandbox else ()
+    write_paths = sandbox.write_paths if sandbox else ()
+    allow_network = sandbox.network == "allow" if sandbox else False
+    # auto and block both mean "no network"; they differ only in what happens
+    # when the host cannot provide one (warn vs refuse), which preflight owns.
+    return jail_policy(
+        root,
+        cfg,
+        isolation,
+        srv.command,
+        extra_ro_paths=tuple(Path(p).expanduser() for p in read_paths),
+        extra_rw_paths=tuple(Path(p).expanduser() for p in write_paths),
+        allow_network=allow_network,
+        env_base=curated_env(passthrough=srv.pass_env, desktop=False),
+    )
+
+
 def start_mcp_manager_if_enabled(
-    cfg: Config, *, reporter: Reporter = STDIO_REPORTER, events: EventSink | None = None
+    cfg: Config,
+    root: Path,
+    isolation: IsolationLevel,
+    *,
+    reporter: Reporter = STDIO_REPORTER,
+    events: EventSink | None = None,
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
@@ -169,16 +215,7 @@ def start_mcp_manager_if_enabled(
             startup_timeout_s=srv.startup_timeout_s,
             call_timeout_s=srv.call_timeout_s,
             pass_env=srv.pass_env,
-            confine=(
-                MCPConfinement(
-                    read_paths=srv.sandbox.read_paths,
-                    write_paths=srv.sandbox.write_paths,
-                    require=srv.sandbox.require,
-                    network=srv.sandbox.network,
-                )
-                if srv.sandbox is not None
-                else None
-            ),
+            policy=mcp_server_policy(cfg, root, isolation, srv),
             http=(
                 HttpTransport(name=name, url=srv.url, token_env=srv.token_env) if srv.url else None
             ),
@@ -188,7 +225,7 @@ def start_mcp_manager_if_enabled(
     ]
     if not configs:
         return None
-    _warn_unconfinable(cfg, reporter=reporter)
+    _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
     manager = MCPManager.start(configs, logger=reporter.err)
     if events is not None:
         for failure in manager.failures:
@@ -196,20 +233,20 @@ def start_mcp_manager_if_enabled(
     return manager
 
 
-def _warn_unconfinable(cfg: Config, *, reporter: Reporter) -> None:
-    """Say so when a server asked to be confined cannot be, on this kernel.
-
-    Decided HERE, not in the shim: the shim's stderr goes to /dev/null (a
-    chatty server would otherwise spam every run), so a warning printed there
-    is a warning nobody reads -- and the manager's next line says the server
-    started, which reads as success.
-    """
-    if landlock_abi() > 0:
+def _warn_servers_that_keep_the_network(
+    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
+) -> None:
+    """`network = "auto"` is the secure default and cannot be honoured without
+    a network namespace, so where it degrades it says so -- per server, here,
+    where the operator is already being told about their servers. An explicit
+    `block` refused long before this (check_mcp_network_support)."""
+    if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.sandbox is not None and not srv.sandbox.require:
+        if srv.enabled and srv.sandbox is not None and srv.sandbox.network == "auto":
             reporter.err(
-                f"[agent6] WARNING: MCP server {name!r} asked to be confined, but this"
-                " kernel has no Landlock: it is running with your full filesystem."
-                " Set its sandbox.require = true to refuse instead."
+                f"[agent6] WARNING: MCP server {name!r} keeps this host's network:"
+                f" taking it away needs the network namespace only 'strict' has, and"
+                f" this host resolved to {isolation!r}. Set its sandbox.network ="
+                " 'block' to refuse rather than run connected."
             )

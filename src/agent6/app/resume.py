@@ -534,7 +534,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             reporter.err(f"[agent6] resume session id: {session_id}")
 
-            mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter, events=events)
+            mcp_manager = start_mcp_manager_if_enabled(
+                cfg, cwd, isolation, reporter=reporter, events=events
+            )
 
             loop_log = frontend.loop_logger(mode)
             tools = build_session_tools(

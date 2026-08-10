@@ -473,6 +473,71 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             time.sleep(0.01)  # killing one layer orphans the next onto us
 
 
+def spawn_in_jail(
+    policy: JailPolicy,
+    *,
+    stdin: int | None = None,
+    stdout: int | None = None,
+    stderr: int | None = None,
+) -> subprocess.Popen[bytes]:
+    """Start `policy.argv` inside the sandbox and hand back the live process.
+
+    The third transport, beside `run_in_jail` (collect a command) and
+    `JailSession` (serve many): for a child agent6 TALKS to for the whole
+    session rather than collects -- an MCP server and its JSON-RPC pipe. The
+    same policy, the same launcher, the same layers.
+
+    The child's stdio is whatever the caller passes, straight through: fork,
+    unshare, pivot_root, Landlock, seccomp and execve none of them touch the
+    fd table, so a pipe handed in here survives every layer. The policy
+    therefore cannot travel on stdin (that belongs to the child), and goes on
+    fd 3 instead, which the launcher reads and closes before the child exists.
+
+    `isolation = "none"` spawns the command directly, the same unsandboxed
+    path `run_in_jail` documents.
+    """
+    argv = list(policy.argv)
+    if policy.isolation == "none":
+        return subprocess.Popen(
+            argv,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            env=dict(policy.env),
+            cwd=policy.cwd,
+            start_new_session=True,
+        )
+    binary = _require_jail_binary()
+    spec = json.loads(_policy_to_json(policy))
+    spec["mode"] = "exec"
+    _become_subreaper()
+    # pass_fds keeps the descriptor's NUMBER in the child, so the launcher is
+    # told the number we actually got rather than a hardcoded 3.
+    policy_r, policy_w = os.pipe()
+    try:
+        with _sweep_lock:
+            proc = subprocess.Popen(
+                [str(binary), "--policy-fd", str(policy_r)],
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                pass_fds=(policy_r,),
+                start_new_session=True,
+                env=_LAUNCHER_ENV,
+            )
+            _live_launchers.add(proc.pid)
+    finally:
+        # Ours to close either way: the child has its own copy, and holding the
+        # read end here would leave the launcher waiting on an EOF that the
+        # write below cannot deliver.
+        os.close(policy_r)
+    # AFTER the spawn, so the reader exists: a policy larger than the pipe
+    # buffer (a long path list) would otherwise block forever on the write.
+    with os.fdopen(policy_w, "wb") as handle:
+        handle.write((json.dumps(spec) + "\n").encode())
+    return proc
+
+
 def run_in_jail(policy: JailPolicy) -> CommandResult:
     """Run `policy.argv` inside the sandbox.
 
