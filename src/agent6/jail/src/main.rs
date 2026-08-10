@@ -242,6 +242,14 @@ fn main() {
     let userns_fd = fd_arg(&args, "--userns-fd");
     let netns_fd = fd_arg(&args, "--netns-fd");
     let policy_fd = fd_arg(&args, "--policy-fd");
+    // The client's way to say "hand the running command back NOW" without
+    // waiting out the check-in: one byte on this pipe. A separate channel, not
+    // the request pipe, because that one is in lockstep -- the client is
+    // blocked reading the answer to the very request this interrupts.
+    let interrupt_fd = fd_arg(&args, "--interrupt-fd");
+    if let Some(fd) = interrupt_fd {
+        prepare_interrupt_fd(fd);
+    }
     let read_ok = match policy_fd {
         // from_raw_fd owns the fd and closes it at end of scope, so the child
         // never inherits the policy channel.
@@ -271,14 +279,45 @@ fn main() {
         _ => None,
     };
     match policy.isolation.as_str() {
-        "strict" => run_strict(&policy, join),
-        "hardened" => run_hardened(&policy),
-        "none" => run_unconfined(&policy),
+        "strict" => run_strict(&policy, join, interrupt_fd),
+        "hardened" => run_hardened(&policy, interrupt_fd),
+        "none" => run_unconfined(&policy, interrupt_fd),
         other => die(format!("unknown sandbox isolation: {other}")),
     }
 }
 
-fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
+/// Make the interrupt pipe non-blocking (the poll below must never wait) and
+/// close-on-exec (a jailed command must not inherit the channel that steers
+/// its own hand-back).
+fn prepare_interrupt_fd(fd: RawFd) {
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFL);
+        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
+            die("could not set O_NONBLOCK on --interrupt-fd");
+        }
+        if libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) < 0 {
+            die("could not set FD_CLOEXEC on --interrupt-fd");
+        }
+    }
+}
+
+/// Whether the client has asked for an immediate hand-back. Drains what is
+/// there: one request is one hand-back, and a byte left behind would convert
+/// the next command the moment it started.
+fn interrupt_requested(fd: Option<RawFd>) -> bool {
+    let Some(fd) = fd else { return false };
+    let mut buf = [0u8; 64];
+    let mut asked = false;
+    loop {
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+        if n <= 0 {
+            return asked; // EAGAIN (nothing pending), EOF, or an error
+        }
+        asked = true;
+    }
+}
+
+fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<RawFd>) -> ! {
     // Before the user namespace maps this process to 0: the jail root is
     // named for the REAL uid, and inside the namespace getuid() is always 0.
     let real_uid = getuid().as_raw();
@@ -310,14 +349,14 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
                 die(format!("PR_SET_DUMPABLE failed: {e}"));
             }
             if policy.mode == "serve" {
-                serve(&policy.cwd, true);
+                serve(&policy.cwd, true, interrupt_fd);
             }
             // A one-shot launcher never hands a command back (its spec sets
             // no check-in), so there is no pid to carry out of here.
             let outcome = if policy.mode == "exec" {
                 run_child_exec(&policy.child_spec(), &policy.cwd)
             } else {
-                run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
+                run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
             };
             if let Err(e) = outcome {
                 die(format!("child execution failed: {e}"));
@@ -328,7 +367,7 @@ fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
     }
 }
 
-fn run_unconfined(policy: &Policy) -> ! {
+fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     // `isolation = "none"`: the operator's explicit opt-out, or a host with no
     // confinement mechanism at all. NOTHING here confines the child -- no
     // namespaces, no Landlock, no seccomp -- so this branch must stay reachable
@@ -351,14 +390,14 @@ fn run_unconfined(policy: &Policy) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        serve(&policy.cwd, false);
+        serve(&policy.cwd, false, interrupt_fd);
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
+        run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
@@ -366,7 +405,7 @@ fn run_unconfined(policy: &Policy) -> ! {
     std::process::exit(0);
 }
 
-fn run_hardened(policy: &Policy) -> ! {
+fn run_hardened(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     // No namespaces, no pivot_root. Landlock confines the FS; seccomp +
     // NO_NEW_PRIVS bound the syscall surface; we still operate on the real cwd
     // and inherit the original /proc, /tmp, network namespace from the parent.
@@ -382,14 +421,14 @@ fn run_hardened(policy: &Policy) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        serve(&policy.cwd, false);
+        serve(&policy.cwd, false, interrupt_fd);
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd).map(|_| ())
+        run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
@@ -401,7 +440,7 @@ fn run_hardened(policy: &Policy) -> ! {
 /// answering each with the same single-line JSON result the one-shot mode
 /// prints. Exits when stdin closes, which takes the PID namespace (and any
 /// backgrounded server in it) down with it.
-fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
+fn serve(cwd: &Path, pid_namespaced: bool, interrupt_fd: Option<RawFd>) -> ! {
     // Setup (mounts, /proc, Landlock, seccomp) is complete by the time we are
     // called, so any warning it emitted is already on our stderr. Signal that
     // with one line the client consumes before its first request: it gives
@@ -437,11 +476,13 @@ fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
         let outcome: io::Result<()> = match request {
             // A run that was handed back keeps running, so it is swept and
             // polled exactly like one that started in the background.
-            Request::Run(child) => run_child(&child.child_spec(), cwd).map(|handed_back| {
-                if let Some(pid) = handed_back {
-                    backgrounded.push(pid);
-                }
-            }),
+            Request::Run(child) => {
+                run_child(&child.child_spec(), cwd, interrupt_fd).map(|handed_back| {
+                    if let Some(pid) = handed_back {
+                        backgrounded.push(pid);
+                    }
+                })
+            }
             Request::Background(child) => {
                 spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push(pid))
             }
@@ -1933,7 +1974,11 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     std::process::exit(status.code().unwrap_or(128 + libc::SIGKILL));
 }
 
-fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<Option<i32>> {
+fn run_child(
+    spec: &ChildSpec<'_>,
+    cwd: &Path,
+    interrupt_fd: Option<RawFd>,
+) -> io::Result<Option<i32>> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
@@ -1996,11 +2041,14 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<Option<i32>> {
             timed_out = true;
             break;
         }
-        if converts && start.elapsed() > checkin {
+        if converts && (start.elapsed() > checkin || interrupt_requested(interrupt_fd)) {
             // Hand the command back rather than kill it: whether a long command
             // is stuck or working is a judgement, so it goes to whoever can
-            // make one. Render BEFORE spilling -- the answer carries the output
-            // so far, and spilling clears the retained capture.
+            // make one. The client can ask for that judgement EARLY (a byte on
+            // the interrupt pipe) when the operator has pressed Stop -- the
+            // same hand-back, just not at the end of a 15-minute check-in.
+            // Render BEFORE spilling -- the answer carries the output so far,
+            // and spilling clears the retained capture.
             let (out, err) = {
                 let buf = captured.lock().unwrap_or_else(|e| e.into_inner());
                 (buf.render(Some(Stream::Out)), buf.render(Some(Stream::Err)))

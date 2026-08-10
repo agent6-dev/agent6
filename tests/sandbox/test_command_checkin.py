@@ -249,3 +249,49 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: Path) -> None:
         assert 1.0 < waited < 15.0, f"waited {waited:.1f}s; expected to wait for the ~2s command"
     finally:
         d.close()
+
+
+def test_an_operator_stop_hands_a_running_command_back_at_once(tmp_path: Path) -> None:
+    """The sibling of the wait above, and the harder half.
+
+    `read_background`'s wait is a poll loop this side owns. A SYNCHRONOUS
+    `run_command` is not: the dispatcher blocks reading the launcher's answer
+    pipe, so a Stop sat unread until the check-in elapsed -- measured at 18s of
+    a 20s command, and the default check-in is 900. The launcher now takes a
+    second reason to hand back, on its own pipe, because the request channel is
+    in lockstep and this side is blocked on the answer to the very request
+    being interrupted. The command is not killed: it becomes `bg<N>` exactly as
+    the check-in would have made it.
+    """
+    from agent6.sessions.ipc import request_stop
+
+    d = _dispatcher(tmp_path, checkin=900.0)
+    session_dir = tmp_path / "session"
+    try:
+        request_stop(session_dir)
+        started = time.monotonic()
+        out = _run(d, "sleep 30")
+        waited = time.monotonic() - started
+        assert waited < 5.0, f"the stop was ignored for {waited:.1f}s of a 900s check-in"
+        assert out["returncode"] is None and out["still_running"] is True
+        assert out["background_id"] == "bg1"
+        d.dispatch("stop_background", {"id": "bg1"})
+    finally:
+        d.close()
+
+
+def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> None:
+    """The negative control: no marker, so the same command returns its own
+    result and no handle, or the early hand-back above would prove nothing."""
+    d = _dispatcher(tmp_path, checkin=900.0)
+    try:
+        started = time.monotonic()
+        out = _run(d, "sleep 2; echo done")
+        waited = time.monotonic() - started
+        assert out["returncode"] == 0
+        # A finished command carries no handle at all, not an empty one.
+        assert "background_id" not in out and "still_running" not in out
+        assert "done" in out["stdout"]
+        assert waited > 1.5, f"returned in {waited:.1f}s; the command sleeps 2"
+    finally:
+        d.close()

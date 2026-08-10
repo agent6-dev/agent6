@@ -23,6 +23,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
@@ -84,6 +85,10 @@ def _never_mounted(p: Path) -> bool:
 # command -- inheriting the agent's env put the operator's provider key there.
 # The launcher reads nothing from the environment (its policy arrives on stdin
 # and the child's env is passed explicitly in it), so it gets none.
+# How long the answer wait sleeps between checks. Short enough that an
+# operator Stop reads as immediate, long enough to cost nothing while a
+# command runs for minutes.
+_ANSWER_POLL_S = 0.2
 _LAUNCHER_ENV: dict[str, str] = {}
 
 
@@ -1185,6 +1190,11 @@ class JailSession:
     # Without one, a `setsid` escapee reparents to this process (a subreaper),
     # so each command's own sweep has to run here instead.
     _pid_namespaced: bool
+    # Write end of the launcher's interrupt pipe: one byte asks it to hand the
+    # RUNNING command back now instead of at the check-in. A second channel is
+    # what the request pipe cannot be -- that one is in lockstep, and this side
+    # is blocked reading the answer to the very request being interrupted.
+    _interrupt_w: int
     # The run's cap, carried on every request: the launcher's own default
     # applies to what a request omits, which would ignore the operator's.
     _memory_limit_mb: int
@@ -1200,17 +1210,24 @@ class JailSession:
         binary = _require_jail_binary()
         join_args, join_fds = _join_args(policy, session_net)
         _become_subreaper()
-        with _sweep_lock:
-            proc = subprocess.Popen(
-                [str(binary), *join_args],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                pass_fds=join_fds,
-                start_new_session=True,
-                env=_LAUNCHER_ENV,
-            )
-            _live_launchers.add(proc.pid)
+        interrupt_r, interrupt_w = os.pipe()
+        try:
+            with _sweep_lock:
+                proc = subprocess.Popen(
+                    [str(binary), "--interrupt-fd", str(interrupt_r), *join_args],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    pass_fds=(interrupt_r, *join_fds),
+                    start_new_session=True,
+                    env=_LAUNCHER_ENV,
+                )
+                _live_launchers.add(proc.pid)
+        except BaseException:
+            os.close(interrupt_w)
+            raise
+        finally:
+            os.close(interrupt_r)
         spec = json.loads(_policy_to_json(policy))
         spec["mode"] = "serve"
         assert proc.stdin is not None and proc.stdout is not None
@@ -1226,6 +1243,7 @@ class JailSession:
         if not ready:
             with _sweep_lock:
                 _live_launchers.discard(proc.pid)
+            os.close(interrupt_w)
             err = _lossy_text(_read_available(proc.stderr)).strip()
             raise JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
         startup_stderr = _lossy_text(_read_available(proc.stderr, budget_s=0.1)).strip()
@@ -1233,6 +1251,7 @@ class JailSession:
             _proc=proc,
             _binary=binary,
             _pid_namespaced=policy.isolation == "strict",
+            _interrupt_w=interrupt_w,
             _memory_limit_mb=policy.memory_limit_mb,
             startup_stderr=startup_stderr,
         )
@@ -1245,6 +1264,7 @@ class JailSession:
         timeout_s: float = 600.0,
         checkin_s: float = 0.0,
         log_dir: str = "",
+        interrupted: Callable[[], bool] | None = None,
     ) -> CommandResult | BackgroundHandoff:
         """Run one command to completion in this session's namespaces.
 
@@ -1252,6 +1272,13 @@ class JailSession:
         double-fork) survive the launcher's process-group kill and reparent to
         this process, so they are swept here -- the bound a per-command launcher
         used to provide.
+
+        *interrupted* is polled while waiting for the answer. Once it says yes,
+        the launcher is asked to hand the command back NOW rather than at
+        ``checkin_s``: the operator pressed Stop, and a 15-minute wait for a
+        command that is already going to be abandoned reads as a hung agent.
+        The command is not killed -- it becomes ``bg<N>`` exactly as the
+        check-in would have made it, and teardown stops it.
         """
         start = time.monotonic()
         before = frozenset() if self._pid_namespaced else frozenset(_own_children())
@@ -1266,7 +1293,8 @@ class JailSession:
                     "checkin_s": checkin_s,
                     "log_dir": log_dir,
                     "memory_limit_mb": self._memory_limit_mb,
-                }
+                },
+                interrupted=interrupted,
             )
         finally:
             # Only for a command that ENDED: one handed back is still running,
@@ -1325,7 +1353,9 @@ class JailSession:
         code = answer.get("returncode")
         return code if isinstance(code, int) else None
 
-    def _request(self, request: dict[str, object]) -> dict[str, object]:
+    def _request(
+        self, request: dict[str, object], *, interrupted: Callable[[], bool] | None = None
+    ) -> dict[str, object]:
         """One request, one answer line. The channel is in lockstep: every
         request gets exactly one answer, or the next one reads this one's.
 
@@ -1338,7 +1368,7 @@ class JailSession:
         try:
             self._proc.stdin.write((json.dumps(request) + "\n").encode())
             self._proc.stdin.flush()
-            line = self._proc.stdout.readline()
+            line = self._await_answer(interrupted)
         except (OSError, ValueError) as exc:  # ValueError: the pipe is closed
             raise JailUnavailableError(f"jail session is gone: {exc}") from exc
         if not line:
@@ -1353,6 +1383,29 @@ class JailSession:
             raise JailUnavailableError(f"jail session answered with {type(parsed).__name__}")
         return parsed  # pyright: ignore[reportUnknownVariableType]
 
+    def _await_answer(self, interrupted: Callable[[], bool] | None) -> bytes:
+        """The launcher's answer line, waiting for it in a way an operator Stop
+        can cut short.
+
+        Selecting on the raw descriptor is safe because the channel is in
+        lockstep: at most one unread answer can be in flight, so a complete
+        answer can never be sitting in the reader's buffer while select says
+        there is nothing to read. EOF selects ready and reads empty, which the
+        caller already reports as a dead session.
+        """
+        assert self._proc.stdout is not None
+        if interrupted is None:
+            return self._proc.stdout.readline()
+        asked = False
+        while not select.select([self._proc.stdout], [], [], _ANSWER_POLL_S)[0]:
+            if not asked and interrupted():
+                # Once: the launcher drains the pipe, and a second byte would
+                # convert whatever command runs next the moment it starts.
+                with contextlib.suppress(OSError):
+                    os.write(self._interrupt_w, b"\x01")
+                asked = True
+        return self._proc.stdout.readline()
+
     def close(self) -> None:
         """Shut the request channel; the PID namespace takes the rest down.
 
@@ -1363,6 +1416,8 @@ class JailSession:
         (3.14 tolerates it), which would be an unhandled crash in
         ``ToolDispatcher.close()`` teardown on the project's minimum Python. The
         ``ValueError`` stays suppressed as a belt-and-suspenders."""
+        with contextlib.suppress(OSError):
+            os.close(self._interrupt_w)
         with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
             self._proc.communicate(timeout=10.0)
         if self._proc.poll() is None:

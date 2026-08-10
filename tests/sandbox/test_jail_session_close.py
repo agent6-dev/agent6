@@ -12,6 +12,7 @@ proc, so they need no namespaces and run on every interpreter.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -42,8 +43,15 @@ class _FakeProc:
 
 
 def _session(proc: Any) -> JailSession:
+    # A real pipe end for the interrupt channel: close() closes it, and a
+    # bogus number would make that the failure under test instead of the flush.
+    _, interrupt_w = os.pipe()
     return JailSession(
-        _proc=proc, _binary=Path("/nonexistent"), _pid_namespaced=True, _memory_limit_mb=0
+        _proc=proc,
+        _binary=Path("/nonexistent"),
+        _pid_namespaced=True,
+        _interrupt_w=interrupt_w,
+        _memory_limit_mb=0,
     )
 
 

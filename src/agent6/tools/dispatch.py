@@ -870,6 +870,10 @@ class ToolDispatcher:
                 timeout_s=0.0,  # the check-in replaces the kill
                 checkin_s=checkin,
                 log_dir=str(shells.log_root),
+                # A Stop mid-command asks for the hand-back NOW. The operator's
+                # gates (verify, metric) go through `_run_argv_in_jail`, which
+                # has no check-in to jump to and its own timeout_s.
+                interrupted=self._operator_wants_out,
             )
         except JailUnavailableError as exc:
             raise ToolError(f"run_command: jail unavailable: {exc}") from exc
