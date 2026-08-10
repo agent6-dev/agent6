@@ -803,22 +803,24 @@ class ToolDispatcher:
     def _fetch(self, raw: dict[str, Any]) -> FetchResult:
         args = FetchInput.model_validate(raw)
         try:
-            target = check_url(args.url)
+            checked = check_url(args.url)
         except FetchRefused as exc:
             raise ToolError(str(exc)) from exc
         # On the list: read it. Off the list: ask. The list IS the standing
         # approval, and a prompt per doc read only trains a reflexive yes --
         # but a GET can carry data out in its path, so a host the operator
         # never named is their call, and an absent one is a no (the away-mode
-        # approver refuses without waiting).
-        if not host_allowed(target.host, self._config.sandbox.fetch_hosts) and not self._approver(
-            f"Allow fetch: {target.prompt()}", standing=False
+        # approver refuses without waiting). Nothing has resolved yet: the DNS
+        # query itself carries the hostname out, so `fetch` runs it behind
+        # this gate.
+        if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approver(
+            f"Allow fetch: {checked.prompt()}", standing=False
         ):
             raise ToolDenied(
-                f"fetch not approved for {target.host} (add it to sandbox.fetch_hosts to allow it)"
+                f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
             )
         try:
-            got = fetch(target)
+            got = fetch(checked)
         except FetchRefused as exc:
             raise ToolError(str(exc)) from exc
         return FetchResult(

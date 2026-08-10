@@ -77,36 +77,28 @@ def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class Target:
-    """A vetted URL: the address to dial, and the name to prove."""
+class Checked:
+    """A vetted URL that has not touched the network: what the gate runs on."""
 
     url: str
     host: str
-    address: str
 
     def prompt(self) -> str:
-        """What the operator is asked. The RESOLVED host, never the raw URL:
-        `https://docs.python.org@evil.example/x` reads as the first and
-        connects to the second."""
+        """What the operator is asked. The parsed host, never the raw URL: the
+        name shown is exactly the one the connection will be proved against,
+        and the one `fetch_hosts` would have to name."""
         path = urlsplit(self.url).path or "/"
-        return f"{self.host} ({self.address}) {path[:200]}"
+        return f"{self.host} {path[:200]}"
 
 
-def check_url(url: str) -> Target:
-    """Vet *url* and pin the address it may be fetched from, or raise.
+def check_url(url: str) -> Checked:
+    """Vet *url* without touching the network, or raise.
 
-    Everything it must be before anyone is asked about it: https, no
-    credentials, a real host, and a host resolving only to public addresses.
-    That last one is what keeps a fetch away from the cloud metadata endpoint
-    (169.254.169.254), a loopback admin port, or the operator's LAN.
-
-    The chosen ADDRESS comes back with it, and `fetch` dials exactly that.
-    Handing the name onward instead let two resolvers disagree: CPython's
-    `getaddrinfo` encodes an international name with IDNA2003 and httpx with
-    UTS-46, so `ßeta.example.com` was vetted as `sseta.example.com` and
-    connected to `xn--eta-4ka.example.com` -- a different host entirely, and a
-    complete bypass needing no race at all. Re-resolving also reopened the
-    plain rebinding window.
+    Everything the string alone can prove: https, no credentials, a real host,
+    and a literal address that is public. A name is NOT resolved here: the DNS
+    query for `<data>.attacker.example` delivers its label to whoever runs
+    that name's authoritative server, so resolving ahead of the operator's
+    gate was itself an egress channel. `fetch` resolves behind the gate.
     """
     parts = urlsplit(url)
     if parts.scheme != "https":
@@ -119,34 +111,49 @@ def check_url(url: str) -> Target:
     if not host:
         raise FetchRefused("no host in the URL")
     try:
-        infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        raise FetchRefused(f"{host} does not resolve: {exc}") from exc
-    chosen = ""
-    for info in infos:
-        addr = ipaddress.ip_address(str(info[4][0]))
-        if not addr.is_global:
-            raise FetchRefused(f"{host} resolves to {addr}, which is not a public address")
-        chosen = chosen or str(addr)
-    if not chosen:
-        raise FetchRefused(f"{host} resolves to nothing")
-    return Target(url=url, host=host, address=chosen)
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        return Checked(url=url, host=host)  # a name: resolved behind the gate
+    if not literal.is_global:
+        raise FetchRefused(f"{host} is not a public address")
+    return Checked(url=url, host=host)
 
 
-def fetch(target: Target) -> Fetched:
-    """GET *target*, refusing anything that is not a bounded text response.
+def fetch(checked: Checked) -> Fetched:
+    """GET *checked*, refusing anything that is not a bounded text response.
 
-    Dials the vetted ADDRESS with the original name in SNI and Host, so the
-    certificate is still proved against the name while no second DNS answer
-    can move it.
+    The host resolves HERE, behind every gate, to public addresses only --
+    which keeps a fetch away from the cloud metadata endpoint
+    (169.254.169.254), a loopback admin port, or the operator's LAN. The
+    connection then dials exactly the address chosen, with the original name
+    in SNI and Host, so the certificate is still proved against the name while
+    no second DNS answer can move it. Handing the name onward instead let two
+    resolvers disagree: CPython's `getaddrinfo` encodes an international name
+    with IDNA2003 and httpx with UTS-46, so `ßeta.example.com` was vetted as
+    `sseta.example.com` and connected to `xn--eta-4ka.example.com` -- a
+    different host entirely, and a complete bypass needing no race at all.
+    Re-resolving also reopened the plain rebinding window.
 
     Redirects are returned, not followed: a 30x hands its Location back for the
     model to decide on, which re-runs every check. Following them silently is
     how one allowed host becomes an open proxy to every other.
     """
-    parts = urlsplit(target.url)
-    literal = f"[{target.address}]" if ":" in target.address else target.address
-    dialled = parts._replace(netloc=f"{literal}:{parts.port or 443}").geturl()
+    parts = urlsplit(checked.url)
+    port = parts.port or 443
+    try:
+        infos = socket.getaddrinfo(checked.host, port, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise FetchRefused(f"{checked.host} does not resolve: {exc}") from exc
+    address = ""
+    for info in infos:
+        addr = ipaddress.ip_address(str(info[4][0]))
+        if not addr.is_global:
+            raise FetchRefused(f"{checked.host} resolves to {addr}, which is not a public address")
+        address = address or str(addr)
+    if not address:
+        raise FetchRefused(f"{checked.host} resolves to nothing")
+    literal = f"[{address}]" if ":" in address else address
+    dialled = parts._replace(netloc=f"{literal}:{port}").geturl()
     deadline = time.monotonic() + TIMEOUT_S
     try:
         with (
@@ -157,8 +164,8 @@ def fetch(target: Target) -> Fetched:
                 # No compression: `iter_bytes` yields DECODED bytes, so the cap
                 # below ran only after zstd had already expanded 256 KB into
                 # 8 GiB and taken the agent process with it.
-                headers={"Host": target.host, "Accept-Encoding": "identity"},
-                extensions={"sni_hostname": target.host},
+                headers={"Host": checked.host, "Accept-Encoding": "identity"},
+                extensions={"sni_hostname": checked.host},
             ) as response,
         ):
             content_type = response.headers.get("content-type", "")
@@ -175,11 +182,11 @@ def fetch(target: Target) -> Fetched:
                     # held the run for as long as it liked.
                     raise FetchRefused(f"response was still arriving after {TIMEOUT_S:g}s")
             return Fetched(
-                url=target.url,
+                url=checked.url,
                 status=response.status_code,
                 content_type=content_type,
                 body=bytes(body).decode(response.encoding or "utf-8", errors="replace"),
                 location=response.headers.get("location", ""),
             )
     except httpx2.HTTPError as exc:
-        raise FetchRefused(f"could not fetch {target.url}: {exc}") from exc
+        raise FetchRefused(f"could not fetch {checked.url}: {exc}") from exc

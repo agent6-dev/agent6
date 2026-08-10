@@ -113,7 +113,7 @@ def test_an_approval_that_must_not_be_remembered_says_so() -> None:
     something to key that decision on."""
     front, asked = _frontend(reply="allow once")
     approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
-    assert approve("Allow fetch: evil.example (1.2.3.4) /x", standing=False) is True
+    assert approve("Allow fetch: evil.example /x", standing=False) is True
     assert asked[-1][1:] == (("allow once", "deny"), False)
 
     approve("Allow run_command: ls")
