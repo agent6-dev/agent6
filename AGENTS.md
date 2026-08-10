@@ -163,8 +163,11 @@ and the principles the Zen doesn't cover:
   graph (`pyan3`, a dev dep), deterministically maps what connects to what so
   a change's edges are reviewable and shapes can be assessed. A red
   `tach check` means the map is stale: record the new edge in `tach.toml`.
-  Never contort code (or add an indirection) to satisfy tach or strict
-  pyright, and never refuse work because of them; when the new edges read as
+  An edge's absence is an observation, never a prohibition: a change that
+  needs a new edge records it and moves on, the same as extending a call
+  graph -- not a decision to escalate or design around. Never contort code
+  (or add an indirection) to satisfy tach or strict pyright, and never
+  refuse or reroute work because of them; when the new edges read as
   complex, redesign because the design warrants it, not because a tool
   flagged it.
 
