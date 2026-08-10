@@ -304,9 +304,11 @@ class _Handler(BaseHTTPRequestHandler):
     def _csrf_refusal(self) -> str | None:
         """Reason to refuse this state-changing POST as cross-site, or None.
 
-        The web UI has no app-level auth: on the default loopback bind the OS
-        user is the trust boundary, behind `tailscale serve` the tailnet
-        identity is. Neither stops a page on ANOTHER origin in the operator's
+        The web UI has no app-level auth: on the default loopback bind the
+        machine is the trust boundary (any local process/user reaches
+        127.0.0.1, so a shared box is not confined here), behind `tailscale
+        serve` the tailnet is. Neither stops a page on ANOTHER origin in the
+        operator's
         browser from POSTing here (classic CSRF). Two standard,
         deployment-agnostic checks close it:
 
