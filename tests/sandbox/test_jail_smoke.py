@@ -121,13 +121,13 @@ def test_jail_blocks_network_when_disallowed(jail_bin: Path, tmp_path: Path) -> 
             JailPolicy(
                 cwd=tmp_path,
                 argv=("/usr/bin/python3", "-c", probe),
-                allow_network=allow,
+                network="host" if allow else "none",
                 timeout_s=10.0,
             )
         ).returncode
 
     try:
-        assert _rc(allow=False) != 0, "connect succeeded with allow_network=False"
+        assert _rc(allow=False) != 0, "connect succeeded with network = none"
         assert _rc(allow=True) == 0, "the probe cannot connect even when allowed"
     finally:
         srv.close()

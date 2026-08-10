@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
-use std::os::fd::FromRawFd;
+use std::os::fd::{FromRawFd, RawFd};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -32,7 +32,7 @@ use landlock::{
     RulesetCreatedAttr, RulesetStatus, ABI,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
-use nix::sched::{unshare, CloneFlags};
+use nix::sched::{setns, unshare, CloneFlags};
 use nix::sys::statvfs::{statvfs, FsFlags};
 use nix::sys::wait::{waitid, waitpid, Id, WaitPidFlag, WaitStatus};
 use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult, Pid};
@@ -51,8 +51,12 @@ struct Policy {
     argv: Vec<String>,
     #[serde(default)]
     env: Vec<(String, String)>,
-    #[serde(default)]
-    allow_network: bool,
+    /// Which network this child joins: "host" (the machine's), "private" (the
+    /// run's own, shared with its siblings, no route off the box) or "none" (its
+    /// own, alone). "private" needs --userns-fd/--netns-fd naming the run's
+    /// holder; joining is why those two arrive together (see join_network).
+    #[serde(default = "default_network")]
+    network: String,
     /// Operator-granted extra paths, bind-mounted at their REAL locations in
     /// strict (like tool_paths and hardened), so a granted
     /// toolchain works via its own absolute paths and shebangs. ro is
@@ -159,6 +163,10 @@ fn default_isolation() -> String {
     "strict".to_string()
 }
 
+fn default_network() -> String {
+    "none".to_string()
+}
+
 fn default_timeout() -> f64 {
     600.0
 }
@@ -172,6 +180,43 @@ fn die(msg: impl AsRef<str>) -> ! {
     std::process::exit(2);
 }
 
+/// `--hold-netns`: create the run's private network and hold it open until
+/// stdin closes. It runs no child and confines nothing -- the run opens
+/// /proc/<pid>/ns/{user,net} once "ready" appears, and those descriptors are
+/// what keep the namespaces alive, so this process may exit immediately after.
+fn hold_netns() -> ! {
+    let (uid, gid) = (getuid(), getgid());
+    if let Err(e) = unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNET) {
+        die(format!("private network: unshare failed: {e}"));
+    }
+    fs::write("/proc/self/setgroups", "deny").ok();
+    if let Err(e) = fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
+        .and_then(|()| fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid)))
+    {
+        die(format!("private network: id map failed: {e}"));
+    }
+    if let Err(e) = bring_loopback_up() {
+        die(format!("private network: loopback failed: {e}"));
+    }
+    println!("ready");
+    if io::stdout().flush().is_err() {
+        die("private network: could not report readiness");
+    }
+    let mut sink = String::new();
+    let _ = io::stdin().lock().read_line(&mut sink);
+    std::process::exit(0);
+}
+
+fn fd_arg(args: &[String], name: &str) -> Option<RawFd> {
+    match args.iter().position(|a| a == name) {
+        Some(i) => match args.get(i + 1).and_then(|n| n.parse::<RawFd>().ok()) {
+            Some(fd) if fd > 2 => Some(fd),
+            _ => die(format!("{name} needs a file descriptor number above 2")),
+        },
+        None => None,
+    }
+}
+
 fn main() {
     // `--policy-fd N` reads the policy from an inherited fd instead of stdin,
     // for exec mode where stdin belongs to the child (its JSON-RPC pipe).
@@ -179,13 +224,12 @@ fn main() {
     // stream: in serve mode the same pipe then carries one request per line.
     let mut input = String::new();
     let args: Vec<String> = std::env::args().collect();
-    let policy_fd = match args.iter().position(|a| a == "--policy-fd") {
-        Some(i) => match args.get(i + 1).and_then(|n| n.parse::<i32>().ok()) {
-            Some(fd) if fd > 2 => Some(fd),
-            _ => die("--policy-fd needs a file descriptor number above 2"),
-        },
-        None => None,
-    };
+    if args.iter().any(|a| a == "--hold-netns") {
+        hold_netns();
+    }
+    let userns_fd = fd_arg(&args, "--userns-fd");
+    let netns_fd = fd_arg(&args, "--netns-fd");
+    let policy_fd = fd_arg(&args, "--policy-fd");
     let read_ok = match policy_fd {
         // from_raw_fd owns the fd and closes it at end of scope, so the child
         // never inherits the policy channel.
@@ -203,18 +247,29 @@ fn main() {
         Err(e) => die(format!("invalid policy JSON: {e}")),
     };
 
+    if !matches!(policy.network.as_str(), "host" | "private" | "none") {
+        die(format!("unknown network: {}", policy.network));
+    }
+    // "private" is the run's shared network, and the only way in is the pair of
+    // descriptors naming its holder. Refuse rather than silently running in a
+    // namespace of our own, which would look identical and be isolated.
+    let join = match (policy.network.as_str(), userns_fd, netns_fd) {
+        ("private", Some(u), Some(n)) => Some((u, n)),
+        ("private", _, _) => die("network = private needs --userns-fd and --netns-fd"),
+        _ => None,
+    };
     match policy.isolation.as_str() {
-        "strict" => run_strict(&policy),
+        "strict" => run_strict(&policy, join),
         "hardened" => run_hardened(&policy),
         other => die(format!("unknown sandbox isolation: {other}")),
     }
 }
 
-fn run_strict(policy: &Policy) -> ! {
+fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
     // Before the user namespace maps this process to 0: the jail root is
     // named for the REAL uid, and inside the namespace getuid() is always 0.
     let real_uid = getuid().as_raw();
-    if let Err(e) = setup_namespaces(policy.allow_network) {
+    if let Err(e) = setup_namespaces(&policy.network, join) {
         die(format!("namespace setup failed: {e}"));
     }
     // After unshare(CLONE_NEWPID), the parent process itself remains in the OLD
@@ -362,24 +417,55 @@ fn bring_loopback_up() -> io::Result<()> {
     Ok(())
 }
 
-fn setup_namespaces(allow_network: bool) -> io::Result<()> {
+/// Enter the run's private network: its user namespace first, because
+/// setns(CLONE_NEWNET) needs CAP_SYS_ADMIN in the namespace that OWNS the
+/// target netns, and an unprivileged joiner only has that inside it. The
+/// caller therefore does NOT create a user namespace of its own; it is already
+/// uid 0 in the one it joined, which is what the mounts below need.
+fn join_network(userns_fd: RawFd, netns_fd: RawFd) -> io::Result<()> {
+    for (fd, kind) in [
+        (userns_fd, CloneFlags::CLONE_NEWUSER),
+        (netns_fd, CloneFlags::CLONE_NEWNET),
+    ] {
+        // from_raw_fd owns it: the child never inherits a handle to a namespace
+        // it could re-enter after we drop privileges.
+        let file = unsafe { std::fs::File::from_raw_fd(fd) };
+        setns(&file, kind).map_err(io_err)?;
+    }
+    Ok(())
+}
+
+fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<()> {
     let uid = getuid();
     let gid = getgid();
+
+    if let Some((userns_fd, netns_fd)) = join {
+        join_network(userns_fd, netns_fd)?;
+        // Everything else is still this child's alone; `lo` is already up in
+        // the network we joined, and the user namespace is already mapped.
+        return unshare(
+            CloneFlags::CLONE_NEWNS
+                | CloneFlags::CLONE_NEWPID
+                | CloneFlags::CLONE_NEWIPC
+                | CloneFlags::CLONE_NEWUTS,
+        )
+        .map_err(io_err)
+        .and_then(|()| make_mounts_private());
+    }
 
     let mut flags = CloneFlags::CLONE_NEWUSER
         | CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWPID
         | CloneFlags::CLONE_NEWIPC
         | CloneFlags::CLONE_NEWUTS;
-    if !allow_network {
+    if network != "host" {
         flags |= CloneFlags::CLONE_NEWNET;
     }
     unshare(flags).map_err(io_err)?;
-    if !allow_network {
+    if network != "host" {
         // An empty netns has `lo` DOWN, so nothing inside can reach even
-        // itself: a server one command starts is unreachable by the next.
-        // Loopback in a namespace with no other interface and no route out
-        // reaches nothing beyond that namespace, so this changes what the
+        // itself. Loopback in a namespace with no other interface and no route
+        // out reaches nothing beyond that namespace, so this changes what the
         // jail's own commands can talk to, never what they can leave to.
         bring_loopback_up()?;
     }
@@ -392,7 +478,11 @@ fn setup_namespaces(allow_network: bool) -> io::Result<()> {
     fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
         .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
 
-    // Make all existing mounts private so our changes don't propagate.
+    make_mounts_private()
+}
+
+/// Stop our mount changes propagating back to the host's mount tree.
+fn make_mounts_private() -> io::Result<()> {
     mount(
         Some(""),
         "/",

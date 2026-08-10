@@ -180,7 +180,7 @@ def test_liveworld_non_network_tool_is_isolated(
     seen = _patch_jail(monkeypatch)
     world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
     world.run_tool(("true",), 5.0, allow_network=False)
-    assert seen[-1].allow_network is False
+    assert seen[-1].network == "none"
 
 
 def test_liveworld_grants_data_dir_rw_and_env(

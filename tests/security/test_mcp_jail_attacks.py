@@ -25,7 +25,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 def _attack(script: str, cwd: Path, **policy_kw: object) -> str:
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(cwd, Config(), "strict", argv, **policy_kw)  # pyright: ignore[reportArgumentType]
+    policy = jail_policy(cwd, Config(), "strict", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
     proc = spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
@@ -153,7 +153,7 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
     dying is the server dying -- no sweep required."""
     script = "import time\nprint('UP', flush=True)\ntime.sleep(300)\n"
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(tmp_path, Config(), "strict", argv)
+    policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
     proc = spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
     )
@@ -209,7 +209,7 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
         "    sys.stderr.write('A' * 65536)\n"
     )
     argv = ("/usr/bin/python3", "-c", flood)
-    proc = _spawn_server(argv, jail_policy(tmp_path, Config(), "strict", argv), ())
+    proc = _spawn_server(argv, jail_policy(tmp_path, Config(), "strict", argv, network="none"), ())
     keep: list[bytes] = []
     assert proc.stderr is not None
     threading.Thread(target=_drain_stderr, args=(proc.stderr, keep), daemon=True).start()
@@ -233,7 +233,7 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
     from agent6.sandbox import jail as jail_mod
 
     argv = ("/usr/bin/python3", "-c", "pass")
-    policy = jail_policy(tmp_path, Config(), "strict", argv)
+    policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
     proc = spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,

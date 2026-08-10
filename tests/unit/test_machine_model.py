@@ -639,7 +639,7 @@ def test_machine_config_overlay_rejects_sandbox(tmp_path: Path) -> None:
         VALID_MACHINE
         + """
 [config.sandbox]
-tool_network = "allow"
+tool_network = "host"
 """
     )
     problems = _problems(tmp_path, body)

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Network confinement for a SPAWNED MCP server, at the security level.
 
-`network = "block"` (the default) must leave the server with no way out, and
+`network = "none"` (the default) must leave the server with no way out, and
 must not pay for that by handing it anything else: the launcher holds a full
 capability set between `unshare` and `execve`, and a server that inherited it
 would have MORE power in exchange for losing its network.
@@ -23,15 +23,16 @@ import pytest
 from agent6.config import Config
 from agent6.sandbox.jail import spawn_in_jail
 from agent6.tools.policy import jail_policy
+from agent6.types import NetworkMode
 
 pytestmark = pytest.mark.needs_namespaces
 
 
-def _probe(script: str, cwd: Path, *, allow_network: bool = False) -> str:
+def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
     """Run one probe as a SERVER would run: spawned through the jail with a
     server policy, stdio inherited, output collected off its stdout pipe."""
     argv = ("/usr/bin/python3", "-c", script)
-    policy = jail_policy(cwd, Config(), "strict", argv, allow_network=allow_network)
+    policy = jail_policy(cwd, Config(), "strict", argv, network=network)
     proc = spawn_in_jail(
         policy,
         stdin=subprocess.DEVNULL,
@@ -103,8 +104,8 @@ def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
             "s.settimeout(3)\n"
             f"print('CONNECT', s.connect_ex(('127.0.0.1', {port})))\n"
         )
-        blocked = _probe(script, tmp_path, allow_network=False)
-        allowed = _probe(script, tmp_path, allow_network=True)
+        blocked = _probe(script, tmp_path, network="none")
+        allowed = _probe(script, tmp_path, network="host")
     assert "CONNECT 0" not in blocked, f"a confined server reached the host: {blocked}"
     assert "CONNECT 0" in allowed, f"network = allow did not reach the listener: {allowed}"
 

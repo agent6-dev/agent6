@@ -351,7 +351,10 @@ class LiveWorld:
             argv=argv,
             isolation=self.isolation,
             env=tuple(env_list),
-            allow_network=allow_network,
+            # A machine tool has no run-wide private network to join: its
+            # states are separate launchers, so "its own, alone" is the
+            # offline answer here.
+            network="host" if allow_network else "none",
             extra_protect_paths=self.protect_paths,
             extra_rw_paths=extra_rw,
             tool_paths=tool_mounts,

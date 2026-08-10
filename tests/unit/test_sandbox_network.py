@@ -25,7 +25,7 @@ from agent6.machine.model import ToolState
 from agent6.types import IsolationLevel
 
 
-def _cfg(tool_network: str = "block") -> Config:
+def _cfg(tool_network: str = "private") -> Config:
     return validate_config({"sandbox": {"tool_network": tool_network}})
 
 
@@ -39,7 +39,7 @@ def _cfg(tool_network: str = "block") -> Config:
 def test_check_network_support_allows_off_hardened(isolation: IsolationLevel) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert check_network_support(_cfg("block"), isolation) is None
+    assert check_network_support(_cfg("private"), isolation) is None
     assert check_network_support(_cfg("only_explicit_states"), isolation) is None
 
 
@@ -60,7 +60,7 @@ _BLOCK_TOOL = ToolState(
 
 
 def test_refusal_networked_tool_under_block() -> None:
-    msg = machine_network_refusal(_cfg("block"), "strict", [_NET_TOOL])
+    msg = machine_network_refusal(_cfg("private"), "strict", [_NET_TOOL])
     assert msg is not None and "allow_network" in msg
 
 
@@ -70,15 +70,15 @@ def test_refusal_providers_explicit_states_strict_ok() -> None:
 
 
 def test_refusal_block_tools_on_hardened() -> None:
-    msg = machine_network_refusal(_cfg("block"), "hardened", [_TOOL])
+    msg = machine_network_refusal(_cfg("private"), "hardened", [_TOOL])
     assert msg is not None and "strict" in msg
 
 
 def test_refusal_explicit_block_state_on_hardened() -> None:
     # tool_network=allow runs auto/allow tools on hardened, but an explicit
     # allow_network="block" demand can't be honored there -> refuse.
-    msg = machine_network_refusal(_cfg("allow"), "hardened", [_BLOCK_TOOL])
-    assert msg is not None and "block" in msg
+    msg = machine_network_refusal(_cfg("host"), "hardened", [_BLOCK_TOOL])
+    assert msg is not None and "block" in msg  # the machine state's own word
 
 
 def test_refusal_networked_tool_under_the_auto_default() -> None:
@@ -89,11 +89,11 @@ def test_refusal_networked_tool_under_the_auto_default() -> None:
     for isolation in ("strict", "hardened"):
         msg = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
         assert msg is not None and "allow_network" in msg
-        assert "'auto'" in msg  # not a hardcoded "block"
+        assert "'auto'" in msg  # not a hardcoded "private"
 
 
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
-    assert machine_network_refusal(_cfg("allow"), "hardened", [_TOOL]) is None
+    assert machine_network_refusal(_cfg("host"), "hardened", [_TOOL]) is None
 
 
 # --- supervisor subprocess: machine_agent.run_one -------------------------

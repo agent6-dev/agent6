@@ -173,6 +173,6 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
             " THIS process to create a user namespace, which this surgical profile does not"
             " grant -- so a default `agent6 run` falls back to hardened (with a note). For"
             " full strict, set kernel.apparmor_restrict_unprivileged_userns=0 (host-wide), or"
-            " use sandbox.tool_network='allow'."
+            " use sandbox.tool_network='host'."
         )
     return 0 if ok else 1

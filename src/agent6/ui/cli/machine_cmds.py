@@ -247,7 +247,7 @@ def _suggested_network_fix(
 
     Two refusals this resolves: a tool that opted in (`allow_network = "allow"`)
     under a config that blocks egress, and -- on `hardened`, which can't give any
-    tool its own netns -- a plain tool refused under `tool_network = "block"`. The
+    tool its own netns -- a plain tool refused under `tool_network = "private"`. The
     returned dict is applied in order
     so `config set`-style sequential writes never trip the combo validator."""
     if not tool_states:
@@ -264,7 +264,7 @@ def _suggested_network_fix(
     if isolation == "hardened":
         # hardened can't isolate one tool's netns, so EVERY tool (networked or
         # not) shares the host network; the combo validator then requires
-        return {"sandbox.tool_network": "allow"}
+        return {"sandbox.tool_network": "host"}
     return None
 
 

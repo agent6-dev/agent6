@@ -231,7 +231,7 @@ def test_run_metric_refused_outside_run_mode(
     cfg = load_config(p)
     fired: list[object] = []
 
-    def fake_run_in_jail(policy: object) -> None:
+    def fake_run_in_jail(policy: object, **_kw: object) -> None:
         fired.append(policy)
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
@@ -1071,7 +1071,7 @@ def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=cfg)
     captured: dict[str, str] = {}
 
-    def fake_run(policy: JailPolicy) -> CommandResult:
+    def fake_run(policy: JailPolicy, **_kw: object) -> CommandResult:
         captured.update(dict(policy.env))
         return CommandResult(
             argv=("true",),
@@ -1210,7 +1210,7 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
 
     captured: dict[str, object] = {}
 
-    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["argv"] = tuple(policy.argv)
         return CommandResult(
             argv=tuple(policy.argv),
@@ -1254,7 +1254,7 @@ def test_run_metric_command_honors_verify_timeout(
 
     captured: dict[str, object] = {}
 
-    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["timeout_s"] = policy.timeout_s
         return CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="1", stderr="", duration_s=0.01
@@ -1284,7 +1284,7 @@ def test_run_metric_command_score_null_on_no_match(
 
     cfg = load_config(p)
 
-    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         return CommandResult(
             argv=tuple(policy.argv),
             returncode=0,
@@ -1611,7 +1611,7 @@ def test_run_command_passes_extra_read_paths_to_policy(
     cfg = load_config(p)
     captured: dict[str, tuple[str, ...]] = {}
 
-    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["ro"] = tuple(str(x) for x in policy.extra_ro_paths)
         return CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
@@ -1640,7 +1640,7 @@ def test_run_command_passes_extra_write_paths_to_policy(
     cfg = load_config(p)
     captured: dict[str, tuple[str, ...]] = {}
 
-    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
         captured["rw"] = tuple(str(x) for x in policy.extra_rw_paths)
         return CommandResult(
             argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
@@ -1762,7 +1762,7 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_strict(
 
     from agent6.types import CommandResult
 
-    def _capture(policy: object) -> CommandResult:
+    def _capture(policy: object, **_kw: object) -> CommandResult:
         captured.append(policy)
         return CommandResult(argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0)
 

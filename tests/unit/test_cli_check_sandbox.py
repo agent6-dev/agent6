@@ -73,7 +73,7 @@ def test_check_sandbox_strict_runs_network_probe(
     getent = [p for p in stub_jail if p.argv[0].endswith("getent")]
     assert len(getent) == 1
     assert getent[0].isolation == "strict"
-    assert getent[0].allow_network is False
+    assert getent[0].network == "none"
 
 
 def test_check_sandbox_none_skips_probes(

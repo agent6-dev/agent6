@@ -33,17 +33,17 @@ def machine_network_refusal(
     Layers machine-specific rules on top of `check_network_support` (which
     handles tool_network=only_explicit_states / block on `hardened`). On
     `hardened` per-tool isolation is impossible, so we refuse, rather than
-    silently mis-confine, whenever isolation is *required*: by the
-    operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
-    A networked state under `tool_network` in {"block", "auto"} (both intend no
-    tool network) is a config conflict and is refused on any isolation. Returns
-    None when fine.
+    silently mis-confine, whenever isolation is *required*: by the operator
+    (`tool_network = "private"`) or by a state (`allow_network = "block"`). A
+    networked state under `tool_network` in {"private", "auto"} (both keep the
+    tool off the host network) is a config conflict, refused on any isolation.
+    Returns None when fine.
     """
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         return net_err
     tn = cfg.sandbox.tool_network
-    no_tool_net = tn in ("block", "auto")  # both intend the tool has no network
+    no_tool_net = tn in ("private", "auto")  # both keep the tool off the host network
     has_allow = any(s.allow_network == "allow" for s in tool_states)
     has_block = any(s.allow_network == "block" for s in tool_states)
     if has_allow and no_tool_net:
@@ -55,7 +55,7 @@ def machine_network_refusal(
                 'a tool state sets allow_network = "allow" but sandbox.tool_network ='
                 f" {tn!r}. The hardened isolation cannot single out one tool's"
                 " network namespace; let tools share the host network with"
-                " sandbox.tool_network = 'allow', or run on strict for explicit"
+                " sandbox.tool_network = 'host', or run on strict for explicit"
                 " per-tool egress."
             )
         return (
@@ -63,12 +63,12 @@ def machine_network_refusal(
             f" {tn!r}. Set sandbox.tool_network = 'only_explicit_states' for"
             " explicit per-tool egress."
         )
-    if tool_states and tn == "block" and isolation == "hardened":
+    if tool_states and tn == "private" and isolation == "hardened":
         return (
             "isolating a machine's tool-state network requires the strict isolation"
             " (a per-tool network namespace); this host supports only 'hardened'."
             " Run on strict, or let tools share the host network with"
-            " sandbox.tool_network = 'allow'."
+            " sandbox.tool_network = 'host'."
         )
     if has_block and isolation == "hardened":
         return (

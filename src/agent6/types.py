@@ -22,6 +22,7 @@ TernaryMode = Literal["no", "ask", "yes"]
 # `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` (self-authorizing, with a loud warning;
 # see `detect.resolve_isolation`).
 IsolationLevel = Literal["strict", "hardened", "none"]
+NetworkMode = Literal["host", "private", "none"]
 # The model roles a session can be driven by.
 RoleName = Literal["worker", "reviewer", "planner"]
 # The modes `agent6 resume` accepts. A narrower question than "is this a
@@ -167,7 +168,10 @@ class JailPolicy:
     argv: tuple[str, ...]
     isolation: IsolationLevel = "strict"
     env: tuple[tuple[str, str], ...] = ()
-    allow_network: bool = False
+    # Which network this child joins: the machine's, the run's own (shared with
+    # its siblings, no route off the box), or one of its own with nothing else
+    # in it. "private" needs the run's PrivateNetwork handed to the transport.
+    network: NetworkMode = "none"
     extra_ro_paths: tuple[Path, ...] = ()
     extra_rw_paths: tuple[Path, ...] = ()
     # Paths inside ``cwd`` that the launcher must make read-only from the

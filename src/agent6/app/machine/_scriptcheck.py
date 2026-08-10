@@ -184,7 +184,7 @@ def run_offline_tests(
                     ("AGENT6_MACHINE_DATA_DIR", ".scriptcheck_data"),
                     ("PYTHONDONTWRITEBYTECODE", "1"),
                 ),
-                allow_network=False,
+                network="none",
                 extra_rw_paths=(data_dir,),
                 timeout_s=timeout_s,
             )

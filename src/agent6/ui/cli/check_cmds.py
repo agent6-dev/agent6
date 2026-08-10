@@ -13,6 +13,7 @@ from agent6.app._setup import (
     check_provider_keys,
     detect_env,
     start_mcp_manager_if_enabled,
+    wants_private_network,
 )
 from agent6.config import (
     Config,
@@ -31,7 +32,7 @@ from agent6.sandbox.detect import (
     apparmor_userns_restricted,
     resolve_isolation,
 )
-from agent6.sandbox.jail import tool_mount_notes
+from agent6.sandbox.jail import PrivateNetwork, tool_mount_notes
 from agent6.types import CommandResult, JailPolicy, SandboxReport
 
 
@@ -99,7 +100,7 @@ def _cmd_check_sandbox() -> int:
 
     def _jail(*argv: str) -> CommandResult:
         return run_in_jail(
-            JailPolicy(cwd=cwd, argv=argv, isolation=isolation, allow_network=False, timeout_s=10.0)
+            JailPolicy(cwd=cwd, argv=argv, isolation=isolation, network="none", timeout_s=10.0)
         )
 
     # Try running `/usr/bin/true` in the jail.
@@ -284,8 +285,15 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
                 detail="not configured (cfg.mcp.enabled=False or empty servers)",
             )
         ]
-    manager = start_mcp_manager_if_enabled(cfg, Path.cwd(), resolve_isolation("auto", detect_env()))
+    isolation = resolve_isolation("auto", detect_env())
+    # A server set to `private` joins the run's network, so `check` has to make
+    # one the same way a run does -- otherwise checking such a server reports a
+    # failure that only `check` would ever see.
+    private_net = PrivateNetwork.open() if wants_private_network(cfg, isolation) else None
+    manager = start_mcp_manager_if_enabled(cfg, Path.cwd(), isolation, private_net=private_net)
     if manager is None:
+        if private_net is not None:
+            private_net.close()
         return [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     out: list[_DoctorCheck] = []
     try:
@@ -311,6 +319,8 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
     finally:
         manager.close()
+        if private_net is not None:
+            private_net.close()
     return out
 
 

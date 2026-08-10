@@ -24,11 +24,12 @@ from agent6.events import EventSink
 from agent6.models.cache import list_models
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
+from agent6.sandbox.jail import PrivateNetwork
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 
 def detect_env() -> Environment:
@@ -152,6 +153,23 @@ def check_provider_keys(cfg: Config) -> str | None:
     return None
 
 
+def wants_private_network(cfg: Config, isolation: IsolationLevel) -> bool:
+    """Whether this run needs its own network: any child that would join one.
+
+    Asked once, before anything spawns, because the network has to exist before
+    its first member. Only strict can provide one; elsewhere every child shares
+    the host's (preflight has already warned or refused).
+    """
+    if isolation != "strict":
+        return False
+    if cfg.sandbox.tool_network != "host":
+        return True
+    return cfg.mcp.enabled and any(
+        srv.enabled and srv.sandbox is not None and srv.sandbox.network == "private"
+        for srv in cfg.mcp.servers.values()
+    )
+
+
 def mcp_server_policy(
     cfg: Config, root: Path, isolation: IsolationLevel, srv: MCPServerEntry
 ) -> JailPolicy | None:
@@ -173,9 +191,11 @@ def mcp_server_policy(
         return None
     read_paths = sandbox.read_paths if sandbox else ()
     write_paths = sandbox.write_paths if sandbox else ()
-    allow_network = sandbox.network == "allow" if sandbox else False
-    # auto and block both mean "no network"; they differ only in what happens
-    # when the host cannot provide one (warn vs refuse), which preflight owns.
+    # auto and none both mean "a network of its own"; they differ only in what
+    # happens when the host cannot provide one (warn vs refuse, which preflight
+    # owns). `private` is the run's shared one; `host` is the machine's.
+    configured = sandbox.network if sandbox else "auto"
+    network: NetworkMode = "none" if configured == "auto" else configured
     return jail_policy(
         root,
         cfg,
@@ -183,7 +203,7 @@ def mcp_server_policy(
         srv.command,
         extra_ro_paths=tuple(Path(p).expanduser() for p in read_paths),
         extra_rw_paths=tuple(Path(p).expanduser() for p in write_paths),
-        allow_network=allow_network,
+        network=network,
         env_base=curated_env(passthrough=srv.pass_env, desktop=False),
     )
 
@@ -195,6 +215,7 @@ def start_mcp_manager_if_enabled(
     *,
     reporter: Reporter = STDIO_REPORTER,
     events: EventSink | None = None,
+    private_net: PrivateNetwork | None = None,
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
@@ -226,7 +247,7 @@ def start_mcp_manager_if_enabled(
     if not configs:
         return None
     _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
-    manager = MCPManager.start(configs, logger=reporter.err)
+    manager = MCPManager.start(configs, logger=reporter.err, private_net=private_net)
     if events is not None:
         for failure in manager.failures:
             events.emit("mcp.server_unavailable", server=failure.name, error=failure.error)

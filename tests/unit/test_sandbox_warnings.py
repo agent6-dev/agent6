@@ -103,23 +103,23 @@ def test_hardened_allow_says_nothing_about_the_network(
     # An operator who set tool_network='allow' asked for the tool to have the
     # network, so no degrade warning for it. `.git` is a separate degrade and
     # is expected here: hardened cannot protect it at all.
-    warn_sandbox_gaps("hardened", _env(4), _cfg("allow"))
+    warn_sandbox_gaps("hardened", _env(4), _cfg("host"))
     err = capsys.readouterr().err
     assert "network" not in err.lower().split("cannot protect .git")[-1]
     assert "cannot protect .git" in err
 
 
 def test_explicit_block_refuses_on_hardened() -> None:
-    """tool_network='block' is an ENFORCE setting: it needs a netns only strict
+    """tool_network='private' is an ENFORCE setting: it needs a netns only strict
     provides, so on hardened we refuse (name what's unsupported + the fix)
     rather than run silently under-confined. 'auto' degrades instead."""
-    err = check_network_support(_cfg("block"), "hardened")
+    err = check_network_support(_cfg("private"), "hardened")
     assert err is not None
-    assert "tool_network = 'block'" in err and "auto" in err and "strict" in err
+    assert "tool_network = 'private'" in err and "auto" in err and "strict" in err
     # auto is NOT refused (it degrades with a warning) -> None.
     assert check_network_support(_cfg("auto"), "hardened") is None
     # On strict, block is enforceable -> no refusal.
-    assert check_network_support(_cfg("block"), "strict") is None
+    assert check_network_support(_cfg("private"), "strict") is None
 
 
 def test_scanner_separates_unreachable_from_home_exposing(
@@ -223,7 +223,7 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     ws.mkdir()
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
-    cfg = Config(sandbox=SandboxConfig(tool_network="allow", protect_git=False))
+    cfg = Config(sandbox=SandboxConfig(tool_network="host", protect_git=False))
     warn_sandbox_gaps("hardened", _env(4), cfg)
     assert capsys.readouterr().err == ""
     assert check_hide_paths_support(cfg, "hardened") is None

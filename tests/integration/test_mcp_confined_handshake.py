@@ -26,6 +26,7 @@ import pytest
 from agent6.config import Config
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.policy import jail_policy
+from agent6.types import JailPolicy, NetworkMode
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -93,7 +94,9 @@ def _call_cat(mgr: MCPManager, path: Path) -> str:
     return str(mgr.call("mcp__reader__cat", {"path": str(path)}))
 
 
-def _policy(argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), net: bool = False):
+def _policy(
+    argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), net: NetworkMode = "none"
+) -> JailPolicy:
     """A server policy exactly as production builds it: the same sandbox a
     jailed command gets, plus this server's additive grants. Nothing here
     names an interpreter -- that is the point of the shared base."""
@@ -103,7 +106,7 @@ def _policy(argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), ne
         "strict",
         argv,
         extra_ro_paths=read,
-        allow_network=net,
+        network=net,
     )
 
 

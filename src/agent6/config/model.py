@@ -344,26 +344,27 @@ class SandboxConfig(BaseModel):
     # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
     # with neither userns nor Landlock) -- see detect.resolve_isolation.
     isolation: Literal["auto", "strict", "hardened", "none"] = "auto"
-    # Whether JAILED commands (`run_command`, `verify`, `metric`, and machine
-    # `tool` states) may reach the network. A jailed child can never out-reach
-    # the process that launches it, so:
-    #  - `auto` (default): no tool network, enforced where the environment can
-    #    and DEGRADED WITH A WARNING where it cannot. On `strict` the per-child
-    #    network namespace makes it truly offline; on `hardened`/`none` there is
-    #    no netns, so the child shares the (agent-scoped) host network and a
-    #    once-per-run warning says so. The secure-by-default option that still
-    #    runs everywhere (see AGENTS.md "Secure by default, degrade or refuse").
-    #  - `block`: ENFORCE no tool network. Refuses to run on a profile that
-    #    cannot provide it (`hardened`/`none`, no netns), naming what is
-    #    unsupported and how to change it -- never silently ineffective.
-    #  - `only_explicit_states`: blocked, EXCEPT machine `tool` states that opt
+    # Which network JAILED commands (`run_command`, `verify`, `metric`, and
+    # machine `tool` states) join. A jailed child can never out-reach the
+    # process that launches it, so:
+    #  - `auto` (default): the run's PRIVATE network where the environment can
+    #    give one, DEGRADED WITH A WARNING where it cannot. On `strict` that is
+    #    a real network namespace with no route out; on `hardened`/`none` there
+    #    is no netns, so the child shares the host network and a once-per-run
+    #    warning says so. The secure-by-default option that still runs
+    #    everywhere (see AGENTS.md "Secure by default, degrade or refuse").
+    #  - `private`: ENFORCE the run's own network -- the commands see each
+    #    other (a dev server one starts answers the next) and nothing off the
+    #    box. Refuses to run where there is no netns, naming what is
+    #    unsupported and how to change it, never silently ineffective.
+    #  - `only_explicit_states`: private, EXCEPT machine `tool` states that opt
     #    in with `allow_network = "allow"` (audited, deterministic commands);
-    #    `run_command` stays blocked. `strict`-only (per-child netns), refused
-    #    elsewhere.
-    #  - `allow`: `run_command` reaches the network too (a dev server, a
-    #    package install). The jailed child simply shares the host network
-    #    instead of getting an empty namespace.
-    tool_network: Literal["auto", "block", "only_explicit_states", "allow"] = "auto"
+    #    `run_command` stays private. `strict`-only, refused elsewhere.
+    #  - `host`: the machine's own network (a package install, a real service).
+    # There is no per-command `none`: the run's commands share one launcher,
+    # and isolating them from each other costs the dev server for no security
+    # -- the model can chain them into a single script anyway.
+    tool_network: Literal["auto", "private", "only_explicit_states", "host"] = "auto"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
     # none: every fetch is a prompt. `"*"` allows any host, written down so the
@@ -372,7 +373,7 @@ class SandboxConfig(BaseModel):
     # URL prefixes: a prefix invites `evil.com/docs.python.org`.
     #
     # `fetch` exists because a jailed command has no network; it is hidden when
-    # `tool_network = "allow"`, where the worker can already run curl. It is
+    # `tool_network = "host"`, where the worker can already run curl. It is
     # still an egress channel a model drives -- a GET can encode data in its
     # path -- so a host not listed here is asked about, and an absent operator
     # is a no.
@@ -1051,15 +1052,18 @@ class MCPSandbox(BaseModel):
     # Readable+executable, and writable, BEYOND the command sandbox. `~` expands.
     read_paths: tuple[str, ...] = ()
     write_paths: tuple[str, ...] = ()
-    # Whether this server reaches the network, with `[sandbox].tool_network`'s
-    # exact vocabulary and meaning -- per-server because servers differ from
-    # commands and from each other: a browser or API server exists to reach
-    # something, a filesystem or memory server does not.
-    #   auto  (default) no network where the host can provide a namespace,
-    #                   degrading with a warning where it cannot
-    #   block           no network, refusing to start where that is impossible
-    #   allow           the host network
-    network: Literal["auto", "allow", "block"] = "auto"
+    # Which network this server joins -- per-server because servers differ from
+    # commands and from each other: a browser server exists to reach something,
+    # a memory server does not.
+    #   auto    (default) a network of its own where the host can give one,
+    #                     degrading to the host's with a warning where it cannot
+    #   none              a network of its own, alone; refuses where impossible
+    #   private           the run's network: the dev server a `run_background`
+    #                     started answers this server too, and still nothing
+    #                     off the box (a browser server driving the app under
+    #                     test is the case this exists for)
+    #   host              the machine's network
+    network: Literal["auto", "none", "private", "host"] = "auto"
     # No confinement at all: the server runs as the operator, with their whole
     # filesystem and network. For a server whose job IS arbitrary host access.
     unconfined: bool = False

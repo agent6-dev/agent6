@@ -39,6 +39,7 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sandbox.jail import PrivateNetwork
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
@@ -212,6 +213,7 @@ def build_session_tools(
     loop_log: Callable[[str], None],
     mcp_manager: MCPManager | None,
     rm_role: RoleModel,
+    private_net: PrivateNetwork | None = None,
 ) -> SessionTools:
     # The DAG curator runs in-process: the run's worker.lock already makes
     # this the sole writer, so no subprocess or socket is needed.
@@ -231,6 +233,7 @@ def build_session_tools(
         session_dir=layout.session_dir,
         # One jail process for this run's commands.
         use_jail_session=True,
+        private_net=private_net,
     )
     compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm_role, log=loop_log)
     cfg = resolve_decompose(cfg, rm_role, log=loop_log)

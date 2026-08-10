@@ -310,17 +310,19 @@ global/repo config, never the machine overlay):
 
 | `sandbox.tool_network` | jailed commands | `tool` w/ `allow_network="allow"` |
 |---|---|---|
-| `auto` *(def)* | offline on `strict` | ⛔ refuse to run |
-| `block` | offline (refuses on `hardened`) | ⛔ refuse to run |
-| `only_explicit_states` | offline | **host network** |
-| `allow` | host network | host network (and `run_command`) |
+| `auto` *(def)* | no host network on `strict` | ⛔ refuse to run |
+| `private` | the same (refuses on `hardened`) | ⛔ refuse to run |
+| `only_explicit_states` | no host network | **host network** |
+| `host` | host network | host network (and `run_command`) |
 
 So the headline setup (offline commands + one operator-reviewed networked tool)
 is `sandbox.tool_network = "only_explicit_states"` and `allow_network = "allow"`
 on that one state.
-`only_explicit_states` (and `block`) need `strict` isolation; a networked tool
-under `sandbox.tool_network = "block"`, or a tool-network config the isolation level
-can't honor, refuses to run at startup naming the state.
+`only_explicit_states` (and `private`) need `strict` isolation; a networked tool
+under `sandbox.tool_network = "private"`, or a tool-network config the isolation
+level can't honor, refuses to run at startup naming the state. A machine's tool
+states each get a network of their OWN when offline: they are separate
+launchers, so there is no run-wide private network for them to share.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
 optional sibling `scripts/` directory holding operator-reviewed helper

@@ -216,7 +216,7 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: Path) -> None:
                 "servers": {
                     "browser": {
                         "command": ["npx", "browser"],
-                        "sandbox": {"read_paths": ["/srv/profile"], "network": "allow"},
+                        "sandbox": {"read_paths": ["/srv/profile"], "network": "host"},
                     },
                     "memory": {"command": ["npx", "memory"]},
                 },
@@ -226,18 +226,18 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: Path) -> None:
     browser = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["browser"])
     memory = mcp_server_policy(cfg, tmp_path, "strict", cfg.mcp.servers["memory"])
     assert browser is not None and memory is not None
-    assert Path("/srv/profile") in browser.extra_ro_paths and browser.allow_network
+    assert Path("/srv/profile") in browser.extra_ro_paths and browser.network == "host"
     assert Path("/srv/profile") not in memory.extra_ro_paths
-    assert not memory.allow_network
+    assert memory.network == "none"
 
 
 def test_no_block_still_confines(tmp_path: Path) -> None:
     """Absent block is the secure default now, not an opt-out: the server is
-    confined exactly like a command."""
+    confined exactly like a command, on a network of its own."""
     policy = _policy_for(None, tmp_path)
     assert policy is not None
     assert policy.isolation == "strict"
-    assert not policy.allow_network
+    assert policy.network == "none"
 
 
 def test_unconfined_is_the_only_way_out(tmp_path: Path) -> None:
@@ -249,7 +249,7 @@ def test_unconfined_cannot_be_half_applied() -> None:
     rather than silently applying one of them."""
     for body in (
         {"unconfined": True, "read_paths": ["/srv"]},
-        {"unconfined": True, "network": "allow"},
+        {"unconfined": True, "network": "host"},
     ):
         with pytest.raises(ValueError, match="unconfined"):
             Config.model_validate(

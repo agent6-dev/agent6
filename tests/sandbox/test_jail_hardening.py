@@ -28,6 +28,7 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str
             Config(),
             level,  # pyright: ignore[reportArgumentType]
             ("sh", "-c", "mknod disk b 8 0; mknod tty c 5 0; ls disk tty 2>&1"),
+            network="none",
         )
     )
     assert "No such file" in res.stdout or "cannot access" in res.stdout
@@ -56,6 +57,7 @@ def test_a_fifo_is_still_a_thing_a_build_can_make(tmp_path: Path) -> None:
             Config(),
             level,  # pyright: ignore[reportArgumentType]
             ("sh", "-c", f"mkfifo {level}.pipe && test -p {level}.pipe && echo fifo-ok"),
+            network="none",
         )
     )
     assert "fifo-ok" in res.stdout, res.stdout + res.stderr

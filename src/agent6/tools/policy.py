@@ -15,7 +15,7 @@ from typing import Any
 from agent6.config import Config
 from agent6.sandbox.jail import operator_tool_paths
 from agent6.tools._result_format import passthrough_env
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 
 def jail_policy(
@@ -28,7 +28,7 @@ def jail_policy(
     extra_ro_paths: tuple[Path, ...] = (),
     extra_rw_paths: tuple[Path, ...] = (),
     extra_protect_paths: tuple[Path, ...] = (),
-    allow_network: bool | None = None,
+    network: NetworkMode | None = None,
     env_base: dict[str, str] | None = None,
 ) -> JailPolicy:
     """The sandbox policy every LLM-influenced argv runs under.
@@ -45,12 +45,19 @@ def jail_policy(
     system dirs, the operator's tool dirs, a writable /tmp as HOME -- is here,
     so nobody has to know where their interpreter lives.
     """
-    # run_command reaches the network only under tool_network = "allow" (the
-    # jailed child then shares the host network instead of an empty namespace).
-    # A caller that answers for itself passes allow_network: an MCP server's
-    # reachability is the operator's per-server choice, not the tool policy.
-    if allow_network is None:
-        allow_network = config.sandbox.tool_network == "allow"
+    # A command joins the host network only under tool_network = "host"; every
+    # other setting puts it on the run's private one. A caller that answers for
+    # itself passes `network`: an MCP server's reachability is the operator's
+    # per-server choice, not the tool policy.
+    if network is None:
+        network = "host" if config.sandbox.tool_network == "host" else "private"
+    # Only strict has namespaces to give, so that is the only level where
+    # "private" or "none" means anything. Everywhere else the child shares this
+    # process's network and the policy says so rather than describing a
+    # confinement it will not get; preflight has already refused an EXPLICIT
+    # setting it cannot honour and warned about an automatic one.
+    if isolation != "strict":
+        network = "host"
     protect_paths: list[Path] = []
     # STRICT only. A writable `.git` is not merely "recoverable": a jailed
     # command can plant a `filter.<n>.clean` in `.git/config` plus a
@@ -97,7 +104,7 @@ def jail_policy(
         argv=argv,
         isolation=isolation,
         env=tuple(sorted(env.items())),
-        allow_network=allow_network,
+        network=network,
         extra_protect_paths=tuple(protect_paths),
         extra_ro_paths=(
             *(Path(p) for p in config.sandbox.extra_read_paths),

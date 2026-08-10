@@ -320,7 +320,7 @@ syscall for hardened), never guessed from the kernel version.
 
 ### 4. Fixed tool surface
 
-- **`fetch` is the model's only egress, and it is narrow.** One https URL, GET, no redirects followed, no credential, text only, 1 MiB. Hosts on `sandbox.fetch_hosts` are read without asking; any other host prompts, and an absent operator is a no. It exists because a jailed command has no network, so it is hidden entirely when `tool_network = "allow"`. A GET can still carry data out in its path -- the allow-list is empty by default for that reason. Nothing resolves before that gate either: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
+- **`fetch` is the model's only egress, and it is narrow.** One https URL, GET, no redirects followed, no credential, text only, 1 MiB. Hosts on `sandbox.fetch_hosts` are read without asking; any other host prompts, and an absent operator is a no. It exists because a jailed command has no route off the box, so it is hidden entirely when `tool_network = "host"`. A GET can still carry data out in its path -- the allow-list is empty by default for that reason. Nothing resolves before that gate either: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
 - **An MCP server's tools are approved per call, on their own scope.** A
   server does fixed things, but the model chooses the arguments, so each
   `mcp__<server>__<tool>` call prompts with those arguments
@@ -532,44 +532,60 @@ each spawn subordinate work. Nothing here loosens the sandbox:
       fixed-argv `tool` reaches the network: unlike `run_command` (LLM-chosen
       argv), a `tool` isn't a free exfil channel.
 
-Egress = `tool_network` × per-tool `allow_network`; the
-effective isolation level decides what's enforceable. "offline" = no egress.
+Egress = `tool_network` × per-tool `allow_network`; the effective isolation
+level decides what's enforceable. Neither `private` nor `none` reaches off the
+box; they differ only in who else is in there.
 
 **Agent egress is unconfined at every isolation level** (claim 3). Only jailed
 commands have a network boundary.
 
-**Jailed-command egress** (`run_command`, machine `tool`) by `tool_network`
-(cells = `strict`, where a per-child netns makes "offline" real):
+**Which network a jailed child joins.** Three answers, one vocabulary: `host`
+(the machine's), `private` (the run's own — its members reach each other and
+nothing off the box), `none` (its own, alone). `auto` is the default everywhere
+and picks the safest that works.
 
-| jailed command | `auto` *(def)* | `block` | `only_explicit_states` | `allow` |
+The run owns ONE private network. A holder process creates it, the run keeps it
+alive with an open descriptor on `/proc/<holder>/ns/{user,net}`, and every child
+that asks joins those. Entering a network namespace needs CAP_SYS_ADMIN in the
+user namespace that owns it, so a joiner enters that user namespace too; it
+still gets its own mount, PID, IPC and UTS namespaces, so two members cannot see
+or signal each other.
+
+By `tool_network` (cells = `strict`, the only level with namespaces to give):
+
+| jailed command | `auto` *(def)* | `private` | `only_explicit_states` | `host` |
 |---|---|---|---|---|
-| `run_command` | offline | offline | offline | host network |
-| `tool`, `allow_network` `auto`(def)/`block` | offline | offline | offline | offline |
+| `run_command` | the run's private network | same | same | host network |
+| `tool`, `allow_network` `auto`(def)/`block` | own, alone | own, alone | own, alone | own, alone |
 | `tool`, `allow_network = allow` | ⛔ refuse | ⛔ refuse | host network | host network |
 
+An MCP server takes the same vocabulary per server, defaulting to `none`; a
+server set to `private` joins the run's network, which is how a browser server
+reaches the dev server a `run_background` started.
+
 `auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
-default, degrade or refuse"): on `strict` it is `offline` above; on `hardened`
-(no netns) it cannot be offline, so a jailed child inherits the agent process's
-network and a once-per-run warning says so. `block` is
-the ENFORCE form — it refuses on `hardened` rather than run under-confined. (On
-`none` nothing is enforced or refused: it is the explicit unsandboxed opt-out
-with its own loud warning, below.)
+default, degrade or refuse"): on `strict` it is the private network above; on
+`hardened` (no netns) there is none to give, so a jailed child inherits the
+agent process's network and a once-per-run warning says so. `private` and
+`none` are the ENFORCE forms — they refuse on `hardened` rather than run
+under-confined. (On `none` isolation nothing is enforced or refused: it is the
+explicit unsandboxed opt-out with its own loud warning, below.)
 
 **Refusals** (fail-closed):
 
 | Configuration | When |
 |---|---|
-| a `tool` sets `allow_network = allow` under `tool_network` `auto`/`block` | machine start |
-| `tool_network = only_explicit_states`, or explicit `tool_network = block` | run start, `hardened` ¹ |
-| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`block` | machine start, `hardened` ¹ |
+| a `tool` sets `allow_network = allow` under `tool_network` `auto`/`private` | machine start |
+| `tool_network = only_explicit_states`, or explicit `tool_network = private` | run start, `hardened` ¹ |
+| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network` `auto`/`private` | machine start, `hardened` ¹ |
 
 - ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
   nothing refused, loud warning.
 
-- ¹ per-command isolation needs a netns, so it's `strict`-only. On `hardened`
-  a jailed child shares the host network. The secure default `auto` degrades
-  there with a warning; an EXPLICIT enforce (`block`, `only_explicit_states`)
-  refuses rather than run silently under-confined.
+- ¹ a network namespace is `strict`-only. On `hardened` a jailed child shares
+  the host network. The secure default `auto` degrades there with a warning; an
+  EXPLICIT enforce (`private`, `none`, `only_explicit_states`) refuses rather
+  than run silently under-confined.
 
 More fail-closed properties:
 

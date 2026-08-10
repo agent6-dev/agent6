@@ -25,6 +25,7 @@ from agent6.app._setup import (
     SandboxOverrides,
     check_provider_keys,
     start_mcp_manager_if_enabled,
+    wants_private_network,
 )
 from agent6.app.finalize import (
     auto_merge_eligible,
@@ -75,6 +76,7 @@ from agent6.paths import (
 from agent6.providers import (
     TranscriptSink,
 )
+from agent6.sandbox.jail import PrivateNetwork
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     clear_away_mode,
@@ -541,11 +543,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Spawned inside the try so the finally below tears it down even if a
         # spawn (MCP) fails.
         mcp_manager = None
+        private_net: PrivateNetwork | None = None
         try:
             reporter.err(f"[agent6] resume session id: {session_id}")
 
+            # The run's private network, before its first member: the
+            # commands and any server that joins it share this one.
+            if wants_private_network(cfg, isolation):
+                private_net = PrivateNetwork.open()
             mcp_manager = start_mcp_manager_if_enabled(
-                cfg, cwd, isolation, reporter=reporter, events=events
+                cfg, cwd, isolation, reporter=reporter, events=events, private_net=private_net
             )
 
             loop_log = frontend.loop_logger(mode)
@@ -561,6 +568,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 questioner=frontend.build_questioner(layout.session_dir, events),
                 loop_log=loop_log,
                 mcp_manager=mcp_manager,
+                private_net=private_net,
                 rm_role=session.rm_role,
             )
             curator = tools.curator
@@ -668,6 +676,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 dispatcher.close()
             if mcp_manager is not None:
                 mcp_manager.close()
+            if private_net is not None:
+                # The last handles on the run's network: closing them is what
+                # lets the kernel reclaim it.
+                private_net.close()
             # Egress teardown is owned by the outer finally (a single call).
             # Doing it here too would reap the broker pid, then the auto-merge
             # git subprocesses and the notify hook below could recycle it before
