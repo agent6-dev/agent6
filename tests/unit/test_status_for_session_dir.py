@@ -122,6 +122,18 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
     ("forked-waiting", [_RESUME, _APPROVAL], "", LIVE, "waiting", "needs answer"),
     ("stale", [_START, _TOOL], "", DEAD, "stale", ""),
     ("stale-beats-waiting", [_START, _APPROVAL], "", DEAD, "stale", ""),
+    # A worker killed during PREFLIGHT (its pid file survives a kill; no
+    # session.start ever lands) used to read "created" -- the fork --no-run
+    # word -- beside the real dollars its verify-inference call spent.
+    (
+        "killed-in-preflight",
+        [{"type": "budget.update", "usd_total": 0.02}],
+        "",
+        DEAD,
+        "stale",
+        "died launching",
+    ),
+    ("killed-in-preflight-no-log", None, "", DEAD, "stale", "died launching"),
     ("passed", [_START, _end("finish_session", True)], "", None, "passed", ""),
     ("finished", [_START, _end("finish_session")], "", None, "finished", ""),
     ("settled", [_START, _end("settled")], "", None, "finished", "unverified"),

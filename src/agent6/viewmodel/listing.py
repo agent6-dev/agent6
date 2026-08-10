@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.sessions.ipc import worker_is_alive
+from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel.events import event_epoch
@@ -249,13 +249,18 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
 def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     """Status before any session.start: a live worker is still launching (egress +
     verify inference run before the loop's first turn) -> "starting". No live
-    worker is either a parked submission (the busy-checkout refusal saved it;
-    resume starts it) or a never-started dir (`fork --no-run`) -> "created"."""
+    worker is a parked submission (the busy-checkout refusal saved it; resume
+    starts it), a worker that died launching (its pid file survives the kill;
+    a clean refusal clears it), or a never-started dir (`fork --no-run`) ->
+    "created". The dead-pid case used to read "created" too, hiding a killed
+    preflight -- and its real dollar figure -- behind the never-ran word."""
     if worker_is_alive(session_dir):
         return "starting", ""
     with contextlib.suppress(ManifestError):
         if read_manifest(session_dir).parked_task:
             return PARKED_STATUS
+    if read_worker_pid(session_dir) is not None:
+        return "stale", "died launching"
     return "created", ""
 
 

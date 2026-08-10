@@ -228,7 +228,9 @@ def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -
         "waiting": "needs answer -- attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
         "parked": "resume to start",
-        "created": "no events yet",
+        # "no events yet" was claimed unconditionally, over logs that HAD
+        # events (a worker that died launching writes preflight events).
+        "created": "no events yet" if scan.last_type is None else "never started",
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
         detail = "long step, likely a provider call"

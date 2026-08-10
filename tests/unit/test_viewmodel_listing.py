@@ -456,16 +456,23 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
     assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
 
 
-def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> None:
-    # The converse: no session.start and no LIVE worker (a `fork --no-run`, or a run
-    # that died in preflight) must NOT read a false "stale" -- it never claimed to
-    # be running. It reads "created", never a false "stale".
+def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: Path) -> None:
+    """A worker killed during preflight leaves its pid file (a clean refusal
+    clears it) and preflight events with real spend. Reading it as "created" --
+    the fork --no-run word -- hid the death; a bare "stale" would overclaim
+    ("was running, crashed"), so the word carries its own reason. A dir with NO
+    pid file ever (fork --no-run) stays "created"."""
     rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    assert summarize_session_dir(rd).status == "created"
+    s = summarize_session_dir(rd)
+    assert (s.status, s.reason) == ("stale", "died launching")
+
+    never_launched = _write_run(tmp_path, "runs", "husk", [])
+    (never_launched / "worker.pid").unlink(missing_ok=True)
+    assert summarize_session_dir(never_launched).status == "created"
 
 
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:

@@ -140,7 +140,11 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
     assert state_word() == "running"
     (d / "logs.jsonl").unlink()
     assert state_word() == "starting"
+    # A dead pid file with no session.start: a worker died LAUNCHING (the pid
+    # survives a kill; a clean refusal clears it) -- not the never-ran word.
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert state_word() == "stale"
+    (d / "worker.pid").unlink()
     assert state_word() == "created"
     (d / "logs.jsonl").write_text(
         json.dumps({"ts": _ts(30), "type": "session.start", "mode": "run"})
