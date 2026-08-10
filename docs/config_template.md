@@ -327,6 +327,10 @@ unconfined process is still a way out — name the narrowest paths that work.
 
 <!-- config-table: mcp mcp.servers.<name> -->
 
+### `[mcp.servers.<name>.sandbox]`
+
+<!-- config-table: mcp.servers.<name>.sandbox -->
+
 ---
 
 ## Reaching a run's network

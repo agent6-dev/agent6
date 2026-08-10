@@ -440,6 +440,15 @@ unconfined process is still a way out — name the narrowest paths that work.
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
 
+### `[mcp.servers.<name>.sandbox]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `read_paths` | `[]` | Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are already there, so a block names only the server's own data. |
+| `write_paths` | `[]` | Paths it may write, likewise additive. |
+| `network` | `"auto"` | Which network this server joins. `auto`: one of its own where the host can give a namespace, degrading to the host's with a warning. `none`: the same, refusing rather than running connected. `session`: the RUN's network, so a dev server a background command started answers this server too (a browser server driving the app under test), and still nothing off the box. `host`: the machine's network. |
+| `unconfined` | `false` | No sandbox at all, for a server whose job IS arbitrary host access. Contradicts every other field here, so setting both is refused rather than half-applied. |
+
 ---
 
 ## Reaching a run's network
