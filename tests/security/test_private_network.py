@@ -572,3 +572,41 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> N
         assert "REFUSED" in text, text
     finally:
         net.close()
+
+
+def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
+    """A joined child enters someone else's user namespace instead of making
+    its own, which is the one thing that could quietly weaken the rest. It does
+    not: the private dirs are still masked, the host is still read-only, and it
+    is still PID 2 in a namespace of its own."""
+    from agent6.paths import private_dirs
+
+    net = PrivateNetwork.open()
+    try:
+        probe = (
+            "import os, pathlib\n"
+            f"p = pathlib.Path({str(private_dirs()[0])!r})\n"
+            "print('SECRETS', 'VISIBLE' if p.exists() and any(p.iterdir()) else 'MASKED')\n"
+            "try:\n"
+            "    pathlib.Path('/etc/agent6-escape-probe').write_text('x')\n"
+            "    print('ETC WRITABLE')\n"
+            "except OSError as exc:\n"
+            "    print('ETC', type(exc).__name__)\n"
+            "print('PID', os.getpid())\n"
+        )
+        argv = ("/usr/bin/python3", "-c", probe)
+        proc = spawn_in_jail(
+            jail_policy(tmp_path, Config(), "strict", argv, network="private"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            private_net=net,
+        )
+        out, err = proc.communicate(timeout=30)
+        text = out.decode() + err.decode()
+        assert "SECRETS MASKED" in text, f"a joined child saw agent6's private dirs: {text}"
+        assert "ETC WRITABLE" not in text, f"a joined child wrote the host: {text}"
+        assert "PID 2" in text, f"a joined child kept the host PID namespace: {text}"
+        assert not Path("/etc/agent6-escape-probe").exists()
+    finally:
+        net.close()
