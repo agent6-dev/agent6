@@ -20,9 +20,13 @@ def _fields(policy: JailPolicy) -> dict[str, object]:
     return json.loads(_policy_to_json(policy))
 
 
-def test_policy_json_carries_bounded_default_memory_limit(tmp_path: Path) -> None:
+def test_policy_json_carries_the_uncapped_default_memory_limit(tmp_path: Path) -> None:
+    """0 = off, matching [sandbox].memory_limit_mb: a cap is an operational
+    guardrail the operator opts into, not a boundary (the kernel already
+    handles a memory bomb), and the two sides must agree on the default so a
+    policy that omits the field means the same thing in Rust."""
     fields = _fields(JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
-    assert fields["memory_limit_mb"] == 4096
+    assert fields["memory_limit_mb"] == 0
 
 
 def test_policy_json_carries_explicit_and_zero_memory_limit(tmp_path: Path) -> None:

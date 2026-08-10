@@ -90,9 +90,9 @@ struct Policy {
     #[serde(default = "default_timeout")]
     timeout_s: f64,
     /// Per-process memory cap in MiB, applied via RLIMIT_DATA in the child
-    /// before exec and inherited by every descendant. 0 disables. The serde
-    /// default matches the Python-side `[sandbox].memory_limit_mb` default so
-    /// a policy missing the field still gets the bounded value.
+    /// before exec and inherited by every descendant. 0 disables, and is the
+    /// default on both sides: the kernel already handles a memory bomb, and a
+    /// cap costs real builds more than it buys.
     #[serde(default = "default_memory_limit_mb")]
     memory_limit_mb: u64,
     /// "once" (default): run `argv` and exit. "serve": after the same setup,
@@ -160,7 +160,7 @@ fn default_timeout() -> f64 {
 }
 
 fn default_memory_limit_mb() -> u64 {
-    4096
+    0
 }
 
 fn die(msg: impl AsRef<str>) -> ! {

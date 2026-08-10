@@ -307,8 +307,8 @@ class LiveWorld:
     # state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
     # Per-process memory cap (MiB) for every tool jail, from
-    # `[sandbox].memory_limit_mb` (the CLI wires it); 0 disables.
-    memory_limit_mb: int = 4096
+    # `[sandbox].memory_limit_mb` (the CLI wires it); 0 (the default) disables.
+    memory_limit_mb: int = 0
     # Operator additions to the jail's hidden set, from `[sandbox].hide_paths`
     # (the CLI wires it). agent6's own private dirs are always hidden by the
     # launcher and need no wiring.

@@ -393,15 +393,13 @@ class SandboxConfig(BaseModel):
     # RLIMIT_DATA by the launcher and inherited by the child's descendants.
     # RLIMIT_DATA (heap + private writable anonymous mappings) rather than
     # RLIMIT_AS so runtimes that reserve large address space without
-    # committing it (V8, JVM, ASAN) keep working. A runaway allocation fails
-    # with ENOMEM (Python MemoryError) that the agent sees as an ordinary
-    # failed command, instead of driving the host to the OOM killer. The cap
-    # is per PROCESS, not per tree; it bounds the common single-runaway case,
-    # not a fork bomb. An operational guardrail, not a security control. 0
-    # disables. No effect under profile `none` (no confinement at all there).
-    # Raise it when a legitimate build or test suite needs more than 4 GiB in
-    # one process.
-    memory_limit_mb: int = Field(default=4096, ge=0)
+    # committing it (V8, JVM, ASAN) keep working. Per PROCESS, not per tree.
+    # An operational guardrail, never a security control: a memory bomb is a
+    # denial of service against your own machine, and the kernel already
+    # handles that. DEFAULT 0 (off) because a cap costs real builds (a large
+    # link, a test matrix) more than it buys; set one when a specific task
+    # needs bounding. No effect under profile `none`.
+    memory_limit_mb: int = Field(default=0, ge=0)
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
     # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
     # For projects whose toolchain or interpreter lives outside the repo — a
