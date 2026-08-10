@@ -123,3 +123,16 @@ def test_expanded_thinking_renders_every_body_line() -> None:
     assert any("beta" in t for t in text)
     assert any("gamma" in t for t in text)
     assert len(text) == 3
+
+
+def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
+    """The least-noise level reads as pure dialogue: hidden omits tool items
+    exactly like thinking. The item itself survives (rendering is a pure
+    function of the fold), so cycling back restores it -- nothing is lost."""
+    tool = TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="12 bytes")
+    assert item_lines(tool, detail="hidden") == []
+    assert item_lines(tool, detail="collapsed")
+    assert item_lines(tool, detail="expanded")
+    # The dialogue kinds stay at every level.
+    assert item_lines(TranscriptItem("text", body="hello"), detail="hidden")
+    assert item_lines(TranscriptItem("operator", body="go on"), detail="hidden")

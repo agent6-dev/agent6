@@ -50,7 +50,8 @@ Span = tuple[str, StyleName]
 Line = list[Span]
 
 # One detail level, cycled by a single shortcut in the TUI:
-#   hidden    -- thinking omitted entirely, tool detail clipped (least noise)
+#   hidden    -- thinking AND tool items omitted entirely: just the dialogue
+#                (prose, operator, commits, verdict)
 #   collapsed -- thinking as a one-line marker, tool detail clipped (the default)
 #   expanded  -- thinking and tool detail both in full
 DetailLevel = Literal["hidden", "collapsed", "expanded"]
@@ -96,29 +97,37 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
     return lines
 
 
+def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
+    """A reasoning block's lines. Expanded: one entry per body line (the
+    contract every consumer's line arithmetic relies on), continuation lines
+    aligned under the glyph. Collapsed: one line OF the reasoning as the
+    summary (first non-empty line, clipped) with a more-count, so collapsed
+    still says what the model is thinking about."""
+    if expanded:
+        body_lines = item.body.split("\n")
+        out: list[Line] = [[(f"{THINK} {body_lines[0]}", "thinking")]]
+        out.extend([(f"  {ln}", "thinking")] for ln in body_lines[1:])
+        return out
+    n = item.body.count("\n") + 1
+    first = next((ln.strip() for ln in item.body.split("\n") if ln.strip()), "")
+    if len(first) > DETAIL_CLIP:
+        first = first[: DETAIL_CLIP - 1] + "…"
+    line: Line = [(f"{THINK} {first}", "thinking")]
+    if n > 1:
+        line.append((f"  (+{n - 1} more line{'' if n == 2 else 's'})", "more"))
+    return [line]
+
+
 def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     """The styled lines for one folded conversation item (both skins render these).
     ``detail`` is the one detail level cycled in the TUI (see DetailLevel)."""
+    if detail == "hidden" and item.kind in ("thinking", "tool"):
+        # The least-noise level reads as pure dialogue; the items survive in
+        # the fold, so cycling back restores them.
+        return []
     lines: list[Line] = []
     if item.kind == "thinking":
-        if detail == "expanded":
-            # One entry per body line (the contract every consumer's line
-            # arithmetic relies on), continuation lines aligned under the glyph.
-            body_lines = item.body.split("\n")
-            lines.append([(f"{THINK} {body_lines[0]}", "thinking")])
-            lines.extend([(f"  {ln}", "thinking")] for ln in body_lines[1:])
-        elif detail == "collapsed":
-            # One line OF the reasoning as the summary (first non-empty line,
-            # clipped), so collapsed still says what the model is thinking
-            # about; "hidden" omits it entirely.
-            n = item.body.count("\n") + 1
-            first = next((ln.strip() for ln in item.body.split("\n") if ln.strip()), "")
-            if len(first) > DETAIL_CLIP:
-                first = first[: DETAIL_CLIP - 1] + "…"
-            line: Line = [(f"{THINK} {first}", "thinking")]
-            if n > 1:
-                line.append((f"  (+{n - 1} more line{'' if n == 2 else 's'})", "more"))
-            lines.append(line)
+        lines.extend(_thinking_lines(item, expanded=detail == "expanded"))
     elif item.kind == "text":
         lines.extend([(ln, "text")] for ln in item.body.split("\n"))
     elif item.kind == "tool":

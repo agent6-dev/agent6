@@ -417,7 +417,7 @@ function makeConv(url, box, body) {
     itemsHost.innerHTML = '';
     let shown = 0;
     conv.items.forEach((it, i) => {
-      if (it.kind === 'thinking' && conv.detail === 'hidden' && !conv.open.has(i)) return;
+      if ((it.kind === 'thinking' || it.kind === 'tool') && conv.detail === 'hidden' && !conv.open.has(i)) return;
       const expanded = conv.detail === 'expanded' || conv.open.has(i);
       const lines = expanded && it.full ? it.full : it.lines;
       const div = el('div', 'ci' + (it.full ? ' exp' : ''));
