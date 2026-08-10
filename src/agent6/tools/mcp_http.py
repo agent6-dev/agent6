@@ -30,6 +30,26 @@ import httpx2
 # body reached 849 MiB of RSS before the check, and a 1 MiB gzip bomb reached
 # 2 GiB -- enough to OOM the process that owns the run and the provider keys.
 MAX_BODY_BYTES = 8 << 20
+
+
+def _clean_session_id(value: str) -> str:
+    """A server-assigned session id we can safely ECHO back in a header, or "".
+
+    The value comes from an operator-run server but crosses the wire, so it is
+    untrusted the same way the token in `_auth` is: a non-ASCII byte makes the
+    HTTP layer raise on the next send with the value IN its message (which
+    reaches stderr, the launch log and the model's context), and a control
+    character rides straight into the outgoing header. The spec restricts a
+    session id to visible ASCII (0x21-0x7E); anything else is dropped so we
+    simply do not echo it, and the caller treats it as a stateless response.
+    Never raises, never quotes the value: a malformed id degrades to no
+    session, it does not take the connection down.
+    """
+    if value and all("\x21" <= ch <= "\x7e" for ch in value):
+        return value
+    return ""
+
+
 # The version agent6 negotiates in `initialize`, echoed on every later request
 # as the spec requires.
 PROTOCOL_VERSION = "2024-11-05"
@@ -128,7 +148,7 @@ class HttpTransport:
                 # The server assigns the session id on the initialize response;
                 # capture it here and every request after echoes it. A stateless
                 # server sends none, so this leaves session_id "".
-                assigned = response.headers.get("mcp-session-id", "")
+                assigned = _clean_session_id(response.headers.get("mcp-session-id", ""))
                 if assigned:
                     self.session_id = assigned
                 encoding = response.headers.get("content-encoding", "")
