@@ -157,3 +157,16 @@ def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
 
     monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", owner_is(4242))
     assert prompt_mod.prompting_is_possible(), "the foreground job must still prompt"
+
+
+def test_a_refused_runs_discarded_id_ends_quietly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal discards its husk, so the minted id matches nothing on disk;
+    the follow-up prompt must end with the refusal's exit code, not crash on
+    the resolver's SessionIdError."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: True)
+    assert cli._prompt_for_the_next_input(None, 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]

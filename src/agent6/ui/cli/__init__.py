@@ -23,7 +23,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.errors import OperatorError, read_operator_file
 from agent6.events import EventWriteError
-from agent6.sessions.id import unused_session_id
+from agent6.sessions.id import SessionIdError, unused_session_id
 from agent6.sessions.layout import SessionLayout, session_layout
 from agent6.types import session_bucket
 from agent6.ui.acp import serve_acp
@@ -286,7 +286,12 @@ def _prompt_for_the_next_input(config_path: Path | None, rc: int, session_id: st
     """
     if not prompting_is_possible():
         return rc
-    layout = resolve_or_newest_layout(Path.cwd(), session_id)
+    try:
+        layout = resolve_or_newest_layout(Path.cwd(), session_id)
+    except SessionIdError:
+        # A refused run discarded its husk, so its minted id matches nothing;
+        # there is no session to continue.
+        return rc
     if layout is None or not layout.session_dir.is_dir():
         return rc
     return end_of_session_prompt(
