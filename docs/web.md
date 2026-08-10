@@ -36,20 +36,18 @@ Shift+Enter inserts a newline.
   saved asks.
 - **Machines page**: machine instances and `machine create` drafts, cards that
   run an authored machine file, and a docked composer that creates a new one.
-- **Session view** (live over SSE): the conversation IS the page — the same folded
-  transcript the CLI stream and the TUI render (reasoning, every tool call with
-  its result, commits, the verdict), with the in-progress turn streaming
-  underneath. A detail toggle cycles collapsed / expanded / hidden, and any
-  clipped item (a long tool result, folded reasoning) expands on click. The
-  run's context — status overview, task graph, budget, clipped tool-call table
-  (hover for the full args and result), latest commit diff, and the raw event
-  log — lives in a collapsible details drawer on the left (drag its edge to
-  resize; both persist). The docked composer steers a live run and, once the
-  run has ended, resumes it with the typed follow-up; typing `/` completes the
-  steer directives, and Ctrl-R (while the composer holds focus) searches the
-  session's past messages into it. Stop now, stop after the
-  current step, compact the context, merge the branch, delete the run's history,
-  approve `run_command` prompts, and answer `ask_user` questions inline.
+- **Session view** (live over SSE): the conversation IS the page — the same
+  folded transcript the CLI and TUI render, with the in-progress turn
+  streaming underneath.
+    - A detail toggle cycles collapsed / expanded / hidden; any clipped item
+      expands on click.
+    - The run's context (status, task graph, budget, tool calls, latest
+      commit diff, event log) lives in a resizable details drawer.
+    - The docked composer steers a live run or resumes an ended one; `/`
+      completes the steer directives, Ctrl-R (composer focused) searches the
+      session's past messages.
+    - Stop now / stop after step, compact, merge, delete history, approve
+      `run_command` prompts, and answer `ask_user` questions inline.
 - **Machines**: the state overview, the path taken, and the current agent
   state's conversation. Approve and answer the current agent state's prompts
   inline (same controls as a run). The docked entry submits as one of the two

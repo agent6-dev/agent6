@@ -95,22 +95,17 @@ agent6 review --base origin/main --head HEAD  # read-only diff review
 agent6 ask "how does the task-graph curator work?"
 ```
 
-`agent6 review --reviewers 3 --personas security,correctness,tests` runs a panel of
-reviewers whose findings are checked against the diff, so only real problems gate.
-`ask` edits nothing and works in any directory, git repository or not; `run` and
-`plan` require one (agent6 builds on git for run branches, diffs, and merges).
-`agent6 run --preset ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
-`paranoid`); `agent6 config presets` lists them with their contents, and
-`agent6 config set preset ultra` makes one the default. `agent6 run "task" --parallel 3` fans out 3 isolated lanes and prints a
-ranked comparison; in the web hub or TUI home composer, start a new run with
-`/parallel [N|model-a,model-b] <task>` to spawn the same fan-out (no spec = one
-isolated lane). A first word with a comma or slash reads as the model spec
-(`/parallel moonshotai/kimi-k2.6 fix X`); a bare name like `opus` reads as task
-text, and a leading path would read as a spec, so start the task with a verb.
-Repeat the `/parallel` token in one message to queue several
-tasks at once, and use it mid-run as a steer to dispatch a sibling group. See
-[configuration](config.md#parallel) and [architecture](architecture.md) for how
-lanes clone, import, and join.
+- `agent6 review --reviewers 3 --personas security,correctness,tests`: a panel
+  whose findings are checked against the diff, so only real problems gate.
+- `ask` works anywhere; `run` and `plan` require a git repository (branches,
+  diffs, merges).
+- `--preset quick|standard|ultra|paranoid` selects a strategy;
+  `agent6 config presets` lists them, `agent6 config set preset <name>`
+  persists one.
+- `agent6 run "task" --parallel 3` (or `model-a,model-b`) fans out isolated
+  lanes and prints a ranked comparison; the same fan-out spawns from the
+  TUI/web composers or mid-run with the `/parallel [spec] <task>` steer
+  directive. Details: [configuration](config.md#parallel).
 
 ## Configuration
 

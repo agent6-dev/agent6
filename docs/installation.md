@@ -7,8 +7,6 @@
   `none`, commands run as ordinary subprocesses behind a startup warning, and an explicit
   `strict` or `hardened` isolation is refused. On Windows use WSL; the CLI does not run
   natively there.
-- **Kernel 6.7 or newer** for the Landlock network rules. Older kernels fall back to
-  filesystem-only Landlock with a warning.
 - **Unprivileged user namespaces** for `strict` isolation. They are on by default on
   Ubuntu, Debian, and most cloud images. On Ubuntu 24.04+, where
   `kernel.apparmor_restrict_unprivileged_userns = 1` blocks them, either set that sysctl
