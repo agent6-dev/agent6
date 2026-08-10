@@ -1,39 +1,10 @@
 #!/usr/bin/env bash
-# Synthetic benchmark harness for agent6.
-#
-# Creates four self-contained tasks under $BENCH_ROOT, runs `agent6 run` on
-# each with a hard budget cap, captures wall time + token+cost summary +
-# verify-pass, and emits a markdown results table.
-#
-# Each task is a fresh git repo with:
-#   * the task statement in TASK.md
-#   * code with a clearly identifiable problem
-#   * a pytest that demonstrates the problem (or that must be added)
-#   * agent6.toml tuned for low cost (sonnet worker, haiku helpers)
-#
-# We measure agent6 only — claude-code is not installed on this host; SWE-bench
-# style multi-agent comparison is out of scope for a $5-10 budget run.
-#
-# Usage: bash bench/run_bench.sh
-# Outputs: bench/results.md and one results.json per task under $BENCH_ROOT.
-#
-# Constraints:
-#   * The jail only exposes the Python stdlib (no pytest, no extra modules),
-#     so tasks use plain `unittest`.
+# Task fixtures for `bash bench/run_tier.sh core`; the runner supplies the
+# machinery and sources this file. Not runnable on its own.
 
-set -euo pipefail
+DEFAULT_BENCH_ROOT=/tmp/agent6-bench
 
-REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-bench}
-cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
-mkdir -p "$BENCH_ROOT"
-
-AGENT6_BIN="$REPO/.venv/bin/agent6"
-[ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN — run 'uv sync' in $REPO first" >&2; exit 1; }
-
-# --- shared agent6.toml -------------------------------------------------------
-common_toml() {
+tier_toml() {
   cat <<'EOF'
 [agent6]
 config_version = 1
@@ -71,22 +42,17 @@ max_tokens_fallback = 1500000
 EOF
 }
 
-init_repo() {
-  local dir="$1"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  ( cd "$dir" && git init -q && git config user.email bench@agent6 && git config user.name bench )
-  common_toml > "$dir/agent6.toml"
-  # Fail on a dead config key here, in 200ms, not after a task's spend:
-  # `config show` loads the same merged layers the run will.
-  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
-  cat > "$dir/.gitignore" <<'GIT'
+tier_gitignore() {
+  cat <<'GIT'
 .agent6/
 __pycache__/
 result.json
 final_pytest.txt
 GIT
-  cat > "$dir/AGENTS.md" <<'AG'
+}
+
+tier_agents_md() {
+  cat <<'AG'
 # Agent guide for this benchmark task
 
 This is a synthetic benchmark repository. Treat the task in `TASK.md` as the
@@ -101,6 +67,17 @@ full specification. Convention:
 - Do not modify the test file unless the task text explicitly says so.
 AG
 }
+
+TASKS=(
+  "setup_task1 01-bugfix-factorial"
+  "setup_task2 02-add-cli-flag"
+  "setup_task3 03-refactor-dedupe"
+  "setup_task4 04-type-annotations"
+  "setup_task5 05-fix-deprecation"
+  "setup_task6 06-add-subcommand"
+  "setup_task7 07-add-logging"
+  "setup_task8 08-extract-method"
+)
 
 # --- task 1: bug-fix ----------------------------------------------------------
 setup_task1() {
@@ -642,69 +619,3 @@ EOF
 }
 
 # --- runner -------------------------------------------------------------------
-run_task() {
-  local dir="$1" name="$2"
-  echo
-  echo "================================================================"
-  echo "TASK: $name"
-  echo "DIR : $dir"
-  echo "================================================================"
-  local task_text; task_text=$(cat "$dir/TASK.md")
-  local start_ns end_ns wall_s log
-  mkdir -p "$BENCH_ROOT/logs"
-  log="$BENCH_ROOT/logs/${name}.log"
-  start_ns=$(date +%s%N)
-  set +e
-  ( cd "$dir" && "$AGENT6_BIN" --config "$dir/agent6.toml" run "$task_text" ) \
-    > "$log" 2>&1
-  local exit_code=$?
-  set -e
-  end_ns=$(date +%s%N)
-  wall_s=$(awk -v s="$start_ns" -v e="$end_ns" 'BEGIN{printf "%.1f", (e-s)/1e9}')
-
-  # verify pass?
-  set +e
-  ( cd "$dir" && python3 -m unittest -v ) > "$dir/final_pytest.txt" 2>&1
-  local verify=$?
-  set -e
-
-  # cost summary
-  local cost_line; cost_line=$(grep -E '^\s*TOTAL: in=' "$log" | tail -1 || echo "")
-  local commits; commits=$( cd "$dir" && git rev-list --count HEAD)
-  local diff_lines; diff_lines=$( cd "$dir" && git diff --shortstat HEAD~$((commits-1)) HEAD 2>/dev/null | tail -1 || echo "")
-
-  cat > "$dir/result.json" <<EOF
-{
-  "task": "$name",
-  "exit_code": $exit_code,
-  "wall_seconds": $wall_s,
-  "verify_pass": $([ $verify -eq 0 ] && echo true || echo false),
-  "cost_summary": $(printf '%s' "$cost_line" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
-  "commits": $commits,
-  "diff_shortstat": $(printf '%s' "$diff_lines" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))")
-}
-EOF
-  echo "  exit=$exit_code  verify=$([ $verify -eq 0 ] && echo PASS || echo FAIL)  wall=${wall_s}s"
-  echo "  $cost_line"
-}
-
-D1=$(setup_task1)
-D2=$(setup_task2)
-D3=$(setup_task3)
-D4=$(setup_task4)
-D5=$(setup_task5)
-D6=$(setup_task6)
-D7=$(setup_task7)
-D8=$(setup_task8)
-
-run_task "$D1" "01-bugfix-factorial"
-run_task "$D2" "02-add-cli-flag"
-run_task "$D3" "03-refactor-dedupe"
-run_task "$D4" "04-type-annotations"
-run_task "$D5" "05-fix-deprecation"
-run_task "$D6" "06-add-subcommand"
-run_task "$D7" "07-add-logging"
-run_task "$D8" "08-extract-method"
-
-echo
-echo "Per-task JSON results saved under $BENCH_ROOT/*/result.json"

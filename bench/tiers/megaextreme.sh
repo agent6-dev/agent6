@@ -1,33 +1,10 @@
 #!/usr/bin/env bash
-# Tier 4 — "megaextreme" bench. Tasks 18–21 probe dimensions the
-# extreme tier (14–17) doesn't:
-#   18: HTTP router from scratch (path params, middleware, precedence)
-#   19: SQL-like query engine (SELECT/WHERE/ORDER BY/LIMIT parser+executor)
-#   20: cross-module bug hunt (4 interacting bugs across 3 files)
-#   21: long-form refactor — convert a small stdlib-only HTTP client lib
-#       from sync to a fully-async API while preserving every test.
-#
-# These tasks are deliberately larger:
-#   - more files, more tests (15–25 each),
-#   - require non-trivial planning (the wins are in decomposition),
-#   - benefit from a strong thinker — so planner / critic / reviewer use
-#     claude-opus-4-5, while the worker stays on sonnet (sonnet is the
-#     better code generator and opus's strength is reasoning).
-#
-# Usage: bash bench/run_bench_megaextreme.sh
-# Outputs: /tmp/agent6-bench-mega/<task>/result.json + logs/.
+# Task fixtures for `bash bench/run_tier.sh megaextreme`; the runner supplies the
+# machinery and sources this file. Not runnable on its own.
 
-set -euo pipefail
+DEFAULT_BENCH_ROOT=/tmp/agent6-bench-mega
 
-REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-bench-mega}
-cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
-mkdir -p "$BENCH_ROOT/logs"
-AGENT6_BIN="$REPO/.venv/bin/agent6"
-[ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN" >&2; exit 1; }
-
-common_toml() {
+tier_toml() {
   cat <<'EOF'
 [agent6]
 config_version = 1
@@ -69,22 +46,17 @@ max_tokens_fallback = 3000000
 EOF
 }
 
-init_repo() {
-  local dir="$1"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  ( cd "$dir" && git init -q && git config user.email bench@agent6 && git config user.name bench )
-  common_toml > "$dir/agent6.toml"
-  # Fail on a dead config key here, in 200ms, not after a task's spend:
-  # `config show` loads the same merged layers the run will.
-  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
-  cat > "$dir/.gitignore" <<'GIT'
+tier_gitignore() {
+  cat <<'GIT'
 .agent6/
 __pycache__/
 result.json
 final_pytest.txt
 GIT
-  cat > "$dir/AGENTS.md" <<'AG'
+}
+
+tier_agents_md() {
+  cat <<'AG'
 # Agent guide for this benchmark task
 
 Synthetic benchmark repo. Treat TASK.md as the full spec.
@@ -97,11 +69,13 @@ Synthetic benchmark repo. Treat TASK.md as the full spec.
 AG
 }
 
-# --- task 18: Express-style HTTP router --------------------------------------
-# Implement a tiny URL router that supports static + parametric segments,
-# method matching, middleware chains, and precedence (static beats param).
-# Everything from scratch in a single file. The stub is empty enough that
-# the agent has to design the data structures itself.
+TASKS=(
+  "setup_task18 18-http-router"
+  "setup_task19 19-sql-engine"
+  "setup_task20 20-multibug"
+  "setup_task21 21-sync-to-async"
+)
+
 setup_task18() {
   local dir="$BENCH_ROOT/18-http-router"
   init_repo "$dir"
@@ -1051,60 +1025,3 @@ EOF
 }
 
 # --- runner -------------------------------------------------------------------
-run_task() {
-  local dir="$1" name="$2"
-  echo
-  echo "================================================================"
-  echo "TASK: $name"
-  echo "================================================================"
-  local task_text; task_text=$(cat "$dir/TASK.md")
-  local start_ns end_ns wall_s log
-  log="$BENCH_ROOT/logs/${name}.log"
-  start_ns=$(date +%s%N)
-  set +e
-  ( cd "$dir" && "$AGENT6_BIN" --config "$dir/agent6.toml" run "$task_text" ) \
-    > "$log" 2>&1
-  local exit_code=$?
-  set -e
-  end_ns=$(date +%s%N)
-  wall_s=$(awk -v s="$start_ns" -v e="$end_ns" 'BEGIN{printf "%.1f", (e-s)/1e9}')
-
-  set +e
-  ( cd "$dir" && python3 -m unittest -v ) > "$dir/final_pytest.txt" 2>&1
-  local verify=$?
-  set -e
-
-  local cost_line; cost_line=$(grep -E '^\s*TOTAL: in=' "$log" | tail -1 || echo "")
-  local commits; commits=$( cd "$dir" && git rev-list --count HEAD)
-  local diff_lines; diff_lines=$( cd "$dir" && git diff --shortstat HEAD~$((commits-1)) HEAD 2>/dev/null | tail -1 || echo "")
-  local test_modified="false"
-  ( cd "$dir" && git diff HEAD~$((commits-1)) HEAD --name-only | grep -E '^test_|/test_' >/dev/null ) && test_modified="true" || true
-
-  cat > "$dir/result.json" <<EOF
-{
-  "task": "$name",
-  "exit_code": $exit_code,
-  "wall_seconds": $wall_s,
-  "verify_pass": $([ $verify -eq 0 ] && echo true || echo false),
-  "cost_summary": $(printf '%s' "$cost_line" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
-  "commits": $commits,
-  "diff_shortstat": $(printf '%s' "$diff_lines" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
-  "test_file_modified": $test_modified
-}
-EOF
-  echo "  exit=$exit_code  verify=$([ $verify -eq 0 ] && echo PASS || echo FAIL)  wall=${wall_s}s  test_modified=$test_modified"
-  echo "  $cost_line"
-}
-
-D18=$(setup_task18)
-D19=$(setup_task19)
-D20=$(setup_task20)
-D21=$(setup_task21)
-
-run_task "$D18" "18-http-router"
-run_task "$D19" "19-sql-engine"
-run_task "$D20" "20-multibug"
-run_task "$D21" "21-sync-to-async"
-
-echo
-echo "Per-task JSON results saved under $BENCH_ROOT/*/result.json"

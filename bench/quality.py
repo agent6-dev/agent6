@@ -20,7 +20,7 @@ Composite is gated: if verify=0, the report still emits the breakdown but
 caps the composite at 0.30 (so a half-correct patch can't outscore a true
 PASS).
 
-Reads from <task_dir>/result.json (written by run_bench.sh) and writes
+Reads from <task_dir>/result.json (written by run_tier.sh) and writes
 <task_dir>/quality.json. Prints a one-line summary on stdout.
 
 Usage:

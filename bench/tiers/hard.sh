@@ -1,24 +1,10 @@
 #!/usr/bin/env bash
-# Harder synthetic tasks for agent6 bench (09–13). These are designed to
-# differentiate competent SOTA coding agents: multi-file refactor, async
-# semantics, security-against-injection, contradictory requirements, and
-# type-cascade. The runner is identical in shape to bench/run_bench.sh but
-# narrower (only the new tasks). Reuses the common toml + verify command.
-#
-# Usage: bash bench/run_bench_hard.sh
-# Outputs: /tmp/agent6-bench-hard/*/result.json plus logs/.
+# Task fixtures for `bash bench/run_tier.sh hard`; the runner supplies the
+# machinery and sources this file. Not runnable on its own.
 
-set -euo pipefail
+DEFAULT_BENCH_ROOT=/tmp/agent6-bench-hard
 
-REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-bench-hard}
-cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
-mkdir -p "$BENCH_ROOT/logs"
-AGENT6_BIN="$REPO/.venv/bin/agent6"
-[ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN" >&2; exit 1; }
-
-common_toml() {
+tier_toml() {
   cat <<'EOF'
 [agent6]
 config_version = 1
@@ -56,22 +42,17 @@ max_tokens_fallback = 1500000
 EOF
 }
 
-init_repo() {
-  local dir="$1"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  ( cd "$dir" && git init -q && git config user.email bench@agent6 && git config user.name bench )
-  common_toml > "$dir/agent6.toml"
-  # Fail on a dead config key here, in 200ms, not after a task's spend:
-  # `config show` loads the same merged layers the run will.
-  ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
-  cat > "$dir/.gitignore" <<'GIT'
+tier_gitignore() {
+  cat <<'GIT'
 .agent6/
 __pycache__/
 result.json
 final_pytest.txt
 GIT
-  cat > "$dir/AGENTS.md" <<'AG'
+}
+
+tier_agents_md() {
+  cat <<'AG'
 # Agent guide for this benchmark task
 
 This is a synthetic benchmark repository. Treat the task in `TASK.md` as the
@@ -84,6 +65,14 @@ full specification.
 - Do not add new dependencies.
 AG
 }
+
+TASKS=(
+  "setup_task9 09-multi-file-rename"
+  "setup_task10 10-async-await-order"
+  "setup_task11 11-prompt-injection"
+  "setup_task12 12-type-cascade"
+  "setup_task13 13-contradictory"
+)
 
 # --- task 09: multi-file rename refactor -------------------------------------
 setup_task9() {
@@ -444,62 +433,3 @@ EOF
 }
 
 # --- runner -------------------------------------------------------------------
-run_task() {
-  local dir="$1" name="$2"
-  echo
-  echo "================================================================"
-  echo "TASK: $name"
-  echo "================================================================"
-  local task_text; task_text=$(cat "$dir/TASK.md")
-  local start_ns end_ns wall_s log
-  log="$BENCH_ROOT/logs/${name}.log"
-  start_ns=$(date +%s%N)
-  set +e
-  ( cd "$dir" && "$AGENT6_BIN" --config "$dir/agent6.toml" run "$task_text" ) \
-    > "$log" 2>&1
-  local exit_code=$?
-  set -e
-  end_ns=$(date +%s%N)
-  wall_s=$(awk -v s="$start_ns" -v e="$end_ns" 'BEGIN{printf "%.1f", (e-s)/1e9}')
-
-  set +e
-  ( cd "$dir" && python3 -m unittest -v ) > "$dir/final_pytest.txt" 2>&1
-  local verify=$?
-  set -e
-
-  local cost_line; cost_line=$(grep -E '^\s*TOTAL: in=' "$log" | tail -1 || echo "")
-  local commits; commits=$( cd "$dir" && git rev-list --count HEAD)
-  local diff_lines; diff_lines=$( cd "$dir" && git diff --shortstat HEAD~$((commits-1)) HEAD 2>/dev/null | tail -1 || echo "")
-  local test_modified="false"
-  ( cd "$dir" && git diff HEAD~$((commits-1)) HEAD --name-only | grep -E '^test_' >/dev/null ) && test_modified="true" || true
-
-  cat > "$dir/result.json" <<EOF
-{
-  "task": "$name",
-  "exit_code": $exit_code,
-  "wall_seconds": $wall_s,
-  "verify_pass": $([ $verify -eq 0 ] && echo true || echo false),
-  "cost_summary": $(printf '%s' "$cost_line" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
-  "commits": $commits,
-  "diff_shortstat": $(printf '%s' "$diff_lines" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))"),
-  "test_file_modified": $test_modified
-}
-EOF
-  echo "  exit=$exit_code  verify=$([ $verify -eq 0 ] && echo PASS || echo FAIL)  wall=${wall_s}s  test_modified=$test_modified"
-  echo "  $cost_line"
-}
-
-D9=$(setup_task9)
-D10=$(setup_task10)
-D11=$(setup_task11)
-D12=$(setup_task12)
-D13=$(setup_task13)
-
-run_task "$D9"  "09-multi-file-rename"
-run_task "$D10" "10-async-await-order"
-run_task "$D11" "11-prompt-injection"
-run_task "$D12" "12-type-cascade"
-run_task "$D13" "13-contradictory"
-
-echo
-echo "Per-task JSON results saved under $BENCH_ROOT/*/result.json"

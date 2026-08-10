@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Head-to-head benchmark: agent6 vs claude-code on the same 8 synthetic tasks.
 #
-# Requires baseline fixtures from a prior `bash bench/run_bench.sh` run (we
+# Requires baseline fixtures from a prior `bash bench/run_tier.sh core` run (we
 # read the root commit of each task repo and reset to it). Spawns claude-code
 # in non-interactive --print mode with --dangerously-skip-permissions so it
 # can edit files inside the fixture, then runs the same verify command.
@@ -27,7 +27,7 @@ CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.npm-global/bin/claude}"
 
 cd "$REPO"
 [ -x "$CLAUDE_BIN" ] || { echo "claude-code not found at $CLAUDE_BIN" >&2; exit 1; }
-[ -d "$BENCH_SRC" ] || { echo "baseline fixtures missing at $BENCH_SRC; run bench/run_bench.sh first" >&2; exit 1; }
+[ -d "$BENCH_SRC" ] || { echo "baseline fixtures missing at $BENCH_SRC; run `bench/run_tier.sh core` first" >&2; exit 1; }
 
 mkdir -p "$BENCH_ROOT/logs"
 
