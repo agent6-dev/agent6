@@ -4116,6 +4116,10 @@ class Workflow:
         The safe point is AFTER a complete iteration, so a stop or an
         injected instruction never splits a tool_use / tool_result pair; the
         per-iteration snapshot is the resume point."""
+        # Before the menu below can print them: a background command's ending
+        # only reaches disk when someone observes it, and `/shells` reads from
+        # there.
+        self.dispatcher.settle_background()
         if self.stop_requested():
             self.stop_clear()
             self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")

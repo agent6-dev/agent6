@@ -712,6 +712,15 @@ class ToolDispatcher:
     def _find_references_lsp(self, raw: dict[str, Any]) -> ToolResult:
         return find_references_lsp(self._root, self._ensure_lsp, raw)
 
+    def settle_background(self) -> None:
+        """Write down the ending of any background command that has finished.
+
+        For the loop's turn boundary: only an observed exit reaches disk, and
+        the model need never ask again after starting one.
+        """
+        if self._shells is not None:
+            self._shells.settle()
+
     def close(self) -> None:
         """Release subprocess resources (LSP server).
 

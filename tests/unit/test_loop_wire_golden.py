@@ -60,6 +60,10 @@ class _StubDispatcher:
     def command_policy(self) -> str:
         return "ask"
 
+    def settle_background(self) -> None:
+        """The turn boundary observes background commands; this scenario starts
+        none, so there is nothing to write down."""
+
 
 def _resp(
     *,

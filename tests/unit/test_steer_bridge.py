@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -267,6 +268,46 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
         with contextlib.suppress(Exception):  # mocks explode later in the leg
             wf.run("q")
         assert len(resets) == expected
+
+
+def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
+    """A background command's ending reaches disk when someone observes it, and
+    a model that starts one and never asks again left `/shells` -- which reads
+    off disk, at this very boundary -- reporting it maybe-running for the rest
+    of the run. The boundary observes once per turn."""
+    from agent6.providers import ProviderResponse
+    from agent6.workflows.loop import Workflow
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    provider = MagicMock()
+    provider.call.return_value = ProviderResponse(
+        text="done",
+        tool_uses=(),
+        stop_reason="end_turn",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": [{"type": "text", "text": "done"}]},
+    )
+    dispatcher = MagicMock()
+    wf = Workflow(
+        root=repo,
+        config=MagicMock(
+            budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
+        provider=provider,
+        dispatcher=dispatcher,
+        logger=lambda _msg: None,
+        provider_retry_count=0,
+        provider_retry_delay_s=0.0,
+        max_iterations=3,
+    )
+    wf.run("do something")
+    assert dispatcher.settle_background.called, "no turn boundary observed the background commands"
 
 
 def test_compact_request_carries_focus(tmp_path: Path) -> None:

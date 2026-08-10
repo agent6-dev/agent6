@@ -545,6 +545,25 @@ def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> Non
     assert not any("still running" in line for line in lines), lines
 
 
+def test_settle_records_an_ending_nobody_asked_about(
+    shells: BackgroundShells, tmp_path: Path
+) -> None:
+    """A command's ending is written down when someone OBSERVES it, and the
+    model may never look again after starting one. Without a settle at the turn
+    boundary, `/shells` read "still running (or the run that owns it ended)" for
+    the rest of the run over a command that ended in seconds."""
+    from agent6.tools.background import roster_from_dir
+
+    done = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path))
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline:
+        shells.settle()
+        if any(f"[{done.id}] exited 7" in line for line in roster_from_dir(tmp_path / "shells")):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"settle never recorded the ending: {roster_from_dir(tmp_path / 'shells')}")
+
+
 def test_an_unsandboxed_background_command_survives_a_siblings_stop(
     tmp_path: Path,
 ) -> None:

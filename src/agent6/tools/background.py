@@ -197,6 +197,17 @@ class BackgroundShells:
         """Every background command this run started, live or not."""
         return [self._view(s) for s in self._shells.values()]
 
+    def settle(self) -> None:
+        """Observe every command, which is what writes an ending down.
+
+        A model can start a command and never ask again, and only an observed
+        exit reaches disk -- so a surface reading the run's shells from
+        elsewhere reported one that ended in seconds as maybe-running for the
+        rest of the run. Called at the turn boundary.
+        """
+        for shell in self._shells.values():
+            shell.job.status()
+
     def read(self, shell_id: str, *, tail_lines: int) -> tuple[ShellView, str]:
         shell = self._get(shell_id)
         try:
