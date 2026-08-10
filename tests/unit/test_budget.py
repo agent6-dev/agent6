@@ -160,7 +160,7 @@ def test_the_caps_have_one_home() -> None:
     from pathlib import Path
 
     from agent6.budget import BudgetTracker
-    from agent6.config.model import BudgetConfig
+    from agent6.config import BudgetConfig
 
     params = inspect.signature(BudgetTracker).parameters
     for name in ("max_usd", "max_tokens_fallback"):
