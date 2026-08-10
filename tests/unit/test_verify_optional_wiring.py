@@ -5,7 +5,15 @@ system prompt swaps the verify block for the no-verify block."""
 
 from __future__ import annotations
 
+import dataclasses
+import json
+import subprocess as sp
+from collections.abc import Callable
 from pathlib import Path
+from typing import ClassVar
+from unittest.mock import MagicMock
+
+import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
@@ -205,3 +213,187 @@ def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: Path) -> 
     assert d.adopt_verify_command(("/bin/true",)) is True
     after = {t.name for t in tool_definitions(d, mode="run")}
     assert "run_verify_command" in after, "the adopted gate has no tool to run it"
+
+
+class _Stop(Exception):
+    """Sentinel: the lifecycle reached pin_gate with this leg's final gate."""
+
+
+def _git_repo(path: Path) -> None:
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    (path / "seed.txt").write_text("seed\n")
+    sp.run(["git", "add", "-A"], cwd=path, check=True)
+    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+
+
+def _role_cfg(extra: dict[str, object]) -> Config:
+    # Callers setenv("K", ...) so provider construction finds the key.
+    return Config.model_validate(
+        {
+            "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "K"}},
+            "models": {
+                "worker": {"provider": "anthropic", "model": "m"},
+                "reviewer": {"provider": "anthropic", "model": "m"},
+            },
+            **extra,
+        }
+    )
+
+
+def _capture_pin(pinned: list[tuple[tuple[str, ...], str]]) -> Callable[..., None]:
+    def _pin(_dir: Path, argv: object, origin: str, **_k: object) -> None:
+        pinned.append((tuple(argv), origin))  # pyright: ignore[reportArgumentType]
+        raise _Stop()
+
+    return _pin
+
+
+def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drop must have the last word at leg start. With commands withheld,
+    the snapshot-reuse block ran AFTER drop_gate_if_unrunnable and handed the
+    dropped gate straight back: the leg resumed gated-but-unwinnable, printed
+    two contradictory preamble lines, committed nothing all leg, and exited 4
+    over a gate that never ran."""
+    import agent6.app._session as session_mod
+    import agent6.app.resume as resume_mod
+    from agent6.app.reporter import Reporter
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.run import session_frontend
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    session_dir = _state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {"version": 3, "session_id": "withheld-AAAA11", "mode": "run", "user_task": "t"}
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": ["pytest", "-q"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = _role_cfg({"sandbox": {"run_commands": "no"}})
+    monkeypatch.setenv("K", "test-key")
+
+    class _Loaded:
+        config = cfg
+        sources: ClassVar[dict[str, str]] = {}
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _load(*_a: object, **_k: object) -> _Loaded:
+        return _Loaded()
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _provider(*_a: object, **_k: object) -> MagicMock:
+        return MagicMock()
+
+    def _yes(*_a: object) -> bool:
+        return True
+
+    pinned: list[tuple[tuple[str, ...], str]] = []
+    monkeypatch.setattr(resume_mod, "load_effective", _load)
+    monkeypatch.setattr(session_mod, "detect_env", object)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
+    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(session_mod, "check_network_support", _none)
+    monkeypatch.setattr(session_mod, "budget_preflight", _none)
+    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _none)
+    monkeypatch.setattr(session_mod, "build_role_provider", _provider)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
+    monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
+    monkeypatch.setattr(resume_mod, "pin_gate", _capture_pin(pinned))
+
+    said: list[str] = []
+    frontend = dataclasses.replace(session_frontend(), confirm_unconfined_autorun=_yes)
+    with pytest.raises(_Stop):
+        resume_mod.resume_task(
+            None,
+            "withheld-AAAA11",
+            frontend=frontend,
+            force=False,
+            reporter=Reporter(out=said.append, err=said.append),
+        )
+    assert pinned == [((), "")], f"the withheld leg was re-gated: {pinned}"
+    assert any("running gateless" in line for line in said)
+
+
+def test_a_withheld_fresh_leg_is_not_regated_by_inference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same rule at the other lifecycle: with commands withheld, inference
+    ran AFTER the drop, re-gated the leg from AGENTS.md, and the pin labelled
+    the inferred command "configured"."""
+    import agent6.app._session as session_mod
+    import agent6.app.run as run_mod
+    from agent6.app.reporter import Reporter
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("Verify: make check\n", encoding="utf-8")
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("K", "test-key")
+    cfg = _role_cfg(
+        {
+            "sandbox": {"run_commands": "no"},
+            "workflow": {"verify_command": ["pytest", "-q"]},
+            "git": {"branch_per_run": False},
+        }
+    )
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    def _provider(*_a: object, **_k: object) -> MagicMock:
+        return MagicMock()
+
+    pinned: list[tuple[tuple[str, ...], str]] = []
+    monkeypatch.setattr(session_mod, "detect_env", object)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _strict)
+    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
+    monkeypatch.setattr(session_mod, "check_network_support", _none)
+    monkeypatch.setattr(session_mod, "budget_preflight", _none)
+    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _none)
+    monkeypatch.setattr(session_mod, "build_role_provider", _provider)
+    monkeypatch.setattr(run_mod, "verify_git_identity", _none)
+    monkeypatch.setattr(run_mod, "pin_gate", _capture_pin(pinned))
+
+    said: list[str] = []
+    frontend = MagicMock()
+    frontend.should_spawn_tui.return_value = False
+    frontend.stream_modes.return_value = (False, False)
+    with pytest.raises(_Stop):
+        run_mod.run_task(
+            cfg,
+            "t",
+            frontend=frontend,
+            mode="run",
+            reporter=Reporter(out=said.append, err=said.append),
+        )
+    assert pinned == [((), "")], f"the withheld leg was re-gated: {pinned}"
+    assert any("running gateless" in line for line in said)

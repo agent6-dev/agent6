@@ -604,11 +604,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
         # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
+        # The drop comes LAST so nothing hands the gate back: a leg that cannot
+        # run a command is gateless, whatever inference found.
         configured_gate = bool(cfg.workflow.verify_command)
-        cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
         cfg = infer_verify_if_unset(
             cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
         )
+        cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
         # After resolution, never before: preflight can DROP the gate (a run
         # that cannot run commands), and an empty gate with an origin of
         # "configured" is a self-contradiction the next leg reads back.

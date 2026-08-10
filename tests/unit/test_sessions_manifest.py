@@ -350,6 +350,7 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: Path) -> None:
         (False, True, "adopted", "adopted"),  # an adopted gate stays adopted
         (False, True, "", "inferred"),  # the leg had to re-infer
         (False, False, "inferred", ""),  # gateless leg claims nothing
+        (True, False, "inferred", ""),  # a dropped gate claims nothing, even over config
     ],
 )
 def test_a_resumed_leg_reports_whose_gate_it_used(

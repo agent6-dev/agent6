@@ -215,9 +215,11 @@ def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporte
     green, so nothing committed, and it finished red over work that may be fine.
 
     Decided ONCE per leg, by whichever lifecycle starts it, because the system
-    prompt is frozen from the same config. A deny that lands MID-leg withdraws
-    the tools (the dispatcher's own filter) but must not retroactively make a
-    gate that already ran red look like a run that never had one.
+    prompt is frozen from the same config. Runs LAST at leg start -- after
+    snapshot reuse and inference -- so nothing hands the gate back. A deny that
+    lands MID-leg withdraws the tools (the dispatcher's own filter) but must
+    not retroactively make a gate that already ran red look like a run that
+    never had one.
     """
     if effective_run_commands(cfg.sandbox.run_commands, session_dir) != "no":
         return cfg
@@ -246,8 +248,8 @@ def infer_verify_if_unset(
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 
-    ``drop_gate_if_unrunnable`` runs first and may have emptied the command, so
-    a run that cannot execute one never infers one either.
+    ``drop_gate_if_unrunnable`` runs AFTER this and has the last word: a leg
+    that cannot run commands ends gateless, whatever was inferred.
     """
     if mode not in ("run", "plan") or cfg.workflow.verify_command:
         return cfg

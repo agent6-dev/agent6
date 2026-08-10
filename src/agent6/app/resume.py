@@ -212,11 +212,12 @@ def snapshot_head_mismatch(
 def leg_gate_origin(*, configured: bool, has_gate: bool, pinned: str) -> str:
     """Where THIS leg's gate came from: config outranks the run's pin, the pin
     stands when the leg reused it (an adopted gate stays adopted), and a leg
-    that had to re-infer says so."""
-    if configured:
-        return "configured"
+    that had to re-infer says so. A gateless leg claims nothing, even when
+    config named a gate the leg then dropped."""
     if not has_gate:
         return ""
+    if configured:
+        return "configured"
     return pinned or "inferred"
 
 
@@ -542,15 +543,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # diverge. Config the operator has pinned since outranks it (announced
         # below, and to the worker, since the prompt still names the old one).
         # `()` means the original run was gateless: stay gateless.
-        # The same leg-start decision a fresh run makes: a leg that cannot run
-        # a command cannot run its gate, so it is gateless rather than
-        # unwinnable. Frozen here, with the system prompt.
-        cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
         leg_configured = bool(cfg.workflow.verify_command)
         if not leg_configured and snapshot.verify_command:
             cfg = cfg.with_verify_command(snapshot.verify_command)
             gate = " ".join(snapshot.verify_command)
             reporter.err(f"[agent6] reusing this run's verify command: {gate}")
+        # The same leg-start decision a fresh run makes, LAST so nothing hands
+        # the gate back: a leg that cannot run a command cannot run its gate,
+        # so it is gateless rather than unwinnable. Frozen here, with the
+        # system prompt.
+        cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
         # Re-pin for this leg: config outranks the pin, the pin outranks a
         # re-inference, and the manifest has to say which one this leg used.
         pinned_origin, pinned_gate = "", ()
