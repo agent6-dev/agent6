@@ -113,7 +113,12 @@ struct Policy {
 }
 
 /// One command to run against an already-established jail.
+// deny_unknown_fields, like Policy above: a request naming a field this launcher
+// does not know is a version skew between the Python side and this binary, and
+// silently dropping it could mean dropping a confinement the caller meant to set.
+// Refuse it rather than run a request we only half-understand.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ChildRequest {
     argv: Vec<String>,
     #[serde(default)]
@@ -1571,6 +1576,25 @@ fn apply_seccomp() -> io::Result<()> {
         // not depend on either. pidfd_open (the handle) is harmless alone and
         // stays allowed; this is the reach.
         libc::SYS_pidfd_getfd,
+        // io_uring submits file/network ops through a shared ring that kernel
+        // worker threads execute -- so those ops never appear as syscalls and
+        // this filter never sees them. Landlock still hooks the ring's FS ops
+        // (worker threads inherit the domain on a current kernel), so it is not
+        // a live FS bypass here; but that is a kernel-version property, and the
+        // seccomp layer must not lean on it. Denying io_uring_setup is a
+        // COMPLETE block, not a leaky one: enter/register need a ring this call
+        // creates, so none can exist. Matches podman/docker, whose default
+        // allow-list profiles omit io_uring entirely. Nothing a build/test does
+        // needs it; a program that genuinely must have it is the signal to run
+        // unsandboxed (isolation = "none"), the same coarse escape hatch a
+        // container user reaches for with seccomp=unconfined.
+        libc::SYS_io_uring_setup,
+        // userfaultfd hands a process a fd that stalls page faults on demand --
+        // the race-window primitive most kernel UAF/heap exploits use to win.
+        // Not an escape by itself. Blocked here rather than left to the
+        // vm.unprivileged_userfaultfd=0 sysctl, which is a host tunable this
+        // layer must not depend on (same reasoning as pidfd_getfd + io_uring).
+        libc::SYS_userfaultfd,
         libc::SYS_mount,
         // umount2 is the unmount call on every arch here. There is no second
         // spelling to add: the legacy `umount` is number 22 of the I386 table,

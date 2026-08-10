@@ -151,9 +151,11 @@ no run) each command gets its own launcher. Under `strict` it:
 - Applies Landlock FS rules (net confinement is the namespace); best-effort:
   a kernel without Landlock skips this layer, warned loudly at run entry.
 - Installs a seccomp deny-list: dangerous syscalls (ptrace and its pidfd-era
-  fd-theft sibling pidfd_getfd, process_vm_readv/writev, kcmp, mount, setns,
-  unshare, kexec, bpf, perf, keyctl, module loading, reboot, clock-set, …)
-  return `EPERM`, the rest allowed.
+  fd-theft sibling pidfd_getfd, process_vm_readv/writev, kcmp, io_uring_setup
+  (whose ring bypasses this filter), userfaultfd, mount, setns, unshare, kexec,
+  bpf, perf, keyctl, module loading, reboot, clock-set, …) return `EPERM`, the
+  rest allowed. This is a default-allow denylist; podman/docker default-DENY
+  and allowlist, reaching the same result for these by omission.
 - Sets `NO_NEW_PRIVS`, so the kernel ignores setuid bits (`sudo`/setuid can't
   escalate).
 - `execve`s the binary and SIGKILLs the group at the wall-clock timeout.

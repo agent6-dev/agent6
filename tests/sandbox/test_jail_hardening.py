@@ -688,3 +688,76 @@ def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str)
     assert open_line.split()[2] != "1", (
         f"the jail denies pidfd_open, the harmless handle: {open_line}"
     )
+
+
+@pytest.mark.parametrize("level", ["hardened", "strict"])
+def test_io_uring_and_userfaultfd_are_denied(tmp_path: Path, level: str) -> None:
+    """io_uring's ops run in kernel worker threads seccomp never sees, so it
+    can bypass a seccomp-only property; denying io_uring_setup is a COMPLETE
+    block (enter/register need a ring only setup creates). userfaultfd is the
+    race-window primitive kernel UAF exploits lean on. Both were reachable
+    (verified before the fix); both must be EPERM now, at both levels, while
+    memfd_create -- ordinary anonymous memory, used by real toolchains -- stays
+    allowed. Probed by NUMBER so a wrapper's own failure can't read as a deny."""
+    import platform
+
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    # (io_uring_setup, userfaultfd, memfd_create) per arch.
+    by_arch = {"x86_64": (425, 323, 319), "aarch64": (425, 282, 279)}
+    if platform.machine() not in by_arch:
+        pytest.skip(f"syscall numbers not pinned for {platform.machine()}")
+    iouring, uffd, memfd = by_arch[platform.machine()]
+    probe = (
+        "import ctypes\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "def call(nr, *a):\n"
+        "    ctypes.set_errno(0)\n"
+        "    libc.syscall(ctypes.c_long(nr), *[ctypes.c_long(x) for x in a])\n"
+        "    return ctypes.get_errno()\n"
+        f"print('iouring', call({iouring}, 0, 0))\n"  # setup(0 entries, NULL params)
+        f"print('uffd', call({uffd}, 0))\n"
+        f"print('memfd', call({memfd}, 0, 0))\n"  # bad name ptr -> EFAULT if allowed
+    )
+    res = run_in_jail(
+        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=level, timeout_s=20.0)  # pyright: ignore[reportArgumentType]
+    )
+    out = res.stdout or ""
+    if "iouring" not in out:
+        pytest.skip(f"probe did not run: {res.stderr[:200]}")
+    errs = dict(ln.split() for ln in out.splitlines() if ln and not ln.startswith("Traceback"))
+    assert errs["iouring"] == "1", f"io_uring_setup reached the kernel (errno {errs['iouring']})"
+    assert errs["uffd"] == "1", f"userfaultfd reached the kernel (errno {errs['uffd']})"
+    assert errs["memfd"] != "1", f"the jail denies memfd_create (errno {errs['memfd']})"
+
+
+def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) -> None:
+    """The serve-mode ChildRequest carries `deny_unknown_fields` like Policy: a
+    field this binary does not know is version skew with the Python side, and
+    silently dropping it could drop a confinement the caller meant to set."""
+    import json
+    import subprocess
+
+    from agent6.config import Config
+    from agent6.sandbox.jail import (  # pyright: ignore[reportPrivateUsage]
+        _policy_to_json,
+        _require_jail_binary,
+    )
+    from agent6.tools.policy import jail_policy
+
+    spec = json.loads(
+        _policy_to_json(jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none"))
+    )
+    spec["mode"] = "serve"
+    req = {"kind": "background", "argv": ["/bin/true"], "a_field_from_a_newer_agent6": 1}
+    proc = subprocess.run(
+        [str(_require_jail_binary())],
+        input=(json.dumps(spec) + "\n" + json.dumps(req) + "\n").encode(),
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    combined = (proc.stdout + proc.stderr).decode(errors="replace")
+    assert "unknown field" in combined.lower(), combined[:300]
+    assert "a_field_from_a_newer_agent6" in combined
