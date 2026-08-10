@@ -127,6 +127,11 @@ and the principles the Zen doesn't cover:
     (`isolation = "strict"`, `tool_network = "block"`) refuses to run when the
     environment can't honor it, naming what is unsupported and how to change it.
     A knob with no such value gets an `auto` that is the default.
+  - Three cases, one rule: an AUTOMATIC setting degrades with a warning; an
+    EXPLICIT setting we cannot honor (or that contradicts another) refuses; an
+    explicit but DISCOURAGED widening (granting a path that holds secrets)
+    runs with a loud warning naming what it costs -- the operator may mean it,
+    and must keep the ability, but must not learn the cost later.
 - **Ask, don't over-decide.** These rules are guardrails against reflexive
   mistakes, not licence to make judgement calls alone. When a task forks (a
   behaviour tradeoff, a maybe-not-worth-it edge case, growing scope, more than
