@@ -85,6 +85,15 @@ def warn_sandbox_gaps(
             "and provider-only agent egress, or set sandbox.tool_network = "
             "'block' to refuse rather than run here."
         )
+    for hidden, region in unmaskable_exposures(cfg, isolation):
+        reporter.err(
+            "[agent6] WARNING: jailed commands can READ"
+            f" {hidden} -- it sits inside {region}, which they are granted,"
+            " and 'hardened' has no mount namespace to mask it out (Landlock"
+            " has no deny rules). Provider keys, transcripts, notes and run"
+            " history in there are readable by every command this run runs."
+            " Use 'strict' to keep them masked under the same grant."
+        )
     if isolation in ("strict", "hardened"):
         notes = tool_mount_notes()
         for tool in notes.unreachable:
@@ -132,38 +141,49 @@ def check_protect_git_support(
     )
 
 
-def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | None:
-    """A refusal message when hiding cannot be honored on this isolation, else
-    None.
+def unmaskable_exposures(cfg: Config, isolation: IsolationLevel) -> tuple[tuple[Path, Path], ...]:
+    """`(hidden path, granted region containing it)` pairs this isolation
+    cannot mask, hidden-path first. Empty on strict (it masks) and on `none`
+    (no jail at all; the blanket unsandboxed warning covers that).
 
-    Hiding is a mount-namespace mask, so `hardened` (Landlock has no deny
-    rules) cannot honor a hidden path that sits inside a granted region -- the
-    workspace or an extra grant. Leaving it readable would be silently
-    ineffective security, so refuse instead, naming the pair. Hidden means
-    agent6's own private dirs (config + state) plus `[sandbox].hide_paths`.
-
-    A hidden path nothing grants is trivially satisfied (Landlock never
-    granted it), so ordinary hardened runs are untouched. `none` has no jail
-    at all; its blanket unsandboxed warning covers this too.
+    On `hardened` there is no mount namespace and Landlock has no deny rules,
+    so anything inside a granted region -- the workspace, or an extra grant --
+    is readable however private it is.
     """
     if isolation != "hardened":
-        return None
+        return ()
     sb = cfg.sandbox
     regions = (
         Path.cwd(),
         *(Path(p) for p in (*sb.extra_read_paths, *sb.extra_write_paths)),
     )
     hidden = (*(Path(p) for p in sb.hide_paths), *private_dirs())
-    for region in regions:
-        for h in hidden:
-            if h.is_relative_to(region):
-                return (
-                    f"{str(h)!r} must stay hidden from jailed commands"
-                    " (agent6-private, or sandbox.hide_paths) but sits inside"
-                    f" {str(region)!r}, which they can read. Masking it needs the"
-                    " mount namespace only 'strict' has: use strict, or move one"
-                    " of the two."
-                )
+    return tuple((h, region) for region in regions for h in hidden if h.is_relative_to(region))
+
+
+def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+    """A refusal message when an EXPLICIT `[sandbox].hide_paths` entry cannot
+    be honored here, else None.
+
+    The same rule the other knobs follow: a default degrades with a warning,
+    a value the operator wrote down refuses rather than being silently
+    ineffective. `hide_paths` is only ever explicit, so an entry hardened
+    cannot mask refuses. The always-hidden private dirs are NOT this: the
+    operator granting a region that contains them is a choice they may mean
+    (real protection remains -- writes stay confined, seccomp still applies),
+    so that is a loud warning instead (`warn_sandbox_gaps`).
+    """
+    if isolation != "hardened":
+        return None  # before reading config: every other level masks
+    listed = {Path(p) for p in cfg.sandbox.hide_paths}
+    for hidden, region in unmaskable_exposures(cfg, isolation):
+        if hidden in listed:
+            return (
+                f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
+                f" {str(region)!r} -- a region jailed commands can read. Masking it"
+                " needs the mount namespace only 'strict' has. Use strict, drop the"
+                " entry, or move one of the two."
+            )
     return None
 
 

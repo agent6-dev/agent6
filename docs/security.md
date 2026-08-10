@@ -119,9 +119,15 @@ no run) each command gets its own launcher. Under `strict` it:
       regenerable -- both are grantable.
     - A policy grant BENEATH a hidden root (a machine's data dir under the
       state dir) is re-bound through the mask at its real path.
-    - An extra grant AT or INSIDE a private dir is refused at config load. On
-      `hardened` there is no mount namespace and Landlock cannot mask, so a
-      hidden path inside the workspace or a grant refuses the run.
+    - An extra grant AT or INSIDE a private dir is refused at config load.
+    - `hardened` has no mount namespace and Landlock has no deny rules, so it
+      cannot mask. A granted region containing a private dir gets a LOUD
+      WARNING naming what becomes readable, not a refusal: the grant is a
+      choice the operator may mean, and real protection remains (writes stay
+      confined to the workspace, `/root` and the rest of the host stay
+      unreadable, seccomp applies). An explicit `hide_paths` entry it cannot
+      mask does refuse -- the same rule `tool_network` follows, where a
+      default degrades and a written-down value enforces.
 - Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
@@ -142,10 +148,12 @@ no run) each command gets its own launcher. Under `strict` it:
 
 Notes:
 
-- **The memory cap is operational, not a threat-model control.** A per-process
-  `RLIMIT_DATA` (`[sandbox].memory_limit_mb`, default 4096, `0` off; not
-  `RLIMIT_AS`, so V8/JVM/ASAN keep working) stops one runaway allocation, nothing
-  more.
+- **The memory cap is operational, not a threat-model control, and is OFF by
+  default.** A memory bomb is a denial of service against your own machine and
+  the kernel already handles it, while a cap costs real builds. Set
+  `[sandbox].memory_limit_mb` to bound a specific task: a per-process
+  `RLIMIT_DATA` (not `RLIMIT_AS`, so V8/JVM/ASAN keep working) that stops one
+  runaway allocation, nothing more.
 - **The seccomp layer is a deny-list (defense-in-depth), not a boundary.**
   Known-dangerous syscalls only; nested-namespace creation via `clone`/`clone3`
   stays allowed (accepted: the whole mount-syscall family is denied and

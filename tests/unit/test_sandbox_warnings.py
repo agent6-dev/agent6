@@ -144,3 +144,85 @@ def test_scanner_separates_unreachable_from_home_exposing(
     notes = jail_mod.tool_mount_notes()
     assert notes.unreachable == (f"{binf}/x -> {home}/x.sh",)
     assert notes.exposes_home_dir == (f"{binf}/y -> {home}/tools/y.sh",)
+
+
+def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Granting a region containing the config dir is a choice the operator may
+    mean: real protection remains on hardened (writes stay confined, seccomp
+    applies), so refusing would be paternalism. It warns instead and names what
+    becomes readable. Strict masks the same grant and says nothing."""
+    from agent6.app.confine import check_hide_paths_support
+
+    home = tmp_path / "home"
+    cfg_dir = home / ".config" / "agent6"
+    cfg_dir.mkdir(parents=True)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
+
+    warn_sandbox_gaps("hardened", _env(4), cfg)
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "READ" in err
+    assert str(cfg_dir) in err and str(home) in err
+    assert check_hide_paths_support(cfg, "hardened") is None  # warned, not refused
+
+    warn_sandbox_gaps("strict", _env(4), cfg)
+    assert str(cfg_dir) not in capsys.readouterr().err
+
+
+def test_the_workspace_itself_counts_as_a_granted_region(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verified live before this existed: with the config dir INSIDE the
+    workspace, a jailed `cat` on hardened printed secrets.toml. The workspace
+    is granted implicitly, so it has to be checked like any other region."""
+    cfg_dir = tmp_path / ".config" / "agent6"
+    cfg_dir.mkdir(parents=True)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+
+    warn_sandbox_gaps("hardened", _env(4), Config())
+    assert str(cfg_dir) in capsys.readouterr().err
+
+
+def test_hardened_refuses_an_explicit_hide_entry_it_cannot_mask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator who wrote hide_paths down asked explicitly, so the rule the
+    other knobs follow applies: a default degrades with a warning, an explicit
+    value refuses rather than being silently ineffective."""
+    from agent6.app.confine import check_hide_paths_support
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.chdir(ws)
+    hidden = ws / "cred.txt"
+    cfg = Config(sandbox=SandboxConfig(hide_paths=(str(hidden),)))
+    err = check_hide_paths_support(cfg, "hardened")
+    assert err is not None and str(hidden) in err
+    assert check_hide_paths_support(cfg, "strict") is None
+
+
+def test_a_plain_hardened_run_neither_warns_nor_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.app.confine import check_hide_paths_support
+
+    for var in ("CONFIG", "STATE", "DATA", "CACHE"):
+        monkeypatch.setenv(f"AGENT6_{var}_HOME", str(tmp_path / var.lower()))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.chdir(ws)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    cfg = Config(sandbox=SandboxConfig(tool_network="allow", protect_git=False))
+    warn_sandbox_gaps("hardened", _env(4), cfg)
+    assert capsys.readouterr().err == ""
+    assert check_hide_paths_support(cfg, "hardened") is None
