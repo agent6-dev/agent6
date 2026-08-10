@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from collections import Counter
 from collections.abc import Sequence
@@ -535,8 +536,7 @@ def create_branch(path: Path, name: str, *, start_point: str | None = None) -> N
     *start_point* (a branch/sha) is where a NEW branch is cut from; None means
     the current HEAD. Idempotent: an existing branch is only checked out, never
     moved (that would be a force/rewrite, which is refused), so re-running or
-    resuming a run reuses the run's branch. ``git.branch_from`` uses start_point
-    to cut a run from its base instead of stacking on the current checkout."""
+    resuming a run reuses the run's branch."""
     existing = _run(path, "branch", "--list", name, check=False)
     if existing.ok and existing.stdout.strip():
         _run(path, "checkout", name)
@@ -544,6 +544,23 @@ def create_branch(path: Path, name: str, *, start_point: str | None = None) -> N
         _run(path, "checkout", "-b", name, start_point)
     else:
         _run(path, "checkout", "-b", name)
+
+
+def set_ref(path: Path, ref: str, sha: str) -> None:
+    """Point *ref* at *sha* (plain `update-ref`, no checkout). For agent6's own
+    refs (`refs/agent6/<id>`); branches go through create_branch_at."""
+    _run(path, "update-ref", ref, sha)
+
+
+def delete_ref(path: Path, ref: str) -> None:
+    """Delete *ref* if it exists (`update-ref -d`); missing is a no-op."""
+    _run(path, "update-ref", "-d", ref, check=False)
+
+
+def checkout_detached(path: Path, rev: str) -> None:
+    """Detached checkout of *rev*: for agent6-OWNED clones (a lane workspace
+    cut at the coordinator's chain tip), never the operator's checkout."""
+    _run(path, "checkout", "-q", "--detach", rev)
 
 
 def create_branch_at(path: Path, name: str, sha: str) -> None:
@@ -653,6 +670,174 @@ def _identity_env(identity: CommitIdentity | None) -> dict[str, str] | None:
     return env or None
 
 
+def _full_message(
+    message: str, trailers: dict[str, str] | None, identity: CommitIdentity | None
+) -> str:
+    """The commit message with the identity trailer and any extra trailers
+    appended once."""
+    merged = dict(trailers or {})
+    if identity is not None and identity.trailer and identity.trailer not in message:
+        key, _, value = identity.trailer.partition(": ")
+        merged[key] = value
+    if not merged:
+        return message
+    trailer_lines = "\n".join(f"{k}: {v}" for k, v in merged.items())
+    return f"{message}\n\n{trailer_lines}"
+
+
+def chain_tip(path: Path, ref: str) -> str | None:
+    """Current sha of *ref* (any ref name), or None when it does not exist."""
+    res = _run(path, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", check=False)
+    sha = res.stdout.strip()
+    return sha if res.returncode == 0 and sha else None
+
+
+def _worktree_tree(path: Path) -> str:
+    """Tree sha of the worktree's CURRENT content, staged into a temp index;
+    the shared index is never read or written."""
+    tmp = Path(tempfile.mkdtemp(prefix="agent6-chain-"))
+    env = {"GIT_INDEX_FILE": str(tmp / "index")}
+    try:
+        _run(path, "add", "-A", env_extra=env)
+        return _run(path, "write-tree", env_extra=env).stdout.strip()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# git's well-known empty tree: the diff base when a chain has no commits yet.
+_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def chain_dirty(path: Path, ref: str, fallback_parent: str | None) -> bool:
+    """True when the worktree's content differs from the chain tip's tree
+    (*ref*, else *fallback_parent*, else the empty tree in an unborn repo).
+    Raises GitError outside a repo -- callers treat that as clean."""
+    base = chain_tip(path, ref) or fallback_parent
+    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
+    return base_tree != _worktree_tree(path)
+
+
+def chain_dirty_paths(path: Path, ref: str, fallback_parent: str | None, limit: int) -> list[str]:
+    """Paths whose worktree content differs from the chain tip's tree, capped
+    at *limit* (an unborn chain diffs against the empty tree)."""
+    base = chain_tip(path, ref) or fallback_parent
+    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
+    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, _worktree_tree(path)).stdout
+    return [line for line in out.splitlines() if line][:limit]
+
+
+def chain_commit(
+    path: Path,
+    message: str,
+    *,
+    ref: str,
+    fallback_parent: str | None,
+    trailers: dict[str, str] | None = None,
+    identity: CommitIdentity | None = None,
+    also_branch: str | None = None,
+) -> str | None:
+    """Record the worktree's current content on the agent's own commit chain,
+    touching neither HEAD, the operator's index, nor any checkout.
+
+    Stages everything into a TEMP index, writes the tree, and `commit-tree`s
+    it parented on *ref*'s current value -- the ref itself is the chain state,
+    so resume and concurrent runs compose without bookkeeping. When the ref
+    does not exist yet the parent is *fallback_parent* (HEAD at run start;
+    None = a root commit in an unborn repo). Advances *ref*
+    (`refs/agent6/<session>`, the gc anchor) and, when *also_branch* is set,
+    `refs/heads/<also_branch>` -- a plain ref move, never a checkout. Returns
+    the new sha, or None when the tree is identical to the parent's (nothing
+    to record). Tolerant of concurrent model or operator git activity by
+    construction: the shared index and HEAD are never read or written.
+    """
+    tree = _worktree_tree(path)
+    parent = chain_tip(path, ref) or fallback_parent
+    parent_args: list[str] = []
+    if parent is not None:
+        if _run(path, "rev-parse", f"{parent}^{{tree}}").stdout.strip() == tree:
+            return None
+        parent_args = ["-p", parent]
+    sha = _run(
+        path,
+        "commit-tree",
+        tree,
+        *parent_args,
+        "-m",
+        _full_message(message, trailers, identity),
+        env_extra=_identity_env(identity),
+    ).stdout.strip()
+    _run(path, "update-ref", ref, sha)
+    if also_branch:
+        _run(path, "update-ref", f"refs/heads/{also_branch}", sha)
+    return sha
+
+
+def chain_merge(
+    path: Path,
+    merge_rev: str,
+    message: str,
+    *,
+    ref: str,
+    fallback_parent: str | None = None,
+    identity: CommitIdentity | None = None,
+    also_branch: str | None = None,
+) -> str | None:
+    """Merge *merge_rev* into the chain at *ref* without touching HEAD, the
+    shared index, or any checkout (`git merge-tree --write-tree` + a two-parent
+    `commit-tree`). Advances *ref* (and *also_branch*) to the result and syncs
+    the worktree from the old tip's tree to the merged tree, so the running
+    agent sees the lane's files. An unborn ref merges onto *fallback_parent*
+    (HEAD at run start); a *merge_rev* that descends from the tip
+    fast-forwards instead of stacking an empty merge commit. Returns the new
+    (or already-containing old) tip; None on textual conflicts (the chain and
+    worktree are left untouched).
+    """
+    ours = chain_tip(path, ref) or fallback_parent
+    if ours is None:
+        raise GitError(f"chain ref {ref} does not exist and no fallback parent was given")
+    theirs = _run(path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}").stdout.strip()
+    if _run(path, "merge-base", "--is-ancestor", theirs, ours, check=False).returncode == 0:
+        return ours
+    if _run(path, "merge-base", "--is-ancestor", ours, theirs, check=False).returncode == 0:
+        sha = theirs
+    else:
+        res = _run(path, "merge-tree", "--write-tree", ours, theirs, check=False)
+        if res.returncode != 0:
+            return None
+        tree = res.stdout.strip().splitlines()[0]
+        sha = _run(
+            path,
+            "commit-tree",
+            tree,
+            "-p",
+            ours,
+            "-p",
+            theirs,
+            "-m",
+            _full_message(message, None, identity),
+            env_extra=_identity_env(identity),
+        ).stdout.strip()
+    _run(path, "update-ref", ref, sha)
+    if also_branch:
+        _run(path, "update-ref", f"refs/heads/{also_branch}", sha)
+    sync_worktree(path, ours, sha)
+    return sha
+
+
+def sync_worktree(path: Path, from_rev: str, to_rev: str) -> None:
+    """Update worktree files from *from_rev*'s tree to *to_rev*'s via a temp
+    index (two-tree `read-tree -m -u`); HEAD and the shared index stay
+    untouched. The worktree must currently match *from_rev*'s tree -- the
+    chain invariant after a chain commit."""
+    tmp = Path(tempfile.mkdtemp(prefix="agent6-chain-"))
+    env = {"GIT_INDEX_FILE": str(tmp / "index")}
+    try:
+        _run(path, "read-tree", from_rev, env_extra=env)
+        _run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _commit(
     path: Path,
     message: str,
@@ -661,15 +846,8 @@ def _commit(
     identity: CommitIdentity | None,
     only_paths: tuple[str, ...] | None = None,
 ) -> str:
-    merged_trailers = dict(trailers or {})
     env_extra = _identity_env(identity)
-    if identity is not None and identity.trailer and identity.trailer not in message:
-        key, _, value = identity.trailer.partition(": ")
-        merged_trailers[key] = value
-    full_message = message
-    if merged_trailers:
-        trailer_lines = "\n".join(f"{k}: {v}" for k, v in merged_trailers.items())
-        full_message = f"{message}\n\n{trailer_lines}"
+    full_message = _full_message(message, trailers, identity)
     argv = ["commit", "-m", full_message]
     if only_paths is not None:
         # Path-limited commit: record only these paths (from the worktree),

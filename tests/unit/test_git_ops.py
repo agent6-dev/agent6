@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -1188,3 +1189,176 @@ def test_squash_merge_combine_uses_gits_own_message(tmp_path: Path) -> None:
     ).stdout
     assert "Squashed commit of the following" in head_msg
     assert "agent6 iter 1: add a" in head_msg
+
+
+def _rev(path: Path, ref: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(path), "rev-parse", ref], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def test_chain_commit_touches_no_head_index_or_checkout(tmp_path: Path) -> None:
+    """The detached chain records the worktree without moving HEAD, without
+    reading or writing the shared index, and without a checkout: the run's
+    commits land on refs/agent6/<id> (and the visible branch ref when asked)
+    while the operator's staged change survives byte-for-byte."""
+    from agent6.git_ops import chain_commit
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("edited\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
+
+    sha = chain_commit(
+        tmp_path,
+        "agent6 iter 1",
+        ref="refs/agent6/t1",
+        fallback_parent=head0,
+        also_branch="agent6/t1",
+    )
+    assert sha is not None
+    assert _rev(tmp_path, "refs/agent6/t1") == sha == _rev(tmp_path, "agent6/t1")
+    assert _rev(tmp_path, f"{sha}^") == head0
+    assert _rev(tmp_path, "HEAD") == head0  # HEAD never moves
+    staged = subprocess.run(
+        ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert staged == ["README.md"]  # the operator's staged set is untouched
+    tree = subprocess.run(
+        ["git", "-C", str(tmp_path), "ls-tree", "--name-only", sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert "b.txt" in tree and "README.md" in tree
+
+
+def test_chain_commit_skips_identical_trees_and_survives_branch_switches(
+    tmp_path: Path,
+) -> None:
+    """An unchanged worktree records nothing (None), and the chain keeps its
+    own parentage when the model or the operator switches branches mid-run."""
+    from agent6.git_ops import chain_commit
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    s1 = chain_commit(tmp_path, "agent6 iter 1", ref="refs/agent6/t1", fallback_parent=head0)
+    assert s1 is not None
+    assert (
+        chain_commit(tmp_path, "agent6 iter 2", ref="refs/agent6/t1", fallback_parent=None) is None
+    )
+
+    subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "-b", "model-branch"], check=True)
+    (tmp_path / "c.txt").write_text("three\n", encoding="utf-8")
+    s2 = chain_commit(tmp_path, "agent6 iter 3", ref="refs/agent6/t1", fallback_parent=None)
+    assert s2 is not None
+    assert _rev(tmp_path, f"{s2}^") == s1
+    branch = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert branch == "model-branch"
+
+
+def test_chain_commit_root_and_trailer(tmp_path: Path) -> None:
+    """No ref and no fallback makes a root commit, and the identity trailer lands once."""
+    from agent6.git_ops import CommitIdentity, chain_commit
+
+    _init_repo(tmp_path)
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    sha = chain_commit(
+        tmp_path,
+        "agent6 iter 1",
+        ref="refs/agent6/t2",
+        fallback_parent=None,
+        identity=CommitIdentity(name="A", email="a@a", trailer="Assisted-by: agent6:m1"),
+    )
+    assert sha is not None
+    body = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B%P", sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert body.count("Assisted-by: agent6:m1") == 1
+    assert body.strip().endswith("m1")  # %P empty: a root commit has no parent
+
+
+def _lane_commit(path: Path, parent: str, name: str, content: str) -> str:
+    """A commit adding *name* on top of *parent* built with plumbing only, like
+    an imported lane tip: it exists in the odb without any checkout."""
+    env = dict(os.environ, GIT_INDEX_FILE=str(path / ".git" / "lane-index"))
+    blob = subprocess.run(
+        ["git", "-C", str(path), "hash-object", "-w", "--stdin"],
+        input=content,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(path), "read-tree", parent], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(path), "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}"],
+        env=env,
+        check=True,
+    )
+    tree = subprocess.run(
+        ["git", "-C", str(path), "write-tree"], env=env, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(path), "commit-tree", tree, "-p", parent, "-m", f"lane: {name}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: Path) -> None:
+    """A clean lane merge lands as a two-parent chain commit and the lane's
+    files appear in the worktree, while HEAD and the operator's checkout stay
+    untouched; an already-contained rev is a no-op returning the tip."""
+    from agent6.git_ops import chain_commit, chain_merge
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    s1 = chain_commit(tmp_path, "agent6 iter 1", ref="refs/agent6/t3", fallback_parent=head0)
+    assert s1 is not None
+    lane = _lane_commit(tmp_path, head0, "c.txt", "lane\n")
+
+    merged = chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t3")
+    assert merged is not None and merged not in (s1, lane)
+    assert _rev(tmp_path, "refs/agent6/t3") == merged
+    parents = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%P", merged],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert parents == [s1, lane]
+    assert (tmp_path / "c.txt").read_text(encoding="utf-8") == "lane\n"
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "two\n"
+    assert _rev(tmp_path, "HEAD") == head0
+    assert chain_merge(tmp_path, head0, "again", ref="refs/agent6/t3") == merged
+
+
+def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: Path) -> None:
+    """A textual conflict returns None: the ref keeps its tip and no file in
+    the worktree is rewritten (the coordinator reports, the model resolves)."""
+    from agent6.git_ops import chain_commit, chain_merge
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
+    s1 = chain_commit(tmp_path, "agent6 iter 1", ref="refs/agent6/t4", fallback_parent=head0)
+    lane = _lane_commit(tmp_path, head0, "b.txt", "theirs\n")
+
+    assert chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t4") is None
+    assert _rev(tmp_path, "refs/agent6/t4") == s1
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
