@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import load_effective
-from agent6.viewmodel.config_view import render_show
+from agent6.config import Config
+from agent6.config.layer import EffectiveConfig, load_effective
+from agent6.viewmodel.config_view import render_key_detail, render_show
 
 
 def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: Path) -> None:
@@ -108,3 +109,19 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     # edits -- was dropped, so later preset edits did nothing.
     assert 'preset = "myfast"' in text
     assert 'run_commands = "ask"' in text, f"the preset's effect was baked in:\n{text}"
+
+
+def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
+    """`--descriptions` adds each leaf's meaning; the default stays values-only."""
+    eff = EffectiveConfig(config=Config(), sources={}, layers=())
+    assert "Cap on metered spend" not in render_show(eff)
+    assert "Cap on metered spend" in render_show(eff, descriptions=True)
+
+
+def test_key_detail_always_carries_the_meaning() -> None:
+    """`config show <key>` is a deliberate ask about one key, so the meaning is
+    part of the answer, no flag needed."""
+    eff = EffectiveConfig(config=Config(), sources={}, layers=())
+    detail = render_key_detail(eff, "budget.max_usd")
+    assert detail is not None
+    assert "meaning: Cap on metered spend" in detail

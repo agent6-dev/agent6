@@ -125,8 +125,10 @@ class WorkflowConfig(BaseModel):
             "candidate for removal."
         ),
     )
-    # Optional. None means "no metric; ``run_metric_command`` is unavailable".
-    metric: MetricConfig | None = None
+    metric: MetricConfig | None = Field(
+        default=None,
+        description="Optional continuous-score metric; unset = no `run_metric_command` tool.",
+    )
 
 
 class ContextConfig(BaseModel):

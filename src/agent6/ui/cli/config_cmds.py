@@ -64,12 +64,16 @@ from agent6.portable import atomic_write, locked_file
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
-def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") -> int:
+def _cmd_config_show(
+    config_path: Path | None, *, as_json: bool, key: str = "", descriptions: bool = False
+) -> int:
     eff = load_effective(Path.cwd(), config_path)
     resolved = models_registry.resolved_adaptive_values(eff.config)
     if key:
         # `config show <key>`: one leaf (or a whole section prefix), untruncated
-        # (JSON mode filters to the same match set).
+        # (JSON mode filters to the same match set). The detail view always
+        # carries the meaning: a deliberately-asked-about key is the one place
+        # a description can never bury the values.
         detail = render_key_detail(
             eff, key, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
         )
@@ -81,7 +85,13 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") 
             return 2
         print(detail, end="")
         return 0
-    text = render_show(eff, as_json=as_json, resolved=resolved, color=sys.stdout.isatty())
+    text = render_show(
+        eff,
+        as_json=as_json,
+        resolved=resolved,
+        color=sys.stdout.isatty(),
+        descriptions=descriptions,
+    )
     print(text, end="")
     return 0
 

@@ -10,6 +10,7 @@ without anyone noticing it never appeared.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -86,3 +87,14 @@ def test_security_sensitive_defaults_are_the_safe_value(path: str, safe: object)
     for part in path.split("."):
         node = getattr(node, part)
     assert node == safe
+
+
+def test_every_rendered_leaf_carries_its_meaning() -> None:
+    """The JSON view (so the web editor's hover text and `--descriptions`)
+    describes every leaf it renders, unset section holders included:
+    `models.worker` shown as (unset) is exactly where "what is this?" is asked."""
+    for config in (Config(), Config.model_validate(_POPULATED)):
+        eff = EffectiveConfig(config=config, sources={}, layers=())
+        view = json.loads(render_show(eff, as_json=True))
+        undescribed = sorted(k for k, leaf in view.items() if not leaf["description"])
+        assert not undescribed, f"leaves with no description: {undescribed}"

@@ -25,6 +25,8 @@ provider + model; `workflow.verify_command` is inferred per run when unset.
 - `agent6 init`: optional setup wizard (per-repo config, inferred
   `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
 - `agent6 config show`: every effective value and which layer set it.
+  `--descriptions` adds each value's meaning under its row; `config show
+  <key>` prints one key untruncated, meaning included.
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]` (`--repo`, or
   `--machine-file FILE` for a machine `[config]` overlay). Every edit is
   re-validated and rolled back if invalid. A sibling pair that must move

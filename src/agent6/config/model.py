@@ -143,9 +143,21 @@ class ModelsConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    worker: RoleModel | None = None
-    reviewer: RoleModel | None = None
-    planner: RoleModel | None = None
+    worker: RoleModel | None = Field(
+        default=None,
+        description=(
+            "The `(provider, model)` driving `agent6 run`/`resume`; its pricing also converts "
+            "the USD budget to tokens."
+        ),
+    )
+    reviewer: RoleModel | None = Field(
+        default=None,
+        description="Drives `agent6 review` and the in-loop critic. Unset falls back to `worker`.",
+    )
+    planner: RoleModel | None = Field(
+        default=None,
+        description="Drives `agent6 plan` (read-only planning). Unset falls back to `worker`.",
+    )
 
     def configured(self) -> dict[str, RoleModel]:
         """Only the roles explicitly set (used for validation/key checks)."""
@@ -214,7 +226,12 @@ class Config(BaseModel):
     model_config = MODEL_CONFIG
 
     agent6: Agent6Section = Field(default_factory=Agent6Section)
-    providers: dict[str, ProviderEntry] = Field(default_factory=dict)
+    providers: dict[str, ProviderEntry] = Field(
+        default_factory=dict,
+        description=(
+            "Provider endpoints by name (`[providers.<name>]`), referenced from `[models.*]`."
+        ),
+    )
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     git: GitConfig = Field(default_factory=GitConfig)

@@ -498,7 +498,9 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
 
 def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.config_command == "show":
-        return _cmd_config_show(args.config, as_json=args.as_json, key=args.key)
+        return _cmd_config_show(
+            args.config, as_json=args.as_json, key=args.key, descriptions=args.descriptions
+        )
     if args.config_command == "fill":
         return _cmd_config_fill(force=args.force)
     if args.config_command == "path":

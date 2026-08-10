@@ -12,6 +12,7 @@ reads an EffectiveConfig.
 from __future__ import annotations
 
 import json
+import textwrap
 import types
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
@@ -46,6 +47,7 @@ class ConfigSetting:
     is_adaptive: bool  # effective_value was resolved away from the raw value
     py_type: str  # str | int | bool | float | choice | list | table
     choices: tuple[str, ...] | None  # enum options for a dropdown, else None
+    description: str  # the leaf's operator-facing meaning (the docs table cell)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +103,7 @@ def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
 
 def _merge_field_schema(
     models: tuple[type[BaseModel], ...], parts: list[str]
-) -> tuple[str, tuple[str, ...] | None, Any] | None:
+) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Resolve a field across discriminated-union members, merging choices: a
     field shared by every member (e.g. ``auth_style``) keeps its choices; the
     discriminator itself (``api_format``: Literal['anthropic'] in one member,
@@ -112,14 +114,15 @@ def _merge_field_schema(
     if len(results) == 1:
         return results[0]
     choices: list[str] = []
-    for _, member_choices, _default in results:
+    for _, member_choices, _default, _desc in results:
         for c in member_choices or ():
             if c not in choices:
                 choices.append(c)
     merged = tuple(choices) or None
     py_type = "choice" if merged else results[0][0]
-    default = next((d for _, _, d in results if d is not None), results[0][2])
-    return py_type, merged, default
+    default = next((d for _, _, d, _ in results if d is not None), results[0][2])
+    description = next((d for _, _, _, d in results if d), "")
+    return py_type, merged, default, description
 
 
 def _type_label(ann: Any) -> str:
@@ -138,9 +141,9 @@ def _type_label(ann: Any) -> str:
 
 def _field_schema(
     model_cls: type[BaseModel], parts: list[str]
-) -> tuple[str, tuple[str, ...] | None, Any] | None:
+) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Walk *model_cls* down the dotted *parts* to a leaf field and return
-    ``(py_type, choices, default)``, or None if the path can't be resolved
+    ``(py_type, choices, default, description)``, or None if the path can't be resolved
     (e.g. a dynamic provider key whose value model is a discriminated union)."""
     name = parts[0]
     fi = getattr(model_cls, "model_fields", {}).get(name)
@@ -151,7 +154,7 @@ def _field_schema(
         default = fi.default
         if default is PydanticUndefined:
             default = fi.default_factory() if fi.default_factory is not None else None
-        return _type_label(ann), _literal_choices(ann), default
+        return _type_label(ann), _literal_choices(ann), default, fi.description or ""
     nested = _nested_model(ann)
     if nested is not None:
         return _field_schema(nested, parts[1:])
@@ -188,7 +191,9 @@ def build_config_view(
             value = leaves[leaf]
             source = eff.sources.get(leaf, "default")
             schema = _field_schema(eff.config.__class__, leaf.split("."))
-            py_type, choices, default = schema if schema is not None else ("str", None, None)
+            if schema is None:
+                schema = ("str", None, None, "")
+            py_type, choices, default, description = schema
             eff_val = resolved.get(leaf, value)
             settings.append(
                 ConfigSetting(
@@ -205,6 +210,7 @@ def build_config_view(
                     is_adaptive=leaf in resolved and eff_val != value,
                     py_type=py_type,
                     choices=choices,
+                    description=description,
                 )
             )
     return ConfigView(settings=tuple(settings), sections=tuple(ordered), layers=eff.layers)
@@ -237,6 +243,19 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def _description_lines(description: str, indent: str) -> list[str]:
+    """The description wrapped for a terminal, markdown bold stripped (backticks
+    read fine in a terminal; ``**`` is noise there)."""
+    return textwrap.wrap(
+        description.replace("**", ""),
+        width=92,
+        initial_indent=indent,
+        subsequent_indent=indent,
+        break_on_hyphens=False,
+        break_long_words=False,
+    )
+
+
 def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
     """One leaf's machine-readable view (shared by the full dump and the
     single-key path, so the two JSON shapes cannot drift)."""
@@ -249,6 +268,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         "adaptive": s.is_adaptive,
         "type": s.py_type,
         "choices": list(s.choices) if s.choices is not None else None,
+        "description": s.description,
     }
 
 
@@ -285,6 +305,10 @@ def render_key_detail(
         lines.append(f"    source:  {s.source}")
         if s.choices:
             lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
+        if s.description:
+            wrapped = _description_lines(s.description, "             ")
+            wrapped[0] = "    meaning: " + wrapped[0].lstrip()
+            lines.extend(f"\x1b[2m{line}\x1b[0m" if color else line for line in wrapped)
     return "\n".join(lines) + "\n"
 
 
@@ -294,6 +318,7 @@ def render_show(
     as_json: bool = False,
     resolved: dict[str, Any] | None = None,
     color: bool = False,
+    descriptions: bool = False,
 ) -> str:
     """Render the effective config + provenance from the shared ConfigView.
 
@@ -308,7 +333,9 @@ def render_show(
     *resolved* maps dotted keys to their resolved values (e.g. adaptive
     compaction sized from the worker model); the caller computes it. *color*
     dims the default rows (tty only; the caller passes ``isatty()``) so the
-    ``*`` operator-set rows stand out.
+    ``*`` operator-set rows stand out. *descriptions* prints each leaf's
+    meaning wrapped and dimmed under its row (``--descriptions``); the default
+    stays values-only so the values stay scannable.
     """
     view = build_config_view(eff, resolved=resolved)
     if as_json:
@@ -334,6 +361,9 @@ def render_show(
         # Dim the default rows so the `*` operator-set values stand out of
         # what is otherwise a long dump of built-in defaults.
         lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
+        if descriptions and s.description:
+            for line in _description_lines(s.description, "      "):
+                lines.append(f"\x1b[2m{line}\x1b[0m" if color else line)
 
     # Top-level scalars first and headerless, as TOML requires and `config fill`
     # already emits: keyed by their own name, they would otherwise each become a

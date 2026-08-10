@@ -48,6 +48,11 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."
     )
+    config_show.add_argument(
+        "--descriptions",
+        action="store_true",
+        help="Print each value's meaning under its row (the docs table cell).",
+    )
     config_fill = _sub(
         config_sub,
         "fill",

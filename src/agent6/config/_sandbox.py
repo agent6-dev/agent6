@@ -399,9 +399,14 @@ class MCPServerEntry(BaseModel):
         default=(),
         description="Env vars the server needs, BY NAME. Everything else is the curated base.",
     )
-    # Filesystem confinement for a SPAWNED server. A `url` one is the
-    # operator's own process; they confine it where they start it.
-    sandbox: MCPSandbox | None = None
+    sandbox: MCPSandbox | None = Field(
+        default=None,
+        description=(
+            "Extra grants for a SPAWNED server beyond the sandbox a jailed command gets; absent "
+            "= exactly that sandbox. A `url` server is your own process: confine it where you "
+            "start it."
+        ),
+    )
     # Ask before each of this server's tool calls ("ask"), or never ("yes").
     # A server's tools do arbitrary things agent6 cannot classify, so the
     # default is the same as a command's: ask. There is no "no" -- withholding
@@ -510,7 +515,10 @@ class MCPConfig(BaseModel):
         default=False,
         description="Master switch; `false` = zero `mcp__*` tools.",
     )
-    servers: dict[str, MCPServerEntry] = Field(default_factory=dict)
+    servers: dict[str, MCPServerEntry] = Field(
+        default_factory=dict,
+        description="MCP servers by name (`[mcp.servers.<name>]`).",
+    )
 
     @field_validator("servers")
     @classmethod

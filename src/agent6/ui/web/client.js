@@ -1429,7 +1429,9 @@ async function renderConfig(gen) {
     const shown = s.adaptive ? (esc(s.effective) + '  (adaptive)') : fmtVal(s.value);
     tr.appendChild(el('td', 'val', shown));
     tr.appendChild(el('td', 'src', esc(s.source)));
-    tr.title = 'click to edit';
+    // Hover text: the leaf's meaning (the docs table cell), from the same
+    // per-key payload the editor overlay shows it in.
+    tr.title = s.description || 'click to edit';
     tr.style.cursor = 'pointer';
     tr.onclick = () => editConfig(k, s);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
@@ -1455,6 +1457,12 @@ function editConfig(key, s) {
   meta.textContent = `${esc(s.type)} · default: ${fmtVal(s.default)} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
   meta.style.marginBottom = '10px';
   box.appendChild(meta);
+  if (s.description) {
+    const desc = el('div', 'sub muted');
+    desc.textContent = s.description;
+    desc.style.marginBottom = '10px';
+    box.appendChild(desc);
+  }
   let field;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (choices) {
