@@ -16,29 +16,13 @@ the security model, the tool surface, or the stability policy in
 
 ## 1. Motivation
 
-agent6's two workflows ([architecture.md](architecture.md)), `run` (the
-agent loop) and `review` (a read-only diff pass), are both *single-shot*:
-you start them, they finish. There is no first-class way to express a
-program that runs indefinitely, reacting to the clock or to external
-signals, branching, looping, and occasionally invoking an agent run as
-one step among many.
-
-"Always-on" autonomous agents target this, but tend to put the LLM in the
-driver's seat of the *control flow*, not just the *work*, so the same
-inputs produce different paths, crashes lose state, and runs can't be
-replayed. agent6 can do better because the `run` workflow is already a
-deterministic, snapshot-and-replay state machine internally. State
-machines lift that pattern up one layer: the operator authors the
-control flow as a static graph, and the LLM stays confined to the work
-*inside* a state.
-
-A representative shape (the watched location and side effects would each
-be separately-audited tools, out of scope here): poll on a fixed
-interval; when items appear, have an agent classify each into a typed
-verdict; on a high-confidence verdict take a side-effecting step and
-loop, else wait and poll again. A long-running loop with timed polling,
-branches on agent output, side-effecting steps, and terminal states is
-what state machines make first-class.
+`run` and `review` are single-shot. A machine expresses the long-running
+shape: timed polling, branches on agent output, side-effecting steps, and
+terminal states. Where "always-on" agents hand the LLM the *control flow*
+(so the same inputs take different paths and crashes lose state), here the
+operator authors the flow as a static graph and the LLM stays confined to
+the work *inside* a state: the deterministic snapshot-and-replay posture
+`run` already has internally, lifted one layer up.
 
 ---
 
@@ -826,57 +810,36 @@ true, goto = ... }`).
 
 ### 7.1 `machine create`: LLM drafts, operator owns
 
-`machine create` lets the operator describe a loop in plain language
-(*"poll this location, classify new items, take a step on high
-confidence"*) and get a first-cut machine bundle back instead of
-authoring it by hand. It is an ordinary jailed agent6 loop with a
-specialized prompt: the model is handed this document's grammar (state
-kinds, the three-owner blackboard
-(`[vars.operator]`/`[vars.code]`/`[vars.agent]`), the total-branch rule)
-and the task, and is told to return one complete machine by calling
-`finish_session` with a `result.toml` field holding the entire `.asm.toml`
-and a `result.scripts` map holding every `scripts/...` file the tool
-states run (plus a `scripts/<name>_test.py` mock test per script with an
-external seam); no new tool and no file-writing capability is
-granted. The CLI extracts the bundle and gates it: the same
-`machine check` validation, ruff lint, ty type check, and the mock tests
-executed in a no-network jail. Failures (with the failing source) loop
-back to the model, up to `--max-attempts` (default 3), until the
-bundle passes. Retries include the prior draft AND its scripts so the
-model patches the named problem instead of regenerating from scratch.
+Describe a loop in plain language and get a first-cut bundle back. It is
+an ordinary jailed agent6 loop handed this document's grammar; the model
+returns the whole bundle through `finish_session` (`result.toml` = the
+`.asm.toml`, `result.scripts` = every referenced script plus a mock test
+per script with an external seam). No new tool, no file-writing
+capability.
 
-On success the validated bundle is written as a draft: with `-o <file>`
-the `.asm.toml` is written there (overwriting freely); otherwise to
-`<machine-name>.asm.toml` in the working directory, which is never
-overwritten (on a name collision the validated draft is printed to
-stdout and the command exits non-zero so nothing is clobbered). Scripts
-land in `scripts/` next to the machine file. Status, spend, and notes go
-to stderr.
-
-Each attempt runs in a draft directory under the per-repo state dir
-(`sessions/machines/<id>/`) holding the `prompt.txt` (the operator's task),
-the candidate `.asm.toml`, the agent transcript, and a `logs.jsonl`
-event stream. On a TTY the drafting agent's reasoning streams to stderr;
-the event log makes it watchable from the TUI too: the Machines page's
-"Create" opens the read-only dashboard on the draft and follows the
-authoring agent's reasoning + tool calls live, exactly like watching a
-run. The create keeps running detached, so closing the dashboard does
-not stop it.
-
-Crucially this does not weaken the "machines are operator artifacts"
-invariant (§9): `create` only ever *drafts* a file into the working tree.
-The operator reviews it, fine-tunes the constants/prompts, and commits
-it; `machine run` still refuses anything the operator has not committed.
-Drafting is assistance; authorization stays human.
+- Every draft is gated: `machine check`, ruff, ty, and the mock tests in
+  a no-network jail. Failures loop back with the failing source, up to
+  `--max-attempts` (default 3); retries carry the prior draft so the
+  model patches, not regenerates.
+- The result is a DRAFT: `-o <file>` overwrites freely, else
+  `<name>.asm.toml` in the cwd, never clobbered (a collision prints to
+  stdout and exits non-zero). Scripts land in `scripts/`.
+- Each attempt is watchable: a draft dir under the state dir carries the
+  prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow
+  live; the create runs detached.
+- §9's invariant holds: `create` only drafts into the working tree; the
+  operator reviews and commits; `machine run` refuses uncommitted files.
+  Drafting is assistance; authorization stays human.
 
 ---
 
 ## 8. Where it lives (module boundaries)
 
-The tach DAG is `cli → machine → workflows → agents → tools → sandbox`,
-and workflows never import each other. An `agent` state needs to
-*invoke* the `loop` workflow, so the engine cannot itself be a `workflow`
-without breaking that rule.
+The layering is `ui → app → workflows → tools → sandbox`, with
+`agent6.machine` a top-level package beside them, and workflows never
+import each other. An `agent` state needs to *invoke* the `loop`
+workflow, so the engine cannot itself be a `workflow` without breaking
+that rule.
 
 `agent6.machine` is a top-level package the CLI depends on. The key
 boundary decision: the engine does not import the workflow stack.
@@ -930,10 +893,9 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   navigation (§4.5), not Python attribute resolution. A `.asm.toml`
   file is data, not code.
 - **All side effects stay jailed.** `tool` states go through
-  `run_in_jail`; each `agent` state is an ordinary jailed run in its own
-  self-confining subprocess (the engine is a host-netns supervisor). The
-  per-state network model and its refusals are specified in
-  [security.md](security.md) §8.
+  `run_in_jail`; each `agent` state is an ordinary run in its own
+  subprocess, its commands jailed like any run's. The per-state network
+  model and its refusals are specified in [security.md](security.md) §8.
 - **Spend bounds.** `[budget].max_transitions` is required and always
   binds. `max_usd` (optional) caps the machine's cumulative METERED spend
   (reported cost when available, else cached price times tokens); a state
