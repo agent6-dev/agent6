@@ -153,7 +153,7 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
     Simulated deterministically here: the swap has already happened, so the
     checked path IS a symlink by the time the write opens it.
     """
-    from agent6.tools._path_safety import read_contained, write_contained
+    from agent6.tools._path_safety import contain, read_contained, write_contained
 
     outside = tmp_path.parent / "agent6_race_target.txt"
     outside.write_text("HOST-CONTENT", encoding="utf-8")
@@ -161,12 +161,12 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: Path
         (tmp_path / "x.txt").symlink_to(outside)
 
         with pytest.raises(ToolError, match="became a symlink"):
-            write_contained(tmp_path, Path("x.txt"), "PWNED")
+            write_contained(contain(tmp_path, "x.txt"), "PWNED")
         assert outside.read_text(encoding="utf-8") == "HOST-CONTENT"
 
         # The read side is the same window, and leaks rather than writes.
         with pytest.raises(ToolError, match="became a symlink"):
-            read_contained(tmp_path, Path("x.txt"))
+            read_contained(contain(tmp_path, "x.txt"))
     finally:
         outside.unlink(missing_ok=True)
 
@@ -427,8 +427,8 @@ def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None
     (tmp_path / "link.txt").symlink_to(real)
 
     sp = resolve_in_root(tmp_path, "link.txt")
-    write_contained(tmp_path, sp.rel_path, "after")
-    assert read_contained(tmp_path, sp.rel_path) == "after"
+    write_contained(sp, "after")
+    assert read_contained(sp) == "after"
     assert real.read_text(encoding="utf-8") == "after", "the in-repo symlink stopped working"
 
 
@@ -536,7 +536,7 @@ def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(tmp_path
     bland "Path component is not a directory" -- hiding the one fact an
     operator acts on. One lstat, on the error path only, names it; an honest
     non-directory component keeps the plain message."""
-    from agent6.tools._path_safety import read_contained
+    from agent6.tools._path_safety import contain, read_contained
 
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
@@ -546,8 +546,8 @@ def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(tmp_path
     _swap_parent_for_a_link_out(root, outside)
 
     with pytest.raises(ToolError, match="became a symlink"):
-        read_contained(root, Path("sub/f.txt"))
+        read_contained(contain(root, "sub/f.txt"))
 
     (root / "plain").write_text("file", encoding="utf-8")
     with pytest.raises(ToolError, match="not a directory"):
-        read_contained(root, Path("plain/f.txt"))
+        read_contained(contain(root, "plain/f.txt"))

@@ -93,7 +93,7 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
         # file a command produced) OOM-crashed the unsandboxed agent. Read one
         # char past the cap to detect the overflow, then trim; pagination and
         # the line counts operate on the capped prefix, and `truncated` says so.
-        full = read_contained(root, sp.rel_path, limit_chars=MAX_READ_CHARS + 1)
+        full = read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
     read_truncated = len(full) > MAX_READ_CHARS
@@ -132,7 +132,7 @@ def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_dir():
         raise ToolError(f"Not a directory: {args.path}")
-    listing = sorted(list_contained(root, sp.rel_path), key=lambda e: e.name)
+    listing = sorted(list_contained(sp), key=lambda e: e.name)
     return ListDirResult(entries=tuple(e.name + "/" if e.is_dir else e.name for e in listing))
 
 
@@ -265,7 +265,7 @@ def _existing_text(root: Path, sp: SafePath, rel_path: str) -> str | None:
         return None
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {rel_path}")
-    return read_contained(root, sp.rel_path)
+    return read_contained(sp)
 
 
 def apply_edit(
@@ -321,7 +321,7 @@ def apply_edit(
         raise ToolError("No content to write")
     if args.preview:
         return preview_result(args.path, existing, new_content, applied=applied)
-    write_contained(root, sp.rel_path, new_content)
+    write_contained(sp, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
     return EditResult(applied=tuple(applied), path=str(sp.rel_path))
@@ -366,7 +366,7 @@ def apply_patch(
         raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
     if args.preview:
         return preview_result(target, existing, new_content)
-    write_contained(root, sp.rel_path, new_content)
+    write_contained(sp, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
     return PatchResult(path=str(sp.rel_path), bytes_written=len(new_content))

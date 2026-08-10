@@ -24,8 +24,13 @@ from agent6.tools.errors import ToolError
 
 @dataclass(frozen=True, slots=True)
 class SafePath:
-    abs_path: Path
+    """A path that passed containment, carrying the base it was contained
+    against: every read and write walks from ``base``, so a ``rel_path`` can
+    never be paired with the wrong tree."""
+
+    base: Path
     rel_path: Path
+    abs_path: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +42,22 @@ class ContainedEntry:
     name: str
     is_dir: bool
     is_symlink: bool
+
+
+def contain(base: Path, candidate: str | Path) -> SafePath:
+    """Contain *candidate* under *base* without resolving symlinks: the
+    descriptor walk is what enforces it, refusing every symlink hop.
+
+    For the bases that are deliberately NOT the workspace -- a skill's own
+    directory, the bundled docs -- where the caller, not the model, chose the
+    tree. Workspace paths go through :class:`Workspace` instead.
+    """
+    rel = Path(candidate)
+    if rel.is_absolute():
+        raise ToolError(f"Absolute paths not allowed: {str(candidate)!r}")
+    if ".." in rel.parts:
+        raise ToolError(f"Path contains '..': {str(candidate)!r}")
+    return SafePath(base=base, rel_path=rel, abs_path=base / rel)
 
 
 def resolve_in_root(root: Path, candidate: str) -> SafePath:
@@ -51,7 +72,7 @@ def resolve_in_root(root: Path, candidate: str) -> SafePath:
         rel = abs_path.relative_to(root.resolve())
     except ValueError as exc:
         raise ToolError(f"Path escapes repo root: {candidate!r}") from exc
-    return SafePath(abs_path=abs_path, rel_path=rel)
+    return SafePath(base=root, rel_path=rel, abs_path=abs_path)
 
 
 def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
@@ -68,12 +89,12 @@ def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
     return os.open(name, flags, dir_fd=dir_fd)
 
 
-def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bool = False) -> int:
-    """Open *rel_path* one component at a time from a descriptor on *root*,
-    each hop relative to the one before it. Returns an fd the caller owns.
+def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) -> int:
+    """Open ``sp`` one component at a time from a descriptor on its base, each
+    hop relative to the one before it. Returns an fd the caller owns.
 
-    :func:`resolve_in_root` resolves and contains a path; opening it again by
-    its full path is a second lookup, and a jailed ``run_background`` loop can
+    A :class:`SafePath` resolves and contains a path; opening it again by its
+    full path is a second lookup, and a jailed ``run_background`` loop can
     swap a component for a symlink out of the workspace in between (the
     workspace is writable, a symlink needs no access to its target, and these
     tools run IN-PROCESS, outside the jail, as the operator). For a write
@@ -82,16 +103,17 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
 
     ``O_NOFOLLOW`` on every component, including the parents this creates,
     contains the walk by construction: no hop can traverse a symlink. ``..``
-    and an absolute path are refused here rather than trusted to the caller,
-    so containment is a property of this function, not of nine call sites.
-    Honest callers are unaffected, including one working through an in-repo
-    symlink, whose resolved path names the real target.
+    and an absolute path are refused here as well as at the SafePath, so
+    containment holds even for a hand-built one. Honest callers are unaffected,
+    including one working through an in-repo symlink, whose resolved path names
+    the real target.
     """
+    rel_path = sp.rel_path
     if rel_path.is_absolute():
         raise ToolError(f"Path is not relative to the workspace: {rel_path}")
     if ".." in rel_path.parts:
         raise ToolError(f"Path contains '..': {rel_path}")
-    dir_fd = os.open(root, os.O_PATH | os.O_DIRECTORY)
+    dir_fd = os.open(sp.base, os.O_PATH | os.O_DIRECTORY)
     at = "."  # the component the walk is on, for the error path below
     try:
         for at in rel_path.parts[:-1]:
@@ -120,10 +142,8 @@ def open_contained(root: Path, rel_path: Path, flags: int, *, create_parents: bo
         os.close(dir_fd)
 
 
-def read_contained(
-    root: Path, rel_path: Path, *, errors: str = "strict", limit_chars: int | None = None
-) -> str:
-    """The file's text, read through a descriptor walked from *root*.
+def read_contained(sp: SafePath, *, errors: str = "strict", limit_chars: int | None = None) -> str:
+    """The file's text, read through a descriptor walked from its base.
     ``UnicodeDecodeError`` still reaches the caller, which reports it.
 
     ``limit_chars`` bounds the read: at most that many characters are pulled
@@ -131,28 +151,28 @@ def read_contained(
     The caller detects truncation by reading ``limit_chars + 1`` and checking
     the length. None reads the whole file (for callers that must, like the
     symbol index parsing a source file)."""
-    fd = open_contained(root, rel_path, os.O_RDONLY)
+    fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         return handle.read() if limit_chars is None else handle.read(limit_chars)
 
 
-def read_bytes_contained(root: Path, rel_path: Path) -> bytes:
-    """The file's bytes, read through a descriptor walked from *root*. For a
+def read_bytes_contained(sp: SafePath) -> bytes:
+    """The file's bytes, read through a descriptor walked from its base. For a
     reader that indexes into the source by byte offset (tree-sitter), which the
     newline translation of a text read would shift."""
-    fd = open_contained(root, rel_path, os.O_RDONLY)
+    fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, "rb") as handle:
         return handle.read()
 
 
-def list_contained(root: Path, rel_path: Path) -> list[ContainedEntry]:
-    """The directory's entries, listed through a descriptor walked from *root*.
+def list_contained(sp: SafePath) -> list[ContainedEntry]:
+    """The directory's entries, listed through a descriptor walked from its base.
 
     The same containment as :func:`read_contained`, for the tools that read a
     directory rather than a file: a name resolved a second time is a second
     lookup, so a listing taken by full path can be a host directory's.
     """
-    fd = open_contained(root, rel_path, os.O_RDONLY | os.O_DIRECTORY)
+    fd = open_contained(sp, os.O_RDONLY | os.O_DIRECTORY)
     try:
         with os.scandir(fd) as entries:
             return [ContainedEntry(e.name, e.is_dir(), e.is_symlink()) for e in entries]
@@ -160,10 +180,10 @@ def list_contained(root: Path, rel_path: Path) -> list[ContainedEntry]:
         os.close(fd)
 
 
-def write_contained(root: Path, rel_path: Path, content: str) -> None:
-    """Replace the file's text through a descriptor walked from *root*, adding
+def write_contained(sp: SafePath, content: str) -> None:
+    """Replace the file's text through a descriptor walked from its base, adding
     any missing parent directories along the same walk."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    fd = open_contained(root, rel_path, flags, create_parents=True)
+    fd = open_contained(sp, flags, create_parents=True)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(content)

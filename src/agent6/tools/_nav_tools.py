@@ -86,7 +86,7 @@ def _lsp_document(root: Path, path: str) -> tuple[Path, str]:
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {path}")
     try:
-        return sp.abs_path, read_contained(root, sp.rel_path)
+        return sp.abs_path, read_contained(sp)
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {path}") from exc
 

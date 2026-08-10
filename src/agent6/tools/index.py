@@ -35,7 +35,7 @@ from typing import Final
 from tree_sitter import Parser, Query, QueryCursor
 from tree_sitter_language_pack import get_language
 
-from agent6.tools._path_safety import read_bytes_contained
+from agent6.tools._path_safety import contain, read_bytes_contained
 
 
 @dataclass(frozen=True, slots=True)
@@ -513,7 +513,7 @@ class SymbolIndex:
             return
         parser, def_query, ref_query = bits
         try:
-            src = read_bytes_contained(self._root, rel)
+            src = read_bytes_contained(contain(self._root, rel))
         except OSError:
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
