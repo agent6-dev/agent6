@@ -151,11 +151,11 @@ def _text(text: str) -> dict[str, Any]:
     """A ContentBlock, with control characters dropped.
 
     Every string this module puts on the wire goes through here, and most of
-    them are model-authored. The fold strips CSI from `detail` and `tail` only,
-    so OSC (the title / clipboard / hyperlink family) survived and `body` was
-    never scrubbed at all. Unlike the CLI, the renderer here is a THIRD PARTY:
-    agent6 does not get to assume it treats an escape as inert. `isprintable`
-    is false for every C0/C1 control, so a sequence loses its ESC and becomes
+    them are model-authored. The fold scrubs its own previews and deltas
+    (viewmodel.transcript.scrub_terminal_controls), but the renderer here is a
+    THIRD PARTY: agent6 does not get to assume it treats an escape as inert,
+    so this layer scrubs everything it emits regardless. `isprintable` is
+    false for every C0/C1 control, so a sequence loses its ESC and becomes
     the literal text it was pretending not to be.
     """
     return {"type": "text", "text": printable(text)}

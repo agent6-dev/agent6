@@ -32,6 +32,7 @@ from agent6.viewmodel.listing import (
     status_word,
 )
 from agent6.viewmodel.policy import session_policy
+from agent6.viewmodel.transcript import scrub_terminal_controls
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -335,25 +336,28 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
 
         case events.RoleTextDelta(text=piece):
-            # Append SSE delta to the in-flight RoleCall.
+            # Append SSE delta to the in-flight RoleCall. Scrub the
+            # CONCATENATION: an escape sequence can arrive split across deltas,
+            # and per-piece scrubbing would let the reassembled whole through.
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
+            joined = scrub_terminal_controls(last.streamed_text + piece)
             return replace(
                 state,
-                last_role=replace(last, streamed_text=(last.streamed_text + piece)[-_STREAM_TAIL:]),
+                last_role=replace(last, streamed_text=joined[-_STREAM_TAIL:]),
             )
 
         case events.RoleThinkingDelta(text=piece):
-            # Append a reasoning delta to the in-flight RoleCall.
+            # Append a reasoning delta to the in-flight RoleCall (scrubbed as a
+            # whole, like the text deltas above).
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
+            joined = scrub_terminal_controls(last.streamed_thinking + piece)
             return replace(
                 state,
-                last_role=replace(
-                    last, streamed_thinking=(last.streamed_thinking + piece)[-_STREAM_TAIL:]
-                ),
+                last_role=replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
         case events.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
@@ -705,7 +709,9 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case _:
             salient = ""
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
-    return f"{line} {salient}" if salient else line
+    # The salient text embeds model-authored fields (args, summaries, output
+    # tails): scrub the finished line so no skin's log pane relays an escape.
+    return scrub_terminal_controls(f"{line} {salient}") if salient else line
 
 
 def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:

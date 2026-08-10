@@ -29,6 +29,7 @@ from agent6.viewmodel.transcript import (
     THINK,
     TranscriptFold,
     TranscriptItem,
+    scrub_terminal_controls,
 )
 from agent6.viewmodel.transcript_style import StyleName, item_lines
 
@@ -197,6 +198,12 @@ class ConsoleView:
 
     # -- inline prose streaming --------------------------------------------
     def _stream(self, piece: str, *, thinking: bool) -> None:
+        # The piece is MODEL text headed for a real terminal: scrub controls
+        # (OSC 52 writes the clipboard; the fold's previews are scrubbed, but
+        # this live path printed the delta raw). A sequence split across deltas
+        # cannot reassemble: any piece containing its opener loses the tail
+        # from the ESC on, and the continuation prints as inert text.
+        piece = scrub_terminal_controls(piece)
         want = "thinking" if thinking else "text"
         if self._phase != want:
             if not piece.strip():

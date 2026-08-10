@@ -24,15 +24,30 @@ from typing import Any, Literal
 from agent6.types import SESSION_KINDS
 from agent6.viewmodel.events import tool_result_ok
 
-# ANSI/CSI escape sequences (colored tool output). Stripped from fold previews:
-# the fold is plain data consumed by non-terminal surfaces (web, saved
-# transcripts, TUI widgets) that render escapes as literal garbage; the live CLI
-# stream styles its own output separately.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# Terminal control sequences in MODEL-AUTHORED text and command output.
+# Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
+# (a demonstrated OSC 52 writes the terminal's clipboard) and DCS/SOS/PM/APC
+# carry arbitrary payloads; a C1 byte opens the same doors 8-bit. Sequences are
+# removed whole (a payload cut off at a chunk boundary surfaces as inert text);
+# stray C0 controls (BEL, \r spoofing) and DEL drop too, keeping \n and \t.
+# Consumed by every skin: the fold's previews and log lines, the streamed
+# deltas, and the CLI's live stream. The TUI's own OSC 52 copy feature is
+# agent6-authored output and never passes through here.
+_CONTROL_RE = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]"  # CSI
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?"  # OSC, BEL- or ST-terminated (or cut off)
+    r"|\x1b[PX^_][^\x1b]*(?:\x1b\\)?"  # DCS / SOS / PM / APC, ST-terminated
+    r"|\x1b."  # any other escape, with its final byte
+    r"|[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]",  # stray C0 (keep \t \n) + DEL + C1
+    re.DOTALL,
+)
 
 
-def _strip_ansi(text: str) -> str:
-    return _ANSI_RE.sub("", text)
+def scrub_terminal_controls(text: str) -> str:
+    """Drop every terminal control sequence and stray control character from
+    model-authored text (see ``_CONTROL_RE``). Idempotent, so accumulating
+    stream tails re-scrub for free."""
+    return _CONTROL_RE.sub("", text)
 
 
 # Shared glyph vocabulary (text characters, not graphics, so every terminal font
@@ -371,8 +386,8 @@ class TranscriptFold:
                 arg=arg,
                 ok=ok,
                 call_id=call_id,
-                detail=_strip_ansi(detail),
-                tail=_strip_ansi(tail),
+                detail=scrub_terminal_controls(detail),
+                tail=scrub_terminal_controls(tail),
             )
         ]
 

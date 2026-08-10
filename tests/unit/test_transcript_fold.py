@@ -86,6 +86,33 @@ def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
     assert "\x1b" not in item.detail and item.detail == "ok"
 
 
+def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
+    """Stripping CSI alone let OSC and DCS through to the CLI terminal -- a
+    demonstrated OSC 52 wrote the operator's clipboard from command stdout.
+    Every string-carrying escape family goes, whole; stray C0/C1 controls drop
+    (keeping \\n and \\t); plain text and the sequences' cut-off payloads
+    surface as inert text."""
+    from agent6.viewmodel.transcript import scrub_terminal_controls as scrub
+
+    payload = "cGF5bG9hZA=="
+    assert scrub(f"\x1b]52;c;{payload}\x07after") == "after"  # OSC 52, BEL-terminated
+    assert scrub(f"\x1b]52;c;{payload}\x1b\\after") == "after"  # OSC 52, ST-terminated
+    assert scrub("\x1b]0;title\x07x") == "x"  # OSC 0 (window title)
+    assert scrub("\x1bPq#payload\x1b\\x") == "x"  # DCS
+    assert scrub("\x1b_apc\x1b\\x") == "x" and scrub("\x1b^pm\x1b\\x") == "x"  # APC / PM
+    assert scrub("\x1b[31mred\x1b[0m") == "red"  # CSI still goes
+    assert scrub("\x9b31mx") == "31mx"  # a C1 byte cannot reopen the door
+    assert scrub("a\rb\x07c") == "abc"  # stray \r spoofing and BEL drop
+    assert scrub("keep\nthese\ttwo") == "keep\nthese\ttwo"
+    # Cut off mid-sequence (a stream chunk boundary): the opener's tail goes,
+    # and the continuation is inert text on its own.
+    assert scrub(f"\x1b]52;c;{payload[:4]}") == ""
+    assert scrub(f"{payload[4:]}\x07done") == f"{payload[4:]}done"
+    # Idempotent: re-scrubbing accumulated tails changes nothing.
+    once = scrub("\x1b]52;c;x\x07text\x1b[1mbold")
+    assert scrub(once) == once == "textbold"
+
+
 def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     # The dispatched event carries only group + per-segment tasks (lane ids do not
     # exist yet); the fold renders a task count + the task summary, never raw json.
@@ -275,3 +302,37 @@ def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
         {"type": "role.result"},
     ]
     assert "streamed prose" in [i.body for i in fold_transcript(events) if i.kind == "text"]
+
+
+def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
+    """The live delta path bypassed the fold's preview scrub entirely, and an
+    escape can arrive SPLIT across two deltas: scrubbing per piece would let
+    the reassembled whole through. The fold scrubs the concatenation."""
+    from agent6.viewmodel.state import apply_event, initial_state
+
+    s = initial_state()
+    s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
+    s = apply_event(s, {"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
+    s = apply_event(s, {"type": "role.text_delta", "text": "bG9hZA==\x07 text"})
+    assert s.last_role is not None
+    # The opener died with its own delta; the continuation is inert text.
+    assert s.last_role.streamed_text == "safe bG9hZA== text"
+    assert "\x1b" not in s.last_role.streamed_text
+    assert "\x07" not in s.last_role.streamed_text
+
+
+def test_log_lines_carry_no_terminal_controls() -> None:
+    """format_log_line embeds model-authored fields (args, summaries, output
+    tails) into every skin's log pane; the finished line is scrubbed."""
+    from agent6.viewmodel.state import format_log_line
+
+    line = format_log_line(
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "ok": True,
+            "summary": "done",
+            "stdout_tail": "\x1b]52;c;cGF5bG9hZA==\x07visible",
+        }
+    )
+    assert "\x1b" not in line and "visible" in line

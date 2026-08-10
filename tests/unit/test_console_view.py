@@ -297,3 +297,21 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
         assert idle < 5
     finally:
         view.close()
+
+
+def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
+    """The live CLI stream printed model deltas raw: the fold's previews were
+    scrubbed but this path was not, so OSC 52 in streamed text could write the
+    operator's clipboard. A split sequence cannot reassemble: the opener's
+    piece loses its tail, and the continuation prints as inert text."""
+    out = _FakeTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        view.feed({"type": "role.call", "role": "worker", "model": "m"})
+        view.feed({"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
+        view.feed({"type": "role.text_delta", "text": "bG9hZA==\x07 more"})
+        got = out.getvalue()
+        assert "\x1b]52" not in got and "\x07" not in got
+        assert "safe" in got and "more" in got
+    finally:
+        view.close()
