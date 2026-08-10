@@ -124,6 +124,18 @@ _TOOL_TABLE_ROWS = 20
 # reader, and the next resume re-asks the prompt itself.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
 
+# Events after which dir_status is recomputed synchronously rather than on the
+# ~1s heartbeat: session boundaries plus the operator-blocking prompt/answer
+# pairs. The chip, worker_lost, and both composer bars all route off
+# dir_status, so serving the previous state for even one heartbeat lies.
+_STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
+    "session.end",
+    "approval.prompt",
+    "approval.answer",
+    "question.prompt",
+    "question.answer",
+}
+
 # A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
 # an answered ask, a gateless settle, a finish over red) is not a failure;
 # painting it red called correct outcomes broken. Involuntary ends
@@ -910,10 +922,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             # block forever on a modal that never opens.
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
-        if event.get("type") == "session.end" or event.get("type") in SESSION_START_EVENTS:
-            # A terminal / leg-boundary event changes the status NOW: refresh
-            # synchronously so the label and the composer routing never serve
-            # the previous state for up to a heartbeat.
+        if event.get("type") in _STATUS_NOW_EVENTS:
+            # A terminal / leg-boundary / operator-blocking event changes the
+            # status NOW: refresh synchronously so the chip, the label, and the
+            # composer routing never serve the previous state for up to a
+            # heartbeat (the chip read "waiting · needs answer" on film while
+            # the log pane already showed the answer and the verify).
             self._refresh_dir_status()
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would

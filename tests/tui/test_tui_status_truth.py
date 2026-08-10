@@ -365,3 +365,35 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             assert "working…" not in body
 
     asyncio.run(scenario())
+
+
+def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) -> None:
+    """The header chip flips on the prompt/answer event itself, never a
+    heartbeat later. Filmed on the dashboard: the log pane already showed
+    approval.answer + verify.end while the chip still read "waiting · needs
+    answer" -- the synchronous dir-status refresh covered only session
+    boundaries, so the chip (and both composer bars) lagged the fold by up to
+    ~1s. Asserted with NO awaits between the event and the read, so the
+    heartbeat cannot mask the regression."""
+    d = tmp_path / "live1"
+    d.mkdir(parents=True)
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            assert app.dir_status[1] != "needs answer"
+            # The prompt arrives: the chip must say so NOW (no pause between).
+            app._handle_event({"type": "approval.prompt", "id": "approval-1", "prompt": "run x?"})
+            assert app.dir_status == ("waiting", "needs answer")
+            # The answer lands: the chip must clear NOW.
+            app._handle_event({"type": "approval.answer", "id": "approval-1", "approved": True})
+            assert app.dir_status[1] != "needs answer"
+
+    asyncio.run(scenario())
