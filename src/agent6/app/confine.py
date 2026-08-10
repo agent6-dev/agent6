@@ -16,7 +16,7 @@ from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
+from agent6.paths import private_dirs
 from agent6.sandbox.detect import Environment
 from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import IsolationLevel
@@ -140,7 +140,7 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
     rules) cannot honor a hidden path that sits inside a granted region -- the
     workspace or an extra grant. Leaving it readable would be silently
     ineffective security, so refuse instead, naming the pair. Hidden means
-    agent6's own config/state/data/cache dirs plus `[sandbox].hide_paths`.
+    agent6's own private dirs (config + state) plus `[sandbox].hide_paths`.
 
     A hidden path nothing grants is trivially satisfied (Landlock never
     granted it), so ordinary hardened runs are untouched. `none` has no jail
@@ -153,13 +153,7 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
         Path.cwd(),
         *(Path(p) for p in (*sb.extra_read_paths, *sb.extra_write_paths)),
     )
-    hidden = (
-        *(Path(p) for p in sb.hide_paths),
-        global_config_dir(),
-        state_base(),
-        data_dir(),
-        cache_dir(),
-    )
+    hidden = (*(Path(p) for p in sb.hide_paths), *private_dirs())
     for region in regions:
         for h in hidden:
             if h.is_relative_to(region):

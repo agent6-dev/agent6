@@ -747,3 +747,22 @@ def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
         load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["relative/x"]\n'))
     with pytest.raises(ConfigError, match=r"\.\."):
         load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["/a/../b"]\n'))
+
+
+def test_the_skills_dir_can_be_granted_to_the_jail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Installed skills are operator content the model is meant to use, so a
+    skill's bundled script must be runnable in the jail: the data dir (and the
+    regenerable cache) are grantable, unlike config and state."""
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    skills = tmp_path / "data" / "skills"
+    body = f'[sandbox]\nextra_read_paths = ["{skills}", "{tmp_path / "cache"}"]\n'
+    assert len(load_config(_write(tmp_path, body)).sandbox.extra_read_paths) == 2
+    # config and state stay refused.
+    body = f'[sandbox]\nextra_read_paths = ["{tmp_path / "state" / "repo"}"]\n'
+    with pytest.raises(ConfigError, match="agent6-private"):
+        load_config(_write(tmp_path, body))

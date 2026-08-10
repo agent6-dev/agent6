@@ -98,8 +98,8 @@ no run) each command gets its own launcher. Under `strict` it:
 - `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd +
   private `/tmp` writable; system paths read-only; `extra_read_paths` and
   `extra_write_paths` at their real paths; operator-tool dirs as read+exec
-  mounts. Tool mounts never include agent6's own config/state/data/cache
-  dirs (either direction of containment) or `$HOME` and its ancestors. A tool
+  mounts. Tool mounts never include agent6's own private dirs (config +
+  state, either direction of containment) or `$HOME` and its ancestors. A tool
   dir whose read-only remount fails is detached; a failed detach refuses the
   run. Command jails and machine tool jails share this one computation.
     - A bin symlink resolving OUT of its bin dir mounts the target's whole
@@ -110,9 +110,13 @@ no run) each command gets its own launcher. Under `strict` it:
 - **Hidden paths are masked last, after every bind**, so no grant exposes
   them from above: an empty tmpfs over a dir, `/dev/null` over a file, at the
   real path and the `/workspace` alias alike.
-    - Always hidden: agent6's config/state/data/cache dirs, so `secrets.toml`
-      and run state stay out of the jail even under an `extra_read_paths`
-      grant of `$HOME`. `[sandbox].hide_paths` adds operator entries.
+    - Always hidden: the config dir (provider keys) and the state base
+      (transcripts, notes, memories, run history), so they stay out of the
+      jail even under an `extra_read_paths` grant of `$HOME`.
+      `[sandbox].hide_paths` adds operator entries. NOT the data dir or the
+      cache: installed skills are content the model is meant to use (a
+      skill's bundled script has to be runnable), and the cache is
+      regenerable -- both are grantable.
     - A policy grant BENEATH a hidden root (a machine's data dir under the
       state dir) is re-bound through the mask at its real path.
     - An extra grant AT or INSIDE a private dir is refused at config load. On

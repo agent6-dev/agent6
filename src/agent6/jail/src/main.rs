@@ -69,7 +69,7 @@ struct Policy {
     #[serde(default)]
     tool_paths: Vec<PathBuf>,
     /// Paths masked from the child even when a broader grant covers them
-    /// (agent6's own config/state/data/cache dirs, plus operator additions):
+    /// (agent6's own config + state dirs, plus operator additions):
     /// a dir masks as an empty tmpfs, a file as a bind of /dev/null. Masked
     /// LAST, after every bind, so no grant exposes them from above; a policy
     /// grant BENEATH a hidden root is then re-bound through the mask (the

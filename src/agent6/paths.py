@@ -203,6 +203,22 @@ def state_base(user: RealUser | None = None) -> Path:
     return user.home / ".local" / "state" / "agent6"
 
 
+def private_dirs() -> tuple[Path, ...]:
+    """agent6 directories a jailed command must never see: the config dir
+    (provider keys) and the state base (transcripts, notes, memories, run
+    history). ONE owner, because the jail masks them, the tool-mount scan
+    refuses them, and the config validator rejects grants inside them.
+
+    Not the data dir or the cache: data holds operator-INSTALLED skills, which
+    the model is meant to use (a skill's bundled script has to be runnable),
+    and the cache holds regenerable provider model lists. Neither is private,
+    and hiding them only cost the skills case a way to work.
+
+    Read per call: the XDG vars are per-process.
+    """
+    return (global_config_dir(), state_base())
+
+
 # A state dir names its workspace so `ls` sorts by location and a stale one is
 # recognisable. The filesystem limit is 255 BYTES per component, and a path of
 # CJK or emoji runs 3-4 bytes per character -- capping characters produced

@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
+from agent6.paths import private_dirs
 from agent6.types import CommandResult, JailPolicy
 
 # --- operator tool reachability ----------------------------------------------
@@ -65,17 +65,16 @@ def _never_mounted(p: Path) -> bool:
     mounted notes, memories and transcripts. Containment cuts both ways: a
     mount CONTAINING a private dir grants the same reads from above, and a
     plain ``~/.local/bin/x -> ~/x.sh`` makes ``real.parent`` the whole home
-    dir. So agent6's config/state/data/cache dirs are refused in either
-    direction, and $HOME and its ancestors outright: mounting home or a dir
-    above it would hand the jail ``~/.ssh`` and every credential the operator
-    owns. A mount BELOW home (a tool target's own subdir) stays allowed; that
-    is what keeps ``~/.local/bin`` tools working. Denied by identity rather
-    than by inspecting contents. Read per call: the XDG vars are per-process.
+    dir. So agent6's private dirs (:func:`agent6.paths.private_dirs`) are
+    refused in either direction, and $HOME and its ancestors outright:
+    mounting home or a dir above it would hand the jail ``~/.ssh`` and every
+    credential the operator owns. A mount BELOW home (a tool target's own
+    subdir) stays allowed; that is what keeps ``~/.local/bin`` tools working.
+    Denied by identity rather than by inspecting contents.
     """
     if Path.home().is_relative_to(p):
         return True
-    private = (global_config_dir(), state_base(), data_dir(), cache_dir())
-    return any(p.is_relative_to(d) or d.is_relative_to(p) for d in private)
+    return any(p.is_relative_to(d) or d.is_relative_to(p) for d in private_dirs())
 
 
 # The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
@@ -254,8 +253,7 @@ def _policy_to_json(policy: JailPolicy) -> str:
             # policy grant BENEATH a hidden root is re-bound through the mask
             # by the launcher (the machine data contract).
             "hide_paths": sorted(
-                {str(p) for p in policy.hide_paths}
-                | {str(global_config_dir()), str(state_base()), str(data_dir()), str(cache_dir())}
+                {str(p) for p in policy.hide_paths} | {str(d) for d in private_dirs()}
             ),
             "timeout_s": policy.timeout_s,
             "memory_limit_mb": policy.memory_limit_mb,
