@@ -655,6 +655,15 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
+    # How long a run_command may run before the model is handed it back as a
+    # background job. NOT a timeout: nothing is killed, the command keeps
+    # running and the model decides whether to wait, poll or stop it -- a
+    # judgement a number cannot make. 0 disables the hand-back (wait while it
+    # lives), which is right when a human is watching and can interrupt.
+    # 900 because the hand-back is non-destructive, so it can afford to be
+    # patient: the cost of being early is a poll cycle of tokens, and the cost
+    # of being late is nothing at all.
+    command_checkin_s: float = Field(ge=0.0, default=900.0)
     # When true, finish_session is refused while the last verify is red (or a verify
     # command is configured but was never run): the worker must get verify green
     # or explicitly stop. Default false keeps finish_session always honorable, but

@@ -161,6 +161,26 @@ class CommandResult:
 
 
 @dataclass(frozen=True, slots=True)
+class BackgroundHandoff:
+    """A command that outlived its check-in and is still running.
+
+    Its own type rather than a CommandResult with a hole in it: a completed
+    command and a running one answer different questions, and a returncode
+    invented for the second would be a lie every caller has to remember to
+    ignore. The tool result the model sees is still ONE shape (see
+    ``ExecResult``).
+    """
+
+    argv: tuple[str, ...]
+    pid: int
+    log: str
+    # What the command printed before the hand-off, still split by stream.
+    stdout: str
+    stderr: str
+    duration_s: float
+
+
+@dataclass(frozen=True, slots=True)
 class JailPolicy:
     """What the jail is allowed to do for a single child invocation."""
 

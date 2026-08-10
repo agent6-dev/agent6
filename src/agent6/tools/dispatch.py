@@ -127,7 +127,13 @@ from agent6.tools.schema import (
     mode_tools,
 )
 from agent6.tools.sessions import conversation, roster
-from agent6.types import CommandResult, IsolationLevel, JailPolicy, session_kind
+from agent6.types import (
+    BackgroundHandoff,
+    CommandResult,
+    IsolationLevel,
+    JailPolicy,
+    session_kind,
+)
 
 
 def _coerce_stringified_args(
@@ -804,7 +810,50 @@ class ToolDispatcher:
                 # an unattended run, so the message blames neither and names
                 # the knob.
                 raise ToolDenied("run_command not approved (sandbox.run_commands='ask')")
-        return self._run_argv_in_jail(args.argv, label="run_command")
+        return self._run_model_command(args.argv)
+
+    def _run_model_command(self, argv: tuple[str, ...]) -> ExecResult:
+        """A command the MODEL chose: no wall-clock kill, and a hand-back
+        instead of a guess about whether a long one is stuck.
+
+        The check-in needs a session (something must stay alive to own the
+        running command) and a background roster to hand it to; without either
+        this is an ordinary bounded run.
+        """
+        session = self._run_session()
+        shells = self._shells
+        checkin = self._config.workflow.command_checkin_s
+        if session is None or shells is None or checkin <= 0:
+            return self._run_argv_in_jail(argv, label="run_command")
+        policy = self._jail_policy(argv)
+        try:
+            outcome = session.run(
+                argv,
+                env=policy.env,
+                timeout_s=0.0,  # the check-in replaces the kill
+                checkin_s=checkin,
+                log_dir=str(shells.log_root),
+            )
+        except JailUnavailableError as exc:
+            raise ToolError(f"run_command: jail unavailable: {exc}") from exc
+        if isinstance(outcome, CommandResult):
+            return ExecResult(
+                returncode=outcome.returncode,
+                stdout=outcome.stdout[-20_000:],
+                stderr=outcome.stderr[-20_000:],
+                duration_s=outcome.duration_s,
+                exec_failed=outcome.exec_failed,
+            )
+        view = shells.adopt(argv, outcome.pid, Path(outcome.log), session=session)
+        self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
+        return ExecResult(
+            returncode=None,
+            stdout=outcome.stdout[-20_000:],
+            stderr=outcome.stderr[-20_000:],
+            duration_s=outcome.duration_s,
+            exec_failed=False,
+            background_id=view.id,
+        )
 
     def _background(self) -> BackgroundShells:
         if self._shells is None:
@@ -1086,7 +1135,9 @@ class ToolDispatcher:
         policy = self._jail_policy(argv, timeout_s=timeout_s)
         try:
             session = self._run_session()
-            res: CommandResult = (
+            # No check-in: this is the operator's gate (verify, metric, the
+            # baseline re-run) and the loop needs a verdict, not a handle.
+            outcome = (
                 session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
                 if session is not None
                 else run_in_jail(
@@ -1095,6 +1146,9 @@ class ToolDispatcher:
             )
         except JailUnavailableError as exc:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
+        if isinstance(outcome, BackgroundHandoff):  # pragma: no cover - no check-in was asked for
+            raise ToolError(f"{label}: the jail handed back a command that was never detachable")
+        res: CommandResult = outcome
         return ExecResult(
             returncode=res.returncode,
             stdout=res.stdout[-20_000:],

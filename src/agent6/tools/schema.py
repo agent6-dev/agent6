@@ -182,6 +182,12 @@ class RunCommandInput(_ToolInput):
         " `stash` and `commit` FAIL against a read-only `.git/` rather than being"
         " refused up front. To undo a bad edit, read prior content with"
         " `git show HEAD:path/to/file` and restore it with `apply_patch` or `apply_edit`."
+        " Nothing is killed for taking too long: a command still running after the"
+        " configured check-in is handed back with `returncode: null`,"
+        " `still_running: true` and a `background_id`, and keeps running. Decide"
+        " what to do the way your instructions say -- poll it with"
+        " `read_background`, stop it with `stop_background`, or carry on and check"
+        " later. The output it printed before the hand-back comes back with it."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)

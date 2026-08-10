@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from agent6.sandbox.jail import JailSession
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.types import CommandResult, IsolationLevel, JailPolicy
 
 # hardened and none need no namespaces; the strict case is marked per-test.
 _NO_NAMESPACE_LEVELS: tuple[IsolationLevel, ...] = ("hardened", "none")
@@ -54,6 +54,7 @@ def test_a_session_serves_commands_without_namespaces(
         res = session.run(("/bin/sh", "-c", "echo out; echo err >&2; exit 3"))
     finally:
         session.close()
+    assert isinstance(res, CommandResult), "a run with no check-in always completes"
     assert res.returncode == 3
     assert res.stdout.strip() == "out"
     assert "err" in res.stderr

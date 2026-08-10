@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import IO
 
 from agent6.paths import hidden_paths, private_dirs
-from agent6.types import CommandResult, JailPolicy
+from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
 
 # --- operator tool reachability ----------------------------------------------
 # The jail's baseline PATH is /usr/bin:/bin and it bind-mounts only the system
@@ -1237,7 +1237,9 @@ class JailSession:
         *,
         env: tuple[tuple[str, str], ...] = (),
         timeout_s: float = 600.0,
-    ) -> CommandResult:
+        checkin_s: float = 0.0,
+        log_dir: str = "",
+    ) -> CommandResult | BackgroundHandoff:
         """Run one command to completion in this session's namespaces.
 
         Without a PID namespace the command's escapees (a `setsid` daemon, a
@@ -1247,6 +1249,7 @@ class JailSession:
         """
         start = time.monotonic()
         before = frozenset() if self._pid_namespaced else frozenset(_own_children())
+        answer: dict[str, object] = {}
         try:
             answer = self._request(
                 {
@@ -1254,13 +1257,30 @@ class JailSession:
                     "argv": list(argv),
                     "env": [list(p) for p in env],
                     "timeout_s": timeout_s,
+                    "checkin_s": checkin_s,
+                    "log_dir": log_dir,
                     "memory_limit_mb": self._memory_limit_mb,
                 }
             )
         finally:
-            if not self._pid_namespaced:
+            # Only for a command that ENDED: one handed back is still running,
+            # and its own children are not escapees yet.
+            if not self._pid_namespaced and not answer.get("backgrounded"):
                 _kill_escapees(before | {self._proc.pid})
-        return _result_from_json(answer, argv, time.monotonic() - start)
+        elapsed = time.monotonic() - start
+        if answer.get("backgrounded"):
+            pid = answer.get("pid")
+            if not isinstance(pid, int):
+                raise JailUnavailableError(f"jail session handed back no pid: {answer}")
+            return BackgroundHandoff(
+                argv=argv,
+                pid=pid,
+                log=str(answer.get("log", "")),
+                stdout=str(answer.get("stdout", "")),
+                stderr=str(answer.get("stderr", "")),
+                duration_s=elapsed,
+            )
+        return _result_from_json(answer, argv, elapsed)
 
     def start_background(
         self, argv: tuple[str, ...], *, env: tuple[tuple[str, str], ...] = ()

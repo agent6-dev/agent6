@@ -256,9 +256,15 @@ class FetchResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class ExecResult(ToolResult):
-    """run_command and run_verify_command: the jailed command's outcome."""
+    """run_command and run_verify_command: the jailed command's outcome.
 
-    returncode: int
+    ONE shape whether the command finished or is still running: a `returncode`
+    of None with a `background_id` set means it outlived its check-in and was
+    handed back, and the model polls it with read_background. Never "a result
+    OR a handle" -- that would be two shapes for one tool.
+    """
+
+    returncode: int | None
     stdout: str
     stderr: str
     duration_s: float
@@ -267,6 +273,9 @@ class ExecResult(ToolResult):
     # already knows its own argv; a verify gate is the operator's (or inferred),
     # and a worker that cannot see it cannot tell a failure from a stale gate.
     command: tuple[str, ...] = ()
+    # Set when the command outlived its check-in and is still running as this
+    # background job. `returncode` is None until it ends.
+    background_id: str = ""
 
     def to_wire(self) -> dict[str, Any]:
         wire: dict[str, Any] = {
@@ -278,9 +287,14 @@ class ExecResult(ToolResult):
         }
         if self.command:
             wire["command"] = shlex.join(self.command)
+        if self.background_id:
+            wire["still_running"] = True
+            wire["background_id"] = self.background_id
         return wire
 
     def summary(self) -> str:
+        if self.background_id:
+            return f"still running as {self.background_id} after {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
 

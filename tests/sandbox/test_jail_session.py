@@ -21,6 +21,14 @@ def _session(cwd: Path) -> JailSession:
     return JailSession.open(JailPolicy(cwd=cwd, argv=("true",), isolation="strict", timeout_s=30.0))
 
 
+def _run(session: JailSession, argv: tuple[str, ...], **kw: object) -> CommandResult:
+    """A run with no check-in always completes, so it is a CommandResult; the
+    hand-off shape is exercised in test_jail_session_levels.py."""
+    res = session.run(argv, **kw)  # pyright: ignore[reportArgumentType]
+    assert isinstance(res, CommandResult), f"unexpected hand-off: {res}"
+    return res
+
+
 def test_the_session_netns_has_loopback_up(tmp_path: Path) -> None:
     """An empty netns leaves `lo` DOWN, so nothing inside can reach even
     itself -- which is what a shared address between a run's commands needs.
@@ -28,7 +36,7 @@ def test_the_session_netns_has_loopback_up(tmp_path: Path) -> None:
     it."""
     session = _session(tmp_path)
     try:
-        got = session.run(("ip", "link", "show", "lo"))
+        got = _run(session, ("ip", "link", "show", "lo"))
         assert got.returncode == 0, got.stderr
         assert "UP" in got.stdout, got.stdout
     finally:
@@ -40,9 +48,9 @@ def test_commands_in_one_session_share_a_tmp(tmp_path: Path) -> None:
     command a fresh one; a run's commands must see one."""
     session = _session(tmp_path)
     try:
-        first = session.run(("sh", "-c", "echo shared > /tmp/marker; echo wrote"))
+        first = _run(session, ("sh", "-c", "echo shared > /tmp/marker; echo wrote"))
         assert first.returncode == 0, first.stderr
-        second = session.run(("sh", "-c", "cat /tmp/marker"))
+        second = _run(session, ("sh", "-c", "cat /tmp/marker"))
         assert second.returncode == 0, second.stderr
         assert "shared" in second.stdout
     finally:
@@ -62,7 +70,8 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: Path) -> None:
             "c,_=s.accept();c.sendall(b'alive');c.close()"
         )
         assert session.start_background(("python3", "-c", listener)) > 0
-        probe = session.run(
+        probe = _run(
+            session,
             (
                 "python3",
                 "-c",
@@ -98,9 +107,9 @@ def test_a_jailed_command_cannot_write_the_launchers_answer_pipe(tmp_path: Path)
     try:
         answer = r'{"returncode":0,"stdout":"FORGED","stderr":""}'
         forge = f"printf '{answer}\\n' > /proc/1/fd/1; echo wrote"
-        forged = session.run(("sh", "-c", forge))
+        forged = _run(session, ("sh", "-c", forge))
         assert "FORGED" not in forged.stdout, "a command wrote the answer the agent read"
-        after = session.run(("sh", "-c", "echo REAL; exit 3"))
+        after = _run(session, ("sh", "-c", "echo REAL; exit 3"))
         assert after.returncode == 3, f"the channel is desynced: {after}"
         assert "REAL" in after.stdout, f"the channel is desynced: {after}"
     finally:
@@ -122,7 +131,9 @@ def test_a_daemonizing_command_does_not_wedge_the_run(tmp_path: Path) -> None:
     answered: list[CommandResult] = []
 
     def run_it() -> None:
-        answered.append(session.run(("sh", "-c", "setsid sleep 300 & echo started"), timeout_s=5.0))
+        answered.append(
+            _run(session, ("sh", "-c", "setsid sleep 300 & echo started"), timeout_s=5.0)
+        )
 
     worker = threading.Thread(target=run_it, daemon=True)
     worker.start()
@@ -131,7 +142,7 @@ def test_a_daemonizing_command_does_not_wedge_the_run(tmp_path: Path) -> None:
         assert not worker.is_alive(), "the launcher never answered: the run is wedged"
         assert answered and answered[0].returncode == 0, answered
         assert "started" in answered[0].stdout, answered[0]
-        after = session.run(("echo", "next"))
+        after = _run(session, ("echo", "next"))
         assert after.returncode == 0 and "next" in after.stdout, after
     finally:
         session.close()
@@ -144,11 +155,11 @@ def test_a_command_that_cannot_be_executed_does_not_end_the_session(tmp_path: Pa
     -- with every backgrounded server inside it."""
     session = _session(tmp_path)
     try:
-        bad = session.run(("definitely-not-a-real-binary", "-q"))
+        bad = _run(session, ("definitely-not-a-real-binary", "-q"))
         assert bad.returncode == 127, bad
         assert bad.exec_failed is True, bad
         assert "not found" in bad.stderr, bad.stderr
-        after = session.run(("echo", "alive"))
+        after = _run(session, ("echo", "alive"))
         assert after.returncode == 0, after.stderr
         assert "alive" in after.stdout, "the session died with the bad command"
     finally:
@@ -176,7 +187,7 @@ def test_a_dead_session_refuses_with_its_own_error(tmp_path: Path) -> None:
         proc.wait(timeout=10.0)
         with pytest.raises(JailUnavailableError):
             for _ in range(3):  # the first write can still buffer
-                session.run(("echo", "hi"))
+                _run(session, ("echo", "hi"))
     finally:
         session.close()
 
@@ -191,7 +202,7 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: Path) -> Non
         )
     )
     try:
-        got = session.run(("python3", "-c", "bytearray(600 * 1024 * 1024)"))
+        got = _run(session, ("python3", "-c", "bytearray(600 * 1024 * 1024)"))
         assert got.returncode != 0, got
         assert "MemoryError" in got.stderr, got.stderr
     finally:
@@ -205,10 +216,10 @@ def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> Non
     session = _session(tmp_path)
     try:
         pid = session.start_background(("sleep", "300"))
-        alive = session.run(("sh", "-c", f"kill -0 {pid} && echo alive"))
+        alive = _run(session, ("sh", "-c", f"kill -0 {pid} && echo alive"))
         assert "alive" in alive.stdout, alive.stderr
         session.stop_background(pid)
-        gone = session.run(("sh", "-c", f"kill -0 {pid} 2>/dev/null && echo alive || echo gone"))
+        gone = _run(session, ("sh", "-c", f"kill -0 {pid} 2>/dev/null && echo alive || echo gone"))
         assert "gone" in gone.stdout, gone.stdout
     finally:
         session.close()
@@ -235,11 +246,11 @@ def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
     """Nothing a run started outlives it: closing the request channel ends the
     PID namespace, and everything inside it goes."""
     session = _session(tmp_path)
-    started = session.run(("sh", "-c", "(sleep 300 &) ; echo bg"))
+    started = _run(session, ("sh", "-c", "(sleep 300 &) ; echo bg"))
     assert started.returncode == 0, started.stderr
     session.close()
     with pytest.raises(Exception):
-        session.run(("true",))
+        _run(session, ("true",))
 
 
 def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(tmp_path: Path) -> None:
@@ -328,10 +339,10 @@ def test_a_hung_command_times_out_without_ending_the_session(tmp_path: Path) -> 
     answering 124), so the next command still runs in the same namespaces."""
     session = _session(tmp_path)
     try:
-        session.run(("sh", "-c", "echo before > /tmp/timeout-marker"))
-        hung = session.run(("sleep", "30"), timeout_s=1.0)
+        _run(session, ("sh", "-c", "echo before > /tmp/timeout-marker"))
+        hung = _run(session, ("sleep", "30"), timeout_s=1.0)
         assert hung.returncode == 124, hung
-        after = session.run(("cat", "/tmp/timeout-marker"))
+        after = _run(session, ("cat", "/tmp/timeout-marker"))
         assert after.returncode == 0, after.stderr
         assert "before" in after.stdout, "the session lost its namespaces"
     finally:
@@ -346,7 +357,7 @@ def test_a_clean_session_reports_no_startup_warning(tmp_path: Path) -> None:
     once."""
     session = _session(tmp_path)
     try:
-        assert session.run(("/bin/echo", "ok")).stdout.strip() == "ok"
+        assert _run(session, ("/bin/echo", "ok")).stdout.strip() == "ok"
         assert session.startup_stderr == "", session.startup_stderr
     finally:
         session.close()

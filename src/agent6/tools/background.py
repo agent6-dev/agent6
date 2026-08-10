@@ -149,6 +149,41 @@ class BackgroundShells:
         self._shells[shell_id] = shell
         return self._view(shell)
 
+    def adopt(
+        self, argv: tuple[str, ...], pid: int, log: Path, *, session: JailSession
+    ) -> ShellView:
+        """Register a command the launcher handed back: it is already running,
+        and already writing the log the launcher created for it.
+
+        The counterpart to :meth:`start`, which spawns. A run_command that
+        outlived its check-in becomes an ordinary background job here, so
+        read_background / stop_background / the teardown sweep need no special
+        case for it.
+        """
+        self._seq += 1
+        shell_id = f"bg{self._seq}"
+        shell_dir = self._root / shell_id
+        shell_dir.mkdir(parents=True, exist_ok=True)
+        # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
+        # command can predict (its own pid); this side never resolves it again.
+        try:
+            log_fd = os.open(log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        except OSError as exc:
+            raise BackgroundError(f"could not open the handed-back command's log: {exc}") from exc
+        command = shlex.join(argv)
+        (shell_dir / _META_NAME).write_text(
+            json.dumps({"id": shell_id, "command": command}), encoding="utf-8"
+        )
+        shell = _Shell(
+            id=shell_id,
+            command=command,
+            dir=shell_dir,
+            job=SessionJob(session, pid, shell_dir),
+            log_fd=log_fd,
+        )
+        self._shells[shell_id] = shell
+        return self._view(shell)
+
     def _open_log(self, shell_id: str) -> int:
         """Create this command's log directory and its log, and hand back the
         one descriptor every later read goes through.
