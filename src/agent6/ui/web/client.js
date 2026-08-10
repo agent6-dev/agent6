@@ -766,11 +766,18 @@ async function renderRun(id, opts, gen) {
   });
 
   live = new EventSource(base + '/events');
+  // The stream stays open across a finish: a resume from any surface logs into
+  // the same file and painting continues (the TUI follows the same way) -- a
+  // close-on-finished froze this page on "stopped" while the hub said
+  // "running". Only stream_dead (transport: nothing more will come) closes.
+  let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     paintRun(cards, s);
     hbState.spin++;
-    if (s.finished || s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
+    if (s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); return; }
+    if (s.finished && !sawEnd) setTimeout(() => cc.conv.refresh(), 900); // one final fold after last writes flush
+    sawEnd = !!s.finished;
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
@@ -1046,6 +1053,9 @@ async function renderConversation(id, gen) {
   if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight); // phone: the page scrolls
 
   live = new EventSource(base + '/events');
+  // Same rule as the run view: the stream survives a finish so a resumed leg
+  // keeps painting; only stream_dead closes.
+  let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     composer.setState(s);
@@ -1059,7 +1069,9 @@ async function renderConversation(id, gen) {
       spin: hbState.spin + 1,
     };
     hbTick();
-    if (s.finished || s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
+    if (s.stream_dead) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); return; }
+    if (s.finished && !sawEnd) setTimeout(() => cc.conv.refresh(), 900); // one final fold after last writes flush
+    sawEnd = !!s.finished;
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }

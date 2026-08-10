@@ -622,8 +622,13 @@ class _Handler(BaseHTTPRequestHandler):
         def tail() -> None:
             src = session_dir / LOGS_NAME
             try:
+                # NOT stop_when_finished: a finished run resumed from any other
+                # surface logs into this same file, and a stream that closed at
+                # session.end left the page frozen on "stopped" while the hub
+                # said "running", forever. The TUI follows across legs the same
+                # way; the client closes only on stream_dead (or navigation).
                 for ev in tail_events(
-                    src, follow=True, stop_when_finished=True, should_stop=stop.is_set
+                    src, follow=True, stop_when_finished=False, should_stop=stop.is_set
                 ):
                     events.put(ev)
             finally:

@@ -12,9 +12,11 @@ import json
 import os
 import socket
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from http.client import HTTPConnection
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -548,6 +550,29 @@ def test_bad_post_body_is_400(server: tuple[WebServer, int]) -> None:
     assert "bad request" in str(body["error"])
 
 
+def _read_until(
+    resp: Any, cond: Callable[[dict[str, object]], bool], *, deadline_s: float = 10.0
+) -> dict[str, object]:
+    """Read SSE data frames until *cond*(snapshot) is true; return that
+    snapshot. The stream does not close on a finished run (a resume keeps
+    painting into it), so tests read to a condition, never to EOF."""
+    buf = b""
+    deadline = time.monotonic() + deadline_s
+    while time.monotonic() < deadline:
+        chunk = resp.read1(4096)
+        if not chunk:
+            break
+        buf += chunk
+        *complete, buf = buf.split(b"\n\n")
+        for f in complete:
+            if not f.startswith(b"data:"):
+                continue
+            snap = json.loads(f[len(b"data:") :].strip())
+            if cond(snap):
+                return snap
+    raise AssertionError("no SSE frame matched before the deadline")
+
+
 def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(
@@ -564,19 +589,40 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         resp = conn.getresponse()
         assert resp.status == 200
         assert "text/event-stream" in resp.getheader("Content-Type", "")
-        # The tailer emits a snapshot per event then a final one and closes the
-        # stream (stop_when_finished). Drain to EOF and check the last data frame.
-        seen = b""
-        while True:
-            chunk = resp.read(256)
-            if not chunk:
-                break
-            seen += chunk
-        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
-        assert frames, "expected at least one SSE data frame"
-        snap = json.loads(frames[-1][len(b"data:") :].strip())
+        snap = _read_until(resp, lambda s: s.get("finished") is True)
         assert snap["user_task"] == "streamed"
-        assert snap["finished"] is True
+    finally:
+        conn.close()
+
+
+def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The tailer opened with stop_when_finished=True and the client closed on
+    `finished`, so a run resumed from ANOTHER surface left this page frozen on
+    "stopped" while the hub said "running", indefinitely. The stream now stays
+    open across a finish and paints the resumed leg (the TUI already did)."""
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "resume-run",
+        [
+            {"type": "session.start", "user_task": "leg one"},
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+    logs = resolved_state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/session/resume-run/events")
+        resp = conn.getresponse()
+        _read_until(resp, lambda s: s.get("finished") is True)
+        # A resume (from the CLI, say) appends to the same log.
+        with logs.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
+            fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
+        snap = _read_until(resp, lambda s: s.get("finished") is False)
+        assert snap["user_task"] == "leg one"
     finally:
         conn.close()
 
@@ -599,15 +645,9 @@ def test_sse_run_frame_carries_the_compare_outcome(
     try:
         conn.request("GET", "/api/session/cmp-run/events")
         resp = conn.getresponse()
-        seen = b""
-        while True:
-            chunk = resp.read(256)
-            if not chunk:
-                break
-            seen += chunk
-        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
-        snap = json.loads(frames[-1][len(b"data:") :].strip())
-        assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
+        snap = _read_until(resp, lambda s: s.get("finished") is True)
+        compare = cast("dict[str, Any]", snap["compare"])
+        assert compare["winner"] is True and compare["rank"] == 1
     finally:
         conn.close()
 
@@ -703,12 +743,15 @@ def test_sse_run_catchup_folds_history_into_few_frames(
         conn.request("GET", "/api/session/big-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
-        seen = resp.read()
-        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
-        assert 1 <= len(frames) <= 5  # was ~1 per historical event
-        snap = json.loads(frames[-1][len(b"data:") :].strip())
-        assert snap["finished"] is True
-        assert snap["log_count"] == len(events)
+        seen_frames = 0
+
+        def _caught_up(s: dict[str, object]) -> bool:
+            nonlocal seen_frames
+            seen_frames += 1
+            return s.get("finished") is True and s.get("log_count") == len(events)
+
+        _read_until(resp, _caught_up)
+        assert seen_frames <= 5  # was ~1 per historical event
     finally:
         conn.close()
 
