@@ -35,7 +35,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     watch_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen TUI instead of the default plain line tail.",
+        help="Open the full-screen TUI instead of the default conversation follow.",
     )
     watch_p.add_argument(
         "--json",
