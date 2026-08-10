@@ -297,6 +297,7 @@ def jail_policy(
             *extra_rw_paths,
         ),
         tool_paths=tool_mounts,
+        hide_paths=tuple(Path(p) for p in config.sandbox.hide_paths),
         memory_limit_mb=config.sandbox.memory_limit_mb,
         **policy_kwargs,
     )

@@ -299,7 +299,9 @@ path = "agent6.config.model"
 # at the leaf rather than in whichever model declared one first.
 # agent6.errors: ConfigError subclasses OperatorError, so a bad config presents
 # as the operator's mistake at the CLI boundary.
-depends_on = ["agent6.types", "agent6.errors"]
+# agent6.paths: the extra-path validator refuses grants inside the private
+# config/state dirs at load time, so it must know where they are.
+depends_on = ["agent6.types", "agent6.errors", "agent6.paths"]
 
 [[modules]]
 # The environment a process spawned OUTSIDE the jail inherits. A leaf because

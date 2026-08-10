@@ -721,3 +721,29 @@ def test_skills_rejects_unknown_key(tmp_path: Path) -> None:
     body = _VALID_TOML + "\n[skills]\nallow_repo_skills = true\n"
     with pytest.raises(ConfigError, match="skills"):
         load_config(_write(tmp_path, body))
+
+
+def test_extra_paths_never_target_the_private_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An extra grant AT or INSIDE an agent6-private dir (secrets, state)
+    never enters the jail and is refused at config load; a grant merely
+    CONTAINING one stays valid (strict masks it out)."""
+    cfg_home = tmp_path / "home" / ".config" / "agent6"
+    cfg_home.mkdir(parents=True)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    body = f'[sandbox]\nextra_read_paths = ["{cfg_home}"]\n'
+    with pytest.raises(ConfigError, match="agent6-private"):
+        load_config(_write(tmp_path, body))
+    body = f'[sandbox]\nextra_write_paths = ["{cfg_home / "sub"}"]\n'
+    with pytest.raises(ConfigError, match="agent6-private"):
+        load_config(_write(tmp_path, body))
+    body = f'[sandbox]\nextra_read_paths = ["{tmp_path / "home"}"]\n'
+    assert load_config(_write(tmp_path, body)).sandbox.extra_read_paths
+
+
+def test_hide_paths_validate_like_the_other_path_lists(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="absolute"):
+        load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["relative/x"]\n'))
+    with pytest.raises(ConfigError, match=r"\.\."):
+        load_config(_write(tmp_path, '[sandbox]\nhide_paths = ["/a/../b"]\n'))

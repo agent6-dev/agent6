@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.confine import (
+    check_hide_paths_support,
     check_network_support,
     warn_sandbox_gaps,
 )
@@ -142,6 +143,10 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
+        return 2
+    hide_err = check_hide_paths_support(cfg, isolation)
+    if hide_err is not None:
+        reporter.err(f"REFUSING: {hide_err}")
         return 2
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
 

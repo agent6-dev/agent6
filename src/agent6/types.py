@@ -183,6 +183,11 @@ class JailPolicy:
     # Distinct from ``extra_ro_paths`` (remapped under /ro, which breaks symlinks);
     # these keep their real paths. Read+execute only, never writable.
     tool_paths: tuple[Path, ...] = ()
+    # Operator additions to the hidden set ([sandbox].hide_paths): masked from
+    # the jail even under a broader grant. The launcher masks LAST, after every
+    # bind, and agent6's own private dirs are always unioned in at
+    # serialization -- no constructor can forget them.
+    hide_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
     # Per-process memory cap in MiB (RLIMIT_DATA, set by the launcher in the
     # child before exec and inherited by every descendant); 0 disables. The

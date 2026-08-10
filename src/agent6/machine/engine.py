@@ -309,6 +309,10 @@ class LiveWorld:
     # Per-process memory cap (MiB) for every tool jail, from
     # `[sandbox].memory_limit_mb` (the CLI wires it); 0 disables.
     memory_limit_mb: int = 4096
+    # Operator additions to the jail's hidden set, from `[sandbox].hide_paths`
+    # (the CLI wires it). agent6's own private dirs are always hidden by the
+    # launcher and need no wiring.
+    hide_paths: tuple[Path, ...] = ()
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -351,6 +355,7 @@ class LiveWorld:
             extra_protect_paths=self.protect_paths,
             extra_rw_paths=extra_rw,
             tool_paths=tool_mounts,
+            hide_paths=self.hide_paths,
             timeout_s=float(timeout_s),
             memory_limit_mb=self.memory_limit_mb,
         )

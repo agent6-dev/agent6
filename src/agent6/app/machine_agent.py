@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.app.confine import check_network_support
+from agent6.app.confine import check_hide_paths_support, check_network_support
 from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider,
@@ -327,6 +327,10 @@ def run_one(
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
+        return _result("error", None, None)
+    hide_err = check_hide_paths_support(cfg, isolation)
+    if hide_err is not None:
+        reporter.err(f"REFUSING: {hide_err}")
         return _result("error", None, None)
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,

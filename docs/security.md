@@ -99,11 +99,20 @@ no run) each command gets its own launcher. Under `strict` it:
   private `/tmp` writable; system paths read-only; `extra_read_paths` and
   `extra_write_paths` at their real paths; operator-tool dirs as read+exec
   mounts. Tool mounts never include agent6's own config/state/data/cache
-  dirs (either direction of containment) or `$HOME` and its ancestors, so
-  `secrets.toml`, `~/.ssh`, and run history stay outside the jail by
-  construction. A tool dir whose read-only remount fails is detached; a
-  failed detach refuses the run. Command jails and machine tool jails share
-  this one computation.
+  dirs (either direction of containment) or `$HOME` and its ancestors. A tool
+  dir whose read-only remount fails is detached; a failed detach refuses the
+  run. Command jails and machine tool jails share this one computation.
+- **Hidden paths are masked last, after every bind**, so no grant exposes
+  them from above: an empty tmpfs over a dir, `/dev/null` over a file, at the
+  real path and the `/workspace` alias alike.
+    - Always hidden: agent6's config/state/data/cache dirs, so `secrets.toml`
+      and run state stay out of the jail even under an `extra_read_paths`
+      grant of `$HOME`. `[sandbox].hide_paths` adds operator entries.
+    - A policy grant BENEATH a hidden root (a machine's data dir under the
+      state dir) is re-bound through the mask at its real path.
+    - An extra grant AT or INSIDE a private dir is refused at config load. On
+      `hardened` there is no mount namespace and Landlock cannot mask, so a
+      hidden path inside the workspace or a grant refuses the run.
 - Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
@@ -388,7 +397,8 @@ syscall for hardened), never guessed from the kernel version.
     - In `$XDG_CONFIG_HOME/agent6/secrets.toml` (refused if group/other-readable
       or foreign-owned, like an SSH key), or from `[providers.<name>].api_key_env`
       (env wins). Never in transcripts, never in `config show` (redacted), never
-      mounted into the jail.
+      in the jail: the config dir is masked there even when an explicit grant
+      covers it, and a grant naming it directly is refused at config load.
 - **`agent6 connect` never executes remote input.**
     - It only prompts locally (`getpass`) and writes config/secrets. It makes one
       read-only `GET` to the provider's key endpoint to confirm auth (status only;

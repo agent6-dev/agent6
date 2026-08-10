@@ -68,6 +68,14 @@ struct Policy {
     /// lookups and symlinks resolve. Read+execute only, never writable.
     #[serde(default)]
     tool_paths: Vec<PathBuf>,
+    /// Paths masked from the child even when a broader grant covers them
+    /// (agent6's own config/state/data/cache dirs, plus operator additions):
+    /// a dir masks as an empty tmpfs, a file as a bind of /dev/null. Masked
+    /// LAST, after every bind, so no grant exposes them from above; a policy
+    /// grant BENEATH a hidden root is then re-bound through the mask (the
+    /// machine data contract: explicit holes in a default-deny cover).
+    #[serde(default)]
+    hide_paths: Vec<PathBuf>,
     /// Paths inside `cwd` to make READ-ONLY from the child's view. In
     /// strict, these are re-bound RO on top of the workspace mount. In
     /// hardened (no mount namespace), the Landlock ruleset switches from
@@ -846,6 +854,8 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         floor_submounts(&dst, RW_FLOOR)?;
     }
 
+    mask_hidden_paths(policy, &new_root)?;
+
     // pivot_root into new_root.
     let put_old = new_root.join(".old_root");
     fs::create_dir_all(&put_old)?;
@@ -880,6 +890,117 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     fs::remove_dir("/.old_root").ok();
 
     chdir("/workspace").map_err(io_err)?;
+    Ok(())
+}
+
+/// Mask the policy's hidden paths out of the assembled root: an empty RO
+/// tmpfs over a dir, a /dev/null bind over a file. Runs after EVERY bind so
+/// no grant (workspace, extras, tools) exposes a hidden path from above --
+/// mount order means the mask always wins. Policy grants BENEATH a hidden
+/// root are then re-bound through the mask at their REAL path (the contract
+/// every grant already has): default-deny with the policy's own explicit
+/// holes, e.g. a machine's data dir under the state dir. Masks stay
+/// writable until the re-binds land, then remount read-only (non-recursive,
+/// so a re-bound RW hole keeps its writability).
+fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
+    let mut masked_dirs: Vec<PathBuf> = Vec::new();
+    // Each hidden path is masked at its real location AND, when it sits inside
+    // the workspace (cwd = $HOME puts ~/.config/agent6 in the workspace bind),
+    // at its /workspace alias -- the alias is a second door to the same files.
+    let mut targets: Vec<PathBuf> = Vec::new();
+    for hp in &policy.hide_paths {
+        targets.push(new_root.join(hp.strip_prefix("/").unwrap_or(hp)));
+        if let Ok(rel) = hp.strip_prefix(&policy.cwd) {
+            targets.push(new_root.join("workspace").join(rel));
+        }
+    }
+    for dst in targets {
+        // Not in the assembled view: nothing mounted it, already invisible.
+        let meta = match fs::symlink_metadata(&dst) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_dir() {
+            mount(
+                Some("tmpfs"),
+                &dst,
+                Some("tmpfs"),
+                MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC,
+                Some("mode=0755"),
+            )
+            .map_err(|e| io::Error::other(format!("mask {}: {e}", dst.display())))?;
+            masked_dirs.push(dst);
+        } else {
+            mount(
+                Some(Path::new("/dev/null")),
+                &dst,
+                Some(""),
+                MsFlags::MS_BIND,
+                Some(""),
+            )
+            .map_err(|e| io::Error::other(format!("mask {}: {e}", dst.display())))?;
+        }
+    }
+    // Re-open the policy's own grants beneath hidden roots. Failures are LOUD:
+    // the policy promised these paths, and a mask must not silently eat one.
+    for (src, ro) in policy
+        .extra_rw_paths
+        .iter()
+        .map(|p| (p, false))
+        .chain(policy.extra_ro_paths.iter().map(|p| (p, true)))
+    {
+        if !policy
+            .hide_paths
+            .iter()
+            .any(|hp| src.starts_with(hp) && src != hp)
+        {
+            continue;
+        }
+        if !src.exists() {
+            continue;
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
+        if src.is_dir() {
+            fs::create_dir_all(&dst)?;
+        } else {
+            fs::File::create(&dst)?;
+        }
+        mount(
+            Some(src.as_path()),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REC,
+            Some(""),
+        )
+        .map_err(|e| io::Error::other(format!("re-bind through mask {}: {e}", dst.display())))?;
+        let floor = if ro { RO_FLOOR } else { RW_FLOOR };
+        mount(
+            Some(""),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | floor | carried_mount_flags(&dst),
+            Some(""),
+        )
+        .map_err(io_err)?;
+        floor_submounts(&dst, floor)?;
+    }
+    for dst in &masked_dirs {
+        // Plain (non-bind, non-recursive) remount: the tmpfs itself goes RO
+        // while a re-bound grant mounted inside keeps its own flags.
+        mount(
+            Some(""),
+            dst.as_path(),
+            Some(""),
+            MsFlags::MS_REMOUNT
+                | MsFlags::MS_RDONLY
+                | MsFlags::MS_NOSUID
+                | MsFlags::MS_NODEV
+                | MsFlags::MS_NOEXEC,
+            Some(""),
+        )
+        .map_err(|e| io::Error::other(format!("mask remount-ro {}: {e}", dst.display())))?;
+    }
     Ok(())
 }
 

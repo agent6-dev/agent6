@@ -47,6 +47,7 @@ from pydantic import (
 )
 
 from agent6.errors import OperatorError
+from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
 from agent6.types import RoleName
 
 
@@ -441,6 +442,41 @@ class SandboxConfig(BaseModel):
             if ".." in Path(p).parts:
                 raise ValueError(f"sandbox.extra_write_paths must not contain '..': {p!r}")
         return v
+
+    # Absolute paths hidden from jailed commands even when a broader grant
+    # covers them (a dir masks as an empty tmpfs, a file reads empty). agent6's
+    # own config/state/data/cache dirs are ALWAYS hidden -- secrets never enter
+    # the jail, even through an explicit extra_read_paths grant of $HOME --
+    # and this list adds to that set. Needs the mount namespace: on `hardened`
+    # a hide inside a granted region refuses to run (see docs/security.md).
+    hide_paths: tuple[str, ...] = ()
+
+    @field_validator("hide_paths")
+    @classmethod
+    def _check_hide_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for p in v:
+            if not p.startswith("/"):
+                raise ValueError(f"sandbox.hide_paths must be absolute: {p!r}")
+            if ".." in Path(p).parts:
+                raise ValueError(f"sandbox.hide_paths must not contain '..': {p!r}")
+        return v
+
+    @model_validator(mode="after")
+    def _extra_paths_never_target_private_dirs(self) -> SandboxConfig:
+        # An extra grant AT or INSIDE an agent6-private dir would mount secrets,
+        # transcripts, or installed skills into the jail by name; there is no
+        # legitimate case. A grant CONTAINING one (e.g. $HOME) is allowed on
+        # strict, where the private dirs are masked out of it.
+        private = (global_config_dir(), state_base(), data_dir(), cache_dir())
+        for p in (*self.extra_read_paths, *self.extra_write_paths):
+            for d in private:
+                if Path(p).is_relative_to(d):
+                    raise ValueError(
+                        f"sandbox extra path {p!r} is inside the agent6-private dir"
+                        f" {str(d)!r} (secrets/state); it never enters the jail."
+                        " Grant a different directory."
+                    )
+        return self
 
 
 class GitCommitCheckpointConfig(BaseModel):

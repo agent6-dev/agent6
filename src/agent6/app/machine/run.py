@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.confine import warn_sandbox_gaps
+from agent6.app.confine import check_hide_paths_support, warn_sandbox_gaps
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
@@ -226,7 +226,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"REFUSING: {exc}")
             return 2
         snapshot_keep = cfg.machine.snapshot_keep
-        refusal = machine_network_refusal(cfg, isolation, tool_states)
+        refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
+            cfg, isolation
+        )
         if refusal is not None:
             outcome = frontend.resolve_network_fix(
                 path, refusal, cfg, isolation, tool_states, cwd, spec.config
@@ -325,6 +327,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 state_log_root=root / "states",
                 notify_hook=surface_notify,
                 memory_limit_mb=cfg.sandbox.memory_limit_mb,
+                hide_paths=tuple(Path(p) for p in cfg.sandbox.hide_paths),
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

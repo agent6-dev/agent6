@@ -743,6 +743,33 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
         assert data_dir in policy.extra_rw_paths
 
 
+def test_tool_jails_carry_the_operator_hide_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A machine's tool jails are jailed commands like any other, so
+    [sandbox].hide_paths reaches them (agent6's own private dirs are unioned
+    in by the launcher and need no wiring)."""
+    from agent6.machine import engine
+    from agent6.machine.engine import LiveWorld
+    from agent6.types import CommandResult, JailPolicy
+
+    captured: dict[str, JailPolicy] = {}
+
+    def fake_run_in_jail(policy: JailPolicy) -> CommandResult:
+        captured["policy"] = policy
+        return CommandResult(argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+    hidden = tmp_path / "cred.txt"
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path / "i"),
+        hide_paths=(hidden,),
+    )
+    world.run_tool(("python3", "x.py"), 5.0)
+    assert captured["policy"].hide_paths == (hidden,)
+
+
 def test_live_world_run_tool_maps_rc124_to_timed_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

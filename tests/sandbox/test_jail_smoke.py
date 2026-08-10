@@ -855,3 +855,86 @@ def test_ordinary_chmod_still_works(
     )
     assert res.returncode == 0
     assert res.stdout.strip() == "640"
+
+
+def test_jail_hidden_paths_mask_secrets_under_a_broad_grant(
+    jail_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The agent6-private dirs never enter the jail, even through an explicit
+    extra_read_paths grant of the home dir that CONTAINS them -- the launcher
+    masks them last, after every bind. A policy grant BENEATH a hidden root
+    (the machine data contract) is re-bound through the mask and stays
+    writable. Everything else under the grant stays readable."""
+    home = tmp_path / "fakehome"
+    cfg_dir = home / ".config" / "agent6"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "secrets.toml").write_text("key = 'sk-SECRET'\n", encoding="utf-8")
+    (home / "notes.txt").write_text("plain\n", encoding="utf-8")
+    state = home / ".local" / "state" / "agent6"
+    data = state / "repo" / "machines" / "m1" / "data"
+    data.mkdir(parents=True)
+    (data / "journal.txt").write_text("j1\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(state))
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    script = (
+        f"cat {home}/notes.txt; "
+        f"cat {cfg_dir}/secrets.toml 2>&1; "
+        f"cat {data}/journal.txt && echo j2 > {data}/journal.txt && echo WROTE"
+    )
+    res = run_in_jail(
+        JailPolicy(
+            cwd=ws,
+            argv=("/bin/sh", "-c", script),
+            extra_ro_paths=(home,),
+            extra_rw_paths=(data,),
+            timeout_s=10.0,
+        )
+    )
+    assert "plain" in res.stdout  # the grant itself works
+    assert "SECRET" not in res.stdout  # the hidden dir masked out of it
+    assert "j1" in res.stdout and "WROTE" in res.stdout  # the hole re-bound RW
+    assert (data / "journal.txt").read_text(encoding="utf-8") == "j2\n"
+
+
+def test_jail_hidden_paths_cover_the_workspace_alias(
+    jail_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """cwd = $HOME puts the private dirs inside the workspace bind; the mask
+    covers the /workspace alias too, so there is no second door."""
+    cfg_dir = tmp_path / ".config" / "agent6"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "secrets.toml").write_text("key = 'sk-SECRET'\n", encoding="utf-8")
+    (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "cat readme.txt; cat .config/agent6/secrets.toml 2>&1"),
+            timeout_s=10.0,
+        )
+    )
+    assert "hello" in res.stdout
+    assert "SECRET" not in res.stdout
+
+
+def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) -> None:
+    """A [sandbox].hide_paths FILE entry inside the workspace reads empty in
+    the jail while its siblings stay readable, and the host copy is intact."""
+    private = tmp_path / "cred.txt"
+    private.write_text("token\n", encoding="utf-8")
+    (tmp_path / "ok.txt").write_text("fine\n", encoding="utf-8")
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "cat ok.txt; cat cred.txt; echo rc=$?"),
+            hide_paths=(private,),
+            timeout_s=10.0,
+        )
+    )
+    assert "fine" in res.stdout
+    assert "token" not in res.stdout
+    assert private.read_text(encoding="utf-8") == "token\n"
