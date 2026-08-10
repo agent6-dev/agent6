@@ -237,12 +237,33 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     return GrepResult(hits=tuple(hits), truncated=False)
 
 
+def _fold(name: str) -> str:
+    """A path component as the FILESYSTEM would match it.
+
+    macOS and Windows match names case-insensitively, and macOS runs agent6
+    unsandboxed, so these in-process refusals are the only thing protecting
+    `.git` there: comparing exactly, `.GIT/config` opened the real
+    `.git/config` and the write that arms a `clean` filter was allowed
+    (reproduced on a casefolded ext4). Folded on every platform rather than
+    per-filesystem -- one rule, and the cost where case does matter is
+    refusing a write to a distinct `.GIT`, which nobody has.
+    """
+    return name.lower()
+
+
+def _within(target: Path, protected: Path) -> bool:
+    """*target* IS *protected* or lies under it, matched the way the
+    filesystem matches names. Whole components only, so `.github` never
+    matches `.git`."""
+    prefix = [_fold(p) for p in protected.parts]
+    return [_fold(p) for p in target.parts][: len(prefix)] == prefix
+
+
 def _under_project_dir(path: Path, dir_name: str) -> bool:
     """The one protected-directory test, shared by the raw and the resolved
     checks so they can never disagree: the workspace-relative *path* IS the
-    top-level *dir_name*, or lies under it. Exact match only (``.github`` never
-    matches ``.git``)."""
-    return path.parts[:1] == (dir_name,)
+    top-level *dir_name*, or lies under it."""
+    return _within(path, Path(dir_name))
 
 
 def _refuse_protected_write(
@@ -289,7 +310,7 @@ def _refuse_env_write(candidate: str, resolved: SafePath) -> None:
     launder the write."""
     ancestors = [resolved.abs_path, *resolved.abs_path.parents]
     for anc in ancestors:
-        if anc.name == "site-packages":
+        if _fold(anc.name) == "site-packages":
             raise ToolError(
                 f"Refusing to write into an installed-package tree (site-packages): "
                 f"{candidate!r}. Installed packages are environment, not source; "
@@ -329,7 +350,7 @@ def refuse_protected_writes(
     if resolved is not None and extra_protect_paths:
         target = resolved.abs_path
         for prot in extra_protect_paths:
-            if target == prot or prot in target.parents:
+            if _within(target, prot):
                 raise ToolError(
                     f"Refusing to write to a protected path (machine bundle): {path!r} "
                     f"resolves under {prot}"
