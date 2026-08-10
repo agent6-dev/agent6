@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from agent6.directive import DirectiveError, Segment
+from agent6.git_ops import GitError
 from agent6.workflows import _parallel_dispatch as pd
 from agent6.workflows._parallel_dispatch import (
     LaneJoin,
@@ -20,7 +21,7 @@ from agent6.workflows._parallel_dispatch import (
     segment_stamp,
     summary_text,
 )
-from agent6.workflows.subrun import LaneResult, LaneSpec, SubrunError
+from agent6.workflows.subrun import LaneResult, LaneSpec
 
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> LaneResult:
@@ -38,30 +39,36 @@ def test_segment_lanes_expands_counts_and_models() -> None:
 
 
 def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed lane, a conflicted merge, and a SubrunError each reduce to a
+    """A failed lane, a conflicted merge, and a GitError each reduce to a
     non-"joined" LaneJoin instead of aborting the run."""
-    assert join_lane_result(Path("/r"), _res(ok=False, error="died")) == LaneJoin(
+    kw: dict[str, Any] = {
+        "ref": "refs/agent6/run",
+        "fallback_parent": None,
+        "identity": None,
+        "also_branch": None,
+    }
+    assert join_lane_result(Path("/r"), _res(ok=False, error="died"), **kw) == LaneJoin(
         "lane-1", "agent6/lane-1", "failed", "", "died"
     )
 
-    def _conflict(_root: Path, _branch: str) -> str | None:
+    def _conflict(*_a: Any, **_k: Any) -> str | None:
         return None
 
-    monkeypatch.setattr(pd, "join_branch", _conflict)
-    assert join_lane_result(Path("/r"), _res(ok=True)).status == "conflict"
+    monkeypatch.setattr(pd, "chain_merge", _conflict)
+    assert join_lane_result(Path("/r"), _res(ok=True), **kw).status == "conflict"
 
-    def _boom(_root: Path, _branch: str) -> str | None:
-        raise SubrunError("fetch failed")
+    def _boom(*_a: Any, **_k: Any) -> str | None:
+        raise GitError("fetch failed")
 
-    monkeypatch.setattr(pd, "join_branch", _boom)
-    j = join_lane_result(Path("/r"), _res(ok=True))
+    monkeypatch.setattr(pd, "chain_merge", _boom)
+    j = join_lane_result(Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.detail) == ("failed", "fetch failed")
 
-    def _clean(_root: Path, _branch: str) -> str | None:
+    def _clean(*_a: Any, **_k: Any) -> str | None:
         return "a" * 40
 
-    monkeypatch.setattr(pd, "join_branch", _clean)
-    j = join_lane_result(Path("/r"), _res(ok=True))
+    monkeypatch.setattr(pd, "chain_merge", _clean)
+    j = join_lane_result(Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.sha) == ("joined", "a" * 40)
 
 

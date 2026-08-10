@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.git_ops import branch_exists, commit_all, create_branch, status
-from agent6.workflows.subrun import SubrunError, clone_workspace, import_run, join_branch
+from agent6.git_ops import branch_exists, commit_all, create_branch
+from agent6.workflows.subrun import SubrunError, clone_workspace, import_run
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -121,42 +121,3 @@ def test_import_run_refuses_existing_run_dir(tmp_path: Path) -> None:
     # Refused before fetching or moving anything.
     assert not branch_exists(origin, branch)
     assert lane_session_dir.exists()
-
-
-def test_join_branch_merges_cleanly(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    _init_repo(workspace)
-    branch = "agent6/lane-1"
-    create_branch(workspace, branch)
-    (workspace / "feature.txt").write_text("new stuff\n", encoding="utf-8")
-    commit_all(workspace, "lane change")
-    _git(workspace, "checkout", "main")
-
-    sha = join_branch(workspace, branch)
-
-    assert sha
-    assert (workspace / "feature.txt").read_text(encoding="utf-8") == "new stuff\n"
-    assert status(workspace).is_clean
-
-
-def test_join_branch_conflict_returns_none_and_leaves_workspace_clean(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    _init_repo(workspace)
-    branch = "agent6/lane-1"
-    create_branch(workspace, branch)
-    (workspace / "README.md").write_text("branch version\n", encoding="utf-8")
-    commit_all(workspace, "branch change")
-    _git(workspace, "checkout", "main")
-    (workspace / "README.md").write_text("main version\n", encoding="utf-8")
-    commit_all(workspace, "main change")
-
-    result = join_branch(workspace, branch)
-
-    assert result is None
-    porcelain = subprocess.run(
-        ["git", "-C", str(workspace), "status", "--porcelain"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert porcelain == ""

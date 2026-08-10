@@ -33,11 +33,13 @@ from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    commit_all,
+    chain_commit,
+    chain_dirty,
+    chain_dirty_paths,
+    chain_tip,
     commit_diff,
     conventional_commit_subject,
     diff_since,
-    dirty_paths,
     worktree_name_status,
 )
 from agent6.git_ops import status as git_status
@@ -537,6 +539,22 @@ class Workflow:
     # Rendered [git.commit].trailer line (render_commit_trailer), appended once
     # to every commit this loop makes. None = no trailer configured.
     commit_trailer: str | None = None
+    # The run's detached commit chain. Per-step commits land on chain_ref
+    # (`refs/agent6/<session>`, the gc anchor) via a temp index: HEAD, the
+    # operator's index, and the checkout are never touched, so operator or
+    # model git activity mid-run cannot collide with the run's own record.
+    # None (plan/ask, unit-test embedders) = the loop never commits.
+    chain_ref: str | None = None
+    # Visible `refs/heads/<name>` advanced to the same tip ([git].branch_per_run);
+    # None = hidden ref only.
+    chain_branch: str | None = None
+    # Parent for the chain's first commit when chain_ref does not exist yet:
+    # HEAD's sha at run start (None in an unborn repo).
+    chain_fallback_parent: str | None = None
+    # [git].commit_per_step: False disables every agent commit. The chain never
+    # advances; resume-from-git, sessions diff/merge, and /parallel dispatch
+    # from a changed tree degrade, and the work stays only in the worktree.
+    commit_per_step: bool = True
     # Hard cap on assistant turns. Each turn = one provider.call. With the
     # default tool-use-loop pattern, agents take 30-100 turns on a non-
     # trivial task; 200 is well above that without being unbounded.
@@ -1394,10 +1412,9 @@ class Workflow:
         """
         if name != "run_command" and not name.startswith(MCP_TOOL_PREFIX):
             return False
-        try:
-            return bool(dirty_paths(self.root, limit=1))
-        except GitError:
-            return False  # no repo (ask mode) or git unreadable: nothing to ground on
+        # Chain-relative (see _worktree_dirty): against a fixed HEAD every
+        # already-committed step would count as "left dirty" forever.
+        return self._worktree_dirty()
 
     def _note_tool_effects(
         self, state: _LoopState, turn: _TurnState, name: str, result: ToolResult
@@ -1574,14 +1591,18 @@ class Workflow:
         gateless = not self.config.workflow.verify_command
         gateless_changed = gateless and (turn.edited or self._worktree_dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
-        if self.mode != "run" or not (verified_commit or gateless_changed):
+        if (
+            self.mode != "run"
+            or not self.commit_per_step
+            or not (verified_commit or gateless_changed)
+        ):
             return None
         commit_subject = self._checkpoint_subject(
             turn, fallback="checkpoint" if gateless else "verify passed"
         )
         sha = ""
         try:
-            sha = commit_all(self.root, commit_subject, identity=self._commit_identity())
+            sha = self._chain_commit(commit_subject)
             self._log(f"  auto-commit: {sha[:12]}")
             self._emit("loop.auto_commit", iteration=turn.iteration, sha=sha)
             turn.committed = bool(sha)
@@ -2937,11 +2958,17 @@ class Workflow:
             return None
 
     def _worktree_dirty(self) -> bool:
-        """True if the repo has uncommitted changes, e.g. an edit a worker made
-        via run_command that the verify-pass auto-commit hasn't captured yet. The
-        verify-settled detector treats that as in-progress work. Best-effort:
-        any git error reports clean, so a hiccup can't wedge the detector."""
+        """True if the worktree holds content not yet recorded on the run's
+        chain, e.g. an edit a worker made via run_command that the verify-pass
+        auto-commit hasn't captured yet. The verify-settled detector treats
+        that as in-progress work. (Plain `git status` would be wrong here: the
+        operator's HEAD never moves during a run, so everything the agent has
+        long since committed to the chain still reads as "dirty" against it.)
+        Best-effort: any git error reports clean, so a hiccup can't wedge the
+        detector; no chain (unit-test embedders) falls back to status."""
         try:
+            if self.chain_ref is not None:
+                return chain_dirty(self.root, self.chain_ref, self.chain_fallback_parent)
             return not git_status(self.root).is_clean
         except (GitError, OSError):
             return False
@@ -2954,10 +2981,12 @@ class Workflow:
         The work is still in the checkout, but nothing reads it there --
         ``sessions diff`` and ``sessions merge`` both read git history -- so the state
         is stated rather than left silent."""
-        if self.mode != "run":
+        if self.mode != "run" or self.chain_ref is None:
             return ""
         try:
-            paths = dirty_paths(self.root, limit=_DIRTY_NOTE_CAP)
+            paths = chain_dirty_paths(
+                self.root, self.chain_ref, self.chain_fallback_parent, _DIRTY_NOTE_CAP
+            )
         except (GitError, OSError):
             return ""
         if not paths:
@@ -2975,12 +3004,10 @@ class Workflow:
         verify, never re-verified, is left only in the working tree and is
         silently lost when the run ends (score.sh, resume, and the diff viewer
         all read git history). Capturing it here closes that gap."""
-        if self.mode != "run" or not self._worktree_dirty():
+        if self.mode != "run" or not self.commit_per_step or not self._worktree_dirty():
             return
         try:
-            sha = commit_all(
-                self.root, f"checkpoint (iter {iteration})", identity=self._commit_identity()
-            )
+            sha = self._chain_commit(f"checkpoint (iter {iteration})")
             if sha:
                 self._log(f"  final checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
@@ -2993,14 +3020,7 @@ class Workflow:
                     patch=commit_diff(self.root, sha, max_bytes=8000),
                 )
         except (GitError, OSError) as exc:
-            msg = str(exc).lower()
-            benign = (
-                "nothing to commit" in msg
-                or "no changes added" in msg
-                or "working tree clean" in msg
-            )
-            if not benign:
-                self._log(f"  final checkpoint commit failed: {exc}")
+            self._log(f"  final checkpoint commit failed: {exc}")
 
     def _pass_pending_root_tasks(self) -> None:
         """On successful completion, mark still-pending root task(s) as passed.
@@ -3271,10 +3291,13 @@ class Workflow:
                 )
 
     def _checkpoint_head_sha(self) -> str:
-        """Workspace HEAD for the per-turn checkpoint; "" if it can't be read.
-
-        A checkpoint is best-effort recovery state -- a missing sha must not
-        crash the snapshot. fork degrades gracefully when it is empty."""
+        """Tip of the run's commit line for the per-turn checkpoint; "" if it
+        can't be read. fork cuts its chain here; resume compares it to the
+        live chain to warn about divergence. Without a chain (unit-test
+        embedders) it is HEAD, and a checkpoint is best-effort recovery
+        state -- a missing sha must not crash the snapshot."""
+        if self.chain_ref is not None:
+            return self._chain_tip_sha()
         try:
             return git_status(self.root).head_sha
         except (GitError, OSError):
@@ -4332,8 +4355,8 @@ class Workflow:
             )
             return
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
-        # Lanes clone committed HEAD only: auto-commit a dirty tree first, and
-        # refuse (rather than dispatch stale work) if it will not come clean.
+        # Lanes cut from the chain tip only: chain-commit a changed tree first,
+        # and refuse (rather than dispatch stale work) if it will not come clean.
         if not self._ensure_clean_for_dispatch(iteration):
             self._inject_parallel_feedback(
                 conversation,
@@ -4374,7 +4397,9 @@ class Workflow:
             self._emit_graph_snapshot()
 
         try:
-            results = self.lane_spawner(lanes, group)  # blocks; no provider calls meanwhile
+            # Lanes cut from the run's chain tip, which _ensure_clean_for_dispatch
+            # just made current; blocks, no provider calls meanwhile.
+            results = self.lane_spawner(lanes, group, at=self._chain_tip_sha() or None)
             if len(results) != len(lanes):
                 raise SubrunError(
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
@@ -4399,7 +4424,17 @@ class Workflow:
         # Join every lane sequentially in dispatch order (a merge mutates the one
         # workspace, so joins can never run concurrently), then stamp one DAG node
         # per segment from its lanes' joins.
-        joined = [join_lane_result(self.root, res) for res in results]
+        joined = [
+            join_lane_result(
+                self.root,
+                res,
+                ref=self.chain_ref or "",
+                fallback_parent=self.chain_fallback_parent,
+                identity=self._commit_identity(),
+                also_branch=self.chain_branch,
+            )
+            for res in results
+        ]
         cursor = 0
         for nid, seg_lanes in zip(node_ids, per_segment, strict=True):
             width = len(seg_lanes)
@@ -4418,17 +4453,16 @@ class Workflow:
         self._inject_parallel_summary(conversation, group, joined)
 
     def _ensure_clean_for_dispatch(self, iteration: int) -> bool:
-        """True when the worktree is clean enough to cut lanes from HEAD. A dirty
-        tree is auto-committed via the checkpoint machinery first; returns whether
-        it came clean."""
+        """True when the chain tip carries the worktree's content, so lanes cut
+        from it see current work. Changed content is chain-committed first;
+        returns whether it came clean (with commit_per_step off, a changed
+        tree cannot be captured and dispatch is refused)."""
         if not self._worktree_dirty():
             return True
+        if not self.commit_per_step:
+            return False
         try:
-            sha = commit_all(
-                self.root,
-                f"checkpoint before /parallel dispatch (iter {iteration})",
-                identity=self._commit_identity(),
-            )
+            sha = self._chain_commit(f"checkpoint before /parallel dispatch (iter {iteration})")
             if sha:
                 self._log(f"  pre-dispatch checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
@@ -4518,6 +4552,33 @@ class Workflow:
         """The provenance trailer for this loop's commits; author identity
         stays git's own resolution (the app verified it at startup)."""
         return CommitIdentity(trailer=self.commit_trailer) if self.commit_trailer else None
+
+    def _chain_commit(self, subject: str) -> str:
+        """One commit of the worktree onto the run's detached chain; "" when
+        nothing changed since the tip or no chain is configured."""
+        if self.chain_ref is None:
+            return ""
+        return (
+            chain_commit(
+                self.root,
+                subject,
+                ref=self.chain_ref,
+                fallback_parent=self.chain_fallback_parent,
+                identity=self._commit_identity(),
+                also_branch=self.chain_branch,
+            )
+            or ""
+        )
+
+    def _chain_tip_sha(self) -> str:
+        """Tip of the run's commit line; "" when the chain has no commits and
+        no fallback (unborn repo) or no chain is configured."""
+        if self.chain_ref is None:
+            return ""
+        try:
+            return chain_tip(self.root, self.chain_ref) or self.chain_fallback_parent or ""
+        except (GitError, OSError):
+            return ""
 
     def _checkpoint_subject(self, turn: _TurnState, *, fallback: str) -> str:
         """The per-step commit message, per ``[git.commit.checkpoint].message``."""

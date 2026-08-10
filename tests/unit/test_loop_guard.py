@@ -67,6 +67,10 @@ def _init_repo(repo: Path) -> None:
 def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflow:
     return Workflow(
         root=repo,
+        chain_ref="refs/agent6/guard",
+        chain_fallback_parent=_sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.strip(),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -260,6 +264,10 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
     worktree and only a final checkpoint can get it into git history."""
     return Workflow(
         root=repo,
+        chain_ref="refs/agent6/guard",
+        chain_fallback_parent=_sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.strip(),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -287,8 +295,13 @@ def _dirtying_dispatcher(repo: Path) -> MagicMock:
 
 
 def _git_log(repo: Path) -> str:
+    """The run's commit line: the chain ref (checkpoints never touch HEAD)."""
     return _sp.run(
-        ["git", "log", "--oneline"], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "log", "--oneline", "refs/agent6/guard"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout
 
 

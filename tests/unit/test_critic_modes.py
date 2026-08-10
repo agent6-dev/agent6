@@ -62,7 +62,7 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
     ]
     # Each verify pass commits real progress (the normal success path), so the
     # verify-settled detector stays dormant and all 5 iterations run.
-    with patch("agent6.workflows.loop.commit_all", return_value="sha"):
+    with patch("agent6.workflows.loop.chain_commit", return_value="sha"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=Conversation.from_wire(messages),

@@ -17,8 +17,9 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.directive import Segment, parse_spec
+from agent6.git_ops import CommitIdentity, GitError, chain_merge
 from agent6.graph.models import NodeStatus
-from agent6.workflows.subrun import LaneResult, LaneTask, SubrunError, join_branch
+from agent6.workflows.subrun import LaneResult, LaneTask
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,17 +57,35 @@ def segment_lanes(seg: Segment, pins: Sequence[str] = ()) -> list[LaneTask]:
     return [LaneTask(task=seg.task, model=model, pins=lane_pins) for model in parse_spec(seg.spec)]
 
 
-def join_lane_result(root: Path, res: LaneResult) -> LaneJoin:
-    """Join one returned lane's branch into the coordinator's branch. A failed
-    lane (nothing imported) or a conflicted merge yields a non-"joined" status;
-    a clean merge yields "joined" with the sha. Never raises; DAG stamping is
-    the segment's (see `segment_stamp`)."""
+def join_lane_result(
+    root: Path,
+    res: LaneResult,
+    *,
+    ref: str,
+    fallback_parent: str | None,
+    identity: CommitIdentity | None,
+    also_branch: str | None,
+) -> LaneJoin:
+    """Join one returned lane's branch onto the coordinator's chain at *ref*
+    (`chain_merge`: HEAD and the operator's checkout stay untouched; the
+    worktree gains the lane's files). A failed lane (nothing imported) or a
+    conflicted merge yields a non-"joined" status; a clean merge yields
+    "joined" with the sha. Never raises; DAG stamping is the segment's (see
+    `segment_stamp`)."""
     rid = res.spec.session_id
     if not res.ok:
         return LaneJoin(rid, res.branch, "failed", "", res.error)
     try:
-        sha = join_branch(root, res.branch)
-    except SubrunError as exc:
+        sha = chain_merge(
+            root,
+            res.branch,
+            f"merge {res.branch}",
+            ref=ref,
+            fallback_parent=fallback_parent,
+            identity=identity,
+            also_branch=also_branch,
+        )
+    except (GitError, OSError) as exc:
         return LaneJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
         return LaneJoin(rid, res.branch, "conflict", "", "merge conflict")

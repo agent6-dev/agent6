@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch, merge_branch
+from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch
 from agent6.sessions.layout import bucket_dir
 
 
@@ -77,7 +77,9 @@ class GroupLaneSpawner(Protocol):
     that lane's `LaneResult.ok` is False and the coordinator's repo is left
     untouched for it."""
 
-    def __call__(self, lanes: list[LaneTask], group: str) -> list[LaneResult]: ...
+    def __call__(
+        self, lanes: list[LaneTask], group: str, *, at: str | None = None
+    ) -> list[LaneResult]: ...
 
 
 def clone_workspace(origin: Path, dest: Path) -> None:
@@ -119,16 +121,3 @@ def import_run(
     dest_session_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(lane_session_dir), str(dest_session_dir))
     return dest_session_dir
-
-
-def join_branch(workspace: Path, branch: str) -> str | None:
-    """Merge *branch* into the current branch of *workspace*.
-
-    Returns the merged sha, or None on conflict: the merge is aborted
-    (`git merge --abort`), leaving the workspace clean.
-    """
-    try:
-        result = merge_branch(workspace, branch)
-    except GitError as exc:
-        raise SubrunError(f"merge {branch!r} into {workspace} failed: {exc}") from exc
-    return None if result.conflicted else result.merged_sha

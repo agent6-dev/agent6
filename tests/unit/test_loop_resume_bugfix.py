@@ -47,6 +47,16 @@ def _wf(**kw: Any) -> Workflow:
         "logger": _silent,
     }
     defaults.update(kw)
+    if "chain_fallback_parent" not in kw and "root" in kw:
+        # Mirror run.py's wiring: the chain's first parent is HEAD at start.
+        head = sp.run(
+            ["git", "-C", str(kw["root"]), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        defaults.setdefault("chain_ref", "refs/agent6/test")
+        defaults.setdefault("chain_fallback_parent", head or None)
     return Workflow(**defaults)
 
 
@@ -718,13 +728,29 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     head_after = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    assert head_after != head_before, "dirty worktree must be committed on exit"
-    status = sp.run(
-        ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True
+    assert head_after == head_before, "the operator's HEAD never moves"
+    chain = sp.run(
+        ["git", "rev-parse", "refs/agent6/test"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
-    assert status == "", "worktree must be clean after the final checkpoint"
+    assert chain != head_before, "the chain must capture the edit on exit"
+    shown = sp.run(
+        ["git", "show", "refs/agent6/test:edit.txt"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert shown == "a real edit\n"
     subject = sp.run(
-        ["git", "log", "-1", "--pretty=%s"], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "log", "-1", "--pretty=%s", "refs/agent6/test"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert "checkpoint" in subject
     # The commit must be COUNTABLE by the folds: a diff.updated is emitted, not

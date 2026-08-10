@@ -175,7 +175,9 @@ class _FakeGroupSpawner:
     def tasks(self, call: int = 0) -> list[str]:
         return [lane.task for lane in self.calls[call][0]]
 
-    def __call__(self, lanes: list[LaneTask], group: str) -> list[LaneResult]:
+    def __call__(
+        self, lanes: list[LaneTask], group: str, *, at: str | None = None
+    ) -> list[LaneResult]:
         self.calls.append((list(lanes), group))
         results: list[LaneResult] = []
         for i, lane in enumerate(lanes, start=1):
@@ -228,6 +230,8 @@ def _build_wf(
         disp.dispatch.return_value = RawResult({"content": "hi\n"})
     return Workflow(
         root=repo,
+        chain_ref="refs/agent6/coord",
+        chain_fallback_parent=_head(repo),
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
@@ -340,10 +344,12 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     # The spawner saw the parsed sibling group under a p1 group id.
     assert spawner.tasks() == ["task one", "task two"]
     assert spawner.calls[0][1] == "p1"
-    # Both lane branches merged into the coordinator's HEAD, in order.
-    log = _git(repo, "log", "--oneline")
+    # Both lane branches merged onto the coordinator's chain, in order; the
+    # operator's HEAD never moves.
+    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
     assert "agent6/run-abc-p1-l1" in log
     assert "agent6/run-abc-p1-l2" in log
+    assert "l1" not in _git(repo, "log", "--oneline")
     assert log.index("l1") > log.index("l2")  # l1 merged first => older => lower in log
     # Two steering nodes were added (besides the seeded root) and both passed
     # with a recorded commit sha.
@@ -474,8 +480,10 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
 
     assert provider.call.call_count == 2  # run continued past the conflict
     assert result.reason == "max_iterations"
-    # The workspace is left clean (merge aborted).
-    assert _git(repo, "status", "--porcelain") == ""
+    # The clean lane's file reached the worktree (chain sync); the conflicted
+    # merge touched nothing.
+    assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
+    assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
     joined = events.of("loop.parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "conflict"]
     failed = events.of("loop.parallel.failed")
@@ -534,7 +542,9 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
 
     calls: list[str] = []
 
-    def exploding_spawner(lanes: list[LaneTask], group: str) -> list[LaneResult]:
+    def exploding_spawner(
+        lanes: list[LaneTask], group: str, *, at: str | None = None
+    ) -> list[LaneResult]:
         calls.append(group)
         raise OSError("disk full while cloning lane 2")
 
@@ -585,8 +595,8 @@ def test_bare_parallel_directive_dispatches_nothing(tmp_path: Path) -> None:
 
 
 def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
-    """A dirty worktree at the boundary is auto-committed (lanes clone committed
-    HEAD only), then dispatch proceeds."""
+    """A changed worktree at the boundary is chain-committed (lanes cut from
+    the chain tip only), then dispatch proceeds."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-dirty"
@@ -619,9 +629,10 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     wf.run("start")
 
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
-    # The wip edit was captured by the pre-dispatch checkpoint.
-    assert _git(repo, "status", "--porcelain") == ""
-    assert "checkpoint before /parallel dispatch" in _git(repo, "log", "--oneline")
+    # The wip edit was captured by the pre-dispatch checkpoint -- on the chain.
+    assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
+    chain_log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    assert "checkpoint before /parallel dispatch" in chain_log
     assert events.of("loop.auto_commit")  # a checkpoint commit was emitted
 
 
@@ -632,11 +643,11 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     (never clone stale work) and the run continues."""
     import agent6.workflows.loop as loop_mod
 
-    # commit_all becomes a no-op, so the tree stays dirty after the attempt.
-    def _noop_commit(*_a: object, **_k: object) -> str:
-        return ""
+    # chain_commit becomes a no-op, so the tree stays dirty after the attempt.
+    def _noop_commit(*_a: object, **_k: object) -> None:
+        return None
 
-    monkeypatch.setattr(loop_mod, "commit_all", _noop_commit)
+    monkeypatch.setattr(loop_mod, "chain_commit", _noop_commit)
 
     repo = tmp_path / "repo"
     _init_repo(repo)
