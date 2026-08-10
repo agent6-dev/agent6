@@ -17,6 +17,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent6.app.fork import undo_fork
+from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.directive import DirectiveError, Segment, parse_compact, parse_directive, parse_spec
@@ -239,6 +241,24 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     write_steer_answer(session_dir, text)  # ready before the run reads it
     request_steer(session_dir)
     return True, "steer requested"
+
+
+def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str]:
+    """`/undo` on a finished run: fork it at the state before its last operator
+    message, unstarted. Returns ({new_session_id, undone_text}, "") or
+    (None, why). A live run is refused: stop it first, then undo."""
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return None, f"no session {session_id!r}"
+    if session_is_live(session_dir):
+        return None, "the session is still running; stop it first, then /undo"
+    said: list[str] = []
+    reporter = Reporter(out=said.append, err=said.append)
+    result = undo_fork(None, session_dir.name, cwd=cwd, reporter=reporter)
+    if result is None:
+        return None, (said[-1].strip() if said else "undo failed")
+    child, text = result
+    return {"new_session_id": child, "undone_text": text}, ""
 
 
 def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:

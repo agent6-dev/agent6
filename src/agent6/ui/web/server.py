@@ -415,6 +415,11 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(self.cwd, session_id, mb.strategy)
+        elif verb == "undo":
+            self._read_body()  # no parameters; drain the (empty) body
+            payload, err = actions.undo_session(self.cwd, session_id)
+            self._ok_or_err(payload is not None, payload or {}, err)
+            return
         elif verb == "resume":
             rb = ResumeBody.model_validate(self._read_body())
             ok, msg = actions.resume_run(self.cwd, session_id, rb.text)

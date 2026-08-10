@@ -25,6 +25,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/compact",
         "/parallel",
         "/restate",
+        "/undo",
     ]
     assert [c for c, _ in steer_suggestion_rows("/p", live=True)] == ["/pin", "/parallel"]
     assert steer_suggestion_rows("fix it", live=True) == []
@@ -36,6 +37,7 @@ def test_compact_is_live_only() -> None:
         "/pin",
         "/parallel",
         "/restate",
+        "/undo",
     ]
     assert complete_steer("/c", live=False) is None  # Tab keeps its focus-move meaning
     assert complete_steer("/c", live=True) == "/compact "

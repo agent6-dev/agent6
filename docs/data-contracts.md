@@ -91,7 +91,7 @@ How a session ends and how it resumes: the SessionResult the workflow returns, t
 
 - **Written by:** workflows/{loop}
 - **Read by:** app/{fork, resume, run}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (11 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
 
 ## ToolResult family
 

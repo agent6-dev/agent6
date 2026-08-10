@@ -196,6 +196,8 @@ depends_on = [
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
 path = "agent6.ui.web"
 depends_on = [
+  # /undo forks in-process (app.fork), the same direction ui.acp already uses.
+  "agent6.app",
   "agent6.sessions.layout",
   "agent6",
   "agent6.directive",

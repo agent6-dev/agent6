@@ -536,6 +536,9 @@ function growGrip(ta) {
   return g;
 }
 
+// The text /undo takes back, consumed by the next session view's composer.
+let pendingComposerFill = '';
+
 // Fill a composer through an edit the browser records, so the native undo
 // stack (Ctrl-Z / Cmd-Z) survives programmatic fills like history recall and
 // slash completion. execCommand is deprecated but remains the only widely
@@ -562,6 +565,7 @@ const STEER_COMMANDS = [
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
   ['/parallel', 'fan out lanes: /parallel [N|models] <task> (repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
+  ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
 ];
 // Slash-command completion for a session composer: while the FIRST word is
 // being typed (`/…`, no whitespace yet), the matching directives with their
@@ -724,6 +728,11 @@ function makeComposer(id) {
     } catch (e) { toast(e.message, true); }
     busy = false; apply();
   };
+  if (pendingComposerFill) {
+    const fill = pendingComposerFill;
+    pendingComposerFill = '';
+    setTimeout(() => fillAsEdit(ta, fill), 0); // after the view attaches
+  }
   ta.onkeydown = (e) => {
     if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
@@ -748,6 +757,18 @@ function makeComposer(id) {
       // Local and free: rendered from the journal, nothing reaches the model.
       getJSON('/api/session/' + encodeURIComponent(id) + '/restate')
         .then(d => { openRestate(d.text || ''); ta.value = ''; })
+        .catch(err => toast(err.message, true));
+      return;
+    }
+    if (text === '/undo') {
+      // Fork at the state before the last message; follow the fork with the
+      // undone text back in the composer to edit and resend.
+      postJSON('/api/session/' + encodeURIComponent(id) + '/undo', {})
+        .then(d => {
+          toast('undone: forked to ' + d.new_session_id);
+          pendingComposerFill = d.undone_text || '';
+          location.hash = '#session/' + encodeURIComponent(d.new_session_id);
+        })
         .catch(err => toast(err.message, true));
       return;
     }
