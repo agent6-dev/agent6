@@ -310,7 +310,7 @@ def print_interrupt_end(
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 
 
-def finalize_auto_merge(  # noqa: PLR0912
+def finalize_auto_merge(
     cwd: Path,
     *,
     layout: SessionLayout,
@@ -319,12 +319,12 @@ def finalize_auto_merge(  # noqa: PLR0912
     budget: BudgetTracker | None = None,
     events: EventSink | None = None,
 ) -> None:
-    """After a successful run, merge the run branch into its base using
+    """After a successful run, land the run branch on its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
-    run + resume share it. Ends on the base branch (the pre-run branch) with a clean
-    tree. Non-fatal and best-effort: on conflict or error the run branch is left
-    intact and the message says how to merge by hand. No-op when branch_per_run was
-    off."""
+    run + resume share it. Ref plumbing only: the checkout is never switched and
+    the worktree (which carries the run's work) is no obstacle. Non-fatal and
+    best-effort: on conflict or error the run branch is left intact and the
+    message says how to merge by hand. No-op when branch_per_run was off."""
     try:
         manifest = read_manifest(layout.session_dir)
     except ManifestError:
@@ -332,17 +332,7 @@ def finalize_auto_merge(  # noqa: PLR0912
     run_branch = manifest.run_branch
     base_branch = manifest.base_branch
     if not run_branch or not base_branch:
-        return  # branch_per_run was off: the work already landed on the base branch
-    try:
-        st = git_status(cwd)
-    except GitError:
-        return
-    if not st.is_clean:
-        reporter.err(
-            f"[agent6] auto_merge skipped (worktree not clean); merge by hand:\n"
-            f"    git checkout {base_branch} && git merge {run_branch}"
-        )
-        return
+        return  # branch_per_run was off (auto_merge requires it)
     identity = CommitIdentity(
         name=cfg.git.commit.name,
         email=cfg.git.commit.email,
@@ -370,7 +360,6 @@ def finalize_auto_merge(  # noqa: PLR0912
         message=None,
         cfg=cfg,
         identity=identity,
-        original="",  # stay on the base branch, where the work now lives
         budget=budget,
         events=events,
         warn=lambda m: reporter.err(f"[agent6] {m}"),

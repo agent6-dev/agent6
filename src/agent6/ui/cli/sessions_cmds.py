@@ -444,7 +444,6 @@ class _MergePlan:
     strategy: str
     identity: CommitIdentity
     cfg: Config
-    original: str
 
 
 def _plan_merge(  # noqa: PLR0911
@@ -493,15 +492,8 @@ def _plan_merge(  # noqa: PLR0911
         return 2
     try:
         cfg = load_effective(cwd, None).config
-        st = git_status(cwd)
-    except (ConfigError, GitError) as exc:
+    except ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    if not st.is_clean:
-        print(
-            "REFUSING: working tree is not clean; commit or stash your changes first.",
-            file=sys.stderr,
-        )
         return 2
     # chain_tip resolves both shapes head_ref takes: a branch name and the
     # hidden refs/agent6/<id> chain ref.
@@ -537,17 +529,16 @@ def _plan_merge(  # noqa: PLR0911
         strategy=strategy or cfg.git.merge_strategy,
         identity=identity,
         cfg=cfg,
-        original=st.branch,
     )
 
 
 def _cmd_merge(
     *, session_id: str, strategy: str | None, into: str | None, message: str | None
 ) -> int:
-    """Merge a run's branch into a target (default: the branch the run was cut
-    from), with the chosen strategy (default: git.merge_strategy). Refuses a dirty
-    worktree, leaves a clean tree on failure, restores your original checkout, and
-    records the merge in the manifest."""
+    """Land a run's work on a target branch (default: the branch the run was
+    cut from) with the chosen strategy (default: git.merge_strategy). Ref
+    plumbing only: your checkout, index, and worktree are never the medium, so
+    a worktree still carrying the run's work is no obstacle."""
     cwd = Path.cwd()
     plan = _plan_merge(cwd, session_id, into, strategy)
     if isinstance(plan, int):
@@ -567,7 +558,6 @@ def _cmd_merge(
         message=message,
         cfg=plan.cfg,
         identity=plan.identity,
-        original=plan.original,
         warn=lambda m: print(f"[agent6] {m}", file=sys.stderr),
     )
     if outcome.status == "error":

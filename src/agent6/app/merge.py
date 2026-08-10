@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run-branch merge engine shared by `sessions merge` and `git.auto_merge`.
+"""The merge engine shared by `sessions merge` and `git.auto_merge`.
 
 `cli.sessions_cmds` validates + resolves a run, then calls `execute_merge`; the run
 finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
-context it already holds. One place to mutate means both honor the same strategy
-dispatch, clean tree on failure, checkout restore, and manifest record."""
+context it already holds. Landing is pure ref plumbing (`git_ops.plumb_merge`):
+no checkout, no clean-tree requirement -- the worktree that necessarily carries
+the run's own work after every run is never an obstacle. One place to mutate
+means both honor the same strategy dispatch and manifest record."""
 
 from __future__ import annotations
 
-import contextlib
 import datetime as _dt
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,15 +29,14 @@ from agent6.git_ops import (
     MergeResult,
     branch_exists,
     branch_tip_sha,
+    chain_tip,
     condense_commit_message,
     conventional_commit_subject,
-    create_branch,
     is_ancestor,
     list_run_commits,
-    merge_branch,
+    plumb_merge,
     range_name_status,
     set_repo_hook_policy,
-    squash_merge,
 )
 from agent6.providers import TranscriptSink
 from agent6.sessions.layout import SessionLayout
@@ -95,18 +95,10 @@ def record_merge_in_manifest(
     return ""
 
 
-def restore_checkout(cwd: Path, original: str, target: str) -> None:
-    """Switch back to the user's original branch after a merge ran on *target*, so a
-    merge does not silently leave them on a different branch. No-op if they were
-    already on the target or on a detached HEAD."""
-    if original and original not in (target, "HEAD") and branch_exists(cwd, original):
-        with contextlib.suppress(GitError):
-            create_branch(cwd, original)
-
-
 def dispatch_merge(
     cwd: Path,
     strategy: str,
+    target: str,
     run_branch: str,
     base_sha: str,
     manifest: SessionManifest,
@@ -119,14 +111,10 @@ def dispatch_merge(
     events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeResult:
-    """Run the chosen strategy. squash builds its message per
-    ``[git.commit.squash].message`` (the trailer is identity's); merge/ff hand
-    off to merge_branch. An operator *message* overrides any style."""
-    if strategy != "squash":
-        return merge_branch(
-            cwd, run_branch, ff_only=(strategy == "ff"), message=message, identity=identity
-        )
-    if message is None:
+    """Run the chosen strategy on *target* via plumb_merge. squash builds its
+    message per ``[git.commit.squash].message`` (the trailer is identity's);
+    an operator *message* overrides any style."""
+    if strategy == "squash" and message is None:
         message = _squash_message(
             cwd,
             cfg,
@@ -138,7 +126,11 @@ def dispatch_merge(
             events=events,
             warn=warn,
         )
-    return squash_merge(cwd, run_branch, message, identity=identity)
+    if message is None and strategy == "merge":
+        message = f"Merge {run_branch}"
+    return plumb_merge(
+        cwd, target, run_branch, strategy=strategy, message=message, identity=identity
+    )
 
 
 def _squash_message(
@@ -156,9 +148,13 @@ def _squash_message(
     """The squash commit's message per ``[git.commit.squash].message``; None
     means let git combine (its own SQUASH_MSG)."""
     style = cfg.git.commit.squash.message
-    if style == "combine":
-        return None
     rows = list_run_commits(cwd, base_sha, run_branch)
+    if style == "combine":
+        # Git's own SQUASH_MSG shape, synthesized (the plumbing merge never
+        # runs `merge --squash`, so git never writes one).
+        parts = ["Squashed commit of the following:\n"]
+        parts += [f"commit {r.sha}\n\n    {r.subject}" for r in rows]
+        return "\n".join(parts) if rows else None
     base_msg = condense_commit_message(rows, subject=manifest.user_task or "agent6 run")
     if style == "conventional":
         subject = conventional_commit_subject(
@@ -257,7 +253,7 @@ def _model_squash_message(
     return (resp.text or "").strip() or None
 
 
-def execute_merge(  # noqa: PLR0911
+def execute_merge(
     cwd: Path,
     *,
     layout: SessionLayout,
@@ -269,58 +265,46 @@ def execute_merge(  # noqa: PLR0911
     message: str | None,
     cfg: Config,
     identity: CommitIdentity,
-    original: str,
     budget: BudgetTracker | None = None,
     events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
-    """Check out *target*, merge *run_branch* in with *strategy*, restore the
-    *original* checkout, and record the merge. The caller validates first; this
-    mutates. Leaves a clean tree on conflict or error."""
+    """Land *run_branch* (a branch name or the run's chain ref) on *target*
+    with *strategy* and record the merge. Ref plumbing only: the checkout is
+    never switched and the worktree is never required clean. The caller
+    validates first; this mutates."""
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     if not branch_exists(cwd, target):
-        # The merge target must already exist; never fabricate it (create_branch
-        # would otherwise make it at HEAD). runs merge pre-checks this for a nicer
-        # message; auto_merge relies on this guard if the base was deleted mid-run.
+        # The merge target must already exist; never fabricate it. runs merge
+        # pre-checks this for a nicer message; auto_merge relies on this guard
+        # if the base was deleted mid-run.
         return MergeOutcome("error", error=f"target branch {target!r} does not exist")
     if (
         strategy == "ff"
         and not is_ancestor(cwd, target, run_branch)
         and not is_ancestor(cwd, run_branch, target)
     ):
-        # Pre-check what `git merge --ff-only` would refuse: without it the
-        # raw `fatal: Not possible to fast-forward` plus git's rebase hints
-        # spew at the operator with no agent6 reason (auto_merge with an ff
-        # config would spew the same on a moved base). A run branch the target
-        # already CONTAINS is not refused: --ff-only is a clean no-op there
-        # ("Already up to date"), even when the target has moved past it.
+        # Pre-check the fast-forward so the refusal names the agent6 remedy
+        # (auto_merge with an ff config would otherwise fail raw on a moved
+        # base). A run the target already CONTAINS is not refused: that is a
+        # clean no-op below.
         return MergeOutcome(
             "error",
             error=(
-                f"{target!r} has moved since the run branch was cut, so a"
+                f"{target!r} has moved since the run started, so a"
                 " fast-forward is impossible; merge with --strategy merge or"
                 " squash instead"
             ),
         )
-    try:
-        create_branch(cwd, target)  # checkout the (now-verified) target
-    except GitError as exc:
-        return MergeOutcome("error", error=f"could not check out target branch {target!r}: {exc}")
-    # A run strands the checkout on its OWN branch (branch_per_run switches at
-    # start and never switches back), so `sessions merge <id>` is often invoked from
-    # agent6/<id> -- meaning `original` IS the branch being merged. Restoring to
-    # it would leave the user on a now-merged (squash: unreachable) branch whose
-    # tree no longer matches the target. Land on the target instead; that is
-    # where the work now lives.
-    land_on = target if original == run_branch else original
     # Where the target stood before we touched it. Every strategy that merges
     # something moves it (squash commits, merge commits, a fast-forward), so an
-    # unmoved target means git had nothing to merge.
+    # unmoved target means there was nothing to merge.
     target_tip_before = branch_tip_sha(cwd, target) or ""
     try:
         result = dispatch_merge(
             cwd,
             strategy,
+            target,
             run_branch,
             base_sha,
             manifest,
@@ -333,9 +317,7 @@ def execute_merge(  # noqa: PLR0911
             warn=warn,
         )
     except GitError as exc:
-        restore_checkout(cwd, land_on, target)
         return MergeOutcome("error", error=f"merge failed: {exc}")
-    restore_checkout(cwd, land_on, target)
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
     if result.merged_sha and result.merged_sha == target_tip_before:
@@ -347,6 +329,6 @@ def execute_merge(  # noqa: PLR0911
         layout,
         merged_into=target,
         merged_sha=result.merged_sha,
-        merged_tip=branch_tip_sha(cwd, run_branch) or "",
+        merged_tip=chain_tip(cwd, run_branch) or "",
     )
     return MergeOutcome("merged", merged_sha=result.merged_sha, stamp_error=stamp_error)
