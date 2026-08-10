@@ -252,6 +252,11 @@ class SteerInput(TextArea):
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
+    BINDINGS: ClassVar = [
+        # TextArea's own undo stack; ctrl+z is the app's Detach (see Agent6TUI).
+        Binding("ctrl+underscore", "undo", "Undo", show=False),
+    ]
+
     class Submitted(Message):
         def __init__(self, text: str) -> None:
             self.text = text

@@ -774,6 +774,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # App-level so it works from any screen (viewers included); the hub-aware
         # exit code needs our handler, not textual's default quit.
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
+        # Ctrl-Z means "step away": the run keeps going and the shell comes
+        # back (raw mode keeps the key, and a real SIGTSTP would freeze a live
+        # provider stream mid-response). priority so the composer TextArea's
+        # built-in ctrl+z undo never shadows it; Ctrl-_ is undo there, and the
+        # detach hint says so.
+        Binding("ctrl+z", "detach_exit", "Detach", show=True, priority=True),
     ]
 
     def __init__(
@@ -796,6 +802,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # dashboard once the run ends so the parent command returns; `agent6
         # watch` leaves this False and keeps following.
         self.exit_on_end = exit_on_end
+        # Set by action_detach_exit; run_tui reads it to print the reattach hint.
+        self.detached = False
         # THE (word, reason) for this run -- status_for_session_dir, the same
         # decision the hub row shows -- refreshed on the ~1/s heartbeat.
         # Derived, never latched: a crash->resume flips it back to running
@@ -1236,6 +1244,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # there's nothing to return to, so a plain close (0) is the same thing.
         self.exit(QUIT_HUB_CODE if self.from_hub else 0)
 
+    def action_detach_exit(self) -> None:
+        # The run was detached all along; leaving is what Ctrl-Z means here.
+        # run_tui prints the reattach hint once the terminal is restored.
+        self.detached = True
+        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
+
     def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
         # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
         # unused default whose SVG export is broken in our terminals), "Theme"
@@ -1261,4 +1275,11 @@ def _append_colored_diff(dt: Text, patch: str) -> None:
 
 
 def run_tui(session_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> int:
-    return Agent6TUI(session_dir, exit_on_end=exit_on_end, from_hub=from_hub).run() or 0
+    app = Agent6TUI(session_dir, exit_on_end=exit_on_end, from_hub=from_hub)
+    rc = app.run() or 0
+    if app.detached:
+        sid = session_dir.name
+        print(f"[agent6] detached: {sid} keeps running.")
+        print(f"          reattach:  agent6 attach {sid}")
+        print("          (Ctrl+_ undoes typing in the composer)")
+    return rc

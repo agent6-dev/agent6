@@ -196,6 +196,8 @@ class SteerModal(ModalScreen[str]):
         *_ARROW_NAV,
         Binding("ctrl+s", "send", "Send", show=False),
         Binding("escape", "cont", "Continue", show=False),
+        # The same undo key the composer bar has (ctrl+z is the app's Detach).
+        Binding("ctrl+underscore", "undo_text", "Undo", show=False),
     ]
 
     def compose(self) -> ComposeResult:
@@ -225,6 +227,9 @@ class SteerModal(ModalScreen[str]):
 
     def action_cont(self) -> None:
         self.dismiss("")
+
+    def action_undo_text(self) -> None:
+        self.query_one("#steer-input", TextArea).undo()
 
 
 class ToolCallDetailModal(ModalScreen[None]):

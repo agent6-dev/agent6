@@ -226,13 +226,19 @@ def _status_suffix(session_facts: Callable[[], SessionFacts] | None) -> str:
     return f"          {format_session_facts(session_facts())}\n"
 
 
+_JOB_CONTROL_HINT = (
+    "[agent6] job control is unavailable here; /detach (Ctrl-C, then d) keeps it running.\n"
+)
+
+
 def _install_status_signal(
     state: dict[str, Any], session_facts: Callable[[], SessionFacts] | None
 ) -> Any:
     """Ctrl-Z: print the run's state, and stand an armed pause back down, so
     checking on a run never costs it a step. Replaces SIGTSTP's default on
-    purpose -- suspending a run mid-step would freeze it holding its worker
-    lock and its egress broker until someone went looking for it."""
+    purpose -- a suspended agent freezes its live provider stream, which the
+    server then kills mid-response: a real suspend would not pause the run,
+    it would corrupt it. The printed hint names the alternative."""
     if not hasattr(signal, "SIGTSTP"):
         return None
 
@@ -240,9 +246,12 @@ def _install_status_signal(
         line = _status_suffix(session_facts).strip() or "no live facts for this leg"
         if state["stage"] == 1:
             state["stage"] = 0
-            tty_message(f"\n[agent6] {line}\n[agent6] pause cancelled; the run continues.\n")
+            tty_message(
+                f"\n[agent6] {line}\n[agent6] pause cancelled; the run continues.\n"
+                + _JOB_CONTROL_HINT
+            )
         else:
-            tty_message(f"\n[agent6] {line}\n")
+            tty_message(f"\n[agent6] {line}\n" + _JOB_CONTROL_HINT)
 
     return signal.signal(signal.SIGTSTP, _handler)
 
@@ -267,8 +276,10 @@ def install_steer_sigint(
       stopping the run (resumable with ``agent6 resume``).
     * Ctrl-Z prints the same one-line status WITHOUT arming anything, and
       cancels an armed pause -- so checking on a run costs it nothing. It also
-      replaces SIGTSTP's default: suspending a run mid-step would freeze it
-      holding its locks and its egress broker.
+      replaces SIGTSTP's default: a suspended agent freezes its live provider
+      stream, which the server then kills mid-response, so a real suspend
+      would corrupt the run rather than pause it. The hint it prints names
+      /detach as the way to step away.
 
     ``console_view``, when given, has its heartbeat spinner suspended for the
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
