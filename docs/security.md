@@ -50,32 +50,22 @@ Under that adversary, agent6 aims to hold:
       `strict`; push needs egress).
 5. **No persistence after the run:** no daemon, cron, `.bashrc` write, or
    setuid binary.
-    - **No setuid/setgid bit can be set.** `chmod`/`fchmod`/`fchmodat`/
-      `fchmodat2` are denied by seccomp when the mode carries
-      `S_ISUID`/`S_ISGID` (ordinary chmod is untouched). `fchmodat2` is named
-      separately because it SUPERSEDED `fchmodat` on Linux 6.6+: a filter
-      listing only the older spelling is open on any current kernel, and
-      `chmod` never reaches it, so only a direct syscall test finds that.
-      The bit would land on the HOST inode and outlive the jail, and under
-      `sudo agent6 --allow-root` the uid_map makes the jailed child real root
-      -- a setuid-root binary left in the workspace is local root for anyone
-      who runs it. Mount `nosuid` does not cover this: it stops the JAIL
-      honouring the bit, not the host. Every mount carries `nosuid`
-      and `nodev` anyway -- the workspace, the system binds, the protect and
-      read-only binds, the writable grants, and the private `/tmp`. Not
-      `noexec` on `/tmp`: HOME lives there and toolchains run helpers from it,
-      and a child that can already execute from the workspace gains nothing
-      from being stopped there.
-    - Children can only write inside the jail's mount namespace (strict) or the
+    - **No setuid/setgid bit can be set**: every chmod-family syscall
+      (`fchmodat2` included) is denied when the mode carries
+      `S_ISUID`/`S_ISGID`; ordinary chmod is untouched. The bit would land on
+      the HOST inode and outlive the jail. Every mount also carries `nosuid`
+      and `nodev`; `/tmp` is not `noexec` (toolchains run helpers from it, and
+      a child that can execute from the workspace gains nothing there).
+    - Children write only inside the jail's mount namespace (strict) or the
       Landlock write grants (hardened).
-    - **Nothing a command starts outlives it.** strict's PID namespace takes the
-      whole tree down. hardened has none, so the agent makes itself a child
-      subreaper: a `setsid` daemon that escapes the launcher's process group
-      reparents to the agent, which kills it when the command returns.
+    - **Nothing a command starts outlives it.** strict's PID namespace takes
+      the tree down; hardened has none, so the agent is a child subreaper and
+      kills every escapee (a `setsid` daemon included) when the command
+      returns.
     - The bound is the command's own descendants. On hardened a command can
-      still hand work to a user daemon that was ALREADY running (a tmux server,
-      `systemd --user`): `AF_UNIX` connect has no Landlock hook, and without a
-      mount namespace those sockets are nameable. strict does not expose them.
+      still hand work to a user daemon ALREADY running (tmux,
+      `systemd --user`): unix sockets have no Landlock hook and stay nameable
+      without a mount namespace. strict does not expose them.
 
 ## Defense layers
 
@@ -105,20 +95,15 @@ name, which live outside that root. Anywhere else (`hardened`, a dispatcher with
 no run) each command gets its own launcher. Under `strict` it:
 
 - Forks a new user/mount/PID/IPC/UTS/net namespace.
-- `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd + private
-  `/tmp` writable, system paths read-only, `extra_read_paths` grants read+exec
-  at their real paths (`extra_rw` grants writable at theirs). Operator-tool
-  dirs join as read+exec `tool_paths` mounts (standard bin dirs that exist, the
-  real dirs their symlinks resolve to, uv-managed CPythons), derived by
-  `sandbox.jail.operator_tool_paths` -- which never mounts agent6's OWN config,
-  state, data or cache dirs however a tool symlink resolves, a dir CONTAINING
-  one of them, or `$HOME` and its ancestors (a `~/.local/bin/x -> ~/x.sh`
-  symlink would otherwise mount the whole home dir), so `secrets.toml`,
-  `~/.ssh` and the run history stay outside the jail by construction rather
-  than by directory layout. A tool dir whose read-only remount fails is
-  detached, and a failed detach refuses the run: best-effort means unreachable,
-  never writable. run_command/verify jails and machine tool jails share that one
-  computation, and `machine check` probes the same PATH.
+- `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd +
+  private `/tmp` writable; system paths read-only; `extra_read_paths` and
+  `extra_write_paths` at their real paths; operator-tool dirs as read+exec
+  mounts. Tool mounts never include agent6's own config/state/data/cache
+  dirs (either direction of containment) or `$HOME` and its ancestors, so
+  `secrets.toml`, `~/.ssh`, and run history stay outside the jail by
+  construction. A tool dir whose read-only remount fails is detached; a
+  failed detach refuses the run. Command jails and machine tool jails share
+  this one computation.
 - Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
@@ -143,18 +128,12 @@ Notes:
   `RLIMIT_DATA` (`[sandbox].memory_limit_mb`, default 4096, `0` off; not
   `RLIMIT_AS`, so V8/JVM/ASAN keep working) stops one runaway allocation, nothing
   more.
-- **The seccomp layer is a deny-list (defense-in-depth), not a boundary.** It
-  enumerates known-dangerous syscalls, so by construction it does not catch
-  everything: namespace creation via `clone`/`clone3` (`CLONE_NEWUSER|CLONE_NEWNS`)
-  is not blocked, only `unshare` is. Accepted, because a nested namespace grants
-  no new access against the host — the whole mount family (`mount`,
-  `mount_setattr`, `open_tree`, `move_mount`, `fsopen`/`fsconfig`/`fsmount`/`fspick`,
-  `pivot_root`, `umount2`) is denied, Landlock is inherited and irrevocable, and
-  `mknod` checks caps against the initial user namespace. Filtering `clone3` is
-  declined on purpose: seccomp cannot read its flags (they sit behind a struct
-  pointer), and denying it outright would break glibc/Go process spawning (they
-  fall back to `clone` only on `ENOSYS`). The real boundaries are the namespaces,
-  Landlock, and the mount-syscall denials — not this list.
+- **The seccomp layer is a deny-list (defense-in-depth), not a boundary.**
+  Known-dangerous syscalls only; nested-namespace creation via `clone`/`clone3`
+  stays allowed (accepted: the whole mount-syscall family is denied and
+  Landlock is inherited and irrevocable, so a nested namespace grants nothing
+  against the host; denying `clone3` would break glibc/Go spawning). The real
+  boundaries are the namespaces, Landlock, and the mount denials.
 - **No `capset`.** `strict` maps namespaced-root to your uid; `hardened` keeps the
   caller's caps (none for a normal user).
 - **`hardened` drops the namespaces + rootfs;** Landlock, seccomp,
@@ -203,27 +182,17 @@ fixed argv depending only on operator input, never LLM output.
 - `git_ops.py`: agent6's own git operations (§5).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/exec_confined.py`: confines itself, then `execvp`s the argv after
-  `--`. For a long-lived child agent6 spawns but does not drive (a configured
-  MCP server): the jail launcher captures stdio and owns the process to
-  completion, which cannot host a live MCP pipe. Both mechanisms are
-  restrict-self-then-exec and inherited, so the server and everything it spawns
-  get them: Landlock's domain is irrevocable across `execve`, and
-  `[mcp.servers.<name>.sandbox].network = "none"` additionally
-  `unshare`s a user + network namespace, which the stdio pipes (file
-  descriptors) survive untouched. Either mechanism stands alone: a block naming
-  no paths applies no Landlock domain (an empty one would grant nothing, to the
-  shim and to whatever it becomes), and a shim asked for neither refuses rather
-  than exec unconfined while looking confined. A domain that IS applied grants
-  the five inert `/dev` nodes the jail grants (`null zero urandom random
-  full`, never `/dev/tty`) ahead of the operator's paths: no toolchain runs
-  without `/dev/null`. The namespace work runs BEFORE Landlock,
-  because it writes `/proc/self/{setgroups,uid_map,gid_map}` (mapping the
-  operator's uid straight through, so the server does not become `nobody`) and
-  opens a socket to bring `lo` up -- none of which the domain grants. A host
-  whose kernel forbids unprivileged user namespaces makes the server REFUSE
-  rather than start connected. The paths and the argv are the operator's, from
-  config; no LLM input reaches it, and `preexec_fn` -- the obvious alternative
-  -- is unsafe in a threaded process, which the MCP client is.
+  `--` — the restrict-self-then-exec shim for a long-lived child agent6 spawns
+  but does not drive (a configured MCP server; the jail launcher owns stdio,
+  which cannot host a live MCP pipe). Both mechanisms are inherited by
+  everything the server spawns: the Landlock domain is irrevocable across
+  `execve`, and `network = "none"` unshares a user + network namespace that
+  the stdio pipes survive. Each stands alone; asked for neither, the shim
+  refuses rather than exec unconfined while looking confined. An applied
+  domain grants the five inert `/dev` nodes ahead of the operator's paths. A
+  kernel forbidding unprivileged userns makes a `network = "none"` server
+  refuse rather than start connected. Argv and paths are the operator's, from
+  config.
 - `sandbox/jail.py`: the jail launcher itself.
 
 - `tools/lsp.py`: the `ty` language server, exe resolved from PATH.
