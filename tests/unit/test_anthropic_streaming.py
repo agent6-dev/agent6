@@ -27,7 +27,7 @@ from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
 from agent6.providers.token_command import CommandToken
 
 
-class _FakeStreamResponse:
+class FakeStreamResponse:
     """Mimics the subset of httpx2 streaming Response we use."""
 
     def __init__(
@@ -45,7 +45,7 @@ class _FakeStreamResponse:
         # Retry-After from them.
         self.headers: dict[str, str] = headers or {}
 
-    def __enter__(self) -> _FakeStreamResponse:
+    def __enter__(self) -> FakeStreamResponse:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -198,11 +198,11 @@ def test_streaming_calls_back_on_each_text_delta(
 
     captured_bodies: list[dict[str, Any]] = []
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
         assert method == "POST"
         body = json.loads(kwargs["content"])
         captured_bodies.append(body)
-        return _FakeStreamResponse(status_code=200, lines=_basic_text_stream())
+        return FakeStreamResponse(status_code=200, lines=_basic_text_stream())
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -241,8 +241,8 @@ def test_streaming_reassembles_tool_use_input_across_deltas(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=_tool_use_stream())
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_tool_use_stream())
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -274,8 +274,8 @@ def test_streaming_callback_exception_does_not_break_stream(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=_basic_text_stream())
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_basic_text_stream())
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -335,8 +335,8 @@ def test_streaming_premature_end_without_message_stop_raises(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=_truncated_text_stream())
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=_truncated_text_stream())
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -371,8 +371,8 @@ def test_streaming_error_event_raises_and_records_transcript(
         ]
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=lines)
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
 
@@ -395,8 +395,8 @@ def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(
             status_code=429,
             lines=[],
             error_body='{"error":{"type":"rate_limit"}}',
@@ -420,8 +420,8 @@ def test_streaming_429_captures_retry_after(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(
             status_code=429,
             lines=[],
             error_body='{"error":{"type":"rate_limit"}}',
@@ -452,10 +452,10 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
 
     stream_called = False
 
-    def fake_stream(*_a: Any, **_kw: Any) -> _FakeStreamResponse:
+    def fake_stream(*_a: Any, **_kw: Any) -> FakeStreamResponse:
         nonlocal stream_called
         stream_called = True
-        return _FakeStreamResponse(status_code=200, lines=[])
+        return FakeStreamResponse(status_code=200, lines=[])
 
     class _R:
         status_code = 200
@@ -505,11 +505,11 @@ def test_streaming_refreshes_token_command_on_401(
     )
     seen_auth: list[str | None] = []
     responses = [
-        _FakeStreamResponse(status_code=401, lines=[], error_body='{"error":"expired"}'),
-        _FakeStreamResponse(status_code=200, lines=_basic_text_stream()),
+        FakeStreamResponse(status_code=401, lines=[], error_body='{"error":"expired"}'),
+        FakeStreamResponse(status_code=200, lines=_basic_text_stream()),
     ]
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
         seen_auth.append(kwargs["headers"].get("authorization"))
         return responses[len(seen_auth) - 1]
 
@@ -563,8 +563,8 @@ def test_streaming_with_budget_requires_usage_tokens(
         ]
     )
 
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=lines)
+    def fake_stream(method: str, url: str, **kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
     with pytest.raises(ProviderError) as exc_info:

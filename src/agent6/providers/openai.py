@@ -32,7 +32,7 @@ import httpx2
 from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers._openai_parse import parse_response
-from agent6.providers._stream import SseCall, StreamClock
+from agent6.providers._stream import SseCall, StreamClock, record_billed_usage
 from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
@@ -624,7 +624,35 @@ class OpenAIProvider:
                         if isinstance(args_piece, str) and args_piece:
                             tool_arg_buf.setdefault(idx, []).append(args_piece)
 
-        call.run(consume)
+        def _record_billed() -> None:
+            # Through parse_response so the usage mapping (cached vs fresh
+            # input, the reported cost) has ONE owner; the empty message is
+            # discarded, only its usage is kept.
+            if not usage:
+                return
+            billed = parse_response(
+                {"choices": [], "usage": usage},
+                tool_names=tool_names,
+                tool_schemas=tool_schemas,
+            )
+            record_billed_usage(
+                self.budget,
+                self.model,
+                input_tokens=billed.input_tokens,
+                output_tokens=billed.output_tokens,
+                cache_read_tokens=billed.cache_read_tokens,
+                cache_creation_tokens=billed.cache_creation_tokens,
+                cost_usd=billed.cost_usd,
+            )
+
+        try:
+            call.run(consume)
+        except BaseException:
+            # Billed already: a mid-stream error, the idle watchdog or an
+            # operator steer ends the turn after the provider has accepted the
+            # input, and the retry re-sends and is billed again.
+            _record_billed()
+            raise
 
         # A stream that ended without `[DONE]` and without any `finish_reason`
         # was cut off mid-generation (a clean EOF is not a completion signal).
@@ -632,6 +660,7 @@ class OpenAIProvider:
         # finished turn feeds the loop a bogus silent_finish or a truncated
         # tool_use; raise a retryable ProviderError so the call is re-issued.
         if not done_seen and not finish_reason:
+            _record_billed()
             call.record(
                 status=0,
                 response="stream ended without [DONE] or finish_reason (truncated)",

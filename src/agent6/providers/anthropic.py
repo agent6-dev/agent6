@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers._stream import SseCall, StreamClock
+from agent6.providers._stream import SseCall, StreamClock, record_billed_usage
 from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.types import (
     ProviderError,
@@ -617,15 +617,35 @@ class AnthropicProvider:
                         status_code=envelope_status(err),
                     )
 
-        call.run(consume)
+        def _record_billed() -> None:
+            record_billed_usage(
+                self.budget,
+                self.model,
+                input_tokens=usage_input,
+                output_tokens=usage_output,
+                cache_read_tokens=usage_cache_read,
+                cache_creation_tokens=usage_cache_creation,
+            )
+
+        try:
+            call.run(consume)
+        except BaseException:
+            # Billed already: input usage arrives in message_start, long before
+            # a mid-stream error, the idle watchdog, or an operator steer can
+            # end the turn. The retry re-sends the whole input and is billed
+            # again, so a run with any flakiness had no ceiling.
+            _record_billed()
+            raise
 
         # No `message_stop` means the stream was cut mid-message (a clean EOF is
         # not a completion signal). The accumulated blocks are a truncated turn,
         # possibly with text already fanned to the TUI; returning them as a
-        # finished response feeds the loop a bogus went_quiet/silent_finish and
-        # records input tokens for a call that never completed. Raise a retryable
-        # ProviderError so _call_with_retry re-issues the request.
+        # finished response feeds the loop a bogus went_quiet/silent_finish.
+        # Raise a retryable ProviderError so _call_with_retry re-issues the
+        # request -- but record what the cut turn already cost first: the
+        # operator's cap is about money spent, not turns completed.
         if not saw_message_stop:
+            _record_billed()
             call.record(status=0, response="stream ended without message_stop (truncated)")
             raise ProviderError(
                 f"Anthropic SSE stream from {url} ended prematurely "

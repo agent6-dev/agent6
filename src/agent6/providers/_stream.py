@@ -52,6 +52,7 @@ from typing import Any
 
 import httpx2
 
+from agent6.budget import BudgetTracker
 from agent6.providers.egress import http_stream
 from agent6.providers.types import (
     ProviderAborted,
@@ -118,6 +119,42 @@ class StreamClock:
         if self._seen_output.is_set():
             return (STREAM_IDLE_TIMEOUT_S, "mid-stream")
         return (STREAM_FIRST_DATA_TIMEOUT_S, "before any data (prefill)")
+
+
+def record_billed_usage(
+    budget: BudgetTracker | None,
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+    cost_usd: float = 0.0,
+) -> None:
+    """Record what a call that did NOT complete already cost.
+
+    A stream that dies after the provider reported usage has been billed: the
+    input was accepted, and whatever was generated was produced. Counting only
+    completed calls left that spend invisible to ``max_usd``, so a retry-heavy
+    run had no ceiling at all -- every retry re-sends the whole input and is
+    billed again. The operator set a number for the task; going past it without
+    being told is the failure, and a run can always be resumed.
+
+    Records nothing when the provider reported nothing: an unknown amount is
+    not a licence to invent one.
+    """
+    if budget is None:
+        return
+    if not (input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens):
+        return
+    budget.record(
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_creation_tokens=cache_creation_tokens,
+        cost_usd=cost_usd,
+    )
 
 
 @dataclass(frozen=True, slots=True)
