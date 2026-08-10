@@ -52,9 +52,13 @@ def test_a_symlink_to_another_owner_refuses(
         st_uid = 0
 
     real_stat = Path.stat
+    # Resolve ONCE, before the patch: on Python 3.12 Path.resolve() calls
+    # Path.stat internally, so resolving inside fake_stat re-enters the patched
+    # method and recurses forever (3.14's resolve() does not, which hid this).
+    foreign_resolved = foreign.resolve()
 
     def fake_stat(self: Path, **kw: object) -> object:
-        return _Foreign() if self == foreign.resolve() else real_stat(self, **kw)  # pyright: ignore[reportArgumentType]
+        return _Foreign() if self == foreign_resolved else real_stat(self, **kw)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(Path, "stat", fake_stat)
     with pytest.raises(OperatorError, match="owned by uid 0"):
