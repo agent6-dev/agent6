@@ -25,6 +25,14 @@ TASK_STATUS_GLYPH = {
 }
 
 
+SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def spinner_frame(tick: int) -> str:
+    """The braille spinner frame for *tick*, one owner for every surface."""
+    return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
+
+
 def format_cost(usd: float, *, partial: bool = False) -> str:
     """Render a USD cost identically on every surface: cents at >= $1, four
     decimals below (so small runs aren't all '$0.00'), with a leading '~' when

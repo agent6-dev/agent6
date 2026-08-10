@@ -58,11 +58,11 @@ from agent6.ui.tui.modals import HistorySearchModal, RestateModal
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
 from agent6.viewmodel import restate
+from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
-    THINK,
     TranscriptFold,
     TranscriptItem,
     operator_inputs,
@@ -489,6 +489,7 @@ class ConversationScreen(Screen[None]):
         # A session-start event (session.start OR loop.resume.start) seen and no
         # session.end since -> the steer bar shows.
         self._live = False
+        self._spin = 0  # live-pane spinner tick, advanced by _poll
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
 
     def compose(self) -> ComposeResult:
@@ -632,14 +633,24 @@ class ConversationScreen(Screen[None]):
             return
         think = "".join(self._live_think).strip()
         text = "".join(self._live_text).strip()
+        frame = spinner_frame(self._spin)
         if not think and not text:
-            live.display = False
+            if not self._live:
+                live.display = False
+                return
+            # Mid-run with nothing streaming (the model is being called, or
+            # tools are executing): the pane used to VANISH here, which read
+            # as frozen for the whole stretch. Keep something moving instead.
+            body = Text()
+            body.append(f"{frame} working… ", style="bold cyan")
+            live.display = True
+            live.update(body)
             return
         body = Text()
         if think:
             # Always show the live "thinking…" indicator (feedback that a turn is
             # working); stream the reasoning itself only when expanded (muted grey).
-            body.append(f"{THINK} thinking… ", style="bold cyan")
+            body.append(f"{frame} thinking… ", style="bold cyan")
             if self._detail == "expanded":
                 body.append(_tail(think, _LIVE_TAIL), style="#6C7086")
         if text:
@@ -696,8 +707,20 @@ class ConversationScreen(Screen[None]):
     def _poll(self) -> None:
         """Append newly-completed turns (sticking to the bottom unless scrolled
         up) and refresh the live in-progress pane."""
+        self._spin += 1
         new_events = self._tail.read()
         if not new_events:
+            # No data this tick, but a live run's pane must keep moving: the
+            # spinner is the only sign of life between events. Same follow
+            # discipline as the data path -- a pane repaint can resize the
+            # viewport, and losing bottom-follow on a QUIET tick is exactly
+            # the kind of drift nobody can reproduce later.
+            if self._live and self._host_live():
+                scroll = self._scroll()
+                following = self._at_bottom(scroll)
+                self._render_live()
+                if following:
+                    scroll.scroll_end(animate=False)
             return
         scroll = self._scroll()
         following = self._at_bottom(scroll)  # BEFORE this frame's layout changes

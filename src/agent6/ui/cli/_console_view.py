@@ -24,6 +24,7 @@ from typing import Any, TextIO
 
 from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
 from agent6.viewmodel.events import event_epoch
+from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.transcript import (
     DONE,
     THINK,
@@ -75,7 +76,6 @@ _STALL_AFTER_S = 1.5  # show the heartbeat once output has been silent this long
 # splitting a streamed word (e.g. a file path) in two. Slow token cadence
 # routinely pauses a few seconds; only a real stall is worth that cost.
 _MID_BLOCK_STALL_S = 10.0
-_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 class ConsoleView:
@@ -316,7 +316,7 @@ class ConsoleView:
                 if self._phase is not None:
                     self._end_block()
                 self._spin += 1
-                glyph = _SPINNER[self._spin % len(_SPINNER)]
+                glyph = spinner_frame(self._spin)
                 hint = "  (Ctrl-C to steer or stop)" if idle >= 20 else ""
                 body = f"{glyph} working… {int(idle)}s{hint}"
                 self._out.write("\r\x1b[2K" + (self._c("dim", body) if self._color else body))

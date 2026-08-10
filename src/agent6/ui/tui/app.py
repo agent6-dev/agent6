@@ -96,7 +96,13 @@ from agent6.ui.tui.modals import (
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.viewmodel import restate, session_compare
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost, status_label
+from agent6.viewmodel.format import (
+    TASK_STATUS_GLYPH,
+    format_compare,
+    format_cost,
+    spinner_frame,
+    status_label,
+)
 from agent6.viewmodel.listing import LIVE_STATUS_WORDS, status_for_session_dir
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
@@ -566,7 +572,7 @@ class DashboardScreen(Screen[None]):
         active = tui.session_controllable() and tui.dir_status[0] != "waiting"
         beat = ""
         if active and role is not None:
-            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
+            spinner = spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
@@ -625,7 +631,7 @@ class DashboardScreen(Screen[None]):
         elif active and role is not None:
             # No live deltas: the model is thinking, or a resume is rebuilding
             # context. A ticking heartbeat, never a stale "idle" or blank.
-            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
+            spinner = spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "stale":

@@ -230,6 +230,12 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             await pilot.pause()
             scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
             assert _following(scroll)  # _reload pins to the bottom
+            # Expanded detail streams the reasoning tail into the live pane, so
+            # a thinking burst grows it by whole lines (collapsed keeps the
+            # pane a constant one-liner and nothing would move).
+            conv_screen = app.screen
+            assert isinstance(conv_screen, ConversationScreen)
+            conv_screen._detail = "expanded"
             overflow_before = scroll.max_scroll_y
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.thinking_delta", "text": "x " * 300}) + "\n")
@@ -304,10 +310,17 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
             await pilot.pause()
             live = app.screen.query_one("#conv-live", Static)
             assert live.display  # the in-progress turn is shown live
-            # a completed turn (role.result) hands off to the scrollback and hides it
+            # a completed turn (role.result) hands its prose off to the
+            # scrollback; the pane stays up as the animated working line (the
+            # run is still live -- tools execute, the next call is coming).
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
-            await _wait_for(pilot, lambda: not live.display, "the live pane handoff")
+            await _wait_for(
+                pilot,
+                lambda: "working…" in str(live.render()),
+                "the live pane handoff",
+            )
+            assert live.display
 
     asyncio.run(scenario())
 
@@ -433,5 +446,40 @@ def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: P
             body = _body_text(app)
             assert "made no conversation" in body
             assert "as the run streams" not in body
+
+    asyncio.run(scenario())
+
+
+def test_live_pane_keeps_moving_between_events(tmp_path: Path) -> None:
+    """Between a turn's end and the next delta the live pane VANISHED, so the
+    primary view read frozen for the whole model-call/tool-run stretch. Mid-run
+    with empty stream buffers it now shows an animated "working…" line, and
+    the spinner frame advances on data-less polls."""
+    import os
+
+    from agent6.ui.tui.app import Agent6TUI
+
+    d = tmp_path / "live-spin"
+    d.mkdir()
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "role.result", "ok": True},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            conv = app._conv
+            conv._poll()
+            live = conv.query_one("#conv-live", Static)
+            assert live.display, "the live pane hid between events on a live run"
+            first = str(live.render())
+            assert "working…" in first
+            conv._poll()  # a data-less poll still turns the spinner
+            assert str(live.render()) != first
 
     asyncio.run(scenario())

@@ -25,6 +25,7 @@ from agent6.providers import Provider, ProviderError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _compare as compare_mod
 from agent6.ui.cli import main
+from agent6.viewmodel.format import SPINNER_FRAMES
 from agent6.workflows.judge import CandidateBrief
 
 
@@ -621,10 +622,9 @@ def _two_candidates() -> list[CandidateBrief]:
 
 _VERDICT = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
 
-# Same glyph set as `_console_view._SPINNER` (also duplicated in ui/tui/app.py and
-# ui/web/page.py) -- proves the judging indicator reuses the CLI's one animation
-# rather than inventing a second one.
-_SPINNER_GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+# The one spinner-frame owner every surface shares (imported at top).
+_SPINNER_GLYPHS = SPINNER_FRAMES
+
 # The run stream's heartbeat tick (`_console_view._HEARTBEAT_TICK_S`).
 _HEARTBEAT_TICK_S = 0.5
 
