@@ -57,6 +57,8 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.app.fork import undo_fork
+from agent6.app.reporter import Reporter
 from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import (
@@ -1040,6 +1042,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call) -- the run keeps going.
         Finished: resume THIS run with the instruction as the follow-up."""
+        if text.strip() == "/undo":
+            self._undo_session()
+            return
         if text.strip() == "/restate":
             # Local and free: rendered from the journal, nothing reaches the model.
             self.push_screen(RestateModal(restate(list(tail_events(self.logs_path, follow=False)))))
@@ -1058,6 +1063,26 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             self.notify("steering this session…")
         else:
             self.resume_with_instruction(text)
+
+    def _undo_session(self) -> None:
+        """`/undo`: fork this run at the state before its last operator message,
+        unstarted; the hub lists the fork and the undone text is reported. A
+        live run is refused: stop it first, then undo."""
+        if self.session_controllable():
+            self.notify("the run is still going: stop it first, then /undo", severity="warning")
+            return
+        said: list[str] = []
+        result = undo_fork(
+            None,
+            self.session_dir.name,
+            cwd=Path.cwd(),
+            reporter=Reporter(out=said.append, err=said.append),
+        )
+        if result is None:
+            self.notify(said[-1].strip() if said else "undo failed", severity="warning")
+            return
+        child, text = result
+        self.notify(f"undone: forked to {child}; your message is back to edit: {text[:60]}")
 
     def resume_with_instruction(self, text: str) -> None:
         """Resume this run with *text* as its first steering instruction (rides
