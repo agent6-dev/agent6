@@ -559,9 +559,17 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // service, since whoever creates it first owns it and every other user's
     // jail then fails closed forever. *real_uid* is the caller's, captured
     // before the user namespace mapped this process to 0.
+    //
+    // Shared by every launcher this user runs, and that is fine: each mounts
+    // its own tmpfs over it in its OWN mount namespace, so they see different
+    // roots through the same mount point, and create_dir_all is idempotent.
+    // What was NOT fine was clearing it first: two launchers starting at once
+    // -- /parallel lanes, or a command while an MCP server's launcher lives --
+    // had one remove_dir_all the tree the other was still building, and that
+    // one died "rootfs setup failed: No such file or directory". Nothing needs
+    // clearing anyway: everything a launcher writes goes inside the tmpfs, so
+    // the directory underneath is empty by construction.
     let new_root = PathBuf::from(format!("/tmp/agent6-jail-root-{real_uid}"));
-    // Make sure parent dir is on tmpfs we can write to (it's in our own NS now).
-    let _ = fs::remove_dir_all(&new_root);
     fs::create_dir_all(&new_root).map_err(|e| {
         io::Error::other(format!(
             "jail root {} is unusable: {e} (remove it, or point TMPDIR elsewhere)",

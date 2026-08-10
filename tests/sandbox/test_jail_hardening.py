@@ -554,3 +554,54 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
     # The root the run actually created carries the CALLER's uid, not the 0 the
     # user namespace maps it to -- otherwise every user collides on -0 again.
     assert Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()
+
+
+@pytest.mark.needs_namespaces
+def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: Path) -> None:
+    """The jail root is shared per-uid, and setup used to clear it first: two
+    launchers starting together had one remove_dir_all the tree the other was
+    building, and that one died "rootfs setup failed: No such file or
+    directory". Reachable from /parallel lanes (separate agent6 processes, one
+    uid) and from any command run while an MCP server's launcher is alive.
+
+    Nothing needs clearing -- each launcher mounts its own tmpfs over the
+    shared mount point in its own namespace -- so the fix was deleting the
+    destructive step. Asserted with real concurrency, and on the mount
+    namespaces too: a per-child namespace is what keeps one child's grants out
+    of another's view.
+    """
+    import threading
+
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    probe = (
+        "import os, time\nprint(os.readlink('/proc/self/ns/mnt'), flush=True)\ntime.sleep(1.5)\n"
+    )
+    results: dict[int, str] = {}
+    failures: dict[int, str] = {}
+
+    def one(i: int) -> None:
+        try:
+            res = run_in_jail(
+                JailPolicy(
+                    cwd=tmp_path,
+                    argv=("/usr/bin/python3", "-c", probe),
+                    isolation="strict",
+                    timeout_s=30.0,
+                )
+            )
+            results[i] = res.stdout.strip() or f"rc={res.returncode} {res.stderr.strip()[:60]}"
+        except Exception as exc:
+            failures[i] = f"{type(exc).__name__}: {exc}"
+
+    threads = [threading.Thread(target=one, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not failures, f"concurrent launchers collided: {failures}"
+    namespaces = [v for v in results.values() if v.startswith("mnt:")]
+    assert len(namespaces) == 4, results
+    assert len(set(namespaces)) == 4, f"children shared a mount namespace: {namespaces}"
