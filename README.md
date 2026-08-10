@@ -15,7 +15,7 @@ open-ended agent loop.
 
 - Sandboxed execution for every LLM-chosen child process, jailed individually
   with Landlock + seccomp; the default `strict` isolation adds namespaces +
-  `pivot_root`, rebinds `.git` read-only, and confines egress to your provider
+  `pivot_root`, rebinds `.git` read-only, and gives jailed commands no network
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
 - Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, a hard
@@ -67,7 +67,7 @@ From [PyPI](https://pypi.org/project/agent6/) with
 uv tool install agent6        # or: pipx install agent6
 ```
 
-agent6 needs **Linux** for the sandbox (kernel 6.7+ for TCP rules), **Python 3.12+**, and
+agent6 needs **Linux** for the sandbox, **Python 3.12+**, and
 an API key for at least one provider. macOS runs unsandboxed behind a warning; on Windows
 use WSL. See [installation](https://agent6.dev/installation/) for the full requirements and
 building from source.
