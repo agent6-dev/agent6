@@ -232,7 +232,10 @@ fixed argv depending only on operator input, never LLM output.
   descriptors) survive untouched. Either mechanism stands alone: a block naming
   no paths applies no Landlock domain (an empty one would grant nothing, to the
   shim and to whatever it becomes), and a shim asked for neither refuses rather
-  than exec unconfined while looking confined. The namespace work runs BEFORE Landlock,
+  than exec unconfined while looking confined. A domain that IS applied grants
+  the five inert `/dev` nodes the jail grants (`null zero urandom random
+  full`, never `/dev/tty`) ahead of the operator's paths: no toolchain runs
+  without `/dev/null`. The namespace work runs BEFORE Landlock,
   because it writes `/proc/self/{setgroups,uid_map,gid_map}` (mapping the
   operator's uid straight through, so the server does not become `nobody`) and
   opens a socket to bring `lo` up -- none of which the domain grants. A host

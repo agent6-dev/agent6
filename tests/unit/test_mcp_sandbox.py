@@ -101,6 +101,34 @@ def test_the_shim_really_confines_what_it_execs(tmp_path: Path) -> None:
     assert "sk-DECOY" not in res.stdout, "the shim did not confine what it exec'd"
 
 
+@pytest.mark.needs_namespaces
+def test_a_confined_server_can_still_write_dev_null(tmp_path: Path) -> None:
+    """The opt-in grants exactly the operator's paths, and no toolchain runs
+    without /dev/null: `git` inside a confined server died "could not open
+    '/dev/null'", surfacing as "Bad git executable" with nothing naming /dev.
+    The five inert nodes the jail grants are granted here too; /dev/tty is not
+    one of them."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    res = subprocess.run(
+        [
+            *_SHIM,
+            *("--read", "/usr", "--read", "/bin", "--read", "/lib", "--read", "/lib64"),
+            *("--read", "/etc"),
+            "--write",
+            str(scratch),
+            "--",
+            "sh",
+            "-c",
+            ": > /dev/null && echo devnull-ok",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0 and "devnull-ok" in res.stdout, res.stderr
+
+
 def test_a_block_with_no_read_paths_is_refused() -> None:
     """Landlock grants READ and EXECUTE together, so a server with no read path
     cannot reach its own interpreter and dies on startup with an import error

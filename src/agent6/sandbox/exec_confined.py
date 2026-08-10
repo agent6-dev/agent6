@@ -45,6 +45,12 @@ from agent6.sandbox.landlock import LandlockNotSupportedError, apply_agent_landl
 _SIOCSIFFLAGS = 0x8914
 _IFF_UP = 0x1
 
+# The five inert /dev nodes the jail grants, granted here ahead of the
+# operator's paths: no toolchain runs without /dev/null, and a confinement
+# omitting it surfaces as the SERVER dying ("could not open '/dev/null'",
+# read as "Bad git executable") with nothing naming /dev. /dev/tty stays out.
+_DEV_NODES = ("/dev/null", "/dev/zero", "/dev/urandom", "/dev/random", "/dev/full")
+
 
 class NoNetworkError(Exception):
     """The server asked for `network = "none"` and this host cannot give it."""
@@ -155,10 +161,11 @@ def main(argv: list[str] | None = None) -> int:
         # Network-only confinement: no paths named, so no filesystem domain.
         return _become(command)
 
+    dev = tuple(p for p in (Path(n) for n in _DEV_NODES) if p.exists())
     try:
         apply_agent_landlock(
-            read_paths=tuple(Path(p).expanduser() for p in args.read),
-            write_paths=tuple(Path(p).expanduser() for p in args.write),
+            read_paths=(*dev, *(Path(p).expanduser() for p in args.read)),
+            write_paths=(*dev, *(Path(p).expanduser() for p in args.write)),
         )
     except LandlockNotSupportedError as exc:
         if args.require:
