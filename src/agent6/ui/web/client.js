@@ -536,7 +536,63 @@ function growGrip(ta) {
   return g;
 }
 
-// The composer bar under a run's conversation. On a LIVE run Enter sends the
+// The steer directives a session composer can complete, with one-line help:
+// a verbatim mirror of agent6.directive.STEER_COMMANDS (drift-pinned by
+// tests/web/test_steer_completion.py). /compact only acts on a live session,
+// so the resume composer offers /pin and /parallel alone.
+const STEER_COMMANDS = [
+  ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
+  ['/compact', 'compact the context now; /compact <focus> steers the summary'],
+  ['/parallel', 'fan out lanes: /parallel [N|models] <task> (repeat to queue more)'],
+];
+// Slash-command completion for a session composer: while the FIRST word is
+// being typed (`/…`, no whitespace yet), the matching directives with their
+// help. Same popup contract as attachParallelSuggest; Tab (or Enter/click on
+// a highlighted row) completes the word plus a trailing space.
+function attachCommandSuggest(ta, root, liveNow) {
+  let box = null, items = [], active = -1;
+  const word = () => {
+    const v = ta.value;
+    return v.startsWith('/') && !/\s/.test(v) ? v : null;
+  };
+  const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
+  const insert = (cmd) => {
+    ta.value = cmd + ' ';
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    close(); ta.focus();
+    ta.dispatchEvent(new Event('input', { bubbles: true })); // the /parallel model popup takes over
+  };
+  const render = () => {
+    const w = word();
+    if (w === null) { close(); return; }
+    items = STEER_COMMANDS.filter(([c]) => (liveNow() || c !== '/compact') && c.startsWith(w));
+    if (!items.length) { close(); return; }
+    if (active >= items.length) active = -1;
+    if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
+    box.textContent = '';
+    items.forEach(([c, help], i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      o.appendChild(el('span', null, c));
+      o.appendChild(el('span', 'muted', ' · ' + help));
+      o.onmousedown = (e) => { e.preventDefault(); insert(c); };
+      box.appendChild(o);
+    });
+  };
+  ta.addEventListener('input', () => { active = -1; render(); });
+  ta.addEventListener('click', render);
+  ta.addEventListener('blur', () => setTimeout(close, 120));
+  // Returns true when the popup consumed the key (caller must not also act on it).
+  return { onKeyDown(e) {
+    if (!box || !items.length) return false;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(); return true; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); return true; }
+    if (e.key === 'Tab') { e.preventDefault(); insert(items[active >= 0 ? active : 0][0]); return true; }
+    if (e.key === 'Enter' && active >= 0) { e.preventDefault(); insert(items[active][0]); return true; }
+    if (e.key === 'Escape') { e.preventDefault(); close(); return true; }
+    return false;
+  } };
+}
+
 // Ctrl-R in a session composer: search this session's past messages (the
 // task, then every steer -- journal-read via the conversation payload, so
 // resumes and steers typed on other surfaces appear). Newest first, one line
@@ -582,6 +638,7 @@ function openHistorySearch(entries, onPick) {
   render();
 }
 
+// The composer bar under a run's conversation. On a LIVE run Enter sends the
 // text as a steer (injected at the run's next safe boundary); on a FINISHED
 // run Enter resumes the run with the text as the follow-up instruction (empty
 // = plain resume), then waits for the resumed worker to take over and
@@ -594,6 +651,8 @@ function makeComposer(id) {
   const hint = el('div', 'hint');
   let finished = null; // unknown until the first SSE frame
   let busy = false;
+  const suggest = attachCommandSuggest(ta, root, () => finished === false);
+  const models = attachParallelSuggest(ta, root); // the spec token after `/parallel `
   const apply = () => {
     ta.disabled = busy;
     if (busy) { hint.textContent = 'resuming…'; return; }
@@ -627,6 +686,7 @@ function makeComposer(id) {
     busy = false; apply();
   };
   ta.onkeydown = (e) => {
+    if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault(); // Ctrl-R here is history search, not a page reload
       if (busy) return;

@@ -169,7 +169,8 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .conv-live .lt { color: var(--accent); font-weight: 600; }
 /* The composer: docked under the conversation, the web analogue of the TUI's
    steer bar (steer a live run; type the follow-up a finished run resumes with). */
-.composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;
+  position: relative; /* the .ac-pop suggestion popups anchor to the composer */ }
 .composer textarea { min-height: 46px; }
 /* The docked composers (new-work, create-machine, machine steer/message) lay the
    textarea + actions in a .row; the textarea grows to fill it. flex-basis 0 +
