@@ -448,7 +448,9 @@ class ConversationScreen(Screen[None]):
     ]
     COMMANDS: ClassVar = {_ConvCommands}
 
-    def __init__(self, logs_path: Path, *, title: str, primary: bool = False) -> None:
+    def __init__(
+        self, logs_path: Path, *, title: Callable[[str], str], primary: bool = False
+    ) -> None:
         """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
         toggles the dashboard); pushed read-only viewers (the hub, the dashboard's
         t) leave it False, where Esc just dismisses."""
@@ -487,7 +489,6 @@ class ConversationScreen(Screen[None]):
         # A session-start event (session.start OR loop.resume.start) seen and no
         # session.end since -> the steer bar shows.
         self._live = False
-        self._prev_subtitle = ""  # app sub_title to restore when the view closes
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
 
     def compose(self) -> ComposeResult:
@@ -505,8 +506,7 @@ class ConversationScreen(Screen[None]):
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
 
     def on_mount(self) -> None:
-        self._prev_subtitle = self.app.sub_title  # show the run in the menu bar's title
-        self.app.sub_title = self._title
+        self.app.sub_title = self._title("conversation")  # run context in the menu bar
         self._reload()
         self._timer = self.set_interval(0.3, self._poll)
         # The jump pill follows the scroll position (mouse wheel included) and
@@ -529,9 +529,6 @@ class ConversationScreen(Screen[None]):
                     max(region.x, region.right - width - 2), max(region.y, region.bottom - 2)
                 )
 
-    def on_unmount(self) -> None:
-        self.app.sub_title = self._prev_subtitle
-
     def on_screen_suspend(self) -> None:
         # Hidden behind the dashboard (or another pushed screen): stop polling.
         if self._timer is not None:
@@ -541,7 +538,7 @@ class ConversationScreen(Screen[None]):
         # Back on top (a dashboard toggle, or a viewer above was closed):
         # re-stamp the title the covering screen may have changed, catch up on
         # events that landed while hidden, and resume the poll.
-        self.app.sub_title = self._title
+        self.app.sub_title = self._title("conversation")
         if self._timer is not None:
             self._poll()
             self._timer.resume()
@@ -900,8 +897,7 @@ class ConversationScreen(Screen[None]):
 
     def action_view_logs(self) -> None:
         """Open the raw event log of this run (the audit-log companion view)."""
-        session_id = self._logs_path.parent.name
-        self.app.push_screen(LogScreen(self._logs_path, title=f"logs · {session_id}"))
+        self.app.push_screen(LogScreen(self._logs_path, title=lambda: self._title("logs")))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)

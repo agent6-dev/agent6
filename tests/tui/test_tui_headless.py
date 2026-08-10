@@ -1090,7 +1090,9 @@ def test_pushed_conversation_viewer_still_dismisses(tmp_path: Path) -> None:
 
     class _Host(App[None]):
         def on_mount(self) -> None:
-            self.push_screen(ConversationScreen(tmp_path / "logs.jsonl", title="conversation · x"))
+            self.push_screen(
+                ConversationScreen(tmp_path / "logs.jsonl", title=lambda ctx: f"{ctx} · x")
+            )
 
     async def scenario() -> None:
         app = _Host()

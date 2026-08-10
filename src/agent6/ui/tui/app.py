@@ -443,13 +443,13 @@ class DashboardScreen(Screen[None]):
         small sliding window; this is the whole history, scroll-anchored. (l again
         inside the view closes it: LogScreen binds l -> close.)"""
         self.app.push_screen(
-            LogScreen(self._tui.logs_path, title=f"logs · {self._tui.session_dir.name}")
+            LogScreen(self._tui.logs_path, title=lambda: self._tui.screen_title("logs"))
         )
 
     def on_screen_resume(self) -> None:
         # The conversation stamps its own sub_title; re-stamp ours when the
         # toggle (or a closing viewer) brings the dashboard back on top.
-        self.app.sub_title = f"run · {self._tui.session_dir.name}"
+        self.app.sub_title = self._tui.run_title()
 
     # --- command palette ---------------------------------------------
 
@@ -812,10 +812,13 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
         self._light_dirty = False  # only stream deltas / heartbeat: light repaint
         self._stop = threading.Event()
-        # When True (the auto-spawned co-process of `agent6 run`), close the
-        # dashboard once the run ends so the parent command returns; `agent6
-        # watch` leaves this False and keeps following.
+        # When True (the auto-spawned co-process of `agent6 run`), the view
+        # ends WITH the run: once it finishes, the dashboard holds on the
+        # payoff until the user leaves (Ctrl+Q), and only then does the parent
+        # command return. `agent6 watch` leaves this False and keeps following.
         self.exit_on_end = exit_on_end
+        # The run ended under exit_on_end and the dashboard is holding.
+        self._end_hold = False
         # Set by action_detach_exit; run_tui reads it to print the reattach hint.
         self.detached = False
         # THE (word, reason) for this run -- status_for_session_dir, the same
@@ -842,16 +845,36 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # lookup can touch the model-listing cache file, so ask it once.
         self._ctx_windows: dict[tuple[str, str], int | None] = {}
         self._dash = DashboardScreen()
-        self._conv = ConversationScreen(
-            self.logs_path, title=f"conversation · {session_dir.name}", primary=True
-        )
+        self._conv = ConversationScreen(self.logs_path, title=self.screen_title, primary=True)
+
+    def _task_lead(self) -> str:
+        """What names this run in a title: the TASK (clipped), the pet name
+        only when no task is known yet -- the web hub's rows lead the same
+        way, and the id stays in the header line and every resume hint."""
+        task = (self.state.user_task or self.fallback_task).strip()
+        if not task:
+            return self.session_dir.name
+        return task[:56] + ("…" if len(task) > 56 else "")
+
+    def screen_title(self, context: str) -> str:
+        """Menu-bar subtitle for a run screen: the view's context word, the live
+        task name, and -- once the run ended -- the status plus how to leave.
+        Screens stamp via a provider calling this at stamp time, never a string
+        frozen at construction: the task name lands after the first fold, and
+        the end hold must survive whichever stamp runs last."""
+        if self._end_hold:
+            return f"{context} · {self._task_lead()} · {self.dir_status[0]} — ctrl+q to leave"
+        return f"{context} · {self._task_lead()}"
+
+    def run_title(self) -> str:
+        return self.screen_title("run")
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
         # Per-process claim file: nothing to defend or re-assert, concurrent
         # web/TUI/attach viewers each hold their own.
         register_frontend(self.session_dir, os.getpid())
-        self.sub_title = f"run · {self.session_dir.name}"  # menu-bar title context
+        self.sub_title = self.run_title()  # menu-bar title context
         # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
         # detached, whose session.steer_requested replays on open); only prompt for ones
         # that arrive AFTER we start watching, so opening a run never pops a stale,
@@ -922,6 +945,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             # block forever on a modal that never opens.
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
+            # The task is known once the boundary folds: retitle the menu bar
+            # (the conversation screen stamps its own title while on top).
+            if self.screen is self._dash:
+                self.sub_title = self.run_title()
         if event.get("type") in _STATUS_NOW_EVENTS:
             # A terminal / leg-boundary / operator-blocking event changes the
             # status NOW: refresh synchronously so the chip, the label, and the
@@ -1011,16 +1038,25 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 self._light_dirty = False
                 with contextlib.suppress(NoMatches):
                     self._dash.render_heartbeat()
-        # Exit only once the run ended (a clean session.end, or the worker died
-        # without one) and no modal is open: never yank an in-flight answer,
-        # but a ghost prompt on a dead run (its answer read by nobody) must
-        # not pin the dashboard open forever.
+        # Once the run ended (a clean session.end, or the worker died without
+        # one) and no modal is open -- never yank an in-flight answer, but a
+        # ghost prompt on a dead run (its answer read by nobody) must not pin
+        # the hold off forever -- the dashboard HOLDS on the payoff (verify,
+        # diff, cost) instead of tearing down under the user. Ctrl+Q leaves;
+        # the composer still routes a typed follow-up to resume.
         if (
             self.exit_on_end
+            and not self._end_hold
             and (self.state.finished or self.worker_lost)
             and not (stack and isinstance(stack[-1], ModalScreen))
         ):
-            self.exit()
+            self._end_hold = True
+            self.sub_title = self.run_title()
+            self.notify(
+                f"{self.dir_status[0]} — Ctrl+Q to leave, or type below to continue the session",
+                timeout=8.0,
+            )
+            self._dirty = True
 
     def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
         def cb(answer: str | None) -> None:

@@ -489,7 +489,9 @@ class HomeScreen(Screen[None]):
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         session_dir = self._runs[table.cursor_row]
-        self.app.push_screen(LogScreen(session_dir / LOGS_NAME, title=f"logs · {session_dir.name}"))
+        self.app.push_screen(
+            LogScreen(session_dir / LOGS_NAME, title=lambda: f"logs · {session_dir.name}")
+        )
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter

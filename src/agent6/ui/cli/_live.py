@@ -126,8 +126,9 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
     While it is up, this process's own console chatter is redirected to
     `<session_dir>/tui_console.log` so it doesn't fight the TUI for the terminal;
     progress still flows through `logs.jsonl`, which the TUI tails, and approvals
-    go through the file bridge. The TUI quits itself on the `session.end` event; we
-    reap it on the way out (terminating if it lingers). A spawn failure degrades
+    go through the file bridge. On `session.end` the TUI holds the finished
+    dashboard until the user leaves (Ctrl+Q); we wait for that, so the terminal
+    stays theirs until they are done looking. A spawn failure degrades
     gracefully to a normal (TUI-less) run rather than aborting."""
     if not enabled:
         yield
@@ -147,13 +148,16 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
     try:
         yield
     finally:
-        # The TUI closes itself on the session.end event. If the run ended without
-        # one (a crash), nudge it with SIGINT first -- textual restores the
-        # terminal cleanly -- and only hard-terminate as a last resort. Keep our
-        # own output redirected until it's gone so nothing scribbles its screen.
+        # The TUI holds the finished dashboard until the user leaves (Ctrl+Q),
+        # so wait for THEM, not a deadline: killing the view at +8s is exactly
+        # the payoff-vanishes defect the hold exists to fix. A wedged TUI is
+        # visibly wedged under the hold hint; Ctrl-C (SIGINT to the group)
+        # still tears everything down, textual restoring the terminal. Keep
+        # our own output redirected until it's gone so nothing scribbles its
+        # screen.
         try:
-            proc.wait(timeout=8)
-        except subprocess.TimeoutExpired:
+            proc.wait()
+        except KeyboardInterrupt:
             proc.send_signal(signal.SIGINT)
             try:
                 proc.wait(timeout=4)

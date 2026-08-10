@@ -58,7 +58,7 @@ class _Host(App[None]):
         self._logs = logs_path
 
     def on_mount(self) -> None:
-        self.push_screen(ConversationScreen(self._logs, title="conversation · test"))
+        self.push_screen(ConversationScreen(self._logs, title=lambda ctx: f"{ctx} · test"))
 
 
 def _write(logs: Path, events: list[dict[str, object]]) -> None:
@@ -382,7 +382,7 @@ class _LivenessHost(App[None]):
         return self._live
 
     def on_mount(self) -> None:
-        self.push_screen(ConversationScreen(self._logs, title="conversation · test"))
+        self.push_screen(ConversationScreen(self._logs, title=lambda ctx: f"{ctx} · test"))
 
 
 def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: Path) -> None:

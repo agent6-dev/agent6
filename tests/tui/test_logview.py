@@ -21,7 +21,7 @@ class _Host(App[None]):
         self._logs = logs_path
 
     def on_mount(self) -> None:
-        self.push_screen(LogScreen(self._logs, title="logs · test"))
+        self.push_screen(LogScreen(self._logs, title=lambda: "logs · test"))
 
 
 def _write_log(path: Path, events: list[dict[str, object]]) -> None:

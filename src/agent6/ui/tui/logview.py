@@ -26,6 +26,7 @@ the conversation view, and Esc/q back.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -88,13 +89,12 @@ class LogScreen(Screen[None]):
         *menu_bindings(MENUS),
     ]
 
-    def __init__(self, logs_path: Path, *, title: str) -> None:
+    def __init__(self, logs_path: Path, *, title: Callable[[], str]) -> None:
         super().__init__()
         self._logs_path = logs_path
         self._title = title
         self._tail = LogTail(logs_path)
         self._text = Text()
-        self._prev_subtitle = ""
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
@@ -103,14 +103,10 @@ class LogScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._prev_subtitle = self.app.sub_title  # show the run in the menu bar's title
-        self.app.sub_title = self._title
+        self.app.sub_title = self._title()  # show the run in the menu bar's title
         self._reload()
         # Follow live: a resume appends to the same file, so keep reading.
         self.set_interval(0.5, self._poll)
-
-    def on_unmount(self) -> None:
-        self.app.sub_title = self._prev_subtitle
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)

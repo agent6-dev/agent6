@@ -13,7 +13,7 @@ from agent6.ui.tui.conversation import ConversationScreen, _ChromeStatic
 def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title="t")
+    screen = ConversationScreen(logs, title=lambda _ctx: "t")
     written: list[str] = []
     screen._emit = written.append  # type: ignore[method-assign]  # sub the raw-write seam
     status = screen._copy_text("hello", method="osc52")
@@ -24,7 +24,7 @@ def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: Path) -> None
 def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title="t")
+    screen = ConversationScreen(logs, title=lambda _ctx: "t")
     screen._content.append("line one\nline two")
     # No body selection (unmounted, so no #conv-body) -> whole transcript.
     text, what = screen._selected_or_all()
@@ -40,7 +40,7 @@ def test_get_selected_text_gathers_body_only(tmp_path: Path) -> None:
     # body-only gather means a drag over a footer key can never reach the clipboard.
     logs = tmp_path / "logs.jsonl"
     logs.write_text("", encoding="utf-8")
-    screen = ConversationScreen(logs, title="t")
+    screen = ConversationScreen(logs, title=lambda _ctx: "t")
     screen._body_selection = lambda: "body text"  # type: ignore[method-assign]
     assert screen.get_selected_text() == "body text"
     screen._body_selection = lambda: None  # type: ignore[method-assign]
