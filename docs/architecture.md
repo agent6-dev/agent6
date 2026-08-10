@@ -54,8 +54,8 @@ almost always a sign of the wrong design.
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the application
   pipelines composed over the engine but never a front-end -- the
   run/resume/fork/machine-agent lifecycles, the run-branch merge + finalize,
-  provider construction, agent-process egress confinement (`app.egress`), and
-  the `--parallel` fan-out + coordinator dispatch. Never imports `agent6.ui`:
+  provider construction, agent-process Landlock confinement (`app.confine`),
+  and the `--parallel` fan-out + coordinator dispatch. Never imports `agent6.ui`:
   what it can't do itself (own a terminal, render a live view, spawn a detached
   `agent6`) the front-end injects as frozen callables (`SessionFrontend`,
   `LaneRuntime`), and its output goes through an injected two-channel
@@ -271,8 +271,8 @@ pipelines composed over the engine, never importing `agent6.ui`.
 
 - **`agent6 run --parallel N|model-a,model-b`** (`dispatch_parallel` /
   `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary
-  detached `agent6 run` (its own jail, egress broker, `run_commands` policy --
-  see [security.md](security.md)), symlinks each lane's live session dir into
+  detached `agent6 run` (its own jail and `run_commands` policy -- see
+  [security.md](security.md)), symlinks each lane's live session dir into
   `<origin_state>/sessions/runs/` as soon as it is located, and polls until every lane
   is terminal. Every hub (`agent6 sessions`, the TUI, the web hub) resolves that
   symlink like any other session dir, so a fan-out is visible live, not just at
@@ -510,7 +510,7 @@ any external viewer (the fold to render-ready state lives in
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |
 | `session.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
 | `budget.update`             | totals + caps for input/output tokens       |
-| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
+| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`frontend`/`stdin`/`session`/`away-deny`/`await-frontend`/`headless`) |
 | `question.prompt`/`.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
 | `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 sessions show`) |
