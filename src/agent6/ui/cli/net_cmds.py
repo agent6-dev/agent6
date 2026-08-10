@@ -197,10 +197,17 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     The operator's command, not the model's, so it is not approved or logged as
     a tool call -- but it is confined identically, which is the point: what you
     see is what the agent sees.
+
+    Unbounded: this is a foreground command in the operator's terminal, so
+    Ctrl-C is the bound, as it is for any other command they type. The fixed
+    policy timeout meant `exec` could not host a long-lived dependency (a dev
+    server, a tail) inside the run's network -- the one thing it is for.
     """
     pid = read_session_netns_pid(layout.session_dir)
     isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
-    policy = jail_policy(cwd, cfg, isolation, argv, network="session" if pid else None)
+    policy = jail_policy(
+        cwd, cfg, isolation, argv, network="session" if pid else None, timeout_s=0.0
+    )
     if policy.network == "session":
         # The run's network belongs to the run; borrow it through the holder
         # rather than making one of our own, which would be a different place.

@@ -431,7 +431,9 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
             env=env,
             capture_output=True,
             check=False,
-            timeout=policy.timeout_s,
+            # <= 0 is "no wall-clock kill" (agent6 exec, a model command whose
+            # check-in replaces the kill); None is subprocess's way to say it.
+            timeout=policy.timeout_s if policy.timeout_s > 0 else None,
         )
     except subprocess.TimeoutExpired as exc:
         # Match the jailed contract: a timeout is an rc=124 result,
@@ -772,8 +774,12 @@ def _launcher_result(
     start: float,
     binary: Path,
 ) -> CommandResult:
+    # The launcher enforces the command's own deadline; this one only bounds
+    # the launcher's teardown after it. <= 0 disables both, so waiting five
+    # seconds here would kill exactly the long command the caller allowed.
+    wait_s = policy.timeout_s + 5.0 if policy.timeout_s > 0 else None
     try:
-        raw_out, raw_err = launcher.communicate(input=spec.encode(), timeout=policy.timeout_s + 5.0)
+        raw_out, raw_err = launcher.communicate(input=spec.encode(), timeout=wait_s)
     except subprocess.TimeoutExpired as exc:
         # Kill the whole group, then drain whatever output was produced. Mirror
         # _run_unsandboxed: surface a timeout as the documented rc=124 result, not
