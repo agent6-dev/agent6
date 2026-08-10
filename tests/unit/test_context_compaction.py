@@ -344,6 +344,22 @@ def test_call_label_identities() -> None:
         == "read_file a.py (start_line=10, limit=40)"
     )
     assert call_label("list_dir", {"path": "src"}) == "list_dir src"
+    # Every tool with an identifying argument, not a hand-listed few: a
+    # compacted "run_command" with no command told the model nothing about
+    # whether it had already run the suite, and searching moved there.
+    assert call_label("run_command", {"argv": ["pytest", "-x", "tests/t.py"]}) == (
+        "run_command pytest -x tests/t.py"
+    )
+    assert call_label("apply_edit", {"path": "src/a.py", "edits": []}) == "apply_edit src/a.py"
+    assert call_label("use_skill", {"name": "debugging"}) == "use_skill debugging"
+    assert call_label("read_background", {"id": "bg1"}) == "read_background bg1"
+    assert call_label("fetch", {"url": "https://x.test/s"}) == "fetch https://x.test/s"
+    # An argv is rendered as a command line, so a quoted pattern stays readable.
+    assert call_label("run_command", {"argv": ["rg", "-n", "def f"]}) == (
+        "run_command rg -n 'def f'"
+    )
+    # Nothing identifying: the bare name, not an invented hint.
+    assert call_label("finish_session", {"summary": "done"}) == "finish_session"
     assert call_label("find_definition", {"symbol": "Foo"}) == "find_definition Foo"
     assert call_label("frobnicate", {"x": 1}) == "frobnicate"
     assert call_label("frobnicate", None) == "frobnicate"

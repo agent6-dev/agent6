@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from agent6.workflows._conversation import (
     AssistantTurn,
@@ -52,6 +53,14 @@ ELISION_GIST_PREFIX = ELISION_PREFIX + " (distilled)"
 _ELISION_HINT_MAX_CHARS = 120
 
 
+# The argument that identifies a call, tried in order. Named tools are not
+# enumerated here: anything carrying one of these gets a label, so a tool added
+# later is never silently anonymous in a compacted transcript. `run_command` is
+# why this matters most -- searching moved there, so a placeholder reading just
+# "run_command" leaves the model unable to tell whether it already ran the suite.
+_IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url")
+
+
 def call_label(tool_name: str, tool_input: Any) -> str:
     """Short identity for a tool call ("read_file src/foo.py").
 
@@ -67,10 +76,15 @@ def call_label(tool_name: str, tool_input: Any) -> str:
         limit = tool_input.get("limit")
         if start_line or limit:
             hint += f" (start_line={start_line}, limit={limit})"
-    elif tool_name in ("list_dir", "outline"):
-        hint = str(tool_input.get("path", ""))
-    elif tool_name in ("find_definition", "find_references"):
-        hint = str(tool_input.get("symbol", ""))
+    else:
+        for key in _IDENTIFYING_KEYS:
+            value = tool_input.get(key)
+            if not value:  # absent, or present-but-empty: no identity to show
+                continue
+            hint = (
+                shlex.join(str(a) for a in value) if isinstance(value, list | tuple) else str(value)
+            )
+            break
     if len(hint) > _ELISION_HINT_MAX_CHARS:
         hint = hint[:_ELISION_HINT_MAX_CHARS] + "..."
     return f"{tool_name} {hint}".rstrip()
