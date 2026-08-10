@@ -27,6 +27,7 @@ from pathlib import Path
 
 from agent6.sessions.layout import LOGS_NAME
 from agent6.viewmodel import summarize_session_dir
+from agent6.viewmodel.format import status_label
 
 # How a btw is started: (cwd, agent6 argv without the exe, env extras) -> "" or
 # an error. Exactly `app.egress.HostLaneLaunch`, which the coordinator already
@@ -108,11 +109,13 @@ def btw_answer(session: BtwSession) -> str | None:
     # `start_btw` waits for -- and writing its worker pid. Reading it as an
     # ending declared a btw dead on the watcher's FIRST poll, and the watcher
     # then stopped looking: the session ran to completion and its answer was
-    # never collected.
-    status = summarize_session_dir(session.dir).status
-    if status in {"created", "running", "starting", "waiting"}:
+    # never collected. (A DEAD pid in that window reads "stale - died
+    # launching", a real ending.)
+    summary = summarize_session_dir(session.dir)
+    if summary.status in {"created", "running", "starting", "waiting"}:
         return None
-    return _final_prose(session.dir) or f"(the btw ended without an answer: {status})"
+    label = status_label(summary.status, summary.reason)
+    return _final_prose(session.dir) or f"(the btw ended without an answer: {label})"
 
 
 def _final_prose(session_dir: Path) -> str:

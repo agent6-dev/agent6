@@ -142,7 +142,12 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
     """`start_btw` returns as soon as the session DIR appears, which is a few
     ms before the child writes its worker pid. Reading that window as an ending
     made the watcher emit "(ended without an answer: created)" on its first
-    poll and stop looking, while the btw ran on and answered."""
+    poll and stop looking, while the btw ran on and answered. A LIVE worker
+    mid-preflight is the same not-yet window; a DEAD one is a real ending
+    ("died launching") -- the old "created" word there kept the watcher polling
+    a dead btw forever."""
+    import os
+
     from agent6.app.btw import BtwSession, btw_answer
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
@@ -151,5 +156,9 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: Path) -> 
 
     assert btw_answer(session) is None, "a dir with no worker yet is not an ending"
 
-    (d / "worker.pid").write_text("1\n", encoding="utf-8")
-    assert btw_answer(session) is None
+    (d / "worker.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+    assert btw_answer(session) is None, "a live worker mid-preflight is not an ending"
+
+    (d / "worker.pid").write_text("1\n", encoding="utf-8")  # foreign pid: the worker died
+    answer = btw_answer(session)
+    assert answer is not None and "died launching" in answer
