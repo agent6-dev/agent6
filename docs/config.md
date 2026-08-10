@@ -402,17 +402,17 @@ agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
 agent6 mcp list
 ```
 
-Confine a spawned server with a `[sandbox]` block — Landlock paths and/or a
-private network namespace, independent axes:
+A spawned server is a jailed child like any other: same launcher, same
+sandbox a `run_command` gets. Its `[sandbox]` block names what it needs on
+top of that.
 
 ```toml
 [mcp.servers.notes]
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
 
 [mcp.servers.notes.sandbox]
-read_paths  = ["/usr", "/etc", "~/notes"]
+read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
 write_paths = ["~/notes"]
-network     = "none"     # loopback only, reaching nothing else
 ```
 
 A confined spawn also loses the desktop-session addresses
@@ -428,10 +428,10 @@ unconfined process is still a way out — name the narrowest paths that work.
 | `servers.<name>.url` | `""` | An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its environment or confinement. |
 | `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
-| `servers.<name>.sandbox.read_paths` | *(required in a block)* | Read+execute paths for a spawned server (absolute or `~`). Naming any path opts into a Landlock domain the server and its children inherit. Absent block = unconfined (agent6 cannot guess what a server needs). The five inert `/dev` nodes are granted ahead of the named paths. |
-| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write. |
-| `servers.<name>.sandbox.require` | `false` | Refuse to start on a kernel with no Landlock, instead of degrading with a warning. |
-| `servers.<name>.sandbox.network` | `"host"` | `"none"` = own network namespace: loopback only. An explicit enforce value — it refuses where userns is unavailable, never quietly keeps the network. (Not named `auto`: that word means secure-and-degrading elsewhere.) |
+| `servers.<name>.sandbox.read_paths` | `[]` | Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are already there, so a block names only the server's own data — nothing has to describe its interpreter. |
+| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write, likewise additive. |
+| `servers.<name>.sandbox.network` | `"auto"` | `[sandbox].tool_network`'s vocabulary at per-server scope, because servers differ from commands and from each other: `auto` = no network where the host can give a namespace, degrading with a warning where it cannot; `block` = refuse to start rather than run connected; `allow` = the host network. |
+| `servers.<name>.sandbox.unconfined` | `false` | No sandbox at all, for a server whose job IS arbitrary host access. Contradicts every other field here, so setting both is refused rather than half-applied. |
 | `servers.<name>.pass_env` | `[]` | Env vars the server needs, BY NAME. Everything else is the curated base. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |

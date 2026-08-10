@@ -154,13 +154,12 @@ reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Import agent6 from the source tree directly, not via the editable install's
-# .pth. The .pth encodes this checkout's absolute host path, which does not
-# exist inside the jail (the repo is bind-mounted at /workspace), so an in-jail
-# verify -- e.g. agent6 running its own suite while improving itself -- could not
-# `import agent6`. pytest prepends <rootdir>/src, which resolves to /workspace/src
-# in the jail and to this dir out of it: identical files either way, no dependency
-# on where (or whether) an editable install points.
+# The source tree, not the installed package: a src-layout project wants its
+# own `src` on the path so the suite tests what is checked out. (This used to
+# be load-bearing for a different reason -- the jail remapped the repo to
+# /workspace, so an editable install's .pth pointed at a path that did not
+# exist inside and `import agent6` found nothing. The jail binds the repo at
+# its real path now, so an editable install imports itself in or out of it.)
 pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [

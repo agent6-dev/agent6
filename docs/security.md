@@ -98,7 +98,10 @@ no run) each command gets its own launcher. Under `strict` it:
 - `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd +
   private `/tmp` writable; system paths read-only; `extra_read_paths` and
   `extra_write_paths` at their real paths; operator-tool dirs as read+exec
-  mounts. Tool mounts never include agent6's own private dirs (config +
+  mounts. EVERY mount is at the path it has outside, the cwd included, so a
+  path means the same thing on both sides of the boundary: an absolute path
+  the model produced, an MCP server's own argv, and an editable install's
+  `.pth` all resolve. Tool mounts never include agent6's own private dirs (config +
   state, either direction of containment) or `$HOME` and its ancestors. A tool
   dir whose read-only remount fails is detached; a failed detach refuses the
   run. Command jails and machine tool jails share this one computation.
@@ -111,8 +114,9 @@ no run) each command gets its own launcher. Under `strict` it:
       is different -- rare, and that tool silently will not run -- so that one
       is named at run start.
 - **Hidden paths are masked last, after every bind**, so no grant exposes
-  them from above: an empty tmpfs over a dir, `/dev/null` over a file, at the
-  real path and the `/workspace` alias alike.
+  them from above: an empty tmpfs over a dir, `/dev/null` over a file. One
+  mask per path, because every mount is at its real location -- there is no
+  alias to close a second door on.
     - Always hidden: the config dir (provider keys) and the state base
       (transcripts, notes, memories, run history), so they stay out of the
       jail even under an `extra_read_paths` grant of `$HOME`.
@@ -406,10 +410,9 @@ syscall for hardened), never guessed from the kernel version.
     - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
       editable-install `.pth` would silently corrupt the venv, invisible in `runs
       diff`/merge since venvs are gitignored. Reads stay allowed.
-    - Related limit: an editable install records the host path in its `.pth`,
-      absent under the jail's `/workspace`, so a `verify_command` importing the
-      project can `ModuleNotFoundError`. Fix with pytest `pythonpath`, a
-      `conftest.py`, or a non-editable install.
+    - An editable install imports itself inside the jail: the repo is bound
+      at its real path, so the host path its `.pth` records is the same path
+      inside.
 
 ### 5b. Secrets, `connect`, root
 
