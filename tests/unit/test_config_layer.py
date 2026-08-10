@@ -757,7 +757,7 @@ def test_provider_members_are_derived_from_the_union() -> None:
     would be validated by nothing, so a bad leaf on it would land."""
     from typing import get_args
 
-    from agent6.config.model import ProviderEntry
+    from agent6.config import ProviderEntry
     from agent6.config.write import PROVIDER_MEMBERS
 
     declared = get_args(get_args(ProviderEntry)[0])

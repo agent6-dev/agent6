@@ -27,6 +27,7 @@ from typing import get_args
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
 
+from agent6.config._providers import Deployment, ProviderEntry
 from agent6.config.io import (
     ConfigLeafValue,
     parse_cli_value,
@@ -41,12 +42,7 @@ from agent6.config.layer import (
     load_effective,
     repo_config_path_for,
 )
-from agent6.config.model import (
-    Config,
-    ConfigError,
-    Deployment,
-    ProviderEntry,
-)
+from agent6.config.model import Config, ConfigError
 from agent6.errors import OperatorError, read_operator_file
 from agent6.paths import (
     chown_to_real_user,

@@ -289,7 +289,17 @@ depends_on = ["agent6.types"]
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config.model"]
+depends_on = ["agent6.config.model", "agent6.config._providers"]
+
+[[modules]]
+# The one pydantic ConfigDict every config model shares.
+path = "agent6.config._base"
+depends_on = []
+
+[[modules]]
+# The [providers.*] entries, discriminated by wire format.
+path = "agent6.config._providers"
+depends_on = ["agent6.config._base"]
 
 [[modules]]
 path = "agent6.config.model"
@@ -299,7 +309,13 @@ path = "agent6.config.model"
 # as the operator's mistake at the CLI boundary.
 # agent6.paths: the extra-path validator refuses grants inside the private
 # config/state dirs at load time, so it must know where they are.
-depends_on = ["agent6.types", "agent6.errors", "agent6.paths"]
+depends_on = [
+  "agent6.config._base",
+  "agent6.config._providers",
+  "agent6.types",
+  "agent6.errors",
+  "agent6.paths",
+]
 
 [[modules]]
 # The environment a process spawned OUTSIDE the jail inherits. A leaf because
@@ -326,7 +342,7 @@ depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths", "agent6
 
 [[modules]]
 path = "agent6.config.write"
-depends_on = ["agent6.config.model", "agent6.config.io", "agent6.config.layer", "agent6.errors", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.config.model", "agent6.config._providers", "agent6.config.io", "agent6.config.layer", "agent6.errors", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.models.cache"

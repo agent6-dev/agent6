@@ -7,9 +7,14 @@ and layering live at `agent6.config.io` / `agent6.config.layer`."""
 
 from __future__ import annotations
 
+from agent6.config._providers import (
+    AnthropicProviderEntry,
+    OpenAIProviderEntry,
+    ProviderEntry,
+    validate_base_url,
+)
 from agent6.config.model import (
     Agent6Section,
-    AnthropicProviderEntry,
     BudgetConfig,
     Config,
     ConfigError,
@@ -23,10 +28,8 @@ from agent6.config.model import (
     MetricConfig,
     ModelsConfig,
     NotifyConfig,
-    OpenAIProviderEntry,
     ParallelConfig,
     PromptConfig,
-    ProviderEntry,
     ReviewConfig,
     ReviewTier,
     RoleModel,
@@ -38,7 +41,6 @@ from agent6.config.model import (
     is_loopback_host,
     load_config,
     mcp_server_name_refusal,
-    validate_base_url,
     validate_config,
 )
 
