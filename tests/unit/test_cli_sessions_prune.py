@@ -392,3 +392,62 @@ def test_runs_rm_asks_clears_the_bucket(
     assert main(["sessions", "rm", "--asks"]) == 0
     assert "removed 2 asks" in capsys.readouterr().out
     assert not asks.exists()
+
+
+def _chain_ref_exists(repo: Path, session_id: str) -> bool:
+    return bool(_git(repo, "for-each-ref", f"refs/agent6/{session_id}", check=False))
+
+
+def test_prune_drops_chain_refs_of_confirmed_merged_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merged run's refs/agent6/<id> falls with the same rules as branches:
+    reachable-merged deletes outright, squash-merged only with
+    --delete-squashed while the ref matches the recorded tip, unmerged and
+    manifest-less (machine) refs are kept silently."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    # merged-reachable: work committed on main itself (a merge landed it).
+    _make_branch(tmp_path, "run-RCH111", "a.txt")
+    _git(tmp_path, "merge", "-q", "--no-ff", "-m", "land", "agent6/run-RCH111")
+    _git(tmp_path, "update-ref", "refs/agent6/run-RCH111", "agent6/run-RCH111")
+    _manifest(tmp_path, "run-RCH111", base, merged=True)
+    # squash-merged: content in main via squash; the ref is unreachable.
+    _make_branch(tmp_path, "run-SQH111", "b.txt")
+    _git(tmp_path, "update-ref", "refs/agent6/run-SQH111", "agent6/run-SQH111")
+    _git(tmp_path, "branch", "-D", "agent6/run-SQH111")
+    _manifest(
+        tmp_path,
+        "run-SQH111",
+        base,
+        merged=True,
+        merged_tip=_git(tmp_path, "rev-parse", "refs/agent6/run-SQH111"),
+    )
+    # unmerged: the ref is the work's only anchor; must survive both passes.
+    _make_branch(tmp_path, "run-UNM111", "c.txt")
+    _git(tmp_path, "update-ref", "refs/agent6/run-UNM111", "agent6/run-UNM111")
+    _git(tmp_path, "branch", "-D", "agent6/run-UNM111")
+    _manifest(tmp_path, "run-UNM111", base, merged=False)
+    # machine chain: no run manifest; never touched, never mentioned.
+    _git(tmp_path, "update-ref", "refs/agent6/machine-box1", base)
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert not _chain_ref_exists(tmp_path, "run-RCH111")
+    assert _chain_ref_exists(tmp_path, "run-SQH111")  # squash needs the flag
+    assert _chain_ref_exists(tmp_path, "run-UNM111")
+    assert _chain_ref_exists(tmp_path, "machine-box1")
+    assert "deleted refs/agent6/run-RCH111" in out
+    assert "machine-box1" not in out
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert not _chain_ref_exists(tmp_path, "run-SQH111")
+    assert _chain_ref_exists(tmp_path, "run-UNM111")
+    assert _chain_ref_exists(tmp_path, "machine-box1")

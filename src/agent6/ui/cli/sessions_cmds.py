@@ -31,6 +31,7 @@ from agent6.git_ops import (
     git_hardening_flags,
     is_ancestor,
     is_git_repo,
+    list_chain_refs,
     list_run_branches,
     list_run_commits,
     render_commit_trailer,
@@ -44,6 +45,7 @@ from agent6.sessions.layout import (
     SESSION_BUCKETS,
     SessionLayout,
     bucket_dir,
+    session_layout,
 )
 from agent6.sessions.manifest import (
     ManifestError,
@@ -714,14 +716,55 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
             squashed_deleted += 1
         else:
             merged_kept += 1
+    refs_deleted, refs_kept = _prune_chain_refs(cwd, state_dir, delete_squashed=delete_squashed)
     kept = merged_kept + unmerged_kept
     total_deleted = deleted + squashed_deleted
     squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""
+    refs_note = (
+        f"; chain refs: deleted {refs_deleted}, kept {refs_kept}"
+        if refs_deleted or refs_kept
+        else ""
+    )
     print(
         f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
-        f"({merged_kept} merged, {unmerged_kept} unmerged)",
+        f"({merged_kept} merged, {unmerged_kept} unmerged){refs_note}",
     )
     return 0
+
+
+def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> tuple[int, int]:
+    """Drop `refs/agent6/<id>` chain refs whose manifest confirms the run
+    merged, under the same safety rules as branches: reachable-from-base
+    deletes outright; a squash-merge (content in the base commit, ref
+    unreachable) deletes only with --delete-squashed AND only while the ref
+    still points at the recorded merged tip. Live runs, unmerged runs, and
+    refs with no run manifest (machine chains) are kept; keeps are silent --
+    an unmerged ref is the run's anchor, not clutter. Returns (deleted, kept
+    merged-but-not-deletable)."""
+    refs_deleted = refs_kept = 0
+    for sid, sha in list_chain_refs(cwd):
+        layout = session_layout(state_dir, sid)
+        if layout is None or worker_is_alive(layout.session_dir):
+            continue  # no session record (a machine chain), or still running
+        try:
+            manifest = read_manifest(layout.session_dir)
+        except ManifestError:
+            continue
+        if not (manifest.merged and manifest.merged.sha):
+            continue
+        into = manifest.merged.into
+        ref = f"refs/agent6/{sid}"
+        if branch_exists(cwd, into) and is_ancestor(cwd, sha, into):
+            delete_ref(cwd, ref)
+            refs_deleted += 1
+            print(f"[agent6] deleted {ref} (merged into {into})")
+        elif delete_squashed and manifest.merged.tip == sha:
+            delete_ref(cwd, ref)
+            refs_deleted += 1
+            print(f"[agent6] deleted {ref} (squash-merged into {into})")
+        else:
+            refs_kept += 1
+    return refs_deleted, refs_kept
 
 
 def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:

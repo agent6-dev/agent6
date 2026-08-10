@@ -560,6 +560,17 @@ def delete_ref(path: Path, ref: str) -> None:
     _run(path, "update-ref", "-d", ref, check=False)
 
 
+def list_chain_refs(path: Path) -> tuple[tuple[str, str], ...]:
+    """(session_id, sha) for every `refs/agent6/<id>` chain ref, sorted by id."""
+    out = _run(path, "for-each-ref", "--format=%(refname)%00%(objectname)", "refs/agent6/").stdout
+    rows: list[tuple[str, str]] = []
+    for line in out.splitlines():
+        ref, _, sha = line.partition("\x00")
+        if ref.startswith("refs/agent6/") and sha:
+            rows.append((ref.removeprefix("refs/agent6/"), sha))
+    return tuple(sorted(rows))
+
+
 def checkout_detached(path: Path, rev: str) -> None:
     """Detached checkout of *rev*: for agent6-OWNED clones (a lane workspace
     cut at the coordinator's chain tip), never the operator's checkout."""
