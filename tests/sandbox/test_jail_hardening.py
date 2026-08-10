@@ -639,3 +639,52 @@ def test_dev_shm_is_the_jails_own_and_writable(tmp_path: Path) -> None:
     assert "tmpfs" in res.stdout, res.stdout
     assert marker in res.stdout, res.stdout
     assert not Path(f"/dev/shm/{marker}").exists(), "the jail wrote the HOST's /dev/shm"
+
+
+@pytest.mark.parametrize("level", ["hardened", "strict"])
+def test_pidfd_getfd_is_denied_and_pidfd_open_is_not(tmp_path: Path, level: str) -> None:
+    """pidfd_getfd steals an already-open fd out of another process's table --
+    the pidfd-era way to do what ptrace's fd access did, without calling
+    ptrace. It is gated only by ptrace_may_access, the SAME check that gates
+    the already-denied process_vm_readv/writev/kcmp, and under `hardened`
+    (no user namespace) that check plus the host's yama tunable was a jailed
+    command's only barrier to lifting a live fd out of the agent.
+
+    Probed by NUMBER so a userspace wrapper's own failure can't read as a deny:
+    438 (pidfd_getfd, x86_64 and aarch64) must be EPERM; 434 (pidfd_open, the
+    harmless handle) must NOT be denied -- it fails EINVAL/ESRCH on a bogus
+    pid, never EPERM from the filter. Verified before the fix: a jailed
+    command duplicated a sibling's fd into itself; after, EPERM."""
+    import platform
+
+    from agent6.sandbox.jail import run_in_jail
+    from agent6.types import JailPolicy
+
+    if platform.machine() not in ("x86_64", "aarch64"):
+        pytest.skip(f"pidfd syscall numbers not pinned for {platform.machine()}")
+    probe = (
+        "import ctypes\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "def call(nr, *a):\n"
+        "    ctypes.set_errno(0)\n"
+        "    rc = libc.syscall(ctypes.c_long(nr), *[ctypes.c_long(x) for x in a])\n"
+        "    return rc, ctypes.get_errno()\n"
+        # pidfd_getfd(-1, -1, 0): a filtered call EPERMs before the kernel
+        # validates the bogus args; unfiltered it would be EBADF.
+        "print('getfd', *call(438, -1, -1, 0))\n"
+        # pidfd_open(-1, 0): EINVAL for the bad pid if allowed, EPERM if filtered.
+        "print('open', *call(434, -1, 0))\n"
+    )
+    res = run_in_jail(
+        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=level, timeout_s=20.0)  # pyright: ignore[reportArgumentType]
+    )
+    out = res.stdout or ""
+    if "getfd" not in out:
+        pytest.skip(f"probe did not run: {res.stderr[:200]}")
+    getfd = next(ln for ln in out.splitlines() if ln.startswith("getfd"))
+    assert getfd.split()[1] == "-1", f"pidfd_getfd reached the kernel: {getfd}"
+    assert getfd.split()[2] == "1", f"pidfd_getfd denied by something other than seccomp: {getfd}"
+    open_line = next(ln for ln in out.splitlines() if ln.startswith("open"))
+    assert open_line.split()[2] != "1", (
+        f"the jail denies pidfd_open, the harmless handle: {open_line}"
+    )

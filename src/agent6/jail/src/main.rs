@@ -1559,6 +1559,18 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_process_vm_readv,
         libc::SYS_process_vm_writev,
         libc::SYS_kcmp,
+        // pidfd_getfd steals an already-open fd out of another process's table
+        // -- the pidfd-era way to do what ptrace's fd access did, without
+        // calling ptrace. It is gated only by ptrace_may_access, the SAME check
+        // that gates process_vm_readv/writev and kcmp above; those are denied
+        // regardless, so this belongs beside them. Left off, a jailed command's
+        // one barrier to lifting a live fd (a provider socket, a secrets or
+        // transcript fd) out of the agent under `hardened` -- no user namespace
+        // there -- is that check plus the host's yama tunable, which is 0 on
+        // many distros and in many containers. seccomp is the layer that must
+        // not depend on either. pidfd_open (the handle) is harmless alone and
+        // stays allowed; this is the reach.
+        libc::SYS_pidfd_getfd,
         libc::SYS_mount,
         // umount2 is the unmount call on every arch here. There is no second
         // spelling to add: the legacy `umount` is number 22 of the I386 table,
