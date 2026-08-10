@@ -27,7 +27,8 @@ live. A live run keeps a steer bar at the bottom.
 `Ctrl+D` toggles the dashboard: the task graph beside the model's live reasoning, then
 the tool calls with their results, and the event log and latest commit diff side by
 side. The composer bar runs along the foot (type to steer, or to resume a finished
-run with a follow-up), and the View menu maximizes the focused pane to full screen.
+run with a follow-up; `/` completes the steer directives, Ctrl-R searches the
+session's past messages), and the View menu maximizes the focused pane to full screen.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
@@ -74,7 +75,8 @@ current state stream, with the run's approvals and questions answerable in place
 ## From the terminal
 
 For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
-Ctrl-C, no TUI required. Runs started from the TUI or web hub are detached instead, and
+Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and
+Ctrl-R searches the session's past messages). Runs started from the TUI or web hub are detached instead, and
 `agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for
 a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot
 of the same state.

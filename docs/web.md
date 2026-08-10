@@ -45,7 +45,9 @@ Shift+Enter inserts a newline.
   (hover for the full args and result), latest commit diff, and the raw event
   log — lives in a collapsible details drawer on the left (drag its edge to
   resize; both persist). The docked composer steers a live run and, once the
-  run has ended, resumes it with the typed follow-up. Stop now, stop after the
+  run has ended, resumes it with the typed follow-up; typing `/` completes the
+  steer directives, and Ctrl-R (while the composer holds focus) searches the
+  session's past messages into it. Stop now, stop after the
   current step, compact the context, merge the branch, delete the run's history,
   approve `run_command` prompts, and answer `ask_user` questions inline.
 - **Machines**: the state overview, the path taken, and the current agent
