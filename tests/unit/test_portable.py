@@ -190,7 +190,13 @@ def test_locked_file_is_same_thread_reentrant(tmp_path: Path) -> None:
 
 
 def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> None:
-    """Reentrancy is per-thread only: a second thread must still queue."""
+    """Reentrancy is per-thread only: a second thread must still queue.
+
+    The holder records its exit INSIDE the block. A lock orders critical
+    sections, not the bookkeeping after them: release unlinks the lock file
+    before unlocking it, so a contender arriving during teardown takes a fresh
+    file and never queues, and its append can land first.
+    """
     import threading
     import time
 
@@ -204,7 +210,7 @@ def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> 
             order.append("holder-in")
             inside.set()
             release.wait(timeout=5)
-        order.append("holder-out")
+            order.append("holder-out")
 
     def contender() -> None:
         inside.wait(timeout=5)
