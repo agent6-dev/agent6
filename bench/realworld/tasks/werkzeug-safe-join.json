@@ -21,7 +21,7 @@
       ".venv/bin/pip",
       "-q",
       "install",
-      "pytest",
+      "pytest<9",
       "markupsafe"
     ]
   ],

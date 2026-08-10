@@ -4,9 +4,25 @@
   "repo_url": "https://github.com/pallets/click.git",
   "commit": "8.1.7",
   "install": [
-    ["python3", "-m", "venv", ".venv"],
-    [".venv/bin/pip", "-q", "install", "-U", "pip"],
-    [".venv/bin/pip", "-q", "install", "pytest"]
+    [
+      "python3",
+      "-m",
+      "venv",
+      ".venv"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "-U",
+      "pip"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "pytest<9"
+    ]
   ],
   "break": [
     {
@@ -16,5 +32,14 @@
     }
   ],
   "task_md": "# Restore `click.utils.make_default_short_help`\n\nThe function `make_default_short_help()` in `src/click/utils.py` currently\nraises `NotImplementedError`. Restore an implementation that satisfies the\ndocstring and passes `tests/test_utils.py::test_make_default_short_help`.\n\nBehaviour summary (from the docstring + tests):\n- Returns a one-line condensed version of the help string.\n- Only the first paragraph (delimited by a blank line) is considered.\n- A leading `\\b` no-rewrap marker is dropped.\n- Result is no longer than `max_length` characters.\n- If a sentence boundary (`.`) fits within the limit, end there with no suffix.\n- Otherwise truncate at the last whole word that fits and append `...`.\n- Whitespace (newlines, tabs, multiple spaces) is collapsed to single spaces.\n\nConstraints:\n- Do not modify any test file.\n- Stdlib only; no new dependencies.\n\nRun the verify command to check.\n",
-  "verify_command": ["env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest", "-x", "-q", "tests/test_utils.py::test_make_default_short_help"]
+  "verify_command": [
+    "env",
+    "PYTHONPATH=src",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-x",
+    "-q",
+    "tests/test_utils.py::test_make_default_short_help"
+  ]
 }
