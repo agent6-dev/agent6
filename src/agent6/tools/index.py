@@ -35,7 +35,7 @@ from typing import Final
 from tree_sitter import Parser, Query, QueryCursor
 from tree_sitter_language_pack import get_language
 
-from agent6.tools._path_safety import contain, read_bytes_contained
+from agent6.tools._path_safety import Workspace, contain, read_bytes_contained
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,11 +302,12 @@ class SymbolIndex:
 
     def __init__(
         self,
-        root: Path,
+        ws: Workspace,
         *,
         excludes: tuple[str, ...] = _DEFAULT_EXCLUDES,
     ) -> None:
-        self._root = root.resolve()
+        self._ws = ws
+        self._root = ws.root.resolve()
         self._excludes = excludes
         # path -> per-file caches. Absolute, resolved paths.
         self._symbols: dict[Path, list[Symbol]] = {}
@@ -576,16 +577,23 @@ class SymbolIndex:
             self._stamps.pop(p, None)
 
     def _included_rel(self, p: Path) -> Path | None:
-        """The path relative to root, or None when *p* lies outside it or under
-        an excluded directory. One answer for both questions, so what is in
-        scope and what the contained read walks cannot disagree. Comparing the
-        RELATIVE parts keeps an excluded dirname in an outside ancestor from
-        mattering."""
+        """The path relative to root, or None when *p* lies outside it, under
+        an excluded directory, or hidden by the workspace boundary. One answer
+        for all three, so what is in scope and what the contained read walks
+        cannot disagree. Comparing the RELATIVE parts keeps an excluded dirname
+        in an outside ancestor from mattering.
+
+        The boundary check belongs here rather than at the query: a hidden file
+        that reached the index would leak its symbol NAMES and line numbers
+        through find_definition even though nothing could read it.
+        """
         try:
             rel = p.relative_to(self._root)
         except ValueError:
             return None
         if any(part in self._excludes for part in rel.parts):
+            return None
+        if self._ws.is_denied(p):
             return None
         return rel
 

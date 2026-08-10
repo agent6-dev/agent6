@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent6.tools._path_safety import read_contained, resolve_in_root
+from agent6.tools._path_safety import Workspace, read_contained
 from agent6.tools.errors import ToolError
 from agent6.tools.index import SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
@@ -34,10 +34,10 @@ INDEX_RESULT_CAP = 500
 
 
 def outline(
-    root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
+    ws: Workspace, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
 ) -> OutlineResult:
     args = OutlineInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
+    sp = ws.resolve_read(args.path)
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
     syms = ensure_index().outline(sp.abs_path)
@@ -47,14 +47,14 @@ def outline(
 
 
 def find_definition(
-    root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
+    ws: Workspace, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
 ) -> DefinitionsResult:
     args = FindDefinitionInput.model_validate(raw)
     defs = ensure_index().find_definition(args.symbol)
     out: list[dict[str, Any]] = []
     for s in defs:
         try:
-            rel = s.path.relative_to(root)
+            rel = s.path.relative_to(ws.root)
         except ValueError:
             continue
         out.append({"name": s.name, "kind": s.kind, "path": str(rel), "line": s.line, "col": s.col})
@@ -63,14 +63,14 @@ def find_definition(
 
 
 def find_references(
-    root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
+    ws: Workspace, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
 ) -> ReferencesResult:
     args = FindReferencesInput.model_validate(raw)
     refs = ensure_index().find_references(args.symbol)
     out: list[dict[str, Any]] = []
     for r in refs:
         try:
-            rel = r.path.relative_to(root)
+            rel = r.path.relative_to(ws.root)
         except ValueError:
             continue
         out.append({"name": r.name, "path": str(rel), "line": r.line, "col": r.col})
@@ -78,11 +78,11 @@ def find_references(
     return ReferencesResult(references=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
-def _lsp_document(root: Path, path: str) -> tuple[Path, str]:
+def _lsp_document(ws: Workspace, path: str) -> tuple[Path, str]:
     """The contained absolute path of *path* and its text, read through the
     root-anchored descriptor walk so the bytes the query anchors on come from
     the file the containment check passed, not from a second lookup by name."""
-    sp = resolve_in_root(root, path)
+    sp = ws.resolve_read(path)
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {path}")
     try:
@@ -92,10 +92,10 @@ def _lsp_document(root: Path, path: str) -> tuple[Path, str]:
 
 
 def find_definition_lsp(
-    root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
+    ws: Workspace, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
 ) -> DefinitionsResult:
     args = FindDefinitionLspInput.model_validate(raw)
-    abs_path, text = _lsp_document(root, args.path)
+    abs_path, text = _lsp_document(ws, args.path)
     try:
         locs = ensure_lsp().find_definition(abs_path, text, args.symbol)
     except LspError as exc:
@@ -103,7 +103,7 @@ def find_definition_lsp(
     out: list[dict[str, Any]] = []
     for loc in locs:
         try:
-            rel = loc.path.resolve().relative_to(root)
+            rel = loc.path.resolve().relative_to(ws.root)
         except ValueError:
             continue
         out.append({"path": str(rel), "line": loc.line, "col": loc.col})
@@ -112,10 +112,10 @@ def find_definition_lsp(
 
 
 def find_references_lsp(
-    root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
+    ws: Workspace, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
 ) -> ReferencesResult:
     args = FindReferencesLspInput.model_validate(raw)
-    abs_path, text = _lsp_document(root, args.path)
+    abs_path, text = _lsp_document(ws, args.path)
     try:
         locs = ensure_lsp().find_references(abs_path, text, args.symbol)
     except LspError as exc:
@@ -123,7 +123,7 @@ def find_references_lsp(
     out: list[dict[str, Any]] = []
     for loc in locs:
         try:
-            rel = loc.path.resolve().relative_to(root)
+            rel = loc.path.resolve().relative_to(ws.root)
         except ValueError:
             continue
         out.append({"path": str(rel), "line": loc.line, "col": loc.col})

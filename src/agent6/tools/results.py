@@ -102,12 +102,19 @@ class ReadFileResult(ToolResult):
 @dataclass(frozen=True, slots=True)
 class ListDirResult(ToolResult):
     entries: tuple[str, ...]
+    # Entries the workspace boundary hides. Counted rather than named: the
+    # listing stays true without disclosing what is hidden.
+    hidden: int = 0
 
     def to_wire(self) -> dict[str, Any]:
-        return {"entries": list(self.entries)}
+        out: dict[str, Any] = {"entries": list(self.entries)}
+        if self.hidden:
+            out["hidden"] = self.hidden
+        return out
 
     def summary(self) -> str:
-        return f"{len(self.entries)} entries"
+        extra = f", {self.hidden} hidden" if self.hidden else ""
+        return f"{len(self.entries)} entries{extra}"
 
 
 # --- search / navigation -----------------------------------------------------

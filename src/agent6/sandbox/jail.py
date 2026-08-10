@@ -27,7 +27,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from agent6.paths import private_dirs
+from agent6.paths import hidden_paths, private_dirs
 from agent6.types import CommandResult, JailPolicy
 
 # --- operator tool reachability ----------------------------------------------
@@ -402,9 +402,7 @@ def _policy_to_json(policy: JailPolicy) -> str:
             # state never enter the jail even under a $HOME-wide grant. A
             # policy grant BENEATH a hidden root is re-bound through the mask
             # by the launcher (the machine data contract).
-            "hide_paths": sorted(
-                {str(p) for p in policy.hide_paths} | {str(d) for d in private_dirs()}
-            ),
+            "hide_paths": sorted({str(p) for p in hidden_paths(policy.hide_paths)}),
             "timeout_s": policy.timeout_s,
             "memory_limit_mb": policy.memory_limit_mb,
         }

@@ -13,9 +13,27 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
+from agent6.paths import hidden_paths
 from agent6.sandbox.jail import operator_tool_paths
+from agent6.tools._path_safety import Workspace
 from agent6.tools._result_format import passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+
+
+def workspace_for(config: Config, root: Path) -> Workspace:
+    """The in-process file boundary for a run rooted at *root*.
+
+    The tools are the FRONT DOOR of the file axis -- an untrusted model reaches
+    files through them directly, with no approval -- and the jail is the fence
+    that stops a command working around it. Both read the same hidden set
+    (:func:`agent6.paths.hidden_paths`), so the two enforcers cannot disagree.
+
+    Derived from config VALUES, never from the isolation level: a degradation
+    (auto falling back to hardened or none, macOS having no jail at all) must
+    never WIDEN what the tools may touch.
+    """
+    denied = hidden_paths(Path(p) for p in config.sandbox.hide_paths)
+    return Workspace(root=root.resolve(), denied=tuple(p.resolve() for p in denied))
 
 
 def resolve_network(

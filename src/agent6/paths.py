@@ -33,6 +33,7 @@ import contextlib
 import hashlib
 import os
 import pwd
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -217,6 +218,17 @@ def private_dirs() -> tuple[Path, ...]:
     Read per call: the XDG vars are per-process.
     """
     return (global_config_dir(), state_base())
+
+
+def hidden_paths(extra: Iterable[Path]) -> tuple[Path, ...]:
+    """Every tree hidden from a run: the operator's ``[sandbox].hide_paths``
+    plus :func:`private_dirs`.
+
+    ONE owner, because two enforcers read it -- the jail masks these from a
+    jailed command, and the in-process ``Workspace`` refuses them to the tools
+    -- and a boundary they disagree about is a hole.
+    """
+    return (*extra, *private_dirs())
 
 
 # A state dir names its workspace so `ls` sorts by location and a stale one is

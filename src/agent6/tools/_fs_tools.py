@@ -25,9 +25,11 @@ from agent6.tools._edit_diag import (
 )
 from agent6.tools._path_safety import (
     SafePath,
+    Workspace,
+    fold_name,
     list_contained,
+    path_within,
     read_contained,
-    resolve_in_root,
     write_contained,
 )
 from agent6.tools.errors import ToolError
@@ -82,9 +84,9 @@ def agent6_docs(raw: dict[str, Any]) -> ToolResult:
     )
 
 
-def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
+def read_file(ws: Workspace, raw: dict[str, Any]) -> ReadFileResult:
     args = ReadFileInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
+    sp = ws.resolve_read(args.path)
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
     try:
@@ -127,42 +129,27 @@ def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     )
 
 
-def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
+def list_dir(ws: Workspace, raw: dict[str, Any]) -> ListDirResult:
     args = ListDirInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
+    sp = ws.resolve_read(args.path)
     if not sp.abs_path.is_dir():
         raise ToolError(f"Not a directory: {args.path}")
     listing = sorted(list_contained(sp), key=lambda e: e.name)
-    return ListDirResult(entries=tuple(e.name + "/" if e.is_dir else e.name for e in listing))
-
-
-def _fold(name: str) -> str:
-    """A path component as the FILESYSTEM would match it.
-
-    macOS and Windows match names case-insensitively, and macOS runs agent6
-    unsandboxed, so these in-process refusals are the only thing protecting
-    `.git` there: comparing exactly, `.GIT/config` opened the real
-    `.git/config` and the write that arms a `clean` filter was allowed
-    (reproduced on a casefolded ext4). Folded on every platform rather than
-    per-filesystem -- one rule, and the cost where case does matter is
-    refusing a write to a distinct `.GIT`, which nobody has.
-    """
-    return name.lower()
-
-
-def _within(target: Path, protected: Path) -> bool:
-    """*target* IS *protected* or lies under it, matched the way the
-    filesystem matches names. Whole components only, so `.github` never
-    matches `.git`."""
-    prefix = [_fold(p) for p in protected.parts]
-    return [_fold(p) for p in target.parts][: len(prefix)] == prefix
+    # A hidden entry is dropped from the names but COUNTED: the listing stays
+    # true ("something here is hidden") without disclosing what, and the model
+    # stops probing a path it will only be refused.
+    visible = [e for e in listing if not ws.is_denied(sp.abs_path / e.name)]
+    return ListDirResult(
+        entries=tuple(e.name + "/" if e.is_dir else e.name for e in visible),
+        hidden=len(listing) - len(visible),
+    )
 
 
 def _under_project_dir(path: Path, dir_name: str) -> bool:
     """The one protected-directory test, shared by the raw and the resolved
     checks so they can never disagree: the workspace-relative *path* IS the
     top-level *dir_name*, or lies under it."""
-    return _within(path, Path(dir_name))
+    return path_within(path, Path(dir_name))
 
 
 def _refuse_protected_write(
@@ -209,7 +196,7 @@ def _refuse_env_write(candidate: str, resolved: SafePath) -> None:
     launder the write."""
     ancestors = [resolved.abs_path, *resolved.abs_path.parents]
     for anc in ancestors:
-        if _fold(anc.name) == "site-packages":
+        if fold_name(anc.name) == "site-packages":
             raise ToolError(
                 f"Refusing to write into an installed-package tree (site-packages): "
                 f"{candidate!r}. Installed packages are environment, not source; "
@@ -249,14 +236,14 @@ def refuse_protected_writes(
     if resolved is not None and extra_protect_paths:
         target = resolved.abs_path
         for prot in extra_protect_paths:
-            if _within(target, prot):
+            if path_within(target, prot):
                 raise ToolError(
                     f"Refusing to write to a protected path (machine bundle): {path!r} "
                     f"resolves under {prot}"
                 )
 
 
-def _existing_text(root: Path, sp: SafePath, rel_path: str) -> str | None:
+def _existing_text(sp: SafePath, rel_path: str) -> str | None:
     """The file's current text, or None when it does not exist yet (both edit
     tools create). A path that exists but is not a file gets the same clear
     error the read tools give -- letting read_text raise leaked
@@ -269,7 +256,7 @@ def _existing_text(root: Path, sp: SafePath, rel_path: str) -> str | None:
 
 
 def apply_edit(
-    root: Path,
+    ws: Workspace,
     config: Config,
     extra_protect_paths: tuple[Path, ...],
     index: SymbolIndex | None,
@@ -277,11 +264,10 @@ def apply_edit(
 ) -> ToolResult:
     args = ApplyEditInput.model_validate(raw)
     refuse_protected_writes(args.path, config, extra_protect_paths)
-    sp = resolve_in_root(root, args.path)
+    sp = ws.resolve_write(args.path)
     refuse_protected_writes(args.path, config, extra_protect_paths, sp)
-    # Write-outside-cwd is enforced by resolve_in_root already (root == cwd).
     applied: list[str] = []
-    existing = _existing_text(root, sp, args.path)
+    existing = _existing_text(sp, args.path)
     new_content = existing
     for i, edit in enumerate(args.edits):
         if edit.kind == "create":
@@ -328,7 +314,7 @@ def apply_edit(
 
 
 def apply_patch(
-    root: Path,
+    ws: Workspace,
     config: Config,
     extra_protect_paths: tuple[Path, ...],
     index: SymbolIndex | None,
@@ -349,14 +335,14 @@ def apply_patch(
     # escape, protected dirs), before the lower-priority model-confusion
     # check that an explicit `path` matches the patch header.
     refuse_protected_writes(target, config, extra_protect_paths)
-    sp = resolve_in_root(root, target)
+    sp = ws.resolve_write(target)
     refuse_protected_writes(target, config, extra_protect_paths, sp)
     if args.path and args.path != derived_path:
         raise ToolError(
             f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
             f"header path {derived_path!r}; emit them consistently or omit `path`"
         )
-    existing = _existing_text(root, sp, target)
+    existing = _existing_text(sp, target)
     try:
         if v4a:
             _, new_content = apply_v4a_text(args.patch, existing)

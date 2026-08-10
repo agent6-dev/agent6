@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.tools._path_safety import Workspace
 from agent6.tools.index import Reference, Symbol, SymbolIndex
 
 # ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ def py_project(tmp_path: Path) -> Path:
 
 
 def test_outline_python_top_level_and_nested(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     syms = idx.outline(py_project / "a.py")
     by_name = {(s.name, s.kind): s for s in syms}
     assert ("foo", "function") in by_name
@@ -68,12 +69,12 @@ def test_outline_python_top_level_and_nested(py_project: Path) -> None:
 
 def test_outline_returns_empty_for_unknown_extension(tmp_path: Path) -> None:
     (tmp_path / "x.md").write_text("# hello\n")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     assert idx.outline(tmp_path / "x.md") == []
 
 
 def test_outline_returns_empty_for_missing_file(tmp_path: Path) -> None:
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     assert idx.outline(tmp_path / "nope.py") == []
 
 
@@ -83,7 +84,7 @@ def test_outline_returns_empty_for_missing_file(tmp_path: Path) -> None:
 
 
 def test_find_definition_locates_single_def(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     defs = idx.find_definition("Bar")
     assert len(defs) == 1
     assert defs[0].kind == "class"
@@ -92,12 +93,12 @@ def test_find_definition_locates_single_def(py_project: Path) -> None:
 
 
 def test_find_definition_returns_empty_for_unknown_name(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     assert idx.find_definition("definitely_does_not_exist") == []
 
 
 def test_find_definition_skips_excluded_dirs(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     assert idx.find_definition("should_not_appear") == []
 
 
@@ -119,7 +120,7 @@ def test_find_references_filters_comments_and_strings(tmp_path: Path) -> None:
             """
         )
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     refs = idx.find_references("foo")
     # Two: definition site + the call.
     assert len(refs) == 2
@@ -129,7 +130,7 @@ def test_find_references_filters_comments_and_strings(tmp_path: Path) -> None:
 
 
 def test_find_references_spans_files(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     refs = idx.find_references("foo")
     paths = {r.path for r in refs}
     assert (py_project / "a.py").resolve() in paths
@@ -142,7 +143,7 @@ def test_find_references_spans_files(py_project: Path) -> None:
 
 
 def test_mark_changed_picks_up_new_symbols(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     assert idx.find_definition("brand_new") == []
     target = py_project / "a.py"
     target.write_text(target.read_text() + "\ndef brand_new():\n    return 0\n")
@@ -153,7 +154,7 @@ def test_mark_changed_picks_up_new_symbols(py_project: Path) -> None:
 
 
 def test_mark_deleted_drops_file_from_index(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     # Prime the index
     assert idx.find_definition("Bar")
     (py_project / "a.py").unlink()
@@ -162,7 +163,7 @@ def test_mark_deleted_drops_file_from_index(py_project: Path) -> None:
 
 
 def test_mark_changed_on_deleted_file_silently_removes(py_project: Path) -> None:
-    idx = SymbolIndex(py_project)
+    idx = SymbolIndex(Workspace(root=py_project))
     assert idx.find_definition("Bar")
     target = py_project / "a.py"
     target.unlink()
@@ -174,7 +175,7 @@ def test_mark_changed_on_deleted_file_silently_removes(py_project: Path) -> None
 
 def test_lazy_initial_scan_is_deferred_until_first_query(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def x(): pass\n")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     # Before any query, internal caches are empty.
     assert not idx._symbols  # pyright: ignore[reportPrivateUsage]
     idx.outline(tmp_path / "a.py")
@@ -204,7 +205,7 @@ def test_rust_outline(tmp_path: Path) -> None:
             """
         )
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     syms = idx.outline(tmp_path / "lib.rs")
     by_kind = {(s.name, s.kind) for s in syms}
     assert ("greet", "function") in by_kind
@@ -234,7 +235,7 @@ def test_typescript_outline(tmp_path: Path) -> None:
             """
         )
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     syms = idx.outline(tmp_path / "a.ts")
     by_kind = {(s.name, s.kind) for s in syms}
     assert ("greet", "function") in by_kind
@@ -327,7 +328,7 @@ def test_outline_supported_languages(
 ) -> None:
     f = tmp_path / filename
     f.write_text(source, encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     got = {(s.name, s.kind) for s in idx.outline(f)}
     assert expected <= got, f"{filename}: missing {expected - got} (got {got})"
 
@@ -337,7 +338,7 @@ def test_outline_c_header_uses_cpp_grammar(tmp_path: Path) -> None:
     # captured -- the plain C grammar would miss it.
     f = tmp_path / "widget.h"
     f.write_text("class Widget {\npublic:\n  void draw();\n};\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     got = {(s.name, s.kind) for s in idx.outline(f)}
     assert ("Widget", "class") in got
 
@@ -351,7 +352,7 @@ def test_cpp_skips_forward_decls_and_param_type_uses(tmp_path: Path) -> None:
         "class Conn;\nvoid f(Conn *c, struct Pt *p) {}\nclass Conn { int x; };\n",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     defs = idx.find_definition("Conn")
     assert len(defs) == 1 and defs[0].kind == "class"  # real def only, no forward-decl dup
     assert idx.find_definition("Pt") == []  # bare param type is not a definition
@@ -361,7 +362,7 @@ def test_c_header_prototypes_are_functions_not_methods(tmp_path: Path) -> None:
     # A plain-C prototype in a .h (cpp grammar) is a free function, not a method.
     f = tmp_path / "api.h"
     f.write_text("int conn_open(const char *s, int n);\nvoid conn_close(void);\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     got = {(s.name, s.kind) for s in idx.outline(f)}
     assert ("conn_open", "function") in got and ("conn_close", "function") in got
     assert not any(k == "method" for _, k in got)
@@ -375,7 +376,7 @@ def test_csharp_operator_overload_name_is_the_symbol(tmp_path: Path) -> None:
         " public static bool operator ==(V a, V b){return true;} }",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     got = {(s.name, s.kind) for s in idx.outline(f)}
     assert ("+", "method") in got and ("==", "method") in got
     assert ("operator", "method") not in got
@@ -388,7 +389,7 @@ def test_find_references_go_filters_to_identifiers(tmp_path: Path) -> None:
     f.write_text(
         "package m\nfunc helper() {}\nfunc use() { helper() }\n// helper\n", encoding="utf-8"
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     refs = idx.find_references("helper")
     # definition + call site, but NOT the comment mention.
     assert len(refs) == 2

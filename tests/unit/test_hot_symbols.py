@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent6.tools._path_safety import Workspace
 from agent6.tools.index import SymbolIndex
 
 
@@ -23,7 +24,7 @@ def test_hot_symbols_finds_cross_file_referenced_symbol(tmp_path: Path) -> None:
         "from a import shared_func\n\nresult = shared_func(3)\n",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     hot = idx.hot_symbols(min_files_referenced=2, max_symbols=10)
     names = [t[0] for t in hot]
     assert "shared_func" in names
@@ -41,7 +42,7 @@ def test_hot_symbols_respects_min_files_referenced(tmp_path: Path) -> None:
         "def local_helper():\n    return 1\n\nresult = local_helper()\n",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     hot = idx.hot_symbols(min_files_referenced=2)
     names = [t[0] for t in hot]
     assert "local_helper" not in names
@@ -58,7 +59,7 @@ def test_hot_symbols_excludes_external_names(tmp_path: Path) -> None:
         "import os\nprint(os.environ)\n",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     hot = idx.hot_symbols(min_files_referenced=1)
     names = [t[0] for t in hot]
     # 'os' is referenced 2x across 2 files but has NO def in the index;
@@ -81,7 +82,7 @@ def test_hot_symbols_caps_results(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     hot = idx.hot_symbols(min_files_referenced=2, max_symbols=3)
     assert len(hot) == 3
 
@@ -89,5 +90,5 @@ def test_hot_symbols_caps_results(tmp_path: Path) -> None:
 def test_hot_symbols_returns_empty_on_no_qualifying_symbols(tmp_path: Path) -> None:
     """A repo with only file-local symbols returns []."""
     (tmp_path / "only.py").write_text("x = 1\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     assert idx.hot_symbols(min_files_referenced=2) == []

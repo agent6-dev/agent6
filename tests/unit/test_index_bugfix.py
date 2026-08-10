@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from agent6.tools._path_safety import Workspace
 from agent6.tools.index import SymbolIndex
 
 
@@ -30,7 +31,7 @@ def _bump_mtime(p: Path) -> None:
 def test_index_self_heals_on_out_of_band_edit(tmp_path: Path) -> None:
     src = tmp_path / "m.py"
     src.write_text("def alpha():\n    pass\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
 
     defs = idx.find_definition("alpha")
     assert len(defs) == 1
@@ -51,7 +52,7 @@ def test_index_self_heals_on_out_of_band_edit(tmp_path: Path) -> None:
 def test_index_evicts_deleted_file(tmp_path: Path) -> None:
     src = tmp_path / "gone.py"
     src.write_text("def doomed():\n    pass\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
     assert len(idx.find_definition("doomed")) == 1
 
     # Delete out of band (e.g. run_command rm / git mv) with no mark_deleted.
@@ -67,7 +68,7 @@ def test_index_concurrent_readers_do_not_raise(tmp_path: Path) -> None:
     # outline on-demand path keeps adding new keys while other threads read.
     for i in range(40):
         (tmp_path / f"f{i}.py").write_text(f"def fn_{i}():\n    helper()\n", encoding="utf-8")
-    idx = SymbolIndex(tmp_path)
+    idx = SymbolIndex(Workspace(root=tmp_path))
 
     errors: list[BaseException] = []
     stop = threading.Event()

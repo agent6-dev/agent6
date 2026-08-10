@@ -80,7 +80,7 @@ from agent6.tools.mcp_client import (
     MCPToolDescriptor,
     split_tool_name,
 )
-from agent6.tools.policy import jail_policy
+from agent6.tools.policy import jail_policy, workspace_for
 from agent6.tools.results import (
     BackgroundResult,
     ExecResult,
@@ -274,6 +274,9 @@ class ToolDispatcher:
     ) -> None:
         self._root = root.resolve()
         self._config = config
+        # The in-process file boundary. Every path-taking read/write tool
+        # resolves through it, so the hidden set holds at every isolation level.
+        self._ws = workspace_for(config, self._root)
         self._isolation: IsolationLevel = isolation
         # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
         # this is the defense-in-depth backstop so the dispatcher itself refuses
@@ -609,16 +612,16 @@ class ToolDispatcher:
         return agent6_docs(raw)
 
     def _read_file(self, raw: dict[str, Any]) -> ToolResult:
-        return read_file(self._root, raw)
+        return read_file(self._ws, raw)
 
     def _list_dir(self, raw: dict[str, Any]) -> ToolResult:
-        return list_dir(self._root, raw)
+        return list_dir(self._ws, raw)
 
     def _apply_edit(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)
+        return apply_edit(self._ws, self._config, self._extra_protect_paths, self._index, raw)
 
     def _apply_patch(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_patch(self._root, self._config, self._extra_protect_paths, self._index, raw)
+        return apply_patch(self._ws, self._config, self._extra_protect_paths, self._index, raw)
 
     # ----- tree-sitter index handlers -----
 
@@ -626,7 +629,7 @@ class ToolDispatcher:
         if self._index is None:
             with self._index_lock:
                 if self._index is None:
-                    self._index = SymbolIndex(self._root)
+                    self._index = SymbolIndex(self._ws)
         return self._index
 
     def hot_symbols(
@@ -653,13 +656,13 @@ class ToolDispatcher:
         return idx.file_outlines()
 
     def _outline(self, raw: dict[str, Any]) -> ToolResult:
-        return outline(self._root, self._ensure_index, raw)
+        return outline(self._ws, self._ensure_index, raw)
 
     def _find_definition(self, raw: dict[str, Any]) -> ToolResult:
-        return find_definition(self._root, self._ensure_index, raw)
+        return find_definition(self._ws, self._ensure_index, raw)
 
     def _find_references(self, raw: dict[str, Any]) -> ToolResult:
-        return find_references(self._root, self._ensure_index, raw)
+        return find_references(self._ws, self._ensure_index, raw)
 
     # LSP-backed navigation. Lazy spawn so runs that never
     # call a *_lsp tool don't pay the server-startup tax.
@@ -674,10 +677,10 @@ class ToolDispatcher:
         return self._lsp
 
     def _find_definition_lsp(self, raw: dict[str, Any]) -> ToolResult:
-        return find_definition_lsp(self._root, self._ensure_lsp, raw)
+        return find_definition_lsp(self._ws, self._ensure_lsp, raw)
 
     def _find_references_lsp(self, raw: dict[str, Any]) -> ToolResult:
-        return find_references_lsp(self._root, self._ensure_lsp, raw)
+        return find_references_lsp(self._ws, self._ensure_lsp, raw)
 
     def settle_background(self) -> None:
         """Write down the ending of any background command that has finished.

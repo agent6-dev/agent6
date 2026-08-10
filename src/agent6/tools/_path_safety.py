@@ -44,6 +44,68 @@ class ContainedEntry:
     is_symlink: bool
 
 
+def fold_name(name: str) -> str:
+    """A path component as the FILESYSTEM would match it.
+
+    macOS and Windows match names case-insensitively, and macOS runs agent6
+    unsandboxed, so these in-process refusals are the only thing protecting
+    `.git` and the hidden trees there: comparing exactly, `.GIT/config` opened
+    the real `.git/config` (reproduced on a casefolded ext4). Folded on every
+    platform rather than per-filesystem -- one rule, and the cost where case
+    does matter is refusing a path to a distinct `.GIT`, which nobody has.
+    """
+    return name.lower()
+
+
+def path_within(target: Path, prefix: Path) -> bool:
+    """*target* IS *prefix* or lies under it, matched the way the filesystem
+    matches names. Whole components only, so `.github` never matches `.git`."""
+    folded = [fold_name(p) for p in prefix.parts]
+    return [fold_name(p) for p in target.parts][: len(folded)] == folded
+
+
+@dataclass(frozen=True, slots=True)
+class Workspace:
+    """The file boundary for everything agent6 does IN-PROCESS.
+
+    Not the sandbox: the sandbox confines child PROCESSES. This is the same
+    policy enforced at the other place an untrusted model reaches files -- the
+    tools, which run in this process and ask nobody's approval. It therefore
+    holds at EVERY isolation level, ``none`` included: the boundary follows the
+    operator's config values, never the isolation level, because a degradation
+    that widened what the tools may read would invert the whole degrade rule.
+
+    ``denied`` (``[sandbox].hide_paths`` plus agent6's own private dirs) is
+    refused for reads and writes alike. A path is reached THROUGH a workspace;
+    the tools that deliberately read another tree (a skill, the bundled docs,
+    the run's own state) name their own base with :func:`contain`.
+    """
+
+    root: Path
+    denied: tuple[Path, ...] = ()
+
+    def is_denied(self, abs_path: Path) -> bool:
+        return any(path_within(abs_path, d) for d in self.denied)
+
+    def resolve_read(self, candidate: str) -> SafePath:
+        sp = resolve_in_root(self.root, candidate)
+        self._refuse_denied(sp, candidate)
+        return sp
+
+    def resolve_write(self, candidate: str) -> SafePath:
+        sp = resolve_in_root(self.root, candidate)
+        self._refuse_denied(sp, candidate)
+        return sp
+
+    def _refuse_denied(self, sp: SafePath, candidate: str) -> None:
+        # Refused, not answered empty: the jail masks because a command cannot
+        # be handed an error, but a tool result can carry one, and inventing
+        # "no such file" for a path that is plainly there is the surface lying.
+        for d in self.denied:
+            if path_within(sp.abs_path, d):
+                raise ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
+
+
 def contain(base: Path, candidate: str | Path) -> SafePath:
     """Contain *candidate* under *base* without resolving symlinks: the
     descriptor walk is what enforces it, refusing every symlink hop.

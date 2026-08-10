@@ -279,8 +279,7 @@ def test_a_path_swapped_after_the_check_is_not_read_for_an_lsp_query(
     from types import SimpleNamespace
     from typing import cast
 
-    from agent6.tools import _nav_tools
-    from agent6.tools._path_safety import SafePath
+    from agent6.tools._path_safety import SafePath, Workspace
     from agent6.tools.lsp import LspClient
 
     root = tmp_path / "ws"
@@ -289,17 +288,17 @@ def test_a_path_swapped_after_the_check_is_not_read_for_an_lsp_query(
     outside = tmp_path / "outside.py"
     outside.write_text("helper = 'OUTSIDE-SECRET'\n", encoding="utf-8")
 
-    real_resolve = _nav_tools.resolve_in_root
+    real_resolve = Workspace.resolve_read
 
-    def swap_after_the_check(root_arg: Path, candidate: str) -> SafePath:
-        sp = real_resolve(root_arg, candidate)
+    def swap_after_the_check(self: Workspace, candidate: str) -> SafePath:
+        sp = real_resolve(self, candidate)
         link = root / "mod.py"
         if not link.is_symlink():
             link.unlink()
             link.symlink_to(outside)
         return sp
 
-    monkeypatch.setattr(_nav_tools, "resolve_in_root", swap_after_the_check)
+    monkeypatch.setattr(Workspace, "resolve_read", swap_after_the_check)
 
     sent = bytearray()
 
@@ -324,19 +323,18 @@ def test_a_path_swapped_after_the_check_is_not_read_for_an_lsp_query(
 
 
 def _swap_after_resolve(root: Path, outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put the swap in the window `list_dir`/grep leave open: right after the
+    """Put the swap in the window `list_dir` leaves open: right after the
     containment check returns, before the tool looks the path up again."""
-    from agent6.tools import _fs_tools
-    from agent6.tools._path_safety import SafePath
+    from agent6.tools._path_safety import SafePath, Workspace
 
-    real_resolve = _fs_tools.resolve_in_root
+    real_resolve = Workspace.resolve_read
 
-    def swap_after_the_check(root_arg: Path, candidate: str) -> SafePath:
-        sp = real_resolve(root_arg, candidate)
+    def swap_after_the_check(self: Workspace, candidate: str) -> SafePath:
+        sp = real_resolve(self, candidate)
         _swap_parent_for_a_link_out(root, outside)
         return sp
 
-    monkeypatch.setattr(_fs_tools, "resolve_in_root", swap_after_the_check)
+    monkeypatch.setattr(Workspace, "resolve_read", swap_after_the_check)
 
 
 def test_a_directory_swapped_after_the_check_is_not_listed(
