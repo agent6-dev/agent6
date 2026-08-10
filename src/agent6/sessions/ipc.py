@@ -110,10 +110,12 @@ def register_frontend(session_dir: Path, pid: int) -> None:
     """Register *pid* as a live answering front-end: one claim file per
     front-end (``frontends/<pid>``), so any number can watch concurrently
     (web + TUI + attach, or several of one kind) and none can deregister
-    another. The name is the claim; the file is empty."""
+    another. The name is the claim; the body is the process start time, which
+    is what tells a live front-end from a recycled pid (see
+    :func:`frontend_is_live`)."""
     d = session_dir / FRONTENDS_DIR
     d.mkdir(parents=True, exist_ok=True)
-    (d / str(pid)).touch()
+    (d / str(pid)).write_text(_proc_start_time(pid), encoding="utf-8")
 
 
 def unregister_frontend(session_dir: Path, pid: int) -> None:
@@ -177,21 +179,27 @@ def _proc_start_time(pid: int) -> str:
 
 def write_session_netns_pid(session_dir: Path, pid: int) -> None:
     """Publish the holder of this run's session network, for `agent6 exec`."""
-    atomic_write(session_dir / NETNS_PID_FILE, f"{pid}\n")
+    atomic_write(session_dir / NETNS_PID_FILE, pid_record(pid))
 
 
 def read_session_netns_pid(session_dir: Path) -> int | None:
     """The live holder of this run's session network, or None.
 
     A pid whose /proc entry is gone is a run that ended (or never had one), not
-    a network to join: the caller should say so rather than guess at a stale
-    number, which the kernel may have handed to someone else.
+    a network to join. Nor is a pid the kernel has since handed to someone else:
+    the recorded start time settles that, because joining on liveness alone put
+    `agent6 exec` and `agent6 forward` inside an unrelated process's namespaces
+    while telling the operator it was the run's.
     """
-    try:
-        pid = int((session_dir / NETNS_PID_FILE).read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+    rec = _parse_pid_record(session_dir / NETNS_PID_FILE)
+    if rec is None:
         return None
-    return pid if Path(f"/proc/{pid}/ns/net").exists() else None
+    pid, recorded_start = rec
+    if pid <= 0 or not Path(f"/proc/{pid}/ns/net").exists():
+        return None
+    if recorded_start and _proc_start_time(pid) != recorded_start:
+        return None
+    return pid
 
 
 def clear_session_netns_pid(session_dir: Path) -> None:
@@ -211,8 +219,7 @@ def write_worker_pid(session_dir: Path, pid: int) -> None:
     # reader in that window sees a PREFIX of the pid with the identity stripped
     # -- and a prefix naming a live process you own reads alive with nothing
     # left to refute it, the exact recycled-pid lie this record exists to kill.
-    record = f"{pid} {_proc_start_time(pid)}".rstrip()
-    atomic_write(session_dir / WORKER_PID_FILE, record)
+    atomic_write(session_dir / WORKER_PID_FILE, pid_record(pid))
 
 
 def emit_session_start(
@@ -230,14 +237,25 @@ def clear_worker_pid(session_dir: Path) -> None:
         (session_dir / WORKER_PID_FILE).unlink()
 
 
-def _read_pid_record(session_dir: Path) -> tuple[int, str] | None:
+def pid_record(pid: int) -> str:
+    """A pid plus the identity that distinguishes it from a later reuse of the
+    same number. Every published pid uses this: liveness alone is not identity,
+    and the kernel hands the number on."""
+    return f"{pid} {_proc_start_time(pid)}".rstrip()
+
+
+def _parse_pid_record(path: Path) -> tuple[int, str] | None:
     """The recorded ``(pid, start_time)``; start_time is "" when none was
     recorded. Split once only: the `ps` lstart identity contains spaces."""
     try:
-        tokens = (session_dir / WORKER_PID_FILE).read_text(encoding="utf-8").split(maxsplit=1)
+        tokens = path.read_text(encoding="utf-8").split(maxsplit=1)
         return int(tokens[0]), tokens[1].strip() if len(tokens) > 1 else ""
     except (OSError, ValueError, IndexError):
         return None
+
+
+def _read_pid_record(session_dir: Path) -> tuple[int, str] | None:
+    return _parse_pid_record(session_dir / WORKER_PID_FILE)
 
 
 def read_worker_pid(session_dir: Path) -> int | None:
@@ -263,10 +281,31 @@ def worker_is_alive(session_dir: Path) -> bool:
     return _proc_start_time(pid) == recorded_start
 
 
+def _claim_is_live(claim: Path, pid: int) -> bool:
+    """Whether *claim* still names the front-end that wrote it.
+
+    The same test :func:`worker_is_alive` applies to the worker: alive AND, when
+    a start time was recorded, still the process that recorded it. Liveness
+    alone is not identity -- a front-end that died and had its pid reused by any
+    other process of ours read as live forever, and an approval then waited out
+    its whole timeout instead of the dead-grace, which is exactly the stall
+    away-mode exists to avoid. A claim with no recorded start time is trusted,
+    as the worker's is.
+    """
+    if pid <= 0 or not pid_alive(pid):
+        return False
+    try:
+        recorded_start = claim.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return not recorded_start or _proc_start_time(pid) == recorded_start
+
+
 def frontend_is_live(session_dir: Path) -> bool:
     """True when ANY registered front-end is a live process we own. Prunes
-    dead claims (hard-killed front-ends) in passing so a stale claim can
-    never block the answer poll and the dir stays tidy."""
+    dead claims (hard-killed front-ends, and pids since reused by something
+    else) in passing so a stale claim can never block the answer poll and the
+    dir stays tidy."""
     try:
         entries = list((session_dir / FRONTENDS_DIR).iterdir())
     except OSError:
@@ -277,7 +316,7 @@ def frontend_is_live(session_dir: Path) -> bool:
             pid = int(f.name)
         except ValueError:
             pid = -1
-        if pid > 0 and pid_alive(pid):
+        if _claim_is_live(f, pid):
             live = True
         else:
             with contextlib.suppress(OSError):
