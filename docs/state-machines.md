@@ -334,7 +334,7 @@ global/repo config, never the machine overlay):
 So the headline setup (offline commands + one operator-reviewed networked tool)
 is `sandbox.tool_network = "only_explicit_states"` and `allow_network = "allow"`
 on that one state.
-`only_explicit_states` (and `local`) need `strict` isolation; a networked tool
+`only_explicit_states` (and `block`) need `strict` isolation; a networked tool
 under `sandbox.tool_network = "block"`, or a tool-network config the isolation level
 can't honor, refuses to run at startup naming the state.
 
@@ -644,8 +644,8 @@ config for the duration of the machine run. The full stack is
 defaults < global < repo < `--config FILE` < the machine `[config]`
 overlay, so the overlay is the highest-precedence layer and the global
 `agent6 --config FILE machine run ...` flag layers under it like any
-other config file. Every knob `agent6 config show` lists is valid inside
-the overlay.
+other config file. Most knobs `agent6 config show` lists are valid inside
+the overlay; the refusals are listed below.
 
 ```toml
 [config.workflow]
@@ -661,14 +661,16 @@ max_usd = 50.0
 Unset keys read straight through to the lower layers, so a machine only
 states what it wants to change. Two hard rules:
 
-- **No connections/secrets, no sandbox policy, no presets, no repo hooks.** A
-  `[config.providers.*]`, `[config.sandbox.*]`, or `[config.presets.*]` block,
-  or `git.run_repo_hooks`, is a *load-time* error. Provider endpoints, api-key
-  env names, and secret values live in the global config / secrets store;
-  sandbox policy (`tool_network`, `run_commands`, `.git`
-  protection), the strategy presets that define it, and honoring the repo's
-  `.git/hooks` (host code run outside the jail on a `mode="run"` commit) are
-  operator decisions in the global/repo config. A machine file may be
+- **No connections/secrets, no sandbox policy, no presets, no MCP servers, no
+  host hooks.** A `[config.providers.*]`, `[config.sandbox.*]`,
+  `[config.presets.*]`, or `[config.mcp.*]` block, or any of
+  `git.run_repo_hooks`, `machine.notify`, `notify.on_complete`, is a
+  *load-time* error. Provider endpoints, api-key env names, and secret values
+  live in the global config / secrets store; sandbox policy (`tool_network`,
+  `run_commands`, `.git` protection), the strategy presets that define it, the
+  MCP servers that widen the tool surface, and every hook that runs an argv on
+  the host outside the jail (the repo's `.git/hooks` on a `mode="run"` commit,
+  the notify hooks) are operator decisions in the global/repo config. A machine file may be
   LLM-drafted or shared, so it must not be able to widen its own egress, weaken
   its jail, or run host code through the overlay, directly or via a
   `[presets.<selected>]` preset the operator's selection would resolve.
@@ -747,15 +749,16 @@ heavy logs are pruned to the most recent `state_log_keep` (default 50) so a
 long-running machine never accumulates them without bound; the journal stays
 the complete transition history regardless.
 
-Sizing for long-running machines: the journal and snapshots grow
-monotonically, roughly one journal line (~200 B) plus one snapshot (a few
-KB) per transition. A 10-minute-interval machine makes ~150k transitions
-a year (3 per tick on the idle path), on the order of tens of MB of
-journal and a few hundred MB of snapshots. The per-state reasoning logs do
-NOT grow with wall-clock time -- only with agent-state executions, and they
-self-prune. There is no automatic rotation of the journal/snapshots in v1;
-archive or delete an instance directory once its history is no longer needed
-for replay, and size `[budget] max_transitions` as the primary runaway guard.
+Sizing for long-running machines: the journal grows monotonically, roughly one
+line (~200 B) per transition. A 10-minute-interval machine makes ~150k
+transitions a year (3 per tick on the idle path), on the order of tens of MB.
+Snapshots do NOT accumulate: each write keeps only the most recent
+`[machine] snapshot_keep` (default 5, `0` = keep every one) and deletes the
+rest, so replay from the journal is bounded by that tail. The per-state
+reasoning logs also do not grow with wall-clock time -- only with agent-state
+executions, and they self-prune. The journal itself has no rotation; archive or
+delete an instance directory once its history is no longer needed for replay,
+and size `[budget] max_transitions` as the primary runaway guard.
 
 ### 5.4 Idempotency and crash recovery
 
@@ -990,7 +993,7 @@ cursor  = "str"
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"    # exactly one of every_secs | until | cron
+every_secs = "{{ poll_secs }}"    # at most one of every_secs | until | cron
 on = { tick = "scan", signal = "scan" }
 
 [states.scan]
@@ -1092,5 +1095,4 @@ Settled design choices, recorded so the rationale travels with the spec:
   path is statically checkable.
 - **List → argv**: no `join` filter; a lone `"{{ listvar }}"` argv
   element is spliced to one element per item (§4.4).
-- **Naming**: subcommand `machine`; suffix `.asm.toml` (`.a6m.toml`
-  fallback, §4).
+- **Naming**: subcommand `machine`; suffix `.asm.toml` (§4).
