@@ -80,6 +80,35 @@ guarantee it cannot keep -- one HTTPS endpoint is enough to exfiltrate from a
 process with filesystem access -- so agent6 states the boundary honestly
 instead of shipping one.
 
+The PROCESS is trusted; the TOOL SURFACE it exposes to the model is not. A
+model is untrusted input at all times -- its behaviour is probabilistic and
+cannot be tested exhaustively -- so the file axis is enforced in both places
+it can be reached: the tools are the front door, the jail is the fence.
+
+- **The in-process tools carry the run's file boundary** (`Workspace`).
+  `read_file`, `list_dir`, `outline`, `find_*`, `apply_edit` and `apply_patch`
+  run in this process and ask no approval, so they resolve every path through
+  one value: the workspace root plus the operator's `extra_read_paths` /
+  `extra_write_paths`, minus `hide_paths` and agent6's own private dirs. The
+  symbol index skips a hidden file too -- one that reached the index would leak
+  its symbol names and line numbers through `find_definition` even though
+  nothing could read it.
+- **It is derived from config VALUES, never from the isolation level.** A
+  degradation must never widen access: `auto` falling back to `hardened` or
+  `none`, or macOS having no jail at all, leaves this boundary exactly where it
+  was -- and `none` is precisely where it is the only one left.
+- **A denied path is refused, with the reason.** The jail masks (empty dir,
+  empty file) because a command cannot be handed an error; a tool result can,
+  and answering "no such file" for a path that is plainly there would be the
+  surface lying. `list_dir` drops the entry but reports `hidden: N`: true that
+  something is hidden, without naming it.
+- **What it does not cover.** Where the operator removes both gates --
+  `isolation = "none"` with `run_commands = "yes"` -- a command can read a
+  denied path directly. Screening `run_command`'s argv would be enumerating
+  badness and a script the model writes bypasses it, so the unsandboxed warning
+  names the cost instead. Under `run_commands = "ask"` the attempt surfaces as
+  an approval prompt showing the argv.
+
 ### 2. `agent6-jail` (Rust), for every child command
 
 `apply_edit` is in-process; every `run_verify_command`/`run_command` runs in
