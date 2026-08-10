@@ -23,7 +23,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
@@ -826,7 +826,25 @@ def _launcher_result(
         raise JailUnavailableError(
             f"agent6-jail produced unparseable output: {proc.stdout!r}"
         ) from exc
-    return _result_from_json(result_json, tuple(policy.argv), duration)
+    return _with_launcher_warnings(
+        _result_from_json(result_json, tuple(policy.argv), duration), proc.stderr
+    )
+
+
+def _with_launcher_warnings(result: CommandResult, launcher_stderr: str) -> CommandResult:
+    """Carry the launcher's own diagnostics into the result.
+
+    The child's stderr arrives in the result JSON, so anything on the
+    launcher's stderr is agent6 reporting on the jail it just built: a mount it
+    could not make, a grant or protect_path it had to skip. Reading them only
+    when the LAUNCHER failed dropped every one from a working run, which is
+    the case they exist for -- an empty /proc reached the caller as
+    "cannot open shared object file" with nothing naming the jail.
+    """
+    warnings = launcher_stderr.strip()
+    if not warnings:
+        return result
+    return replace(result, stderr=f"{result.stderr}\n{warnings}".strip())
 
 
 def _result_from_json(
