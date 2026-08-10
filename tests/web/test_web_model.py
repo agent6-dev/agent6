@@ -136,10 +136,31 @@ def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
     assert s["winner"] is True
 
 
+def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
+    """The composer's Ctrl-R history search reads `operator_inputs`: the task,
+    then every steer, raw text in journal order (the client flattens and
+    reverses for display)."""
+    d = _run(
+        tmp_path,
+        "r2h",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "polish the web"},
+            {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
+            {"type": "loop.steer.injected", "chars": 8, "text": "ship\nit"},
+        ],
+    )
+    payload = model.conversation_payload(d)
+    assert payload["operator_inputs"] == ["polish the web", "focus on tests", "ship\nit"]
+
+
 def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
     d = model.runs_root(tmp_path) / "r2b"
     d.mkdir(parents=True)
-    assert model.conversation_payload(d) == {"session_id": "r2b", "items": []}
+    assert model.conversation_payload(d) == {
+        "session_id": "r2b",
+        "items": [],
+        "operator_inputs": [],
+    }
 
 
 def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:

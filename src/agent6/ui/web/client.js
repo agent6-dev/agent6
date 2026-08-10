@@ -537,11 +537,57 @@ function growGrip(ta) {
 }
 
 // The composer bar under a run's conversation. On a LIVE run Enter sends the
+// Ctrl-R in a session composer: search this session's past messages (the
+// task, then every steer -- journal-read via the conversation payload, so
+// resumes and steers typed on other surfaces appear). Newest first, one line
+// each, repeats collapsed: the same list the CLI and TUI searches show.
+// Picking fills the composer for editing; nothing is sent.
+function openHistorySearch(entries, onPick) {
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
+  box.appendChild(el('h2', null, 'search past messages'));
+  const field = el('input', 'field'); field.placeholder = 'type to narrow…';
+  box.appendChild(field);
+  const list = el('div', 'hs-list');
+  box.appendChild(list);
+  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  const pick = (t) => { close(); onPick(t); };
+  let items = [], active = 0;
+  const render = () => {
+    const q = field.value.toLowerCase();
+    const all = entries.filter(t => t.toLowerCase().includes(q));
+    items = all.slice(0, 8);
+    if (active >= items.length) active = Math.max(0, items.length - 1);
+    list.textContent = '';
+    items.forEach((t, i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), t);
+      o.onmousedown = (e) => { e.preventDefault(); pick(t); };
+      list.appendChild(o);
+    });
+    if (!items.length) list.appendChild(el('div', 'more-note', '(no match)'));
+    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
+  };
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) pick(items[active]); }
+  }
+  activeOverlayClose = close; // navigating away dismisses it
+  document.addEventListener('keydown', onKey);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  field.oninput = () => { active = 0; render(); };
+  back.appendChild(box); document.body.appendChild(back);
+  field.focus();
+  render();
+}
+
 // text as a steer (injected at the run's next safe boundary); on a FINISHED
 // run Enter resumes the run with the text as the follow-up instruction (empty
 // = plain resume), then waits for the resumed worker to take over and
 // re-renders. Shift+Enter inserts a newline. setState(s) keeps the mode in
-// sync with each SSE frame.
+// sync with each SSE frame. Ctrl-R (composer-focused only, so the browser
+// keeps its reload elsewhere) opens the past-message search above.
 function makeComposer(id) {
   const root = el('div', 'composer');
   const ta = el('textarea', 'field');
@@ -553,10 +599,10 @@ function makeComposer(id) {
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished) {
       ta.placeholder = 'continue this session…';
-      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline';
+      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages';
     } else {
       ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Shift+Enter newline';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Shift+Enter newline · Ctrl-R past messages';
     }
   };
   const resume = async (text) => {
@@ -581,6 +627,22 @@ function makeComposer(id) {
     busy = false; apply();
   };
   ta.onkeydown = (e) => {
+    if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault(); // Ctrl-R here is history search, not a page reload
+      if (busy) return;
+      getJSON('/api/session/' + encodeURIComponent(id) + '/conversation').then(d => {
+        const seen = new Set(), entries = [];
+        for (const t of (d.operator_inputs || []).slice().reverse()) {
+          const line = t.split(/\s+/).join(' ').trim();
+          if (line && !seen.has(line)) { seen.add(line); entries.push(line); }
+        }
+        if (!entries.length) { toast('no past messages this session yet', true); return; }
+        openHistorySearch(entries, (text) => {
+          ta.value = text; ta.focus(); ta.setSelectionRange(text.length, text.length);
+        });
+      }).catch(err => toast(err.message, true));
+      return;
+    }
     if (e.key !== 'Enter' || e.shiftKey) return;
     e.preventDefault();
     if (finished === null || busy) return;

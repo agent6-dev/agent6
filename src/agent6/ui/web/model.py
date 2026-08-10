@@ -32,6 +32,7 @@ from agent6.viewmodel import (
     machine_state_as_dict,
     machine_word_for_dir,
     newest_state_log,
+    operator_inputs,
     session_compare,
     session_state_as_dict,
     summarize_session_dir,
@@ -271,15 +272,15 @@ def session_snapshot(session_dir: Path) -> dict[str, Any]:
     return snap
 
 
-def conversation_items(log_path: Path) -> list[dict[str, Any]]:
-    """The log folded into rendered conversation items, one entry per
+def conversation_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The events folded into rendered conversation items, one entry per
     ``TranscriptItem``: its ``kind``, the collapsed ``lines`` (lists of
     ``[text, style]`` spans from the shared ``item_lines`` renderer, the same
     fold the CLI stream and the TUI conversation view draw), and ``full`` (the
     expanded rendering) only when it differs, so the page can offer per-item
     expansion without re-implementing any clipping client-side."""
     out: list[dict[str, Any]] = []
-    for item in fold_transcript(list(tail_events(log_path, follow=False))):
+    for item in fold_transcript(events):
         collapsed = item_lines(item, detail="collapsed")
         expanded = item_lines(item, detail="expanded")
         entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
@@ -290,8 +291,15 @@ def conversation_items(log_path: Path) -> list[dict[str, Any]]:
 
 
 def conversation_payload(session_dir: Path) -> dict[str, Any]:
-    """A run's conversation, folded from its event log."""
-    return {"session_id": session_dir.name, "items": conversation_items(session_dir / LOGS_NAME)}
+    """A run's conversation, folded from its event log, plus the operator's
+    own past inputs (the task, then every steer) for the composer's Ctrl-R
+    history search. One read serves both keys."""
+    events = list(tail_events(session_dir / LOGS_NAME, follow=False))
+    return {
+        "session_id": session_dir.name,
+        "items": conversation_items(events),
+        "operator_inputs": operator_inputs(events),
+    }
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
@@ -301,7 +309,8 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
     log = newest_state_log(machine_dir)
     if log is None:
         return {"state_dir": "", "items": []}
-    return {"state_dir": log.parent.name, "items": conversation_items(log)}
+    items = conversation_items(list(tail_events(log, follow=False)))
+    return {"state_dir": log.parent.name, "items": items}
 
 
 # --- machine snapshot (structure + watch + reasoning) -----------------------

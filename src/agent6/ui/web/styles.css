@@ -186,6 +186,10 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .ac-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
+/* Ctrl-R history search: the composer's past-message picker (same rows as the
+   autocomplete popup, docked in a modal card). */
+.hs-list { margin-top: 8px; max-height: 45vh; overflow-y: auto; }
+.hs-list .more-note { padding: 5px 10px; font-size: 13px; }
 .more-note { color: var(--muted); font-style: italic; }
 .card-head-row { display: flex; align-items: baseline; gap: 8px; }
 .card-head-row h2 { flex: 1; }
