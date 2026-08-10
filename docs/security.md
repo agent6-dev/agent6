@@ -33,9 +33,7 @@ Under that adversary, agent6 aims to hold:
 1. **No writes outside the workspace.**
 2. **No reads outside the workspace and a read-only system set.**
     - The system set (`/usr /bin /sbin /lib /lib64 /etc /dev /proc /tmp`) exists
-      so installed toolchains resolve.
-    - `hardened` also exposes `$HOME` + `/run` (Landlock can't carve them out);
-      `sandbox.extra_read_paths` adds more.
+      so installed toolchains resolve; `sandbox.extra_read_paths` adds more.
 3. **The agent process's own egress is NOT bounded.** agent6 talks to the
    configured providers; nothing stops the PROCESS reaching elsewhere.
     - A network-only block on a process with unconfined filesystem access is a
@@ -377,11 +375,9 @@ syscall for hardened), never guessed from the kernel version.
       way. Naming it would close nothing: a planted git config is one
       host-execution vector among many in repo content (`.envrc`, a `Makefile`,
       `conftest.py`).
-    - agent6 used to refuse mutating git subcommands (plus the `-c alias.*`
-      injection that dodged them) in `run_command` argv. Removed: a blocklist
-      enumerates badness, and a model that writes a shell script and runs it
-      walks past it, so it bought complexity and a false sense of a boundary
-      the jail already owns.
+    - `run_command` argv carries no git-verb screen: a blocklist enumerates
+      badness, and a script the model writes walks past it. The jail owns
+      that boundary.
 - **git_ops neutralizes repo-controlled host code in a poisoned `.git/config`.**
     - `core.fsmonitor` and `diff.external` are always off; `.git/hooks/*` run only
       under `git.run_repo_hooks = true` (default false; `core.hooksPath` points
@@ -399,16 +395,11 @@ syscall for hardened), never guessed from the kernel version.
       together: a grant on a directory is RECURSIVE (no "this directory
       only"), and stacked rulesets INTERSECT (an access needs every layer to
       allow it). To deny `.git` some layer must not grant it, which by
-      recursion means that layer cannot grant the workspace root either --
-      so the root becomes unwritable overall and nothing new can be created
-      in it. Measured, both shapes: granting the root allows `.git` too;
-      granting only its children denies both. A second layer cannot subtract
-      what a first one granted.
-      agent6 shipped the children-only carve for a while. Its cost was that
-      no NEW top-level entry could be created -- `touch`, `mkdir`, `mkfifo`
-      all failed at the workspace root, and coreutils reported "File exists",
-      sending operators looking in the wrong place. That is too much to pay
-      for a protection the operator can have properly by using `strict`.
+      recursion means not granting the workspace root either. Measured, both
+      shapes: granting the root allows `.git` too; a children-only carve
+      denies every NEW top-level entry (`touch`, `mkdir`, `mkfifo` fail at
+      the root) -- too much to pay for a protection `strict` provides
+      properly.
       The in-process edit tools (`apply_edit`/`apply_patch`) refuse, on both
       isolation levels, a write into the project's own `.git`, raw or
       symlink-resolved. That guard covers only in-process edits, not jailed
@@ -565,10 +556,9 @@ with its own loud warning, below.)
 - ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
   nothing refused, loud warning.
 
-- ¹ per-command isolation needs a netns, so it's `strict`-only. On `hardened` a
-  jailed child inherits the agent's Landlock (host-agnostic, per provider port;
-  UDP unconfined). The secure default `auto` degrades there with a warning; an
-  EXPLICIT enforce (`block`, `only_explicit_states`)
+- ¹ per-command isolation needs a netns, so it's `strict`-only. On `hardened`
+  a jailed child shares the host network. The secure default `auto` degrades
+  there with a warning; an EXPLICIT enforce (`block`, `only_explicit_states`)
   refuses rather than run silently under-confined.
 
 More fail-closed properties:
@@ -606,9 +596,10 @@ More fail-closed properties:
 - **Nothing in a skill runs at install or load.**
     - Its scripts run only if the model runs them through the jailed command path,
       subject to `run_commands`.
-- **`use_skill` is read-only and path-contained.** Serves the skill's own dir only
-  (symlinks/`..` resolved first), never the repo or network. Skill dirs aren't
-  mounted into the jail; content reaches the model engine-side.
+- **`use_skill` is read-only and path-contained.** Serves the skill's own dir
+  only, through a component-walked descriptor (any symlink hop or `..`
+  refused), never the repo or network. Skill dirs aren't mounted into the
+  jail; content reaches the model engine-side.
 - **Repo-local `.claude/skills/` are deliberately NOT discovered.** Third-party
   repo content must not enter the prompt; only the installed dir +
   `[skills].extra_dirs` are scanned.
@@ -624,8 +615,6 @@ regressions.
 
 ## Known limitations
 
-- **Landlock TCP rules need Linux ≥ 6.7** (ABI ≥ 4); older kernels leave the agent
-  process net-unconfined (children stay net-isolated in `strict` via the empty netns).
 - **User namespaces must be enabled;** some distros disable them, and agent6
   refuses `strict` there.
 - **AppArmor userns (Ubuntu 24.04+)** blocks unprivileged userns without a profile.
