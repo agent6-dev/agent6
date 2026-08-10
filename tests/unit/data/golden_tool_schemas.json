@@ -45,28 +45,6 @@
     }
   },
   {
-    "name": "find_definition_lsp",
-    "required": [
-      "path",
-      "symbol"
-    ],
-    "properties": {
-      "path": "string",
-      "symbol": "string"
-    }
-  },
-  {
-    "name": "find_references_lsp",
-    "required": [
-      "path",
-      "symbol"
-    ],
-    "properties": {
-      "path": "string",
-      "symbol": "string"
-    }
-  },
-  {
     "name": "apply_edit",
     "required": [
       "edits",

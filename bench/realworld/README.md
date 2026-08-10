@@ -47,9 +47,8 @@ and via agent6's own internal accounting. Total spend is bounded by the
 number of tasks × per-task cap.
 
 For a symbol-tool arm comparison, set `AGENT6_REALWORLD_TOOLSET` to
-`index` (full surface, default), `treesitter` (LSP pair hidden), or
-`baseline` (no symbol tools) and run once per arm; the results file
-name includes the toolset.
+`index` (symbol tools on, default) or `baseline` (no symbol tools) and
+run once per arm; the results file name includes the toolset.
 
 ### Filtering tasks + routing controls
 

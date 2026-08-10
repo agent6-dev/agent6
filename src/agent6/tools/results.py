@@ -135,10 +135,9 @@ class OutlineResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class DefinitionsResult(ToolResult):
-    """find_definition and find_definition_lsp: same envelope, different rows."""
+    """find_definition's result envelope."""
 
-    # find_definition rows: {name: str, kind: str, path: str, line: int, col: int}.
-    # find_definition_lsp rows: {path: str, line: int, col: int} (no name/kind).
+    # Rows: {name: str, kind: str, path: str, line: int, col: int}.
     definitions: tuple[dict[str, Any], ...]
     truncated: bool
 
@@ -151,10 +150,9 @@ class DefinitionsResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class ReferencesResult(ToolResult):
-    """find_references and find_references_lsp."""
+    """find_references's result envelope."""
 
-    # find_references rows: {name: str, path: str, line: int, col: int}.
-    # find_references_lsp rows: {path: str, line: int, col: int} (no name).
+    # Rows: {name: str, path: str, line: int, col: int}.
     references: tuple[dict[str, Any], ...]
     truncated: bool
 

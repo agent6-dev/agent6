@@ -544,43 +544,6 @@ class FindReferencesInput(_ToolInput):
     symbol: str = Field(min_length=1)
 
 
-class FindDefinitionLspInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "find_definition_lsp"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Semantic 'go to definition' via a real Language Server "
-        "(Astral's `ty`, Python-only for now). Pass `path` to the file "
-        "where the symbol is referenced and `symbol` to the identifier "
-        "name; the tool resolves the first whole-word occurrence and "
-        "asks the LSP for its definition site(s). Use this over "
-        "`find_definition` when you need scope-aware resolution (e.g. "
-        "to disambiguate two `foo`s, or to follow `from x import foo` "
-        "across modules). Falls back with an error if `ty` is "
-        "unavailable; the tree-sitter `find_definition` is always "
-        "available as a backup."
-    )
-
-    path: str = Field(min_length=1)
-    symbol: str = Field(min_length=1)
-
-
-class FindReferencesLspInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "find_references_lsp"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Semantic 'find all references' via a real Language Server "
-        "(Astral's `ty`, Python-only for now). Pass `path` to a file "
-        "where the symbol is defined or used and `symbol` to the "
-        "identifier name; the tool resolves the first whole-word "
-        "occurrence and asks the LSP for every reference, including "
-        "cross-module ones discovered through import resolution. Use "
-        "this over `find_references` when cross-file rename correctness "
-        "matters: it ignores unrelated identifiers that share the same "
-        "name. Falls back with an error if `ty` is unavailable."
-    )
-
-    path: str = Field(min_length=1)
-    symbol: str = Field(min_length=1)
-
-
 class UserQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -629,8 +592,6 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     OutlineInput,
     FindDefinitionInput,
     FindReferencesInput,
-    FindDefinitionLspInput,
-    FindReferencesLspInput,
     ApplyEditInput,
     ApplyPatchInput,
     RunVerifyInput,

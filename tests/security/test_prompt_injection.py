@@ -264,64 +264,6 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "HOST-CONTENT"
 
 
-def test_a_path_swapped_after_the_check_is_not_read_for_an_lsp_query(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`find_definition_lsp` / `find_references_lsp` kept the check-then-reopen
-    shape the fs tools lost: `resolve_in_root` cleared the path, then the LSP
-    client re-opened it BY FULL PATH and shipped whatever it got to the language
-    server in `textDocument/didOpen`.
-
-    The swap is injected into the window it needs: between the containment check
-    and the read.
-    """
-    import subprocess
-    from types import SimpleNamespace
-    from typing import cast
-
-    from agent6.tools._path_safety import SafePath, Workspace
-    from agent6.tools.lsp import LspClient
-
-    root = tmp_path / "ws"
-    root.mkdir()
-    (root / "mod.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
-    outside = tmp_path / "outside.py"
-    outside.write_text("helper = 'OUTSIDE-SECRET'\n", encoding="utf-8")
-
-    real_resolve = Workspace.resolve_read
-
-    def swap_after_the_check(self: Workspace, candidate: str) -> SafePath:
-        sp = real_resolve(self, candidate)
-        link = root / "mod.py"
-        if not link.is_symlink():
-            link.unlink()
-            link.symlink_to(outside)
-        return sp
-
-    monkeypatch.setattr(Workspace, "resolve_read", swap_after_the_check)
-
-    sent = bytearray()
-
-    class _Stdin:
-        def write(self, data: bytes) -> int:
-            sent.extend(data)
-            return len(data)
-
-        def flush(self) -> None: ...
-
-    def fake_start(self: LspClient) -> None:
-        proc = SimpleNamespace(stdin=_Stdin(), poll=lambda: None)
-        self._proc = cast("subprocess.Popen[bytes]", proc)  # pyright: ignore[reportPrivateUsage]
-
-    monkeypatch.setattr(LspClient, "start", fake_start)
-
-    d = _dispatcher(root)
-    with pytest.raises(ToolError, match="became a symlink"):
-        d.dispatch("find_definition_lsp", {"path": "mod.py", "symbol": "helper"})
-    assert (root / "mod.py").is_symlink(), "the swap never happened; the test proves nothing"
-    assert b"OUTSIDE-SECRET" not in bytes(sent), "host content reached the language server"
-
-
 def _swap_after_resolve(root: Path, outside: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Put the swap in the window `list_dir` leaves open: right after the
     containment check returns, before the tool looks the path up again."""

@@ -61,9 +61,7 @@ from agent6.tools._memory_tools import (
 )
 from agent6.tools._nav_tools import (
     find_definition,
-    find_definition_lsp,
     find_references,
-    find_references_lsp,
     outline,
 )
 from agent6.tools._result_format import (
@@ -74,7 +72,6 @@ from agent6.tools.background import BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.index import Symbol, SymbolIndex
-from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
     MCPError,
@@ -104,9 +101,7 @@ from agent6.tools.schema import (
     DagUpdateTaskInput,
     FetchInput,
     FindDefinitionInput,
-    FindDefinitionLspInput,
     FindReferencesInput,
-    FindReferencesLspInput,
     FinishPlanningInput,
     FinishSessionInput,
     InvalidateMemoryInput,
@@ -249,20 +244,16 @@ _COMMAND_TOOLS = frozenset(
     }
 )
 
-# Bench / A-B arms for the symbol-tool surface, keyed by AGENT6_SYMBOL_TOOLS:
-# "treesitter" hides the LSP pair even where it would be useful, "none" hides
-# all five symbol tools (the rg-via-run_command floor). Unset or unknown hides
-# nothing (the full surface); the bench harness validates the arm name, so a
-# stray value cannot silently select an arm.
+# Bench / A-B arm for the symbol-tool surface, keyed by AGENT6_SYMBOL_TOOLS:
+# "none" hides the three symbol tools (the rg-via-run_command floor). Unset
+# or unknown hides nothing (the full surface); the bench harness validates
+# the arm name, so a stray value cannot silently select an arm.
 _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
-    "treesitter": frozenset({FindDefinitionLspInput.TOOL_NAME, FindReferencesLspInput.TOOL_NAME}),
     "none": frozenset(
         {
             OutlineInput.TOOL_NAME,
             FindDefinitionInput.TOOL_NAME,
             FindReferencesInput.TOOL_NAME,
-            FindDefinitionLspInput.TOOL_NAME,
-            FindReferencesLspInput.TOOL_NAME,
         }
     ),
 }
@@ -364,8 +355,6 @@ class ToolDispatcher:
             OutlineInput.TOOL_NAME: self._outline,
             FindDefinitionInput.TOOL_NAME: self._find_definition,
             FindReferencesInput.TOOL_NAME: self._find_references,
-            FindDefinitionLspInput.TOOL_NAME: self._find_definition_lsp,
-            FindReferencesLspInput.TOOL_NAME: self._find_references_lsp,
             ApplyEditInput.TOOL_NAME: self._apply_edit,
             ApplyPatchInput.TOOL_NAME: self._apply_patch,
             RunVerifyInput.TOOL_NAME: self._run_verify,
@@ -405,14 +394,6 @@ class ToolDispatcher:
         # seats (sharing one dispatcher across ThreadPoolExecutor threads)
         # can't double-build it.
         self._index_lock = threading.Lock()
-        # Lazy LSP client for find_*_lsp tools. Spawned on
-        # first use, killed by close(). Outside the jail, same trust
-        # boundary as the tree-sitter index.
-        self._lsp: LspClient | None = None
-        # The ty LSP server is Python-only; hide the two find_*_lsp tools when
-        # they can't help (no ty/uvx, or a non-Python repo) so they don't waste
-        # schema tokens or confuse the model with dead near-duplicate tools.
-        self._lsp_tools_useful = lsp_tools_useful(self._root)
         # Operator-installed skills, resolved once on first use (a disk scan
         # of the configured skill dirs). None = not yet resolved.
         self._skills_cache: ResolvedSkills | None = None
@@ -452,11 +433,6 @@ class ToolDispatcher:
         # two ways to do one thing is the thing we do not do.
         if self._config.sandbox.network == "host":
             names = [n for n in names if n != FetchInput.TOOL_NAME]
-        # Python-only LSP tools are dead weight on a non-Python repo or with no
-        # ty/uvx installed: hide them rather than offer tools that only error.
-        if not self._lsp_tools_useful:
-            lsp_names = {FindDefinitionLspInput.TOOL_NAME, FindReferencesLspInput.TOOL_NAME}
-            names = [n for n in names if n not in lsp_names]
         # Bench / A-B harness: constrain the symbol-tool surface without a
         # rebuild (see _SYMBOL_TOOL_ARMS).
         hidden_symbols = symbol_tools_hidden()
@@ -684,24 +660,6 @@ class ToolDispatcher:
     def _find_references(self, raw: dict[str, Any]) -> ToolResult:
         return find_references(self._ws, self._ensure_index, raw)
 
-    # LSP-backed navigation. Lazy spawn so runs that never
-    # call a *_lsp tool don't pay the server-startup tax.
-    def _ensure_lsp(self) -> LspClient:
-        if self._lsp is None:
-            client = LspClient(self._root)
-            try:
-                client.start()
-            except LspError as exc:
-                raise ToolError(str(exc)) from exc
-            self._lsp = client
-        return self._lsp
-
-    def _find_definition_lsp(self, raw: dict[str, Any]) -> ToolResult:
-        return find_definition_lsp(self._ws, self._ensure_lsp, raw)
-
-    def _find_references_lsp(self, raw: dict[str, Any]) -> ToolResult:
-        return find_references_lsp(self._ws, self._ensure_lsp, raw)
-
     def settle_background(self) -> None:
         """Write down the ending of any background command that has finished.
 
@@ -712,7 +670,7 @@ class ToolDispatcher:
             self._shells.settle()
 
     def close(self) -> None:
-        """Release subprocess resources (LSP server).
+        """Release subprocess resources.
 
         Idempotent. Safe to call from CLI teardown alongside
         ``mcp_manager.close()``.
@@ -723,9 +681,6 @@ class ToolDispatcher:
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
-        if self._lsp is not None:
-            self._lsp.close()
-            self._lsp = None
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
         """Adopt a verify command mid-run: the loop's gateless adoption after

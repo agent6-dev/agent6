@@ -264,7 +264,6 @@ fixed argv depending only on operator input, never LLM output.
   config.
 - `sandbox/jail.py`: the jail launcher itself.
 
-- `tools/lsp.py`: the `ty` language server, exe resolved from PATH.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv from config.
