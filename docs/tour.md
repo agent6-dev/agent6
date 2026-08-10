@@ -75,8 +75,9 @@ current state stream, with the run's approvals and questions answerable in place
 
 For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
 Ctrl-C, no TUI required. Runs started from the TUI or web hub are detached instead, and
-`agent6 attach` attaches to either kind: a plain no-deps line tail by default, `--tui` for
-the full-screen TUI, `--json` for a one-shot snapshot of the same state.
+`agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for
+a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot
+of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/cli-demo.webm" type="video/webm">

@@ -56,7 +56,7 @@ rather than queued, so the editor can offer the prompt again; mid-run
 steering is `agent6`'s pause menu, which an editor has no terminal for.
 
 Runs are serialised across the connection: a second prompt waits for the first
-to reach a boundary. `session/cancel` drops the same stop marker `agent6 stop`
+to reach a boundary. `session/cancel` drops the same stop marker `agent6 sessions stop`
 does -- a marker, not a kill, so the step in flight finishes and commits before
 the run ends.
 

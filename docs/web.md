@@ -32,7 +32,8 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends,
 Shift+Enter inserts a newline.
 
 - **Sessions page**: every session (mode, status, last activity, cost); the docked
-  composer starts new work (run / plan / ask); prune merged run branches.
+  composer starts new work (run / plan / ask); prune merged run branches, clear
+  saved asks.
 - **Machines page**: machine instances and `machine create` drafts, cards that
   run an authored machine file, and a docked composer that creates a new one.
 - **Session view** (live over SSE): the conversation IS the page — the same folded
@@ -45,8 +46,8 @@ Shift+Enter inserts a newline.
   log — lives in a collapsible details drawer on the left (drag its edge to
   resize; both persist). The docked composer steers a live run and, once the
   run has ended, resumes it with the typed follow-up. Stop now, stop after the
-  current step, compact the context, merge the branch, approve `run_command`
-  prompts, and answer `ask_user` questions inline.
+  current step, compact the context, merge the branch, delete the run's history,
+  approve `run_command` prompts, and answer `ask_user` questions inline.
 - **Machines**: the state overview, the path taken, and the current agent
   state's conversation. Approve and answer the current agent state's prompts
   inline (same controls as a run). The docked entry submits as one of the two
@@ -63,9 +64,9 @@ The layout reflows. On a desktop, the nav rail collapses to an icon strip and
 the run view is a fixed pane whose drawer and conversation scroll internally.
 On a phone, a fixed top bar holds the theme toggle, a bottom tab bar navigates,
 the composer docks above it, and the run view shows one widget at a time —
-conversation by default; the ☰ menu in the top bar switches to the task graph,
-budget, tool calls, latest commit, or event log — so the page is the only
-scroller.
+conversation by default; the ☰ menu in the top bar switches to the status
+overview, task graph, budget, tool calls, latest commit, or event log — so the
+page is the only scroller.
 
 ## Notifications and installing (PWA)
 
@@ -91,10 +92,11 @@ curl -s localhost:7658/api/config              # effective config (no secrets)
 curl -sN localhost:7658/api/session/<id>/events    # SSE: a fresh snapshot per change
 ```
 
-`curl /api/session/<id>` returns exactly what `agent6 attach <id> --json` prints.
+`curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus
+the manifest's branch and compare facts.
 Writes are small JSON `POST`s (`/api/new`,
-`/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact}`,
-`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/prune`,
+`/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact,rm}`,
+`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`,
 `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn /
 answer-file contracts, never arbitrary execution. A machine's `approve`/`answer`/
 `steer` land in the current agent state's per-state dir; `poke` drops a signal
