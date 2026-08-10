@@ -617,6 +617,38 @@ def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.Mon
     assert _head_message(tmp_path).count("Assisted-by: agent6:") == 1
 
 
+def test_merge_squash_trailer_names_every_code_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later leg's worker wrote code on a second model: the squash trailer
+    joins the journal's worker models first-seen order, not the manifest's
+    starting driver alone, and a message-writing role never appears."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g").mkdir()
+    (tmp_path / "g" / "config.toml").write_text(
+        '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
+    )
+    _setup_run(tmp_path, "run-TRL222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-TRL222")
+    layout.logs_path.write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "role.call", "role": "worker", "model": "m-one"},
+                {"type": "role.call", "role": "critic", "model": "m-critic"},
+                {"type": "role.call", "role": "worker", "model": "m-two"},
+                {"type": "role.call", "role": "worker", "model": "m-one"},
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert main(["sessions", "merge", "run-TRL222", "--strategy", "squash"]) == 0
+    head = _head_message(tmp_path)
+    assert "Assisted-by: agent6:m-one, m-two" in head
+    assert "m-critic" not in head
+
+
 def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -477,9 +477,9 @@ class GitCommitConfig(BaseModel):
 
     name: str | None = None
     email: str | None = None
-    # A git trailer line appended once to every commit agent6 makes when
-    # non-empty, e.g. "Assisted-by: agent6:{model}". Placeholders: {model} (the
-    # model id that wrote the commit) and {role} (worker/reviewer).
+    # Appended to every commit agent6 makes when non-empty, e.g.
+    # "Assisted-by: agent6:{model}". {model} = the model(s) that wrote the
+    # code, first worker first, ", "-joined when several contributed.
     trailer: str = ""
     checkpoint: GitCommitCheckpointConfig = GitCommitCheckpointConfig()
     squash: GitCommitSquashConfig = GitCommitSquashConfig()
@@ -490,13 +490,12 @@ class GitCommitConfig(BaseModel):
         if not v:
             return v
         fields = {f for _, f, _, _ in string.Formatter().parse(v) if f is not None}
-        unknown = fields - {"model", "role"}
+        unknown = fields - {"model"}
         if unknown:
             raise ValueError(
-                f"unknown placeholder {sorted(unknown)} in git.commit.trailer"
-                " (known: {model}, {role})"
+                f"unknown placeholder {sorted(unknown)} in git.commit.trailer (known: {{model}})"
             )
-        rendered = v.format(model="m", role="worker")
+        rendered = v.format(model="m")
         if not re.fullmatch(r"[A-Za-z][A-Za-z-]*: .+", rendered, re.DOTALL):
             raise ValueError(
                 'git.commit.trailer must be a git trailer line, "Key: value"'

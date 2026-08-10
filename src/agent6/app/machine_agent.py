@@ -365,7 +365,7 @@ def run_one(
         root=req.root,
         config=cfg,
         commit_trailer=render_commit_trailer(
-            cfg.git.commit.trailer, model=rm.model if rm is not None else "", role="worker"
+            cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
         ),
         provider=provider,
         summariser_provider=summariser_provider,

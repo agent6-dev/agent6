@@ -101,6 +101,19 @@ _BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
 _OPERATOR_TEXT = {"session.start": "user_task", "loop.steer.injected": "text"}
 
 
+def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
+    """The models that wrote code in a session: every `role.call` worker
+    model, first-seen order (the primary worker first), deduplicated. Commit
+    trailers read this; a message-writing model never joins the list."""
+    seen: dict[str, None] = {}
+    for event in events:
+        if event.get("type") == "role.call" and event.get("role") == "worker":
+            model = str(event.get("model", "")).strip()
+            if model:
+                seen.setdefault(model, None)
+    return tuple(seen)
+
+
 def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
     """The operator's typed messages, oldest first, consecutive repeats
     collapsed. Fed from the on-disk journal, so it spans resume legs and every

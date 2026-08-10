@@ -1069,12 +1069,16 @@ def test_commit_all_appends_the_identity_trailer_once(tmp_path: Path) -> None:
     assert head_msg.splitlines()[0] == "add f"
 
 
-def test_render_commit_trailer_fills_model_and_role() -> None:
+def test_render_commit_trailer_joins_the_code_writers() -> None:
     from agent6.git_ops import render_commit_trailer
 
-    assert render_commit_trailer("", model="m", role="worker") is None
-    got = render_commit_trailer("Assisted-by: agent6:{model} ({role})", model="m1", role="worker")
-    assert got == "Assisted-by: agent6:m1 (worker)"
+    assert render_commit_trailer("", models=("m",)) is None
+    got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1",))
+    assert got == "Assisted-by: agent6:m1"
+    # Several contributing models join first-seen order, deduplicated, blanks
+    # dropped: the primary worker stays first.
+    got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1", "", "m2", "m1"))
+    assert got == "Assisted-by: agent6:m1, m2"
 
 
 def test_squash_merge_conflict_rolls_back_clean(tmp_path: Path) -> None:

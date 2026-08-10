@@ -35,7 +35,7 @@ from agent6.git_ops import (
 )
 from agent6.sessions.layout import LOGS_NAME, SessionLayout
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.viewmodel import scan_session_log, summarize_session_dir
+from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import SessionResult
 
@@ -348,8 +348,8 @@ def finalize_auto_merge(  # noqa: PLR0912
         email=cfg.git.commit.email,
         trailer=render_commit_trailer(
             cfg.git.commit.trailer,
-            model=manifest.models.driver.model if manifest.models.driver else "",
-            role="worker",
+            models=worker_models(tail_events(layout.session_dir / LOGS_NAME, follow=False))
+            or ((manifest.models.driver.model,) if manifest.models.driver else ()),
         ),
     )
     try:

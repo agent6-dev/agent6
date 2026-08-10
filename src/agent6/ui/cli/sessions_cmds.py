@@ -38,6 +38,7 @@ from agent6.git_ops import status as git_status
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import (
+    LOGS_NAME,
     SESSION_BUCKETS,
     SessionLayout,
     bucket_dir,
@@ -67,7 +68,9 @@ from agent6.viewmodel import (
     newest_session_dir,
     session_is_live,
     summarize_session_dir,
+    tail_events,
     task_snippet,
+    worker_models,
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
@@ -516,8 +519,8 @@ def _plan_merge(  # noqa: PLR0911
         email=cfg.git.commit.email,
         trailer=render_commit_trailer(
             cfg.git.commit.trailer,
-            model=manifest.models.driver.model if manifest.models.driver else "",
-            role="worker",
+            models=worker_models(tail_events(layout.session_dir / LOGS_NAME, follow=False))
+            or ((manifest.models.driver.model,) if manifest.models.driver else ()),
         ),
     )
     try:

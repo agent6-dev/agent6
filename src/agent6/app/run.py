@@ -680,9 +680,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 config=cfg,
                 initial_pins=tuple(pins),
                 commit_trailer=render_commit_trailer(
-                    cfg.git.commit.trailer,
-                    model=session.rm_role.model,
-                    role=session_kind(mode).role,
+                    cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
                 provider=session.provider,
                 dispatcher=dispatcher,

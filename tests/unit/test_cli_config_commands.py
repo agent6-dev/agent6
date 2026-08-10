@@ -487,13 +487,15 @@ def test_set_of_an_unserializable_cli_value_refuses(
 def test_commit_trailer_validates_placeholders_and_shape(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """[git.commit].trailer takes a git trailer line with {model}/{role} only;
-    an unknown placeholder or a shapeless string is refused at config set, not
-    at commit time."""
+    """[git.commit].trailer takes a git trailer line with {model} as its one
+    placeholder; an unknown placeholder or a shapeless string is refused at
+    config set, not at commit time."""
     assert _run(["config", "set", "git.commit.trailer", "Assisted-by: agent6:{model}"]) == 0
     capsys.readouterr()
     assert _refuse(["config", "set", "git.commit.trailer", "Assisted-by: {agent}"]) == 2
     assert "agent" in capsys.readouterr().err
+    assert _refuse(["config", "set", "git.commit.trailer", "By: {model} ({role})"]) == 2
+    assert "role" in capsys.readouterr().err
     assert _refuse(["config", "set", "git.commit.trailer", "no trailer shape"]) == 2
     assert "Key: value" in capsys.readouterr().err
 

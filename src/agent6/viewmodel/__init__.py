@@ -88,6 +88,7 @@ from agent6.viewmodel.transcript import (
     fold_transcript,
     operator_inputs,
     salient_arg,
+    worker_models,
 )
 
 __all__ = [
@@ -150,4 +151,5 @@ __all__ = [
     "summarize_session_dir",
     "tail_events",
     "task_snippet",
+    "worker_models",
 ]

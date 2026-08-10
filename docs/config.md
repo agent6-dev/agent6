@@ -237,7 +237,7 @@ The security boundary. Profiles and the network model are specified in
 | Field | Default | Meaning |
 |---|---|---|
 | `name` / `email` | none | Override the commit identity (else use the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
-| `trailer` | `""` | A git trailer line appended once to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` (kernel convention) or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"` (GitHub renders it). Placeholders: `{model}` (the model id that wrote the commit), `{role}` (`worker`/`reviewer`). Validated at `config set`; a squash emits it once however many per-step commits carried it. |
+| `trailer` | `""` | Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) that wrote the code, `", "`-joined when several contributed. |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`
 
