@@ -163,9 +163,9 @@ class _Dispatcher(_StubDispatcher):
                 duration_s=0.05,
                 exec_failed=False,
             )
-        if name == "grep":
+        if name == "list_dir":
             self._compact_flag[0] = True
-            return RawResult({"hits": ["b.md:12: needle"]})
+            return RawResult({"entries": ["b.md"]})
         if name == "finish_session":
             return RawResult({"acknowledged": True})
         raise AssertionError(f"unexpected tool: {name}")
@@ -216,8 +216,8 @@ _RESPONSES = [
     _resp(thinking="pondering silently"),
     # iter 3: another large read (feeds tier-1 pressure).
     _resp(tool_uses=(("tu-3", "read_file", {"path": "b.md"}),), stop_reason="tool_use"),
-    # iter 4: grep; serving it arms the manual compact marker.
-    _resp(tool_uses=(("tu-4", "grep", {"pattern": "needle"}),), stop_reason="tool_use"),
+    # iter 4: list_dir; serving it arms the manual compact marker.
+    _resp(tool_uses=(("tu-4", "list_dir", {"path": "."}),), stop_reason="tool_use"),
     # iter 5 (post tier-2 restart): finish.
     _resp(tool_uses=(("tu-5", "finish_session", {"summary": "done"}),), stop_reason="tool_use"),
 ]

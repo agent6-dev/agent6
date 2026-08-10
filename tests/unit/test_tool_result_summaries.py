@@ -38,7 +38,6 @@ from agent6.tools.results import (
     FetchResult,
     FinishPlanningResult,
     FinishSessionResult,
-    GrepResult,
     InvalidateMemoryResult,
     ListDirResult,
     ListTasksResult,
@@ -78,11 +77,6 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ),
     ("list_dir", ListDirResult(entries=("a.txt", "b/")), "2 entries"),
     # search / navigation
-    ("grep", GrepResult(hits=(_HIT,), truncated=False), "1 matches"),
-    ("grep_truncated", GrepResult(hits=(_HIT, _HIT), truncated=True), "2 matches (truncated)"),
-    # A wall-clock abort is a DIFFERENT partial-ness than the hit cap; saying
-    # "(truncated)" for both hid which one happened.
-    ("grep_timeout", GrepResult(hits=(), truncated=True, timeout=True), "0 matches (timed out)"),
     ("outline", OutlineResult(symbols=(_SYM, _SYM, _SYM), truncated=False), "3 symbols"),
     ("outline_truncated", OutlineResult(symbols=(_SYM,), truncated=True), "1 symbols (truncated)"),
     ("definitions", DefinitionsResult(definitions=(_LOC,), truncated=False), "1 definitions"),

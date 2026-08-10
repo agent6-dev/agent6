@@ -126,25 +126,6 @@ def test_wire_list_dir(tmp_path: Path) -> None:
     assert _dumps(d.dispatch("list_dir", {"path": "d"})) == '{"entries": ["a.txt", "b.txt"]}'
 
 
-# --- search family -----------------------------------------------------------
-
-
-def test_wire_grep_hit(tmp_path: Path) -> None:
-    (tmp_path / "h.txt").write_text("hello world\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    assert _dumps(d.dispatch("grep", {"path": "h.txt", "pattern": "hello"})) == (
-        '{"hits": [{"path": "h.txt", "line": 1, "text": "hello world"}], "truncated": false}'
-    )
-
-
-def test_wire_grep_empty(tmp_path: Path) -> None:
-    (tmp_path / "h.txt").write_text("hello\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    assert _dumps(d.dispatch("grep", {"path": "h.txt", "pattern": "zzz"})) == (
-        '{"hits": [], "truncated": false}'
-    )
-
-
 # --- filesystem-write family (applied + preview) -----------------------------
 
 

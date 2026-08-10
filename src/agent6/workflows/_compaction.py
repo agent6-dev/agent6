@@ -67,8 +67,6 @@ def call_label(tool_name: str, tool_input: Any) -> str:
         limit = tool_input.get("limit")
         if start_line or limit:
             hint += f" (start_line={start_line}, limit={limit})"
-    elif tool_name == "grep":
-        hint = f"pattern {str(tool_input.get('pattern', ''))!r}"
     elif tool_name in ("list_dir", "outline"):
         hint = str(tool_input.get("path", ""))
     elif tool_name in ("find_definition", "find_references"):
@@ -240,8 +238,8 @@ def cap_tool_result(content: str, *, tool_name: str) -> str:
         )
     elif tool_name in ("run_command", "run_verify_command"):
         guidance = (
-            "Re-run with a narrower scope (e.g. a single test, smaller grep"
-            " pattern, head/tail) to get a result that fits. Do NOT re-call"
+            "Re-run with a narrower scope (e.g. a single test, a narrower"
+            " search, head/tail) to get a result that fits. Do NOT re-call"
             " with identical arguments expecting different output."
         )
     else:

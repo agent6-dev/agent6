@@ -4960,17 +4960,15 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
                 self.nudges += 1
             if TOOL_ERROR_ESCALATION[:26] in last:
                 self.escs += 1
-            # keep issuing grep with a slightly different (runaway) pattern each
-            # time — same ERROR signature, different args
-            return _tool_resp(
-                "grep", {"pattern": "x|" * self.calls, "path": "."}, tool_id=f"g{self.calls}"
-            )
+            # keep issuing the same tool with a slightly different (runaway) arg
+            # each time — same ERROR signature, different args
+            return _tool_resp("read_file", {"path": "x/" * self.calls}, tool_id=f"g{self.calls}")
 
     from agent6.tools.errors import ToolError as _TE
 
     class DispatcherStub(_StubDispatcher):
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            raise _TE("grep: the arguments were not valid JSON. Resend the call.")
+            raise _TE("read_file: the arguments were not valid JSON. Resend the call.")
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -5105,7 +5103,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
                 self.nudges += 1
             if self.calls >= 12:
                 return _tool_resp("finish_session", {"summary": "ok"}, tool_id="f")
-            return _tool_resp("grep", {"pattern": "p", "path": "."}, tool_id=f"g{self.calls}")
+            return _tool_resp("read_file", {"path": "p"}, tool_id=f"g{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
@@ -5114,8 +5112,8 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.n += 1
             if self.n % 2 == 0:  # alternate error / success
-                return RawResult({"hits": [], "content": "ok"})
-            raise _TE("grep: bad pattern")
+                return RawResult({"content": "ok"})
+            raise _TE("read_file: bad path")
 
     provider = ProviderStub()
     config = SimpleNamespace(

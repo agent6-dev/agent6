@@ -41,7 +41,7 @@ from agent6.tools._path_safety import read_bytes_contained
 @dataclass(frozen=True, slots=True)
 class Symbol:
     """A definition site. `path` is absolute; `line`/`col` are 1-based,
-    the convention every emitting surface shares (grep, the LSP twins, the
+    the convention every emitting surface shares (the LSP twins and the
     system-prompt repo map)."""
 
     name: str

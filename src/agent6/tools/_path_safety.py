@@ -5,7 +5,7 @@
 Every tool that reads/writes a path in-process (outside
 ``agent6.sandbox.jail.run_in_jail``) resolves it through here first: reject an
 absolute path or a ``..`` component, then require the resolved path to still
-be under *root*. Shared by the fs handlers (read_file / list_dir / grep /
+be under *root*. Shared by the fs handlers (read_file / list_dir /
 apply_edit / apply_patch), the navigation handlers (outline / find_*) -- which
 all take an untrusted ``path`` argument -- and the symbol index they query.
 """

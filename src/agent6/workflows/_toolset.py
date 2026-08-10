@@ -25,7 +25,6 @@ READONLY_REVIEW_TOOLS = frozenset(
     {
         "read_file",
         "list_dir",
-        "grep",
         "outline",
         "find_definition",
         "find_references",

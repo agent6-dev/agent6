@@ -163,19 +163,19 @@ def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None
     # resends in one shot.
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with pytest.raises(ToolError, match="not valid JSON"):
-        d.dispatch("grep", {"_raw_arguments": '{"pattern": "\\d+"'})
+        d.dispatch("read_file", {"_raw_arguments": '{"path": "a.py"'})
 
 
 def test_runaway_raw_arguments_name_the_truncation(tmp_path: Path) -> None:
     # A huge unterminated argument string is a runaway generation cut off by
-    # the output-token ceiling (observed: kimi-k2.7 emitting a 117KB grep
-    # pattern of one alternation repeated). "Resend" feedback makes such a
-    # model regenerate the same runaway; the error must name the truncation
-    # and direct a much smaller call instead.
+    # the output-token ceiling (observed: a model emitting a 117KB argument of
+    # one alternation repeated). "Resend" feedback makes such a model
+    # regenerate the same runaway; the error must name the truncation and
+    # direct a much smaller call instead.
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    runaway = '{"pattern": "' + "setup_show|" * 3000
+    runaway = '{"path": "' + "setup_show|" * 3000
     with pytest.raises(ToolError, match="cut off mid-generation"):
-        d.dispatch("grep", {"_raw_arguments": runaway})
+        d.dispatch("read_file", {"_raw_arguments": runaway})
 
 
 def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
@@ -885,123 +885,6 @@ def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
 
 
-def test_grep_finds_match(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    (tmp_path / "a.py").write_text("hello world\nfoo\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("grep", {"pattern": "hello", "path": "."}).to_wire()
-    assert len(out["hits"]) == 1
-    assert out["hits"][0]["text"] == "hello world"
-
-
-def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    (tmp_path / ".github").mkdir()
-    (tmp_path / ".github" / "ci.yml").write_text("needle: here\n", encoding="utf-8")
-    (tmp_path / "plain.txt").write_text("needle\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    # Default recursive search from root skips the dot-dir.
-    root_hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
-    assert [h["path"] for h in root_hits] == ["plain.txt"]
-    # Explicitly targeting the dot-dir searches inside it.
-    dot_hits = d.dispatch("grep", {"pattern": "needle", "path": ".github"}).to_wire()["hits"]
-    assert any(h["path"].endswith("ci.yml") for h in dot_hits)
-
-
-def test_grep_skips_what_the_repo_calls_not_source(tmp_path: Path) -> None:
-    """A grep spent its whole 10s deadline inside a gitignored build tree (718MB
-    of Rust `target/` reproduced it), then reported truncated=True over an answer
-    that was already complete -- and matched inside the compiled binaries. The
-    repo's own ignore rules say what is not source; a checked-in file matching
-    one of them is still searched."""
-    import subprocess as sp
-
-    sp.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
-    (tmp_path / ".gitignore").write_text("build/\n*.log\nkept.log\n", encoding="utf-8")
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "artifact.c").write_text("needle\n", encoding="utf-8")
-    (tmp_path / "src.c").write_text("needle\n", encoding="utf-8")
-    (tmp_path / "kept.log").write_text("needle\n", encoding="utf-8")
-    sp.run(["git", "add", "-f", ".gitignore", "src.c", "kept.log"], cwd=tmp_path, check=True)
-    sp.run(
-        ["git", "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-qm", "init"],
-        cwd=tmp_path,
-        check=True,
-    )
-
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
-    assert sorted(h["path"] for h in hits) == ["kept.log", "src.c"]
-
-
-def test_grep_does_not_match_inside_a_binary_file(tmp_path: Path) -> None:
-    """`read_file` refuses a file with NUL bytes and grep matched inside one, so
-    a committed image filled the 500-hit cap with raw bytes -- and the model was
-    handed those bytes plus a `truncated` flag over a complete answer."""
-    (tmp_path / "notes.txt").write_text("needle\n", encoding="utf-8")
-    (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"needle\x00" * 200)
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    out = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()
-    assert [h["path"] for h in out["hits"]] == ["notes.txt"]
-    assert out["truncated"] is False
-
-
-def test_grep_on_a_named_binary_file_says_so(tmp_path: Path) -> None:
-    """Named directly it is an error, the same one `read_file` raises: skipping
-    it silently would answer "searched, no matches" over a file never read.
-    Skipping is only for the files a DIRECTORY walk sweeps up."""
-    (tmp_path / "logo.png").write_bytes(b"\x89PNG\x00needle")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(ToolError, match="binary"):
-        d.dispatch("grep", {"pattern": "needle", "path": "logo.png"})
-
-
-def test_grep_outside_a_repo_searches_everything(tmp_path: Path) -> None:
-    """No repo, no ignore rules: the filter is the repo's answer or nothing at
-    all, never a guess about which directories are build output."""
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "artifact.c").write_text("needle\n", encoding="utf-8")
-    (tmp_path / "src.c").write_text("needle\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
-    assert sorted(h["path"] for h in hits) == ["build/artifact.c", "src.c"]
-
-
-def test_grep_screen_flags_catastrophic_shapes_only() -> None:
-    from agent6.tools._grep_safety import (
-        _has_nested_unbounded_quantifier as nested,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    for bad in ("(a+)+", "(a*)*", "(a+)*$", "(.*)*", "((ab)+)+", "(x+){2,}", "(\\d+)+"):
-        assert nested(bad), f"should flag {bad!r}"
-    for ok in ("hello", "foo+bar", "(foo)bar", "(foo+)bar", "[a-z]+", "a.*b", "(ab|cd)+", "x{2,4}"):
-        assert not nested(ok), f"should NOT flag {ok!r}"
-
-
-def test_grep_rejects_nested_quantifier_pattern(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    (tmp_path / "a.py").write_text("aaaaaaaaaa\n", encoding="utf-8")
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="nested unbounded quantifier"):
-        d.dispatch("grep", {"pattern": "(a+)+$", "path": "."})
-
-
-def test_grep_rejects_overlong_pattern(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="too long"):
-        d.dispatch("grep", {"pattern": "a" * 1001, "path": "."})
-
-
-def test_grep_rejects_nonexistent_path(tmp_path: Path) -> None:
-    """grep on a missing path must error like its sibling fs tools, not return
-    an empty hit list indistinguishable from "searched, no matches"."""
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="No such path"):
-        d.dispatch("grep", {"pattern": "hello", "path": "no/such/dir"})
-
-
 def test_list_dir(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "x").mkdir()
@@ -1098,16 +981,14 @@ def test_outline_returns_symbols(tmp_path: Path) -> None:
     assert out["truncated"] is False
 
 
-def test_nav_tools_report_one_based_lines_matching_grep(tmp_path: Path) -> None:
-    """outline/find_definition/find_references share grep's (and the LSP
-    twins') 1-based line/col convention: `class Bar` on source line 3 is line 3
-    on every surface, not tree-sitter's 0-based start_point."""
+def test_nav_tools_report_one_based_lines(tmp_path: Path) -> None:
+    """outline/find_definition/find_references share the LSP twins' 1-based
+    line/col convention: `class Bar` on source line 3 is line 3 on every
+    surface, not tree-sitter's 0-based start_point."""
     cfg = _config(tmp_path)
     src = "def foo():\n    pass\nclass Bar:\n    pass\nfoo()\n"
     (tmp_path / "a.py").write_text(src, encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    hit = d.dispatch("grep", {"pattern": "class Bar", "path": "a.py"}).to_wire()["hits"][0]
-    assert hit["line"] == 3
     outline = {s["name"]: s for s in d.dispatch("outline", {"path": "a.py"}).to_wire()["symbols"]}
     assert outline["Bar"]["line"] == 3
     assert outline["foo"]["line"] == 1

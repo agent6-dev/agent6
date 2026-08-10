@@ -344,7 +344,7 @@ As a diagram:
 ```mermaid
 flowchart TD
     LLM[LLM choice of tool] --> Tools[tools/dispatch.py]
-    Tools -->|apply_edit, apply_patch, read, list, grep, outline| FS[(workspace fs)]
+    Tools -->|apply_edit, apply_patch, read, list, outline| FS[(workspace fs)]
     Tools -->|run_verify_command, run_metric_command, run_command| Jail[agent6-jail]
     Jail --> NS[user/mount/pid/ipc/uts/net NS]
     Jail --> Pivot[pivot_root into minimal rootfs]

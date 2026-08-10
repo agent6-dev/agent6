@@ -365,30 +365,6 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
     assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
 
 
-def test_a_directory_swapped_after_the_check_is_not_walked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """grep contained its per-file reads but not its WALK: `rglob` looked the
-    checked directory up again by full path. A component swapped in that window
-    sent the walk into a host tree -- unbounded, since the wall-clock deadline
-    only covers the reads -- and every target it found then failed the per-file
-    containment check, so grep answered with a confident empty search of a
-    directory it never opened (`{'hits': [], 'truncated': False}`, measured,
-    while the workspace file below held the match)."""
-    root = tmp_path / "ws"
-    (root / "sub").mkdir(parents=True)
-    (root / "sub" / "in_repo.txt").write_text("NEEDLE in the workspace\n", encoding="utf-8")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (outside / "host.txt").write_text("NEEDLE on the host\n", encoding="utf-8")
-
-    _swap_after_resolve(root, outside, monkeypatch)
-    d = _dispatcher(root)
-    with pytest.raises(ToolError, match="became a symlink"):
-        d.dispatch("grep", {"path": "sub", "pattern": "NEEDLE"})
-    assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
-
-
 def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -428,9 +404,9 @@ def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
 
 
 def test_an_in_repo_symlinked_directory_is_listed_but_never_descended(tmp_path: Path) -> None:
-    """The converse of the contained walk: `list_dir` still marks a symlink to a
-    directory with a trailing "/", and grep neither refuses one nor follows it --
-    a self-referential link would walk forever."""
+    """`list_dir` marks a symlink to a directory with a trailing "/" but is
+    non-recursive, so it never descends one -- a self-referential link would
+    walk forever."""
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "a.txt").write_text("NEEDLE\n", encoding="utf-8")
     (tmp_path / "alias").symlink_to(tmp_path / "pkg", target_is_directory=True)
@@ -438,8 +414,6 @@ def test_an_in_repo_symlinked_directory_is_listed_but_never_descended(tmp_path: 
     d = _dispatcher(tmp_path)
     entries = d.dispatch("list_dir", {"path": "."}).to_wire()["entries"]
     assert "pkg/" in entries and "alias/" in entries and "loop/" in entries
-    hits = d.dispatch("grep", {"path": ".", "pattern": "NEEDLE"}).to_wire()["hits"]
-    assert [h["path"] for h in hits] == ["pkg/a.txt"]
 
 
 def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None:
@@ -456,30 +430,6 @@ def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: Path) -> None
     write_contained(tmp_path, sp.rel_path, "after")
     assert read_contained(tmp_path, sp.rel_path) == "after"
     assert real.read_text(encoding="utf-8") == "after", "the in-repo symlink stopped working"
-
-
-def test_grep_skips_symlink_escaping_root_but_searches_in_repo_links(tmp_path: Path) -> None:
-    """Recursive grep must contain every target it reads, not just the base
-    path: an in-tree symlink to an outside file is skipped (the read runs
-    in-process, outside the jail), while a symlink to an in-repo file still
-    matches."""
-    outside = tmp_path.parent / "agent6_secret_outside.txt"
-    outside.write_text("GREP-ESCAPE-SECRET", encoding="utf-8")
-    try:
-        (tmp_path / "leak").symlink_to(outside)
-        (tmp_path / "sub").mkdir()
-        (tmp_path / "sub" / "nested_leak").symlink_to(outside)
-        (tmp_path / "real.txt").write_text("GREP-ESCAPE-SECRET in repo", encoding="utf-8")
-        (tmp_path / "inlink").symlink_to(tmp_path / "real.txt")
-        d = _dispatcher(tmp_path)
-        result = d.dispatch("grep", {"path": ".", "pattern": "GREP-ESCAPE-SECRET"}).to_wire()
-        paths = {hit["path"] for hit in result["hits"]}
-        assert "leak" not in paths
-        assert "sub/nested_leak" not in paths
-        assert "real.txt" in paths
-        assert "inlink" in paths
-    finally:
-        outside.unlink(missing_ok=True)
 
 
 # --- Unknown / hijacked tool names --------------------------------------------

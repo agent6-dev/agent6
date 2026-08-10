@@ -53,11 +53,11 @@ EXPLORE_REVIEW_SYSTEM_PROMPT = (
     REVIEW_SYSTEM_PROMPT
     + """
 
-You ALSO have read-only tools (read_file, grep, outline, list_dir,
+You ALSO have read-only tools (read_file, outline, list_dir,
 find_definition, find_references) to INVESTIGATE the broader repo before judging.
 When the diff changes a function/class signature, public API, return type, or a
-shared constant, USE find_references / grep to find existing callers/usages and
-check they still work.
+shared constant, USE find_references / find_definition to find existing
+callers/usages and check they still work.
 
 A diff that BREAKS an existing caller or usage you find elsewhere (e.g. it
 changed `f(x)` to `f(x, y)` but `f(a)` is still called in another file) is a

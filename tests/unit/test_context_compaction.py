@@ -262,8 +262,8 @@ def test_elision_placeholder_names_the_call() -> None:
     p = elision_placeholder("read_file", {"path": "src/x.py", "start_line": 10, "limit": 50})
     assert p.startswith(ELISION_PREFIX)
     assert "read_file src/x.py" in p and "start_line=10" in p
-    g = elision_placeholder("grep", {"pattern": "def foo"})
-    assert "grep pattern 'def foo'" in g
+    g = elision_placeholder("find_definition", {"symbol": "foo"})
+    assert "find_definition foo" in g
     # Unknown pairing (orphan result) falls back to the generic marker.
     from agent6.workflows._compaction import ELISION_PLACEHOLDER
 
@@ -343,7 +343,6 @@ def test_call_label_identities() -> None:
         call_label("read_file", {"path": "a.py", "start_line": 10, "limit": 40})
         == "read_file a.py (start_line=10, limit=40)"
     )
-    assert call_label("grep", {"pattern": "needle"}) == "grep pattern 'needle'"
     assert call_label("list_dir", {"path": "src"}) == "list_dir src"
     assert call_label("find_definition", {"symbol": "Foo"}) == "find_definition Foo"
     assert call_label("frobnicate", {"x": 1}) == "frobnicate"

@@ -151,7 +151,7 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
     dirty = _wf(verify=True, root=tmp_path)._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
 
     assert dirty("run_command") is False  # clean tree: a read-only probe costs nothing
-    assert dirty("grep") is False  # never asked of in-process read tools
+    assert dirty("read_file") is False  # never asked of in-process read tools
     (tmp_path / "a.txt").write_text("mutated\n", encoding="utf-8")
     assert dirty("run_command") is True
     assert dirty("mcp__srv__write") is True

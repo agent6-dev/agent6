@@ -39,8 +39,8 @@ class ReadFileInput(_ToolInput):
         " the repo, file does not exist, file is not UTF-8 decodable, or"
         " file is binary. Use `outline` instead when you only need a file's"
         " structure, not every line. A very large file is read only up to a"
-        " cap and the result sets `truncated: true`; grep or a narrower range"
-        " to reach the rest."
+        " cap and the result sets `truncated: true`; use a narrower"
+        " `start_line`/`limit` range to reach the rest."
     )
 
     path: str = Field(min_length=1)
@@ -67,30 +67,10 @@ class ListDirInput(_ToolInput):
         "List immediate entries in a directory (non-recursive). `path` is "
         "repo-root-relative; defaults to '.'. Hidden entries (starting with "
         "'.') are included. Returns names with a trailing '/' for directories. "
-        "For recursive listing, use `grep` with a permissive pattern instead."
+        "For a recursive view, use `run_command` (e.g. `rg --files`, `find`)."
     )
 
     path: str = Field(default=".")
-
-
-class GrepInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "grep"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Search for a Python-flavor regex `pattern` in files under `path` "
-        "(repo-root-relative, defaults to '.'). Recursive. Hidden files and "
-        "directories (starting with '.', e.g. .git) are skipped UNLESS `path` "
-        "names one explicitly. Returns hits as {path, line (1-based), text} "
-        "records. The pattern is matched per line; use "
-        "`^` / `$` for line anchors. Common usage: `pattern='def foo'` to "
-        "find function definitions across the repo; `pattern='import "
-        "requests'` for imports. For semantic identifier matching that "
-        "excludes string/comment occurrences, prefer `find_definition` or "
-        "`find_references`."
-    )
-
-    pattern: str = Field(min_length=1)
-    path: str = Field(default=".")
-    case_insensitive: bool = False
 
 
 class ApplyEditInput(_ToolInput):
@@ -664,7 +644,6 @@ ApplyEditInput.model_rebuild()
 ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     ReadFileInput,
     ListDirInput,
-    GrepInput,
     OutlineInput,
     FindDefinitionInput,
     FindReferencesInput,

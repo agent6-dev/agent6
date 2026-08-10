@@ -267,7 +267,7 @@ class _ExploreProvider:
 def test_explore_review_uses_tools_then_verdicts() -> None:
     from agent6.workflows._review import explore_review
 
-    tu = {"name": "grep", "id": "t1", "input": {"pattern": "read_doc"}}
+    tu = {"name": "find_references", "id": "t1", "input": {"symbol": "read_doc"}}
     provider = _ExploreProvider(
         [
             _ExploreResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
@@ -283,7 +283,7 @@ def test_explore_review_uses_tools_then_verdicts() -> None:
     v = explore_review(
         cast(Provider, provider), _ctx(), seat="security", model="m1", tools=[], dispatch=dispatch
     )
-    assert provider.calls == 2 and dispatched == ["grep"]  # investigated, then judged
+    assert provider.calls == 2 and dispatched == ["find_references"]  # investigated, then judged
     assert v.error is None and v.verdict == "block" and v.findings[0].category == "security"
 
 
@@ -316,7 +316,7 @@ def test_explore_review_skips_dispatch_on_final_iteration() -> None:
     # The last allowed model call returns tool_uses and no verdict: the seat is
     # about to abstain, and no model call follows to consume the results, so the
     # final round's tools must not be executed (pure waste).
-    tu = {"name": "grep", "id": "t1", "input": {"pattern": "x"}}
+    tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _ExploreProvider(
         [
             _ExploreResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
@@ -340,11 +340,11 @@ def test_explore_review_skips_dispatch_on_final_iteration() -> None:
     )
     assert v.error == "explore: no verdict within max_iters"
     assert provider.calls == 3  # every model call still happens
-    assert dispatched == ["grep", "grep"]  # rounds 1-2 only; final round skipped
+    assert dispatched == ["find_references", "find_references"]  # rounds 1-2; final skipped
 
 
 def test_run_panel_routes_explore_tier_seats() -> None:
-    tu = {"name": "grep", "id": "t1", "input": {"pattern": "x"}}
+    tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     prov = _ExploreProvider(
         [
             _ExploreResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
@@ -385,7 +385,7 @@ def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None
 
     # On the FINAL allowed iteration the model emits a tool_use AND a verdict in
     # the same turn; the verdict must be honored (not wasted into an abstain).
-    tu = {"name": "grep", "id": "t1", "input": {"pattern": "x"}}
+    tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _ExploreProvider(
         [_ExploreResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})]
     )

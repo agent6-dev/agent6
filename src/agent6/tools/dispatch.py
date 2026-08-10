@@ -49,7 +49,7 @@ from agent6.skills import (
 )
 from agent6.tools._control_tools import ask_user, finish_planning, finish_session
 from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
-from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, grep, list_dir, read_file
+from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
 from agent6.tools._memory_tools import (
     add_memory,
     invalidate_memory,
@@ -109,7 +109,6 @@ from agent6.tools.schema import (
     FindReferencesLspInput,
     FinishPlanningInput,
     FinishSessionInput,
-    GrepInput,
     InvalidateMemoryInput,
     ListDirInput,
     OutlineInput,
@@ -327,7 +326,6 @@ class ToolDispatcher:
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
             ListDirInput.TOOL_NAME: self._list_dir,
-            GrepInput.TOOL_NAME: self._grep,
             OutlineInput.TOOL_NAME: self._outline,
             FindDefinitionInput.TOOL_NAME: self._find_definition,
             FindReferencesInput.TOOL_NAME: self._find_references,
@@ -571,18 +569,18 @@ class ToolDispatcher:
             raw = raw_input.get("_raw_arguments")
             raw_len = len(raw) if isinstance(raw, str) else 0
             if raw_len > 20_000:
-                # Not a formatting slip: the arguments ran away (observed:
-                # kimi-k2.7 emitting a 117KB grep pattern of one alternation
-                # repeated until the output-token ceiling cut the JSON string
-                # mid-way). "Resend" feedback makes such a model regenerate
-                # the same runaway; name the actual problem instead.
+                # Not a formatting slip: the arguments ran away (observed: a
+                # model emitting a 117KB pattern of one alternation repeated
+                # until the output-token ceiling cut the JSON string mid-way).
+                # "Resend" feedback makes such a model regenerate the same
+                # runaway; name the actual problem instead.
                 raise ToolError(
                     f"{name}: the arguments were cut off mid-generation"
                     f" ({raw_len // 1000} KB, truncated before the JSON closed)."
                     " Do NOT resend the same call. Emit a much smaller call:"
-                    " short literal values only (e.g. a grep pattern under 200"
-                    " characters, one or two alternations), and split broad"
-                    " searches into several small ones."
+                    " short literal values only (keep any pattern or argument"
+                    " under a couple hundred characters), and split broad work"
+                    " into several small calls."
                 )
             raise ToolError(
                 f"{name}: the arguments were not valid JSON. Resend the call with a"
@@ -615,9 +613,6 @@ class ToolDispatcher:
 
     def _list_dir(self, raw: dict[str, Any]) -> ToolResult:
         return list_dir(self._root, raw)
-
-    def _grep(self, raw: dict[str, Any]) -> ToolResult:
-        return grep(self._root, raw)
 
     def _apply_edit(self, raw: dict[str, Any]) -> ToolResult:
         return apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)

@@ -114,27 +114,6 @@ class ListDirResult(ToolResult):
 
 
 @dataclass(frozen=True, slots=True)
-class GrepResult(ToolResult):
-    # Each hit row: {path: str, line: int, text: str (first 500 chars)}.
-    hits: tuple[dict[str, Any], ...]
-    truncated: bool
-    # Only the wall-clock-timeout return carries this key.
-    timeout: bool = False
-
-    def to_wire(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"hits": list(self.hits), "truncated": self.truncated}
-        if self.timeout:
-            out["timeout"] = True
-        return out
-
-    def summary(self) -> str:
-        # A wall-clock abort and the hit cap are different partial-ness: say
-        # which one, so a timed-out search never reads as "too many matches".
-        why = " (timed out)" if self.timeout else _trunc(self.truncated)
-        return f"{len(self.hits)} matches{why}"
-
-
-@dataclass(frozen=True, slots=True)
 class OutlineResult(ToolResult):
     # Each symbol row: {name: str, kind: str, line: int, col: int}.
     symbols: tuple[dict[str, Any], ...]

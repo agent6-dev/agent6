@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Content access & write handlers: agent6_docs, read_file, list_dir, grep,
+"""Content access & write handlers: agent6_docs, read_file, list_dir,
 apply_edit, apply_patch.
 
 All of these run in-process (never through ``agent6.sandbox.jail``), so the
@@ -13,22 +13,16 @@ jail's mount-based protections cover for an in-process write. See
 
 from __future__ import annotations
 
-import re
-import time
-from collections import deque
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
-from agent6.git_ops import ignored_paths
 from agent6.tools._agent6_docs import list_agent6_docs, read_agent6_doc
 from agent6.tools._edit_diag import (
     edit_mismatch_error,
     indent_tolerant_replacement,
     preview_result,
 )
-from agent6.tools._grep_safety import reject_pathological_regex
 from agent6.tools._path_safety import (
     SafePath,
     list_contained,
@@ -49,7 +43,6 @@ from agent6.tools.results import (
     DocsContentResult,
     DocsIndexResult,
     EditResult,
-    GrepResult,
     ListDirResult,
     PatchResult,
     ReadFileResult,
@@ -59,15 +52,9 @@ from agent6.tools.schema import (
     Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
-    GrepInput,
     ListDirInput,
     ReadFileInput,
 )
-
-# Wall-clock budget for a single grep over the tree; the regex-shape screening
-# (tools/_grep_safety.py) closes the catastrophic-backtracking cases, and this
-# bounds the rest.
-MAX_GREP_WALL_S = 10.0
 
 # Upper bound on what read_file pulls into memory. read_contained loads the
 # whole file before slicing, so without this a large file (a checked-in blob, a
@@ -147,112 +134,6 @@ def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
         raise ToolError(f"Not a directory: {args.path}")
     listing = sorted(list_contained(root, sp.rel_path), key=lambda e: e.name)
     return ListDirResult(entries=tuple(e.name + "/" if e.is_dir else e.name for e in listing))
-
-
-def _walk_contained_files(root: Path, rel_dir: Path) -> Iterator[Path]:
-    """Every workspace-relative file under *rel_dir*, listed through descriptors
-    walked from *root* so the walk itself cannot leave the workspace.
-
-    Hidden entries (.git, ...) are skipped below the requested directory, so
-    `grep <pat> .github/` still searches. A symlink is never descended into (a
-    self-referential one would walk forever, and the walk refuses to traverse
-    one anyway); a symlink to a file is yielded, and the caller contains the
-    read.
-
-    Level order: a grep that runs out of wall-clock has spent it on the shallow
-    files, not inside the first build directory below them (depth-first read
-    827MB before the source file next to it).
-    """
-    queue = deque([rel_dir])
-    while queue:
-        current = queue.popleft()
-        for entry in list_contained(root, current):
-            if entry.name.startswith("."):
-                continue
-            if entry.is_dir and not entry.is_symlink:
-                queue.append(current / entry.name)
-            elif not entry.is_dir:
-                yield current / entry.name
-
-
-def _grep_targets(root: Path, sp: SafePath, candidate: str) -> list[Path]:
-    """The workspace-relative files a grep of *sp* scans: the visible files
-    under the requested directory, or the file named directly -- which is
-    searched even when it is hidden.
-
-    A directory walk drops what the repo's own ignore rules exclude. Without
-    it a grep spent its entire wall-clock deadline inside a gitignored build
-    tree and then reported an already-complete answer as truncated."""
-    if sp.abs_path.is_file():
-        return [sp.rel_path]
-    if sp.abs_path.is_dir():
-        walked = list(_walk_contained_files(root, sp.rel_path))
-        ignored = ignored_paths(root, [str(p) for p in walked])
-        return [p for p in walked if str(p) not in ignored]
-    # A walk of a missing path yields nothing, which would render as a
-    # confident "searched, no matches"; error like the sibling fs tools.
-    raise ToolError(f"No such path: {candidate}")
-
-
-def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
-    args = GrepInput.model_validate(raw)
-    sp = resolve_in_root(root, args.path)
-    reject_pathological_regex(args.pattern)
-    try:
-        pat = re.compile(args.pattern, re.IGNORECASE if args.case_insensitive else 0)
-    except re.error as exc:
-        raise ToolError(f"Invalid regex: {exc}") from exc
-    deadline = time.monotonic() + MAX_GREP_WALL_S
-    hits: list[dict[str, Any]] = []
-    root_resolved = root.resolve()
-    # A binary file NAMED directly is an error, the same one `read_file` raises;
-    # one a directory walk swept up is skipped. Same split as hidden entries.
-    named_file = sp.abs_path.is_file()
-    for path in _grep_targets(root, sp, args.path):
-        # Contain each target like read_file contains its leaf: the walk yields
-        # in-repo symlinks whose destination can be anywhere on the host, and
-        # this read runs in-process (outside the jail). Resolve and require
-        # the real file to still be under root; skip escapees.
-        #
-        # READ the resolved path, not the original: reading `path` re-follows
-        # the symlink, so the check and the use land on different objects and a
-        # background command in the same jail can swap the link between them.
-        try:
-            rel = (root / path).resolve().relative_to(root_resolved)
-        except (OSError, ValueError):
-            continue
-        if time.monotonic() > deadline:
-            # Bound total wall-clock: a pathological pattern/large tree can't
-            # hang the run. Report partial hits rather than stalling.
-            return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
-        try:
-            text = read_contained(root, rel, errors="ignore")
-        except OSError:
-            continue
-        if "\x00" in text:
-            # Raw bytes are not an answer: a committed image filled the hit cap
-            # with them and the model read `truncated` over a complete answer.
-            if named_file:
-                raise ToolError(f"File is binary (contains NUL bytes): {args.path}")
-            continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            # Re-check the wall-clock inside the line loop too: the
-            # between-files check alone can't bound a large single file.
-            # (It still can't interrupt one in-progress C-level match —
-            # the static screen above is the defence for that.)
-            if time.monotonic() > deadline:
-                return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
-            if pat.search(line):
-                hits.append(
-                    {
-                        "path": str(path),
-                        "line": lineno,
-                        "text": line[:500],
-                    }
-                )
-                if len(hits) >= 500:
-                    return GrepResult(hits=tuple(hits), truncated=True)
-    return GrepResult(hits=tuple(hits), truncated=False)
 
 
 def _fold(name: str) -> str:
