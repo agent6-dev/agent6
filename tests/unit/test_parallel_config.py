@@ -32,9 +32,14 @@ def test_parallel_defaults() -> None:
     assert cfg.parallel.workdir == ""
 
 
-def test_parallel_max_lanes_must_be_positive() -> None:
+def test_parallel_max_lanes_bounds() -> None:
+    # le=1024: the cap itself is capped, or a huge max_lanes re-opens the
+    # huge-count allocation the spec grammar refuses against.
     with pytest.raises(ValueError):
         ParallelConfig(max_lanes=0)
+    with pytest.raises(ValueError):
+        ParallelConfig(max_lanes=1025)
+    assert ParallelConfig(max_lanes=1024).max_lanes == 1024
 
 
 def test_parallel_override_via_repo_config(repo: Path) -> None:

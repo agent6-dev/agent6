@@ -30,12 +30,13 @@ def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> LaneRes
 
 
 def test_segment_lanes_expands_counts_and_models() -> None:
-    assert [lt.model for lt in segment_lanes(Segment(task="t", spec="3"))] == [None, None, None]
-    lanes = segment_lanes(Segment(task="t", spec="m1,m2"))
+    three = segment_lanes(Segment(task="t", spec="3"), limit=4)
+    assert [lt.model for lt in three] == [None, None, None]
+    lanes = segment_lanes(Segment(task="t", spec="m1,m2"), limit=4)
     assert [lt.model for lt in lanes] == ["m1", "m2"]
     assert all(lt.task == "t" for lt in lanes)
     with pytest.raises(DirectiveError):
-        segment_lanes(Segment(task="t", spec="0"))
+        segment_lanes(Segment(task="t", spec="0"), limit=4)
 
 
 def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,7 +132,7 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     "PINNED operator instructions (verbatim):" instead of the work. Pins ride
     the LaneTask out-of-band; the task text stays the task."""
     lanes = segment_lanes(
-        Segment(spec="2", task="refactor the model layer"), ["never touch schema files"]
+        Segment(spec="2", task="refactor the model layer"), ["never touch schema files"], limit=4
     )
     assert len(lanes) == 2
     for lane in lanes:
@@ -139,5 +140,5 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
         assert lane.pins == ("never touch schema files",)
 
     # No pins: nothing rides along.
-    plain = segment_lanes(Segment(spec="", task="do it"))
+    plain = segment_lanes(Segment(spec="", task="do it"), limit=4)
     assert plain[0].task == "do it" and plain[0].pins == ()

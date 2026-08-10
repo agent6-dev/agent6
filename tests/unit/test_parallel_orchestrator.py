@@ -177,13 +177,13 @@ def test_build_lane_specs_model_list(tmp_path: Path) -> None:
 
 def test_build_lane_specs_over_cap_refused(tmp_path: Path) -> None:
     cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
-    with pytest.raises(ParallelError, match="max_lanes"):
+    with pytest.raises(DirectiveError, match="max_lanes"):
         _specs(tmp_path, cfg, "fan", "5")
 
 
 def test_build_lane_specs_rejects_zero(tmp_path: Path) -> None:
-    # Spec-shape errors come from the shared grammar (parse_spec); the cap error
-    # stays a ParallelError (a ui/cli concern that reads [parallel].max_lanes).
+    # Every spec-shape error, the cap included, comes from the shared grammar:
+    # parse_spec refuses over-limit BEFORE building the lane list.
     with pytest.raises(DirectiveError):
         _specs(tmp_path, Config(), "fan", "0")
 

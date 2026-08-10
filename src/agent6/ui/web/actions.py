@@ -112,15 +112,16 @@ def _model_refusal(cwd: Path, segments: list[Segment]) -> str | None:
     cache says doesn't exist, before any spawn (the composer's normal error path,
     nothing spawned). None = every model checks out, or there is no cache to check
     against (a fresh/offline machine proceeds; the detached lane's own preflight
-    warns). A malformed spec surfaces its grammar error."""
-    try:
-        models = [m for seg in segments for m in parse_spec(seg.spec)]
-    except DirectiveError as exc:
-        return str(exc)
+    warns). A malformed or over-`max_lanes` spec surfaces its grammar error."""
     try:
         cfg = load_effective(cwd).config
     except ConfigError:
         return None  # a broken config is its own separate error; don't mask it here
+    try:
+        cap = cfg.parallel.max_lanes
+        models = [m for seg in segments for m in parse_spec(seg.spec, limit=cap)]
+    except DirectiveError as exc:
+        return str(exc)
     verdict = validate_spec_models(models, cfg)
     return refusal_message(verdict, directive=True) if verdict.refused else None
 

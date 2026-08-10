@@ -38,10 +38,11 @@ class LaneJoin:
     detail: str
 
 
-def segment_lanes(seg: Segment, pins: Sequence[str] = ()) -> list[LaneTask]:
+def segment_lanes(seg: Segment, pins: Sequence[str] = (), *, limit: int) -> list[LaneTask]:
     """Expand one segment into its lanes: `parse_spec` maps the spec to one
     model per lane (`None` = the worker model). Raises DirectiveError on a
-    bad spec (zero lanes, empty model list).
+    bad spec (zero lanes, empty model list, more than *limit* lanes --
+    `[parallel].max_lanes`, refused before the list is built).
 
     Operator *pins* ride on every lane OUT-OF-BAND of the task. `/pin`
     promises an instruction "stays binding for the rest of the run", and a
@@ -54,7 +55,8 @@ def segment_lanes(seg: Segment, pins: Sequence[str] = ()) -> list[LaneTask]:
     re-shows.
     """
     lane_pins = tuple(pins)
-    return [LaneTask(task=seg.task, model=model, pins=lane_pins) for model in parse_spec(seg.spec)]
+    models = parse_spec(seg.spec, limit=limit)
+    return [LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
 
 
 def join_lane_result(

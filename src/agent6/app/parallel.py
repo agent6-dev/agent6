@@ -138,12 +138,7 @@ def build_lane_specs(
     relies on that so it needn't reach the private helper)."""
     if workdir_root is None:
         workdir_root = _workdir_root(cfg, fanout_id)
-    models = parse_spec(spec)
-    if len(models) > cfg.parallel.max_lanes:
-        raise ParallelError(
-            f"--parallel requests {len(models)} lanes but [parallel].max_lanes ="
-            f" {cfg.parallel.max_lanes}. Request fewer, or raise [parallel].max_lanes."
-        )
+    models = parse_spec(spec, limit=cfg.parallel.max_lanes)
     return [
         LaneSpec(
             lane=i,

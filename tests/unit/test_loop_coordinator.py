@@ -236,6 +236,9 @@ def _build_wf(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
             workflow=MagicMock(verify_command=verify_command, require_verify_to_finish=False),
+            # A real int, not a Mock: segment_lanes compares the spec's lane
+            # count against this cap.
+            parallel=SimpleNamespace(max_lanes=4),
         ),
         provider=provider,
         dispatcher=disp,

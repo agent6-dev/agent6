@@ -43,7 +43,8 @@ _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)")
 
 class DirectiveError(ValueError):
     """A `/parallel` directive or spec was malformed: a bare token, a segment
-    with no task, a non-positive lane count, or an empty model list."""
+    with no task, a non-positive or over-`max_lanes` lane count, or an empty
+    model list."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,15 +56,17 @@ class Segment:
     task: str
 
 
-def parse_spec(spec: str) -> list[str | None]:
+def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     """A spec string -> one entry per lane: ``None`` = the configured worker
     model, else a per-lane model override. ``""`` (omitted) is one default lane.
 
     A positive integer ``N`` is N default lanes; a comma-separated list is one
     lane per named model (a single model id, e.g. ``provider/model``, is a
-    one-lane list). Raises DirectiveError on a non-positive count or a list that
-    names no models. Single source for the directive spec AND the CLI
-    ``run --parallel <spec>`` value grammar."""
+    one-lane list). *limit* is the caller's ``[parallel].max_lanes``; an
+    over-limit count refuses BEFORE the lane list is built, so a mistyped huge
+    count cannot allocate it. Raises DirectiveError on a non-positive or
+    over-limit count or a list that names no models. Single source for the
+    directive spec AND the CLI ``run --parallel <spec>`` value grammar."""
     s = spec.strip()
     if not s:
         return [None]
@@ -76,11 +79,22 @@ def parse_spec(spec: str) -> list[str | None]:
         n = int(s)
         if n < 1:
             raise DirectiveError("parallel lane count must be >= 1")
+        if n > limit:
+            raise DirectiveError(_over_limit(n, limit))
         return [None] * n
     models = [m.strip() for m in s.split(",") if m.strip()]
     if not models:
         raise DirectiveError(f"parallel spec {spec!r} names no models")
+    if len(models) > limit:
+        raise DirectiveError(_over_limit(len(models), limit))
     return list(models)
+
+
+def _over_limit(requested: int, limit: int) -> str:
+    return (
+        f"parallel spec requests {requested} lanes but [parallel].max_lanes = {limit}."
+        " Request fewer, or raise [parallel].max_lanes."
+    )
 
 
 # A leading `/pin` token, whitespace-delimited: optional leading whitespace,

@@ -210,10 +210,15 @@ class ParallelConfig(BaseModel):
 
     # Hard cap on lanes per fan-out. `--parallel` over this refuses up front so a
     # typo (or a long model list) can't spawn an unbounded pile of clones+runs.
+    # le: the cap itself must be bounded, or a huge max_lanes re-opens the
+    # huge-count allocation parse_spec refuses against. Static, not CPU-derived:
+    # lanes are I/O-bound detached runs, and the same repo config must load on
+    # every box.
     max_lanes: int = Field(
         ge=1,
+        le=1024,
         default=4,
-        description="Hard cap per fan-out; more refuses up front.",
+        description="Hard cap per fan-out (1-1024); more refuses up front.",
     )
     # Base directory for lane workspaces (each fan-out gets `<workdir>/<fanout-id>/
     # lane-<i>`). "" resolves to `<cache_dir>/parallel`, a regenerable cache the

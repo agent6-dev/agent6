@@ -19,31 +19,45 @@ def _segs(text: str) -> list[tuple[str, str]]:
 
 
 def test_parse_spec_omitted_is_one_default_lane() -> None:
-    assert parse_spec("") == [None]
-    assert parse_spec("   ") == [None]
+    assert parse_spec("", limit=4) == [None]
+    assert parse_spec("   ", limit=4) == [None]
 
 
 def test_parse_spec_int_is_n_default_lanes() -> None:
-    assert parse_spec("3") == [None, None, None]
-    assert parse_spec("1") == [None]
+    assert parse_spec("3", limit=4) == [None, None, None]
+    assert parse_spec("1", limit=4) == [None]
 
 
 def test_parse_spec_model_list_is_one_lane_per_model() -> None:
-    assert parse_spec("gpt-5,opus") == ["gpt-5", "opus"]
-    assert parse_spec("kimi, glm ") == ["kimi", "glm"]
+    assert parse_spec("gpt-5,opus", limit=4) == ["gpt-5", "opus"]
+    assert parse_spec("kimi, glm ", limit=4) == ["kimi", "glm"]
 
 
 def test_parse_spec_slash_model_id_is_one_lane() -> None:
     # provider/model ids pass through whole; the CLI --parallel value shares this
-    assert parse_spec("moonshotai/kimi-k2.6") == ["moonshotai/kimi-k2.6"]
-    assert parse_spec("a/b,c/d") == ["a/b", "c/d"]
+    assert parse_spec("moonshotai/kimi-k2.6", limit=4) == ["moonshotai/kimi-k2.6"]
+    assert parse_spec("a/b,c/d", limit=4) == ["a/b", "c/d"]
 
 
 def test_parse_spec_zero_and_empty_models_raise() -> None:
     with pytest.raises(DirectiveError):
-        parse_spec("0")
+        parse_spec("0", limit=4)
     with pytest.raises(DirectiveError):
-        parse_spec(",")
+        parse_spec(",", limit=4)
+
+
+def test_parse_spec_over_limit_refuses_before_allocating() -> None:
+    """`[None] * n` ran before any cap, so a mistyped 12-digit count requested a
+    terabytes-scale list and the kernel OOM-killed the process before
+    [parallel].max_lanes (checked on the RESULT) could refuse. The refusal now
+    happens before the list is built, on both branches. Pinned with SMALL
+    values: a test that proves the bound by allocating past it is the bug it is
+    testing for."""
+    with pytest.raises(DirectiveError, match=r"max_lanes = 4"):
+        parse_spec("9", limit=4)
+    with pytest.raises(DirectiveError, match=r"max_lanes = 2"):
+        parse_spec("a,b,c", limit=2)
+    assert parse_spec("4", limit=4) == [None] * 4  # the bound is inclusive
 
 
 # --- directive gate: only a leading exact /parallel token -----------------
@@ -181,10 +195,10 @@ def test_superscript_digit_is_not_a_lane_count() -> None:
     DirectiveError-catching caller (500 in the web composer; escaped the
     coordinator's never-end-the-run guard). isdecimal() is exactly int()'s
     accepted set: a superscript is now ordinary task text / a model token."""
-    assert parse_spec("\u00b2") == ["\u00b2"]  # a (bogus) model token, no raise
+    assert parse_spec("\u00b2", limit=4) == ["\u00b2"]  # a (bogus) model token, no raise
     assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
     # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
-    assert parse_spec("\u0662") == [None, None]
+    assert parse_spec("\u0662", limit=4) == [None, None]
 
 
 # --- /pin steer directive ------------------------------------------------------
