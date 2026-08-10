@@ -174,7 +174,7 @@ class _ProviderBase(BaseModel):
         default=None,
         description=(
             "argv that prints a short-lived bearer to stdout; re-run on TTL and once on "
-            "`401`/`403`. Wins over `api_key_env`. See below."
+            "`401`/`403`. Wins over `api_key_env`."
         ),
     )
     token_command_ttl_s: float = Field(
@@ -189,8 +189,8 @@ class _ProviderBase(BaseModel):
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Provider-specific JSON merged into every request body (load-bearing keys filtered). "
-            "See OpenRouter below."
+            "Provider-specific JSON merged into every request body (load-bearing keys filtered), "
+            "e.g. OpenRouter routing options."
         ),
     )
     extra_query: dict[str, str] = Field(
@@ -434,24 +434,23 @@ class SandboxConfig(BaseModel):
     network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
         default="auto",
         description=(
-            "Which network jailed commands join. `auto`: the run's PRIVATE network (they reach "
-            "each other, nothing off the box, and nothing outside the run reaches in — including "
-            "you), enforced on `strict`, degraded to the host's with a warning on "
-            "`hardened`/`none`; `session`: the same, refusing where unenforceable; "
-            "`only_explicit_states`: strict-only, machine `tool` states opt in; `host`: the "
-            "machine's network. No per-command `none` — a run's commands share one launcher, and "
-            "isolating them from each other costs a dev server for no security."
+            "Which network jailed commands join. `auto`: the run's PRIVATE network (commands "
+            "reach each other, nothing off the box, nothing outside reaches in), enforced on "
+            "`strict`, degraded to the host's with a warning on `hardened`/`none`. `session`: "
+            "the same, refusing where unenforceable. `only_explicit_states`: strict-only; "
+            "machine `tool` states opt in. `host`: the machine's network. No per-command "
+            "`none`: a run's commands share one launcher."
         ),
     )
     run_commands: Literal["yes", "no", "ask"] = Field(
         default="ask",
         description=(
-            "May the LLM run commands (`run_command`, `run_verify_command`, `stop_background` — "
-            "one decision for all of them): `yes` (auto-approve) / `no` (tools withheld, and the "
-            "verify gate with them) / `ask` (prompt per call; the session-wide allow/deny answers "
-            "persist). `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` "
-            "(never over a configured `no`), `--no-commands` (always allowed). A run that cannot "
-            "ask anyone refuses to start rather than wait forever."
+            "May the LLM run commands (`run_command`, `run_verify_command`, `stop_background`: "
+            "one decision for all three): `yes` auto-approves, `no` withholds the tools (and the "
+            "verify gate with them), `ask` prompts per call with session-wide allow/deny "
+            "answers. `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` "
+            "(never over a configured `no`), `--no-commands`. A run that cannot ask anyone "
+            "refuses to start."
         ),
     )
     # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
@@ -471,11 +470,10 @@ class SandboxConfig(BaseModel):
             "Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent "
             'operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as '
             "a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL "
-            "prefixes. Everything else about fetch is fixed (SECURITY §4): https only, no "
-            "credentials, text ≤ 1 MiB, no compression, redirects returned not followed, gate "
-            "before DNS, connection pinned to the vetted address. Hidden when `network = "
-            '"host"`; withheld from machine/agent states. A GET can still encode data in its '
-            "path — why the default is empty."
+            "prefixes. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned "
+            'not followed: SECURITY §4). Hidden when `network = "host"`; withheld from '
+            "machine/agent states. A GET can still encode data in its path, hence the empty "
+            "default."
         ),
     )
     # Make `.git/` read-only from the child's view so a worker that gains
@@ -492,10 +490,10 @@ class SandboxConfig(BaseModel):
         default=True,
         description=(
             "Keep `.git/` unwritable by jailed commands (else one can plant a git filter that "
-            "agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount "
-            "namespace, and Landlock cannot substitute (SECURITY §5). On `hardened` the default "
-            "degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse "
-            "`.git` writes everywhere regardless."
+            "agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a "
+            "mount namespace (SECURITY §5). On `hardened` the default degrades with a warning; "
+            "an explicit `true` refuses. The in-process edit tools refuse `.git` writes "
+            "everywhere regardless."
         ),
     )
     # Per-process memory cap in MiB for every JAILED child (`run_command`,
@@ -529,9 +527,9 @@ class SandboxConfig(BaseModel):
     extra_read_paths: tuple[str, ...] = Field(
         default=(),
         description=(
-            "Extra absolute paths **the run** may **read + execute**, at their real locations — a "
-            "toolchain/interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). "
-            "Mounted for jailed commands, and readable by the in-process tools (name one with an "
+            "Extra absolute paths **the run** may **read + execute**, at their real locations: a "
+            "toolchain or interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). "
+            "Mounted for jailed commands, readable by the in-process tools (name one with an "
             "absolute path). Loosens confinement; list only what the build needs."
         ),
     )
@@ -558,7 +556,7 @@ class SandboxConfig(BaseModel):
     extra_write_paths: tuple[str, ...] = Field(
         default=(),
         description=(
-            "Extra absolute paths **the run** may **read + write**, at their real locations — a "
+            "Extra absolute paths **the run** may **read + write**, at their real locations: a "
             "build cache, an output dir, a sibling checkout the task edits. Write implies read. "
             "List only what the task writes."
         ),
@@ -583,15 +581,14 @@ class SandboxConfig(BaseModel):
     hide_paths: tuple[str, ...] = Field(
         default=(),
         description=(
-            "Paths **the run** may never read or write, even under a broader grant; agent6's "
+            "Paths **the run** may never read or write, even under a broader grant. agent6's "
             "config dir and state base are always hidden, so an `extra_read_paths` grant of "
-            "`$HOME` never exposes `secrets.toml` or your run history (the data dir and cache are "
-            "not hidden: installed skills stay usable). Enforced twice: the in-process tools "
-            "refuse them at **every** isolation level (`none` included), and jailed commands see "
-            "them masked (a dir appears empty, a file reads empty). Masking needs the mount "
-            "namespace: on `hardened` an entry it cannot mask refuses the run, and a grant that "
-            "exposes the always-hidden dirs warns loudly instead (the grant may be deliberate; "
-            "writes and the rest of the host stay confined)."
+            "`$HOME` never exposes `secrets.toml` or your run history (the data dir and cache "
+            "are not: installed skills stay usable). Enforced twice: the in-process tools refuse "
+            "them at **every** isolation level (`none` included), and jailed commands see them "
+            "masked (a dir appears empty, a file reads empty). Masking needs the mount "
+            "namespace: on `hardened` an entry it cannot mask refuses the run, and a grant "
+            "exposing the always-hidden dirs warns loudly instead."
         ),
     )
 
@@ -761,9 +758,9 @@ class GitConfig(BaseModel):
         default=True,
         description=(
             "Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and "
-            "your checkout are never touched). Off: agent6 never commits -- work stays only in the "
-            "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from "
-            "a changed tree degrade."
+            "your checkout are never touched). Off: agent6 never commits; work stays only in the "
+            "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch "
+            "from a changed tree degrade."
         ),
     )
     # Default strategy for `agent6 sessions merge`: how the run branch lands on
@@ -837,12 +834,11 @@ class GitConfig(BaseModel):
     run_repo_filters: bool = Field(
         default=False,
         description=(
-            "Honor the repo's own content drivers — `filter.<n>.clean/smudge/process` and "
-            "`merge.<n>.driver` — during agent6's git ops. Off: a driver defined in `.git/config` "
+            "Honor the repo's own content drivers (`filter.<n>.clean/smudge/process`, "
+            "`merge.<n>.driver`) during agent6's git ops. Off: a driver defined in `.git/config` "
             "is repo-controlled host code that runs on the auto-commit's `git add` (or a chain "
-            "merge), the same RCE class as a hook. agent6 neutralizes each by name. Turn on to "
-            "support **Git-LFS** (its clean/smudge filters are exactly these) or another content "
-            "driver."
+            "merge), the same RCE class as a hook; agent6 neutralizes each by name. Turn on to "
+            "support **Git-LFS** (its clean/smudge filters are exactly these)."
         ),
     )
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
@@ -902,8 +898,8 @@ class WorkflowConfig(BaseModel):
         default=(),
         description=(
             'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
-            '&& b"]`). Optional: unset infers per run (AGENTS.md `## Verify command` → repo '
-            "manifests → a cheap model call), injected in-memory and printed. None "
+            '&& b"]`). Optional: unset infers per run (AGENTS.md `## Verify command`, then repo '
+            "manifests, then a cheap model call), injected in-memory and printed. None "
             "inferable = the run starts gateless; a recognizable project created mid-run "
             "adopts the first resolvable inferred gate. Set it to pin one."
         ),
@@ -936,12 +932,11 @@ class WorkflowConfig(BaseModel):
         ge=0.0,
         default=900.0,
         description=(
-            "How long a model's `run_command` may run before it is **handed back** as a background "
-            "job. Not a timeout: nothing is killed, the command keeps running, and the model is "
-            "told (`returncode: null`, `still_running: true`, a `background_id`) so it can poll "
-            "with `read_background`, stop it, or carry on — a judgement a number cannot make. `0` "
-            "disables the hand-back and waits while the command lives, which is right when a human "
-            "is watching and can interrupt."
+            "How long a model's `run_command` may run before it is **handed back** as a "
+            "background job. Not a timeout: nothing is killed, the command keeps running, and "
+            "the model is told (`returncode: null`, `still_running: true`, a `background_id`) so "
+            "it can wait with `read_background`, stop it, or carry on. `0` disables the "
+            "hand-back, which is right when a human is watching and can interrupt."
         ),
     )
     # When true, finish_session is refused while the last verify is red (or a verify
@@ -1522,10 +1517,9 @@ class MCPSandbox(BaseModel):
     read_paths: tuple[str, ...] = Field(
         default=(),
         description=(
-            "Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute "
-            "or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are "
-            "already there, so a block names only the server's own data — nothing has to describe "
-            "its interpreter."
+            "Read+execute paths for this server BEYOND the sandbox a jailed command gets "
+            "(absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as "
+            "`HOME` are already there, so a block names only the server's own data."
         ),
     )
     write_paths: tuple[str, ...] = Field(
@@ -1546,12 +1540,11 @@ class MCPSandbox(BaseModel):
     network: Literal["auto", "none", "session", "host"] = Field(
         default="auto",
         description=(
-            "Which network this server joins, because servers differ from commands and from each "
-            "other: `auto` = one of its own where the host can give a namespace, degrading to the "
-            "host's with a warning where it cannot; `none` = the same, refusing rather than "
-            "running connected; `session` = the RUN's network, so the dev server a background "
-            "command started answers this server too (a browser server driving the app under "
-            "test) and still nothing off the box; `host` = the machine's network."
+            "Which network this server joins. `auto`: one of its own where the host can give a "
+            "namespace, degrading to the host's with a warning. `none`: the same, refusing "
+            "rather than running connected. `session`: the RUN's network, so a dev server a "
+            "background command started answers this server too (a browser server driving the "
+            "app under test), and still nothing off the box. `host`: the machine's network."
         ),
     )
     # No confinement at all: the server runs as the operator, with their whole
@@ -1835,8 +1828,9 @@ class Config(BaseModel):
     preset: str = Field(
         default="",
         description=(
-            "Named strategy preset (see [Presets](#presets)). Top-level because it overrides every "
-            "section. `agent6 config set preset <name>` (`--repo`); `--preset` overrides per run."
+            "Named strategy preset: fills many settings at once (see the Presets section). "
+            "Top-level because it overrides every section. `agent6 config set preset <name>` "
+            "(`--repo`); `--preset` overrides per run."
         ),
     )
 
