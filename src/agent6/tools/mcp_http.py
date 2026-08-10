@@ -39,9 +39,18 @@ class MCPHttpError(Exception):
     """The server could not be reached, or answered with something unusable."""
 
 
-@dataclass(frozen=True, slots=True)
+class MCPSessionExpired(MCPHttpError):
+    """A stateful server answered a request carrying our session id with 404:
+    the spec's signal that it expired the session. The caller re-initializes.
+    A subclass of MCPHttpError so a plain ``except MCPHttpError`` still catches
+    it, but the manager can single it out to re-handshake."""
+
+
+@dataclass(slots=True)
 class HttpTransport:
-    """A connection to one operator-run MCP server."""
+    """A connection to one operator-run MCP server. Not frozen: ``session_id``
+    is live connection state the server assigns on ``initialize`` (the rest is
+    config)."""
 
     name: str
     url: str
@@ -49,7 +58,10 @@ class HttpTransport:
     # here and never logged, never written to a transcript, and never part of
     # an error message.
     token_env: str = ""
-    # Echoed on every request after the server assigns one.
+    # The streamable-HTTP session id: captured from the ``initialize`` response
+    # (see `send`), echoed on every later request (see `_headers`), and cleared
+    # on the 404 that means the server expired it. Stays "" for a stateless
+    # server, which never sends one.
     session_id: str = ""
 
     def _auth(self) -> str:
@@ -105,8 +117,20 @@ class HttpTransport:
                     content=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
                 ) as response,
             ):
+                if response.status_code == 404 and self.session_id:
+                    # The spec: a 404 to a request bearing a session id means
+                    # the server expired that session. Drop it so we do not
+                    # keep echoing a dead id, and signal a re-initialize.
+                    self.session_id = ""
+                    raise MCPSessionExpired(f"server {self.name!r} expired its session (HTTP 404)")
                 if response.status_code >= 400:
                     raise MCPHttpError(f"server {self.name!r} returned HTTP {response.status_code}")
+                # The server assigns the session id on the initialize response;
+                # capture it here and every request after echoes it. A stateless
+                # server sends none, so this leaves session_id "".
+                assigned = response.headers.get("mcp-session-id", "")
+                if assigned:
+                    self.session_id = assigned
                 encoding = response.headers.get("content-encoding", "")
                 if encoding.lower() not in ("", "identity"):
                     # The RESPONSE header picks the decoder, whatever was asked

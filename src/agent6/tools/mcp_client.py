@@ -53,7 +53,7 @@ from typing import IO, Any
 
 from agent6.child_env import curated_env
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, spawn_in_jail
-from agent6.tools.mcp_http import HttpTransport, MCPHttpError
+from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
 from agent6.types import JailPolicy
 
 # MCP protocol version we speak. The spec is versioned by date string;
@@ -478,6 +478,24 @@ class _MCPServer:
             self._next_id += 1
             return req_id
 
+    def _reinitialize(self) -> None:
+        """Re-run just the ``initialize`` handshake after a session expiry: the
+        transport captures the fresh session id, and the tool list does not
+        change, so there is nothing to re-list. HTTP only (a stdio server has
+        no session to expire)."""
+        init = self._request(
+            "initialize",
+            {
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "agent6", "version": "0"},
+            },
+            timeout_s=self.startup_timeout_s,
+        )
+        if not isinstance(init, dict):
+            raise MCPError(f"server {self.name!r} returned non-dict re-initialize result")
+        self._notify("notifications/initialized", {})
+
     def _request(
         self,
         method: str,
@@ -497,6 +515,16 @@ class _MCPServer:
             # reader thread, no id collision with a server-initiated request.
             try:
                 response = self.http.send(payload, timeout_s=timeout_s)
+            except MCPSessionExpired:
+                # The server dropped our session (the transport already cleared
+                # the id). Re-initialize per the spec and retry this request
+                # once. The re-initialize carries no session id, so its own
+                # 404 (if any) is a plain error and cannot loop back here.
+                self._reinitialize()
+                try:
+                    response = self.http.send(payload, timeout_s=timeout_s)
+                except MCPHttpError as exc:
+                    raise MCPError(str(exc)) from exc
             except MCPHttpError as exc:
                 raise MCPError(str(exc)) from exc
             if response is None:
