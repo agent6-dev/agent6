@@ -88,3 +88,48 @@ def test_a_clean_session_emits_nothing(tmp_path: Path, monkeypatch: pytest.Monke
     finally:
         d.close()
     assert _events(log, "jail.degraded") == []
+
+
+def test_concurrent_callers_open_exactly_one_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lazy open is a check-then-set, so two threads reaching it together
+    each started a launcher and one was dropped on the floor.
+
+    A dropped `JailSession` leaks its launcher process, its namespaces and
+    (under `network = "session"`) its network holder, with nothing left holding
+    a handle to close them. Nothing calls a command tool concurrently on one
+    dispatcher TODAY -- review seats are read-only -- but that was an invariant
+    written in a comment, not enforced. The sleep widens the window the race
+    needs; without the lock this opens two.
+    """
+    import threading
+    import time
+
+    opened: list[_StubSession] = []
+
+    def slow_open(cls: object, policy: object, *, session_net: object = None) -> _StubSession:
+        time.sleep(0.05)  # the window a check-then-set leaves open
+        stub = _StubSession("")
+        opened.append(stub)
+        return stub
+
+    monkeypatch.setattr("agent6.tools.dispatch.JailSession.open", classmethod(slow_open))
+    d = _dispatcher(tmp_path, EventSink(tmp_path / "e.jsonl"), _StubSession(""))
+    seen: list[object] = []
+    try:
+        threads = [
+            threading.Thread(
+                target=lambda: seen.append(d._run_session())  # pyright: ignore[reportPrivateUsage]
+            )
+            for _ in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        d.close()
+
+    assert len(opened) == 1, f"opened {len(opened)} sessions; {len(opened) - 1} leaked"
+    assert seen == [opened[0]] * 4

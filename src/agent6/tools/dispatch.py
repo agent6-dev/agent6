@@ -328,6 +328,11 @@ class ToolDispatcher:
         self._own_session_net: SessionNetwork | None = None
         self._session: JailSession | None = None
         self._session_failed = False
+        # Two threads racing the lazy open would each start a launcher and one
+        # would be dropped on the floor -- a leaked jail process, its
+        # namespaces, and (under `session`) its network holder, with nothing
+        # left holding a handle to close them.
+        self._session_lock = threading.Lock()
         # The run's dir, for the effective command policy: the operator's
         # session choice and away-mode live there and can change mid-run.
         self._session_dir = session_dir
@@ -1135,27 +1140,29 @@ class ToolDispatcher:
         """
         if not self._use_session:
             return None
-        if self._session is None and not self._session_failed:
-            rw = () if self._shells is None else (self._shells.log_root,)
-            try:
-                policy = self._jail_policy(("true",), extra_rw_paths=rw)
-                net = self._net() if policy.network == "session" else None
-                self._session = JailSession.open(policy, session_net=net)
-                if self._session.startup_stderr:
-                    # The run's jail came up degraded but runs (e.g. rootless
-                    # podman refusing the /proc mount, so $ORIGIN toolchains
-                    # will not start). Say so ONCE, here at the run's single
-                    # session open -- not per command, where it would repeat.
-                    self._emit("jail.degraded", detail=self._session.startup_stderr)
-            except (JailUnavailableError, OSError):
-                self._session_failed = True
-        return self._session
+        with self._session_lock:
+            if self._session is None and not self._session_failed:
+                rw = () if self._shells is None else (self._shells.log_root,)
+                try:
+                    policy = self._jail_policy(("true",), extra_rw_paths=rw)
+                    net = self._net() if policy.network == "session" else None
+                    self._session = JailSession.open(policy, session_net=net)
+                    if self._session.startup_stderr:
+                        # The run's jail came up degraded but runs (e.g. rootless
+                        # podman refusing the /proc mount, so $ORIGIN toolchains
+                        # will not start). Say so ONCE, here at the run's single
+                        # session open -- not per command, where it would repeat.
+                        self._emit("jail.degraded", detail=self._session.startup_stderr)
+                except (JailUnavailableError, OSError):
+                    self._session_failed = True
+            return self._session
 
     def close_jail_session(self) -> None:
         """End the run's jail process; its PID namespace takes the rest down."""
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+        with self._session_lock:
+            if self._session is not None:
+                self._session.close()
+                self._session = None
 
     def _run_argv_in_jail(
         self,
