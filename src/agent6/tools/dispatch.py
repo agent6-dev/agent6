@@ -739,7 +739,14 @@ class ToolDispatcher:
         """
         server, _tool = split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
-        if entry is not None and entry.approve == "yes":
+        if entry is None:
+            # The scope becomes a filename, and the LLM chooses tool names: a
+            # call to `mcp__../../tmp/x__t` would otherwise prompt about, and
+            # then record a grant for, a "server" that is a path. Only a
+            # configured name is a server, and the manager would refuse this
+            # call anyway.
+            raise ToolError(f"unknown MCP server in {name!r}")
+        if entry.approve == "yes":
             return
         args = json.dumps(truncate_args(raw_input), ensure_ascii=False, sort_keys=True)
         if not self._approver(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):

@@ -18,7 +18,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow
 from agent6.tools.dispatch import Approver, ToolDispatcher
-from agent6.tools.errors import ToolDenied
+from agent6.tools.errors import ToolDenied, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
@@ -203,5 +203,25 @@ def test_denying_a_server_for_the_session_withdraws_its_tools(tmp_path: Path) ->
         assert "mcp__fake__echo" in d.available_tool_names()  # a sibling's denial is not ours
         set_session_deny(session_dir, "mcp.fake")
         assert "mcp__fake__echo" not in d.available_tool_names()
+    finally:
+        mgr.close()
+
+
+def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(tmp_path: Path) -> None:
+    """A name that is not a configured server is not a server, and the LLM
+    chooses tool names: `mcp__../../tmp/x__t` parsed out a server of
+    `../../tmp/x`, which became the scope of the grant the operator was asked
+    for (`tests/security/test_ipc_containment.py` holds the other half). Asking
+    at all offers consent for something that cannot exist, and the manager
+    refuses the call a moment later anyway."""
+
+    def _forbidden(_prompt: str, /, *, scope: str | None = None) -> bool:
+        pytest.fail(f"the operator was asked about a server that does not exist: {scope}")
+
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=_forbidden)
+        with pytest.raises(ToolError, match="unknown MCP server"):
+            d.dispatch("mcp__../../tmp/x__t", {})
     finally:
         mgr.close()

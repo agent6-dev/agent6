@@ -331,7 +331,9 @@ syscall for hardened), never guessed from the kernel version.
   (`[mcp.servers.<name>].approve`, default `ask`). An "allow all" answer covers
   that server for the run: never the command tools, never a sibling server. The
   prompts that offer no standing answer at all (`fetch`'s off-list host, the
-  sandbox-off gate) say so, and no front-end shows the button.
+  sandbox-off gate) say so, and no front-end shows the button. A tool name that
+  names no configured server is refused rather than prompted about: the scope
+  becomes a filename, and the model picks the name.
 - **The LLM only sees the fixed set in `src/agent6/tools/schema.py`.**
     - Structured edits, read-only navigation, fixed-argv verify/metric commands,
       `finish_session`, `ask_user`, a curator task notepad, a cross-run memory

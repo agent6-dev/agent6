@@ -63,15 +63,25 @@ def approvals_dir(session_dir: Path) -> Path:
     return p
 
 
-def _answer_path(directory: Path, answer_id: str) -> Path:
-    """Resolve ``<directory>/<answer_id>.answer``, refusing an id that escapes the
-    directory (a path separator, ``..``, or an absolute path). A front-end always
-    answers an id from a prompt it rendered, but that id crosses a trust boundary
-    in the web server, so containment stays a hard check on the write primitive."""
-    target = directory / f"{answer_id}.answer"
+def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
+    """``<directory>/<filename>``, refusing a name that is not one plain file.
+
+    Both bridge files name themselves after a string from outside: a prompt id
+    the web server takes from the request, and an approval scope holding a
+    server name parsed out of a tool name the LLM chose. A separator makes a
+    directory of one of those, and ``..`` walks out of the run, so containment
+    is a hard check on the write primitive rather than a caller's manners.
+    """
+    if not untrusted or "/" in untrusted or os.sep in untrusted or "\x00" in untrusted:
+        raise ValueError(f"unsafe {what}: {untrusted!r}")
+    target = directory / filename
     if not target.resolve().is_relative_to(directory.resolve()):
-        raise ValueError(f"unsafe answer id: {answer_id!r}")
+        raise ValueError(f"unsafe {what}: {untrusted!r}")
     return target
+
+
+def _answer_path(directory: Path, answer_id: str) -> Path:
+    return _contained(directory, f"{answer_id}.answer", untrusted=answer_id, what="answer id")
 
 
 def clear_pending_answers(session_dir: Path) -> None:
@@ -373,15 +383,21 @@ SESSION_ALLOW_FILE = "session.allow"
 SESSION_DENY_FILE = "session.deny"
 
 
+def _marker_path(session_dir: Path, stem: str, scope: str) -> Path:
+    return _contained(
+        approvals_dir(session_dir), f"{stem}.{scope}", untrusted=scope, what="approval scope"
+    )
+
+
 def set_session_allow(session_dir: Path, scope: str) -> None:
     """Record the operator's 'allow all of *scope* for the session' choice."""
-    d = approvals_dir(session_dir)
-    d.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(d / f"{SESSION_ALLOW_FILE}.{scope}", "1")
+    target = _marker_path(session_dir, SESSION_ALLOW_FILE, scope)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _write_answer_atomic(target, "1")
 
 
 def session_allow_set(session_dir: Path, scope: str) -> bool:
-    return (approvals_dir(session_dir) / f"{SESSION_ALLOW_FILE}.{scope}").exists()
+    return _marker_path(session_dir, SESSION_ALLOW_FILE, scope).exists()
 
 
 def set_session_deny(session_dir: Path, scope: str) -> None:
@@ -392,13 +408,13 @@ def set_session_deny(session_dir: Path, scope: str) -> None:
     rather than refusing each call, so the model stops spending turns on a door
     that will not open.
     """
-    d = approvals_dir(session_dir)
-    d.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(d / f"{SESSION_DENY_FILE}.{scope}", "1")
+    target = _marker_path(session_dir, SESSION_DENY_FILE, scope)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _write_answer_atomic(target, "1")
 
 
 def session_deny_set(session_dir: Path, scope: str) -> bool:
-    return (approvals_dir(session_dir) / f"{SESSION_DENY_FILE}.{scope}").exists()
+    return _marker_path(session_dir, SESSION_DENY_FILE, scope).exists()
 
 
 def record_answer(session_dir: Path, answer: str, scope: str | None) -> bool:
