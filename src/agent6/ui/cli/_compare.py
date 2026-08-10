@@ -23,7 +23,6 @@ from agent6.app.compare import (
     RankOutcome,
     manifest_task,
     print_ranked_candidates,
-    verify_ok,
 )
 from agent6.app.compare import (
     rank as core_rank,
@@ -35,7 +34,7 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S, _SPINNER
 from agent6.workflows.judge import CandidateBrief
 
-__all__ = ["RankOutcome", "manifest_task", "print_ranked_candidates", "rank", "verify_ok"]
+__all__ = ["RankOutcome", "manifest_task", "print_ranked_candidates", "rank"]
 
 
 @contextlib.contextmanager

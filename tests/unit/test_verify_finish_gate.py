@@ -99,11 +99,12 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     def _capture(_type: str, **fields: Any) -> None:
         emitted.append(fields)
 
-    for verify, state_kw, all_passed, verdict in (
+    cases: tuple[tuple[bool, dict[str, Any], bool, str], ...] = (
         (False, {"last_verify_ok": None}, False, "not_applicable"),
         (True, {"last_verify_ok": True, "edited_since_verify": False}, True, "passed"),
         (True, {"last_verify_ok": False}, False, "failed"),
-    ):
+    )
+    for verify, state_kw, all_passed, verdict in cases:
         wf = _wf(verify=verify)
         wf.events = MagicMock(emit=_capture)
         wf.events.emit = _capture  # type: ignore[method-assign]

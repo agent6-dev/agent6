@@ -58,15 +58,6 @@ class RankOutcome:
     judge_cost_partial: bool = False
 
 
-def verify_ok(status: str) -> bool | None:
-    """Map a run's folded status to the judge's verify tri-state."""
-    if status == "passed":
-        return True
-    if status == "failed":
-        return False
-    return None
-
-
 def manifest_task(session_dir: Path, fallback: str) -> str:
     """The run's own recorded `user_task`, else *fallback*."""
     try:

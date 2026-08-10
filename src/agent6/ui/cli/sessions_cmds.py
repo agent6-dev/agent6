@@ -58,7 +58,7 @@ from agent6.ui.cli._common import (
     resolve_session_layout,
     sgr,
 )
-from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
+from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     died_without_end,
@@ -764,7 +764,7 @@ def _screen_candidates(
                 session_id=layout.session_id,
                 task=manifest_task(layout.session_dir, fallback=layout.session_id),
                 diff=_candidate_diff(cwd, manifest.base_sha, manifest.run_branch or ""),
-                verify_ok=verify_ok(summary.status),
+                verify_ok=summary.verify_ok,
                 cost_usd=summary.cost_usd,
             )
         )

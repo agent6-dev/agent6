@@ -40,8 +40,8 @@ from agent6.app.compare import (
     manifest_task,
     print_ranked_candidates,
     rank,
-    verify_ok,
 )
+from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.manifest import write_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
@@ -849,7 +849,7 @@ def _import_lanes(
                 session_id=res.spec.session_id,
                 task=manifest_task(dest, task),
                 diff=diff_since(res.spec.workdir, base_sha),
-                verify_ok=verify_ok(summary.status),
+                verify_ok=summary.verify_ok,
                 cost_usd=summary.cost_usd,
             )
         )
@@ -868,6 +868,18 @@ def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, cfg: Config) -> No
         (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
     with contextlib.suppress(OSError):
         workdir_root.rmdir()  # only succeeds when nothing was kept
+
+
+def fanout_exit_code(candidates: list[CandidateBrief]) -> int:
+    """The fan-out's exit, from the lanes' gate verdicts: 1 nothing rankable,
+    0 some lane verified green (or no lane had a gate), 4 gates ran and none
+    passed -- an all-red fan-out used to crown a rank 1 and exit 0, reading as
+    success to every script."""
+    if not candidates:
+        return 1
+    if any(c.verify_ok is True for c in candidates):
+        return 0
+    return EXIT_VERIFY_FAILED if any(c.verify_ok is False for c in candidates) else 0
 
 
 def _print_report(
@@ -1006,4 +1018,4 @@ def run_parallel(
 
     if interrupted:
         return 130
-    return 0 if candidates else 1
+    return fanout_exit_code(candidates)

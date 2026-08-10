@@ -147,6 +147,10 @@ class SessionSummary:
     cost_usd: float
     usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some leg)
     mtime: float
+    # The gate verdict from the gate facts (LogScan.verify_verdict), NOT the
+    # status word: the compare table and the judge read it, and the word calls
+    # a red-gated finish "finished".
+    verify_ok: bool | None = None
 
 
 def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[str, str]:
@@ -335,6 +339,22 @@ class LogScan:
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
     operator_blocked: bool = False  # a prompt is still unanswered on this leg
+    last_verify_rc: int | None = None  # this leg's last verify.end exit code
+
+    def verify_verdict(self) -> bool | None:
+        """The gate verdict from the gate FACTS, for judging candidates: True =
+        the run ended all-passed (the gate vouched for the final tree), False =
+        this leg's last verify ran and failed, None = nothing observed the
+        final tree (gateless, no verify this leg, or a green made stale by
+        later edits). Deriving this from the folded status word called a RED
+        gate "no verify": finish_session over red folds to "finished"."""
+        if self.mode != "run":
+            return None
+        if self.finished and self.all_passed:
+            return True
+        if self.last_verify_rc is not None and self.last_verify_rc != 0:
+            return False
+        return None
 
     def status_facts(self) -> StatusFacts:
         """This scan's answers to the status questions, for status_for_session_dir.
@@ -389,6 +409,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     # Prompt ids still awaiting their answer. A later event must not clear the
     # bit: Ctrl-C emits session.steer_requested while an approval still waits.
     pending_prompts: set[str] = set()
+    last_verify_rc: int | None = None
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -423,6 +444,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     # re-asks with restarted ids, so a held-over entry would keep
                     # the run "waiting" forever (the typed fold's rule too).
                     pending_prompts.clear()
+                    last_verify_rc = None
                     if start_ep is None:
                         start_ep = ep
                 elif etype == "session.end":
@@ -446,7 +468,12 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     usd_prior_legs += usd_leg
                     usd_leg = 0.0
                     input_tokens = output_tokens = None
+                    last_verify_rc = None  # leg-scoped, like the token counters
                     legs += 1
+                elif etype == "verify.end":
+                    rc = ev.get("exit_code")
+                    if isinstance(rc, int) and not isinstance(rc, bool):
+                        last_verify_rc = rc
                 elif etype == "budget.update":
                     saw_budget = True
                     usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
@@ -473,6 +500,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         last_ep=last_ep,
         last_type=last_type,
         operator_blocked=bool(pending_prompts),
+        last_verify_rc=last_verify_rc,
     )
 
 
@@ -512,4 +540,5 @@ def summarize_session_dir(session_dir: Path) -> SessionSummary:
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
         mtime=session_mtime(session_dir),
+        verify_ok=scan.verify_verdict(),
     )

@@ -1591,3 +1591,21 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
         assert (m.get("compare") or {}).get("winner") is not True
         # The work is not lost: the branch is named in the failure report.
         assert lane_id in out
+
+
+def test_fanout_exit_reflects_the_gate_verdicts() -> None:
+    """An all-red fan-out exited 0: every lane finished over a red gate, one
+    was still crowned rank 1, and the fan-out read as success to every script.
+    The exit now mirrors session_exit_code: 4 when gates ran and none passed,
+    0 when some lane verified green or no lane had a gate, 1 for no candidates."""
+    from agent6.app.parallel import fanout_exit_code
+    from agent6.workflows.judge import CandidateBrief
+
+    def _cand(verify_ok: bool | None) -> CandidateBrief:
+        return CandidateBrief(session_id="s", task="t", diff="", verify_ok=verify_ok, cost_usd=0.0)
+
+    assert fanout_exit_code([]) == 1
+    assert fanout_exit_code([_cand(True), _cand(False)]) == 0
+    assert fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
+    assert fanout_exit_code([_cand(False), _cand(False)]) == 4
+    assert fanout_exit_code([_cand(False), _cand(None)]) == 4

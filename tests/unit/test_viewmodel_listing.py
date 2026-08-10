@@ -126,6 +126,53 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
     assert s.cost_usd == 0.12
 
 
+def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path) -> None:
+    """The judge's verify tri-state came from the folded status word, and
+    finish_session over a red gate folds to "finished": the compare table and
+    the judge called a RED gate "no verify", so an all-red fan-out crowned a
+    rank 1 and exited 0. The verdict now reads the gate facts: the last
+    verify.end this leg, and the end's all_passed."""
+    red_finish: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+    ]
+    rd = _write_run(tmp_path, "runs", "r-red", red_finish)
+    assert summarize_session_dir(rd).verify_ok is False, "a red gate read as no-verify"
+
+    green: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0},
+        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+    ]
+    assert summarize_session_dir(_write_run(tmp_path, "runs", "r-green", green)).verify_ok is True
+
+    gateless: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "all_passed": False, "reason": "settled"},
+    ]
+    assert summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless)).verify_ok is None
+
+    # A plan never runs its (inferred) gate: no verdict to claim.
+    plan: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "plan", "user_task": "t"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
+    ]
+    assert summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verify_ok is None
+
+    # A prior leg's red is not this leg's: the observation is leg-scoped, like
+    # the token counters (the resumed leg may never run the gate at all).
+    resumed: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "loop.resume.start"},
+        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+    ]
+    rd = _write_run(tmp_path, "runs", "r-legs", resumed)
+    assert summarize_session_dir(rd).verify_ok is None
+
+
 def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
     # An ask verifies nothing; "passed" for a Q&A is a category error. The ask
     # flow's own banner already says "answered", so listings must agree.

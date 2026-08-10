@@ -45,8 +45,9 @@ _EXIT_BUDGET_EXHAUSTED = 3
 # The agent finished deliberately but the verify gate was red or stale. Its own
 # code so a script can tell "the work is not green" from "the run broke" (1)
 # without parsing the event log; `require_verify_to_finish` turns the same
-# condition into a refusal to finish at all.
-_EXIT_VERIFY_FAILED = 4
+# condition into a refusal to finish at all. Public: the parallel fan-out exits
+# with it when gates ran and no lane passed.
+EXIT_VERIFY_FAILED = 4
 
 
 def session_exit_code(result: SessionResult) -> int:
@@ -60,7 +61,7 @@ def session_exit_code(result: SessionResult) -> int:
     running the gate. WHOSE failure it is shows in the word and the reason,
     not here; a script reading 0 would take it as passing."""
     if result.completed:
-        return _EXIT_VERIFY_FAILED if result.verified in ("failed", "unverified") else 0
+        return EXIT_VERIFY_FAILED if result.verified in ("failed", "unverified") else 0
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
