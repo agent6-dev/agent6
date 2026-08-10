@@ -13,6 +13,12 @@ from agent6.config._providers import (
     ProviderEntry,
     validate_base_url,
 )
+from agent6.config._sandbox import (
+    MCPConfig,
+    MCPServerEntry,
+    SandboxConfig,
+    mcp_server_name_refusal,
+)
 from agent6.config.model import (
     Agent6Section,
     BudgetConfig,
@@ -23,8 +29,6 @@ from agent6.config.model import (
     GitConfig,
     MachineConfig,
     MachineNotifyConfig,
-    MCPConfig,
-    MCPServerEntry,
     MetricConfig,
     ModelsConfig,
     NotifyConfig,
@@ -34,13 +38,11 @@ from agent6.config.model import (
     ReviewTier,
     RoleModel,
     RoleName,
-    SandboxConfig,
     ThinkingLevel,
     WebConfig,
     WorkflowConfig,
     is_loopback_host,
     load_config,
-    mcp_server_name_refusal,
     validate_config,
 )
 
