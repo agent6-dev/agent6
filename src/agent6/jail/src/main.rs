@@ -1926,19 +1926,18 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     // polling try_wait() forever.
     let stdout_pipe = child.stdout.take().expect("stdout piped");
     let stderr_pipe = child.stderr.take().expect("stderr piped");
-    let stdout_buf = Arc::new(Mutex::new(CapBuf::default()));
-    let stderr_buf = Arc::new(Mutex::new(CapBuf::default()));
+    // ONE capture for both pipes: the arrival order is what a merged log needs,
+    // and it cannot be recovered from two separate buffers later.
+    let captured = Arc::new(Mutex::new(Capture::default()));
     let drained = Arc::new(AtomicUsize::new(0));
-    for (pipe, buf) in [
-        (
-            Box::new(stdout_pipe) as Box<dyn Read + Send>,
-            Arc::clone(&stdout_buf),
-        ),
-        (Box::new(stderr_pipe), Arc::clone(&stderr_buf)),
+    for (pipe, tag) in [
+        (Box::new(stdout_pipe) as Box<dyn Read + Send>, Stream::Out),
+        (Box::new(stderr_pipe), Stream::Err),
     ] {
         let done = Arc::clone(&drained);
+        let sink = Arc::clone(&captured);
         std::thread::spawn(move || {
-            read_capped_into(pipe, &buf);
+            read_capped_into(pipe, tag, &sink);
             done.fetch_add(1, Ordering::SeqCst);
         });
     }
@@ -1998,14 +1997,10 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
         std::thread::sleep(Duration::from_millis(20));
     }
     let held_open = drained.load(Ordering::SeqCst) < 2;
-    let stdout = stdout_buf
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .render();
-    let mut stderr = stderr_buf
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .render();
+    let (stdout, mut stderr) = {
+        let buf = captured.lock().unwrap_or_else(|e| e.into_inner());
+        (buf.render(Some(Stream::Out)), buf.render(Some(Stream::Err)))
+    };
     if held_open {
         stderr.push_str(concat!(
             "\n[agent6-jail] output capture ended early: a process outside the",
@@ -2257,43 +2252,90 @@ const STREAM_RETAIN_TAIL: usize = 4 * 1024 * 1024;
 /// Bytes (not read_to_string): a strict decode returned Err and dropped the
 /// whole stream to "" on the first non-UTF-8 byte (a grep over a binary, a
 /// latin-1 file), misleading every consumer while the real rc was reported.
-/// The capped head+tail of one stream, readable while it is still filling.
-#[derive(Default)]
-struct CapBuf {
-    head: Vec<u8>,
-    tail: VecDeque<u8>,
-    dropped: u64,
+/// Which stream a captured chunk arrived on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stream {
+    Out,
+    Err,
 }
 
-impl CapBuf {
-    fn push(&mut self, mut rest: &[u8]) {
-        if self.head.len() < STREAM_RETAIN_HEAD {
-            let take = (STREAM_RETAIN_HEAD - self.head.len()).min(rest.len());
-            self.head.extend_from_slice(&rest[..take]);
-            rest = &rest[take..];
+/// A command's output as it arrived: chunks tagged by stream, in arrival order,
+/// under one head+tail cap.
+///
+/// Three views come off the one capture. A synchronous result reports stdout
+/// and stderr SEPARATELY, so each renders alone; a log wants chronology, so it
+/// renders merged. Recording the order once is what lets a command that starts
+/// synchronous and is later handed back as a background job keep both -- the
+/// order cannot be reconstructed from two separate buffers afterwards.
+///
+/// Ordering is as accurate as any capture without a pty: a process block-buffers
+/// stdout into a pipe while stderr is unbuffered, so the writer's own flushing
+/// dominates, exactly as it does for a shared `2>&1` fd.
+#[derive(Default)]
+struct Capture {
+    head: Vec<(Stream, Vec<u8>)>,
+    head_bytes: usize,
+    tail: VecDeque<(Stream, Vec<u8>)>,
+    tail_bytes: usize,
+    // Per stream, so a flood on stdout does not stamp the cap marker onto a
+    // stderr result that lost nothing.
+    dropped_out: u64,
+    dropped_err: u64,
+}
+
+impl Capture {
+    fn push(&mut self, stream: Stream, bytes: &[u8]) {
+        if self.head_bytes < STREAM_RETAIN_HEAD {
+            self.head_bytes += bytes.len();
+            self.head.push((stream, bytes.to_vec()));
+            return;
         }
-        if !rest.is_empty() {
-            self.tail.extend(rest.iter().copied());
-            if self.tail.len() > STREAM_RETAIN_TAIL {
-                let excess = self.tail.len() - STREAM_RETAIN_TAIL;
-                self.tail.drain(..excess);
-                self.dropped += excess as u64;
+        self.tail_bytes += bytes.len();
+        self.tail.push_back((stream, bytes.to_vec()));
+        // Whole chunks: they are one read each (<=64 KiB), so the cap is coarse
+        // by at most one chunk and the tagging stays intact.
+        while self.tail_bytes > STREAM_RETAIN_TAIL {
+            match self.tail.pop_front() {
+                Some((stream, dropped)) => {
+                    self.tail_bytes -= dropped.len();
+                    match stream {
+                        Stream::Out => self.dropped_out += dropped.len() as u64,
+                        Stream::Err => self.dropped_err += dropped.len() as u64,
+                    }
+                }
+                None => break,
             }
         }
     }
 
-    fn render(&self) -> String {
-        let mut out = self.head.clone();
-        if self.dropped > 0 {
+    /// One stream's bytes, or the merged stream when *only* is None.
+    fn render(&self, only: Option<Stream>) -> String {
+        let keep = |s: &Stream| only.is_none_or(|want| want == *s);
+        let mut out: Vec<u8> = Vec::new();
+        for (stream, bytes) in &self.head {
+            if keep(stream) {
+                out.extend_from_slice(bytes);
+            }
+        }
+        let dropped = match only {
+            Some(Stream::Out) => self.dropped_out,
+            Some(Stream::Err) => self.dropped_err,
+            None => self.dropped_out + self.dropped_err,
+        };
+        if dropped > 0 {
             out.extend_from_slice(
                 format!(
                     "\n[agent6-jail] output over the retained cap; {} bytes omitted here\n",
-                    self.dropped
+                    dropped
                 )
                 .as_bytes(),
             );
         }
-        out.extend(self.tail.iter().copied());
+        for (stream, bytes) in &self.tail {
+            if keep(stream) {
+                out.extend_from_slice(bytes);
+            }
+        }
         String::from_utf8_lossy(&out).into_owned()
     }
 }
@@ -2301,7 +2343,7 @@ impl CapBuf {
 /// Drain *stream* into *sink* until EOF. Runs on its own thread, which may
 /// outlive the command: a grandchild outside its process group keeps the write
 /// end open, and nothing can make that read return.
-fn read_capped_into(mut stream: impl Read, sink: &Mutex<CapBuf>) {
+fn read_capped_into(mut stream: impl Read, tag: Stream, sink: &Mutex<Capture>) {
     let mut chunk = [0u8; 64 * 1024];
     loop {
         match stream.read(&mut chunk) {
@@ -2309,7 +2351,7 @@ fn read_capped_into(mut stream: impl Read, sink: &Mutex<CapBuf>) {
             Ok(n) => sink
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(&chunk[..n]),
+                .push(tag, &chunk[..n]),
         }
     }
 }
@@ -2321,9 +2363,12 @@ mod tests {
     /// Drain to EOF and render, the shape these retention tests pin. The
     /// launcher itself never waits for EOF (see the teardown in run_child).
     fn read_capped(stream: impl Read) -> String {
-        let sink = Mutex::new(CapBuf::default());
-        read_capped_into(stream, &sink);
-        let rendered = sink.lock().unwrap_or_else(|e| e.into_inner()).render();
+        let sink = Mutex::new(Capture::default());
+        read_capped_into(stream, Stream::Out, &sink);
+        let rendered = sink
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .render(Some(Stream::Out));
         rendered
     }
 
