@@ -227,3 +227,41 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     warn_sandbox_gaps("hardened", _env(4), cfg)
     assert capsys.readouterr().err == ""
     assert check_hide_paths_support(cfg, "hardened") is None
+
+
+def test_root_on_hardened_names_what_it_costs(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Running as root is the operator's explicit widening, so it warns rather
+    than refuses -- but the warning has to name the cost, not just the choice.
+    Verified as real uid 0: under hardened a jailed command reads /etc/shadow,
+    /etc/sudoers and the host's ssh private keys, because Landlock grants the
+    documented read-only system set and root stops file permissions narrowing
+    it. The root banner names running as root; it does not name this."""
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
+    warn_sandbox_gaps("hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)))
+    err = capsys.readouterr().err
+    assert "running as root" in err
+    assert "/etc/shadow" in err and "ssh private keys" in err
+
+
+def test_root_on_strict_says_nothing_about_it(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """strict pivots into a minimal rootfs -- verified as real uid 0, its /etc
+    holds a single entry and none of those files exist. Warning there would be
+    telling the operator about a cost they are not paying."""
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.is_root", lambda: True)
+    warn_sandbox_gaps("strict", _env(4), Config())
+    assert capsys.readouterr().err == ""
+
+
+def test_a_normal_user_on_hardened_is_not_told_about_root(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    monkeypatch.setattr("agent6.app.confine.is_root", lambda: False)
+    warn_sandbox_gaps("hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)))
+    assert "running as root" not in capsys.readouterr().err

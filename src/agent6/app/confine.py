@@ -16,7 +16,7 @@ from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.paths import private_dirs
+from agent6.paths import is_root, private_dirs
 from agent6.sandbox.detect import Environment
 from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import IsolationLevel
@@ -51,6 +51,10 @@ def warn_sandbox_gaps(
 
     `protect_git` degrades the same way: strict-only, because it is a read-only
     bind. An explicitly-set one refuses (check_protect_git_support).
+
+    Running as ROOT is the operator's explicit widening, so it warns rather
+    than refuses -- but on `hardened` it says what the widening costs, since
+    the granted system set stops being narrowed by file permissions there.
     """
     if isolation == "none":
         reporter.err(
@@ -68,6 +72,19 @@ def warn_sandbox_gaps(
             "Landlock LSM enabled). Namespaces, the pivoted read-only rootfs, "
             "and seccomp still confine commands; the in-jail Landlock "
             "defense-in-depth is absent."
+        )
+    if isolation == "hardened" and is_root():
+        # The root banner names running as root; this names what it COSTS at
+        # this level, which is where the operator would otherwise find out
+        # afterwards. Not a blocklist of sensitive files: the grant is the
+        # documented read-only system set, and root simply stops file
+        # permissions from narrowing it.
+        reporter.err(
+            "[agent6] WARNING: running as root under 'hardened': file permissions "
+            "no longer narrow what a jailed command READS, so root-only files in "
+            "the granted system set -- /etc/shadow, /etc/sudoers, the host's ssh "
+            "private keys -- are readable by it. 'strict' pivots into a minimal "
+            "rootfs where they are absent. Run as your normal user."
         )
     if isolation == "hardened" and cfg.sandbox.protect_git:
         reporter.err(
