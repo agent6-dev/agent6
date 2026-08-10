@@ -8,6 +8,11 @@ committed under `seed/`; vhs replays them through the TUI and captures the image
 We commit the **tape, scripts, and seed fixtures only**. Generated media
 (`out/`, `*.png`, `*.webm`) is gitignored and rebuilt on demand.
 
+Every tape sets the terminal to agent6's own `agent6-dark` palette (the same
+colours `src/agent6/ui/tui/theme.py` defines, inlined as a vhs theme object),
+so the terminal frame and the TUI inside it share one background instead of
+framing the product in an unrelated theme's.
+
 ## Files
 
 - `tour.tape`: vhs script for the PNGs. Drives hub -> config -> search -> help ->
