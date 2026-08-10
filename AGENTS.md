@@ -91,8 +91,10 @@ and the principles the Zen doesn't cover:
   it and delete the old shape; no backward-compat shims, deprecation aliases,
   or migrations until `1.0.0` brings semantic versioning and real migrations.
   A change whose value is a claim about model behaviour, prompts, or
-  performance ships only with a measured A/B (replicates, variance) against a
-  demonstrated baseline failure; a null result is reported, not shipped.
+  performance SHIPS only with a measured A/B (replicates, variance); a null
+  result is reported, not shipped. The bar is on shipping, never on measuring:
+  running an experiment needs no prior justification, and a demonstrated
+  baseline failure is one reason to measure, not a precondition for it.
   Unmeasured tuning is superstition.
 - **Structures over scores.** A measure that becomes a target stops
   measuring: never chase line counts, module counts, or graph-edge numbers.
