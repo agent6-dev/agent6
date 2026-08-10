@@ -29,6 +29,13 @@ class _StubSession:
         pass
 
 
+def _patch_open(monkeypatch: pytest.MonkeyPatch, stub: _StubSession) -> None:
+    def fake_open(cls: object, policy: object, *, session_net: object = None) -> _StubSession:
+        return stub
+
+    monkeypatch.setattr("agent6.tools.dispatch.JailSession.open", classmethod(fake_open))
+
+
 def _events(path: Path, kind: str) -> list[dict[str, object]]:
     if not path.exists():
         return []
@@ -58,10 +65,7 @@ def test_a_degraded_session_emits_jail_degraded_once(
 ) -> None:
     warning = "[agent6-jail] warning: fresh /proc mount failed (EPERM)"
     stub = _StubSession(warning)
-    monkeypatch.setattr(
-        "agent6.tools.dispatch.JailSession.open",
-        classmethod(lambda cls, policy, *, session_net=None: stub),
-    )
+    _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
     d = _dispatcher(tmp_path, EventSink(log), stub)
     try:
@@ -76,10 +80,7 @@ def test_a_degraded_session_emits_jail_degraded_once(
 
 def test_a_clean_session_emits_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _StubSession("")
-    monkeypatch.setattr(
-        "agent6.tools.dispatch.JailSession.open",
-        classmethod(lambda cls, policy, *, session_net=None: stub),
-    )
+    _patch_open(monkeypatch, stub)
     log = tmp_path / "e.jsonl"
     d = _dispatcher(tmp_path, EventSink(log), stub)
     try:

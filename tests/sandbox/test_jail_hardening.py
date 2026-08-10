@@ -740,9 +740,9 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) 
     import subprocess
 
     from agent6.config import Config
-    from agent6.sandbox.jail import (  # pyright: ignore[reportPrivateUsage]
-        _policy_to_json,
-        _require_jail_binary,
+    from agent6.sandbox.jail import (
+        _policy_to_json,  # pyright: ignore[reportPrivateUsage]
+        _require_jail_binary,  # pyright: ignore[reportPrivateUsage]
     )
     from agent6.tools.policy import jail_policy
 

@@ -21,7 +21,7 @@ from agent6.config import Config
 
 
 @pytest.fixture(autouse=True)
-def _reset_policy() -> object:
+def _reset_policy() -> object:  # pyright: ignore[reportUnusedFunction]
     yield
     git_ops.set_provider_key_env([])  # module-level state; do not leak across tests
 
