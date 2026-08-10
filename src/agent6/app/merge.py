@@ -17,9 +17,10 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app.manifest import write_manifest
-from agent6.app.providers import build_role_provider
+from agent6.app.providers import InstrumentedProvider, build_role_provider
 from agent6.budget import BudgetTracker
 from agent6.config import Config
+from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     CommitRow,
@@ -114,6 +115,8 @@ def dispatch_merge(
     identity: CommitIdentity,
     *,
     transcript_dir: Path | None = None,
+    budget: BudgetTracker | None = None,
+    events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeResult:
     """Run the chosen strategy. squash builds its message per
@@ -131,6 +134,8 @@ def dispatch_merge(
             base_sha=base_sha,
             run_branch=run_branch,
             transcript_dir=transcript_dir,
+            budget=budget,
+            events=events,
             warn=warn,
         )
     return squash_merge(cwd, run_branch, message, identity=identity)
@@ -144,6 +149,8 @@ def _squash_message(
     base_sha: str,
     run_branch: str,
     transcript_dir: Path | None,
+    budget: BudgetTracker | None,
+    events: EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
     """The squash commit's message per ``[git.commit.squash].message``; None
@@ -167,6 +174,8 @@ def _squash_message(
             run_branch=run_branch,
             task=manifest.user_task or "agent6 run",
             transcript_dir=transcript_dir,
+            budget=budget,
+            events=events,
         )
         if msg:
             return msg
@@ -183,21 +192,43 @@ def _model_squash_message(
     run_branch: str,
     task: str,
     transcript_dir: Path | None,
+    budget: BudgetTracker | None,
+    events: EventSink | None,
 ) -> str | None:
     """One provider call writing the squash message from git facts only; None
-    on any failure (the caller degrades to the agent6 style)."""
+    on any failure (the caller degrades to the agent6 style).
+
+    *budget* is the RUN's tracker when auto_merge runs inside a run: the call
+    spends the run's remainder, not a fresh full cap. `sessions merge` is its
+    own invocation and passes None (per-invocation ceiling, as everywhere).
+    With *events* the call is instrumented, so its spend reaches the log."""
     if transcript_dir is None:
         return None
     try:
+        tracker = (
+            budget
+            if budget is not None
+            else BudgetTracker(
+                max_usd=cfg.budget.max_usd,
+                max_tokens_fallback=cfg.budget.max_tokens_fallback,
+            )
+        )
         provider = build_role_provider(
             cfg,
             "worker",
             transcript_sink=TranscriptSink(transcript_dir),
-            budget=BudgetTracker(
-                max_usd=cfg.budget.max_usd,
-                max_tokens_fallback=cfg.budget.max_tokens_fallback,
-            ),
+            budget=tracker,
         )
+        if events is not None:
+            rm = cfg.models.resolve("worker")
+            provider = InstrumentedProvider(
+                inner=provider,
+                role="squash",
+                model=rm.model if rm is not None else "",
+                provider_name=rm.provider if rm is not None else "",
+                events=events,
+                budget=tracker,
+            )
         steps = "\n".join(f"- {r.subject}" for r in rows[:100])
         files = "\n".join(
             f"{s}\t{p}" for s, p in range_name_status(cwd, base_sha, run_branch)[:200]
@@ -239,6 +270,8 @@ def execute_merge(  # noqa: PLR0911
     cfg: Config,
     identity: CommitIdentity,
     original: str,
+    budget: BudgetTracker | None = None,
+    events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeOutcome:
     """Check out *target*, merge *run_branch* in with *strategy*, restore the
@@ -295,6 +328,8 @@ def execute_merge(  # noqa: PLR0911
             cfg,
             identity,
             transcript_dir=layout.session_dir / "transcripts",
+            budget=budget,
+            events=events,
             warn=warn,
         )
     except GitError as exc:

@@ -16,6 +16,7 @@ from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
 from agent6.config import Config, NotifyConfig
+from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -310,7 +311,13 @@ def print_interrupt_end(
 
 
 def finalize_auto_merge(  # noqa: PLR0912
-    cwd: Path, *, layout: SessionLayout, cfg: Config, reporter: Reporter
+    cwd: Path,
+    *,
+    layout: SessionLayout,
+    cfg: Config,
+    reporter: Reporter,
+    budget: BudgetTracker | None = None,
+    events: EventSink | None = None,
 ) -> None:
     """After a successful run, merge the run branch into its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
@@ -364,6 +371,8 @@ def finalize_auto_merge(  # noqa: PLR0912
         cfg=cfg,
         identity=identity,
         original="",  # stay on the base branch, where the work now lives
+        budget=budget,
+        events=events,
         warn=lambda m: reporter.err(f"[agent6] {m}"),
     )
     if outcome.status == "merged":

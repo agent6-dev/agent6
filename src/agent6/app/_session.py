@@ -178,7 +178,7 @@ def build_session_providers(
     # configured (any review_* key); otherwise critic!=off keeps the legacy
     # single critic, so a pre-panel before_finish/periodic config still gates.
     review_seats = (
-        build_review_seats(cfg, transcript_sink=transcript_sink, budget=budget, n=1)
+        build_review_seats(cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events)
         if cfg.review.trigger != "off" and review_panel_configured(cfg)
         else []
     )

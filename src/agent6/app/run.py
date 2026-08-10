@@ -801,7 +801,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 and auto_merge_eligible(result)
                 and cfg.git.auto_merge
             ):
-                finalize_auto_merge(cwd, layout=layout, cfg=cfg, reporter=reporter)
+                finalize_auto_merge(
+                    cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
+                )
             # Never leave root-owned run state in the user's repo (sudo case).
             chown_to_real_user(state_dir)
 

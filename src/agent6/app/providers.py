@@ -352,6 +352,7 @@ def build_review_seats(
     n: int,
     personas: tuple[str, ...] = (),
     model_override: str = "",
+    events: EventSink | None = None,
 ) -> list[ReviewSeat]:
     """Build the review-panel seats.
 
@@ -361,7 +362,25 @@ def build_review_seats(
 
     Simple form (no ``review.seats``): ``n`` seats all on the ``reviewer`` model,
     differing only by adversarial persona (``personas`` cycled, else a built-in
-    set)."""
+    set).
+
+    With *events*, each seat is instrumented like the critic: only
+    InstrumentedProvider emits ``budget.update``, so bare seat providers spent
+    real money no surface ever showed (the tracker enforced; the log never
+    heard). ``agent6 review`` passes None -- it has no session log."""
+
+    def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
+        if events is None:
+            return provider
+        return InstrumentedProvider(
+            inner=provider,
+            role=f"review:{persona}",
+            model=model,
+            provider_name=provider_name,
+            events=events,
+            budget=budget,
+        )
+
     if cfg.review.seats:
         seats: list[ReviewSeat] = []
         for spec in cfg.review.seats:
@@ -388,6 +407,7 @@ def build_review_seats(
                     budget=budget,
                 )
                 label = f"{provider_name}/{seat_model}"
+                provider = _instrumented(provider, persona or "general", seat_model, provider_name)
             else:  # bare persona -> reviewer route
                 rm = cfg.models.resolve("reviewer")
                 provider = build_role_provider(
@@ -399,6 +419,9 @@ def build_review_seats(
                     seat=f"review:{persona}",
                 )
                 label = model_override or (rm.model if rm is not None else "reviewer")
+                provider = _instrumented(
+                    provider, persona or "general", label, rm.provider if rm is not None else ""
+                )
             seats.append(
                 ReviewSeat(
                     persona=persona or "general",
@@ -426,7 +449,9 @@ def build_review_seats(
             ReviewSeat(
                 persona=pool[i % len(pool)],
                 model=model,
-                provider=provider,
+                provider=_instrumented(
+                    provider, pool[i % len(pool)], model, rm.provider if rm is not None else ""
+                ),
                 tier=cfg.review.tier,
             )
         )

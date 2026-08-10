@@ -467,3 +467,31 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
     res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2)
     assert len(res.per_seat) == 6
     assert peak <= 2
+
+
+def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: Any) -> None:
+    """Only InstrumentedProvider emits budget.update, so bare seat providers
+    spent real money no surface ever showed: the tracker enforced, but the log
+    never heard, and the run's cost was under-reported permanently. With the
+    run's sink each seat is wrapped like the critic; `agent6 review` has no
+    session log, passes no sink, and stays bare."""
+    from agent6.app import providers as prov_mod
+    from agent6.app.providers import InstrumentedProvider
+
+    monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
+    cfg = _cfg_with_seats(("security@anthropic/claude-opus-4-8", "correctness"))
+    kw: dict[str, Any] = {"transcript_sink": cast(Any, MagicMock()), "budget": cast(Any, None)}
+
+    seats = prov_mod.build_review_seats(cfg, n=1, events=cast(Any, MagicMock()), **kw)
+    assert [type(s.provider) for s in seats] == [InstrumentedProvider, InstrumentedProvider]
+
+    assert not any(
+        isinstance(s.provider, InstrumentedProvider)
+        for s in prov_mod.build_review_seats(cfg, n=1, **kw)
+    )
+
+    # The simple form (no configured seats) wraps the same way.
+    simple_cfg = _cfg_with_seats(())
+    (seat,) = prov_mod.build_review_seats(simple_cfg, n=1, events=cast(Any, MagicMock()), **kw)
+    assert isinstance(seat.provider, InstrumentedProvider)

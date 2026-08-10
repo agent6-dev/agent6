@@ -606,3 +606,66 @@ def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.Mon
     _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-TRL111", "--strategy", "squash"]) == 0
     assert _head_message(tmp_path).count("Assisted-by: agent6:") == 1
+
+
+def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The squash call built a FRESH full-cap BudgetTracker and a bare
+    provider: real spend that never counted against the run's remainder and
+    never reached the log (only InstrumentedProvider emits budget.update).
+    Inside a run it now uses the run's tracker and is instrumented;
+    `sessions merge` passes neither and keeps its per-invocation ceiling."""
+    from typing import Any
+
+    from agent6.app import merge as merge_mod
+    from agent6.budget import BudgetTracker
+    from agent6.config import Config
+    from agent6.providers.types import ProviderResponse
+
+    seen: dict[str, Any] = {}
+
+    class _Prov:
+        def call(self, **_k: Any) -> ProviderResponse:
+            return ProviderResponse(
+                text="feat: x\n\nbody",
+                tool_uses=(),
+                stop_reason="end_turn",
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+            )
+
+    def _brp(_cfg: Any, _role: str, *, budget: Any, **_k: Any) -> Any:
+        seen["budget"] = budget
+        return _Prov()
+
+    class _Sink:
+        def __init__(self) -> None:
+            self.types: list[str] = []
+
+        def emit(self, event_type: str, **_f: Any) -> None:
+            self.types.append(event_type)
+
+    def _no_files(*_a: Any) -> list[tuple[str, str]]:
+        return []
+
+    monkeypatch.setattr(merge_mod, "build_role_provider", _brp)
+    monkeypatch.setattr(merge_mod, "range_name_status", _no_files)
+    sink = _Sink()
+    tracker = BudgetTracker(max_usd=-1, max_tokens_fallback=-1)
+    msg = merge_mod._model_squash_message(  # pyright: ignore[reportPrivateUsage]
+        tmp_path,
+        Config(),
+        (),
+        base_sha="0" * 40,
+        run_branch="agent6/x",
+        task="t",
+        transcript_dir=tmp_path,
+        budget=tracker,
+        events=sink,  # pyright: ignore[reportArgumentType]
+    )
+    assert msg == "feat: x\n\nbody"
+    assert seen["budget"] is tracker, "the squash call minted its own budget"
+    assert "budget.update" in sink.types, "the squash spend never reached the log"
