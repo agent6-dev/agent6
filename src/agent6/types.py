@@ -9,7 +9,7 @@ inputs), `agent6.machine.model` (machine files).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -261,24 +261,6 @@ class RepoSummary:
     # are then empty and the prompt names the situation instead of
     # rendering a fake repo header.
     is_git: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class FileContext:
-    """Files relevant to a single workflow step, gathered deterministically by the workflow."""
-
-    files: tuple[tuple[Path, str], ...] = field(default_factory=tuple)
-
-    def as_text(self, max_chars_per_file: int = 200_000) -> str:
-        chunks: list[str] = []
-        for path, content in self.files:
-            body = (
-                content
-                if len(content) <= max_chars_per_file
-                else (content[:max_chars_per_file] + "\n…[truncated]…\n")
-            )
-            chunks.append(f"### {path}\n```\n{body}\n```")
-        return "\n\n".join(chunks)
 
 
 @dataclass(frozen=True, slots=True)

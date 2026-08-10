@@ -288,12 +288,6 @@ def _run(
     return result
 
 
-def slugify(text: str, max_len: int = 40) -> str:
-    """Lowercase ASCII slug for use in branch names."""
-    slug = _SLUG_RE.sub("-", text.lower()).strip("-")
-    return (slug or "run")[:max_len]
-
-
 def is_git_repo(path: Path) -> bool:
     res = _run(path, "rev-parse", "--is-inside-work-tree", check=False)
     return res.ok and res.stdout.strip() == "true"

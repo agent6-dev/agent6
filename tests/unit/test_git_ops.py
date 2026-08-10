@@ -36,7 +36,6 @@ from agent6.git_ops import (
     recent_log,
     restore_stash,
     set_repo_hook_policy,
-    slugify,
     stash_all,
     status,
     unignored,
@@ -285,13 +284,6 @@ def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: Path) -> None:
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
     commit_all(tmp_path, "c")  # must not raise or fire the signing program
     assert not marker.exists(), "repo gpg.program executed on the host during commit"
-
-
-def test_slugify_basic() -> None:
-    assert slugify("Hello, World!") == "hello-world"
-    assert slugify("") == "run"
-    assert slugify("a" * 100).startswith("a" * 40)
-    assert len(slugify("a" * 100)) == 40
 
 
 def test_is_git_repo_false_for_tmp(tmp_path: Path) -> None:
