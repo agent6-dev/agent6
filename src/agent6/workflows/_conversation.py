@@ -38,7 +38,7 @@ block-by-block and never forward the field.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -104,8 +104,8 @@ class AssistantTurn:
 
 @dataclass(frozen=True, slots=True)
 class UserTurn:
-    """One user message: tool results and/or notices, in wire order (a
-    harness notice may sit between two results in the same turn)."""
+    """One user message: tool results and/or notices, in wire order
+    (canonically results first, notices after -- see Conversation.results)."""
 
     items: tuple[ToolResultItem | Notice, ...]
 
@@ -123,6 +123,12 @@ def _parse_tool_uses(blocks: Sequence[Any]) -> tuple[ToolUse, ...]:
 
 def _result_ids(turn: UserTurn) -> list[str]:
     return [it.tool_use_id for it in turn.items if isinstance(it, ToolResultItem)]
+
+
+def _results_first[T](items: Sequence[T], *, key: Callable[[T], object] = lambda it: it) -> list[T]:
+    """Stable partition of a user turn's items: tool_results first (keeping
+    their order), notices after."""
+    return sorted(items, key=lambda it: isinstance(key(it), Notice))
 
 
 class Conversation:
@@ -170,11 +176,14 @@ class Conversation:
 
     def results(self, items: Sequence[ToolResultItem | Notice]) -> None:
         """Append the user turn answering the preceding tool_use turn. The
-        result items must cover exactly its tool_use ids, in order (notices
-        may interleave); anything else is a split pair and raises."""
+        result items must cover exactly its tool_use ids, in order; notices
+        are carried AFTER the results. The wire requires a user message to
+        LEAD with its tool_result blocks: a text block first reads as a
+        tool_use with no result and the provider refuses the request, so the
+        order is canonicalized here rather than trusted per call site."""
         prev = self._turns[-1] if self._turns else None
         want = [tu.id for tu in prev.tool_uses] if isinstance(prev, AssistantTurn) else []
-        turn = UserTurn(items=tuple(items))
+        turn = UserTurn(items=tuple(_results_first(items)))
         if _result_ids(turn) != want:
             raise ValueError(
                 f"conversation invariant: tool_result ids {_result_ids(turn)} do not"
@@ -284,9 +293,12 @@ class Conversation:
     @classmethod
     def from_wire(cls, messages: Sequence[Any]) -> Conversation:
         """Parse a persisted message list (resume/fork snapshot load). Accepts
-        exactly the shapes the loop writes -- anything it accepts round-trips
-        byte-for-byte through ``to_wire`` -- and raises ValueError loudly on
-        every other shape (a snapshot this loop cannot have written)."""
+        exactly the shapes the loop writes and raises ValueError loudly on
+        every other shape (a snapshot this loop cannot have written). A turn
+        in canonical order round-trips byte-for-byte through ``to_wire``; a
+        snapshot from before the results-first canonicalization is HEALED on
+        load (its notice moves after the results, marks following their
+        blocks), which is what makes such a snapshot resumable at all."""
         conv = cls()
         marks: list[tuple[int, int]] = []
         for t_idx, msg in enumerate(messages):
@@ -303,12 +315,18 @@ class Conversation:
                 raise ValueError(f"malformed conversation: {where} has role {role!r}")
             prev = conv._turns[-1] if conv._turns else None
             pending = list(prev.tool_uses) if isinstance(prev, AssistantTurn) else []
-            items: list[ToolResultItem | Notice] = []
+            parsed: list[tuple[ToolResultItem | Notice, bool]] = []
             for i_idx, block in enumerate(content):
                 item = _parse_user_block(block, pending, where=f"{where} block {i_idx}")
-                if _block_mark(block, where=f"{where} block {i_idx}"):
+                parsed.append((item, _block_mark(block, where=f"{where} block {i_idx}")))
+            # Canonicalize BEFORE recording mark positions, so a healed
+            # pre-canonical snapshot (notice ahead of its results) keeps each
+            # mark on the block it was stamped on.
+            parsed = _results_first(parsed, key=lambda pair: pair[0])
+            for i_idx, (_, marked) in enumerate(parsed):
+                if marked:
                     marks.append((t_idx, i_idx))
-                items.append(item)
+            items = [item for item, _ in parsed]
             if any(isinstance(it, ToolResultItem) for it in items):
                 conv.results(items)  # validates the pairing against the tool_use turn
             else:

@@ -325,9 +325,10 @@ def test_scenario_exercises_the_shaping_paths(tmp_path: Path) -> None:
     actually walked through."""
     got = _run_scenario(tmp_path)
     calls = [json.loads(c["messages"]) for c in got["worker_calls"]]
-    # Interleaved notice: the broken-verify text sits inside the results turn.
+    # In-turn notice: the broken-verify text rides the results turn AFTER the
+    # results (a text block ahead of a tool_result 400s the anthropic wire).
     results_turn = calls[1][2]["content"]
-    assert [b["type"] for b in results_turn] == ["tool_result", "text", "tool_result"]
+    assert [b["type"] for b in results_turn] == ["tool_result", "tool_result", "text"]
     # Steering injected; went-quiet assistant popped (no empty assistant turn).
     assert "focus on the parser first" in json.dumps(calls[2])
     assert all(m["content"] != [] for m in calls[2] if m["role"] == "assistant")

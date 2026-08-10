@@ -89,7 +89,9 @@ def test_from_wire_pairs_results_to_their_calls() -> None:
     items = [it for it in results_turn.items if isinstance(it, ToolResultItem)]
     assert [it.for_call.name for it in items] == ["read_file", "run_verify_command"]
     assert items[0].for_call.input == {"path": "a.py"}
-    assert isinstance(results_turn.items[1], Notice)  # the interleaved notice survives
+    # The notice survives, canonicalized after the results (results lead the
+    # wire message; see test_wire_leads_with_tool_results_never_notice_text).
+    assert isinstance(results_turn.items[-1], Notice)
 
 
 def test_assistant_raw_blocks_pass_through_verbatim() -> None:
@@ -357,3 +359,44 @@ def test_restart_then_roll_starts_a_fresh_pair() -> None:
     conv.restart("[context restart] summary")
     conv.roll_cache_marks()
     assert _marked(conv.to_wire()) == [(0, 0), (1, 0)]
+
+
+def test_wire_leads_with_tool_results_never_notice_text() -> None:
+    """Anthropic refuses a user message whose tool_result blocks do not lead:
+    a text block first reads as "tool_use without tool_result immediately
+    after" and 400s the whole run (reproduced live: the baseline-verify
+    notice landed before the verify's own result and every such run died as
+    provider_error). results() canonicalizes: results first in call order,
+    notices after."""
+    conv = Conversation()
+    conv.notice("TASK")
+    conv.assistant([_tool_use_block("t1", "run_verify_command")])
+    last = conv.turns[-1]
+    assert isinstance(last, AssistantTurn)
+    conv.results(
+        [
+            Notice("[harness] the gate was already red"),
+            ToolResultItem(tool_use_id="t1", content="exit=1", for_call=last.tool_uses[0]),
+        ]
+    )
+    blocks = conv.to_wire()[-1]["content"]
+    assert [b["type"] for b in blocks] == ["tool_result", "text"]
+    # from_wire heals a persisted pre-fix snapshot the same way.
+    healed = Conversation.from_wire(
+        [
+            {"role": "user", "content": [{"type": "text", "text": "TASK"}]},
+            {
+                "role": "assistant",
+                "content": [_tool_use_block("t1", "run_verify_command")],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "[harness] notice first"},
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "exit=1"},
+                ],
+            },
+        ]
+    )
+    blocks = healed.to_wire()[-1]["content"]
+    assert [b["type"] for b in blocks] == ["tool_result", "text"]
