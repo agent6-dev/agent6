@@ -80,7 +80,6 @@ fi)
 
 [sandbox]
 isolation = "auto"
-agent_network = "providers"
 network = "session"
 run_commands = "yes"
 protect_git = true
@@ -366,11 +365,15 @@ PY
   # Pull cost/tokens out of the budget summary that agent6 prints.
   # The end-of-run summary may go to stdout or stderr depending on path; check both.
   combined="$logdir/agent6.stdout $logdir/agent6.stderr"
-  cost=$(cat $combined 2>/dev/null | grep -oE 'cost~\$[0-9.]+' | tail -1 | tr -d '$' | sed 's/cost~//')
+  # `|| true` on each: under `set -e -o pipefail` a grep that matches nothing
+  # exits 1 and kills the whole (often multi-hour) run AFTER the task already
+  # passed, and the regex-validate fallbacks below never get to run. The
+  # summary format is allowed to drift; the numbers just fall back to 0.
+  cost=$( { cat $combined 2>/dev/null | grep -oE 'cost~\$[0-9.]+' | tail -1 | tr -d '$' | sed 's/cost~//'; } || true)
   [[ "$cost" =~ ^[0-9]+(\.[0-9]+)?$ ]] || cost=0
-  in_tok=$(cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed 's/TOTAL: in=//')
+  in_tok=$( { cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed 's/TOTAL: in=//'; } || true)
   [[ "$in_tok" =~ ^[0-9]+$ ]] || in_tok=0
-  out_tok=$(cat $combined 2>/dev/null | grep -oE 'out=[0-9]+/' | tail -1 | tr -d '/' | sed 's/out=//')
+  out_tok=$( { cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+ out=[0-9]+' | tail -1 | sed 's/.* out=//'; } || true)
   [[ "$out_tok" =~ ^[0-9]+$ ]] || out_tok=0
 
   cat > "$logdir/result.json" <<EOF

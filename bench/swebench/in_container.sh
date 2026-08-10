@@ -115,7 +115,6 @@ model = "$MODEL"
 # value); the per-invocation forms are --dangerously-disable-sandbox /
 # AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1.
 isolation = "none"
-agent_network = "providers"
 network = "session"
 run_commands = "yes"
 protect_git = false

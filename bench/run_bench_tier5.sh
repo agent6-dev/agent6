@@ -56,7 +56,6 @@ model = "claude-sonnet-4-5"
 
 [sandbox]
 isolation = "auto"
-agent_network = "providers"
 network = "session"
 run_commands = "yes"
 protect_git = true
