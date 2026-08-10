@@ -39,9 +39,12 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
     ``~/.local/state``; isolating the global config dir (``AGENT6_CONFIG_HOME``,
     pointed at an empty dir) is what makes ``AGENT6_STATE_HOME`` authoritative,
     since a global ``[agent6].state_dir`` would otherwise override it in
-    ``state_base()``. A test may still override ``AGENT6_STATE_HOME`` itself (its
-    body runs after this fixture); tests that need a global config set
-    ``AGENT6_CONFIG_HOME`` to their own dir.
+    ``state_base()``. The cache home is isolated for the same reason as the git
+    config above: the developer's model-price cache made USD assertions pass
+    locally while a bare CI runner has no cache, so a test that needs a price
+    seeds its own cache dir (see test_pricing.py). A test may still override
+    any of these itself (its body runs after this fixture).
     """
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path_factory.mktemp("agent6-state")))
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path_factory.mktemp("agent6-config")))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path_factory.mktemp("agent6-cache")))

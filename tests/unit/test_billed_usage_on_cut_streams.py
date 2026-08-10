@@ -12,6 +12,7 @@ set a number for the task and could pass it without being told.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -45,7 +46,17 @@ def _sse(event: str, data: dict[str, Any]) -> list[str]:
     return [f"event: {event}", f"data: {json.dumps(data)}", ""]
 
 
-def test_anthropic_records_what_a_cut_stream_already_cost() -> None:
+def test_anthropic_records_what_a_cut_stream_already_cost(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The USD assertion needs a table price; the suite isolates the model-price
+    # cache, so seed one (the suite never reads the developer's real cache).
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    (tmp_path / "models").mkdir()
+    pricing = {"claude-sonnet-4-5": [3.0, 15.0]}
+    (tmp_path / "models" / "anthropic.json").write_text(
+        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
+    )
     lines = _sse(
         "message_start",
         {
