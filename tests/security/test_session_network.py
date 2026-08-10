@@ -610,3 +610,26 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
         assert not Path("/etc/agent6-escape-probe").exists()
     finally:
         net.close()
+
+
+def test_closing_a_network_releases_every_descriptor(tmp_path: Path) -> None:
+    """A run's network costs nothing once the run ends.
+
+    The holder is a live process with pipes, and `close()` released the two
+    namespace descriptors while leaving its stdout and stderr to garbage
+    collection -- two per run that a long-lived web or hub process would
+    accumulate. Measured against the process's own fd table, so the assertion
+    is the resource, not the code path.
+    """
+
+    def open_fds() -> int:
+        return len(list(Path("/proc/self/fd").iterdir()))
+
+    baseline = open_fds()
+    held = [SessionNetwork.open() for _ in range(8)]
+    assert open_fds() > baseline, "the probe is not measuring anything"
+    for net in held:
+        net.close()
+    assert open_fds() <= baseline + 1, (
+        f"descriptors leaked: {baseline} before, {open_fds()} after 8 open/close"
+    )

@@ -142,3 +142,19 @@ def test_forward_bridges_a_port_to_this_machine(tmp_path: Path) -> None:
         bridge.wait(timeout=10)
         dispatcher.close()
         net.close()
+
+
+def test_forward_refuses_a_run_with_no_network_instead_of_waiting(tmp_path: Path) -> None:
+    """It used to bind the local port and block in accept(), then drop each
+    connection in silence -- the join happens in the per-connection child, so
+    nothing failed until someone tried to use it. A bridge to nowhere must say
+    so before it looks like a bridge."""
+    import io
+
+    from agent6.ui.cli.net_cmds import forward
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="no-net", subdir="runs")
+    layout.session_dir.mkdir(parents=True)
+    out = io.StringIO()
+    assert forward(layout, 3000, 3000, out=out) == 2
+    assert "sandbox.network" in out.getvalue()

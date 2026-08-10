@@ -330,6 +330,14 @@ class SessionNetwork:
         except BaseException:
             proc.kill()
             raise
+        # Done with its output: the holder says "ready" once and then only waits
+        # on stdin. Holding these would be two descriptors per run that nothing
+        # closes until garbage collection -- which a long-lived web or hub
+        # process accumulates.
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
         return cls(userns_fd=fds[0], netns_fd=fds[1], holder_pid=proc.pid, _holder=proc)
 
     def args(self) -> list[str]:

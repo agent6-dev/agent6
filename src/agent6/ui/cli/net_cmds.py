@@ -116,6 +116,18 @@ def forward(
     come back out of a namespace, and the parent must stay outside to keep
     accepting, so the fork is the bridge rather than a design flourish.
     """
+    # Refuse before binding, not per connection: the join happens in the child
+    # that handles a connection, so a run with no network to join used to print
+    # "forwarding" and then drop every connection in silence.
+    if read_session_netns_pid(layout.session_dir) is None:
+        print(
+            f"agent6 forward: {layout.session_id} has no network of its own to"
+            " reach into. A run only makes one under the strict isolation with"
+            " sandbox.network = auto|session; with network = host its commands"
+            " are already on this machine's.",
+            file=out,
+        )
+        return 2
     # Same number on both sides unless told otherwise: that is what `kubectl
     # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
     # the number you are about to type into a browser. A random local port would
