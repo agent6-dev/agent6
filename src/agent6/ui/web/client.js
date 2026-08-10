@@ -1035,6 +1035,11 @@ async function renderConversation(id, gen) {
   // The same app shell as the run view, minus the drawer: the conversation
   // fills the view full width and the composer docks at the bottom.
   const app = el('div', 'run-app');
+  // This page registers as the run's answering front-end the moment its
+  // stream opens, so it must SHOW the prompts it claims to answer: without a
+  // host, a run blocked on an approval waited on a page that never painted it.
+  const prompts = el('div', 'page-pad'); app.appendChild(prompts);
+  const cards = { _id: id, _prompts: prompts };
   const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
   const body = el('div', 'run-body');
   body.appendChild(cc.card);
@@ -1048,6 +1053,7 @@ async function renderConversation(id, gen) {
   // silent no-op) and the empty note in the future tense -- and a parked or
   // created run gets no SSE frame to ever correct either.
   composer.setState(snap);
+  paintPrompts(cards, notLive(snap) ? {} : snap); // the run view's dead-run gating
   cc.conv.setLive(snap);
   await cc.conv.refresh();
   if (gen !== undefined && gen !== routeGen) return; // the refresh reopened the window
@@ -1061,6 +1067,7 @@ async function renderConversation(id, gen) {
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     composer.setState(s);
+    paintPrompts(cards, notLive(s) ? {} : s);
     cc.conv.setLive(s);
     cc.conv.poke();
     hbState = {

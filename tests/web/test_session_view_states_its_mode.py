@@ -43,3 +43,15 @@ def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:
     """A hard-coded 'Run' is right one time in three."""
     client = (Path(model.__file__).with_name("client.js")).read_text(encoding="utf-8")
     assert "opts.title || 'Run'" not in client
+
+
+def test_conversation_route_paints_the_prompts_it_claims_to_answer() -> None:
+    """#/conversation/<id> registers as the run's answering front-end the
+    moment its stream opens, but never painted the prompts: a run blocked on
+    an approval waited on a page that could not show it. The route's builder
+    paints prompts like the run view -- seeded from the snapshot, then per
+    frame."""
+    client = (Path(model.__file__).with_name("client.js")).read_text(encoding="utf-8")
+    conv = client[client.index("async function renderConversation") :]
+    conv = conv[: conv.index("// --- machine watch")]
+    assert conv.count("paintPrompts(") >= 2, "the conversation route paints no prompts"
