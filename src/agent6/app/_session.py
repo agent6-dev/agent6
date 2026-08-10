@@ -17,7 +17,6 @@ from agent6.app._setup import SandboxOverrides, detect_env
 from agent6.app.confine import (
     check_network_support,
     check_protect_git_support,
-    maybe_apply_agent_landlock,
     warn_sandbox_gaps,
 )
 from agent6.app.preflight import budget_preflight, warn_if_prompt_override_incomplete
@@ -104,30 +103,15 @@ def install_inside_workspace(cwd: Path) -> Path | None:
     return root if root.is_relative_to(cwd.resolve()) else None
 
 
-def start_isolation(
-    cfg: Config,
-    isolation: IsolationLevel,
-    *,
-    cwd: Path,
-    reporter: Reporter,
-) -> None:
-    """Apply the agent-process Landlock, or refuse; warn on an in-workspace
-    install (never refuse it: agent6 developing agent6 is exactly that shape).
-
-    Only `hardened` has a Landlock layer here; `strict` confines each COMMAND
-    instead (its own namespaces per jailed child), which is what actually
-    bounds untrusted work.
-    """
+def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
+    """Warn when agent6 is installed inside the workspace a jailed command can
+    write (never refuse it: agent6 developing agent6 is exactly that shape)."""
     if (root := install_inside_workspace(cwd)) is not None:
         reporter.err(
             f"[agent6] WARNING: agent6 is installed inside this workspace ({root});"
             " a jailed command can rewrite the running agent. Install it outside"
             " the project (pipx / uv tool)."
         )
-    landlock_err = maybe_apply_agent_landlock(cfg, isolation, reporter=reporter)
-    if landlock_err is not None:
-        reporter.err(f"REFUSING: {landlock_err}")
-        raise SessionRefused(2)
 
 
 @dataclass(frozen=True, slots=True)

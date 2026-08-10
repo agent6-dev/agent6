@@ -331,7 +331,6 @@ def test_plan_resume_builds_the_planner_provider(
     monkeypatch.setattr(resume_mod, "check_provider_keys", _none)
     monkeypatch.setattr(session_mod, "budget_preflight", _none)
     monkeypatch.setattr(resume_mod, "verify_git_identity", _none)
-    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _none)
     monkeypatch.setattr(resume_mod, "ensure_on_run_branch", _none)
 
     captured: list[str] = []

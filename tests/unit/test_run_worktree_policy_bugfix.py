@@ -84,7 +84,6 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     monkeypatch.setattr(app_run_mod, "set_repo_hook_policy", _noop)
     monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
-    monkeypatch.setattr(session_mod, "maybe_apply_agent_landlock", _noop)
 
 
 def test_dirty_tree_refused_with_default_config(

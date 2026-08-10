@@ -11,7 +11,6 @@ import pytest
 
 import agent6
 from agent6.app import _session as session_mod
-from agent6.config import Config
 
 
 def test_detects_an_install_root_inside_the_workspace(
@@ -35,7 +34,7 @@ def test_run_entry_warns_once_and_never_refuses(
     pkg.mkdir(parents=True)
     monkeypatch.setattr(agent6, "__file__", str(pkg / "__init__.py"))
     reporter = MagicMock()
-    session_mod.start_isolation(Config(), "strict", cwd=ws, reporter=reporter)
+    session_mod.warn_install_inside_workspace(ws, reporter=reporter)
     warnings = [c.args[0] for c in reporter.err.call_args_list if "WARNING" in c.args[0]]
     assert any("installed inside" in w and "pipx" in w for w in warnings)
 
@@ -47,5 +46,5 @@ def test_no_warning_for_an_outside_install(tmp_path: Path, monkeypatch: pytest.M
     ws = tmp_path / "ws"
     ws.mkdir()
     reporter = MagicMock()
-    session_mod.start_isolation(Config(), "strict", cwd=ws, reporter=reporter)
+    session_mod.warn_install_inside_workspace(ws, reporter=reporter)
     assert not [c for c in reporter.err.call_args_list if "installed inside" in c.args[0]]

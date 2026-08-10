@@ -24,7 +24,7 @@ from agent6.app._session import (
     build_session_tools,
     select_isolation,
     session_config,
-    start_isolation,
+    warn_install_inside_workspace,
 )
 from agent6.app._setup import (
     BudgetOverrides,
@@ -188,8 +188,8 @@ class SessionFrontend:
     """The presentation + process-spawn callables `ui/cli` injects into the
     run/resume lifecycle: the live console view (held cli-side; the lifecycle
     only signals attach/close), the interactive prompts, and the REPLs. The
-    lifecycle owns egress itself (`app.egress`) and the run-dir bridge
-    (`sessions.ipc`); only the exe-spawn primitives it can't reach stay injected.
+    lifecycle owns the run-dir bridge (`sessions.ipc`); only the exe-spawn
+    primitives it can't reach stay injected.
     One value serves both `run_task` and `resume_task`; resume simply never
     calls the run-only fields."""
 
@@ -532,14 +532,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        try:
-            start_isolation(cfg, isolation, cwd=cwd, reporter=reporter)
-        except SessionRefused as refusal:
-            # Nothing ran, so leave no run dir behind: every other refusal
-            # discards its husk, and one that survives is listed forever as a
-            # run that produced nothing.
-            discard_husk_dir(layout.session_dir)
-            return refusal.rc
+        warn_install_inside_workspace(cwd, reporter=reporter)
 
         # Cut the run branch, then write the manifest that records it. The cut
         # is the ONLY workspace mutation in preflight and deliberately its LAST

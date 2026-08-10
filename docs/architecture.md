@@ -54,7 +54,7 @@ almost always a sign of the wrong design.
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the application
   pipelines composed over the engine but never a front-end -- the
   run/resume/fork/machine-agent lifecycles, the run-branch merge + finalize,
-  provider construction, agent-process Landlock confinement (`app.confine`),
+  provider construction, the sandbox cross-checks (`app.confine`),
   and the `--parallel` fan-out + coordinator dispatch. Never imports `agent6.ui`:
   what it can't do itself (own a terminal, render a live view, spawn a detached
   `agent6`) the front-end injects as frozen callables (`SessionFrontend`,

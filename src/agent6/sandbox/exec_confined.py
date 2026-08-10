@@ -39,7 +39,7 @@ import struct
 import sys
 from pathlib import Path
 
-from agent6.sandbox.landlock import LandlockNotSupportedError, apply_agent_landlock
+from agent6.sandbox.landlock import LandlockNotSupportedError, apply_landlock
 
 # ioctl to set an interface's flags, and the one flag we set (linux/if.h).
 _SIOCSIFFLAGS = 0x8914
@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
 
     dev = tuple(p for p in (Path(n) for n in _DEV_NODES) if p.exists())
     try:
-        apply_agent_landlock(
+        apply_landlock(
             read_paths=(*dev, *(Path(p).expanduser() for p in args.read)),
             write_paths=(*dev, *(Path(p).expanduser() for p in args.write)),
         )

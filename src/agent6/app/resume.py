@@ -18,7 +18,7 @@ from agent6.app._session import (
     build_session_tools,
     select_isolation,
     session_config,
-    start_isolation,
+    warn_install_inside_workspace,
 )
 from agent6.app._setup import (
     BudgetOverrides,
@@ -504,10 +504,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        try:
-            start_isolation(cfg, isolation, cwd=cwd, reporter=reporter)
-        except SessionRefused as refusal:
-            return refusal.rc
+        warn_install_inside_workspace(cwd, reporter=reporter)
 
         # Get onto the run's branch so the loop's commits land there (a fork
         # cuts agent6/<id> without checking it out; the operator may have moved

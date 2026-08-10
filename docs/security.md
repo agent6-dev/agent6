@@ -38,12 +38,10 @@ Under that adversary, agent6 aims to hold:
       `sandbox.extra_read_paths` adds more.
 3. **The agent process's own egress is NOT bounded.** agent6 talks to the
    configured providers; nothing stops the PROCESS reaching elsewhere.
-    - There was once an empty netns plus a broker proxying provider calls. It was
-      deleted: under `strict` the agent process has no filesystem confinement, so
-      code execution there could write `~/.ssh/authorized_keys` or a cron entry
-      and exfiltrate on its own schedule. Blocking the socket while leaving that
-      open is a partial mitigation that reads as a guarantee, and it cost four
-      special cases plus a finding of its own.
+    - A network-only block on a process with unconfined filesystem access is a
+      partial mitigation that reads as a guarantee: code executing there could
+      write `~/.ssh/authorized_keys` or a cron entry and exfiltrate on its own
+      schedule regardless. agent6 does not ship that non-claim (§1).
     - What IS bounded is what a COMMAND reaches: `sandbox.tool_network`
       (default `auto`; §8). That boundary is per-jailed-child and unchanged.
 
@@ -83,31 +81,16 @@ Under that adversary, agent6 aims to hold:
 
 ## Defense layers
 
-### 1. Agent-process Landlock (`hardened` only)
+### 1. The agent process is trusted, and no level confines it
 
-Applied at `run`/`resume` start, before any network object. Restricts the Python
-process irrevocably, inherited by every child:
-
-| Landlock rule | Allowed |
-|---|---|
-| FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, `/bin` `/sbin` `/lib` `/lib64` `/dev`, `/run` + `/proc` when present |
-| FS write | cwd, `/tmp`, the `/dev` char devices, `/proc` when present |
-
-- **`strict` skips this layer.**
-    - Its per-command namespaces are stronger, and this would
-      break the jail's `pivot_root`/`mount` at Landlock ABI ≥ 7.
-- **The read+exec set mirrors the jail child's roots.**
-    - The launcher opens each from here to grant the child, so a missing one
-      (e.g. `/dev` on merged-`/usr`) makes the child's execve fail EACCES.
-- **Neither level bounds the AGENT's egress. Both say so rather than pretending.**
-    - Landlock filters connects by PORT, not host, so the only rule available
-      here was "any host on the provider ports". That stops nothing worth
-      stopping -- an exfiltrating agent needs one HTTPS endpoint, and every host
-      offers one -- while breaking a legitimate tool on another port. It was
-      removed: a security claim nobody can rely on is worse than no claim.
-    - Bind/listen is not denied either. Blocking inbound while outbound stays
-      open is the same non-claim, and it cost a dev server the model runs its
-      listening socket. Nothing it binds outlives the command (§5).
+The agent's own Python process runs unconfined at every isolation level: it
+holds the provider keys, writes the per-repo state dir, and spawns the jail.
+Every security boundary is the jail's, applied per command; isolation levels
+differ only in which jail features the launcher enables (§2). A partial
+confinement of a trusted process (a port filter, a bind ban) reads as a
+guarantee it cannot keep -- one HTTPS endpoint is enough to exfiltrate from a
+process with filesystem access -- so agent6 states the boundary honestly
+instead of shipping one.
 
 ### 2. `agent6-jail` (Rust), for every child command
 

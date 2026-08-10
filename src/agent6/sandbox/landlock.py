@@ -150,7 +150,7 @@ def _set_no_new_privs() -> None:
 
 def _create_ruleset(handled_fs: int, abi: int) -> int:
     # struct layout depends on ABI: v1-v3 = 1x u64, v4+ = 2x u64. The net field
-    # stays 0 -- agent6 handles no network access (see apply_agent_landlock).
+    # stays 0 -- agent6 handles no network access (see apply_landlock).
     attr = struct.pack("=QQ", handled_fs, 0) if abi >= 4 else struct.pack("=Q", handled_fs)
     buf = ctypes.create_string_buffer(attr, len(attr))
     return _syscall(
@@ -185,7 +185,7 @@ class LandlockReport:
     fs_write: tuple[Path, ...]
 
 
-def apply_agent_landlock(
+def apply_landlock(
     *,
     read_paths: tuple[Path, ...],
     write_paths: tuple[Path, ...],

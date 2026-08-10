@@ -5,11 +5,9 @@ the confined subprocess, and the confined runner itself.
 
 A machine run's engine is a thin supervisor that stays in the host network
 namespace and makes no network calls itself. Each `agent` state runs in its own
-fresh process (`ui/cli/machine_agent` is the `python -m` entry), so it can
-confine its OWN egress per `sandbox.agent_network` (the broker on `strict`,
-Landlock on `hardened`), independently of the engine and of sibling `tool`
-states. That is what lets a machine run a broker-confined agent alongside an
-operator-reviewed, network-carved-out tool in the same run.
+fresh process (`ui/cli/machine_agent` is the `python -m` entry), independent of
+the engine and of sibling `tool` states; like every agent process it runs
+unconfined, and the jail bounds the commands it dispatches.
 
 `build_machine_agent_runner` (host side) builds the callable an `agent` state
 fires: it spawns the subprocess with a fixed argv, hands it the request via a
@@ -39,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.app.confine import check_network_support, maybe_apply_agent_landlock
+from agent6.app.confine import check_network_support
 from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider,
@@ -314,11 +312,6 @@ def run_one(
     net_err = check_network_support(cfg, isolation)
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
-        return _result("error", None, None)
-    budget: BudgetTracker | None = None
-    landlock_err = maybe_apply_agent_landlock(cfg, isolation)
-    if landlock_err is not None:
-        reporter.err(f"REFUSING: {landlock_err}")
         return _result("error", None, None)
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,

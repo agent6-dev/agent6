@@ -8,7 +8,7 @@ from agent6.sandbox.jail import JailUnavailableError, run_in_jail, strict_namesp
 from agent6.sandbox.landlock import (
     LandlockError,
     LandlockNotSupportedError,
-    apply_agent_landlock,
+    apply_landlock,
     landlock_abi,
 )
 
@@ -16,7 +16,7 @@ __all__ = [
     "JailUnavailableError",
     "LandlockError",
     "LandlockNotSupportedError",
-    "apply_agent_landlock",
+    "apply_landlock",
     "landlock_abi",
     "run_in_jail",
     "strict_namespaces_work",

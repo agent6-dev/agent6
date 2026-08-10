@@ -121,7 +121,11 @@ def _cmd_check_sandbox() -> int:
             SandboxReport(
                 name="jail_blocks_network",
                 ok=True,
-                detail="n/a under hardened (egress confined by agent-process Landlock at run time)",
+                detail=(
+                    "n/a under hardened: no per-command network namespace; jailed"
+                    " commands share the host network (tool_network degrades with"
+                    " a warning)"
+                ),
             )
         )
 

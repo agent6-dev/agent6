@@ -52,7 +52,7 @@ def test_no_network_access_is_handled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ll, "_create_ruleset", fake_create)
     monkeypatch.setattr(ll, "_restrict_self", noop_restrict)
 
-    ll.apply_agent_landlock(read_paths=(), write_paths=())
+    ll.apply_landlock(read_paths=(), write_paths=())
     assert captured["fs"]  # filesystem access IS handled
 
 
@@ -89,7 +89,7 @@ def test_handled_fs_masks_truncate_below_abi3(
     monkeypatch.setattr(ll, "_add_path_rule", fake_add_path)
     monkeypatch.setattr(ll, "_restrict_self", noop_restrict)
 
-    ll.apply_agent_landlock(read_paths=(), write_paths=(tmp_path,))
+    ll.apply_landlock(read_paths=(), write_paths=(tmp_path,))
     assert bool(captured["fs"] & _TRUNCATE) is expect_truncate
     # The per-path rule bits intersect with handled_fs, so the mask propagates.
     assert all(bool(bits & _TRUNCATE) is expect_truncate for bits in rule_bits)
