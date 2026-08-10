@@ -890,11 +890,16 @@ class JailSession:
         return parsed  # pyright: ignore[reportUnknownVariableType]
 
     def close(self) -> None:
-        """Shut the request channel; the PID namespace takes the rest down."""
-        with contextlib.suppress(OSError):
-            if self._proc.stdin is not None:
-                self._proc.stdin.close()
-        with contextlib.suppress(subprocess.TimeoutExpired):
+        """Shut the request channel; the PID namespace takes the rest down.
+
+        ``communicate()`` closes stdin itself (signalling the serve loop's EOF)
+        and drains stdout/stderr. It is NOT preceded by a manual
+        ``stdin.close()``: on Python 3.12/3.13 ``communicate()`` then flushes
+        the already-closed pipe and raises ``ValueError: flush of closed file``
+        (3.14 tolerates it), which would be an unhandled crash in
+        ``ToolDispatcher.close()`` teardown on the project's minimum Python. The
+        ``ValueError`` stays suppressed as a belt-and-suspenders."""
+        with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
             self._proc.communicate(timeout=10.0)
         if self._proc.poll() is None:
             with contextlib.suppress(OSError):
