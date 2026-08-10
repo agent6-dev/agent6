@@ -99,13 +99,37 @@ class _Shell:
     stop_error: str = ""
 
 
+def _highest_shell_seq(root: Path) -> int:
+    """The largest `bg<N>` already recorded under *root*, or 0.
+
+    Both layouts are scanned: `start`/`adopt` create `<root>/bg<N>` and
+    `_open_log` creates `<root>/logs/bg<N>`, and a leg that died between them
+    leaves only one of the two behind.
+    """
+    highest = 0
+    for directory in (root, root / _LOG_ROOT):
+        with contextlib.suppress(OSError):
+            for entry in directory.iterdir():
+                name = entry.name
+                if name.startswith("bg") and name[2:].isdigit():
+                    highest = max(highest, int(name[2:]))
+    return highest
+
+
 class BackgroundShells:
     """The run's background commands. Not thread-safe: one loop drives it."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
         self._shells: dict[str, _Shell] = {}
-        self._seq = 0
+        # Continue the numbering rather than restart it: a RESUMED run reuses
+        # the session dir, so starting from zero handed the next command an id
+        # whose log directory already existed. `_open_log` refuses that (two
+        # commands must never share a log) with a message blaming a command for
+        # planting it -- so a resumed run's first background command died on a
+        # collision it caused itself. Every long command reaches this now: one
+        # that outlives the check-in is handed back as a background shell.
+        self._seq = _highest_shell_seq(root)
         # Eagerly: the run's jail session grants this path when it opens, and a
         # mount source has to exist by then.
         self.log_root = root / _LOG_ROOT
