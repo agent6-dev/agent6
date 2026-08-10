@@ -20,6 +20,14 @@ from agent6.config._sandbox import (
     SandboxConfig,
     mcp_server_name_refusal,
 )
+from agent6.config._surfaces import (
+    MachineConfig,
+    MachineNotifyConfig,
+    NotifyConfig,
+    ParallelConfig,
+    WebConfig,
+    is_loopback_host,
+)
 from agent6.config._workflow import (
     BudgetConfig,
     ContextConfig,
@@ -33,16 +41,10 @@ from agent6.config.model import (
     Agent6Section,
     Config,
     ConfigError,
-    MachineConfig,
-    MachineNotifyConfig,
     ModelsConfig,
-    NotifyConfig,
-    ParallelConfig,
     RoleModel,
     RoleName,
     ThinkingLevel,
-    WebConfig,
-    is_loopback_host,
     load_config,
     validate_config,
 )

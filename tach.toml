@@ -289,7 +289,7 @@ depends_on = ["agent6.types"]
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config.model", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._git", "agent6.config._workflow"]
+depends_on = ["agent6.config.model", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._git", "agent6.config._workflow", "agent6.config._surfaces"]
 
 [[modules]]
 # The one pydantic ConfigDict every config model shares.
@@ -317,6 +317,11 @@ path = "agent6.config._workflow"
 depends_on = ["agent6.config._base"]
 
 [[modules]]
+# The surface models: skills, machine, web, notify, parallel.
+path = "agent6.config._surfaces"
+depends_on = ["agent6.config._base"]
+
+[[modules]]
 path = "agent6.config.model"
 # RoleName and the session-mode vocabulary: shared value types, so they live
 # at the leaf rather than in whichever model declared one first.
@@ -328,6 +333,7 @@ depends_on = [
   "agent6.config._sandbox",
   "agent6.config._git",
   "agent6.config._workflow",
+  "agent6.config._surfaces",
   "agent6.types",
   "agent6.errors",
 ]
