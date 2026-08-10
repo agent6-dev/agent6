@@ -21,7 +21,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** workflows/{loop}
 - **Read by:** workflows/{_compaction, _critic}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (13 test files exercise it)
 
 ## SessionManifest
 
@@ -81,6 +81,9 @@ How a session ends and how it resumes: the SessionResult the workflow returns, t
 | `gateless_ever_committed` | `bool` | `False` |
 | `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
+| `last_verify_ok` | `bool | None` | `None` |
+| `edited_since_verify` | `bool` | `False` |
+| `baseline_ok` | `bool | None` | `None` |
 | `parallel_groups_dispatched` | `int` | `0` |
 | `pins` | `tuple[str, ...]` | `()` |
 | `head_sha` | `str` | `''` |
@@ -88,7 +91,7 @@ How a session ends and how it resumes: the SessionResult the workflow returns, t
 
 - **Written by:** workflows/{loop}
 - **Read by:** app/{fork, resume, run}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (10 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (11 test files exercise it)
 
 ## ToolResult family
 
