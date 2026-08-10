@@ -386,6 +386,7 @@ def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
         descriptors=lambda: [
             SimpleNamespace(
                 qualified_name="mcp__fs__write_file",
+                server_name="fs",
                 tool_name="write_file",
                 description="write a file",
                 input_schema={"type": "object"},

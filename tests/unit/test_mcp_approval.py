@@ -16,7 +16,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.events import EventSink
-from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow
+from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow, set_session_deny
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.errors import ToolDenied, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
@@ -223,5 +223,69 @@ def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(tmp_pat
         d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=_forbidden)
         with pytest.raises(ToolError, match="unknown MCP server"):
             d.dispatch("mcp__../../tmp/x__t", {})
+    finally:
+        mgr.close()
+
+
+def test_deny_all_for_a_server_refuses_the_next_call_not_just_the_listing(tmp_path: Path) -> None:
+    """ "Deny all" WITHDREW the server's tools and nothing more: the model still
+    carries the previous turn's tool list, so calling one anyway ran it -- and
+    re-prompted the operator for the scope they had just refused. Withdrawal is
+    not refusal; the call gate reads the same marker the listing does."""
+    asked: list[tuple[str, str | None]] = []
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            approver=_recording(asked),
+            session_dir=session_dir,
+        )
+        d.dispatch("mcp__fake__echo", {"text": "hi"})
+        assert len(asked) == 1
+        set_session_deny(session_dir, "mcp.fake")
+        assert "mcp__fake__echo" not in d.available_tool_names()
+        with pytest.raises(ToolError, match="denied for this session"):
+            d.dispatch("mcp__fake__echo", {"text": "hi"})
+        assert len(asked) == 1, "the operator was asked again after denying the scope"
+    finally:
+        mgr.close()
+
+
+def test_denying_one_server_leaves_a_sibling_alone(tmp_path: Path) -> None:
+    """The deny is per scope, like the grant."""
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name=name, command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+            for name in ("fake", "other")
+        ]
+    )
+    cfg = Config.model_validate(
+        {
+            "mcp": {
+                "enabled": True,
+                "servers": {n: {"command": ["true"]} for n in ("fake", "other")},
+            }
+        }
+    )
+    try:
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=cfg,
+            mcp_manager=mgr,
+            approver=_recording([]),
+            session_dir=session_dir,
+        )
+        set_session_deny(session_dir, "mcp.fake")
+        assert d.mcp_denied("fake") and not d.mcp_denied("other")
+        assert "mcp__other__echo" in d.available_tool_names()
+        d.dispatch("mcp__other__echo", {"text": "hi"})  # the sibling still answers
     finally:
         mgr.close()

@@ -448,23 +448,25 @@ class ToolDispatcher:
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
 
+    def mcp_denied(self, server: str) -> bool:
+        """Whether the operator answered "deny all" for *server* this session.
+
+        Read at both gates, like `command_policy`: the tool list drops the
+        server so the model stops spending turns on a door that will not open,
+        and the call gate refuses it because withdrawal is not refusal -- the
+        model still has the previous turn's list in context.
+        """
+        if self._session_dir is None:
+            return False
+        return session_deny_set(self._session_dir, f"{MCP_SCOPE_PREFIX}{server}")
+
     def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
         """The MCP tools on offer right now, minus any server the operator denied
-        for the session.
-
-        Re-read per turn like `command_policy`: "deny all" WITHDRAWS that
-        server's tools rather than refusing each call, so the model stops
-        spending turns on a door that will not open.
-        """
+        for the session."""
         if self._mcp_manager is None:
             return ()
-        descs = self._mcp_manager.descriptors()
-        if self._session_dir is None:
-            return tuple(descs)
         return tuple(
-            d
-            for d in descs
-            if not session_deny_set(self._session_dir, f"{MCP_SCOPE_PREFIX}{d.server_name}")
+            d for d in self._mcp_manager.descriptors() if not self.mcp_denied(d.server_name)
         )
 
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -746,6 +748,8 @@ class ToolDispatcher:
             # configured name is a server, and the manager would refuse this
             # call anyway.
             raise ToolError(f"unknown MCP server in {name!r}")
+        if self.mcp_denied(server):
+            raise ToolError(f"{name} is not available ({server!r} was denied for this session)")
         if entry.approve == "yes":
             return
         args = json.dumps(truncate_args(raw_input), ensure_ascii=False, sort_keys=True)
