@@ -19,6 +19,7 @@ use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
+use std::os::fd::FromRawFd;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -100,6 +101,9 @@ struct Policy {
     /// namespaces, so a run's commands share one netns, one PID namespace and
     /// one /tmp -- and a backgrounded server outlives the command that started
     /// it. EOF on stdin tears the namespace (and everything in it) down.
+    /// "exec": same setup, then run ONE long-lived child on our own stdio and
+    /// exit with its status -- for a process agent6 talks to (an MCP server)
+    /// rather than collects. Requires --policy-fd, since stdin is the child's.
     #[serde(default = "default_mode")]
     mode: String,
 }
@@ -169,11 +173,30 @@ fn die(msg: impl AsRef<str>) -> ! {
 }
 
 fn main() {
-    // The policy is the FIRST LINE, not the whole stream: in serve mode the
-    // same pipe then carries one request per line.
+    // `--policy-fd N` reads the policy from an inherited fd instead of stdin,
+    // for exec mode where stdin belongs to the child (its JSON-RPC pipe).
+    // Without it, the policy is the FIRST LINE of stdin -- not the whole
+    // stream: in serve mode the same pipe then carries one request per line.
     let mut input = String::new();
-    if io::stdin().lock().read_line(&mut input).is_err() || input.trim().is_empty() {
-        die("failed to read policy from stdin");
+    let args: Vec<String> = std::env::args().collect();
+    let policy_fd = match args.iter().position(|a| a == "--policy-fd") {
+        Some(i) => match args.get(i + 1).and_then(|n| n.parse::<i32>().ok()) {
+            Some(fd) if fd > 2 => Some(fd),
+            _ => die("--policy-fd needs a file descriptor number above 2"),
+        },
+        None => None,
+    };
+    let read_ok = match policy_fd {
+        // from_raw_fd owns the fd and closes it at end of scope, so the child
+        // never inherits the policy channel.
+        Some(fd) => {
+            let file = unsafe { std::fs::File::from_raw_fd(fd) };
+            io::BufReader::new(file).read_line(&mut input).is_ok()
+        }
+        None => io::stdin().lock().read_line(&mut input).is_ok(),
+    };
+    if !read_ok || input.trim().is_empty() {
+        die("failed to read policy");
     }
     let policy: Policy = match serde_json::from_str(&input) {
         Ok(p) => p,
@@ -221,7 +244,12 @@ fn run_strict(policy: &Policy) -> ! {
             if policy.mode == "serve" {
                 serve(Path::new("/workspace"), true);
             }
-            if let Err(e) = run_child(&policy.child_spec(), Path::new("/workspace")) {
+            let run = if policy.mode == "exec" {
+                run_child_exec
+            } else {
+                run_child
+            };
+            if let Err(e) = run(&policy.child_spec(), Path::new("/workspace")) {
                 die(format!("child execution failed: {e}"));
             }
             std::process::exit(0);
@@ -248,7 +276,12 @@ fn run_hardened(policy: &Policy) -> ! {
     if policy.mode == "serve" {
         serve(&policy.cwd, false);
     }
-    if let Err(e) = run_child(&policy.child_spec(), &policy.cwd) {
+    let run = if policy.mode == "exec" {
+        run_child_exec
+    } else {
+        run_child
+    };
+    if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
@@ -1555,13 +1588,11 @@ impl Policy {
     }
 }
 
-fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
-    if spec.argv.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
-    }
-    let _ = CString::new(spec.argv[0].as_bytes());
-    let _ = OsStr::new(""); // silence unused import on some targets
-
+/// The child's argv, env, cwd and process group -- everything except how its
+/// stdio is wired. Shared so a served/one-shot command and an exec-mode
+/// long-lived server are launched identically; a second spelling here is how
+/// one of them would quietly stop getting a hardening.
+fn build_command(spec: &ChildSpec<'_>, cwd: &Path) -> Command {
     let mut cmd = Command::new(&spec.argv[0]);
     cmd.args(&spec.argv[1..]);
     cmd.env_clear();
@@ -1579,28 +1610,19 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     if !spec.env.iter().any(|(k, _)| k == "HOME") {
         cmd.env("HOME", "/home");
     }
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
     cmd.current_dir(cwd);
     // Put the child in its own process group (pgid == its pid) so we can kill
     // the whole tree on timeout/exit. Otherwise a backgrounded grandchild that
     // inherited our stdout/stderr write-end keeps the pipe open and the reader
     // threads' read_to_string() never sees EOF — hanging the launcher.
     cmd.process_group(0);
-    // Memory cap: RLIMIT_DATA (brk + private writable anonymous mappings,
-    // enforced for mmap since kernel 4.7 — older than any Landlock-capable
-    // kernel), NOT RLIMIT_AS: an address-space cap breaks VA reservers that
-    // never commit the memory (V8's 4 GiB pointer-compression cage, ASAN
-    // shadow, JVM heap reserve). A runaway allocation gets ENOMEM (Python
-    // MemoryError, C++ bad_alloc) instead of driving the host to the OOM
-    // killer. The limit inherits across fork/exec, so each descendant is
-    // individually bounded; it is per-process, not per-tree (that would take
-    // a cgroup, which an unprivileged launcher cannot assume). Raising the
-    // hard limit back needs CAP_SYS_RESOURCE in the INITIAL user namespace,
-    // which a jailed child (even userns root under `strict`) never has.
-    let mem_bytes: libc::rlim_t = if spec.memory_limit_mb > 0 {
-        (spec.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024)
+    cmd
+}
+
+/// Capability drop + the optional RLIMIT_DATA cap, in the child before exec.
+fn apply_child_limits(cmd: &mut Command, memory_limit_mb: u64) {
+    let mem_bytes: libc::rlim_t = if memory_limit_mb > 0 {
+        (memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024)
     } else {
         0
     };
@@ -1631,6 +1653,45 @@ fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
             Ok(())
         });
     }
+}
+
+/// `mode = "exec"`: run a LONG-LIVED child on our own stdio and exit with its
+/// status. For a process agent6 talks to rather than collects -- an MCP server
+/// needs its JSON-RPC pipe for the whole session, which the capture path
+/// (pipes drained into a JSON result) cannot provide.
+///
+/// No timeout: the pipe closing is the lifetime. We stay alive as the child's
+/// parent (PID 1 of its namespace under strict) so it is reaped and so the
+/// namespace outlives no one.
+fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+    if spec.argv.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
+    }
+    let mut cmd = build_command(spec, cwd);
+    apply_child_limits(&mut cmd, spec.memory_limit_mb);
+    // Inherited, not piped: these three fds are the caller's pipe to the
+    // server. fork/exec does not touch the fd table, so the JSON-RPC stream
+    // survives the namespaces, the pivoted root, Landlock and seccomp.
+    cmd.stdin(Stdio::inherit());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+    let mut child = cmd.spawn()?;
+    let status = child.wait()?;
+    std::process::exit(status.code().unwrap_or(128 + libc::SIGKILL));
+}
+
+fn run_child(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
+    if spec.argv.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
+    }
+    let _ = CString::new(spec.argv[0].as_bytes());
+    let _ = OsStr::new(""); // silence unused import on some targets
+
+    let mut cmd = build_command(spec, cwd);
+    apply_child_limits(&mut cmd, spec.memory_limit_mb);
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn()?;
     let child_pid = child.id() as i32; // == pgid, since process_group(0)
