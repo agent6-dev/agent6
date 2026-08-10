@@ -62,7 +62,6 @@ non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
 | `deployment` | `"direct"` | `"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + model/version placement. |
 | `base_url` | per (format, deployment) | Endpoint host + path prefix; required for vertex/azure. Its host is the only network destination the agent dials for this provider. |
 | `auth_style` | per (format, deployment) | `"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). Rarely set by hand. |
@@ -72,8 +71,9 @@ non-default host).
 | `extra_headers` | `{}` | Extra HTTP headers on every request. Not for secrets. |
 | `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See OpenRouter below. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
-| `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
 | `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read). |
+| `api_format` | *(required)* | `"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
+| `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
 
 ### Deployments
 
@@ -146,6 +146,7 @@ USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`**
 drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
 `worker`. Cross-vendor mixes are fine.
 
+<!-- the three roles are the same shape, so the table is rendered once -->
 | Field | Default | Meaning |
 |---|---|---|
 | `provider` | *(required)* | A `[providers.*]` name. |
@@ -165,10 +166,10 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 | `run_commands` | `"ask"` | May the LLM run commands (`run_command`, `run_verify_command`, `stop_background` — one decision for all of them): `yes` (auto-approve) / `no` (tools withheld, and the verify gate with them) / `ask` (prompt per call; the session-wide allow/deny answers persist). `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` (never over a configured `no`), `--no-commands` (always allowed). A run that cannot ask anyone refuses to start rather than wait forever. |
 | `fetch_hosts` | `[]` | Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL prefixes. Everything else about fetch is fixed (SECURITY §4): https only, no credentials, text ≤ 1 MiB, no compression, redirects returned not followed, gate before DNS, connection pinned to the vetted address. Hidden when `network = "host"`; withheld from machine/agent states. A GET can still encode data in its path — why the default is empty. |
 | `protect_git` | `true` | Keep `.git/` unwritable by jailed commands (else one can plant a git filter that agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount namespace, and Landlock cannot substitute (SECURITY §5). On `hardened` the default degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse `.git` writes everywhere regardless. |
+| `memory_limit_mb` | `0` (off) | `RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel already handles a memory bomb, and a cap costs real builds more than it buys. Set one to bound a specific task; a runaway then fails as an ordinary command error. |
 | `extra_read_paths` | `[]` | Extra absolute paths **the run** may **read + execute**, at their real locations — a toolchain/interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). Mounted for jailed commands, and readable by the in-process tools (name one with an absolute path). Loosens confinement; list only what the build needs. |
 | `extra_write_paths` | `[]` | Extra absolute paths **the run** may **read + write**, at their real locations — a build cache, an output dir, a sibling checkout the task edits. Write implies read. List only what the task writes. |
-| `hide_paths` | `()` | Paths **the run** may never read or write, even under a broader grant; agent6's config dir and state base are always hidden, so an `extra_read_paths` grant of `$HOME` never exposes `secrets.toml` or your run history (the data dir and cache are not hidden: installed skills stay usable). Enforced twice: the in-process tools refuse them at **every** isolation level (`none` included), and jailed commands see them masked (a dir appears empty, a file reads empty). Masking needs the mount namespace: on `hardened` an entry it cannot mask refuses the run, and a grant that exposes the always-hidden dirs warns loudly instead (the grant may be deliberate; writes and the rest of the host stay confined). |
-| `memory_limit_mb` | `0` (off) | `RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel already handles a memory bomb, and a cap costs real builds more than it buys. Set one to bound a specific task; a runaway then fails as an ordinary command error. |
+| `hide_paths` | `[]` | Paths **the run** may never read or write, even under a broader grant; agent6's config dir and state base are always hidden, so an `extra_read_paths` grant of `$HOME` never exposes `secrets.toml` or your run history (the data dir and cache are not hidden: installed skills stay usable). Enforced twice: the in-process tools refuse them at **every** isolation level (`none` included), and jailed commands see them masked (a dir appears empty, a file reads empty). Masking needs the mount namespace: on `hardened` an entry it cannot mask refuses the run, and a grant that exposes the always-hidden dirs warns loudly instead (the grant may be deliberate; writes and the rest of the host stay confined). |
 
 ## `[git]`
 
@@ -189,7 +190,8 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` / `email` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
+| `name` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
+| `email` | none | Override the commit identity (else the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
 | `trailer` | `""` | Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) that wrote the code, `", "`-joined when several contributed. |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`
@@ -223,11 +225,11 @@ The security boundary; the model is [security.md](security.md) (§3 isolation,
 | `period` | `10` | Iterations between reviews for `periodic`. |
 | `decision` | `"advisory"` | `advisory` (inject findings, never block) / `veto` / `quorum` / `all`. |
 | `quorum` | `2` | K for `quorum`; counts distinct MODELS, so same-model seats can't fake it. |
-| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, cross-file). |
-| `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
 | `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory. |
 | `budget_fraction` | `0.25` | Skip the in-loop panel once remaining budget falls below this fraction. |
 | `seats` | `[]` | Panel roster: `"persona"` routes via `[models.reviewer]`; `"persona@provider/model"` pins a model per seat. `agent6 review --reviewers N [--personas …]` synthesizes an equivalent. |
+| `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
+| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, cross-file). |
 
 Grounding is mechanical, not prose: a `block` gates only if its `file:line`
 is in the diff AND its category is in a fixed allowed set (security /
@@ -372,9 +374,9 @@ app auth: remote access is expected behind `tailscale serve`.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `web.host` | `127.0.0.1` | Bind address; non-loopback requires `allow_non_loopback = true`. |
-| `web.port` | `7658` | Listen port. |
-| `web.allow_non_loopback` | `false` | Opt-in for a non-loopback bind, so a typo can never silently expose the write surface. |
+| `host` | `"127.0.0.1"` | Bind address; non-loopback requires `allow_non_loopback = true`. |
+| `port` | `7658` | Listen port. |
+| `allow_non_loopback` | `false` | Opt-in for a non-loopback bind, so a typo can never silently expose the write surface. |
 
 ## `[parallel]`
 
@@ -388,8 +390,8 @@ available").
 
 | Field | Default | Meaning |
 |---|---|---|
-| `parallel.max_lanes` | `4` | Hard cap per fan-out; more refuses up front. |
-| `parallel.workdir` | `""` | Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import. |
+| `max_lanes` | `4` | Hard cap per fan-out; more refuses up front. |
+| `workdir` | `""` | Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import. |
 
 ## `[mcp]` + `[mcp.servers.<name>]` (optional)
 
@@ -428,17 +430,13 @@ unconfined process is still a way out — name the narrowest paths that work.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `mcp.enabled` | `false` | Master switch; `false` = zero `mcp__*` tools. |
+| `enabled` | `false` | Master switch; `false` = zero `mcp__*` tools. |
 | `servers.<name>.command` | `[]` | argv for a stdio server agent6 spawns. Exactly one of this or `url`. |
 | `servers.<name>.url` | `""` | An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its environment or confinement. |
 | `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
-| `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers THIS server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |
-| `servers.<name>.sandbox.read_paths` | `[]` | Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are already there, so a block names only the server's own data — nothing has to describe its interpreter. |
-| `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write, likewise additive. |
-| `servers.<name>.sandbox.network` | `"auto"` | Which network this server joins, because servers differ from commands and from each other: `auto` = one of its own where the host can give a namespace, degrading to the host's with a warning where it cannot; `none` = the same, refusing rather than running connected; `session` = the RUN's network, so the dev server a background command started answers this server too (a browser server driving the app under test) and still nothing off the box; `host` = the machine's network. |
-| `servers.<name>.sandbox.unconfined` | `false` | No sandbox at all, for a server whose job IS arbitrary host access. Contradicts every other field here, so setting both is refused rather than half-applied. |
 | `servers.<name>.pass_env` | `[]` | Env vars the server needs, BY NAME. Everything else is the curated base. |
+| `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers THIS server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
 

@@ -19,6 +19,8 @@ exclude_docs: |
   mkdocs.yml
   .gitignore
   gen_contracts.py
+  gen_config.py
+  config_template.md
   screenshots/*.tape
   screenshots/*.sh
   screenshots/*.py
