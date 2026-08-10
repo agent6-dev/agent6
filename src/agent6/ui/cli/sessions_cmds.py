@@ -398,18 +398,25 @@ def _cmd_commits(*, session_id: str) -> int:
         return res
     _layout, manifest = res
     ref = _commits_ref(manifest)
-    if ref.reason:
+    if not ref.head_ref:
         print(
             f"ERROR: this session has no branch to list commits from ({ref.reason}).",
             file=sys.stderr,
         )
         return 2
+    if ref.reason:
+        # A resolvable ref with a caveat (branch_per_run off -> base..HEAD):
+        # `sessions diff` accepts exactly this run, and refusing here made the
+        # two verbs disagree about the same session. Say the caveat instead.
+        print(f"[agent6] {ref.reason}.", file=sys.stderr)
     base_sha = manifest.base_sha
     if not base_sha:
         print("ERROR: manifest has no base_sha; nothing to list commits from", file=sys.stderr)
         return 2
     run_branch = ref.head_ref
-    pruned = _pruned_branch_note(cwd, manifest, run_branch)
+    # Only a RECORDED branch can be pruned; the HEAD fallback is not a ref
+    # whose absence means anything (same guard as diff's).
+    pruned = _pruned_branch_note(cwd, manifest, run_branch) if manifest.run_branch else None
     if pruned is not None:
         print(pruned)
         return 0

@@ -513,17 +513,26 @@ def test_diff_of_a_branch_per_run_off_run_shows_the_work_on_head(
     assert "made no commits" not in out
 
 
-def test_commits_of_a_branch_per_run_off_run_names_where_the_work_went(
+def test_commits_of_a_branch_per_run_off_run_lists_from_head_like_diff(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """`sessions diff` falls back to base..HEAD for a branch_per_run=off run;
+    `sessions commits` refused the SAME session. Both verbs now accept the same
+    ref, and commits states the caveat (base..HEAD may include operator
+    commits) instead of refusing."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-HEADF2", commits=[], run_branch=None)
     _set_manifest_field(tmp_path, "run-HEADF2", mode="run")
+    (tmp_path / "work.txt").write_text("w\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 1: work on HEAD")
 
-    assert main(["sessions", "commits", "run-HEADF2"]) == 2
-    err = capsys.readouterr().err
-    assert "no branch to list commits from" in err
-    assert "branch_per_run was off, so the work already landed on your current branch" in err
+    assert main(["sessions", "commits", "run-HEADF2"]) == 0
+    captured = capsys.readouterr()
+    assert "agent6 iter 1: work on HEAD" in captured.out
+    assert "branch_per_run was off, so the work already landed on your current branch" in (
+        captured.err
+    )
 
 
 def test_commits_with_a_branch_but_no_base_sha_does_not_blame_branch_per_run(
