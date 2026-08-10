@@ -65,7 +65,6 @@ from agent6.sessions.ipc import (
     request_compact,
     request_steer,
     request_stop,
-    set_session_allow,
     unregister_frontend,
     write_answer,
     write_question_answers,
@@ -946,7 +945,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             for ap in self.state.pending_approvals:
                 if not ap.answered and ap.id not in self._seen_approval_ids:
                     self._seen_approval_ids.add(ap.id)
-                    self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
+                    self.push_screen(
+                        ApprovalModal(ap.id, ap.prompt, standing=ap.standing), self._on_approval(ap)
+                    )
             for qp in self.state.pending_questions:
                 if not qp.answered and qp.id not in self._seen_question_ids:
                     self._seen_question_ids.add(qp.id)
@@ -1003,9 +1004,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             if not self.session_controllable():
                 self.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
                 return
-            if answer == "session":  # allow every later run_command this run
-                set_session_allow(self.session_dir)
-            write_answer(self.session_dir, ap.id, approved=answer in ("yes", "session"))
+            write_answer(self.session_dir, ap.id, answer or "no")
 
         return cb
 

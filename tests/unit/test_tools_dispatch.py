@@ -877,7 +877,7 @@ def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
 
     cfg = _config_with_run_commands(tmp_path, "ask")
 
-    def _no(_prompt: str, /, *, standing: bool = True) -> bool:
+    def _no(_prompt: str, /, *, scope: str | None = None) -> bool:
         return False
 
     d = ToolDispatcher(root=tmp_path, config=cfg, approver=_no)
@@ -1797,7 +1797,7 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
 
     asked: list[str] = []
 
-    def refuse(prompt: str, /, *, standing: bool = True) -> bool:
+    def refuse(prompt: str, /, *, scope: str | None = None) -> bool:
         asked.append(prompt)
         return False
 

@@ -48,7 +48,6 @@ from agent6.sessions.ipc import (
     read_worker_pid,
     register_frontend,
     request_steer,
-    set_session_allow,
     unregister_frontend,
     write_answer,
     write_question_answers,
@@ -390,7 +389,8 @@ class MachineWatchScreen(Screen[None]):
             if not ap.answered and key not in self._seen_prompt_keys:
                 self._seen_prompt_keys.add(key)
                 self.app.push_screen(
-                    ApprovalModal(ap.id, ap.prompt), self._on_approval(state_dir, ap.id)
+                    ApprovalModal(ap.id, ap.prompt, standing=ap.standing),
+                    self._on_approval(state_dir, ap.id),
                 )
         for qp in rs.pending_questions:
             key = f"{state_dir}|{qp.id}"
@@ -408,9 +408,7 @@ class MachineWatchScreen(Screen[None]):
             if not self._steerable():
                 self.app.notify(_ANSWER_LOST, severity="warning", timeout=6.0)
                 return
-            if answer == "session":  # allow every later run_command in this agent state
-                set_session_allow(state_dir)
-            write_answer(state_dir, prompt_id, approved=answer in ("yes", "session"))
+            write_answer(state_dir, prompt_id, answer or "no")
 
         return cb
 

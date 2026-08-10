@@ -127,7 +127,7 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     The ask shows the parsed host and path, never the raw URL."""
     asked: list[str] = []
 
-    def _deny(prompt: str, /, *, standing: bool = True) -> bool:
+    def _deny(prompt: str, /, *, scope: str | None = None) -> bool:
         asked.append(prompt)
         return False
 
@@ -143,7 +143,7 @@ def test_an_allowed_host_is_never_prompted_for(
     from agent6.tools import dispatch as dispatch_mod
     from agent6.tools.fetch import Checked, Fetched
 
-    def _loud(_prompt: str, /, *, standing: bool = True) -> bool:
+    def _loud(_prompt: str, /, *, scope: str | None = None) -> bool:
         return pytest.fail("an allowed host must not prompt")
 
     def _fetched(checked: Checked) -> Fetched:
@@ -182,19 +182,52 @@ def test_allowing_every_command_does_not_allow_the_network(
     for the rest of the run. The operator was answering about commands: both
     the prompt and the modal say so."""
     from agent6.events import EventSink
-    from agent6.sessions.ipc import set_away_mode, set_session_allow
+    from agent6.sessions.ipc import COMMAND_SCOPE, set_away_mode, set_session_allow
     from agent6.ui.cli._interact import build_approver
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
-    set_session_allow(session_dir)
+    set_session_allow(session_dir, COMMAND_SCOPE)
     approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
 
-    assert approve("Allow run_command: ls") is True
+    assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
     # away-mode deny, so the opted-out call refuses instead of polling for a
     # front-end that will never attach.
     set_away_mode(session_dir, "deny")
-    assert approve("Allow fetch: evil.example /x", standing=False) is False
+    assert approve("Allow fetch: evil.example /x") is False
+
+
+def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mirror leak of the test above, and the wider one: the front-end used
+    to decide what a click MEANT, so an "a" typed at a fetch prompt (a gate that
+    opts out of standing answers) set the one global marker and granted every
+    command for the rest of the run. The asking side decides now, and a prompt
+    with no scope has nothing to grant."""
+    from agent6.events import EventSink
+    from agent6.sessions.ipc import COMMAND_SCOPE, session_allow_set
+    from agent6.ui.cli import _interact as interactmod
+
+    session_dir = tmp_path / "run"
+    (session_dir / "approvals").mkdir(parents=True)
+    shown: list[str] = []
+
+    def _typed(prompt: str, **_kw: object) -> str:
+        shown.append(prompt)
+        return "a"  # "allow all", on a prompt that offers no such thing
+
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: True)
+    monkeypatch.setattr(interactmod, "tty_prompt", _typed)
+    approve = interactmod.build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+
+    approve("Allow fetch: evil.example /x")
+    assert not session_allow_set(session_dir, COMMAND_SCOPE)
+    # And the prompt never offered it: an "allow all" that covers only the call
+    # it was clicked on is a button that lies about itself.
+    approve("Allow run_command: ls", scope=COMMAND_SCOPE)
+    assert "[y/N]" in shown[0] and "allow all" not in shown[0]
+    assert "allow all" in shown[1]
 
 
 def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
@@ -250,7 +283,7 @@ def test_a_denied_fetch_never_touches_the_resolver(
 
     monkeypatch.setattr(socket, "getaddrinfo", _spy)
 
-    def _deny(_prompt: str, /, *, standing: bool = True) -> bool:
+    def _deny(_prompt: str, /, *, scope: str | None = None) -> bool:
         return False
 
     d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)

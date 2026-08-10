@@ -76,6 +76,7 @@ from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
 from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
 from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
     away_mode,
     clear_away_mode,
     clear_compact_request,
@@ -154,8 +155,8 @@ def apply_spawned_away_default(session_dir: Path) -> None:
         return
     if away == "approve":
         # approve is never stored in away.mode (deny|wait): like the interactive
-        # detach prompt, approve-all reuses the session-allow marker.
-        set_session_allow(session_dir)
+        # detach prompt, approve-all sets the command scope's allow marker.
+        set_session_allow(session_dir, COMMAND_SCOPE)
     elif away in ("wait", "deny"):
         set_away_mode(session_dir, away)
 
@@ -858,7 +859,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so
             # the detached `resume` acquires it.
-            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.session_dir):
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(
+                layout.session_dir, COMMAND_SCOPE
+            ):
                 frontend.prompt_detach_away_mode(layout.session_dir)
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:

@@ -1307,3 +1307,28 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) ->
             )
 
     asyncio.run(scenario())
+
+
+def test_a_prompt_with_no_scope_shows_no_allow_session_button() -> None:
+    """The button would grant nothing beyond the call it was clicked on (the
+    fetch gate opts out of standing answers), so it is not there -- and neither
+    is its "a" key, footer entry included."""
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(ApprovalModal("a", "allow fetch?", standing=False), lambda _v: None)
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ApprovalModal)
+            labels = [str(b.label) for b in modal.query(Button)]
+            assert labels == ["Allow (y)", "Deny (n)"]
+            assert modal.check_action("approve_session", ()) is False
+            await pilot.press("a")  # the removed binding must not answer
+            await pilot.pause()
+            assert app.screen is modal, "'a' dismissed a modal that offers no session answer"
+
+    asyncio.run(scenario())

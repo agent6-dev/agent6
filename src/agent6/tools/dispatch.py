@@ -33,7 +33,7 @@ from agent6.sandbox.jail import (
     jail_search_path,
     run_in_jail,
 )
-from agent6.sessions.ipc import effective_run_commands
+from agent6.sessions.ipc import COMMAND_SCOPE, effective_run_commands
 from agent6.sessions.layout import session_layout
 from agent6.skills import (
     ResolvedSkills,
@@ -175,10 +175,18 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, str]:
 
 
 class Approver(Protocol):
-    def __call__(self, prompt: str, /, *, standing: bool = True) -> bool: ...
+    """Asks the operator, and says what an "allow all" would cover.
+
+    `scope` is what the prompt is ABOUT -- "command" for the command tools --
+    and is what a standing answer grants. The default is None: no standing
+    answer on offer, so the operator is asked every time. Nothing else may read
+    one scope's grant as consent for another.
+    """
+
+    def __call__(self, prompt: str, /, *, scope: str | None = None) -> bool: ...
 
 
-def _default_approver(prompt: str, /, *, standing: bool = True) -> bool:  # pragma: no cover
+def _default_approver(prompt: str, /, *, scope: str | None = None) -> bool:  # pragma: no cover
     try:
         ans = input(f"{prompt} [y/N] ").strip().lower()
     except EOFError:
@@ -685,7 +693,7 @@ class ToolDispatcher:
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)
         if self.command_policy() == "ask" and not self._approver(
-            f"Allow run_verify_command: {shlex.join(argv)}"
+            f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):
             raise ToolDenied("run_verify_command not approved (sandbox.run_commands='ask')")
         # per-call timeout from config. Defaults to the jail's
@@ -724,7 +732,7 @@ class ToolDispatcher:
         if self.command_policy() == "ask":
             # A shell-style command line, not a Python tuple repr: the operator
             # is approving a command, so show it the way they would type it.
-            ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}")
+            ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}", scope=COMMAND_SCOPE)
             if not ok:
                 # The gate can't tell a human "no" from the policy auto-deny of
                 # an unattended run, so the message blames neither and names
@@ -751,7 +759,7 @@ class ToolDispatcher:
         # query itself carries the hostname out, so `fetch` runs it behind
         # this gate.
         if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approver(
-            f"Allow fetch: {checked.prompt()}", standing=False
+            f"Allow fetch: {checked.prompt()}"
         ):
             raise ToolDenied(
                 f"fetch not approved for {checked.host} (add it to sandbox.fetch_hosts to allow it)"
@@ -786,7 +794,7 @@ class ToolDispatcher:
         args = RunBackgroundInput.model_validate(raw)
         shells = self._background()
         if self.command_policy() == "ask" and not self._approver(
-            f"Allow run_background: {shlex.join(args.argv)}"
+            f"Allow run_background: {shlex.join(args.argv)}", scope=COMMAND_SCOPE
         ):
             raise ToolDenied("run_background not approved (sandbox.run_commands='ask')")
         try:

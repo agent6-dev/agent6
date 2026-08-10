@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from agent6.events import EventSink
+from agent6.sessions.ipc import COMMAND_SCOPE
 from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import _live as livemod
 
@@ -38,27 +39,27 @@ def _dead(_d: object) -> bool:
     return False
 
 
-def _ans_yes(_d: object, _pid: object, **_k: object) -> bool:
-    return True
-
-
-def _ans_none(_d: object, _pid: object, **_k: object) -> bool | None:
-    return None
-
-
-def _stdin_no(_p: object) -> str:
-    return "no"
-
-
-def _stdin_yes(_p: object) -> str:
+def _ans_yes(_d: object, _pid: object, **_k: object) -> str:
     return "yes"
 
 
-def _stdin_forbidden(_p: object) -> str:
+def _ans_none(_d: object, _pid: object, **_k: object) -> str | None:
+    return None
+
+
+def _stdin_no(_p: object, **_k: object) -> str:
+    return "no"
+
+
+def _stdin_yes(_p: object, **_k: object) -> str:
+    return "yes"
+
+
+def _stdin_forbidden(_p: object, **_k: object) -> str:
     pytest.fail("stdin approver must not be used")
 
 
-def _stdin_session(_p: object) -> str:
+def _stdin_session(_p: object, **_k: object) -> str:
     return "session"
 
 
@@ -71,7 +72,7 @@ def test_approver_uses_tui_answer_when_live(
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("run `ls`?") is True
+    assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.prompt")
     ans = _events_of(log, "approval.answer")[0]
     assert ans["approved"] is True
@@ -98,11 +99,11 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     )
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground stdin path
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
-    write_answer(tmp_path, "approval-1", approved=True)  # the premature POST
+    write_answer(tmp_path, "approval-1", "yes")  # the premature POST
     approve = interactmod.build_approver(tmp_path, events)
     # The premature "yes" is cleared before the prompt; read_answer finds nothing
     # and times out, so it falls back to stdin (which denies) -- NOT auto-approved.
-    assert approve("run `curl evil`?") is False
+    assert approve("run `curl evil`?", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
@@ -127,12 +128,12 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
 
     def writer() -> None:
         time.sleep(0.3)  # after the prompt is emitted and the poll starts
-        write_answer(tmp_path, "approval-1", approved=True)
+        write_answer(tmp_path, "approval-1", "yes")
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("run `ls`?") is True
+    assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
     t.join(timeout=2)
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
@@ -150,7 +151,7 @@ def test_approver_falls_back_to_stdin_without_tui(
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("x") is False
+    assert approve("x", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
@@ -176,11 +177,11 @@ def test_approver_headless_no_frontend_waits_not_denies(
     def attach_and_answer() -> None:
         time.sleep(0.3)
         register_frontend(tmp_path, os.getpid())
-        write_answer(tmp_path, "approval-1", approved=True)
+        write_answer(tmp_path, "approval-1", "yes")
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("rm -rf build") is True
+    assert approve("rm -rf build", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 
@@ -195,10 +196,10 @@ def test_approver_session_allows_every_later_command(
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("first?") is True
+    assert approve("first?", scope=COMMAND_SCOPE) is True
     # A second prompt must NOT reach the stdin approver -- the session marker auto-passes.
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
-    assert approve("second?") is True
+    assert approve("second?", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[-1]["source"] == "session"
 
 
@@ -212,7 +213,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("x") is True
+    assert approve("x", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
 
@@ -310,11 +311,11 @@ def test_spawned_away_default_approve_reuses_session_allow(
     the file's deny|wait vocabulary, so the reader fell into the wait branch and
     the spawn BLOCKED on every approval instead of approving."""
     from agent6.app.run import apply_spawned_away_default
-    from agent6.sessions.ipc import away_mode, session_allow_set
+    from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
     apply_spawned_away_default(tmp_path)
-    assert session_allow_set(tmp_path) is True
+    assert session_allow_set(tmp_path, COMMAND_SCOPE) is True
     assert away_mode(tmp_path) == ""  # approve is never stored in away.mode
 
 
@@ -349,7 +350,7 @@ def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
     set_away_mode(tmp_path, "deny")
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("rm -rf /") is False
+    assert approve("rm -rf /", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
 
 
@@ -368,7 +369,9 @@ def test_approver_live_front_end_wins_over_away_mode(
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("ls") is True  # the attached front-end approved despite away=deny
+    assert (
+        approve("ls", scope=COMMAND_SCOPE) is True
+    )  # the attached front-end approved despite away=deny
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
 
@@ -390,11 +393,11 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     def attach_and_answer() -> None:
         time.sleep(0.3)
         register_frontend(tmp_path, os.getpid())  # a front-end re-attaches
-        write_answer(tmp_path, "approval-1", approved=True)  # and answers
+        write_answer(tmp_path, "approval-1", "yes")  # and answers
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = interactmod.build_approver(tmp_path, events)
-    assert approve("ls") is True
+    assert approve("ls", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 

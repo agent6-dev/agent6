@@ -515,7 +515,7 @@ any external viewer (the fold to render-ready state lives in
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |
 | `session.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
 | `budget.update`             | totals + caps for input/output tokens       |
-| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`frontend`/`stdin`/`session`/`away-deny`/`await-frontend`/`headless`) |
+| `approval.prompt`/`.answer` | `id`, `prompt`, `standing` (is an "allow all" on offer) / `id`, `approved`, `source` (`frontend`/`stdin`/`session`/`away-deny`/`await-frontend`/`headless`) |
 | `question.prompt`/`.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
 | `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 sessions show`) |
@@ -523,8 +523,12 @@ any external viewer (the fold to render-ready state lives in
 | `session.end`                   | `reason`, `iterations`, `all_passed`; one shape from every exit path (loop, machine-create, interrupt fallback) |
 
 A `run_command` approval is published as `approval.prompt`; the dashboard
-TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
-workflow reads, then records `approval.answer`. The answer poll falls back
+TUI shows an Allow/Deny modal and writes the operator's literal choice (`yes`,
+`no`, `session`, `session-deny`) to `approvals/<id>.answer`, which the workflow
+reads, then records `approval.answer`. What a choice GRANTS is the asking
+side's: each prompt names the SCOPE an "allow all" would cover (`command`, or
+one MCP server), a standing answer is recorded per scope, and a gate that
+offers none (`fetch`) sets `standing: false` so no front-end shows the button. The answer poll falls back
 headless (stdin prompt, or deny for a machine state) only after the front-end
 has stayed dead for 30 consecutive seconds, so a transient drop (a page
 reload, a phone locking its browser) does not convert a pending approval into

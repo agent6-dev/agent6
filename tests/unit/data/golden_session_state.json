@@ -83,6 +83,7 @@
     {
       "id": "approval-1",
       "prompt": "Allow run_command: rm -rf build",
+      "standing": true,
       "answered": true,
       "approved": true
     }

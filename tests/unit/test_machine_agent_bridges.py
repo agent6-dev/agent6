@@ -35,13 +35,28 @@ def _dirs(tmp_path: Path) -> tuple[Path, Path, EventSink]:
     return instance, state, EventSink(state / "logs.jsonl")
 
 
+def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(tmp_path: Path) -> None:
+    """The run approver honoured the prompt's scope and the machine one did not,
+    so a machine state's "allow every command" auto-passed the gates that
+    deliberately have no standing answer -- the same defect, in the copy."""
+    from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow
+
+    instance, state = tmp_path / "inst", tmp_path / "inst" / "1-agent"
+    state.mkdir(parents=True)
+    set_session_allow(state, COMMAND_SCOPE)
+    bridges = _build_machine_bridges(instance, state, EventSink(state / "logs.jsonl"))
+
+    assert bridges.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    assert bridges.approve("Allow fetch: evil.example /x") is False  # headless deny, not the grant
+
+
 def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
     # Crash recovery re-executes the same `<seq>-<state>` dir with fresh prompt-id
     # counters; an answer file left by the aborted attempt must not satisfy this
     # execution's first prompt. Building the bridges drops the stale files.
     instance, state, events = _dirs(tmp_path)
     register_frontend(instance, os.getpid())
-    write_answer(state, "approval-1", approved=True)  # stale: from the aborted attempt
+    write_answer(state, "approval-1", "yes")  # stale: from the aborted attempt
     write_question_answers(state, "question-1", ["stale"])
     _build_machine_bridges(instance, state, events)
     assert not (state / "approvals" / "approval-1.answer").exists()
@@ -68,7 +83,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: Path) -> None:
     # clears any premature pre-write first). A writer thread does exactly that;
     # the answer lands in the PER-STATE dir and read_answer picks it up promptly.
     threading.Thread(
-        target=lambda: (time.sleep(0.2), write_answer(state, "approval-1", approved=True)),
+        target=lambda: (time.sleep(0.2), write_answer(state, "approval-1", "yes")),
         daemon=True,
     ).start()
     assert b.approve("allow?") is True
@@ -92,7 +107,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
-    write_answer(state, "approval-1", approved=True)  # premature: no prompt yet
+    write_answer(state, "approval-1", "yes")  # premature: no prompt yet
     # No writer thread: nothing arrives after the prompt, so with the premature
     # answer cleared the approver falls through to the headless deny. Shrink the
     # read timeout so the poll gives up quickly instead of blocking 600s.

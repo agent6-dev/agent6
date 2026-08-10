@@ -428,7 +428,7 @@ def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> No
         try:
             barrier.wait(timeout=5)
             for _ in range(50):
-                write_answer(d, "approval-1", approved=True)
+                write_answer(d, "approval-1", "yes")
         except Exception as exc:
             errors.append(exc)
 

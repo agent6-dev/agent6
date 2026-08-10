@@ -37,7 +37,7 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
 def test_an_approval_becomes_a_request_to_the_editor() -> None:
     front, asked = _frontend()
     approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
-    assert approve("Allow run_command: ls") is True
+    assert approve("Allow run_command: ls", scope="command") is True
     assert asked == [("Allow run_command: ls", ("allow", "deny"), True)]
 
 
@@ -95,15 +95,15 @@ def test_an_unsandboxed_autorun_still_needs_a_human() -> None:
 
 
 def test_an_approval_that_must_not_be_remembered_says_so() -> None:
-    """`standing=False` is the fetch tool's off-list host, where a GET can
-    carry data out in its path. An editor that offers "always allow" needs
+    """A prompt with no scope is the fetch tool's off-list host, where a GET
+    can carry data out in its path. An editor that offers "always allow" needs
     something to key that decision on."""
     front, asked = _frontend(reply="allow once")
     approve = front.build_approver(Path("/x"), None)  # pyright: ignore[reportArgumentType]
-    assert approve("Allow fetch: evil.example /x", standing=False) is True
+    assert approve("Allow fetch: evil.example /x") is True
     assert asked[-1][1:] == (("allow once", "deny"), False)
 
-    approve("Allow run_command: ls")
+    approve("Allow run_command: ls", scope="command")
     assert asked[-1][1:] == (("allow", "deny"), True)
 
 

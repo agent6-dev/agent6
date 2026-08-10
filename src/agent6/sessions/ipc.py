@@ -12,7 +12,10 @@ answers prompts by writing files. When an approval is needed:
    workflow process waits for the front-end to write the answer file.
    Otherwise it falls back to a plain stdin prompt.
 3. The front-end (when present) presents a modal / control, then writes
-   `<session_dir>/approvals/<id>.answer` containing exactly `yes` or `no`.
+   `<session_dir>/approvals/<id>.answer` containing the operator's literal
+   choice: `yes`, `no`, `session` or `session-deny`. What a choice GRANTS is
+   the asking side's to decide (see `Approver`), not the front-end's -- the
+   front-end reports the click.
 
 We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
@@ -296,10 +299,11 @@ def _await_answer(
     return _consume_answer(target)
 
 
-def write_answer(session_dir: Path, prompt_id: str, *, approved: bool) -> None:
-    """Called by a front-end (TUI or web)."""
+def write_answer(session_dir: Path, prompt_id: str, answer: str) -> None:
+    """Called by a front-end (TUI or web) with the operator's literal choice:
+    "yes", "no", "session" or "session-deny"."""
     target = _answer_path(approvals_dir(session_dir), prompt_id)
-    _write_answer_atomic(target, "yes" if approved else "no")
+    _write_answer_atomic(target, answer)
 
 
 def clear_answer(session_dir: Path, prompt_id: str) -> None:
@@ -323,28 +327,33 @@ def clear_question_answers(session_dir: Path, question_id: str) -> None:
         _answer_path(questions_dir(session_dir), question_id).unlink(missing_ok=True)
 
 
-# "Allow for the rest of the session": one marker file, checked before every
-# prompt. It is NOT an `*.answer`, so clear_pending_answers leaves it in place --
+# "Allow (or deny) for the rest of the session": one marker file per SCOPE,
+# checked before every prompt in that scope. A scope is what the operator was
+# answering about, so a standing answer grants what the prompt said and no more.
+# Today there is one: the three command tools share it.
+#
+# Markers are NOT `*.answer`s, so clear_pending_answers leaves them in place:
 # the choice persists across this run's resumes (a detached run then keeps going
-# without a front-end to prompt). Scoped to the run's approvals dir, so other runs
-# are unaffected; a fresh run has a fresh dir and prompts again.
+# without a front-end to prompt). They live in the run's approvals dir, so other
+# runs are unaffected and a fresh run prompts again.
+COMMAND_SCOPE = "command"
 SESSION_ALLOW_FILE = "session.allow"
 SESSION_DENY_FILE = "session.deny"
 
 
-def set_session_allow(session_dir: Path) -> None:
-    """Record the operator's 'allow every command for the session' choice."""
+def set_session_allow(session_dir: Path, scope: str) -> None:
+    """Record the operator's 'allow all of *scope* for the session' choice."""
     d = approvals_dir(session_dir)
     d.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(d / SESSION_ALLOW_FILE, "1")
+    _write_answer_atomic(d / f"{SESSION_ALLOW_FILE}.{scope}", "1")
 
 
-def session_allow_set(session_dir: Path) -> bool:
-    return (approvals_dir(session_dir) / SESSION_ALLOW_FILE).exists()
+def session_allow_set(session_dir: Path, scope: str) -> bool:
+    return (approvals_dir(session_dir) / f"{SESSION_ALLOW_FILE}.{scope}").exists()
 
 
-def set_session_deny(session_dir: Path) -> None:
-    """Record the mirror choice: 'no commands for the rest of the session'.
+def set_session_deny(session_dir: Path, scope: str) -> None:
+    """Record the mirror choice: 'none of *scope* for the rest of the session'.
 
     A single "no" answers one call, exactly as a single "yes" approves one; only
     the session choices persist. Denying for the session WITHDRAWS the tools
@@ -353,11 +362,28 @@ def set_session_deny(session_dir: Path) -> None:
     """
     d = approvals_dir(session_dir)
     d.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(d / SESSION_DENY_FILE, "1")
+    _write_answer_atomic(d / f"{SESSION_DENY_FILE}.{scope}", "1")
 
 
-def session_deny_set(session_dir: Path) -> bool:
-    return (approvals_dir(session_dir) / SESSION_DENY_FILE).exists()
+def session_deny_set(session_dir: Path, scope: str) -> bool:
+    return (approvals_dir(session_dir) / f"{SESSION_DENY_FILE}.{scope}").exists()
+
+
+def record_answer(session_dir: Path, answer: str, scope: str | None) -> bool:
+    """Apply the operator's literal *answer* and return the verdict for THIS call.
+
+    The one place an answer's meaning is decided. A session choice persists only
+    when the prompt offered one: `scope=None` is a gate with no standing answer
+    (`fetch`), and an "allow all" arriving on one anyway grants nothing beyond
+    the call it was clicked on. Anything unrecognised is a deny, so a truncated
+    or hand-written answer file cannot approve.
+    """
+    if scope:
+        if answer == "session":
+            set_session_allow(session_dir, scope)
+        elif answer == "session-deny":
+            set_session_deny(session_dir, scope)
+    return answer in {"yes", "session"}
 
 
 def effective_run_commands(configured: str, session_dir: Path) -> str:
@@ -374,9 +400,9 @@ def effective_run_commands(configured: str, session_dir: Path) -> str:
     """
     if configured != "ask":
         return configured
-    if session_allow_set(session_dir):
+    if session_allow_set(session_dir, COMMAND_SCOPE):
         return "yes"
-    if session_deny_set(session_dir) or away_mode(session_dir) == "deny":
+    if session_deny_set(session_dir, COMMAND_SCOPE) or away_mode(session_dir) == "deny":
         return "no"
     return "ask"
 
@@ -384,7 +410,7 @@ def effective_run_commands(configured: str, session_dir: Path) -> str:
 # How a DETACHED run (no terminal to prompt) handles run_command approvals and
 # ask_user questions: "deny" auto-denies, "wait" blocks until a front-end
 # reattaches and answers. "approve" is not stored here -- detach approve-all
-# reuses the session.allow marker. Persists like session.allow (not an *.answer).
+# sets the command scope's allow marker. Persists like it (not an *.answer).
 AWAY_MODE_FILE = "away.mode"
 
 
@@ -423,9 +449,10 @@ def read_answer(
     poll_s: float = 0.2,
     live_dir: Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
-) -> bool | None:
-    """Called by the workflow. Returns True/False, or None on timeout or once the
-    front-end has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
+) -> str | None:
+    """Called by the workflow. Returns the operator's literal choice ("yes",
+    "no", "session", "session-deny"), or None on timeout or once the front-end
+    has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
 
     ``live_dir`` overrides which dir the liveness gate probes for front-end claims
     (defaults to ``session_dir``). A machine agent state reads answers from its
@@ -439,9 +466,7 @@ def read_answer(
         poll_s=poll_s,
         dead_grace_s=dead_grace_s,
     )
-    if txt is None:
-        return None
-    return txt.strip().lower() in {"yes", "y", "true", "1"}
+    return None if txt is None else txt.strip().lower()
 
 
 # --- agent->user question bridge (the `ask_user` tool) -----------------------

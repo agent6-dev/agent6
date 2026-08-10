@@ -26,7 +26,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -95,8 +95,9 @@ class SteerBody(_Body):
 
 class ApproveBody(_Body):
     id: str
-    approved: bool
-    session: bool = False  # "allow session": approve every later run_command too
+    # The operator's literal choice; what a session answer GRANTS is the asking
+    # side's to decide (agent6.sessions.ipc.record_answer), not this endpoint's.
+    answer: Literal["yes", "no", "session", "session-deny"]
     state: str = ""
 
 
@@ -405,7 +406,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.steer(self.cwd, session_id, body.text)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.approved, session=ab.session)
+            ok, msg = actions.approve(self.cwd, session_id, ab.id, ab.answer)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
@@ -438,9 +439,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.machine_steer(self.cwd, name, body.text, state=body.state)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.machine_approve(
-                self.cwd, name, ab.id, ab.approved, session=ab.session, state=ab.state
-            )
+            ok, msg = actions.machine_approve(self.cwd, name, ab.id, ab.answer, state=ab.state)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answers, state=qb.state)

@@ -10,6 +10,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
     effective_run_commands,
     set_away_mode,
     set_session_allow,
@@ -24,22 +25,22 @@ _COMMAND_TOOLS = {"run_command", "run_verify_command", "run_background", "stop_b
 def test_a_standing_policy_is_not_movable_in_run(tmp_path: Path, configured: str) -> None:
     """Only "ask" is a question. A configured yes or no is the operator's
     standing policy, and no in-run choice overrides it."""
-    set_session_allow(tmp_path)
-    set_session_deny(tmp_path)
+    set_session_allow(tmp_path, COMMAND_SCOPE)
+    set_session_deny(tmp_path, COMMAND_SCOPE)
     set_away_mode(tmp_path, "deny")
     assert effective_run_commands(configured, tmp_path) == configured
 
 
 def test_ask_is_what_the_session_choice_moves(tmp_path: Path) -> None:
     assert effective_run_commands("ask", tmp_path) == "ask"
-    set_session_allow(tmp_path)
+    set_session_allow(tmp_path, COMMAND_SCOPE)
     assert effective_run_commands("ask", tmp_path) == "yes"
 
 
 def test_deny_for_the_session_is_the_mirror_of_allow(tmp_path: Path) -> None:
     """A single no answers one call, exactly as a single yes approves one; only
     the session choices persist, and denying withdraws rather than refuses."""
-    set_session_deny(tmp_path)
+    set_session_deny(tmp_path, COMMAND_SCOPE)
     assert effective_run_commands("ask", tmp_path) == "no"
 
 
@@ -65,7 +66,7 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: Path) -> None:
     )
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert set(d.available_tool_names()) >= _COMMAND_TOOLS
-    set_session_deny(tmp_path)
+    set_session_deny(tmp_path, COMMAND_SCOPE)
     assert _COMMAND_TOOLS.isdisjoint(d.available_tool_names())
 
 
@@ -75,7 +76,7 @@ def test_the_policy_is_re_read_not_cached(tmp_path: Path) -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": "ask"}})
     d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert d.command_policy() == "ask"
-    set_session_allow(tmp_path)
+    set_session_allow(tmp_path, COMMAND_SCOPE)
     assert d.command_policy() == "yes"
 
 
@@ -112,13 +113,13 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> N
 
     answers = iter(["no", "no", "yes"])
 
-    def _answer(_p: str, /, *, standing: bool = True) -> bool:
+    def _answer(_p: str, /, *, scope: str | None = None) -> bool:
         return next(answers) == "yes"
 
     d._approver = _answer  # pyright: ignore[reportPrivateUsage]
     for _ in range(2):
         with pytest.raises(Exception, match="not approved"):
             d.dispatch("run_command", {"argv": ["true"]})
-        assert not session_deny_set(tmp_path)
+        assert not session_deny_set(tmp_path, COMMAND_SCOPE)
         assert d.command_policy() == "ask"
         assert set(d.available_tool_names()) >= _COMMAND_TOOLS

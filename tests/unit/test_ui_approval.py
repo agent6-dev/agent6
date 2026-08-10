@@ -52,19 +52,19 @@ def test_read_answer_picks_up_written_answer(tmp_path: Path) -> None:
 
     def writer() -> None:
         time.sleep(0.2)
-        write_answer(tmp_path, "abc", approved=True)
+        write_answer(tmp_path, "abc", "yes")
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     result = read_answer(tmp_path, "abc", timeout_s=2.0, poll_s=0.05)
     t.join(timeout=1)
-    assert result is True
+    assert result == "yes"
 
 
 def test_write_answer_no_round_trips(tmp_path: Path) -> None:
     register_frontend(tmp_path, os.getpid())
-    write_answer(tmp_path, "x", approved=False)
-    assert read_answer(tmp_path, "x", timeout_s=1.0) is False
+    write_answer(tmp_path, "x", "no")
+    assert read_answer(tmp_path, "x", timeout_s=1.0) == "no"
 
 
 # --- liveness grace: a transient front-end drop must not deny the prompt ------
@@ -79,13 +79,13 @@ def test_read_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:
     def revive_and_answer() -> None:
         time.sleep(0.2)
         register_frontend(tmp_path, os.getpid())
-        write_answer(tmp_path, "g1", approved=True)
+        write_answer(tmp_path, "g1", "yes")
 
     t = threading.Thread(target=revive_and_answer, daemon=True)
     t.start()
     result = read_answer(tmp_path, "g1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
     t.join(timeout=2)
-    assert result is True
+    assert result == "yes"
 
 
 def test_read_answer_falls_back_after_grace_expires(tmp_path: Path) -> None:
@@ -148,7 +148,7 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
     t.join(timeout=5)
     assert torn == []
     assert not list((tmp_path / "questions").glob("*.tmp"))
-    write_answer(tmp_path, "a9", approved=True)
+    write_answer(tmp_path, "a9", "yes")
     assert not list((tmp_path / "approvals").glob("*.tmp"))
     write_steer_answer(tmp_path, "steer text")
     assert not list(tmp_path.glob("*.tmp"))
@@ -164,11 +164,11 @@ def test_answer_landing_during_dead_verdict_is_consumed(
     from agent6.sessions import ipc
 
     def write_then_dead(_live: Path) -> bool:
-        write_answer(tmp_path, "abc", approved=True)
+        write_answer(tmp_path, "abc", "yes")
         return False
 
     monkeypatch.setattr(ipc, "frontend_is_live", write_then_dead)
-    assert ipc.read_answer(tmp_path, "abc", timeout_s=5.0, poll_s=0.01, dead_grace_s=0.0) is True
+    assert ipc.read_answer(tmp_path, "abc", timeout_s=5.0, poll_s=0.01, dead_grace_s=0.0) == "yes"
     assert not (tmp_path / "approvals" / "abc.answer").exists()
 
 
@@ -190,10 +190,10 @@ def test_answer_landing_at_deadline_is_consumed(
 
         def sleep(self, s: float) -> None:
             self.now += s
-            write_answer(tmp_path, "abc", approved=True)
+            write_answer(tmp_path, "abc", "yes")
 
     monkeypatch.setattr(ipc, "time", _Clock())
-    assert ipc.read_answer(tmp_path, "abc", timeout_s=0.05, poll_s=0.1) is True
+    assert ipc.read_answer(tmp_path, "abc", timeout_s=0.05, poll_s=0.1) == "yes"
     assert not (tmp_path / "approvals" / "abc.answer").exists()
 
 

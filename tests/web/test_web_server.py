@@ -327,7 +327,7 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
-    status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "approved": True})
+    status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "answer": "yes"})
     assert status == 200
     assert body["ok"] is True
     assert (session_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
@@ -382,14 +382,12 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
-        port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "approved": True}
+        port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "answer": "yes"}
     )
     assert status != 200
     assert not escape.exists()
     # a normal id still works
-    ok_status, ok_body = _post(
-        port, "/api/session/trav-run/approve", {"id": "p1", "approved": True}
-    )
+    ok_status, ok_body = _post(port, "/api/session/trav-run/approve", {"id": "p1", "answer": "yes"})
     assert ok_status == 200 and ok_body["ok"] is True
 
 
@@ -446,7 +444,7 @@ def test_machine_approve_and_steer_target_per_state_dir(
 ) -> None:
     _srv, port = server
     _inst, state = _make_machine_with_state(tmp_path, "acter", "0001-work", running=True)
-    _post(port, "/api/machine/acter/approve", {"id": "approval-1", "approved": False})
+    _post(port, "/api/machine/acter/approve", {"id": "approval-1", "answer": "no"})
     assert (state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "no"
     _post(port, "/api/machine/acter/steer", {"text": "focus"})
     assert (state / "steer.answer").read_text(encoding="utf-8") == "focus"
@@ -1226,7 +1224,7 @@ def test_machine_answer_routes_to_named_state_not_newest(
     status, body = _post(
         port,
         "/api/machine/adv/approve",
-        {"id": "approval-1", "approved": True, "state": "0001-work"},
+        {"id": "approval-1", "answer": "yes", "state": "0001-work"},
     )
     assert status == 200 and body["ok"] is True
     # The answer landed in the state the prompt was rendered from, NOT the newest.
@@ -1258,7 +1256,7 @@ def test_machine_answer_state_hint_traversal_is_contained(
     status, _ = _post(
         port,
         "/api/machine/adv3/approve",
-        {"id": "approval-1", "approved": True, "state": "../../../../pwned"},
+        {"id": "approval-1", "answer": "yes", "state": "../../../../pwned"},
     )
     assert status != 200
     assert not escape.exists()

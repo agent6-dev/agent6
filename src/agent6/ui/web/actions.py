@@ -27,7 +27,6 @@ from agent6.sessions.ipc import (
     request_compact,
     request_steer,
     request_stop,
-    set_session_allow,
     worker_is_alive,
     write_answer,
     write_question_answers,
@@ -188,11 +187,9 @@ def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
     return (err == ""), (err or "started")
 
 
-def approve(
-    cwd: Path, session_id: str, prompt_id: str, approved: bool, *, session: bool = False
-) -> tuple[bool, str]:
-    """Answer a pending approval prompt (the run's `approval.prompt`). ``session``
-    (the "allow session" button) also auto-approves every later run_command."""
+def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
+    """Answer a pending approval prompt (the run's `approval.prompt`) with the
+    operator's literal choice."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
@@ -202,9 +199,7 @@ def approve(
         # action: nothing would consume the answer, and the next resume drops
         # it. A session grant would be just as stranded.
         return False, "the session is not live"
-    if session:
-        set_session_allow(session_dir)
-    write_answer(session_dir, prompt_id, approved=approved)
+    write_answer(session_dir, prompt_id, answer)
     return True, "answered"
 
 
@@ -358,11 +353,10 @@ def _machine_unavailable(cwd: Path, name: str, *, ended: str, stopped: str) -> s
 
 
 def machine_approve(
-    cwd: Path, name: str, prompt_id: str, approved: bool, *, session: bool = False, state: str = ""
+    cwd: Path, name: str, prompt_id: str, answer: str, *, state: str = ""
 ) -> tuple[bool, str]:
     """Answer a pending approval in the agent state the prompt was rendered from
-    (``state``; newest when absent). ``session`` auto-approves every later
-    run_command in that state."""
+    (``state``; newest when absent)."""
     refusal = _machine_unavailable(
         cwd,
         name,
@@ -374,9 +368,7 @@ def machine_approve(
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
-    if session:
-        set_session_allow(state_dir)
-    write_answer(state_dir, prompt_id, approved=approved)
+    write_answer(state_dir, prompt_id, answer)
     return True, "answered"
 
 

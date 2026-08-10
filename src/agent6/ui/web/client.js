@@ -930,11 +930,14 @@ function paintPrompts(cards, s) {
       box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Approve');
-      const sess = el('button', 'primary', 'Allow session');
       const no = el('button', 'danger', 'Deny');
-      const send = (ok, session) => async () => { try { await postJSON(base + '/approve', { id: ap.id, approved: ok, session: !!session, ...extra }); } catch (e) { toast(e.message, true); } };
-      yes.onclick = send(true, false); sess.onclick = send(true, true); no.onclick = send(false, false);
-      row.appendChild(yes); row.appendChild(sess); row.appendChild(no); box.appendChild(row);
+      const send = (answer) => async () => { try { await postJSON(base + '/approve', { id: ap.id, answer, ...extra }); } catch (e) { toast(e.message, true); } };
+      yes.onclick = send('yes'); no.onclick = send('no');
+      row.appendChild(yes);
+      // Only when the prompt says an "allow all" would actually cover its scope:
+      // a button that silently answered one call would lie about itself.
+      if (ap.standing !== false) { const sess = el('button', 'primary', 'Allow session'); sess.onclick = send('session'); row.appendChild(sess); }
+      row.appendChild(no); box.appendChild(row);
       return box;
     };
   }

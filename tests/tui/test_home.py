@@ -95,7 +95,7 @@ def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
 
 
 def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
-    write_answer(tmp_path, "approval-1", approved=True)
+    write_answer(tmp_path, "approval-1", "yes")
     write_question_answers(tmp_path, "question-1", ["stale"])
     register_frontend(tmp_path, 12345)
     clear_pending_answers(tmp_path)

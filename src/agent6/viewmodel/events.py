@@ -173,6 +173,10 @@ class BudgetUpdate:
 class ApprovalPrompt:
     id: str
     prompt: str
+    # Whether an "allow all" would actually cover anything beyond this call, so
+    # a front-end only offers the button when it means something. A log written
+    # before the field existed folds True, the old behaviour.
+    standing: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,7 +397,11 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
             )
         case "approval.prompt":
-            return ApprovalPrompt(id=str(raw.get("id", "")), prompt=str(raw.get("prompt", "")))
+            return ApprovalPrompt(
+                id=str(raw.get("id", "")),
+                prompt=str(raw.get("prompt", "")),
+                standing=bool(raw.get("standing", True)),
+            )
         case "approval.answer":
             return ApprovalAnswer(
                 id=str(raw.get("id", "")), approved=bool(raw.get("approved", False))

@@ -19,7 +19,6 @@ from agent6.sessions.ipc import (
     pid_alive,
     read_worker_pid,
     register_frontend,
-    set_session_allow,
     unregister_frontend,
     worker_is_alive,
     write_answer,
@@ -494,9 +493,7 @@ class _CliFrontEnd:
         if kind == "approval":
             with self._view.pause():
                 answer = default_stdin_approver(str(content))
-            if answer == "session":
-                set_session_allow(self._session_dir)
-            write_answer(self._session_dir, prompt_id, approved=answer != "no")
+            write_answer(self._session_dir, prompt_id, answer)
         else:
             questions = tuple(
                 UserQuestion(

@@ -70,6 +70,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -728,7 +729,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
-            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.session_dir):
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(
+                layout.session_dir, COMMAND_SCOPE
+            ):
                 frontend.prompt_detach_away_mode(layout.session_dir)
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:

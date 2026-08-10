@@ -369,7 +369,7 @@ def test_machine_poke_refuses_ended_machine(tmp_path: Path) -> None:
 
 def test_machine_approve_refuses_ended_machine(tmp_path: Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
-    ok, msg = actions.machine_approve(tmp_path, "tiny", "approval-1", True)
+    ok, msg = actions.machine_approve(tmp_path, "tiny", "approval-1", "yes")
     assert not ok
     assert "ended" in msg
     assert not list((inst / "states" / "0000-route").glob("**/*.answer"))
@@ -440,7 +440,7 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
     before = sorted(p.name for p in session_dir.iterdir())
 
-    ok, msg = actions.approve(tmp_path, "dead-run-A1", "approval-1", True)
+    ok, msg = actions.approve(tmp_path, "dead-run-A1", "approval-1", "yes")
     assert ok is False and "not live" in msg
     ok2, msg2 = actions.answer_question(tmp_path, "dead-run-A1", "q-1", ["yes"])
     assert ok2 is False and "not live" in msg2
@@ -461,14 +461,14 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
     (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
     (inst / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
 
-    ok, msg = actions.machine_approve(tmp_path, "dead", "approval-1", True)
+    ok, msg = actions.machine_approve(tmp_path, "dead", "approval-1", "yes")
     assert ok is False and "not running" in msg
     ok, msg = actions.machine_answer(tmp_path, "dead", "q-1", ["yes"])
     assert ok is False and "not running" in msg
 
 
 _UNKNOWN_MACHINE_CALLS: list[tuple[Callable[[Path], tuple[bool, str]], str]] = [
-    (lambda cwd: actions.machine_approve(cwd, "ghost", "approval-1", True), "approve"),
+    (lambda cwd: actions.machine_approve(cwd, "ghost", "approval-1", "yes"), "approve"),
     (lambda cwd: actions.machine_answer(cwd, "ghost", "question-1", ["yes"]), "answer"),
     (lambda cwd: actions.machine_steer(cwd, "ghost", "do more"), "steer"),
 ]

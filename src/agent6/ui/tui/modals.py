@@ -45,7 +45,10 @@ _ARROW_NAV = (
 # focus, so it always shows the focused accent -- the $primary<->$accent
 # resting/focus toggle is only for non-modal cards where focus actually moves.
 class ApprovalModal(ModalScreen[str]):
-    """Dismisses "yes", "no", or "session" (allow every later run_command this run)."""
+    """Dismisses "yes", "no", or "session" (allow this prompt's whole scope for
+    the run). `standing=False` is a prompt with no scope to grant, so it offers
+    no session button: one that answered only the call it was clicked on would
+    lie about itself."""
 
     DEFAULT_CSS = """
     ApprovalModal { align: center middle; }
@@ -66,16 +69,17 @@ class ApprovalModal(ModalScreen[str]):
         *_ARROW_NAV,
         Binding("y", "approve", "Allow", show=True),
         Binding("Y", "approve", "Allow", show=False),
-        Binding("a", "approve_session", "Allow session", show=True),
+        Binding("a", "approve_session", "Allow session", show=True),  # dropped when not standing
         Binding("n", "deny", "Deny", show=True),
         Binding("N", "deny", "Deny", show=False),
         Binding("escape", "deny", "Deny", show=False),
     ]
 
-    def __init__(self, prompt_id: str, prompt: str) -> None:
+    def __init__(self, prompt_id: str, prompt: str, *, standing: bool = True) -> None:
         super().__init__()
         self.prompt_id = prompt_id
         self.prompt_text = prompt
+        self.standing = standing
 
     def compose(self) -> ComposeResult:
         with Container(id="approval-box"):
@@ -85,7 +89,8 @@ class ApprovalModal(ModalScreen[str]):
             yield Static(body)
             with Horizontal(id="approval-buttons"):
                 yield Button("Allow (y)", id="yes", variant="success")
-                yield Button("Allow session (a)", id="session", variant="success")
+                if self.standing:
+                    yield Button("Allow session (a)", id="session", variant="success")
                 yield Button("Deny (n)", id="no", variant="error")
 
     def on_mount(self) -> None:
@@ -96,6 +101,10 @@ class ApprovalModal(ModalScreen[str]):
 
     def action_approve(self) -> None:
         self.dismiss("yes")
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Hides the "a" binding (footer included) on a prompt with no scope."""
+        return self.standing if action == "approve_session" else True
 
     def action_approve_session(self) -> None:
         self.dismiss("session")

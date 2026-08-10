@@ -70,6 +70,7 @@ from agent6.sessions.ipc import (
     read_answer,
     read_question_answers,
     read_steer_answer,
+    record_answer,
     session_allow_set,
     steer_request_pending,
 )
@@ -185,22 +186,23 @@ def _build_machine_bridges(
     clear_pending_answers(state_dir)
     counters = {"approval": 0, "question": 0}
 
-    def approve(prompt: str, /, *, standing: bool = True) -> bool:
+    def approve(prompt: str, /, *, scope: str | None = None) -> bool:
         counters["approval"] += 1
         prompt_id = f"approval-{counters['approval']}"
-        # A prior "allow session" for this agent state auto-passes every later prompt.
-        if session_allow_set(state_dir):
+        # A prior "allow session" for THIS scope auto-passes its later prompts.
+        if scope and session_allow_set(state_dir, scope):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
         # Clear a pre-written answer for this id before emitting (see the run
         # approver): a premature /api/machine/<name>/approve must not auto-pass.
         clear_answer(state_dir, prompt_id)
-        events.emit("approval.prompt", id=prompt_id, prompt=prompt)
+        events.emit("approval.prompt", id=prompt_id, prompt=prompt, standing=bool(scope))
         approved: bool | None = None
         source = "headless"
         if frontend_is_live(instance_dir):
-            approved = read_answer(state_dir, prompt_id, live_dir=instance_dir)
-            if approved is not None:
+            answer = read_answer(state_dir, prompt_id, live_dir=instance_dir)
+            if answer is not None:
+                approved = record_answer(state_dir, answer, scope)
                 source = "frontend"
         if approved is None:
             approved = False  # headless machine: no operator to ask, deny safely

@@ -129,6 +129,8 @@ class RoleCall:
 class ApprovalPrompt:
     id: str
     prompt: str
+    # False when no "allow all" is on offer for this prompt (see the event).
+    standing: bool = True
     answered: bool = False
     approved: bool | None = None
 
@@ -460,8 +462,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 ),
             )
 
-        case events.ApprovalPrompt(id=aid, prompt=prompt):
-            ap = ApprovalPrompt(id=aid, prompt=prompt)
+        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing):
+            ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing)
             return replace(state, pending_approvals=(*state.pending_approvals, ap))
 
         case events.ApprovalAnswer(id=wanted_id, approved=approved):

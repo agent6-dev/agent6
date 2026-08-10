@@ -72,13 +72,14 @@ def acp_frontend(
 ) -> SessionFrontend:
     """Wire the lifecycle to one ACP client."""
 
-    def _approve(prompt: str, /, *, standing: bool = True) -> bool:
+    def _approve(prompt: str, /, *, scope: str | None = None) -> bool:
         if not capabilities.can_ask:
             return False  # nobody to ask, so the answer is no
-        # `standing=False` means an "always allow" the editor remembers must
-        # NOT cover this one -- the fetch tool's off-list host, where a GET can
-        # carry data out in its path. The option names carry it, because an
-        # editor that offers "always" needs something to key that decision on.
+        # No scope means an "always allow" the editor remembers must NOT cover
+        # this one -- the fetch tool's off-list host, where a GET can carry data
+        # out in its path. The option names carry it, because an editor that
+        # offers "always" needs something to key that decision on.
+        standing = scope is not None
         options = ("allow", "deny") if standing else ("allow once", "deny")
         answer = ask(prompt, options, standing)
         return bool(answer) and answer.startswith("allow")
@@ -102,13 +103,10 @@ def acp_frontend(
         """
         if isolation != "none" or cfg.sandbox.run_commands != "yes":
             return True
-        # standing=False: docs/security.md documents this as a ONE-TIME gate,
-        # and ACP's `allow_always` is exactly the button that would let one
-        # click silence it for every later session.
-        return _approve(
-            "Run commands UNSANDBOXED on this host, with no per-command prompt?",
-            standing=False,
-        )
+        # No scope: docs/security.md documents this as a ONE-TIME gate, and
+        # ACP's `allow_always` is exactly the button that would let one click
+        # silence it for every later session.
+        return _approve("Run commands UNSANDBOXED on this host, with no per-command prompt?")
 
     def _steer(
         _events: EventSink, _session_dir: Path, _facts: Callable[[], SessionFacts]

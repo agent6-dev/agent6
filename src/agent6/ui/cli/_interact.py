@@ -16,16 +16,17 @@ from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
 from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
     away_mode,
     clear_answer,
     clear_question_answers,
     frontend_is_live,
     read_answer,
     read_question_answers,
+    record_answer,
     session_allow_set,
     set_away_mode,
     set_session_allow,
-    set_session_deny,
     steer_answer_is_abort,
 )
 from agent6.tools.schema import UserQuestion
@@ -59,21 +60,24 @@ def _has_controlling_tty() -> bool:
     return True
 
 
-def default_stdin_approver(prompt: str) -> str:
+def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
     """Plain-terminal fallback for tool approval (no live TUI, or its answer
-    timed out). Returns "yes", "no", "session" (allow all for the rest of this
-    run) or "session-deny" (withhold the tools for the rest of it).
+    timed out). Returns "yes", "no", "session" (allow all of this prompt's scope
+    for the rest of the run) or "session-deny" (withhold that scope for it).
 
     A plain y/n answers ONE call, either way; only the two session choices
-    persist, and they mirror each other. Routed via /dev/tty so the prompt stays
-    visible when a TUI has redirected the std streams to its console log."""
-    ans = tty_prompt(f"{prompt} [y/N/a/d]  (a = allow all, d = deny all, this session): ")
+    persist, and they mirror each other. `standing=False` is a gate that has no
+    session answer to give (`fetch`), so it does not offer one. Routed via
+    /dev/tty so the prompt stays visible when a TUI has redirected the std
+    streams to its console log."""
+    suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
+    ans = tty_prompt(f"{prompt} {suffix}")
     if ans is None:
         return "no"
     ans = ans.strip().lower()
-    if ans in {"a", "all", "always", "session"}:
+    if standing and ans in {"a", "all", "always", "session"}:
         return "session"
-    if ans in {"d", "deny", "never"}:
+    if standing and ans in {"d", "deny", "never"}:
         return "session-deny"
     return "yes" if ans in {"y", "yes"} else "no"
 
@@ -99,7 +103,7 @@ def prompt_detach_away_mode(session_dir: Path) -> None:
     )
     choice = (ans or "").strip().lower()
     if choice in {"a", "approve"}:
-        set_session_allow(session_dir)  # reuse the session-allow marker
+        set_session_allow(session_dir, COMMAND_SCOPE)
         print("  -> approving every run_command.", file=sys.stderr)
     elif choice in {"d", "deny"}:
         set_away_mode(session_dir, "deny")
@@ -109,7 +113,7 @@ def prompt_detach_away_mode(session_dir: Path) -> None:
         print("  -> waiting; reattach (agent6 attach / the TUI) to approve.", file=sys.stderr)
 
 
-def _wait_for_reply(session_dir: Path, read_once: Callable[[], object | None]) -> object | None:
+def _wait_for_reply[T](session_dir: Path, read_once: Callable[[], T | None]) -> T | None:
     """Detach 'wait' mode: block until a reattached front-end supplies an answer
     (``read_once`` returns non-None) or stops the run. ``read_once`` polls a live
     front-end for up to its own (short) timeout; between calls, when no front-end is
@@ -139,15 +143,14 @@ def build_approver(
     This is what wires the watch/auto-spawn TUI to run_command approval."""
     counter = {"n": 0}
 
-    def approve(prompt: str, *, standing: bool = True) -> bool:
+    def approve(prompt: str, *, scope: str | None = None) -> bool:
         counter["n"] += 1
         prompt_id = f"approval-{counter['n']}"
-        # Already granted for the session (this run + its resumes) -> auto-pass.
-        # `standing=False` opts out: the operator granted "allow every command",
-        # and both the prompt they answered and the modal they clicked say
-        # exactly that. Reading it as consent for the network too turned one
-        # keystroke into unlimited egress for the rest of the run.
-        if standing and session_allow_set(session_dir):
+        # Already granted for THIS scope (this run + its resumes) -> auto-pass.
+        # Only the scope the operator answered about: "allow every command" is
+        # what that prompt and that modal said, and reading it as consent for
+        # the network too turned one keystroke into unlimited egress.
+        if scope and session_allow_set(session_dir, scope):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
         # Clear any premature answer for this id, then emit the prompt so ANY live
@@ -155,18 +158,19 @@ def build_approver(
         # answer it. clear_answer stops a pre-written answer (a premature approve
         # POST, ids being predictable) from silently auto-passing.
         clear_answer(session_dir, prompt_id)
-        events.emit("approval.prompt", id=prompt_id, prompt=prompt)
+        # `standing` tells every front-end whether to OFFER an "allow all": a
+        # button that silently answers only this call would lie about itself.
+        events.emit("approval.prompt", id=prompt_id, prompt=prompt, standing=bool(scope))
         # A live front-end ALWAYS gets asked, in its own UI, regardless of the
         # detach away-mode: away-mode governs only the window when nothing is
         # attached. (A foreground run writes no front-end claim, so it falls through
         # to the stdin prompt below.)
         if frontend_is_live(session_dir):
-            answer = read_answer(
-                session_dir, prompt_id
-            )  # the front-end wrote "allow session" itself
+            answer = read_answer(session_dir, prompt_id)
             if answer is not None:
-                events.emit("approval.answer", id=prompt_id, approved=answer, source="frontend")
-                return answer
+                approved = record_answer(session_dir, answer, scope)
+                events.emit("approval.answer", id=prompt_id, approved=approved, source="frontend")
+                return approved
         # Nothing attached (or the front-end died mid-prompt): the detached run's
         # chosen away-mode governs. deny/wait are only reached headless.
         away = away_mode(session_dir)
@@ -183,20 +187,17 @@ def build_approver(
                 session_dir,
                 lambda: read_answer(session_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0),
             )
-            approved = bool(reply)
+            approved = reply is not None and record_answer(session_dir, reply, scope)
             events.emit("approval.answer", id=prompt_id, approved=approved, source="await-frontend")
             return approved
         # Foreground (a controlling tty, no away-mode): prompt on it directly.
         with _pause(console_view):
-            answer_s = default_stdin_approver(prompt)
-        if answer_s == "session":
-            set_session_allow(session_dir)
-        elif answer_s == "session-deny":
-            # Withdraws the tools from the next turn (see effective_run_commands),
-            # rather than refusing every later call: the model stops spending
-            # turns on a door that will not open.
-            set_session_deny(session_dir)
-        approved = answer_s in {"yes", "session"}
+            answer_s = default_stdin_approver(prompt, standing=bool(scope))
+        # A session choice persists (across this run's resumes); session-deny
+        # WITHDRAWS the scope's tools from the next turn rather than refusing
+        # every later call, so the model stops spending turns on a door that
+        # will not open.
+        approved = record_answer(session_dir, answer_s, scope)
         events.emit("approval.answer", id=prompt_id, approved=approved, source="stdin")
         return approved
 
