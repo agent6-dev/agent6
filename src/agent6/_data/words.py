@@ -5,13 +5,14 @@
 Hand-curated, deliberately bland. Avoids:
   - anything pejorative, political, or culturally loaded;
   - homophones and easily-misspelt words (lose vs loose, etc.);
-  - words shorter than 4 characters (too easy to collide as prefixes).
+  - words that prefix another list word (ambiguous to complete).
 
-Combined space: len(ADJECTIVES) * len(NOUNS) pairs (~25k at 160 x 160),
-multiplied by a 6-char random base32 suffix per run, so collisions are
-not a concern even on a busy laptop.
+Combined space: len(ADJECTIVES) * len(NOUNS) pairs, multiplied by a 6-char
+random base32 suffix per run, so collisions are not a concern even on a
+busy laptop.
 
-If you add words, keep the lists sorted and ASCII-only.
+If you add words, keep the lists sorted, lowercase ASCII, and prefix-free;
+tests/unit/test_words.py holds you to it.
 """
 
 from __future__ import annotations
