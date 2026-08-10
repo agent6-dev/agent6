@@ -136,49 +136,75 @@ class _ProviderBase(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    deployment: Deployment = "direct"
+    deployment: Deployment = Field(
+        default="direct",
+        description=(
+            '`"direct"`, `"vertex"`, or `"azure"` (`openai` only). Selects URL shape + '
+            "model/version placement."
+        ),
+    )
     # Resolved by _fill_defaults from (api_format, deployment) when omitted;
     # never empty post-validation. The host also feeds the egress allow-list.
-    base_url: str = ""
+    base_url: str = Field(
+        default="",
+        description=(
+            "Endpoint host + path prefix; required for vertex/azure. Its host is the only network "
+            "destination the agent dials for this provider."
+        ),
+    )
     # Auth header style; defaults from (api_format, deployment) in _fill_defaults.
-    auth_style: AuthStyle = "bearer"
+    auth_style: AuthStyle = Field(
+        default="bearer",
+        description=(
+            '`"x_api_key"`, `"bearer"`, `"api_key_header"` (Azure), or `"none"` (local). '
+            "Rarely set by hand."
+        ),
+    )
     # Static key: env var name (falls back to secrets.toml by provider name).
     # Secrets live here, never in base_url/extra_headers/extra_query.
-    api_key_env: str | None = Field(default=None, min_length=1)
+    api_key_env: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Env var holding the key (wins over `secrets.toml`). Omit for `agent6 connect` keys or "
+            "unauthenticated local endpoints."
+        ),
+    )
     token_command: list[str] | None = Field(
         default=None,
         description=(
-            "Command (argv) whose stdout is a bearer token, run instead of a"
-            " static key for endpoints behind a short-lived, refreshable token"
-            " (cloud OAuth access tokens, OIDC/STS gateways). Cached on a TTL"
-            " and re-minted on a 401/403; takes precedence over api_key_env."
+            "argv that prints a short-lived bearer to stdout; re-run on TTL and once on "
+            "`401`/`403`. Wins over `api_key_env`. See below."
         ),
     )
     token_command_ttl_s: float = Field(
         gt=0.0,
         default=300.0,
-        description="Seconds to cache token_command output before re-running it.",
+        description="Seconds to cache `token_command` output.",
     )
     extra_headers: dict[str, str] = Field(
         default_factory=dict,
-        description="Extra HTTP headers attached to every request (e.g. OpenRouter's).",
+        description="Extra HTTP headers on every request. Not for secrets.",
     )
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Extra JSON merged into every request body (load-bearing"
-            " messages/model/stream keys are filtered). E.g. OpenRouter routing:"
-            ' extra_body = { provider = { sort = "throughput" } }.'
+            "Provider-specific JSON merged into every request body (load-bearing keys filtered). "
+            "See OpenRouter below."
         ),
     )
     extra_query: dict[str, str] = Field(
         default_factory=dict,
-        description="Extra URL query params (e.g. Azure's api-version). No secrets here.",
+        description="Extra URL query params (e.g. Azure's `api-version`).",
     )
     # per-HTTP-call timeout (connect + read) in seconds. Default 600s streams a
     # long response yet fails a stuck connection before it burns the budget
     # window; lower it on benches that should fail fast.
-    http_timeout_s: float = Field(gt=0.0, default=600.0)
+    http_timeout_s: float = Field(
+        gt=0.0,
+        default=600.0,
+        description="Per-HTTP-call timeout (connect + read).",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -223,8 +249,19 @@ class AnthropicProviderEntry(_ProviderBase):
     a Google-OAuth bearer via ``token_command``).
     """
 
-    api_format: Literal["anthropic"]
-    prompt_caching: bool = True
+    api_format: Literal["anthropic"] = Field(
+        description=(
+            '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
+            "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
+        ),
+    )
+    prompt_caching: bool = Field(
+        default=True,
+        description=(
+            "(`anthropic`) Prompt caching: system prompt, tools, and the growing conversation "
+            "re-read at 0.1x input price."
+        ),
+    )
 
 
 class OpenAIProviderEntry(_ProviderBase):
@@ -237,7 +274,12 @@ class OpenAIProviderEntry(_ProviderBase):
     header).
     """
 
-    api_format: Literal["openai"]
+    api_format: Literal["openai"] = Field(
+        description=(
+            '`"anthropic"` (Messages) or `"openai"` (Chat Completions: OpenAI, OpenRouter, '
+            "Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …)."
+        ),
+    )
 
 
 ProviderEntry = Annotated[
@@ -268,15 +310,32 @@ class RoleModel(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    provider: str = Field(min_length=1)
-    model: str = Field(min_length=1)
-    temperature: float | None = Field(default=0.0, ge=0.0, le=2.0)
+    provider: str = Field(
+        min_length=1,
+        description="A `[providers.*]` name.",
+    )
+    model: str = Field(
+        min_length=1,
+        description="Model id at that provider.",
+    )
+    temperature: float | None = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable.",
+    )
     # Reasoning/thinking effort for this role. ``None`` leaves the
     # provider default; ``off`` disables it explicitly. Mapped per
     # provider: OpenAI-compatible reasoning models receive a
     # ``reasoning.effort`` knob, Anthropic models receive an
     # ``extended_thinking`` budget. Non-reasoning models ignore it.
-    thinking: ThinkingLevel | None = None
+    thinking: ThinkingLevel | None = Field(
+        default=None,
+        description=(
+            "Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget "
+            "(≈ 4k/8k/16k tokens); non-reasoning models ignore it."
+        ),
+    )
 
 
 class ModelsConfig(BaseModel):
@@ -343,7 +402,15 @@ class SandboxConfig(BaseModel):
     # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` resolves to none only when the
     # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
     # with neither userns nor Landlock) -- see detect.resolve_isolation.
-    isolation: Literal["auto", "strict", "hardened", "none"] = "auto"
+    isolation: Literal["auto", "strict", "hardened", "none"] = Field(
+        default="auto",
+        description=(
+            "`auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only "
+            "when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse "
+            "where unsupported, never downgrade. Explicit `none` runs UNSANDBOXED (also "
+            "`--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`)."
+        ),
+    )
     # Which network JAILED commands (`run_command`, `verify`, `metric`, and
     # machine `tool` states) join. A jailed child can never out-reach the
     # process that launches it, so:
@@ -364,8 +431,29 @@ class SandboxConfig(BaseModel):
     # There is no per-command `none`: the run's commands share one launcher,
     # and isolating them from each other costs the dev server for no security
     # -- the model can chain them into a single script anyway.
-    network: Literal["auto", "session", "only_explicit_states", "host"] = "auto"
-    run_commands: Literal["yes", "no", "ask"] = "ask"
+    network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
+        default="auto",
+        description=(
+            "Which network jailed commands join. `auto`: the run's PRIVATE network (they reach "
+            "each other, nothing off the box, and nothing outside the run reaches in — including "
+            "you), enforced on `strict`, degraded to the host's with a warning on "
+            "`hardened`/`none`; `session`: the same, refusing where unenforceable; "
+            "`only_explicit_states`: strict-only, machine `tool` states opt in; `host`: the "
+            "machine's network. No per-command `none` — a run's commands share one launcher, and "
+            "isolating them from each other costs a dev server for no security."
+        ),
+    )
+    run_commands: Literal["yes", "no", "ask"] = Field(
+        default="ask",
+        description=(
+            "May the LLM run commands (`run_command`, `run_verify_command`, `stop_background` — "
+            "one decision for all of them): `yes` (auto-approve) / `no` (tools withheld, and the "
+            "verify gate with them) / `ask` (prompt per call; the session-wide allow/deny answers "
+            "persist). `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` "
+            "(never over a configured `no`), `--no-commands` (always allowed). A run that cannot "
+            "ask anyone refuses to start rather than wait forever."
+        ),
+    )
     # Hosts the `fetch` tool may read WITHOUT asking. Empty (the default) means
     # none: every fetch is a prompt. `"*"` allows any host, written down so the
     # opt-out reads as a choice in `config show` rather than as an absent
@@ -377,7 +465,19 @@ class SandboxConfig(BaseModel):
     # still an egress channel a model drives -- a GET can encode data in its
     # path -- so a host not listed here is asked about, and an absent operator
     # is a no.
-    fetch_hosts: tuple[str, ...] = ()
+    fetch_hosts: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent "
+            'operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as '
+            "a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL "
+            "prefixes. Everything else about fetch is fixed (SECURITY §4): https only, no "
+            "credentials, text ≤ 1 MiB, no compression, redirects returned not followed, gate "
+            "before DNS, connection pinned to the vetted address. Hidden when `network = "
+            '"host"`; withheld from machine/agent states. A GET can still encode data in its '
+            "path — why the default is empty."
+        ),
+    )
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
@@ -388,7 +488,16 @@ class SandboxConfig(BaseModel):
     # to carve with, and carving .git read-only would also deny new top-level
     # entries and break toolchains), so .git is writable there: recoverable,
     # gated by run_commands, and run state lives out of the workspace.
-    protect_git: bool = True
+    protect_git: bool = Field(
+        default=True,
+        description=(
+            "Keep `.git/` unwritable by jailed commands (else one can plant a git filter that "
+            "agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount "
+            "namespace, and Landlock cannot substitute (SECURITY §5). On `hardened` the default "
+            "degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse "
+            "`.git` writes everywhere regardless."
+        ),
+    )
     # Per-process memory cap in MiB for every JAILED child (`run_command`,
     # verify, metric, machine `tool` states, offline script tests), applied as
     # RLIMIT_DATA by the launcher and inherited by the child's descendants.
@@ -400,7 +509,15 @@ class SandboxConfig(BaseModel):
     # handles that. DEFAULT 0 (off) because a cap costs real builds (a large
     # link, a test matrix) more than it buys; set one when a specific task
     # needs bounding. No effect under `isolation = "none"`.
-    memory_limit_mb: int = Field(default=0, ge=0)
+    memory_limit_mb: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "`RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel "
+            "already handles a memory bomb, and a cap costs real builds more than it buys. Set one "
+            "to bound a specific task; a runaway then fails as an ordinary command error."
+        ),
+    )
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
     # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
     # For projects whose toolchain or interpreter lives outside the repo — a
@@ -409,7 +526,15 @@ class SandboxConfig(BaseModel):
     # (not write) under `hardened`/`strict`. This LOOSENS confinement (the child
     # can read more of the host), so list only what the build/test actually
     # needs. Empty by default. No effect under `isolation = "none"`.
-    extra_read_paths: tuple[str, ...] = ()
+    extra_read_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Extra absolute paths **the run** may **read + execute**, at their real locations — a "
+            "toolchain/interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). "
+            "Mounted for jailed commands, and readable by the in-process tools (name one with an "
+            "absolute path). Loosens confinement; list only what the build needs."
+        ),
+    )
 
     @field_validator("extra_read_paths")
     @classmethod
@@ -430,7 +555,14 @@ class SandboxConfig(BaseModel):
     # is readable). This loosens confinement further than extra_read_paths,
     # so list only what the task actually writes. Empty by default; no effect
     # under `none`.
-    extra_write_paths: tuple[str, ...] = ()
+    extra_write_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Extra absolute paths **the run** may **read + write**, at their real locations — a "
+            "build cache, an output dir, a sibling checkout the task edits. Write implies read. "
+            "List only what the task writes."
+        ),
+    )
 
     @field_validator("extra_write_paths")
     @classmethod
@@ -448,7 +580,20 @@ class SandboxConfig(BaseModel):
     # enter the jail, even through an explicit extra_read_paths grant of $HOME --
     # and this list adds to that set. Needs the mount namespace: on `hardened`
     # a hide inside a granted region refuses to run (see docs/security.md).
-    hide_paths: tuple[str, ...] = ()
+    hide_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Paths **the run** may never read or write, even under a broader grant; agent6's "
+            "config dir and state base are always hidden, so an `extra_read_paths` grant of "
+            "`$HOME` never exposes `secrets.toml` or your run history (the data dir and cache are "
+            "not hidden: installed skills stay usable). Enforced twice: the in-process tools "
+            "refuse them at **every** isolation level (`none` included), and jailed commands see "
+            "them masked (a dir appears empty, a file reads empty). Masking needs the mount "
+            "namespace: on `hardened` an entry it cannot mask refuses the run, and a grant that "
+            "exposes the always-hidden dirs warns loudly instead (the grant may be deliberate; "
+            "writes and the rest of the host stay confined)."
+        ),
+    )
 
     @field_validator("hide_paths")
     @classmethod
@@ -485,7 +630,13 @@ class GitCommitCheckpointConfig(BaseModel):
     # agent6: the `agent6 iter N:` subject. conventional: a `type(scope): subject`
     # derived from the diff without a model call. model: the model writes the
     # message from git facts, degrading to agent6 with a warning on any failure.
-    message: Literal["agent6", "conventional", "model"] = "agent6"
+    message: Literal["agent6", "conventional", "model"] = Field(
+        default="agent6",
+        description=(
+            "Per-step message style: `agent6` (`agent6 iter N:`), `conventional` (derived from the "
+            "diff, no model call), or `model` (model-written, degrading to `agent6` on failure)."
+        ),
+    )
 
 
 class GitCommitSquashConfig(BaseModel):
@@ -495,7 +646,13 @@ class GitCommitSquashConfig(BaseModel):
 
     # As checkpoint's styles, plus combine: git's own squash message (the
     # concatenated per-step log).
-    message: Literal["agent6", "conventional", "combine", "model"] = "agent6"
+    message: Literal["agent6", "conventional", "combine", "model"] = Field(
+        default="agent6",
+        description=(
+            "Squash-commit style: checkpoint's styles plus `combine` (git's concatenated per-step "
+            "log)."
+        ),
+    )
 
 
 class GitCommitConfig(BaseModel):
@@ -509,12 +666,31 @@ class GitCommitConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    name: str | None = None
-    email: str | None = None
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Override the commit identity (else the project's `git config`). `agent6 run` refuses "
+            "to start with no resolvable identity."
+        ),
+    )
+    email: str | None = Field(
+        default=None,
+        description=(
+            "Override the commit identity (else the project's `git config`). `agent6 run` refuses "
+            "to start with no resolvable identity."
+        ),
+    )
     # Appended to every commit agent6 makes when non-empty, e.g.
     # "Assisted-by: agent6:{model}". {model} = the model(s) that wrote the
     # code, first worker first, ", "-joined when several contributed.
-    trailer: str = ""
+    trailer: str = Field(
+        default="",
+        description=(
+            'Appended to every commit agent6 makes, e.g. `"Assisted-by: agent6:{model}"` or '
+            '`"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`. `{model}` = the model(s) '
+            'that wrote the code, `", "`-joined when several contributed.'
+        ),
+    )
     checkpoint: GitCommitCheckpointConfig = GitCommitCheckpointConfig()
     squash: GitCommitSquashConfig = GitCommitSquashConfig()
 
@@ -541,38 +717,82 @@ class GitCommitConfig(BaseModel):
 class GitConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    require_clean_worktree: bool = True
-    auto_stash: bool = False
+    require_clean_worktree: bool = Field(
+        default=True,
+        description="Refuse to start on a dirty worktree.",
+    )
+    auto_stash: bool = Field(
+        default=False,
+        description=(
+            "Stash uncommitted changes before the run; restored per `auto_stash_pop`, else the "
+            "`git stash apply <sha>` line is printed (by sha, never silently left)."
+        ),
+    )
     # When auto_stash stashed pre-run changes, restore them at run end. Default
     # off (safe): the run-end reporter always prints how to pop the stash; with
     # this on, agent6 also pops it for you when it can do so cleanly (switching
     # back to the base branch first under branch_per_run), and otherwise leaves
     # the stash with a message rather than risk a conflicted auto-apply.
-    auto_stash_pop: bool = False
+    auto_stash_pop: bool = Field(
+        default=False,
+        description=(
+            "Pop the stash back at run end when safe (clean tree, conflict-free apply). On any "
+            "doubt, leave it and print how to restore. Never `reset --hard`."
+        ),
+    )
     # Per-step commits land on the run's own detached chain
     # (refs/agent6/<session>/head), parented on HEAD at run start; HEAD, the
     # operator's index, and the checkout are never touched. branch_per_run
     # additionally advances a visible agent6/<slug> branch ref to the chain
     # tip (off = the hidden ref only). Forced on for --parallel lanes (work
     # is imported by branch).
-    branch_per_run: bool = True
+    branch_per_run: bool = Field(
+        default=True,
+        description=(
+            "Also advance a visible `agent6/<id>` branch to the run's chain tip (else the hidden "
+            "`refs/agent6/<id>/head` ref only). Forced on for `--parallel` lanes (work is imported "
+            "by branch)."
+        ),
+    )
     # Off = no per-step commits at all: sessions diff/commits/merge, fork
     # rollback, and the compare judge honestly degrade to "no step history";
     # resume still works from snapshots.
-    commit_per_step: bool = True
+    commit_per_step: bool = Field(
+        default=True,
+        description=(
+            "Per-step commits onto the run's detached chain (a temp index; HEAD, your index, and "
+            "your checkout are never touched). Off: agent6 never commits -- work stays only in the "
+            "worktree, and resume-from-git, `sessions diff`/`merge`, and `/parallel` dispatch from "
+            "a changed tree degrade."
+        ),
+    )
     # Default strategy for `agent6 sessions merge`: how the run branch lands on
     # your branch. `squash` (one combined commit), `merge` (a
     # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).
     # The per-step commits always happen on the run branch during the run; this
     # only governs how they are consolidated when you merge.
-    merge_strategy: Literal["squash", "merge", "ff"] = "squash"
+    merge_strategy: Literal["squash", "merge", "ff"] = Field(
+        default="squash",
+        description=(
+            "`agent6 sessions merge` default: `squash` (one commit), `merge` (--no-ff, keeps "
+            "per-step history), `ff`. Governs consolidation only; per-step commits always land on "
+            "the run's chain."
+        ),
+    )
     # After a successful run, automatically run `merge_strategy` to land the
     # run's work on its base (what `agent6 sessions merge` does, run for you).
     # Default off: the run's refs are kept until you choose to merge. Works
     # with branch_per_run off too (the hidden chain ref is merged). With
     # auto_stash_pop the merge lands first, then your stashed pre-run changes
     # go back on top.
-    auto_merge: bool = False
+    auto_merge: bool = Field(
+        default=False,
+        description=(
+            "After a run with nothing red, land the run's work on its base automatically (never "
+            "over a red/stale verify). With `branch_per_run` off it merges the hidden chain ref. "
+            "On conflict nothing moves and instructions are printed."
+        ),
+    )
     # After auto_merge, delete the run branch when it is safely deletable
     # (`git branch -d`: reachable-merged, so merge/ff strategies). A squash-merged
     # branch is unreachable and is reported with the `git branch -D` to remove it by
@@ -581,7 +801,14 @@ class GitConfig(BaseModel):
     # record until `sessions rm`). With both on, run branches stop
     # accumulating, so agent6 looks like a direct-to-branch agent while keeping
     # the per-step commits during the run. Default off.
-    auto_prune: bool = False
+    auto_prune: bool = Field(
+        default=False,
+        description=(
+            "After `auto_merge`, delete the run branch when `git branch -d` can (merge/ff). A "
+            "squash-merged branch is reported with the `-D` line, never force-deleted. Requires "
+            "`auto_merge`; no-op without a run branch."
+        ),
+    )
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
     # OWN git operations (notably the per-step auto-commit). Default false:
     # secure-by-default (a hook is repo-controlled code that would execute on
@@ -591,7 +818,14 @@ class GitConfig(BaseModel):
     # git hooks. Set true to honor the repo's hooks (trust the repo). Either
     # way `core.fsmonitor`/`diff.external` stay neutralized (those fire on
     # status/diff and have no legitimate use here).
-    run_repo_hooks: bool = False
+    run_repo_hooks: bool = Field(
+        default=False,
+        description=(
+            "Run the repo's own `.git/hooks/*` during agent6's git ops. Off: a repo hook is "
+            "repo-controlled host code, an RCE vector on an untrusted repo. "
+            "`core.fsmonitor`/`diff.external` are always neutralized."
+        ),
+    )
     # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
     # and `merge.<n>.driver` -- run during agent6's OWN git operations. Default
     # false: like a hook, a driver defined in `.git/config` is repo-controlled
@@ -600,7 +834,17 @@ class GitConfig(BaseModel):
     # agent6 neutralizes each repo-defined driver by name. Set true to honor
     # them -- the setting a Git-LFS repo needs, since LFS's clean/smudge filters
     # are exactly these drivers.
-    run_repo_filters: bool = False
+    run_repo_filters: bool = Field(
+        default=False,
+        description=(
+            "Honor the repo's own content drivers — `filter.<n>.clean/smudge/process` and "
+            "`merge.<n>.driver` — during agent6's git ops. Off: a driver defined in `.git/config` "
+            "is repo-controlled host code that runs on the auto-commit's `git add` (or a chain "
+            "merge), the same RCE class as a hook. agent6 neutralizes each by name. Turn on to "
+            "support **Git-LFS** (its clean/smudge filters are exactly these) or another content "
+            "driver."
+        ),
+    )
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
 
     @model_validator(mode="after")
@@ -633,9 +877,17 @@ class MetricConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    command: tuple[str, ...] = Field(min_length=1)
-    pattern: str = Field(min_length=1)
-    goal: Literal["minimize", "maximize"]
+    command: tuple[str, ...] = Field(
+        min_length=1,
+        description="argv to run.",
+    )
+    pattern: str = Field(
+        min_length=1,
+        description="Regex; first capture group = the number.",
+    )
+    goal: Literal["minimize", "maximize"] = Field(
+        description='`"minimize"` or `"maximize"`.',
+    )
 
 
 class WorkflowConfig(BaseModel):
@@ -646,7 +898,16 @@ class WorkflowConfig(BaseModel):
     # to empty. Optional: `agent6 run`/`plan` infer one per run when it is unset
     # (AGENTS.md -> repo signals -> a cheap LLM call; see agent6.verify_infer),
     # falling back to a gateless run. `agent6 init` can pin one.
-    verify_command: tuple[str, ...] = ()
+    verify_command: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
+            '&& b"]`). Optional: unset infers per run (AGENTS.md `## Verify command` → repo '
+            "manifests → a cheap model call), injected in-memory and printed. None "
+            "inferable = the run starts gateless; a recognizable project created mid-run "
+            "adopts the first resolvable inferred gate. Set it to pin one."
+        ),
+    )
     # per-call timeout for verify_command (and metric_command) in
     # seconds. Defaults to the jail's general 600s but should be cranked
     # MUCH lower for benches where the verify is a fast correctness test
@@ -654,7 +915,15 @@ class WorkflowConfig(BaseModel):
     # infinite-loop / quadratic edits 20x faster than the 600s default).
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
-    verify_timeout_s: float = Field(gt=0.0, default=600.0)
+    verify_timeout_s: float = Field(
+        gt=0.0,
+        default=600.0,
+        description=(
+            "Per-call timeout for `verify_command` / `metric.command`. The operator's gate needs a "
+            "verdict, so it is bounded; a model-chosen `run_command` is not (see "
+            "`command_checkin_s`)."
+        ),
+    )
     # How long a run_command may run before the model is handed it back as a
     # background job. NOT a timeout: nothing is killed, the command keeps
     # running and the model decides whether to wait, poll or stop it -- a
@@ -663,20 +932,44 @@ class WorkflowConfig(BaseModel):
     # 900 because the hand-back is non-destructive, so it can afford to be
     # patient: the cost of being early is a poll cycle of tokens, and the cost
     # of being late is nothing at all.
-    command_checkin_s: float = Field(ge=0.0, default=900.0)
+    command_checkin_s: float = Field(
+        ge=0.0,
+        default=900.0,
+        description=(
+            "How long a model's `run_command` may run before it is **handed back** as a background "
+            "job. Not a timeout: nothing is killed, the command keeps running, and the model is "
+            "told (`returncode: null`, `still_running: true`, a `background_id`) so it can poll "
+            "with `read_background`, stop it, or carry on — a judgement a number cannot make. `0` "
+            "disables the hand-back and waits while the command lives, which is right when a human "
+            "is watching and can interrupt."
+        ),
+    )
     # When true, finish_session is refused while the last verify is red (or a verify
     # command is configured but was never run): the worker must get verify green
     # or explicitly stop. Default false keeps finish_session always honorable, but
     # even then a finish over a red verify is reported honestly (session.end
     # all_passed=False -> "finished", never "passed"); this flag turns the honest
     # signal into a hard gate for operators who want it.
-    require_verify_to_finish: bool = False
+    require_verify_to_finish: bool = Field(
+        default=False,
+        description=(
+            "Refuse `finish_session` while the last verify is red or never ran (bounded nudges). "
+            'Regardless, a finish over red is always reported "finished", never "passed".'
+        ),
+    )
     # Opt-in: bounce the FIRST finish_session over a green verify once, with a
     # directive to re-check every spec requirement (the committed suite may
     # cover a subset). Targets the finish-on-green-but-incomplete failure
     # mode measured on bench/coreagent's eventflow task; costs about one
     # extra turn per run when on. See docs/config.md for the measurements.
-    spec_recheck_on_finish: bool = False
+    spec_recheck_on_finish: bool = Field(
+        default=False,
+        description=(
+            "Bounce the first finish over a green verify once for a spec re-check. Measured "
+            "(n=6/arm, 3 models): no gain beyond noise, one score drop, +38-88% cost. Kept off; "
+            "candidate for removal."
+        ),
+    )
     # Optional. None means "no metric; ``run_metric_command`` is unavailable".
     metric: MetricConfig | None = None
 
@@ -704,16 +997,41 @@ class ContextConfig(BaseModel):
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
     # to stay adaptive. When the window is unknown the historical 256k/768k
     # fixed defaults apply.
-    drop_at_chars: int | None = Field(default=None, gt=0)
-    summarise_at_chars: int | None = Field(default=None, gt=0)
-    summary_max_tokens: int = Field(gt=0, default=2048)
+    drop_at_chars: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Tier 1: oldest tool results become placeholders. Unset sizes from the worker's "
+            "context window (~45%); set BOTH thresholds to pin."
+        ),
+    )
+    summarise_at_chars: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Tier 2: summarise elided history and restart (the task DAG survives). Unset ≈ 80% of "
+            "the window. Must exceed `drop_at_chars`."
+        ),
+    )
+    summary_max_tokens: int = Field(
+        gt=0,
+        default=2048,
+        description="Cap on the tier-2 summary (and gist distillation calls).",
+    )
     # Tier-1 gist elision: a large read_file result about to be elided decays
     # to a placeholder carrying a model-written gist of the file first (one
     # batched reviewer-model call per drop event), then to the bare marker
     # under continued pressure. Measured on the longhorizon bench: bare
     # elision of reference docs halves a retention task's score under a small
     # window. False = straight to bare markers (no distiller calls).
-    elision_gists: bool = True
+    elision_gists: bool = Field(
+        default=True,
+        description=(
+            "Tier 1 decays a large `read_file` to a model-written gist before the bare marker "
+            "(demoted under continued pressure so the byte bound holds). `false` = straight to "
+            "bare markers."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:
@@ -749,18 +1067,35 @@ class PromptConfig(BaseModel):
     # the tool contracts intact (apply_edit/apply_patch, run_verify_command,
     # finish_session); run startup warns if the override omits them. Inspect the
     # assembled result with `agent6 prompt show`.
-    system_prompt_file: str = ""
+    system_prompt_file: str = Field(
+        default="",
+        description=(
+            "ADVANCED: replace run-mode's static base prompt with this file (dynamic blocks still "
+            "append). Warned at startup if core tool names are missing."
+        ),
+    )
     # Include the structural-prior blocks in the run-mode <repo-priors>: hot
     # symbols (cross-file reference ranking), git co-change pairs, and the
     # tree-sitter symbol outline. Default on. Set false for a leaner/cheaper
     # prompt that relies purely on on-demand exploration (outline/find_definition)
     # -- the base repo map + AGENTS.md still ship.
-    structural_priors: bool = True
+    structural_priors: bool = Field(
+        default=True,
+        description=(
+            "Include the `<repo-priors>` block (hot symbols, co-change, outline). `false` for a "
+            "leaner prompt."
+        ),
+    )
     # one-shot task prompt revision before the worker loop starts.
     # Reuses the reviewer model, takes no tools, and is budget-tracked like
     # any other provider call. Default off: crisp prompts and frontier models
     # do not need revision.
-    revise_prompt: Literal["off", "auto", "interactive"] = "off"
+    revise_prompt: Literal["off", "auto", "interactive"] = Field(
+        default="off",
+        description=(
+            "One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`."
+        ),
+    )
     # Front-load task decomposition (run mode). When on the worker's system
     # prompt swaps the "DAG is optional" guidance for a "decompose first"
     # directive: lay the task out as ordered subtasks before editing, then work
@@ -773,7 +1108,15 @@ class PromptConfig(BaseModel):
     # start via ``with_decompose``, and the engine treats any value other than
     # "on" as off. No effect on plan/ask/machine/agent modes. See
     # docs/config.md for the measured per-model effect.
-    decompose: Literal["auto", "on", "off"] = "auto"
+    decompose: Literal["auto", "on", "off"] = Field(
+        default="auto",
+        description=(
+            "Front-load task decomposition (run mode): `on` helps small models that under-finish "
+            "multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead). "
+            "`auto` resolves per worker model from the capability registry; `config show` displays "
+            "the resolved value. `--decompose` forces one run."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_system_prompt_file(self) -> PromptConfig:
@@ -801,17 +1144,30 @@ class SkillsConfig(BaseModel):
 
     # Master switch for the whole subsystem. Off = no index block, no
     # use_skill tool, slash commands don't register.
-    enabled: bool = True
+    enabled: bool = Field(
+        default=True,
+        description="Master switch: off = no index, no `use_skill`, no slash commands.",
+    )
     # Additional skill directories scanned BEFORE the installed dir (a local
     # checkout during skill development wins over an installed copy). Each may
     # hold skill subdirectories or be a single skill dir itself.
-    extra_dirs: tuple[str, ...] = ()
+    extra_dirs: tuple[str, ...] = Field(
+        default=(),
+        description="Additional skill dirs, scanned BEFORE the installed dir.",
+    )
     # Per-skill exceptions, one value per skill so contradictory states are
     # unrepresentable: "disabled" drops it from the index; "always" injects
     # the full SKILL.md text into the system prompt instead of indexing it.
     # Absent = "enabled". Layered configs merge this map key-wise, so a repo
     # config can flip one skill without restating the rest.
-    state: dict[str, Literal["enabled", "disabled", "always"]] = Field(default_factory=dict)
+    state: dict[str, Literal["enabled", "disabled", "always"]] = Field(
+        default_factory=dict,
+        description=(
+            'Per-skill: `"disabled"` drops it; `"always"` injects the full text into the '
+            "system prompt. Layers merge key-wise; `agent6 skills enable/disable [--repo]` "
+            "writes it."
+        ),
+    )
 
 
 class ReviewConfig(BaseModel):
@@ -829,32 +1185,74 @@ class ReviewConfig(BaseModel):
     #   periodic         - every ``period`` iterations.
     # The reviewer provider must already be configured in
     # ``[models.reviewer]`` (same one ``agent6 review`` uses).
-    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    period: int = Field(ge=1, default=10)
+    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
+        default="off",
+        description=(
+            "In-loop review panel trigger: `off` / `on_verify_fail` / `before_finish` / `periodic`."
+        ),
+    )
+    period: int = Field(
+        ge=1,
+        default=10,
+        description="Iterations between reviews for `periodic`.",
+    )
     # Adversarial review panel (opt-in). ``seats`` is THE roster: flat
     # "persona[@provider/model]" strings (e.g. "security" routes via
     # [models.reviewer]; "security@openrouter/moonshotai/kimi-k2" pins a
     # model). The `agent6 review --reviewers N`/`--personas` flags synthesize
     # an in-memory equivalent. ``decision`` is only a GATE in-loop; "advisory"
     # (default) just injects findings as guidance and never blocks.
-    decision: Literal["advisory", "veto", "quorum", "all"] = "advisory"
-    quorum: int = Field(ge=1, default=2)
+    decision: Literal["advisory", "veto", "quorum", "all"] = Field(
+        default="advisory",
+        description="`advisory` (inject findings, never block) / `veto` / `quorum` / `all`.",
+    )
+    quorum: int = Field(
+        ge=1,
+        default=2,
+        description="K for `quorum`; counts distinct MODELS, so same-model seats can't fake it.",
+    )
     # Per-run cap on total panel blocks before the gate auto-downgrades to
     # advisory for the rest of the run (so a gating panel can never stall forever).
-    max_total_rejections: int = Field(ge=1, default=4)
+    max_total_rejections: int = Field(
+        ge=1,
+        default=4,
+        description="Per-run blocks before the gate auto-disarms to advisory.",
+    )
     # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
     # the run's remaining token budget falls below this fraction -- reviewing costs
     # most exactly when budget is scarcest. Default 0.25 = skip the panel in the
     # last quarter of the budget.
-    budget_fraction: float = Field(gt=0.0, le=1.0, default=0.25)
-    seats: tuple[str, ...] = ()
+    budget_fraction: float = Field(
+        gt=0.0,
+        le=1.0,
+        default=0.25,
+        description="Skip the in-loop panel once remaining budget falls below this fraction.",
+    )
+    seats: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            'Panel roster: `"persona"` routes via `[models.reviewer]`; '
+            '`"persona@provider/model"` pins a model per seat. `agent6 review --reviewers N '
+            "[--personas …]` synthesizes an equivalent."
+        ),
+    )
     # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
     # `agent6 review` runs all seats in parallel regardless (fast one-shot).
-    concurrency: int = Field(ge=1, default=1)
+    concurrency: int = Field(
+        ge=1,
+        default=1,
+        description="In-loop seat parallelism (post-hoc `agent6 review` is always parallel).",
+    )
     # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
     # read-only tool-using mini-loop that reads the broader repo first to catch
     # cross-file impact). explore is more thorough but costs several calls/seat.
-    tier: ReviewTier = "diff"
+    tier: ReviewTier = Field(
+        default="diff",
+        description=(
+            "`diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer, "
+            "cross-file)."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_review_seats(self) -> ReviewConfig:
@@ -903,8 +1301,15 @@ class BudgetConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    max_usd: float = 10.0
-    max_tokens_fallback: int = Field(ge=-1, default=2_000_000)
+    max_usd: float = Field(
+        default=10.0,
+        description="Cap on metered spend (cache-aware, per model).",
+    )
+    max_tokens_fallback: int = Field(
+        ge=-1,
+        default=2_000_000,
+        description="Token cap for UNMETERED calls only (local models, price gaps).",
+    )
 
     @field_validator("max_usd")
     @classmethod
@@ -939,8 +1344,15 @@ class MachineNotifyConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    on_event: tuple[str, ...] = Field(default=(), description="argv to run on a notify/end event")
-    timeout_s: float = Field(gt=0.0, default=30.0)
+    on_event: tuple[str, ...] = Field(
+        default=(),
+        description="argv per notify/end (empty = disabled).",
+    )
+    timeout_s: float = Field(
+        gt=0.0,
+        default=30.0,
+        description="Hook timeout.",
+    )
 
 
 class MachineConfig(BaseModel):
@@ -953,7 +1365,14 @@ class MachineConfig(BaseModel):
     # journal, so old snapshots are an audit convenience, not state. 0 keeps
     # every snapshot (one file per transition; budget disk accordingly for
     # long-running machines).
-    snapshot_keep: int = Field(ge=0, default=5)
+    snapshot_keep: int = Field(
+        ge=0,
+        default=5,
+        description=(
+            "Blackboard snapshots kept per instance (recovery reads only the latest; `machine "
+            "replay` rebuilds from the journal). `0` keeps all."
+        ),
+    )
     notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
 
 
@@ -983,11 +1402,24 @@ class WebConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    host: str = "127.0.0.1"
-    port: int = Field(ge=1, le=65535, default=7658)
+    host: str = Field(
+        default="127.0.0.1",
+        description="Bind address; non-loopback requires `allow_non_loopback = true`.",
+    )
+    port: int = Field(
+        ge=1,
+        le=65535,
+        default=7658,
+        description="Listen port.",
+    )
     # Opt-in required to bind a non-loopback host. Off by default so a typo or a
     # copied config can never silently expose the agent to the local network.
-    allow_non_loopback: bool = False
+    allow_non_loopback: bool = Field(
+        default=False,
+        description=(
+            "Opt-in for a non-loopback bind, so a typo can never silently expose the write surface."
+        ),
+    )
 
     @model_validator(mode="after")
     def _guard_non_loopback(self) -> WebConfig:
@@ -1004,7 +1436,12 @@ class WebConfig(BaseModel):
 class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    config_version: int = Field(ge=1, le=1, default=1)
+    config_version: int = Field(
+        ge=1,
+        le=1,
+        default=1,
+        description="Config schema version (must be `1`).",
+    )
     # Absolute base directory for per-repo agent6 state (this per-repo config +
     # all run state), which lives OUT of the workspace under ``<base>/<repo-id>/``
     # (default ``$XDG_STATE_HOME/agent6``; see ``agent6.paths.state_base``). Can
@@ -1012,7 +1449,14 @@ class Agent6Section(BaseModel):
     # per-repo/flag value would be chicken-and-egg. Must be absolute. Point it
     # at a persisted, out-of-cwd path (e.g. a mounted volume) to keep run state
     # across devcontainer rebuilds.
-    state_dir: str | None = None
+    state_dir: str | None = Field(
+        default=None,
+        description=(
+            "Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the "
+            "workspace. Global-config only; `AGENT6_STATE_HOME` overrides. In a devcontainer the "
+            "default is ephemeral: point it at a persisted volume to keep runs across rebuilds."
+        ),
+    )
 
     @field_validator("state_dir")
     @classmethod
@@ -1045,8 +1489,15 @@ class NotifyConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    on_complete: tuple[str, ...] = Field(default=(), description="argv to run on completion")
-    timeout_s: float = Field(gt=0.0, default=30.0)
+    on_complete: tuple[str, ...] = Field(
+        default=(),
+        description="argv to run (empty = disabled).",
+    )
+    timeout_s: float = Field(
+        gt=0.0,
+        default=30.0,
+        description="Hook timeout.",
+    )
 
 
 class MCPSandbox(BaseModel):
@@ -1068,8 +1519,19 @@ class MCPSandbox(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     # Readable+executable, and writable, BEYOND the command sandbox. `~` expands.
-    read_paths: tuple[str, ...] = ()
-    write_paths: tuple[str, ...] = ()
+    read_paths: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute "
+            "or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are "
+            "already there, so a block names only the server's own data — nothing has to describe "
+            "its interpreter."
+        ),
+    )
+    write_paths: tuple[str, ...] = Field(
+        default=(),
+        description="Paths it may write, likewise additive.",
+    )
     # Which network this server joins -- per-server because servers differ from
     # commands and from each other: a browser server exists to reach something,
     # a memory server does not.
@@ -1081,10 +1543,26 @@ class MCPSandbox(BaseModel):
     #                     off the box (a browser server driving the app under
     #                     test is the case this exists for)
     #   host              the machine's network
-    network: Literal["auto", "none", "session", "host"] = "auto"
+    network: Literal["auto", "none", "session", "host"] = Field(
+        default="auto",
+        description=(
+            "Which network this server joins, because servers differ from commands and from each "
+            "other: `auto` = one of its own where the host can give a namespace, degrading to the "
+            "host's with a warning where it cannot; `none` = the same, refusing rather than "
+            "running connected; `session` = the RUN's network, so the dev server a background "
+            "command started answers this server too (a browser server driving the app under "
+            "test) and still nothing off the box; `host` = the machine's network."
+        ),
+    )
     # No confinement at all: the server runs as the operator, with their whole
     # filesystem and network. For a server whose job IS arbitrary host access.
-    unconfined: bool = False
+    unconfined: bool = Field(
+        default=False,
+        description=(
+            "No sandbox at all, for a server whose job IS arbitrary host access. Contradicts every "
+            "other field here, so setting both is refused rather than half-applied."
+        ),
+    )
 
     @model_validator(mode="after")
     def _escape_hatch_is_exclusive(self) -> MCPSandbox:
@@ -1149,17 +1627,37 @@ class MCPServerEntry(BaseModel):
     # lifetime and confinement); `url` connects to one the OPERATOR runs, in
     # whatever container or sandbox they chose -- which is how anyone actually
     # runs a server that wants a browser or a device.
-    command: tuple[str, ...] = ()
-    url: str = ""
+    command: tuple[str, ...] = Field(
+        default=(),
+        description="argv for a stdio server agent6 spawns. Exactly one of this or `url`.",
+    )
+    url: str = Field(
+        default="",
+        description=(
+            "An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its "
+            "environment or confinement."
+        ),
+    )
     # The env var holding the bearer token for `url`. Named, never inlined: a
     # secret in a config file is a secret in a backup.
-    token_env: str = ""
-    enabled: bool = True
+    token_env: str = Field(
+        default="",
+        description=(
+            "For a `url` server: env var holding the bearer. Named, never inlined; never logged."
+        ),
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Per-server toggle.",
+    )
     # Environment variables this server needs, BY NAME (e.g. ["GITHUB_TOKEN"]).
     # Everything else comes from the curated base agent6 gives any child it
     # spawns outside the jail. Naming each one is the point: a provider key is
     # never among them, because nobody would write it down.
-    pass_env: tuple[str, ...] = ()
+    pass_env: tuple[str, ...] = Field(
+        default=(),
+        description="Env vars the server needs, BY NAME. Everything else is the curated base.",
+    )
     # Filesystem confinement for a SPAWNED server. A `url` one is the
     # operator's own process; they confine it where they start it.
     sandbox: MCPSandbox | None = None
@@ -1167,13 +1665,30 @@ class MCPServerEntry(BaseModel):
     # A server's tools do arbitrary things agent6 cannot classify, so the
     # default is the same as a command's: ask. There is no "no" -- withholding
     # a server's tools is what `enabled = false` already says.
-    approve: Literal["ask", "yes"] = "ask"
+    approve: Literal["ask", "yes"] = Field(
+        default="ask",
+        description=(
+            "Ask before each of this server's tool calls, showing the arguments the model "
+            'chose; `yes` never asks. The session answers are per server: "allow all" covers '
+            'THIS server for the run (not the command tools, not a sibling server), "deny all" '
+            "withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. "
+            "No `no`: withholding a server's tools is what `enabled = false` says."
+        ),
+    )
     # Time budget for the initialize + tools/list handshake. If the
     # server doesn't respond in this window we log and skip it.
-    startup_timeout_s: float = Field(gt=0.0, default=10.0)
+    startup_timeout_s: float = Field(
+        gt=0.0,
+        default=10.0,
+        description="`initialize` + `tools/list` budget.",
+    )
     # Per-call timeout for ``tools/call`` requests. Surfaces as a tool
     # failure (ToolError) if exceeded.
-    call_timeout_s: float = Field(gt=0.0, default=60.0)
+    call_timeout_s: float = Field(
+        gt=0.0,
+        default=60.0,
+        description="Per `tools/call` timeout.",
+    )
 
     @model_validator(mode="after")
     def _one_transport(self) -> MCPServerEntry:
@@ -1250,7 +1765,10 @@ class MCPConfig(BaseModel):
 
     model_config = _BASE_MODEL_CONFIG
 
-    enabled: bool = False
+    enabled: bool = Field(
+        default=False,
+        description="Master switch; `false` = zero `mcp__*` tools.",
+    )
     servers: dict[str, MCPServerEntry] = Field(default_factory=dict)
 
     @field_validator("servers")
@@ -1275,12 +1793,21 @@ class ParallelConfig(BaseModel):
 
     # Hard cap on lanes per fan-out. `--parallel` over this refuses up front so a
     # typo (or a long model list) can't spawn an unbounded pile of clones+runs.
-    max_lanes: int = Field(ge=1, default=4)
+    max_lanes: int = Field(
+        ge=1,
+        default=4,
+        description="Hard cap per fan-out; more refuses up front.",
+    )
     # Base directory for lane workspaces (each fan-out gets `<workdir>/<fanout-id>/
     # lane-<i>`). "" resolves to `<cache_dir>/parallel`, a regenerable cache the
     # orchestrator cleans up after importing each lane. Point it at a fast disk
     # for large repos.
-    workdir: str = ""
+    workdir: str = Field(
+        default="",
+        description=(
+            'Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import.'
+        ),
+    )
 
 
 class Config(BaseModel):
@@ -1305,7 +1832,13 @@ class Config(BaseModel):
     # Named strategy PRESET: fills in many settings at once (BUILTIN_PRESETS +
     # user `[presets.<name>]`). "" / "standard" = plain defaults; injection
     # order and stacking rules: `config.layer._apply_preset`.
-    preset: str = ""
+    preset: str = Field(
+        default="",
+        description=(
+            "Named strategy preset (see [Presets](#presets)). Top-level because it overrides every "
+            "section. `agent6 config set preset <name>` (`--repo`); `--preset` overrides per run."
+        ),
+    )
 
     @model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:

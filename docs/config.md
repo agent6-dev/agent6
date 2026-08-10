@@ -150,7 +150,7 @@ drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
 |---|---|---|
 | `provider` | *(required)* | A `[providers.*]` name. |
 | `model` | *(required)* | Model id at that provider. |
-| `temperature` | `0.0` | Pinned per call (`0.0`–`2.0`). `0.0` keeps tool use stable. |
+| `temperature` | `0.0` | Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable. |
 | `thinking` | none | Reasoning effort: `off`/`low`/`medium`/`high`. Anthropic maps it to a thinking budget (≈ 4k/8k/16k tokens); non-reasoning models ignore it. |
 
 ## `[sandbox]`
