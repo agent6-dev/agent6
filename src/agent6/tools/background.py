@@ -23,6 +23,7 @@ from agent6.sandbox.jail import (
     BackgroundJob,
     JailSession,
     JailUnavailableError,
+    LocalJob,
     SessionJob,
     start_in_jail,
 )
@@ -87,7 +88,7 @@ class _Shell:
     id: str
     command: str
     dir: Path
-    job: BackgroundJob | SessionJob
+    job: BackgroundJob | LocalJob | SessionJob
     # Opened before the command could exist, held for the run: the one handle
     # to its output that no jailed process can redirect.
     log_fd: int
@@ -122,7 +123,7 @@ class BackgroundShells:
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
         policy = policy_for(wrapped, (log_dir,))
-        job: BackgroundJob | SessionJob
+        job: BackgroundJob | LocalJob | SessionJob
         try:
             if session is None:
                 job = start_in_jail(policy, outcome_dir=shell_dir)

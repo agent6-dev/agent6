@@ -591,10 +591,86 @@ class BackgroundStatus:
     error: str
 
 
-class BackgroundJob:
-    """A jailed command detached from the call that started it."""
+def _write_outcome(outcome_dir: Path, returncode: int) -> None:
+    """Record a command's exit code where a surface in ANOTHER process reads
+    it: this run answers only its own."""
+    with contextlib.suppress(OSError):
+        (outcome_dir / _RESULT_NAME).write_text(
+            json.dumps({"returncode": returncode}), encoding="utf-8"
+        )
 
-    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path | None) -> None:
+
+def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int]) -> bool:
+    """Kill *proc*'s group and sweep what it left behind; True when it is gone.
+
+    killpg only reaches the process's own group, so a child that called setsid()
+    is missed exactly as it is for a foreground command -- and `run_in_jail`'s
+    sweep can never catch it either, because by then it is not NEW.
+    Unregistering first, then sweeping, makes this the moment its escapees stop
+    being spared.
+    """
+    if proc.poll() is None:
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=5.0)
+    with _sweep_lock:
+        _live_launchers.discard(proc.pid)
+    _kill_escapees(descendants)
+    return proc.poll() is not None
+
+
+class LocalJob:
+    """A detached command running with no confinement (`none` isolation).
+
+    There is no launcher to write the exit code down, so this does it: the
+    Popen IS the command, and its code is persisted on the first observed exit
+    and on stop. Without that, `/shells` from another process read every such
+    command as maybe-still-running for the run's life and after it.
+    """
+
+    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path) -> None:
+        self._proc = proc
+        self._outcome_dir = outcome_dir
+        # Everything that was already ours when this command started: its own
+        # escapees are whatever appears beyond this set.
+        self._descendants = frozenset(_own_children())
+        self._final: BackgroundStatus | None = None
+
+    @property
+    def pid(self) -> int:
+        return self._proc.pid
+
+    def status(self) -> BackgroundStatus:
+        if self._final is not None:
+            return self._final
+        if self._proc.poll() is None:
+            return BackgroundStatus(running=True, returncode=None, error="")
+        return self._settle(int(self._proc.returncode))
+
+    def stop(self) -> str:
+        """Kill the command and everything it started. Idempotent.
+
+        Answers "" when the command is gone, else why it might not be: a
+        surface that prints "stopped" over a live process is stating the one
+        thing an operator acts on, wrongly.
+        """
+        if not _stop_detached(self._proc, self._descendants):
+            return f"the command {self._proc.pid} did not exit after SIGKILL"
+        self._settle(int(self._proc.returncode))
+        return ""
+
+    def _settle(self, returncode: int) -> BackgroundStatus:
+        self._final = BackgroundStatus(running=False, returncode=returncode, error="")
+        _write_outcome(self._outcome_dir, returncode)
+        return self._final
+
+
+class BackgroundJob:
+    """A jailed command detached from the call that started it: its launcher
+    wrote the exit code to *outcome_dir* when the command ended."""
+
+    def __init__(self, proc: subprocess.Popen[bytes], outcome_dir: Path) -> None:
         self._proc = proc
         self._outcome_dir = outcome_dir
         # Everything that was already ours when this command started: its own
@@ -608,8 +684,6 @@ class BackgroundJob:
     def status(self) -> BackgroundStatus:
         if self._proc.poll() is None:
             return BackgroundStatus(running=True, returncode=None, error="")
-        if self._outcome_dir is None:  # unsandboxed: the child IS the process
-            return BackgroundStatus(running=False, returncode=self._proc.returncode, error="")
         self._unregister()
         raw = ""
         with contextlib.suppress(OSError):
@@ -635,21 +709,8 @@ class BackgroundJob:
         Answers "" when the command is gone, else why it might not be: a
         surface that prints "stopped" over a live process is stating the one
         thing an operator acts on, wrongly.
-
-        killpg only reaches the launcher's group, so a child that called
-        setsid() is missed exactly as it is for a foreground command -- and
-        `run_in_jail`'s sweep can never catch it either, because by then it is
-        not NEW. Unregistering first, then sweeping, makes this the moment its
-        escapees stop being spared.
         """
-        if self._proc.poll() is None:
-            with contextlib.suppress(OSError):
-                os.killpg(self._proc.pid, signal.SIGKILL)
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                self._proc.wait(timeout=5.0)
-        self._unregister()
-        _kill_escapees(self._descendants)
-        if self._proc.poll() is None:
+        if not _stop_detached(self._proc, self._descendants):
             return f"the sandbox launcher {self._proc.pid} did not exit after SIGKILL"
         return ""
 
@@ -698,23 +759,21 @@ class SessionJob:
         return ""
 
     def _settle(self, status: BackgroundStatus) -> None:
-        """Record the command's end, and write its exit code where a surface in
-        another process reads it (this session answers only its own run)."""
+        """Record the command's end, and write its exit code down."""
         self._final = status
         if status.returncode is not None:
-            with contextlib.suppress(OSError):
-                (self._outcome_dir / _RESULT_NAME).write_text(
-                    json.dumps({"returncode": status.returncode}), encoding="utf-8"
-                )
+            _write_outcome(self._outcome_dir, status.returncode)
 
 
-def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
+def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | LocalJob:
     """Spawn `policy.argv` in the sandbox and return WITHOUT waiting for it.
 
     The caller owns the command's own output: nothing is captured here, so
     `policy.argv` must redirect it somewhere both sides can read. Only the
     launcher's result JSON and stderr land in *outcome_dir*, which is what lets
-    the exit code outlive the turn that started the command.
+    the exit code outlive the turn that started the command. The unsandboxed
+    branch has no launcher to write that JSON, so its `LocalJob` writes it
+    from the exit it observes.
 
     Security review note: same policy, same launcher, same confinement as
     `run_in_jail` -- the only difference is that this call does not wait. The
@@ -740,7 +799,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob:
             # status polled a reaped pid -- which reads as returncode 0, so
             # agent6 killed a command and then called it a clean exit.
             _live_launchers.add(proc.pid)
-        return BackgroundJob(proc, None)
+        return LocalJob(proc, outcome_dir)
     binary = _require_jail_binary()
     spec = _policy_to_json(policy)
     _become_subreaper()

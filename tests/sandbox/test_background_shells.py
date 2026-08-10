@@ -513,6 +513,38 @@ def test_a_platform_without_proc_still_starts_a_background_command(
         shells.stop_all()
 
 
+def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: Path) -> None:
+    """`none` has no launcher to write the code down, so nothing did: `/shells`
+    from another process reported every such command "still running (or the run
+    that owns it ended)" for the run's life and after it. The owning run knew
+    the code all along."""
+    from agent6.tools.background import roster_from_dir
+
+    shells = BackgroundShells(tmp_path / "shells")
+    done = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path, "none"))
+    live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
+    try:
+        assert _wait_state(shells, done.id, "exited") == "exited"
+        lines = roster_from_dir(tmp_path / "shells")
+        assert any(f"[{done.id}] exited 42" in line for line in lines), lines
+        assert any(f"[{live.id}] still running" in line for line in lines), lines
+    finally:
+        shells.stop_all()
+
+
+def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: Path) -> None:
+    """A stop is an ending like any other: another process must not go on
+    reading it as maybe-still-running."""
+    from agent6.tools.background import roster_from_dir
+
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
+    assert _wait_state(shells, view.id, "running") == "running"
+    shells.stop(view.id)
+    lines = roster_from_dir(tmp_path / "shells")
+    assert not any("still running" in line for line in lines), lines
+
+
 def test_an_unsandboxed_background_command_survives_a_siblings_stop(
     tmp_path: Path,
 ) -> None:
