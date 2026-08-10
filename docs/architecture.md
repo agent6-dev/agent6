@@ -15,8 +15,8 @@ ui  ──▶  app  ──▶  workflows  ──▶  tools  ──▶  sandbox
 ```
 
 `ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
-`ui/web`, `ui/acp` (the four front-ends) and the write helpers `ui/spawn` +
-`ui/notify`, over the
+`ui/web`, `ui/acp` (the four front-ends), `ui/mcp_server.py` (agent6 as an
+MCP server), and the write helpers `ui/spawn` + `ui/notify`, over the
 shared headless read-model fold (`viewmodel`). `app/` sits between: the
 application pipelines that compose the engine but are not a front-end, taking
 the presentation, process-spawn, and run-dir bridge callables the front-end
@@ -67,8 +67,9 @@ almost always a sign of the wrong design.
   agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed
   tool surface the LLM sees, plus dispatch.
-- **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): Landlock
-  on the agent process, `agent6-jail` for children.
+- **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the
+  `agent6-jail` launcher and its policy. Every boundary is per command; the
+  agent process itself is never confined.
 
 ## Workflow: `run`
 
