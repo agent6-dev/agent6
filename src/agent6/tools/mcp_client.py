@@ -109,6 +109,25 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
 # parseable in transcripts.
 MCP_TOOL_PREFIX = "mcp__"
 
+
+def split_tool_name(qualified_name: str) -> tuple[str, str]:
+    """``mcp__<server>__<tool>`` -> (server, tool).
+
+    Splits on the FIRST double-underscore after the prefix, so a tool name that
+    contains "__" itself survives intact (server names cannot: see
+    `mcp_server_name_refusal`). One parser, because the dispatcher needs the
+    server to know whose approval rule applies and the manager needs it to route.
+    """
+    if not qualified_name.startswith(MCP_TOOL_PREFIX):
+        raise MCPError(f"not an MCP tool name: {qualified_name!r}")
+    suffix = qualified_name[len(MCP_TOOL_PREFIX) :]
+    try:
+        server_name, tool_name = suffix.split("__", 1)
+    except ValueError as exc:
+        raise MCPError(f"malformed MCP tool name: {qualified_name!r}") from exc
+    return server_name, tool_name
+
+
 # A server-advertised tool name is spliced into the LLM-visible
 # ``mcp__<server>__<tool>``; the provider tool-name grammar is
 # ``[A-Za-z0-9_-]{1,64}``. A name with whitespace/dots/other chars would make
@@ -649,15 +668,7 @@ class MCPManager:
         return tuple(out)
 
     def call(self, qualified_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if not qualified_name.startswith(MCP_TOOL_PREFIX):
-            raise MCPError(f"not an MCP tool name: {qualified_name!r}")
-        suffix = qualified_name[len(MCP_TOOL_PREFIX) :]
-        # Split on the FIRST double-underscore so tool names that
-        # themselves contain "__" survive intact.
-        try:
-            server_name, tool_name = suffix.split("__", 1)
-        except ValueError as exc:
-            raise MCPError(f"malformed MCP tool name: {qualified_name!r}") from exc
+        server_name, tool_name = split_tool_name(qualified_name)
         srv = self._servers.get(server_name)
         if srv is None:
             raise MCPError(f"unknown MCP server: {server_name!r}")

@@ -47,7 +47,9 @@ Shift+Enter inserts a newline.
       completes the steer directives, Ctrl-R (composer focused) searches the
       session's past messages.
     - Stop now / stop after step, compact, merge, delete history, approve
-      `run_command` prompts, and answer `ask_user` questions inline.
+      `run_command` and MCP-tool prompts, and answer `ask_user` questions
+      inline. "Allow session" appears only where it would grant something
+      beyond the one call it is clicked on.
 - **Machines**: the state overview, the path taken, and the current agent
   state's conversation. Approve and answer the current agent state's prompts
   inline (same controls as a run). The docked entry submits as one of the two

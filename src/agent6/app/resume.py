@@ -44,7 +44,13 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import SessionFacts, SessionFrontend, apply_spawned_away_default, run_task
+from agent6.app.run import (
+    SessionFacts,
+    SessionFrontend,
+    apply_spawned_away_default,
+    approval_scopes,
+    run_task,
+)
 from agent6.config import (
     Config,
     ConfigError,
@@ -251,14 +257,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # files), so the loop's steer poll injects it at its first boundary.
         request_steer(layout.session_dir)
         write_steer_answer(layout.session_dir, steer.strip())
-    if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
-        clear_away_mode(layout.session_dir)
-    else:
-        # A front-end (web/TUI) or a detach spawns resume with no terminal; honor
-        # AGENT6_DETACHED_AWAY so ask_user/approvals WAIT for a viewer instead of
-        # fabricating an empty answer. Mirrors run_task; a pure headless resume
-        # (CI) sets no env, so this is a no-op and keeps the non-hanging default.
-        apply_spawned_away_default(layout.session_dir)
     # Record this worker's pid so `agent6 sessions show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.session_dir, os.getpid())
@@ -424,6 +422,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except ConfigError as exc:
             reporter.err(f"ERROR: {exc}")
             return 2
+
+        # Needs the config: "approve everything while away" is a grant per
+        # scope, and the scopes in play include one per configured MCP server.
+        if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+            clear_away_mode(layout.session_dir)
+        else:
+            # A front-end (web/TUI) or a detach spawns resume with no terminal; honor
+            # AGENT6_DETACHED_AWAY so ask_user/approvals WAIT for a viewer instead of
+            # fabricating an empty answer. Mirrors run_task; a pure headless resume
+            # (CI) sets no env, so this is a no-op and keeps the non-hanging default.
+            apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
 
         try:
             isolation = select_isolation(
@@ -732,7 +741,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(
                 layout.session_dir, COMMAND_SCOPE
             ):
-                frontend.prompt_detach_away_mode(layout.session_dir)
+                frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:
                 reporter.err(f"[agent6] {err}")

@@ -1,0 +1,207 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""The approval gate on MCP tool calls, and the scope it grants.
+
+A server's tools are asked about like a command, on their own scope: an "allow
+all" for one server must never be readable as consent for the command tools or
+for a sibling server. These run against the in-tree fake server so the call
+really reaches (or really does not reach) a running process.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from agent6.config import Config
+from agent6.events import EventSink
+from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow
+from agent6.tools.dispatch import Approver, ToolDispatcher
+from agent6.tools.errors import ToolDenied
+from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
+
+
+def _manager() -> MCPManager:
+    return MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+        ]
+    )
+
+
+def _recording(asked: list[tuple[str, str | None]]) -> Approver:
+    def approve(prompt: str, /, *, scope: str | None = None) -> bool:
+        asked.append((prompt, scope))
+        return True
+
+    return approve
+
+
+def _deny(_prompt: str, /, *, scope: str | None = None) -> bool:
+    return False
+
+
+def _cfg(**server: object) -> Config:
+    return Config.model_validate(
+        {"mcp": {"enabled": True, "servers": {"fake": {"command": ["true"], **server}}}}
+    )
+
+
+def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: Path) -> None:
+    """`approve = "ask"` is the default, so a fresh server prompts. The prompt
+    carries the ARGUMENTS: the server's actions are fixed, what the model chose
+    to send is not."""
+    asked: list[tuple[str, str | None]] = []
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            approver=_recording(asked),
+        )
+        d.dispatch("mcp__fake__echo", {"text": "hello"})
+    finally:
+        mgr.close()
+    assert len(asked) == 1
+    prompt, scope = asked[0]
+    assert prompt == 'Allow mcp__fake__echo: {"text": "hello"}'
+    assert scope == "mcp.fake"
+
+
+def test_a_denied_call_never_reaches_the_server(tmp_path: Path) -> None:
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            approver=_deny,
+        )
+        with pytest.raises(ToolDenied, match="approve"):
+            d.dispatch("mcp__fake__echo", {"text": "hello"})
+    finally:
+        mgr.close()
+
+
+def test_approve_yes_is_the_standing_consent(tmp_path: Path) -> None:
+    """The durable way to stop being asked, visible in `agent6 config show`."""
+
+    def _forbidden(_prompt: str, /, *, scope: str | None = None) -> bool:
+        pytest.fail("approve = 'yes' must not prompt")
+
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path, config=_cfg(approve="yes"), mcp_manager=mgr, approver=_forbidden
+        )
+        assert d.dispatch("mcp__fake__echo", {"text": "hi"})
+    finally:
+        mgr.close()
+
+
+def test_auto_approve_covers_mcp_servers() -> None:
+    """ "Do not prompt me this run" that still prompted would not be that."""
+    cfg = _cfg().with_sandbox_overrides(auto_approve=True)
+    assert cfg.mcp.servers["fake"].approve == "yes"
+    assert cfg.sandbox.run_commands == "yes"
+
+
+def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
+    """The scope is the point. One "a" at a run_command prompt granted every
+    later approval in the run, MCP tools included, when a single marker meant
+    "allow everything"."""
+    from agent6.sessions.ipc import set_away_mode
+    from agent6.ui.cli._interact import build_approver
+
+    session_dir = tmp_path / "run"
+    (session_dir / "approvals").mkdir(parents=True)
+    set_session_allow(session_dir, COMMAND_SCOPE)
+    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+
+    assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    # away-mode deny, so the ungranted call refuses instead of polling for a
+    # front-end that will never attach.
+    set_away_mode(session_dir, "deny")
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=approve)
+        with pytest.raises(ToolDenied):
+            d.dispatch("mcp__fake__echo", {"text": "hi"})
+    finally:
+        mgr.close()
+
+
+def test_allowing_one_server_does_not_allow_its_sibling(tmp_path: Path) -> None:
+    """Two servers are two threats: the operator granted the one they were
+    asked about, and nothing else."""
+    from agent6.sessions.ipc import session_allow_set
+    from agent6.ui.cli._interact import build_approver
+
+    session_dir = tmp_path / "run"
+    (session_dir / "approvals").mkdir(parents=True)
+    set_session_allow(session_dir, "mcp.notes")
+    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+
+    assert approve("Allow mcp__notes__read: {}", scope="mcp.notes") is True
+    assert not session_allow_set(session_dir, "mcp.shell")
+    assert not session_allow_set(session_dir, COMMAND_SCOPE)
+
+
+def test_approving_everything_while_away_covers_the_servers_too(tmp_path: Path) -> None:
+    """A grant is per scope, so "approve all" that granted only the command
+    scope would leave a detached run blocked on its first MCP call with nobody
+    there to answer -- the hang the away-mode exists to prevent."""
+    from agent6.app.run import apply_spawned_away_default, approval_scopes
+    from agent6.sessions.ipc import session_allow_set
+
+    cfg = Config.model_validate(
+        {
+            "mcp": {
+                "enabled": True,
+                "servers": {
+                    "notes": {"command": ["true"]},
+                    "off": {"command": ["true"], "enabled": False},
+                },
+            }
+        }
+    )
+    assert approval_scopes(cfg) == (COMMAND_SCOPE, "mcp.notes")  # a disabled server has no tools
+
+    import os
+
+    os.environ["AGENT6_DETACHED_AWAY"] = "approve"
+    try:
+        apply_spawned_away_default(tmp_path, approval_scopes(cfg))
+    finally:
+        del os.environ["AGENT6_DETACHED_AWAY"]
+    assert session_allow_set(tmp_path, COMMAND_SCOPE)
+    assert session_allow_set(tmp_path, "mcp.notes")
+    assert not session_allow_set(tmp_path, "mcp.off")
+
+
+def test_denying_a_server_for_the_session_withdraws_its_tools(tmp_path: Path) -> None:
+    """ "Deny all" is the mirror of "allow all", so it has to do the mirror
+    thing: withdraw that server's tools from the next turn (the tool list is
+    rebuilt per turn) rather than refuse each call, and leave every other
+    server's alone."""
+    from agent6.sessions.ipc import set_session_deny
+
+    session_dir = tmp_path / "run"
+    (session_dir / "approvals").mkdir(parents=True)
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path, config=_cfg(), mcp_manager=mgr, session_dir=session_dir, approver=_deny
+        )
+        assert "mcp__fake__echo" in d.available_tool_names()
+        set_session_deny(session_dir, "mcp.other")
+        assert "mcp__fake__echo" in d.available_tool_names()  # a sibling's denial is not ours
+        set_session_deny(session_dir, "mcp.fake")
+        assert "mcp__fake__echo" not in d.available_tool_names()
+    finally:
+        mgr.close()

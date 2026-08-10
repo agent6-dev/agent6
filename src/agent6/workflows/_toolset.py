@@ -71,9 +71,8 @@ def tool_definitions(
     # (plan/ask/machine/agent) must not offer them at all; the dispatcher
     # refuses mcp__* in those modes as the backstop. Names already carry the
     # `mcp__<server>__` prefix so they can never collide with built-ins.
-    mgr = getattr(dispatcher, "_mcp_manager", None) if session_kind(mode).edits else None
-    if mgr is not None:
-        for desc in mgr.descriptors():
+    if session_kind(mode).edits:
+        for desc in dispatcher.mcp_descriptors():
             schema = dict(desc.input_schema)
             schema.setdefault("type", "object")
             out.append(

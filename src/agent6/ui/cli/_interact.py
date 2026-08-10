@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
 from agent6.sessions.ipc import (
-    COMMAND_SCOPE,
     away_mode,
     clear_answer,
     clear_question_answers,
@@ -82,9 +81,13 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
     return "yes" if ans in {"y", "yes"} else "no"
 
 
-def prompt_detach_away_mode(session_dir: Path) -> None:
+def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
     """On detach with run_commands=ask, ask how approvals/questions should be
     handled while nothing is watching, and record it for the background run.
+
+    "Approve all" grants every scope in play (`scopes`): the command tools and
+    each configured MCP server. Granting only one would leave the run blocked
+    on the first prompt from another, with nobody there to answer.
 
     The default is WAIT: a deny throws away the run's work (the model's commands
     are refused and it flails, burning tokens for nothing), while wait pauses
@@ -103,8 +106,10 @@ def prompt_detach_away_mode(session_dir: Path) -> None:
     )
     choice = (ans or "").strip().lower()
     if choice in {"a", "approve"}:
-        set_session_allow(session_dir, COMMAND_SCOPE)
-        print("  -> approving every run_command.", file=sys.stderr)
+        for scope in scopes:
+            set_session_allow(session_dir, scope)
+        covered = "run_command and MCP tool call" if len(scopes) > 1 else "run_command"
+        print(f"  -> approving every {covered}.", file=sys.stderr)
     elif choice in {"d", "deny"}:
         set_away_mode(session_dir, "deny")
         print("  -> denying run_commands until you reattach.", file=sys.stderr)

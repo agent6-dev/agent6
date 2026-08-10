@@ -33,7 +33,12 @@ from agent6.sandbox.jail import (
     jail_search_path,
     run_in_jail,
 )
-from agent6.sessions.ipc import COMMAND_SCOPE, effective_run_commands
+from agent6.sessions.ipc import (
+    COMMAND_SCOPE,
+    MCP_SCOPE_PREFIX,
+    effective_run_commands,
+    session_deny_set,
+)
 from agent6.sessions.layout import session_layout
 from agent6.skills import (
     ResolvedSkills,
@@ -67,7 +72,13 @@ from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolErr
 from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
-from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
+from agent6.tools.mcp_client import (
+    MCP_TOOL_PREFIX,
+    MCPError,
+    MCPManager,
+    MCPToolDescriptor,
+    split_tool_name,
+)
 from agent6.tools.policy import jail_policy
 from agent6.tools.results import (
     BackgroundResult,
@@ -177,10 +188,10 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, str]:
 class Approver(Protocol):
     """Asks the operator, and says what an "allow all" would cover.
 
-    `scope` is what the prompt is ABOUT -- "command" for the command tools --
-    and is what a standing answer grants. The default is None: no standing
-    answer on offer, so the operator is asked every time. Nothing else may read
-    one scope's grant as consent for another.
+    `scope` is what the prompt is ABOUT -- "command" for the command tools,
+    "mcp.<server>" for one server's -- and is what a standing answer grants.
+    The default is None: no standing answer on offer, so the operator is asked
+    every time. Nothing else may read one scope's grant as consent for another.
     """
 
     def __call__(self, prompt: str, /, *, scope: str | None = None) -> bool: ...
@@ -430,9 +441,27 @@ class ToolDispatcher:
         # unset (default keeps both tools available).
         if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1":
             names = [n for n in names if n != ApplyEditInput.TOOL_NAME]
-        if self._mcp_manager is not None:
-            names.extend(d.qualified_name for d in self._mcp_manager.descriptors())
+        names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
+
+    def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+        """The MCP tools on offer right now, minus any server the operator denied
+        for the session.
+
+        Re-read per turn like `command_policy`: "deny all" WITHDRAWS that
+        server's tools rather than refusing each call, so the model stops
+        spending turns on a door that will not open.
+        """
+        if self._mcp_manager is None:
+            return ()
+        descs = self._mcp_manager.descriptors()
+        if self._session_dir is None:
+            return tuple(descs)
+        return tuple(
+            d
+            for d in descs
+            if not session_deny_set(self._session_dir, f"{MCP_SCOPE_PREFIX}{d.server_name}")
+        )
 
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         # Returns the typed result; the caller serializes it with to_wire() at
@@ -494,6 +523,7 @@ class ToolDispatcher:
                 raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
             if self._mcp_manager is None:
                 raise ToolError(f"{name}: MCP is not configured")
+            self._approve_mcp_call(name, raw_input)
             try:
                 return RawResult(self._mcp_manager.call(name, raw_input))
             except MCPError as exc:
@@ -689,6 +719,26 @@ class ToolDispatcher:
             return False
         self._config = self._config.with_verify_command(argv)
         return True
+
+    def _approve_mcp_call(self, name: str, raw_input: dict[str, Any]) -> None:
+        """Gate one MCP tool call on its server's `approve`, or raise ToolDenied.
+
+        A server's tools are arbitrary external capabilities, so they are asked
+        about like a command -- but on their OWN scope: "allow all" for one
+        server grants that server, never the command tools and never a sibling
+        server. `approve = "yes"` (or `--auto-approve`) is the standing consent.
+        The ARGUMENTS are in the prompt because they are the whole risk: the
+        server's actions are fixed, what the model chose to send is not.
+        """
+        server, _tool = split_tool_name(name)
+        entry = self._config.mcp.servers.get(server)
+        if entry is not None and entry.approve == "yes":
+            return
+        args = json.dumps(truncate_args(raw_input), ensure_ascii=False, sort_keys=True)
+        if not self._approver(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
+            raise ToolDenied(
+                f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
+            )
 
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)

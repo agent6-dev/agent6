@@ -391,8 +391,8 @@ available").
 MCP servers, spawned (`command`) or connected (`url`); tools appear as
 `mcp__<name>__<tool>`. A server runs as your user outside the jail with a
 curated env (never your provider keys; `pass_env` adds named vars). The LLM
-influences the ARGUMENTS it passes, so audit each server like a `run_command`
-allow-list. `agent6 mcp connect` handshakes first and only then writes the
+influences the ARGUMENTS it passes, so each call is approved like a command
+(`approve`), and audit each server like a `run_command` allow-list. `agent6 mcp connect` handshakes first and only then writes the
 entry; a server that does not start is skipped with an
 `mcp.server_unavailable` journal event, never fatal.
 
@@ -428,6 +428,7 @@ unconfined process is still a way out — name the narrowest paths that work.
 | `servers.<name>.url` | `""` | An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its environment or confinement. |
 | `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
+| `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers THIS server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |
 | `servers.<name>.sandbox.read_paths` | `[]` | Read+execute paths for this server BEYOND the sandbox a jailed command gets (absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as `HOME` are already there, so a block names only the server's own data — nothing has to describe its interpreter. |
 | `servers.<name>.sandbox.write_paths` | `[]` | Paths it may write, likewise additive. |
 | `servers.<name>.sandbox.network` | `"auto"` | `[sandbox].tool_network`'s vocabulary at per-server scope, because servers differ from commands and from each other: `auto` = no network where the host can give a namespace, degrading with a warning where it cannot; `block` = refuse to start rather than run connected; `allow` = the host network. |

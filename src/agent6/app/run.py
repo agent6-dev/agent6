@@ -77,6 +77,7 @@ from agent6.providers import TranscriptSink
 from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
+    MCP_SCOPE_PREFIX,
     away_mode,
     clear_away_mode,
     clear_compact_request,
@@ -139,7 +140,20 @@ class SteerHooks(Protocol):
     reset_stage: Callable[[], None]
 
 
-def apply_spawned_away_default(session_dir: Path) -> None:
+def approval_scopes(cfg: Config) -> tuple[str, ...]:
+    """Every scope this run can be asked about: the command tools, plus one per
+    live MCP server. "Approve everything while I am away" has to name them --
+    a grant is per scope, so a run left with only the command scope granted
+    would still block on the first MCP call with nobody there to answer."""
+    servers = (
+        tuple(f"{MCP_SCOPE_PREFIX}{name}" for name, s in cfg.mcp.servers.items() if s.enabled)
+        if cfg.mcp.enabled
+        else ()
+    )
+    return (COMMAND_SCOPE, *servers)
+
+
+def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> None:
     """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
     spawns a run detached and drives it over the bridge. Without it a spawned run
     with no terminal fabricates empty ask_user answers when no viewer is live;
@@ -155,8 +169,9 @@ def apply_spawned_away_default(session_dir: Path) -> None:
         return
     if away == "approve":
         # approve is never stored in away.mode (deny|wait): like the interactive
-        # detach prompt, approve-all sets the command scope's allow marker.
-        set_session_allow(session_dir, COMMAND_SCOPE)
+        # detach prompt, approve-all sets an allow marker per scope in play.
+        for scope in scopes:
+            set_session_allow(session_dir, scope)
     elif away in ("wait", "deny"):
         set_away_mode(session_dir, away)
 
@@ -211,7 +226,7 @@ class SessionFrontend:
     make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
-    prompt_detach_away_mode: Callable[[Path], None]
+    prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None]
     # `run -i` / `ask -i`
     build_repl_hook: Callable[
@@ -413,7 +428,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.session_dir)
     else:
-        apply_spawned_away_default(layout.session_dir)
+        apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
     # Record this worker's pid so `agent6 sessions show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.session_dir, os.getpid())
@@ -862,7 +877,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(
                 layout.session_dir, COMMAND_SCOPE
             ):
-                frontend.prompt_detach_away_mode(layout.session_dir)
+                frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
             err = frontend.spawn_detached_resume(cwd, layout.session_id)
             if err:
                 reporter.err(f"[agent6] {err}")

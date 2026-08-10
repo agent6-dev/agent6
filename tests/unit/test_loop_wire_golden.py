@@ -32,6 +32,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from agent6.providers import ProviderResponse
+from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, RawResult, ToolResult
 from agent6.workflows._conversation import Conversation
 from agent6.workflows.loop import Workflow
@@ -52,6 +53,10 @@ class _StubDispatcher:
     """
 
     def available_tool_names(self) -> tuple[str, ...]:
+        return ()
+
+    def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+        """No MCP servers, so nothing to add to the per-turn tool list."""
         return ()
 
     def skills_available(self) -> bool:

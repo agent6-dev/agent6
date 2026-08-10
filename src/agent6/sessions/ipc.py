@@ -330,13 +330,16 @@ def clear_question_answers(session_dir: Path, question_id: str) -> None:
 # "Allow (or deny) for the rest of the session": one marker file per SCOPE,
 # checked before every prompt in that scope. A scope is what the operator was
 # answering about, so a standing answer grants what the prompt said and no more.
-# Today there is one: the three command tools share it.
+# The whole vocabulary: the three command tools share one, and each MCP server
+# has its own (server names are [A-Za-z0-9_-]+, so a scope is always a safe file
+# suffix and two servers never collide).
 #
 # Markers are NOT `*.answer`s, so clear_pending_answers leaves them in place:
 # the choice persists across this run's resumes (a detached run then keeps going
 # without a front-end to prompt). They live in the run's approvals dir, so other
 # runs are unaffected and a fresh run prompts again.
 COMMAND_SCOPE = "command"
+MCP_SCOPE_PREFIX = "mcp."
 SESSION_ALLOW_FILE = "session.allow"
 SESSION_DENY_FILE = "session.deny"
 

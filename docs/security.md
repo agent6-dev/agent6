@@ -321,6 +321,13 @@ syscall for hardened), never guessed from the kernel version.
 ### 4. Fixed tool surface
 
 - **`fetch` is the model's only egress, and it is narrow.** One https URL, GET, no redirects followed, no credential, text only, 1 MiB. Hosts on `sandbox.fetch_hosts` are read without asking; any other host prompts, and an absent operator is a no. It exists because a jailed command has no network, so it is hidden entirely when `tool_network = "allow"`. A GET can still carry data out in its path -- the allow-list is empty by default for that reason. Nothing resolves before that gate either: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
+- **An MCP server's tools are approved per call, on their own scope.** A
+  server does fixed things, but the model chooses the arguments, so each
+  `mcp__<server>__<tool>` call prompts with those arguments
+  (`[mcp.servers.<name>].approve`, default `ask`). An "allow all" answer covers
+  that server for the run: never the command tools, never a sibling server. The
+  prompts that offer no standing answer at all (`fetch`'s off-list host, the
+  sandbox-off gate) say so, and no front-end shows the button.
 - **The LLM only sees the fixed set in `src/agent6/tools/schema.py`.**
     - Structured edits, read-only navigation, fixed-argv verify/metric commands,
       `finish_session`, `ask_user`, a curator task notepad, a cross-run memory

@@ -1141,6 +1141,11 @@ class MCPServerEntry(BaseModel):
     # Filesystem confinement for a SPAWNED server. A `url` one is the
     # operator's own process; they confine it where they start it.
     sandbox: MCPSandbox | None = None
+    # Ask before each of this server's tool calls ("ask"), or never ("yes").
+    # A server's tools do arbitrary things agent6 cannot classify, so the
+    # default is the same as a command's: ask. There is no "no" -- withholding
+    # a server's tools is what `enabled = false` already says.
+    approve: Literal["ask", "yes"] = "ask"
     # Time budget for the initialize + tools/list handshake. If the
     # server doesn't respond in this window we log and skip it.
     startup_timeout_s: float = Field(gt=0.0, default=10.0)
@@ -1326,9 +1331,11 @@ class Config(BaseModel):
         ``disable_sandbox`` forces ``sandbox.isolation = "none"`` (unconfined).
         ``auto_approve`` upgrades ``run_commands`` ``"ask" -> "yes"`` but never
         resurrects a withheld ``"no"`` (a per-invocation flag must not grant a
-        capability the standing policy denied). ``no_commands`` pins it to
-        ``"no"`` and always may: tightening needs no permission. All are
-        operator-supplied (flag/env); the LLM can reach none of them.
+        capability the standing policy denied); it covers every MCP server's
+        ``approve`` too, because "do not prompt me this run" that still prompted
+        would not be that. ``no_commands`` pins ``run_commands`` to ``"no"`` and
+        always may: tightening needs no permission. All are operator-supplied
+        (flag/env); the LLM can reach none of them.
         """
         if not disable_sandbox and not auto_approve and not no_commands:
             return self
@@ -1338,6 +1345,9 @@ class Config(BaseModel):
             sandbox["isolation"] = "none"
         if auto_approve and self.sandbox.run_commands != "no":
             sandbox["run_commands"] = "yes"
+        if auto_approve:
+            for server in data.get("mcp", {}).get("servers", {}).values():
+                server["approve"] = "yes"
         if no_commands:
             sandbox["run_commands"] = "no"
         return Config.model_validate(data)

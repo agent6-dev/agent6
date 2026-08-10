@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent6.providers import ProviderError, ProviderResponse
+from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows.loop import Workflow
@@ -41,6 +42,10 @@ class _StubDispatcher:
     """
 
     def available_tool_names(self) -> tuple[str, ...]:
+        return ()
+
+    def mcp_descriptors(self) -> tuple[MCPToolDescriptor, ...]:
+        """No MCP servers, so nothing to add to the per-turn tool list."""
         return ()
 
     def skills_available(self) -> bool:

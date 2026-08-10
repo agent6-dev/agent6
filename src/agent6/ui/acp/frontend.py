@@ -143,7 +143,7 @@ def acp_frontend(
         confirm_run_on_run_branch=lambda branch: _approve(
             f"Continue this run on {branch!r}, which is already a run branch?"
         ),
-        prompt_detach_away_mode=lambda _session_dir: None,
+        prompt_detach_away_mode=lambda _session_dir, _scopes: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,
         build_repl_hook=_no_repl,
         run_ask_repl=_no_ask_repl,

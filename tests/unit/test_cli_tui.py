@@ -299,7 +299,7 @@ def test_spawned_away_default_sets_wait_from_env(
     from agent6.sessions.ipc import away_mode
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
-    apply_spawned_away_default(tmp_path)
+    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
     assert away_mode(tmp_path) == "wait"
 
 
@@ -314,7 +314,7 @@ def test_spawned_away_default_approve_reuses_session_allow(
     from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
-    apply_spawned_away_default(tmp_path)
+    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
     assert session_allow_set(tmp_path, COMMAND_SCOPE) is True
     assert away_mode(tmp_path) == ""  # approve is never stored in away.mode
 
@@ -337,7 +337,7 @@ def test_spawned_away_default_is_noop_without_env(
     from agent6.sessions.ipc import away_mode
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    apply_spawned_away_default(tmp_path)
+    apply_spawned_away_default(tmp_path, (COMMAND_SCOPE,))
     assert away_mode(tmp_path) == ""
 
 
@@ -419,12 +419,12 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
     old = os.environ.get("AGENT6_DETACHED_AWAY")
     os.environ["AGENT6_DETACHED_AWAY"] = "wait"  # what the spawned resume carries
     try:
-        apply_spawned_away_default(session_dir)
+        apply_spawned_away_default(session_dir, (COMMAND_SCOPE,))
         assert away_mode(session_dir) == "deny"
         # With nothing chosen, the launcher's default still applies.
         other = tmp_path / "other"
         other.mkdir()
-        apply_spawned_away_default(other)
+        apply_spawned_away_default(other, (COMMAND_SCOPE,))
         assert away_mode(other) == "wait"
     finally:
         if old is None:
