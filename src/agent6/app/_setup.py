@@ -21,6 +21,7 @@ from agent6.config import (
     MCPServerEntry,
 )
 from agent6.events import EventSink
+from agent6.git_ops import set_provider_key_env, set_repo_hook_policy
 from agent6.models.cache import list_models
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
@@ -122,6 +123,22 @@ class SandboxOverrides:
             auto_approve=self.auto_approve,
             no_commands=self.no_commands,
         )
+
+
+def apply_git_egress_policy(cfg: Config) -> None:
+    """Set how agent6's OWN git ops (run outside the jail) treat repo-controlled
+    host code and provider secrets, from the run's config. One call per entry
+    point (run, resume, merge, machine), so the policy is set the same way
+    everywhere; git_ops itself stays config-free.
+
+    - Repo `.git/hooks/*` fire only under `git.run_repo_hooks` (default off): a
+      hook is repo-controlled host code, an RCE vector on an untrusted repo.
+    - The configured provider-key env vars are stripped from git's environment:
+      git never needs a provider key, and a git subprocess (a credential
+      helper, a content driver we could not neutralize) should not inherit one.
+    """
+    set_repo_hook_policy(cfg.git.run_repo_hooks)
+    set_provider_key_env(p.api_key_env for p in cfg.providers.values() if p.api_key_env)
 
 
 def check_provider_keys(cfg: Config) -> str | None:

@@ -403,6 +403,11 @@ syscall for hardened), never guessed from the kernel version.
     - Defense in depth on top of `protect_git`: those settings bound what a
       poisoned `.git/config` could do, and `protect_git` stops the model
       writing one in the first place.
+    - **git's environment is stripped of provider keys.** agent6's git runs on
+      the host and inherits the environment; the configured `api_key_env` names
+      are removed from it, so a credential helper or content driver git invokes
+      never inherits a provider key. git keeps everything else (PATH, SSH,
+      proxy, credential-helper vars).
     - **`protect_git` is strict-only, and hardened leaves `.git` writable.**
       The threat is real there: a jailed command can plant a
       `filter.<n>.clean` plus a `.gitattributes`, and agent6's own auto-commit

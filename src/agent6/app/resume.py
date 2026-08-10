@@ -23,6 +23,7 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    apply_git_egress_policy,
     check_provider_keys,
     start_mcp_manager_if_enabled,
     wants_session_network,
@@ -67,7 +68,6 @@ from agent6.git_ops import (
     chain_tip,
     is_ancestor,
     render_commit_trailer,
-    set_repo_hook_policy,
     verify_git_identity,
 )
 from agent6.paths import (
@@ -299,7 +299,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = load_effective(
                     cwd, config_path, preset=preset or manifest.workflow.replay_preset
                 ).config
-                set_repo_hook_policy(cfg.git.run_repo_hooks)
+                apply_git_egress_policy(cfg)
                 if budget_overrides is not None:
                     cfg = budget_overrides.apply(cfg)
                 if sandbox_overrides is not None:
@@ -416,7 +416,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             effective = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset)
             cfg, explicit_leaves = effective.config, frozenset(effective.sources)
-            set_repo_hook_policy(cfg.git.run_repo_hooks)
+            apply_git_egress_policy(cfg)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)
             # Same clamp a fresh session gets: a resumed ask is still an ask.

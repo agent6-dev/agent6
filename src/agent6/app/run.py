@@ -29,6 +29,7 @@ from agent6.app._session import (
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    apply_git_egress_policy,
     start_mcp_manager_if_enabled,
     wants_session_network,
 )
@@ -66,7 +67,6 @@ from agent6.git_ops import (
     auto_stash_message,
     dirty_paths,
     render_commit_trailer,
-    set_repo_hook_policy,
     stash_all,
     verify_git_identity,
 )
@@ -337,7 +337,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # here: `ui/cli` set it and `agent6 acp` did not, so a repo that opted
     # into its own hooks silently kept them off under an editor -- a knob
     # `config show` reports and one surface ignored.
-    set_repo_hook_policy(cfg.git.run_repo_hooks)
+    apply_git_egress_policy(cfg)
     identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
     # so it skips the commit-oriented git pre-flight entirely.
