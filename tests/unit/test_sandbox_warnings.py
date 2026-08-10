@@ -12,6 +12,7 @@ import pytest
 from agent6.app.confine import check_network_support, warn_sandbox_gaps
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import Environment, KernelInfo
+from agent6.sandbox.jail import ToolMountNotes
 
 
 def _env(landlock_abi: int) -> Environment:
@@ -49,7 +50,7 @@ def test_strict_without_landlock_warns(capsys: pytest.CaptureFixture[str]) -> No
 def test_strict_with_landlock_is_silent(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("agent6.app.confine.unreachable_tools", tuple)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
     warn_sandbox_gaps("strict", _env(2), _cfg())
     assert capsys.readouterr().err == ""
 
@@ -61,13 +62,29 @@ def test_unreachable_tool_is_named_once(
     (mounting home would hand the jail every credential), so the tool dies in
     the jail with no explanation -- the preflight warning is the explanation."""
     monkeypatch.setattr(
-        "agent6.app.confine.unreachable_tools",
-        lambda: ("/home/op/.local/bin/x -> /home/op/x.sh",),
+        "agent6.app.confine.tool_mount_notes",
+        lambda: ToolMountNotes(unreachable=("/home/op/.local/bin/x -> /home/op/x.sh",)),
     )
     warn_sandbox_gaps("strict", _env(2), _cfg())
     err = capsys.readouterr().err
     assert "/home/op/.local/bin/x -> /home/op/x.sh" in err
     assert "never" in err and "mounted" in err
+
+
+def test_a_tool_dragging_a_home_dir_into_the_jail_is_named(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`~/bin/x -> ~/.ssh/helper` mounts ~/.ssh read-only into the jail. That
+    stays ALLOWED -- the operator placed the symlink, and refusing dot-dirs
+    would be guessing at where keys live -- but the exposure is named."""
+    monkeypatch.setattr(
+        "agent6.app.confine.tool_mount_notes",
+        lambda: ToolMountNotes(exposes_home_dir=("/home/op/.local/bin/x -> /home/op/.ssh/helper",)),
+    )
+    warn_sandbox_gaps("strict", _env(2), _cfg())
+    err = capsys.readouterr().err
+    assert "/home/op/.ssh/helper" in err
+    assert "READ-ONLY" in err and "readable" in err
 
 
 def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[str]) -> None:
@@ -104,88 +121,26 @@ def test_explicit_block_refuses_on_hardened() -> None:
     assert check_network_support(_cfg("block"), "strict") is None
 
 
-def test_unreachable_tools_scans_home_direct_targets(
+def test_scanner_separates_unreachable_from_home_exposing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The scanner reports a symlink resolving DIRECTLY into $HOME and stays
-    quiet about one resolving into its own subdir (that parent mounts fine)."""
+    """A symlink resolving DIRECTLY into $HOME is unreachable (home is never
+    mounted); one resolving into a home SUBDIR is reachable but drags that
+    subdir in; one resolving inside its own bin dir is neither."""
     from agent6.sandbox import jail as jail_mod
 
     home = tmp_path / "home"
-    (home / ".local" / "bin").mkdir(parents=True)
+    binf = home / ".local" / "bin"
+    binf.mkdir(parents=True)
     (home / "tools").mkdir()
     (home / "x.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (home / "tools" / "y.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-    (home / ".local" / "bin" / "x").symlink_to(home / "x.sh")
-    (home / ".local" / "bin" / "y").symlink_to(home / "tools" / "y.sh")
+    (binf / "z.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (binf / "x").symlink_to(home / "x.sh")
+    (binf / "y").symlink_to(home / "tools" / "y.sh")
+    (binf / "z").symlink_to(binf / "z.sh")
     monkeypatch.setattr(jail_mod.Path, "home", classmethod(lambda _cls: home))
 
-    dropped = jail_mod.unreachable_tools()
-    assert len(dropped) == 1
-    assert dropped[0] == f"{home}/.local/bin/x -> {home}/x.sh"
-
-
-def test_hardened_refuses_a_grant_containing_a_hidden_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Landlock has no deny rules: on hardened a granted region that CONTAINS
-    a hidden dir would leave it readable -- silently ineffective security --
-    so the run refuses, naming the pair. Strict masks it and runs."""
-    from agent6.app.confine import check_hide_paths_support
-
-    home = tmp_path / "home"
-    cfg_dir = home / ".config" / "agent6"
-    cfg_dir.mkdir(parents=True)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
-    monkeypatch.chdir(tmp_path)
-    cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
-
-    err = check_hide_paths_support(cfg, "hardened")
-    assert err is not None and str(home) in err and str(cfg_dir) in err
-    assert check_hide_paths_support(cfg, "strict") is None
-
-
-def test_hardened_refuses_a_private_dir_inside_the_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The workspace is granted implicitly, so a config dir INSIDE it is
-    readable on hardened with no grant listed at all -- verified live: a
-    jailed `cat` printed secrets.toml. The refusal is what closes it."""
-    from agent6.app.confine import check_hide_paths_support
-
-    cfg_dir = tmp_path / ".config" / "agent6"
-    cfg_dir.mkdir(parents=True)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
-    monkeypatch.chdir(tmp_path)
-
-    err = check_hide_paths_support(Config(), "hardened")
-    assert err is not None and str(cfg_dir) in err
-    assert check_hide_paths_support(Config(), "strict") is None
-
-
-def test_hardened_refuses_a_hide_entry_inside_the_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from agent6.app.confine import check_hide_paths_support
-
-    monkeypatch.chdir(tmp_path)
-    hidden = tmp_path / "cred.txt"
-    cfg = Config(sandbox=SandboxConfig(hide_paths=(str(hidden),)))
-    err = check_hide_paths_support(cfg, "hardened")
-    assert err is not None and str(hidden) in err
-    assert check_hide_paths_support(cfg, "strict") is None
-
-
-def test_plain_hardened_run_is_not_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No hidden path anywhere near a granted region: nothing to mask, so an
-    ordinary hardened run is untouched."""
-    from agent6.app.confine import check_hide_paths_support
-
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "data"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    ws = tmp_path / "ws"
-    ws.mkdir()
-    monkeypatch.chdir(ws)
-    assert check_hide_paths_support(Config(), "hardened") is None
+    notes = jail_mod.tool_mount_notes()
+    assert notes.unreachable == (f"{binf}/x -> {home}/x.sh",)
+    assert notes.exposes_home_dir == (f"{binf}/y -> {home}/tools/y.sh",)

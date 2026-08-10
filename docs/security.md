@@ -102,6 +102,11 @@ no run) each command gets its own launcher. Under `strict` it:
   dirs (either direction of containment) or `$HOME` and its ancestors. A tool
   dir whose read-only remount fails is detached; a failed detach refuses the
   run. Command jails and machine tool jails share this one computation.
+    - A bin symlink resolving OUT of its bin dir mounts the target's whole
+      directory read-only (`~/bin/x -> ~/.ssh/helper` exposes `~/.ssh`). That
+      is allowed -- the operator placed the symlink, and guessing at which
+      directories hold keys would be enumerating badness -- and both it and a
+      tool the jail cannot reach at all are named at run start.
 - **Hidden paths are masked last, after every bind**, so no grant exposes
   them from above: an empty tmpfs over a dir, `/dev/null` over a file, at the
   real path and the `/workspace` alias alike.

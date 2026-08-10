@@ -139,13 +139,31 @@ def _tool_bin_dirs() -> tuple[Path, ...]:
     )
 
 
-def unreachable_tools() -> tuple[str, ...]:
-    """Bin-dir symlinks whose real target's dir is never mounted
-    (`_never_mounted`: $HOME itself, or agent6's private dirs), so the tool
-    resolves to nothing inside the jail. For the once-per-run preflight
-    warning; the mount refusal itself stays silent and absolute."""
-    dropped: list[str] = []
-    for d in _tool_bin_dirs():
+@dataclass(frozen=True, slots=True)
+class ToolMountNotes:
+    """What the operator should know about how their bin dirs resolve into the
+    jail, for the once-per-run preflight. Both lists are `"<link> -> <target>"`
+    strings; the mount decisions themselves are unchanged and silent."""
+
+    # A symlink whose target's dir is never mounted, so the tool is absent
+    # inside the jail (it would die 127 with nothing naming the reason).
+    unreachable: tuple[str, ...] = ()
+    # A symlink resolving OUT of its bin dir into another dir under $HOME,
+    # which is therefore mounted read-only into the jail. Allowed on purpose
+    # (it is what keeps ~/.local/bin tools working), but the operator placed
+    # one symlink and got a whole directory exposed, so say which.
+    exposes_home_dir: tuple[str, ...] = ()
+
+
+def tool_mount_notes() -> ToolMountNotes:
+    """Scan the bin dirs the jail puts on PATH and report both surprises: a
+    tool the jail cannot reach, and a tool that drags a home directory into
+    the jail with it."""
+    home = Path.home()
+    bin_dirs = _tool_bin_dirs()
+    unreachable: list[str] = []
+    exposes: list[str] = []
+    for d in bin_dirs:
         try:
             entries = list(d.iterdir()) if d.is_dir() else []
         except OSError:
@@ -157,9 +175,14 @@ def unreachable_tools() -> tuple[str, ...]:
                 real = entry.resolve()
             except OSError:
                 continue
-            if real.is_file() and not _under_system_root(real) and _never_mounted(real.parent):
-                dropped.append(f"{entry} -> {real}")
-    return tuple(sorted(dropped))
+            if not real.is_file() or _under_system_root(real):
+                continue
+            parent = real.parent
+            if _never_mounted(parent):
+                unreachable.append(f"{entry} -> {real}")
+            elif parent.is_relative_to(home) and parent not in bin_dirs:
+                exposes.append(f"{entry} -> {real}")
+    return ToolMountNotes(tuple(sorted(unreachable)), tuple(sorted(exposes)))
 
 
 def jail_search_path() -> str:

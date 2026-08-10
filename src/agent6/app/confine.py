@@ -18,7 +18,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.paths import cache_dir, data_dir, global_config_dir, state_base
 from agent6.sandbox.detect import Environment
-from agent6.sandbox.jail import unreachable_tools
+from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import IsolationLevel
 
 
@@ -86,12 +86,21 @@ def warn_sandbox_gaps(
             "'block' to refuse rather than run here."
         )
     if isolation in ("strict", "hardened"):
-        for tool in unreachable_tools():
+        notes = tool_mount_notes()
+        for tool in notes.unreachable:
             reporter.err(
                 f"[agent6] WARNING: tool {tool} resolves into a dir that is never"
                 " mounted into the jail ($HOME itself, or agent6's private dirs),"
                 " so it will not run inside sandboxed commands. Move the target"
                 " into its own subdirectory."
+            )
+        for tool in notes.exposes_home_dir:
+            reporter.err(
+                f"[agent6] WARNING: tool {tool} resolves out of its bin dir, so"
+                " that target's whole directory is mounted READ-ONLY into the"
+                " jail and every file in it is readable by jailed commands."
+                " Point the symlink at a directory holding only what the tool"
+                " needs if that is not what you want."
             )
 
 
