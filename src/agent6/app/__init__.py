@@ -9,7 +9,7 @@ fan-out and the coordinator's `/parallel` dispatch, `parallel`/`compare`) over
 `workflows`, `git_ops`, `sessions`, and the headless `viewmodel`, and never imports
 `agent6.ui`. What it cannot do itself -- own a terminal, render a live view,
 spawn a detached `agent6` process, or drive the run-dir bridge -- is injected
-by the front-end (`ui/cli`) as frozen values of callables (`run.SessionFrontend`,
+by the front-end (`ui/cli`) as frozen values of callables (`frontend.SessionFrontend`,
 `parallel.LaneRuntime`), so the pipelines stay testable and ui-free. Output goes
 through the injected two-channel `reporter.Reporter` (default `STDIO_REPORTER`),
 never a direct `print`.

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app.run import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
+from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink

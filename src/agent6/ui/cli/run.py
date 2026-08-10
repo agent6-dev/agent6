@@ -15,10 +15,11 @@ from agent6.app._setup import (
     SandboxOverrides,
     check_provider_keys,
 )
+from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.preflight import (
     require_git_repo,
 )
-from agent6.app.run import FrontendCapabilities, SessionFrontend, run_task
+from agent6.app.run import run_task
 from agent6.config import (
     Config,
     RoleName,

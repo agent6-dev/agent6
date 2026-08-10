@@ -13,10 +13,8 @@ import os
 import shutil
 import sys
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 from agent6.app._session import (
     SessionRefused,
@@ -43,6 +41,12 @@ from agent6.app.finalize import (
     session_exit_code,
     stash_recovery_hint,
 )
+from agent6.app.frontend import (
+    SessionFacts,
+    SessionFrontend,
+    apply_spawned_away_default,
+    approval_scopes,
+)
 from agent6.app.manifest import (
     pin_gate,
     write_session_manifest,
@@ -57,7 +61,6 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.events import EventSink, EventWriteError
@@ -80,8 +83,6 @@ from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
-    MCP_SCOPE_PREFIX,
-    away_mode,
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -91,8 +92,6 @@ from agent6.sessions.ipc import (
     read_compact_request,
     request_steer,
     session_allow_set,
-    set_away_mode,
-    set_session_allow,
     stop_request_pending,
     write_session_netns_pid,
     write_steer_answer,
@@ -107,148 +106,10 @@ from agent6.sessions.lock import (
     repo_writer_holder,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.tools.dispatch import Approver, ToolDispatcher
-from agent6.tools.mcp_client import MCPManager
-from agent6.tools.schema import UserQuestion
-from agent6.types import IsolationLevel, session_bucket, session_kind
+from agent6.tools.dispatch import ToolDispatcher
+from agent6.types import session_bucket, session_kind
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import SessionResult, Workflow
-from agent6.workflows.subrun import GroupLaneSpawner
-
-
-@dataclass(frozen=True, slots=True)
-class SessionFacts:
-    """The live facts the CLI pause banner shows, so an operator deciding
-    whether to interrupt can see what this run is doing without the widgets a
-    TUI/web viewer has. Built by the lifecycle (which holds the tracker and the
-    resolved config) and rendered by the front-end; read inside a signal
-    handler, so every field is already in memory -- no file read, no fold."""
-
-    spend_usd: float
-    spend_partial: bool  # a model with no price data contributed: a lower bound
-    model: str
-    run_commands: str
-    isolation: str
-
-
-class SteerHooks(Protocol):
-    """What the lifecycle needs of the front-end's steer state (the SIGINT
-    pause menu or the file-bridge steer); `ui/cli/_steer.SteerState` satisfies
-    it structurally."""
-
-    requested: Callable[[], bool]
-    clear: Callable[[], None]
-    prompt: Callable[[], str | None]
-    restore: Callable[[], None]
-    abort_pending: Callable[[], bool]
-    interrupt: Callable[[], bool]
-    reset_stage: Callable[[], None]
-
-
-def approval_scopes(cfg: Config) -> tuple[str, ...]:
-    """Every scope this run can be asked about: the command tools, plus one per
-    live MCP server. "Approve everything while I am away" has to name them --
-    a grant is per scope, so a run left with only the command scope granted
-    would still block on the first MCP call with nobody there to answer."""
-    servers = (
-        tuple(f"{MCP_SCOPE_PREFIX}{name}" for name, s in cfg.mcp.servers.items() if s.enabled)
-        if cfg.mcp.enabled
-        else ()
-    )
-    return (COMMAND_SCOPE, *servers)
-
-
-def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> None:
-    """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
-    spawns a run detached and drives it over the bridge. Without it a spawned run
-    with no terminal fabricates empty ask_user answers when no viewer is live;
-    'wait' makes approvals and questions block for a front-end. A pure headless
-    run (no launcher) sets no env, so this is a no-op and it keeps its default.
-
-    A DEFAULT: an away mode already on the run dir is the operator's own detach
-    answer, and the resume this spawns carries 'wait' regardless -- overwriting
-    silently upgraded a chosen 'deny' to 'wait', so the run blocked on an
-    approval nobody was there to give instead of denying and carrying on."""
-    away = os.environ.get("AGENT6_DETACHED_AWAY", "")
-    if not away or away_mode(session_dir):
-        return
-    if away == "approve":
-        # approve is never stored in away.mode (deny|wait): like the interactive
-        # detach prompt, approve-all sets an allow marker per scope in play.
-        for scope in scopes:
-            set_session_allow(session_dir, scope)
-    elif away in ("wait", "deny"):
-        set_away_mode(session_dir, away)
-
-
-@dataclass(frozen=True, slots=True)
-class FrontendCapabilities:
-    """What this surface can actually do, declared once at wiring.
-
-    Every one of these was answered at CALL time by the callable failing, so
-    `/btw` was offered to a run that could never spawn one and answered "needs
-    a live run with a terminal" only once the operator asked. A surface that
-    knows what it cannot do never offers it.
-    """
-
-    # A pane that renders as it happens (a console view, the TUI, the web).
-    live_view: bool = True
-    # Approvals and ask_user reach a human. False for a headless run with no
-    # away-mode -- which is exactly what `headless_approval_refusal` computes.
-    can_ask: bool = True
-    # A pause menu exists: mid-run steering, /compact, /pin.
-    can_steer: bool = True
-    # May start sibling sessions: `/btw`, `/parallel`.
-    can_spawn: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class SessionFrontend:
-    """The presentation + process-spawn callables `ui/cli` injects into the
-    run/resume lifecycle: the live console view (held cli-side; the lifecycle
-    only signals attach/close), the interactive prompts, and the REPLs. The
-    lifecycle owns the run-dir bridge (`sessions.ipc`); only the exe-spawn
-    primitives it can't reach stay injected.
-    One value serves both `run_task` and `resume_task`; resume simply never
-    calls the run-only fields."""
-
-    # What this surface can do at all. Read before offering something, rather
-    # than discovered by trying it.
-    capabilities: FrontendCapabilities
-    # live view: the console-view instance lives cli-side; builders that need it
-    # (approver/questioner/steer/logger) close over it there.
-    should_spawn_tui: Callable[[bool, bool, str], bool]
-    stream_modes: Callable[[bool], tuple[bool, bool]]
-    attach_console_view: Callable[[EventSink], None]
-    close_console_view: Callable[[], None]
-    loop_logger: Callable[[str], Callable[[str], None]]
-    tui_session: Callable[[Path, bool], AbstractContextManager[None]]
-    # operator interaction
-    build_approver: Callable[[Path, EventSink], Approver]
-    build_questioner: Callable[
-        [Path, EventSink], Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
-    ]
-    make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
-    confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
-    confirm_run_on_run_branch: Callable[[str], bool]
-    prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
-    select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None]
-    # `run -i` / `ask -i`
-    build_repl_hook: Callable[
-        [Path, BudgetTracker, str, MCPManager | None],
-        Callable[[int, str], Literal["continue", "stop"]],
-    ]
-    run_ask_repl: Callable[[Workflow, BudgetTracker, SessionLayout, str], SessionResult]
-    save_ask_transcript: Callable[[SessionLayout, str, str], None]
-    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner).
-    build_coordinator_spawner: Callable[
-        [Config, Path, Path, str, str, float | None, bool],
-        GroupLaneSpawner | None,
-    ]
-    # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
-    # LaneRuntime's injected spawner).
-    agent6_exe: Callable[[], str]
-    spawn_detached_resume: Callable[[Path, str], str]
 
 
 def discard_husk_dir(session_dir: Path) -> None:

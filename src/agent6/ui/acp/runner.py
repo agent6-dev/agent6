@@ -28,8 +28,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from agent6.app.frontend import FrontendCapabilities
 from agent6.app.reporter import Reporter
-from agent6.app.run import FrontendCapabilities, run_task
+from agent6.app.run import run_task
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.types import session_bucket

@@ -220,7 +220,7 @@ def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.Mo
 
 def _acp_front(*, reply: str | None):
     """The real ACP frontend, with the ask seam captured."""
-    from agent6.app.run import FrontendCapabilities
+    from agent6.app.frontend import FrontendCapabilities
     from agent6.ui.acp.frontend import acp_frontend
 
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []

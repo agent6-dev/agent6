@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.app.run import FrontendCapabilities
+from agent6.app.frontend import FrontendCapabilities
 from agent6.tools.schema import UserQuestion
 from agent6.ui.acp.frontend import acp_frontend
 

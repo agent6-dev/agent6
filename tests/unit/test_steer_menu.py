@@ -449,7 +449,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
     holding its worker lock and its egress broker."""
     import signal
 
-    from agent6.app.run import SessionFacts
+    from agent6.app.frontend import SessionFacts
     from agent6.events import EventSink
     from agent6.ui.cli import _steer
 

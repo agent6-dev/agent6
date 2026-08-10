@@ -36,6 +36,12 @@ from agent6.app.finalize import (
     print_session_end,
     session_exit_code,
 )
+from agent6.app.frontend import (
+    SessionFacts,
+    SessionFrontend,
+    apply_spawned_away_default,
+    approval_scopes,
+)
 from agent6.app.manifest import pin_gate
 from agent6.app.preflight import (
     drop_gate_if_unrunnable,
@@ -46,13 +52,7 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import (
-    SessionFacts,
-    SessionFrontend,
-    apply_spawned_away_default,
-    approval_scopes,
-    run_task,
-)
+from agent6.app.run import run_task
 from agent6.config import (
     Config,
     ConfigError,

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent6.app.run import SessionFacts
+from agent6.app.frontend import SessionFacts
 from agent6.events import EventSink
 from agent6.sessions.ipc import (
     clear_steer_answer,

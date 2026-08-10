@@ -295,7 +295,7 @@ def test_spawned_away_default_sets_wait_from_env(
 ) -> None:
     # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
     # terminal-less run WAITS for a viewer instead of fabricating empty answers.
-    from agent6.app.run import apply_spawned_away_default
+    from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import away_mode
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
@@ -310,7 +310,7 @@ def test_spawned_away_default_approve_reuses_session_allow(
     interactive detach prompt. Writing "approve" into away.mode put it outside
     the file's deny|wait vocabulary, so the reader fell into the wait branch and
     the spawn BLOCKED on every approval instead of approving."""
-    from agent6.app.run import apply_spawned_away_default
+    from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
@@ -333,7 +333,7 @@ def test_spawned_away_default_is_noop_without_env(
 ) -> None:
     # A pure headless run (no launcher, no env) is untouched, keeping its
     # non-hanging default so CI never blocks on an unanswerable question.
-    from agent6.app.run import apply_spawned_away_default
+    from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import away_mode
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
@@ -410,7 +410,7 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
     carrying on."""
     import os
 
-    from agent6.app.run import apply_spawned_away_default
+    from agent6.app.frontend import apply_spawned_away_default
     from agent6.sessions.ipc import away_mode, set_away_mode
 
     session_dir = tmp_path / "run"

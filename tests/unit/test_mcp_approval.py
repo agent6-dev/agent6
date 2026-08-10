@@ -156,7 +156,7 @@ def test_approving_everything_while_away_covers_the_servers_too(tmp_path: Path) 
     """A grant is per scope, so "approve all" that granted only the command
     scope would leave a detached run blocked on its first MCP call with nobody
     there to answer -- the hang the away-mode exists to prevent."""
-    from agent6.app.run import apply_spawned_away_default, approval_scopes
+    from agent6.app.frontend import apply_spawned_away_default, approval_scopes
     from agent6.sessions.ipc import session_allow_set
 
     cfg = Config.model_validate(

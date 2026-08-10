@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
 from agent6 import __version__
-from agent6.app.run import FrontendCapabilities
+from agent6.app.frontend import FrontendCapabilities
 from agent6.ui.acp.rpc import (
     INTERNAL_ERROR,
     INVALID_REQUEST,
