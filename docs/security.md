@@ -418,7 +418,10 @@ syscall for hardened), never guessed from the kernel version.
       The in-process edit tools (`apply_edit`/`apply_patch`) refuse, on both
       isolation levels, a write into the project's own `.git`, raw or
       symlink-resolved. That guard covers only in-process edits, not jailed
-      commands.
+      commands. The name is matched case-folded, on every platform: macOS and
+      Windows open `.GIT/config` as `.git/config`, and macOS runs unsandboxed,
+      where this refusal is the only thing protecting `.git`. Same for
+      `site-packages` and an operator protect path.
 - **The edit tools refuse writes into an in-repo venv or `site-packages`.**
     - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
       editable-install `.pth` would silently corrupt the venv, invisible in `runs
