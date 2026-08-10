@@ -73,8 +73,9 @@ class HttpTransport:
             # Streamable HTTP: a server may answer with either.
             "accept": "application/json, text/event-stream",
             "mcp-protocol-version": PROTOCOL_VERSION,
-            # No compression: the cap below counts what ARRIVES, and a decoded
-            # stream would let a small body expand past it before any check.
+            # Compression is declined here and refused in `send` if the server
+            # answers with it anyway: the cap counts what ARRIVES, and a
+            # decoded stream would expand past it before any check.
             "accept-encoding": "identity",
         }
         if auth := self._auth():
@@ -106,7 +107,16 @@ class HttpTransport:
             ):
                 if response.status_code >= 400:
                     raise MCPHttpError(f"server {self.name!r} returned HTTP {response.status_code}")
-                for chunk in response.iter_bytes():
+                encoding = response.headers.get("content-encoding", "")
+                if encoding.lower() not in ("", "identity"):
+                    # The RESPONSE header picks the decoder, whatever was asked
+                    # for; honouring it hands a compromised server a
+                    # decompression bomb that expands ahead of the cap below.
+                    raise MCPHttpError(
+                        f"server {self.name!r} answered with content-encoding {encoding!r};"
+                        " only identity is read"
+                    )
+                for chunk in response.iter_raw():
                     body += chunk
                     if len(body) > MAX_BODY_BYTES:
                         raise MCPHttpError(

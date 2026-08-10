@@ -8,14 +8,51 @@ and the operator's allow-list is what makes a read silent.
 
 from __future__ import annotations
 
+import gzip
 import socket
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
+import httpx2
 import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
-from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
+from agent6.tools.fetch import MAX_BYTES, FetchRefused, check_url, fetch, host_allowed
+
+
+class _Body(httpx2.SyncByteStream):
+    """A streamed response body, fresh per response."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield self._data
+
+
+def _fetch_serving(
+    monkeypatch: pytest.MonkeyPatch, *, headers: dict[str, str], content: bytes
+) -> None:
+    """Point `fetch` at an in-memory server answering one GET, with the host
+    resolving to a public address."""
+    from agent6.tools import fetch as fetch_mod
+
+    def _public(*_a: object, **_k: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        return [(0, 0, 0, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _public)
+
+    def _handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, headers=headers, stream=_Body(content))
+
+    real_client = httpx2.Client
+
+    def _client(**kwargs: Any) -> httpx2.Client:
+        return real_client(transport=httpx2.MockTransport(_handler), **kwargs)
+
+    monkeypatch.setattr(fetch_mod.httpx2, "Client", _client)
 
 
 @pytest.mark.parametrize(
@@ -168,6 +205,35 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
     assert "fetch" not in d.available_tool_names()
     with pytest.raises(ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
+
+
+def test_a_plain_text_response_streams_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fetch_serving(monkeypatch, headers={"content-type": "text/plain"}, content=b"hello")
+    got = fetch(check_url("https://example.com/x"))
+    assert (got.status, got.body) == (200, "hello")
+
+
+def test_a_compressed_response_is_refused_not_decoded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The `Accept-Encoding: identity` REQUEST header binds nothing: httpx
+    picks its decoder from the RESPONSE header, so a hostile server's
+    `Content-Encoding` expanded a small body in memory before the size cap
+    could count it (8 KiB of zstd measured out at 256 MiB in one chunk).
+    Anything but identity is refused, never decoded."""
+    _fetch_serving(
+        monkeypatch,
+        headers={"content-type": "text/plain", "content-encoding": "gzip"},
+        content=gzip.compress(b"a" * 4096),
+    )
+    with pytest.raises(FetchRefused, match="content-encoding"):
+        fetch(check_url("https://example.com/x"))
+
+
+def test_an_oversized_body_is_refused_while_it_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fetch_serving(
+        monkeypatch, headers={"content-type": "text/plain"}, content=b"x" * (MAX_BYTES + 1)
+    )
+    with pytest.raises(FetchRefused, match="larger than"):
+        fetch(check_url("https://example.com/x"))
 
 
 def test_a_denied_fetch_never_touches_the_resolver(

@@ -161,9 +161,9 @@ def fetch(checked: Checked) -> Fetched:
             client.stream(
                 "GET",
                 dialled,
-                # No compression: `iter_bytes` yields DECODED bytes, so the cap
-                # below ran only after zstd had already expanded 256 KB into
-                # 8 GiB and taken the agent process with it.
+                # Compression is declined here and refused below if the server
+                # sends it anyway: the cap counts what ARRIVES, and a decoded
+                # stream would expand past it before any check.
                 headers={"Host": checked.host, "Accept-Encoding": "identity"},
                 extensions={"sni_hostname": checked.host},
             ) as response,
@@ -171,8 +171,14 @@ def fetch(checked: Checked) -> Fetched:
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(_TEXTUAL):
                 raise FetchRefused(f"not a text response: content-type {content_type!r}")
+            encoding = response.headers.get("content-encoding", "")
+            if encoding.lower() not in ("", "identity"):
+                # The RESPONSE header picks the decoder, whatever was asked
+                # for; honouring it hands a hostile server a decompression
+                # bomb that expands ahead of the cap below.
+                raise FetchRefused(f"refusing content-encoding {encoding!r}: only identity is read")
             body = bytearray()
-            for chunk in response.iter_bytes():
+            for chunk in response.iter_raw():
                 body += chunk
                 if len(body) > MAX_BYTES:
                     raise FetchRefused(f"response is larger than {MAX_BYTES} bytes")

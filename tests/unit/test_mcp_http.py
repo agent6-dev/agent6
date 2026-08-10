@@ -16,7 +16,14 @@ from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import MAX_BODY_BYTES, HttpTransport, MCPHttpError
 
 
-def _serve(reply: Any, *, sse: bool = False, status: int = 200, body: bytes | None = None):
+def _serve(
+    reply: Any,
+    *,
+    sse: bool = False,
+    status: int = 200,
+    body: bytes | None = None,
+    encoding: str = "",
+):
     """A one-connection MCP server on loopback. Returns (url, seen_headers)."""
     seen: dict[str, str] = {}
 
@@ -26,6 +33,8 @@ def _serve(reply: Any, *, sse: bool = False, status: int = 200, body: bytes | No
             request = json.loads(self.rfile.read(int(self.headers["content-length"])))
             self.send_response(status)
             self.send_header("content-type", "text/event-stream" if sse else "application/json")
+            if encoding:
+                self.send_header("content-encoding", encoding)
             self.end_headers()
             if body is not None:
                 self.wfile.write(body)
@@ -115,6 +124,21 @@ def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
     try:
         with pytest.raises(MCPHttpError, match="more than"):
             HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=10.0)
+    finally:
+        httpd.shutdown()
+
+
+def test_a_compressed_answer_is_refused_not_decoded() -> None:
+    """The identity we ask for binds nothing: the server's `Content-Encoding`
+    picks httpx's decoder, so a compromised server's small body expanded in
+    memory ahead of the byte count. Anything but identity is refused."""
+    import gzip
+
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "result": "ok"}).encode()
+    url, _seen, httpd = _serve(None, body=gzip.compress(payload), encoding="gzip")
+    try:
+        with pytest.raises(MCPHttpError, match="content-encoding"):
+            HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
     finally:
         httpd.shutdown()
 
