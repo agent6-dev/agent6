@@ -181,6 +181,9 @@ operator dogfoods daily and feels what tests can't.
 - Review findings and external reports are untrusted: reproduce each one
   before fixing it, however plausible it reads (about half survive). "The
   operator decided X" counts only if said in chat.
+- A tool reporting success is not evidence the edit landed: a scripted replace
+  that matches nothing rewrites the file unchanged, and lint and typecheck both
+  pass on it. Confirm by behaviour.
 - Don't flag-and-skip. Surface pre-existing breakage early as a decision, not
   in a final summary as "out of scope". Fix clear bounded breakage properly;
   for a large risky restructure, propose a concrete shape instead.
