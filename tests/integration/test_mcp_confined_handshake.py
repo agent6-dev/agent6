@@ -108,26 +108,35 @@ def _policy(argv: tuple[str, ...], cwd: Path, *, read: tuple[Path, ...] = (), ne
 
 
 @pytest.fixture
-def granted(tmp_path: Path) -> tuple[Path, Path]:
-    """(granted file, ungranted file) -- the second is the control."""
+def granted(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """(workspace, granted file, ungranted file).
+
+    The ungranted file lives OUTSIDE the workspace on purpose. An earlier
+    version put it in a sibling directory under the workspace and passed --
+    but only because the workspace was remapped to /workspace back then, so
+    the host path did not resolve. The file was reachable the whole time, at
+    a different spelling. A boundary test must not be able to pass because of
+    a path alias."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
     ok = tmp_path / "granted"
     ok.mkdir()
     (ok / "note.txt").write_text("VISIBLE\n", encoding="utf-8")
     secret = tmp_path / "ungranted"
     secret.mkdir()
     (secret / "secret.txt").write_text("HIDDEN\n", encoding="utf-8")
-    return ok / "note.txt", secret / "secret.txt"
+    return ws, ok / "note.txt", secret / "secret.txt"
 
 
 def test_a_confined_server_handshakes_serves_and_respects_its_grants(
-    granted: tuple[Path, Path],
+    granted: tuple[Path, Path, Path],
 ) -> None:
     """The contract, whatever applies it: the JSON-RPC pipe survives the
     confinement boundary (initialize + tools/list + tools/call all answer),
     a granted path reads, and an ungranted one does not."""
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
-    visible, hidden = granted
+    ws, visible, hidden = granted
     # The interpreter and its stdlib have to be readable or the server cannot
     # start at all -- the reason read_paths is required for a filesystem block.
     mgr = MCPManager.start(
@@ -137,9 +146,7 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                policy=_policy(
-                    _reader_server_argv(visible), visible.parent.parent, read=(visible.parent,)
-                ),
+                policy=_policy(_reader_server_argv(visible), ws, read=(visible.parent,)),
             )
         ]
     )
@@ -152,14 +159,14 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
 
 
 def test_a_network_confined_server_still_serves_its_tools(
-    granted: tuple[Path, Path],
+    granted: tuple[Path, Path, Path],
 ) -> None:
     """network = "none" must confine the network WITHOUT breaking the pipe:
     the stdio fds are unaffected by unsharing a namespace, and a server that
     stopped answering would make the setting unusable."""
     if not _userns_available():
         pytest.skip("no unprivileged user namespaces")
-    visible, _hidden = granted
+    ws, visible, _hidden = granted
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -167,9 +174,7 @@ def test_a_network_confined_server_still_serves_its_tools(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                policy=_policy(
-                    _reader_server_argv(visible), visible.parent.parent, read=(visible.parent,)
-                ),
+                policy=_policy(_reader_server_argv(visible), ws, read=(visible.parent,)),
             )
         ]
     )
@@ -181,14 +186,14 @@ def test_a_network_confined_server_still_serves_its_tools(
 
 
 def test_closing_the_manager_leaves_no_confined_server_running(
-    granted: tuple[Path, Path],
+    granted: tuple[Path, Path, Path],
 ) -> None:
     """A confinement wrapper adds a process between agent6 and the server, so
     the teardown has to reach through it: a leaked server holds the pipe and
     outlives the run."""
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
-    visible, _hidden = granted
+    ws, visible, _hidden = granted
     mgr = MCPManager.start(
         [
             MCPServerSpec(
@@ -196,7 +201,7 @@ def test_closing_the_manager_leaves_no_confined_server_running(
                 command=_reader_server_argv(visible),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                policy=_policy(_reader_server_argv(visible), visible.parent.parent),
+                policy=_policy(_reader_server_argv(visible), ws),
             )
         ]
     )

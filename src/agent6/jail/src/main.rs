@@ -242,14 +242,14 @@ fn run_strict(policy: &Policy) -> ! {
                 die(format!("PR_SET_DUMPABLE failed: {e}"));
             }
             if policy.mode == "serve" {
-                serve(Path::new("/workspace"), true);
+                serve(&policy.cwd, true);
             }
             let run = if policy.mode == "exec" {
                 run_child_exec
             } else {
                 run_child
             };
-            if let Err(e) = run(&policy.child_spec(), Path::new("/workspace")) {
+            if let Err(e) = run(&policy.child_spec(), &policy.cwd) {
                 die(format!("child execution failed: {e}"));
             }
             std::process::exit(0);
@@ -696,8 +696,14 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         )
         .map_err(io_err)?;
     }
-    // Bind the cwd RW.
-    let cwd_in = new_root.join("workspace");
+    // Bind the cwd RW, at its REAL path. Every mount in this root is at the
+    // path it has outside -- tool dirs, operator grants, and the workspace
+    // alike -- so a path means the same thing on both sides of the boundary.
+    // A remapped /workspace made an absolute host path (the one the model
+    // sees, the one an MCP server is configured with, the one in a server's
+    // own argv) fail with ENOENT inside, and made every hidden path need
+    // masking twice: once at its real location and once through the alias.
+    let cwd_in = new_root.join(policy.cwd.strip_prefix("/").unwrap_or(&policy.cwd));
     fs::create_dir_all(&cwd_in)?;
     mount(
         Some(policy.cwd.as_path()),
@@ -922,7 +928,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     umount2(Path::new("/.old_root"), MntFlags::MNT_DETACH).map_err(io_err)?;
     fs::remove_dir("/.old_root").ok();
 
-    chdir("/workspace").map_err(io_err)?;
+    chdir(&policy.cwd).map_err(io_err)?;
     Ok(())
 }
 
@@ -937,17 +943,10 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
 /// so a re-bound RW hole keeps its writability).
 fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
     let mut masked_dirs: Vec<PathBuf> = Vec::new();
-    // Each hidden path is masked at its real location AND, when it sits inside
-    // the workspace (cwd = $HOME puts ~/.config/agent6 in the workspace bind),
-    // at its /workspace alias -- the alias is a second door to the same files.
-    let mut targets: Vec<PathBuf> = Vec::new();
+    // One target per hidden path: every mount is at its real location, so
+    // there is no second door to close.
     for hp in &policy.hide_paths {
-        targets.push(new_root.join(hp.strip_prefix("/").unwrap_or(hp)));
-        if let Ok(rel) = hp.strip_prefix(&policy.cwd) {
-            targets.push(new_root.join("workspace").join(rel));
-        }
-    }
-    for dst in targets {
+        let dst = new_root.join(hp.strip_prefix("/").unwrap_or(hp));
         // Not in the assembled view: nothing mounted it, already invisible.
         let meta = match fs::symlink_metadata(&dst) {
             Ok(m) => m,
@@ -1038,7 +1037,7 @@ fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
 }
 
 fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
-    // Strict runs inside the pivoted rootfs; /workspace (the cwd bind)
+    // Strict runs inside the pivoted rootfs; the cwd bind (at its real path)
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
     // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
     // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
@@ -1070,10 +1069,10 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
-    if let Ok(fd) = PathFd::new("/workspace") {
+    if let Ok(fd) = PathFd::new(policy.cwd.as_path()) {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_all))
-            .map_err(|e| io::Error::other(format!("rule /workspace: {e}")))?;
+            .map_err(|e| io::Error::other(format!("rule cwd: {e}")))?;
     }
     // /tmp is a fresh private tmpfs in this jail's own mount namespace (mounted
     // in setup_rootfs), discarded when the jail exits. Grant it RW so toolchain

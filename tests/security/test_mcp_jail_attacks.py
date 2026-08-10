@@ -136,7 +136,7 @@ def test_a_symlink_out_of_the_workspace_reaches_nothing(tmp_path: Path) -> None:
     ws.mkdir()
     script = (
         "import os, pathlib\n"
-        f"link = pathlib.Path('/workspace/escape'); link.symlink_to({str(secret)!r})\n"
+        f"link = pathlib.Path('escape'); link.symlink_to({str(secret)!r})\n"
         "try:\n"
         "    print('FOLLOWED', link.read_text())\n"
         "except OSError as exc:\n"
@@ -178,7 +178,7 @@ def test_the_server_cannot_write_the_repos_git_dir(tmp_path: Path) -> None:
     script = (
         "import pathlib\n"
         "try:\n"
-        "    cfgp = pathlib.Path('/workspace/.git/config')\n"
+        "    cfgp = pathlib.Path('.git/config')\n"
         "    cfgp.write_text('[filter \"x\"]\\n\\tclean = id\\n')\n"
         "    print('POISONED')\n"
         "except OSError as exc:\n"

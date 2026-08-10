@@ -500,7 +500,7 @@ def test_a_fully_populated_policy_holds_every_invariant(
         "        if int(p.split('/')[2]) != me and b'PARENT-SECRET' in env(p)]\n"
         "print('LEAK', leak)\n"
         "try:\n"
-        "    open('/workspace/.git/config','w').write('x'); print('PROTECT writable')\n"
+        "    open('.git/config','w').write('x'); print('PROTECT writable')\n"
         "except OSError: print('PROTECT refused')\n"
     )
     res = run_in_jail(
@@ -548,7 +548,9 @@ def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: Path) -> No
             timeout_s=20.0,
         )
     )
-    assert "/workspace" in res.stdout, res.stdout + res.stderr
+    # The child lands in its cwd at that cwd's REAL path: every mount in the
+    # jail is where it is outside, so nothing has to be translated.
+    assert str(tmp_path) in res.stdout, res.stdout + res.stderr
     # The root the run actually created carries the CALLER's uid, not the 0 the
     # user namespace maps it to -- otherwise every user collides on -0 again.
     assert Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()

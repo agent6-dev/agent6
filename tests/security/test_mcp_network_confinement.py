@@ -57,7 +57,7 @@ def test_a_confined_server_gains_no_capabilities(tmp_path: Path) -> None:
         "import os, re\n"
         "s = open('/proc/self/status').read()\n"
         "f = lambda k: re.search(rf'^{k}:\\s*(.*)$', s, re.M).group(1).split()[0]\n"
-        "open('/workspace/made-by-server.txt', 'w').write('x')\n"
+        "open('made-by-server.txt', 'w').write('x')\n"
         "print(f('CapPrm'), f('CapEff'), f('CapBnd'))\n"
     )
     caps = _probe(script, tmp_path).split()
