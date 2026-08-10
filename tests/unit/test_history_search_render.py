@@ -13,6 +13,7 @@ from agent6.ui.cli.history_cmds import (
     _parse_rg_matches,  # pyright: ignore[reportPrivateUsage]
     _render_history_hits,  # pyright: ignore[reportPrivateUsage]
     _session_id_from_path,  # pyright: ignore[reportPrivateUsage]
+    _strings_in,  # pyright: ignore[reportPrivateUsage]
     _window,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -231,3 +232,14 @@ def test_deeply_nested_json_line_degrades_instead_of_crashing() -> None:
     line = '{"a":' * depth + "1" + "}" * depth
     hits = _parse_rg_matches(_rg_match_bytes("/s/runs/r1/logs.jsonl", line, '"a"'))
     assert len(hits) == 1  # fell back to the raw window, no RecursionError
+
+
+def test_string_walk_survives_nesting_the_parser_accepted() -> None:
+    """json.loads accepts nesting right up to the stack ceiling (where that
+    ceiling sits varies by interpreter and arch), so the walk over its result
+    must be iterative: one CI leg parsed the 100k-deep line the others refused,
+    then blew the recursion limit inside the walker instead."""
+    deep: dict[str, object] = {"leaf": "NEEDLE"}
+    for _ in range(100_000):
+        deep = {"a": deep}
+    assert list(_strings_in(deep)) == ["NEEDLE"]

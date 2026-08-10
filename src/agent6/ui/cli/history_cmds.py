@@ -109,15 +109,20 @@ def _match_core(text: str, start: int, end: int) -> str:
 
 
 def _strings_in(obj: object) -> Iterator[str]:
-    """Every string value nested anywhere in a decoded JSON object."""
-    if isinstance(obj, str):
-        yield obj
-    elif isinstance(obj, dict):
-        for v in obj.values():
-            yield from _strings_in(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            yield from _strings_in(v)
+    """Every string value nested anywhere in a decoded JSON object.
+
+    Iterative: json.loads accepts nesting right up to the interpreter's stack
+    ceiling, so a recursive walk over what it returns can be the thing that
+    blows up."""
+    stack = [obj]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            yield item
+        elif isinstance(item, dict):
+            stack.extend(reversed(list(item.values())))
+        elif isinstance(item, list):
+            stack.extend(reversed(item))
 
 
 def _field_snippet(raw: str, start: int, end: int) -> str | None:
@@ -153,7 +158,7 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
     for line in rg_json.splitlines():
         try:
             rec = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         if rec.get("type") != "match":
             continue
