@@ -93,6 +93,12 @@ VARR=""
 for w in $AGENT6_SB_VERIFY; do VARR="${VARR}\"${w}\", "; done
 VERIFY_TOML="verify_command = [${VARR%, }]"
 
+# A/B arm: the orchestrator mounts a replacement run-mode base prompt.
+PROMPT_FILE_LINE=""
+if [ -f /mnt/system_prompt.txt ]; then
+  PROMPT_FILE_LINE='system_prompt_file = "/mnt/system_prompt.txt"'
+fi
+
 cat > /root/agent6.toml <<EOF
 [agent6]
 config_version = 1
@@ -131,6 +137,7 @@ $VERIFY_TOML
 [prompt]
 revise_prompt = "off"
 structural_priors = ${AGENT6_SB_STRUCTURAL_PRIORS:-true}
+$PROMPT_FILE_LINE
 
 $REVIEW_LINES
 

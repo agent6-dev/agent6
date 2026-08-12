@@ -60,7 +60,14 @@ def _strip_test_files(patch: str) -> str:
 
 
 def run_one(
-    inst: dict, model: str, wheel: Path, out_dir: Path, *, max_usd: float, timeout_s: int
+    inst: dict,
+    model: str,
+    wheel: Path,
+    out_dir: Path,
+    *,
+    max_usd: float,
+    timeout_s: int,
+    prompt_file: Path | None = None,
 ) -> dict:
     iid = inst["instance_id"]
     pred_path = out_dir / "preds" / f"{model_label(model)}__{iid}.json"
@@ -105,6 +112,11 @@ def run_one(
         "-e",
         f"AGENT6_SB_WHEEL={wheel.name}",
         *review_env,
+        *(
+            ["-v", f"{prompt_file.resolve()}:/mnt/system_prompt.txt:ro"]
+            if prompt_file is not None
+            else []
+        ),
         "-v",
         f"{uv}:/usr/local/bin/uv:ro",
         "-v",
@@ -179,11 +191,19 @@ def main() -> int:
         default=None,
         help="explicit agent6 wheel (default: newest in dist/); use to A/B two builds",
     )
+    ap.add_argument(
+        "--prompt-file",
+        type=Path,
+        default=None,
+        help="mount as prompt.system_prompt_file inside the container (A/B arm)",
+    )
     args = ap.parse_args()
 
     rows = {r["instance_id"]: r for r in json.loads(args.instances.read_text())}
     sample = json.loads(args.sample.read_text())
-    ids = sample["sample_ids"][args.skip :]
+    # sample_50 carries eval ids as "sample_ids"; dev_slice carries "dev_ids"
+    # (named distinctly so a dev run can never be mistaken for the eval sample).
+    ids = (sample.get("sample_ids") or sample["dev_ids"])[args.skip :]
     ids = ids[: args.n] if args.n else ids
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     jobs = [(rows[i], m) for m in models for i in ids if i in rows]
@@ -205,7 +225,14 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=args.conc) as ex:
         futs = {
             ex.submit(
-                run_one, inst, m, wheel, args.out, max_usd=args.max_usd, timeout_s=args.timeout
+                run_one,
+                inst,
+                m,
+                wheel,
+                args.out,
+                max_usd=args.max_usd,
+                timeout_s=args.timeout,
+                prompt_file=args.prompt_file,
             ): (inst["instance_id"], m)
             for inst, m in jobs
         }
