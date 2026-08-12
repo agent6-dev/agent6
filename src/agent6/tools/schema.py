@@ -172,11 +172,8 @@ class RunCommandInput(_ToolInput):
 class FetchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "fetch"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read one https URL and return its text. For documentation, specs, changelogs and"
-        " API references the repo does not contain. GET only, redirects are returned rather"
-        " than followed, and the response must be text (1 MiB cap). Hosts the operator has"
-        " allowed are read straight away; any other host asks them first, so prefer a URL"
-        " you were given over one you guessed."
+        "Fetch an http(s) URL (GET). Returns status, headers, and body text"
+        " (truncated at a cap). Requires network reach from this run."
     )
 
     url: str = Field(min_length=1)
@@ -213,8 +210,7 @@ class ReadBackgroundInput(_ToolInput):
 class StopBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "stop_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Kill a background command and everything it started. Already-finished commands are"
-        " left as they are; their output stays readable."
+        "Stop a background command by background_id. Returns its final output and returncode."
     )
 
     id: str
@@ -223,15 +219,8 @@ class StopBackgroundInput(_ToolInput):
 class RunMetricInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_metric_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Run the user-declared metric command in the sandbox. Returns the "
-        "command output plus the parsed score (the first capture group of "
-        "the configured `pattern` regex, parsed as float). For metric-"
-        "driven optimization runs: call this after each successful verify "
-        "to see whether the change improved the score. Returns "
-        "{returncode, stdout, stderr, duration_s, score}. `score` is null "
-        "if the pattern didn't match or the capture group wasn't numeric. "
-        "No arguments. Exposed to the agent loop so the agent itself "
-        "decides when to verify."
+        "Run the configured metric command. Returns the parsed score. The"
+        " harness also runs it automatically after each verify-passing edit."
     )
 
 
@@ -248,21 +237,19 @@ class FinishSessionInput(_ToolInput):
     result: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Optional structured JSON object. When the task instructs you to "
-            "return data matching a named schema, put that object here; it is "
-            "validated against the schema at the trust boundary."
+            "Optional JSON object. When the task names a result schema,"
+            " return the matching object here; validated at the trust"
+            " boundary."
         ),
     )
     stale_gate: str = Field(
         default="",
         description=(
-            "Set ONLY when the verify command no longer matches the task -- it "
-            "tests behaviour this run deliberately changed, or it cannot run at "
-            "all. Give the command you believe it should be. This never changes "
-            "the gate and never makes the run pass; it records the proposal for "
-            "the operator, who decides. Use it instead of reverting correct work "
-            "to satisfy a stale gate: that is always the wrong move. Leave empty "
-            "when the gate is simply failing -- then fix the work."
+            "Set only when the verify command no longer matches the task: it"
+            " pins behaviour this run deliberately changed, or cannot run."
+            " Give the command you believe is right; it records a proposal"
+            " and never changes the gate or passes the run. A merely failing"
+            " gate means fix the work."
         ),
     )
 
@@ -357,11 +344,7 @@ class DagUpdateTaskInput(_ToolInput):
 class DagListTasksInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_tasks"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "List tasks in the DAG. Optional `status` filter (pending |"
-        " in_progress | passed | failed | skipped | obsolete). Use to find"
-        " a parent_id before add_task, or to check what's still pending."
-        " Returns {id, parent_id, title, status, acceptance, relevant_paths}"
-        " per task."
+        "List the task graph: ids, titles, statuses, dependencies, and the current focus."
     )
 
     # The same status enum update_task uses, so a typo is a schema rejection
@@ -388,23 +371,14 @@ class AddMemoryInput(_ToolInput):
 
 class ReadNotesInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_notes"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read your durable scratchpad for this repository -- the same text that"
-        " appears in the <notes> block of your system prompt. Use it before"
-        " write_notes so you rewrite the current content rather than replacing"
-        " it blind. Returns the notes, or empty when you have written none."
-    )
+    TOOL_DESCRIPTION: ClassVar[str] = "Read the run's scratchpad notes."
 
 
 class WriteNotesInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "write_notes"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "REPLACE your durable scratchpad with `content`, which future sessions"
-        " on this repository will see in their <notes> block. Unlike add_memory"
-        " (append-only, one fact per entry) this is one document you rewrite:"
-        " reorganize it, delete what is resolved, merge what repeats. Read it"
-        " first. Keep it a working document, not a log -- oversized notes are"
-        " REFUSED so you prune rather than let them crowd out the task."
+        "Replace the run's scratchpad notes (persisted across resume; shown"
+        " to future runs on this repo). Keep it short and current."
     )
 
     content: str = Field(max_length=NOTES_MAX_CHARS)
@@ -413,12 +387,8 @@ class WriteNotesInput(_ToolInput):
 class InvalidateMemoryInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "invalidate_memory"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Mark a memory from the <memories> block as no longer true, so future"
-        " runs stop seeing it. Non-destructive: the entry stays on disk for"
-        " the operator's audit trail (`agent6 memory list --all`). Use when"
-        " the repository or the operator contradicts a recorded memory."
-        " `id` is the 26-char id shown in the block; `reason` says"
-        " what changed."
+        "Mark a recorded memory wrong or stale by id, with the reason. It"
+        " stops appearing; the correction is kept for the operator."
     )
 
     id: str = Field(min_length=26, max_length=26)
@@ -428,12 +398,8 @@ class InvalidateMemoryInput(_ToolInput):
 class UseSkillInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Load an operator-installed skill from the <skills> index in the"
-        " system prompt. Returns the skill's full SKILL.md instructions;"
-        " follow them for the current task. Optional `file` fetches a"
-        " supplementary file the skill references (e.g."
-        " 'references/patterns.md'), path relative to the skill's own"
-        " directory. Read-only; never reads the repository."
+        "Load an installed skill's full instructions by name (from the"
+        " <skills> index) and follow them."
     )
 
     name: str = Field(min_length=1, max_length=100)
@@ -454,13 +420,9 @@ class OutlineInput(_ToolInput):
 class FindDefinitionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_definition"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Find every declaration site of an identifier (function / class / "
-        "struct / enum / type alias) across the project. Returns matches as "
-        "(file path, line, kind). Tree-sitter backed; matches by exact symbol "
-        "name (not by type or scope). Common usage: locate where a symbol is "
-        "defined before reading its file. Cheaper than `grep 'def foo'` "
-        "because it excludes occurrences in strings, comments, and other "
-        "identifier-shaped tokens that happen to share the name."
+        "Find where a symbol is defined (tree-sitter; excludes strings and"
+        " comments). Returns file:line with a snippet. Cheaper than grep for"
+        " symbols."
     )
 
     symbol: str = Field(min_length=1)
