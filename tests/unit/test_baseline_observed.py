@@ -77,7 +77,7 @@ def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.Mon
     wf = _wf()
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    assert any("ALREADY failing" in str(n) for n in turn.tool_results)
+    assert any("already failing" in str(n) for n in turn.tool_results)
 
 
 def test_a_leg_that_moved_past_the_base_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
