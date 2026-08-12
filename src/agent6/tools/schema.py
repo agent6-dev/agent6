@@ -34,17 +34,10 @@ class _ToolInput(BaseModel):
 class ReadFileInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_file"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read a text file from the repository. `path` is repo-root-relative "
-        "(e.g. 'src/foo.py'); an absolute path works only inside a directory "
-        "the operator granted the run. Returns the "
-        "UTF-8 decoded contents. Optional `start_line` (1-based, matching"
-        " every line number this harness reports; default 1) and `limit`"
-        " (max lines to return, default all). Fails when: path is outside"
-        " the repo, file does not exist, file is not UTF-8 decodable, or"
-        " file is binary. Use `outline` instead when you only need a file's"
-        " structure, not every line. A very large file is read only up to a"
-        " cap and the result sets `truncated: true`; use a narrower"
-        " `start_line`/`limit` range to reach the rest."
+        "Read a UTF-8 text file. `path` is repo-root-relative (absolute only"
+        " inside granted directories). start_line (1-based) and limit select a"
+        " range. Very large files truncate (truncated: true); narrow the range"
+        " to reach the rest. outline shows structure without content."
     )
 
     path: str = Field(min_length=1)
@@ -80,23 +73,12 @@ class ListDirInput(_ToolInput):
 class ApplyEditInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_edit"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Apply substring edits to one file. `edits` MUST be an ARRAY of"
-        " objects (NOT a JSON-encoded string), each with string fields"
-        ' {"old_string": "...", "new_string": "..."} and an OPTIONAL'
-        ' "kind" that defaults to "replace" (set kind="create" only to'
-        " make a new file). Each edit's `old_string` MUST occur"
-        " EXACTLY ONCE in the file (whitespace, indentation, and line"
-        " endings must match byte-for-byte). If `old_string` is not"
-        " unique, expand it with more surrounding context. If `old_string`"
-        " is not found, the on-disk file content likely differs from what"
-        " you expect - re-read with `read_file` before retrying. Set"
-        " kind='create' (with empty `old_string`) to create a new file;"
-        " `new_string` is then the full file content and MUST be the only"
-        " edit in the array."
-        " Pass `preview=true` for a dry-run: the unified diff and hunk"
-        " count of the would-be change are returned WITHOUT touching disk."
-        " Use this to sanity-check large or risky multi-edit calls before"
-        " committing to them; defaults to false (apply directly)."
+        "Edit one file. `edits` is an array of {old_string, new_string, kind?}."
+        " Each old_string must occur exactly once in the file, byte for byte;"
+        " expand it with surrounding context if not unique, and re-read the"
+        ' file if not found. kind="create" makes a new file: empty old_string,'
+        " full content in new_string, the only edit in the array. preview=true"
+        " returns the would-be diff without touching disk."
     )
 
     path: str = Field(min_length=1)
@@ -122,15 +104,11 @@ class ApplyEditInput(_ToolInput):
 class ApplyPatchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_patch"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Apply a patch to one file. Two formats are accepted: (1) standard"
-        " unified diff (`--- a/PATH`, `+++ b/PATH`, `@@ -L,N +L,N @@` hunks with"
-        " ` `, `-`, `+` line prefixes; `--- /dev/null` to create a file), or (2)"
-        " OpenAI's `*** Begin Patch` / `*** Update File: PATH` / `*** End Patch`"
-        " format (context-anchored hunks, no line numbers). Context lines must"
-        " match the on-disk file exactly (no fuzzy match). `path` is optional:"
-        " when omitted it is taken from the patch headers. File deletion is not"
-        " supported. One file per call. Pass `preview=true` for a dry-run: the"
-        " diff and hunk count are echoed back WITHOUT writing to disk."
+        "Patch one file per call. Accepts a standard unified diff (`--- a/PATH`,"
+        " `+++ b/PATH`, @@ hunks; `--- /dev/null` creates) or OpenAI's"
+        " *** Begin/Update File/End Patch format. Context lines must match the"
+        " file exactly; no deletion. `path` optional (taken from headers)."
+        " preview=true echoes the diff without writing."
     )
 
     path: str = ""
@@ -174,23 +152,17 @@ class RunVerifyInput(_ToolInput):
 class RunCommandInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Run a command in the sandbox. argv must be an array of strings (no shell)."
-        " Requires `run_commands` capability != 'no' in config; if 'ask', the user is prompted."
-        " Under jailed isolation PATH is `/usr/bin:/bin` plus standard bin dirs; prefer"
-        " absolute paths like `/usr/bin/python3` there (bare `python` may not resolve)."
-        " Nothing is killed for taking too long: a command still running after the"
-        " configured check-in is handed back with `returncode: null`,"
-        " `still_running: true` and a `background_id`, and keeps running. Decide"
-        " what to do the way your instructions say -- poll it with"
-        " `read_background`, stop it with `stop_background`, or carry on and check"
-        " later. The output it printed before the hand-back comes back with it."
-        " Pass `background: true` to skip the wait entirely and get that handle"
-        " immediately -- for a server, a watcher, or anything you want running"
-        " while you work. Under the default isolation a run's commands share one"
-        " PRIVATE network, so a server you start here answers a later run_command"
-        " at the address it prints, and nothing outside the run reaches it. Every"
-        " background command is killed when the run ends, so never use one for"
-        " work whose result you need afterwards."
+        "Run a command in the sandbox. argv is an array of strings, no shell."
+        " Requires the run_commands capability; 'ask' prompts the operator."
+        " Under jailed isolation PATH is minimal; prefer absolute paths like"
+        " /usr/bin/python3. A command still running at the check-in is handed"
+        " back with returncode null, still_running true, and a background_id,"
+        " and keeps running: poll with read_background, stop with"
+        " stop_background, or continue working; output printed so far comes"
+        " with the hand-back. background=true returns the handle at once."
+        " Jailed commands in one run share the run's private network, so a"
+        " server started here answers later commands. All background commands"
+        " die when the run ends."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)
@@ -213,12 +185,8 @@ class FetchInput(_ToolInput):
 class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read another session in this project. A run, a plan and an ask are all sessions."
-        " Always returns the roster of this project's sessions, newest first, with each"
-        " one's id, mode and task. Pass `id` to also get that session's conversation, or"
-        " `query` to narrow the roster to sessions whose task or transcript contains that"
-        " text. Read-only, and limited to this project. Use it to pick up what an earlier"
-        " session worked out instead of redoing it."
+        "Read another session's transcript summary by id (or the latest when"
+        " omitted). Use to continue or review earlier work; read-only."
     )
 
     id: str = ""
@@ -229,13 +197,9 @@ class ReadSessionInput(_ToolInput):
 class ReadBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read what a background command has printed so far. Always returns the state of every"
-        " background command this run started (running / exited with its code / stopped / died),"
-        " so a command that ended on its own is visible the next time you look. Omit `id` for"
-        " that roster alone, which never waits."
-        " With an `id`, this WAITS for that command to finish (up to `wait_s`, default: the"
-        " run's configured check-in) and returns as soon as it does -- ask once rather than"
-        " polling in a loop. Pass `wait_s: 0` to look without waiting."
+        "Read a background command's output. `background_id` from run_command;"
+        " `offset` skips bytes already seen. Returns output, running state,"
+        " and returncode when finished."
     )
 
     id: str = ""
@@ -274,13 +238,10 @@ class RunMetricInput(_ToolInput):
 class FinishSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "finish_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Signal that the agent has completed its work and the workflow "
-        "should exit cleanly. Call this when (a) the task is done and "
-        "verify passes, or (b) the metric has plateaued and further work "
-        "is unlikely to improve it, or (c) you are blocked and cannot "
-        "make progress. `summary` is a one-paragraph description of what "
-        "was done / left undone, surfaced to the operator. Do not call any "
-        "other tools after finish_session."
+        "End the run cleanly. Call when the task is done and verify passes,"
+        " the metric has plateaued, or you are blocked. summary: one"
+        " paragraph for the operator on what was done and left undone. Call"
+        " no tools after it."
     )
 
     summary: str = Field(min_length=1)
@@ -357,19 +318,13 @@ class FinishPlanningInput(_ToolInput):
 class DagAddTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "add_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Add a subtask to the persistent task graph. Use only when the task"
-        " naturally decomposes into 3+ trackable steps; skip for one-shot"
-        " or single-file work. `parent_id` attaches under an existing task"
-        " (omit to attach under the run's root). `title` is a short"
-        " imperative; `acceptance` is the verify-able condition."
-        " `after` places the new task directly after that sibling instead of"
-        " last, which is how work is inserted between two existing steps."
-        " `depends_on` lists task ULIDs that must pass before this one is"
-        " surfaced. `standing=true` makes a STANDING task: the run's"
-        " never-finishing fallback goal, worked only when no ordinary task"
-        " is ready; it never passes (retire it with skipped/obsolete) and"
-        " the run re-enters it instead of ending."
-        " Returns the new task's 26-char ULID."
+        "Add a subtask to the persistent task graph; skip for one-shot work."
+        " parent_id attaches under an existing task (default the root). title"
+        " is a short imperative; acceptance the verifiable condition. after"
+        " inserts directly after that sibling. depends_on lists task ULIDs"
+        " that must pass first. standing=true marks the run's never-finishing"
+        " fallback goal: worked when nothing else is ready, never passes,"
+        " retired with skipped/obsolete. Returns the new task's ULID."
     )
 
     title: str = Field(min_length=1)
@@ -388,12 +343,9 @@ class DagAddTaskInput(_ToolInput):
 class DagUpdateTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Update a task: set `status` (pending | in_progress | passed |"
-        " failed | skipped | obsolete) and/or append `depends_on` edges"
-        " (task ULIDs this task must wait on; the harness only surfaces a"
-        " task once every dependency has passed, and a cycle is rejected)."
-        " Mark in_progress when starting a subtask and passed (only) after"
-        " verify confirms it. Pass at least one of status / depends_on."
+        "Update a task: status (in_progress moves focus; passed only after"
+        " verify confirms), title, acceptance, or depends_on (task ULIDs that"
+        " must pass first). Fields omitted stay unchanged."
     )
 
     id: str = Field(min_length=26, max_length=26)
@@ -425,15 +377,9 @@ class DagListTasksInput(_ToolInput):
 class AddMemoryInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "add_memory"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Record a durable note that FUTURE agent runs on this repository will"
-        " see in the <memories> block of their system prompt. `scope` is one"
-        " of: facts (a stable observation about this codebase you had to"
-        " discover), decisions (a choice the operator confirmed or you"
-        " committed to), preferences (how the operator wants things done)."
-        " `body` is ONE self-contained statement naming the concrete files,"
-        " commands, or numbers. Do NOT record task progress (the task graph"
-        " owns that), secrets, or anything a future run can read straight"
-        " from the repo. Returns the new memory's 26-char id."
+        "Record one durable, self-contained fact for future runs on this"
+        " repository. scope 'repo' or 'global'. Never task progress, secrets,"
+        " or anything obvious from the repo."
     )
 
     scope: Literal["facts", "decisions", "preferences"]
@@ -497,14 +443,9 @@ class UseSkillInput(_ToolInput):
 class OutlineInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "List top-level and nested definitions (functions / classes / structs "
-        "/ enums) in ONE source file with their start line numbers. Tree-"
-        "sitter backed, deterministic, cheap. Use this instead of `read_file` "
-        "when you only need a file's shape (e.g. 'what classes are in "
-        "core.py?'). Supported extensions: .py .rs .ts .tsx .js .jsx .go "
-        ".java .c .h .cpp .cc .cs .rb .php - other files return an empty "
-        "list. Returns names + line numbers only; for function bodies use "
-        "`read_file`."
+        "Structural outline of a source file: top-level and nested defs,"
+        " classes, and their line ranges. Cheaper than reading the file when"
+        " you need shape, not content."
     )
 
     path: str = Field(min_length=1)
@@ -528,15 +469,8 @@ class FindDefinitionInput(_ToolInput):
 class FindReferencesInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_references"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Find every identifier occurrence of `symbol` across the project, "
-        "including the definition site itself. Tree-sitter backed: matches "
-        "inside strings and comments are excluded - vastly cleaner than "
-        "plain `grep <symbol>`. Use this to enumerate all call sites of a "
-        "function before renaming it or changing its signature. Caveat: "
-        "this is text-level identifier matching, NOT semantic resolution. "
-        "Unrelated `foo`s in unrelated scopes (e.g. a local var `foo` in "
-        "one function and a top-level function `foo` in another) will all "
-        "be returned; disambiguate by inspecting the surrounding context."
+        "List references to a symbol across the repo (tree-sitter; excludes"
+        " strings and comments). Returns file:line rows with a snippet."
     )
 
     symbol: str = Field(min_length=1)
@@ -552,18 +486,13 @@ class UserQuestion(BaseModel):
 class AskUserInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "ask_user"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Ask the operator one or more questions and wait for the answers. CALL THIS"
-        " whenever the task asks you to confirm, ask, check with, or get input from the"
-        " operator, or for a genuine decision you cannot make from the repo + task (a"
-        " product choice, an ambiguous requirement). Do NOT just write the question as"
-        " text and stop -- the operator only sees a question you send through THIS tool."
-        " Batch related questions into ONE call (they are answered together and reviewed"
-        ' before submitting). `questions` is an ARRAY of objects, each {"question":'
-        ' "...", "options": ["...", ...]}; a single question may also be passed flat as'
-        ' {"question": "..."}. Give 2-4 `options` when the answer is a choice (the'
-        ' operator may also type free text). Returns {"answers": [<string>, ...]}'
-        " aligned to `questions`. A live TUI/web front-end answers; only a headless run"
-        " with nobody watching returns empty answers, so ask freely when input is wanted."
+        "Ask the operator and wait. Use for decisions the repo and task cannot"
+        " settle, or when the task says to check with the operator; a question"
+        " written as plain text is never seen. `questions` is an array of"
+        " {question, options?}; give 2-4 options for a choice (free text is"
+        " always allowed); batch related questions into one call. Returns"
+        " {answers: [...]} aligned to questions. Headless runs with nobody"
+        " watching return empty answers."
     )
 
     questions: tuple[UserQuestion, ...] = Field(min_length=1, max_length=8)
@@ -715,11 +644,22 @@ def mode_tools(mode: str) -> ModeTools:
     )
 
 
+def _strip_titles(node: Any) -> Any:
+    """Drop pydantic's auto "title" keys: they duplicate the field name in
+    Title Case and carry no signal on the wire (~1.6k chars across the
+    surface)."""
+    if isinstance(node, dict):
+        return {k: _strip_titles(v) for k, v in node.items() if k != "title"}
+    if isinstance(node, list):
+        return [_strip_titles(v) for v in node]
+    return node
+
+
 def schemas_as_provider_tools() -> list[dict[str, Any]]:
     """Emit Anthropic-API-shape tool descriptors. (kept dict-typed to avoid circular import)"""
     out: list[dict[str, Any]] = []
     for cls in ALL_TOOLS:
-        schema = cls.model_json_schema()
+        schema = _strip_titles(cls.model_json_schema())
         # Anthropic wants the schema directly, not wrapped, with "type" present.
         schema.setdefault("type", "object")
         out.append(
