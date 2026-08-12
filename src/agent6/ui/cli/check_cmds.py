@@ -384,7 +384,8 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
 
 def _boundaries_mcp(cfg: Config) -> None:
     if not cfg.mcp.enabled or not cfg.mcp.servers:
-        print("  mcp servers: none run ([mcp].enabled = false or no servers)")
+        cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
+        print(f"  mcp servers: none run ({cause})")
         return
     print(f"  mcp servers ({len(cfg.mcp.servers)} configured, approval per server):")
     for name, srv in sorted(cfg.mcp.servers.items()):
