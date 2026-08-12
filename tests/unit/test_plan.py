@@ -181,7 +181,7 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
         config=cfg, repo=repo, mode="plan", memories=(), notes="", skills=None
     )  # pyright: ignore[reportPrivateUsage]
     # override replaces the run base...
-    assert "CUSTOM WORKER" in run and "<edit-rules>" not in run
+    assert "CUSTOM WORKER" in run and "<agent6>" not in run
     # ...but the dynamic blocks (budget, repo-priors) still append
     assert "<budget-awareness>" in run and "<repo-priors>" in run
     # other modes are unaffected (scoped to run)

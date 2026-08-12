@@ -47,7 +47,7 @@ def test_prompt_show_run_mode_injects_agents_md(
     out = capsys.readouterr().out
     assert rc == 0
     # static structural blocks + the per-repo priors block
-    assert "<role>" in out and "<repo-priors>" in out
+    assert "<agent6>" in out and "<repo-priors>" in out
     # the repo's AGENTS.md is injected verbatim into the prompt
     assert "be terse here" in out
 
