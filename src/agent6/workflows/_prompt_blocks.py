@@ -22,6 +22,7 @@ from agent6.notes import NOTES_MAX_CHARS
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
+    HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
     MEMORIES_HEADER_READONLY,
     MEMORIES_HEADER_RUN,
@@ -36,7 +37,7 @@ from agent6.prompts.loop import (
     no_verify_block,
 )
 from agent6.skills import ResolvedSkills
-from agent6.types import RepoSummary
+from agent6.types import IsolationLevel, RepoSummary
 
 # Cross-run memories injected into the system prompt. Bounded so the block
 # can never crowd out the task: one entry is clipped at MEMORY_ENTRY_MAX_CHARS
@@ -235,15 +236,20 @@ def repo_priors_block(repo: RepoSummary) -> str:
         )
     else:
         repo_line = "Directory (not a git repository; no branch, history, or tracked-file map)."
+    # No AGENTS.md -> no section: an "(empty)" header is noise on every repo
+    # that has none.
+    agents_block = (
+        f"AGENTS.md (project conventions):\n{repo.agents_md}\n\n" if repo.agents_md else ""
+    )
     return V2_REPO_BLOCK_TEMPLATE.format(
         repo_line=repo_line,
         top_level=", ".join(repo.top_level),
-        agents_md=repo.agents_md or "(empty)",
+        agents_block=agents_block,
         repo_map_block=repo_map_block,
         symbol_outline_block=symbol_outline_block,
         co_change_block=co_change_block,
         hot_symbols_block=hot_symbols_block,
-        recent_log=repo.recent_log or "(none)",
+        recent=f"Recent commits:\n{repo.recent_log or '(none)'}",
     )
 
 
@@ -255,6 +261,7 @@ def build_system_prompt(
     memories: tuple[MemoryEntry, ...],
     notes: str,
     skills: ResolvedSkills | None,
+    isolation: IsolationLevel = "strict",
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -293,6 +300,9 @@ def build_system_prompt(
     # workflow starts; an unresolved "auto" reaching here (bench/embedders)
     # conservatively renders the optional block.
     base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose == "on"))
+    # The hardened filesystem caveat is real only under hardened; under strict
+    # (or none) stating it would misdirect the model.
+    base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if isolation == "hardened" else "")
     parts = [base]
 
     # When the bench harness sets

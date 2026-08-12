@@ -309,7 +309,9 @@ class ToolDispatcher:
         # The in-process file boundary. Every path-taking read/write tool
         # resolves through it, so the hidden set holds at every isolation level.
         self._ws = workspace_for(config, self._root)
-        self._isolation: IsolationLevel = isolation
+        # Public: the prompt builder reads it so the system prompt describes
+        # THIS dispatcher's command behaviour (hardened-only caveats).
+        self.isolation: IsolationLevel = isolation
         # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
         # this is the defense-in-depth backstop so the dispatcher itself refuses
         # a source mutation even if something dispatched one directly.
@@ -1077,7 +1079,7 @@ class ToolDispatcher:
         return jail_policy(
             self._root,
             self._config,
-            self._isolation,
+            self.isolation,
             argv,
             timeout_s=timeout_s,
             extra_rw_paths=extra_rw_paths,

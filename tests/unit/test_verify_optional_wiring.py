@@ -395,3 +395,32 @@ def test_a_withheld_fresh_leg_is_not_regated_by_inference(
         )
     assert pinned == [((), "")], f"the withheld leg was re-gated: {pinned}"
     assert any("running gateless" in line for line in said)
+
+
+def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
+    """The hardened create-a-top-level-entry workaround is a real constraint
+    only under hardened; a strict run reading it would route file creation
+    through apply_edit for no reason (found reading a strict run's real
+    prompt: the rule rendered unconditionally)."""
+    repo = _repo(tmp_path)
+    cfg = _cfg(verify=True)
+    strict = build_system_prompt(
+        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None, isolation="strict"
+    )
+    hardened = build_system_prompt(
+        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None, isolation="hardened"
+    )
+    assert "Under hardened isolation" not in strict
+    assert "__HARDENED_FS_RULE__" not in strict
+    assert "Under hardened isolation" in hardened
+
+
+def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
+    """A repo without AGENTS.md got an 'AGENTS.md (project conventions):
+    (empty)' header on every run -- noise standing where signal goes."""
+    repo = _repo(tmp_path)
+    out = build_system_prompt(
+        config=_cfg(verify=True), repo=repo, mode="run", memories=(), notes="", skills=None
+    )
+    assert "AGENTS.md (project conventions):" not in out
+    assert "(empty)" not in out

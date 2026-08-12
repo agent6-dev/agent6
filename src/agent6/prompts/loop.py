@@ -50,13 +50,7 @@ the loop will halt if you exceed it.
   environment reasons (missing tool, unwritable path), do not probe the
   sandbox with diagnostic commands; use `run_verify_command` and read its
   output.
-- Under hardened isolation, jailed commands cannot CREATE new
-  top-level files or directories in the workspace root (existing entries
-  are writable as normal). If a build tool needs a new top-level entry
-  (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
-  `apply_edit` using `kind="create"`: the file itself for a file, or a
-  placeholder like `target/.keep` for a directory. Then rerun the command.
-- If the verify command itself no longer matches the task -- it asserts
+__HARDENED_FS_RULE__- If the verify command itself no longer matches the task -- it asserts
     behaviour this run deliberately changed, or it cannot run at all -- say
     so: finish with `stale_gate` set to the command you believe it should
     be. NEVER revert correct work to make a stale gate green; that discards
@@ -108,6 +102,17 @@ takehomes that already ship a metric).
 # surface-current-task + finish-gate machinery walks it one focused task at a
 # time. Aimed at small/open models that lose track of multi-part tasks; a capable
 # model needs neither, which is why this is opt-in (measured per model).
+# Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
+# resolved isolation is hardened: under strict (or none) the constraint does
+# not exist and stating it would misdirect the model.
+HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
+  top-level files or directories in the workspace root (existing entries
+  are writable as normal). If a build tool needs a new top-level entry
+  (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
+  `apply_edit` using `kind="create"`: the file itself for a file, or a
+  placeholder like `target/.keep` for a directory. Then rerun the command.
+"""
+
 DAG_RULES_OPTIONAL = """<dag-rules>
 The DAG-as-tool surface (`add_task`, `update_task`, `list_tasks`)
 maintains a persistent task breakdown.
@@ -424,11 +429,7 @@ V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
 {repo_line}
 Top-level: {top_level}
 
-{repo_map_block}{symbol_outline_block}AGENTS.md (project conventions):
-{agents_md}
-
-{co_change_block}{hot_symbols_block}Recent commits:
-{recent_log}
+{repo_map_block}{symbol_outline_block}{agents_block}{co_change_block}{hot_symbols_block}{recent}
 </repo-priors>
 """
 

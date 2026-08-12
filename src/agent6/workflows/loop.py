@@ -777,6 +777,7 @@ class Workflow:
             memories=self._load_memories(),
             notes=self._load_notes(),
             skills=self._load_skills(),
+            isolation=self.dispatcher.isolation,
         )
 
         try:

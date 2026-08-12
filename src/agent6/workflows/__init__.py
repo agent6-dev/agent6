@@ -11,8 +11,10 @@ from agent6.config import Config
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
 from agent6.notes import NotesError, read_notes
+from agent6.sandbox.detect import IsolationUnavailableError, detect, resolve_isolation
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.types import IsolationLevel
 from agent6.workflows._context import load_repo_summary
 from agent6.workflows._prompt_blocks import (
     MEMORIES_MAX_CHARS,
@@ -63,7 +65,18 @@ def system_prompt_for(
         memories=_active_memories(recall),
         notes=_notes(recall),
         skills=_installed_skills(root, config, mode),
+        isolation=_shown_isolation(config),
     )
+
+
+def _shown_isolation(config: Config) -> IsolationLevel:
+    """The level a run here would resolve, for prompt display; an explicit
+    setting this host cannot honor shows as "none" rather than refusing a
+    read-only preview."""
+    try:
+        return resolve_isolation(config.sandbox.isolation, detect())
+    except IsolationUnavailableError:
+        return "none"
 
 
 def _notes(state_dir: Path | None) -> str:
