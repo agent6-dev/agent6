@@ -184,3 +184,24 @@ if [ -d "$STATE_DIR" ]; then
   mkdir -p /out/state
   cp -r "$STATE_DIR"/. /out/state/ 2>/dev/null || true
 fi
+
+# True per-run cost: sum the provider's billed `cost` from every transcript.
+# The run.log TOTAL line is absent when the run times out, which undercounted
+# a 50-instance sweep by ~$3.7; this number survives regardless of how the
+# run ended.
+"$CONDA_PY" - <<'PYEOF' > /out/cost.json 2>/dev/null || true
+import glob, json
+total, calls = 0.0, 0
+for t in glob.glob("/out/state/*/sessions/runs/*/transcripts/*.json"):
+    try:
+        d = json.load(open(t))
+    except Exception:
+        continue
+    r = d.get("response")
+    body = r.get("body") if isinstance(r, dict) else None
+    u = body.get("usage") if isinstance(body, dict) else None
+    if isinstance(u, dict):
+        total += float(u.get("cost") or 0.0)
+        calls += 1
+print(json.dumps({"billed_usd": round(total, 4), "calls": calls}))
+PYEOF
