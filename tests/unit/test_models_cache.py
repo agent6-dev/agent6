@@ -199,3 +199,36 @@ def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None
     pricing = _parse_pricing(payload)
     assert "vendor/x" not in pricing
     assert "vendor/y" in pricing
+
+
+def test_pricing_catalog_refresh_prices_a_bare_claude_id(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config with only [providers.anthropic] never fetched the OpenRouter
+    catalog, so every claude-* run was honestly-but-needlessly unpriced on a
+    cold cache and the $ cap never bound (found live: an unmetered opus run
+    inside a container)."""
+    from agent6.models import pricing as models_pricing
+
+    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+        assert "openrouter.ai" in url
+        assert "Authorization" not in headers, "catalog fetch must be keyless"
+        return httpx2.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "anthropic/claude-opus-5",
+                        "pricing": {"prompt": "0.000005", "completion": "0.000025"},
+                    }
+                ]
+            },
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2, "get", _get)
+    assert models_pricing.lookup_price("claude-opus-5") is None
+    models_cache.refresh_pricing_catalog()
+    price = models_pricing.lookup_price("claude-opus-5")
+    assert price is not None
+    assert price[0] > 0 and price[1] > 0

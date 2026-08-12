@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 
 import httpx2
 
-from agent6.config import AnthropicProviderEntry, ProviderEntry
+from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry, ProviderEntry
 from agent6.paths import cache_dir
 from agent6.providers.wire import auth_header
 
@@ -291,6 +291,26 @@ def fetch_models_live(
         return None
     _write_cache(_cache_path(provider_name), models, pricing, context)
     return models
+
+
+# The price source for bare ``claude-*`` ids (pricing's OpenRouter alias
+# path). Public listing, fetched keyless, only when no openrouter provider is
+# configured to refresh it with a key.
+# Security review note: a fixed, provider-shaped host (the canonical
+# OpenRouter base_url) fetched with a keyless GET at preflight; no secret
+# leaves the process and nothing from the response is executed.
+_PRICING_CATALOG_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def refresh_pricing_catalog(*, ttl_s: int = _CACHE_TTL_S) -> None:
+    """TTL-gated keyless refresh of the OpenRouter catalog cache.
+
+    Direct-Anthropic model ids are priced through pricing's alias into this
+    catalog; a config with only [providers.anthropic] otherwise never fetches
+    it and every claude-* run is honestly-but-needlessly unpriced (found by
+    an unmetered $ cap inside a cold-cache container)."""
+    entry = OpenAIProviderEntry(api_format="openai", base_url=_PRICING_CATALOG_BASE_URL)
+    list_models("openrouter", entry, None, ttl_s=ttl_s)
 
 
 def cached_models(provider_name: str) -> list[str]:

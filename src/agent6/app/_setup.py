@@ -22,7 +22,7 @@ from agent6.config import (
 )
 from agent6.events import EventSink
 from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_repo_hook_policy
-from agent6.models.cache import list_models
+from agent6.models.cache import list_models, refresh_pricing_catalog
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.sandbox.jail import SessionNetwork
@@ -180,6 +180,15 @@ def check_provider_keys(cfg: Config) -> str | None:
         # OpenAI-compatible: a missing key is only an error if the endpoint
         # clearly expects one; local endpoints legitimately need none, so we
         # do not block here.
+    if "openrouter" not in needed and any(
+        rm.model.startswith("claude-") and "/" not in rm.model
+        for rm in cfg.models.configured().values()
+    ):
+        # Bare claude-* ids price through the OpenRouter catalog (pricing's
+        # alias); with no openrouter provider configured nothing above
+        # fetched it, and the $ cap would run honestly-but-needlessly
+        # unpriced on a cold cache.
+        refresh_pricing_catalog()
     return None
 
 
