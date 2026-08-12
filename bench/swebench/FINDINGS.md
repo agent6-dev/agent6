@@ -263,3 +263,70 @@ redesign around the `ever_edited` gap.
   `ever_edited` gap.
 - Deeper turn-efficiency (if pursued): loop/compaction/tooling, replicated
   resolve-rate -- prompt nudges were a measured null.
+
+## Campaign: the v0.0.22 -> v0.1.0 program (kimi-k3)
+
+Full program on `sample_50.json` (held-out eval; NEVER tuned on) with all
+tuning on `dev_slice_25.json` (fixed seeded 25 of the 450 non-eval
+instances). Official evaluator throughout; predictions source-only.
+
+### Headline (eval-50, official scorer)
+
+| build | resolved | empty | wrong | $/solve |
+|---|---|---|---|---|
+| baseline (released wheel, old base) | 31/50 = 62.0% | 8 | 11 | $0.59 |
+| final (minimal base, guard, fast verify, veto seat) | 32/50 = 64.0% | 1 | 17 | $0.58 |
+
+The +2pp is within run variance (+/-2 resolves observed on identical
+configs). The structural change is real: empty patches 8 -> 1 (attempt
+rate 84% -> 98%). Recovered attempts on eval-hard instances mostly became
+wrong patches, not resolves; wrong-patch is now the whole frontier.
+
+### Same-slice head-to-head (dev_slice_25, same model, same materials)
+
+| agent | resolved |
+|---|---|
+| mini-swe-agent 2.4.6 | 23/25 = 92% |
+| pi (@earendil-works/pi-coding-agent) | 21/25 = 84% |
+| agent6 final build + veto seat | 21/25 = 84% |
+| agent6 pre-fix build | 19/25 = 76% |
+
+Dev slice is easier than the full set (all agents score far above their
+full-set numbers); cross-slice comparison is invalid. Published k3
+figures elsewhere: mini-swe-agent 67.3, KimiCode 67.5, Claude Code 73.7
+(full-500, vendor tables).
+
+### What moved the needle and what did not
+
+- Moved: a stagnation notice (wall clock with zero edits and zero
+  verifies; recall spirals make 3-10 calls and die by timeout, invisible
+  to call-count guards) and a fast verify (`-x`, parallel django, 240s
+  cap; one 600s full-suite verify had eaten half a run's budget).
+  Together: every prior empty-patch class eliminated on both slices.
+- Did not: prompt opinion text. A 4.3k-char base and a 1.0k-char
+  mechanics-only base resolve the same (the one measured-positive
+  behavioural line moved to harness scaffolding); a same-model veto
+  seat approves its own contract misses (17 wrong patches passed).
+- Meter validated exact against provider billing (0.0% error, five runs).
+
+### Harness disclosure (for reproduction)
+
+- Verify: auto-detected per repo; pytest `-q -x`, django
+  `runtests.py --parallel 2`; `verify_timeout_s = 240`.
+- Instance scaffolding: an AGENTS.md committed pre-base with four lines
+  steering derivation over upstream-fix recall (k3's recall attempts
+  spiral; successful recall would raise scores, so this trades ceiling
+  for reliability). Same file planted for every agent compared.
+- Review: one `correctness` seat, same model, `decision = "veto"`,
+  before finish, spend inside the same $1 cap.
+- Caps: $1/instance, 1200s wall, conc 1-2 on 4 cores.
+- Anti-cheat: no benchmark detection in product code; test-file diffs
+  stripped from predictions; unmodified official scorer; dev/eval split
+  registered in-repo before any tuning.
+
+### Open directions
+
+Wrong-patch (contract misses against hidden gold tests) is the frontier:
+distinct-model review panels, contract search (find how the existing
+suite pins the surface), and stronger models (harness is model-agnostic;
+vendor-scaffold co-training is the competition's edge).
