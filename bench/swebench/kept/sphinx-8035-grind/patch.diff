@@ -1,0 +1,101 @@
+diff --git a/doc/usage/extensions/autodoc.rst b/doc/usage/extensions/autodoc.rst
+index 150b62c4d..3fcb9cadd 100644
+--- a/doc/usage/extensions/autodoc.rst
++++ b/doc/usage/extensions/autodoc.rst
+@@ -140,6 +140,9 @@ inserting them into the page source under a suitable :rst:dir:`py:module`,
+ 
+      .. versionadded:: 1.1
+ 
++     .. versionchanged:: 3.2
++        The option can now take arguments, i.e. the private members to document.
++
+    * autodoc considers a member private if its docstring contains
+      ``:meta private:`` in its :ref:`info-field-lists`.
+      For example:
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 8c3509c3b..41d7a55d7 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -648,16 +648,20 @@ class Documenter:
+                         keep = has_doc or self.options.undoc_members
+             elif (namespace, membername) in attr_docs:
+                 if want_all and isprivate:
+-                    # ignore members whose name starts with _ by default
+-                    keep = self.options.private_members
++                    if self.options.private_members is ALL:
++                        keep = True
++                    else:
++                        keep = membername in (self.options.private_members or ())
+                 else:
+                     # keep documented attributes
+                     keep = True
+                 isattr = True
+             elif want_all and isprivate:
+-                # ignore members whose name starts with _ by default
+-                keep = self.options.private_members and \
+-                    (has_doc or self.options.undoc_members)
++                if self.options.private_members is ALL:
++                    keep = has_doc or self.options.undoc_members
++                else:
++                    keep = membername in (self.options.private_members or ()) and \
++                        (has_doc or self.options.undoc_members)
+             else:
+                 if self.options.members is ALL and is_filtered_inherited_member(membername):
+                     keep = False
+@@ -859,7 +863,7 @@ class ModuleDocumenter(Documenter):
+         'show-inheritance': bool_option, 'synopsis': identity,
+         'platform': identity, 'deprecated': bool_option,
+         'member-order': member_order_option, 'exclude-members': members_set_option,
+-        'private-members': bool_option, 'special-members': members_option,
++        'private-members': members_option, 'special-members': members_option,
+         'imported-members': bool_option, 'ignore-module-all': bool_option
+     }  # type: Dict[str, Callable]
+ 
+@@ -1279,7 +1283,7 @@ class ClassDocumenter(DocstringSignatureMixin, ModuleLevelDocumenter):  # type:
+         'noindex': bool_option, 'inherited-members': inherited_members_option,
+         'show-inheritance': bool_option, 'member-order': member_order_option,
+         'exclude-members': members_set_option,
+-        'private-members': bool_option, 'special-members': members_option,
++        'private-members': members_option, 'special-members': members_option,
+     }  # type: Dict[str, Callable]
+ 
+     _signature_class = None  # type: Any
+diff --git a/tests/test_ext_autodoc.py b/tests/test_ext_autodoc.py
+index be46c1490..4a6c6bf16 100644
+--- a/tests/test_ext_autodoc.py
++++ b/tests/test_ext_autodoc.py
+@@ -1975,6 +1975,34 @@ def test_name_conflict(app):
+     ]
+ 
+ 
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_autodoc_private_members(app):
++    # default: no private members
++    options = {"members": None}
++    actual = do_autodoc(app, 'class', 'target.Class', options)
++    assert '   .. py:attribute:: Class._private_inst_attr' not in actual
++
++    # :private-members: without arguments: all private members
++    options = {"members": None,
++               "undoc-members": None,
++               "private-members": None}
++    actual = do_autodoc(app, 'class', 'target.Class', options)
++    assert '   .. py:attribute:: Class._private_inst_attr' in actual
++
++    # :private-members: with arguments: only listed private members
++    options = {"members": None,
++               "undoc-members": None,
++               "private-members": '_private_inst_attr'}
++    actual = do_autodoc(app, 'class', 'target.Class', options)
++    assert '   .. py:attribute:: Class._private_inst_attr' in actual
++
++    options = {"members": None,
++               "undoc-members": None,
++               "private-members": '_nonexisting'}
++    actual = do_autodoc(app, 'class', 'target.Class', options)
++    assert '   .. py:attribute:: Class._private_inst_attr' not in actual
++
++
+ @pytest.mark.sphinx('html', testroot='ext-autodoc')
+ def test_name_mangling(app):
+     options = {"members": None,

@@ -1,0 +1,848 @@
+{
+  "request": {
+    "body": {
+      "max_tokens": 32768,
+      "messages": [
+        {
+          "content": "<agent6>\nYou are agent6, a coding agent. The first user message is the task.\nWork in this repository. Spend is metered against a hard budget; the\nloop halts when it runs out.\n\n- apply_edit: old_string must occur exactly once in the file, byte for\n  byte. kind=\"create\" makes a new file (empty old_string).\n- apply_patch: standard unified diff. Best for multi-hunk edits to one\n  file.\n- run_verify_command runs the operator's test gate in its configured\n  environment; run project tests only through it, never via\n  run_command.\n- If the gate no longer matches the task (it pins behaviour this run\n  deliberately changed, or cannot run), finish with stale_gate set to\n  the command you believe is right; it records a proposal for the\n  operator and does not move the gate. Never revert correct work to\n  turn a stale gate green.\n- The harness commits automatically after each passing verify; manual\n  git commit is optional.\n- finish_session is the only clean end. Call it when done or blocked.\n</agent6>\n\n<dag-rules>\nThe DAG-as-tool surface (`add_task`, `update_task`, `list_tasks`)\nmaintains a persistent task breakdown.\nOPTIONAL - skip it entirely for one-shot fixes, single-file edits, or\nperf-takehome-style \"make this number smaller\" runs. Use it ONLY when\nthe task naturally decomposes into 3+ subtasks worth tracking and\nhumans watching the TUI benefit from seeing the breakdown.\n\nWhen you do use it: `add_task(title, parent_id?)` returns an id;\n`update_task(id, status=\"in_progress\")` when you start a subtask (this\nalso moves the TUI's \"current task\" pointer);\n`update_task(id, status=\"passed\")` only after verify confirms it.\nWhen one subtask must land before another can start, order them with\n`depends_on` (on `add_task` at creation, or `update_task` after); the\nharness only surfaces a task once its dependencies have passed.\n</dag-rules>\n\n<verify-command>\nThis run's verify_command (call via `run_verify_command`):\n  argv: [\"/opt/miniconda3/envs/testbed/bin/python\", \"tests/runtests.py\", \"--verbosity\", \"1\"]\n  timeout: 600.0s\n\nReturncode 0 means the change passes verify. Non-zero means the change\nbroke something - either revert it or fix the regression before\nproceeding. The timeout is set to catch infinite-loop / quadratic edits\nearly; if verify legitimately needs longer, the operator misconfigured\nthe timeout.\n</verify-command>\n\n<budget-awareness>\nHard budget: $1 for metered spend; 2,000,000 input+output\ntokens for calls with no price data. The loop halts when a cap is\ncrossed. Track your spend - tool results contribute to input on every\nsubsequent turn (they get re-sent in the conversation), so prefer\nnarrow `read_file` ranges and specific `grep` patterns over broad\nreads.\n</budget-awareness>\n\n<repo-priors>\nRepository: branch=main, head=e4446723e347, files=6714\nTop-level: AGENTS.md, AUTHORS, CONTRIBUTING.rst, Django.egg-info/, Gruntfile.js, INSTALL, LICENSE, LICENSE.python, MANIFEST.in, README.rst, django/, docs/, extras/, js_tests/, package.json, pyproject.toml, scripts/, setup.cfg, setup.py, tests/, tox.ini\n\nRepo map (tracked files grouped by directory):\n  ./  (22 files: .editorconfig, .eslintignore, .eslintrc, .git-blame-ignore-revs, .gitattributes, .gitignore, +16 more)\n  .github/  (3 files: CODE_OF_CONDUCT.md, FUNDING.yml, SECURITY.md)\n  .github/workflows/  (8 files: benchmark.yml, docs.yml, linters.yml, new_contributor_pr.yml, schedule_tests.yml, schedules.yml, +2 more)\n  .github/workflows/data/  (1 files: test_postgres.py.tpl)\n  .tx/  (1 files: config)\n  django/  (3 files: __init__.py, __main__.py, shortcuts.py)\n  django/apps/  (3 files: __init__.py, config.py, registry.py)\n  django/conf/  (2 files: __init__.py, global_settings.py)\n  django/conf/app_template/  (6 files: __init__.py-tpl, admin.py-tpl, apps.py-tpl, models.py-tpl, tests.py-tpl, views.py-tpl)\n  django/conf/app_template/migrations/  (1 files: __init__.py-tpl)\n  django/conf/locale/  (1 files: __init__.py)\n  django/conf/locale/af/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/ar/  (2 files: __init__.py, formats.py)\n  django/conf/locale/ar/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/ar_DZ/  (2 files: __init__.py, formats.py)\n  django/conf/locale/ar_DZ/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/ast/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/az/  (2 files: __init__.py, formats.py)\n  django/conf/locale/az/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/be/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/bg/  (2 files: __init__.py, formats.py)\n  django/conf/locale/bg/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/bn/  (2 files: __init__.py, formats.py)\n  django/conf/locale/bn/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/br/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/bs/  (2 files: __init__.py, formats.py)\n  django/conf/locale/bs/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/ca/  (2 files: __init__.py, formats.py)\n  django/conf/locale/ca/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/ckb/  (2 files: __init__.py, formats.py)\n  django/conf/locale/ckb/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/cs/  (2 files: __init__.py, formats.py)\n  django/conf/locale/cs/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/cy/  (2 files: __init__.py, formats.py)\n  django/conf/locale/cy/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/da/  (2 files: __init__.py, formats.py)\n  django/conf/locale/da/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/de/  (2 files: __init__.py, formats.py)\n  django/conf/locale/de/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/de_CH/  (2 files: __init__.py, formats.py)\n  django/conf/locale/dsb/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/el/  (2 files: __init__.py, formats.py)\n  django/conf/locale/el/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/en/  (2 files: __init__.py, formats.py)\n  django/conf/locale/en/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/en_AU/  (2 files: __init__.py, formats.py)\n  django/conf/locale/en_AU/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/en_GB/  (2 files: __init__.py, formats.py)\n  django/conf/locale/en_GB/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/en_IE/  (2 files: __init__.py, formats.py)\n  django/conf/locale/eo/  (2 files: __init__.py, formats.py)\n  django/conf/locale/eo/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/es/  (2 files: __init__.py, formats.py)\n  django/conf/locale/es/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/es_AR/  (2 files: __init__.py, formats.py)\n  django/conf/locale/es_AR/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/es_CO/  (2 files: __init__.py, formats.py)\n  django/conf/locale/es_CO/LC_MESSAGES/  (2 files: django.mo, django.po)\n  django/conf/locale/es_MX/  (2 files: __init__.py, formats.py)\n  django/conf/locale/es_MX/LC_MESSAGES/  (2 files: django.mo, django.po)\n  ... (1966 more directories)\n\nSymbol outline (top-level defs per file from the tree-sitter index; line numbers are 1-based):\ndjango/__init__.py:\n  function setup:8\ndjango/apps/config.py:\n  class AppConfig:13\n  function __init__:16\n  function __repr__:58\n  function default_auto_field:62\n  function _is_default_auto_field_overridden:68\n  function _path_from_module:71\n  function create:100\n  function get_model:224\n  function get_models:241\n  function import_models:262\n  function ready:271\ndjango/apps/registry.py:\n  class Apps:13\n  function __init__:20\n  function populate:61\n  function check_apps_ready:129\n  function check_models_ready:140\n  function get_app_configs:145\n  function get_app_config:150\n  function get_models:169\n  function get_model:188\n  function register_model:215\n  function is_installed:242\n  function get_containing_app_config:251\n  ... (+10 more)\ndjango/conf/__init__.py:\n  class SettingsReference:35\n  function __new__:41\n  function __init__:44\n  class LazySettings:48\n  function _setup:55\n  function __repr__:73\n  function __getattr__:81\n  function __setattr__:98\n  function __delattr__:109\n  function configure:114\n  class Settings:175\n  class UserSettingsHolder:244\n  ... (+15 more)\ndjango/conf/global_settings.py:\n  function gettext_noop:9\ndjango/conf/urls/i18n.py:\n  function i18n_patterns:8\n  function is_language_prefix_patterns_used:24\ndjango/conf/urls/static.py:\n  function static:10\ndjango/contrib/admin/__init__.py:\n  function autodiscover:51\ndjango/contrib/admin/actions.py:\n  function delete_selected:19\ndjango/contrib/admin/apps.py:\n  class SimpleAdminConfig:7\n  function ready:15\n  class AdminConfig:20\n  function ready:25\ndjango/contrib/admin/checks.py:\n  function _issubclass:18\n  function _contains_subclass:29\n  function check_admin_app:46\n  function check_dependencies:55\n  class BaseModelAdminChecks:176\n  function check:177\n  function _check_autocomplete_fields:194\n  function _check_autocomplete_fields_item:217\n  function _check_raw_id_fields:270\n  function _check_raw_id_fields_item:288\n  class ModelAdminChecks:804\n  class InlineModelAdminChecks:1249\n  ... (+52 more)\ndjango/contrib/admin/decorators.py:\n  function action:1\n  function decorator:21\n  function display:34\n  function decorator:58\n  function register:80\n  function _model_admin_wrapper:95\ndjango/contrib/admin/exceptions.py:\n  class DisallowedModelAdminLookup:4\n  class DisallowedModelAdminToField:10\ndjango/contrib/admin/filters.py:\n  class ListFilter:24\n  function __init__:28\n  class FacetsMixin:75\n  class SimpleListFilter:90\n  class FieldListFilter:169\n  class RelatedFieldListFilter:220\n  class BooleanFieldListFilter:328\n  class ChoicesFieldListFilter:399\n  class DateFieldListFilter:464\n  class AllValuesFieldListFilter:564\n  class RelatedOnlyFieldListFilter:641\n  class EmptyFieldListFilter:654\n  ... (+49 more)\ndjango/contrib/admin/forms.py:\n  class AdminAuthenticationForm:6\n  function confirm_login_allowed:20\n  class AdminPasswordChangeForm:30\ndjango/contrib/admin/helpers.py:\n  class ActionForm:29\n  class AdminForm:39\n  function __init__:40\n  function __repr__:58\n  class Fieldset:99\n  class Fieldline:130\n  class AdminField:165\n  class AdminReadonlyField:195\n  class InlineAdminFormSet:302\n  class InlineAdminForm:460\n  class InlineFieldset:527\n  class AdminErrorList:541\n  ... (+37 more)\ndjango/contrib/admin/migrations/0001_initial.py:\n  class Migration:6\ndjango/contrib/admin/migrations/0002_logentry_remove_auto_add.py:\n  class Migration:5\ndjango/contrib/admin/migrations/0003_logentry_add_action_flag_choices.py:\n  class Migration:4\ndjango/contrib/admin/models.py:\n  class LogEntryManager:24\n  function log_action:27\n  class LogEntry:48\n  class Meta:78\n  function __repr__:84\n  function __str__:87\n  function is_addition:100\n  function is_change:103\n  function is_deletion:106\n  function get_change_message:109\n  function get_edited_object:173\n  function get_admin_url:177\ndjango/contrib/admin/options.py:\n  class ShowFacets:75\n  function get_content_type_for_model:84\n  function get_ul_class:92\n  class IncorrectLookupParameters:96\n  class BaseModelAdmin:124\n  function check:145\n  function __init__:148\n  class ModelAdmin:641\n  class InlineModelAdmin:2317\n  class DeleteProtectedModelForm:2411\n  class StackedInline:2528\n  class TabularInline:2532\n  ... (+112 more)\ndjango/contrib/admin/sites.py:\n  class AlreadyRegistered:28\n  class NotRegistered:32\n  class AdminSite:36\n  function __init__:71\n  function __repr__:78\n  function check:81\n  function register:99\n  function unregister:150\n  function is_registered:163\n  function get_model_admin:169\n  function add_action:175\n  class DefaultAdminSite:606\n  ... (+25 more)\ndjango/contrib/admin/static/admin/js/SelectBox.js:\n  method get_hidden_node_count:44\ndjango/contrib/admin/static/admin/js/actions.js:\n  function show:4\n  function hide:10\n  function showQuestion:16\n  function showClear:22\n  function reset:30\n  function clearAcross:37\n  function checker:46\n  function updateCounter:58\n  function affectedCheckboxes:131\n  function ready:187\ndjango/contrib/admin/static/admin/js/admin/RelatedObjectLookups.js:\n  function dismissChildPopups:10\n  function setPopupIndex:19\n  function addPopupIndex:28\n  function removePopupIndex:32\n  function showAdminPopup:36\n  function showRelatedObjectLookupPopup:48\n  function dismissRelatedLookupPopup:52\n  function showRelatedObjectPopup:67\n  function updateRelatedObjectLinks:71\n  function updateRelatedSelectsOptions:90\n  function dismissAddRelatedObjectPopup:120\n  function dismissChangeRelatedObjectPopup:150\n  ... (+1 more)\ndjango/contrib/admin/static/admin/js/calendar.js:\n  function calendarMonth:134\n  function onClick:135\n  function Calendar:179\ndjango/contrib/admin/static/admin/js/cancel.js:\n  function ready:6\n  function handleClick:15\ndjango/contrib/admin/static/admin/js/core.js:\n  function quickElement:5\n  function removeChildren:20\n  function findPosX:30\n  function findPosY:43\ndjango/contrib/admin/static/admin/js/nav_sidebar.js:\n  function initSidebarQuickFilter:26\n  function checkValue:36\ndjango/contrib/admin/static/admin/js/theme.js:\n  function setTheme:5\n  function cycleTheme:14\n  function initTheme:39\n  function setupTheme:45\ndjango/contrib/admin/static/admin/js/urlify.js:\n  function downcode:141\n  function URLify:149\ndjango/contrib/admin/static/admin/js/vendor/jquery/jquery.js:\n  function isFunction:77\n  function isWindow:91\n  function DOMEval:107\n  function toType:137\n  function isArrayLike:507\n  function Sizzle:759\n  function createCache:907\n  function cache:910\n  function markFunction:927\n  function assert:936\n  function addHandle:960\n  function siblingCheck:975\n  ... (+76 more)\ndjango/contrib/admin/static/admin/js/vendor/jquery/jquery.min.js:\n  function b:2\n  function w:2\n  function p:2\n  function se:2\n  function ue:2\n  function e:2\n  function le:2\n  function ce:2\n  function fe:2\n  function pe:2\n  function de:2\n  function he:2\n  ... (+62 more)\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/bs.js:\n  function e:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/cs.js:\n  function e:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/hr.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/lt.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/lv.js:\n  function e:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/ru.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/sr-Cyrl.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/sr.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/i18n/uk.js:\n  function n:3\ndjango/contrib/admin/static/admin/js/vendor/select2/select2.full.js:\n  function hasProp:65\n  function normalize:77\n  function makeRequire:187\n  function makeNormalize:204\n  function makeLoad:210\n  function callDep:216\n  function splitPrefix:233\n  function makeRelParts:245\n  function makeConfig:293\n  function BaseConstructor:509\n  function getMethods:526\n  function DecoratedClass:552\n  ... (+56 more)\n... (1862 more files; outline budget exhausted)\n\nAGENTS.md (project conventions):\nIf the task matches a known public issue, still derive the fix from\nthis checkout: never spend turns recalling or fetching the canonical\nupstream commit. Anything remembered about the upstream fix is an\nunverified hint, not a source.\n\n\nGit co-change pairs (files that historically change together; consider when editing one of these):\n  django/utils/functional.py <-> tests/utils_tests/test_functional.py  (changed together 5 times)\n  django/db/models/sql/query.py <-> docs/releases/4.2.2.txt  (changed together 4 times)\n  docs/releases/5.0.txt <-> docs/topics/async.txt  (changed together 4 times)\n  django/contrib/admin/checks.py <-> docs/ref/checks.txt  (changed together 3 times)\n  django/contrib/admin/checks.py <-> tests/modeladmin/test_checks.py  (changed together 3 times)\n  django/db/migrations/operations/models.py <-> tests/migrations/test_optimizer.py  (changed together 3 times)\n  django/forms/fields.py <-> docs/ref/forms/fields.txt  (changed together 3 times)\n  docs/internals/contributing/writing-code/unit-tests.txt <-> tests/requirements/py3.txt  (changed together 3 times)\n  docs/internals/deprecation.txt <-> docs/releases/5.0.txt  (changed together 3 times)\n  docs/ref/contrib/gis/install/geolibs.txt <-> docs/releases/5.0.txt  (changed together 3 times)\n  docs/ref/forms/fields.txt <-> docs/releases/5.0.txt  (changed together 3 times)\n  docs/releases/5.0.txt <-> docs/topics/http/decorators.txt  (changed together 3 times)\n  docs/topics/async.txt <-> docs/topics/http/decorators.txt  (changed together 3 times)\n  django/contrib/admin/checks.py <-> tests/admin_checks/tests.py  (changed together 2 times)\n  django/contrib/admin/sites.py <-> django/contrib/admin/utils.py  (changed together 2 times)\n  django/contrib/admin/sites.py <-> docs/ref/contrib/admin/index.txt  (changed together 2 times)\n  django/contrib/admin/sites.py <-> docs/releases/5.0.txt  (changed together 2 times)\n  django/contrib/admin/sites.py <-> tests/admin_ordering/tests.py  (changed together 2 times)\n  django/contrib/admin/static/admin/css/base.css <-> tests/admin_views/tests.py  (changed together 2 times)\n  django/contrib/admin/templates/admin/widgets/related_widget_wrapper.html <-> tests/admin_views/test_related_object_lookups.py  (changed together 2 times)\n\nHot symbols (cross-file reference hot spots from static analysis; changing one of these forces edits across the listed file count):\n  django (function) at django/contrib/gis/gdal/geomtype.py:78, referenced across 1979 files\n  db (function) at django/db/models/manager.py:143, referenced across 925 files\n  name (function) at django/contrib/contenttypes/models.py:154, referenced across 837 files\n  test (function) at django/test/testcases.py:127, referenced across 772 files\n  get (function) at django/contrib/admin/views/autocomplete.py:13, referenced across 496 files\n  SimpleTestCase (class) at django/test/testcases.py:168, referenced across 428 files\n  super (function) at django/template/loader_tags.py:70, referenced across 421 files\n  TestCase (class) at django/test/testcases.py:1236, referenced across 392 files\n  __init__ (function) at django/apps/config.py:16, referenced across 369 files\n  path (function) at django/contrib/staticfiles/storage.py:37, referenced across 362 files\n  value (function) at django/contrib/admin/filters.py:112, referenced across 362 files\n  assertRaisesMessage (function) at django/test/testcases.py:759, referenced across 353 files\n  CharField (class) at django/db/models/fields/__init__.py:1194, referenced across 350 files\n  connection (function) at django/utils/log.py:135, referenced across 319 files\n  join (function) at django/db/models/functions/comparison.py:179, referenced across 318 files\n\nRecent commits:\ne4446723e3 bench scaffolding\n6f7e0e4bc8 SWE-bench\nf64fd47a76 Fixed #9602 -- Added AdminSite.get_model_admin().\nd569c1dcfe Fixed #34639 -- Reverted \"Fixed #32682 -- Made admin changelist use Exists() instead of distinct() for preventing duplicates.\"\n28e2077148 Refs #32433 -- Reallowed calling QuerySet.delete() after distinct().\n95cdf9dc66 Used AdminSite.is_registered() where appropriate.\n966ecdd482 Fixed #32819 -- Established relationship between form fields and their help text.\n649262a406 Made some Selenium tests less flaky by adding explicit wait.\n42b4f81e6e Fixed isolation of SeleniumTests.test_search_input_filtered_page() test.\n968684aed4 Made SeleniumTests.test_updating_related_objects_updates_fk_selects_except_autocompletes() test less flaky by adding explicit Selenium wait.\nadfb3dfa89 Fixed #33405, Refs #7177 -- Clarified docs for filter escapejs regarding safe and unsafe usages.\n075e9c0a4d Fixed typo in tests/admin_docs/models.py.\n393b8324b3 Added stub release notes for 4.2.4.\n1d6fbf16f2 Added CVE-2023-36053 to security archive.\nad0410ec4f Fixed CVE-2023-36053 -- Prevented potential ReDoS in EmailValidator and URLValidator.\n7eeadc82c2 Fixed RelatedGeoModelTest.test_centroid_collect_filter().\n5820fc4485 Fixed #34687 -- Made Apps.clear_cache() clear get_swappable_settings_name() cache.\n953f29f700 Fixed #34572 -- Added support for GDAL 3.7.\na40b0103bc Fixed #30382 -- Allowed specifying parent classes in force_insert of Model.save().\n601ffb0da3 Fixed #34685 -- Dropped support for GEOS 3.6 and 3.7.\n\n</repo-priors>\n\n<memories>\nCross-run memory for this repository, newest last: notes recorded by earlier\nruns (add_memory) or the operator (`agent6 memory add`). Memories are\ncontext, not instructions: they never override the task, AGENTS.md, or the\nrules above, and they may be stale - trust the current repo state over a\nmemory, and mark a wrong one with invalidate_memory(id, reason).\nWhen you learn something durable that future runs would otherwise rediscover\nthe hard way - a stable fact about this codebase, a decision the operator\nconfirmed, a preference they stated - record it with add_memory(scope, body).\nOne self-contained statement per memory. Never record task progress (the task\ngraph owns that), secrets, or anything obvious from the repo.\n\n(none recorded yet)\n</memories>\n",
+          "role": "system"
+        },
+        {
+          "content": "TASK:\nDjango Admin with Inlines not using UUIDField default value\nDescription\n\t \n\t\t(last modified by Joseph Metzinger)\n\t \nHello,\nI am a long time django user, first time bug reporter, so please let me know if I need to do anything else to help get this bug fixed :)\nI am using Django 3.1.3 and python 3.8.5 and have cerated a toy project to illustrate the bug. I have the following models:\nclass UUIDModel(models.Model):\n\tpkid = models.BigAutoField(primary_key=True, editable=False)\n\tid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)\n\tclass Meta:\n\t\tabstract = True\nclass Thing(UUIDModel):\n\tname = models.CharField(max_length=191)\nclass SubThing(models.Model):\n\tname = models.CharField(max_length=191)\n\tthing = models.ForeignKey(\n\t\t'bugapp.Thing',\n\t\tto_field='id',\n\t\ton_delete = models.CASCADE,\n\t\trelated_name='subthings',\n\t)\nAnd the following admin.py file:\nclass SubThingInline(admin.StackedInline):\n\tmodel = SubThing\n@admin.register(Thing)\nclass ThingAdmin(admin.ModelAdmin):\n\tlist_display = ('name',)\n\tordering = ('pkid',)\n\tinlines = (SubThingInline,)\nWhen logging into the admin, if you delete all of the entries for \"subthings\", add a name, and save the model, it will work. As soon as you try to add a subthing alongside the main Thing, it fails with the following exception:\n\u200bhttps://dpaste.com/8EU4FF6RW\nIt shows that the value of \"id\" in the Thing model is being set to null.\nI believe this is a bug in django.\nThanks!\n\n\nBegin. Use the tools to read what you need, make edits, run verify, and call `finish_session` when done.\n\nThe DAG-as-tool surface is wired. Root task id is `01KZS203GDQRJPVFVK1D7TPJXR`. Use `add_task` to break this into trackable subtasks (or skip the DAG entirely - it's optional).",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"argv\": [\"grep\", \"-n\", \"fk.get_attname\\\\|_get_foreign_key\\\\|fk_value\\\\|def _construct_form\\\\|def save_new\", \"django/forms/models.py\"]}",
+                "name": "run_command"
+              },
+              "id": "call_019ff22024c57be084133b02",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "{\"returncode\": 0, \"stdout\": \"710:    def _construct_form(self, i, **kwargs):\\n763:    def save_new(self, form, commit=True):\\n943:    def save_new_objects(self, commit=True):\\n1118:    def _construct_form(self, i, **kwargs):\\n1134:        fk_value = self.instance.pk\\n1136:            fk_value = getattr(self.instance, self.fk.remote_field.field_name)\\n1137:            fk_value = getattr(fk_value, \\\"pk\\\", fk_value)\\n1138:        setattr(form.instance, self.fk.get_attname(), fk_value)\\n1145:    def save_new(self, form, commit=True):\\n1190:def _get_foreign_key(parent_model, model, fk_name=None, can_fail=False):\\n1302:    fk = _get_foreign_key(parent_model, model, fk_name=fk_name)\\n\", \"stderr\": \"\", \"duration_s\": 0.005741124041378498, \"exec_failed\": false}",
+          "role": "tool",
+          "tool_call_id": "call_019ff22024c57be084133b02"
+        }
+      ],
+      "model": "moonshotai/kimi-k3",
+      "reasoning": {
+        "effort": "low"
+      },
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "temperature": 0.0,
+      "tools": [
+        {
+          "function": {
+            "description": "Read a text file from the repository. `path` is repo-root-relative (e.g. 'src/foo.py'); an absolute path works only inside a directory the operator granted the run. Returns the UTF-8 decoded contents. Optional `start_line` (1-based, matching every line number this harness reports; default 1) and `limit` (max lines to return, default all). Fails when: path is outside the repo, file does not exist, file is not UTF-8 decodable, or file is binary. Use `outline` instead when you only need a file's structure, not every line. A very large file is read only up to a cap and the result sets `truncated: true`; use a narrower `start_line`/`limit` range to reach the rest.",
+            "name": "read_file",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "limit": {
+                  "anyOf": [
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Limit"
+                },
+                "path": {
+                  "minLength": 1,
+                  "title": "Path",
+                  "type": "string"
+                },
+                "start_line": {
+                  "default": 1,
+                  "minimum": 1,
+                  "title": "Start Line",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "title": "ReadFileInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "List immediate entries in a directory (non-recursive). `path` is repo-root-relative; defaults to '.'. Hidden entries (starting with '.') are included. Returns names with a trailing '/' for directories. For a recursive view, use `run_command` (e.g. `rg --files`, `find`).",
+            "name": "list_dir",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "default": ".",
+                  "title": "Path",
+                  "type": "string"
+                }
+              },
+              "title": "ListDirInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "List top-level and nested definitions (functions / classes / structs / enums) in ONE source file with their start line numbers. Tree-sitter backed, deterministic, cheap. Use this instead of `read_file` when you only need a file's shape (e.g. 'what classes are in core.py?'). Supported extensions: .py .rs .ts .tsx .js .jsx .go .java .c .h .cpp .cc .cs .rb .php - other files return an empty list. Returns names + line numbers only; for function bodies use `read_file`.",
+            "name": "outline",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "minLength": 1,
+                  "title": "Path",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "title": "OutlineInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Find every declaration site of an identifier (function / class / struct / enum / type alias) across the project. Returns matches as (file path, line, kind). Tree-sitter backed; matches by exact symbol name (not by type or scope). Common usage: locate where a symbol is defined before reading its file. Cheaper than `grep 'def foo'` because it excludes occurrences in strings, comments, and other identifier-shaped tokens that happen to share the name.",
+            "name": "find_definition",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "symbol": {
+                  "minLength": 1,
+                  "title": "Symbol",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "symbol"
+              ],
+              "title": "FindDefinitionInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Find every identifier occurrence of `symbol` across the project, including the definition site itself. Tree-sitter backed: matches inside strings and comments are excluded - vastly cleaner than plain `grep <symbol>`. Use this to enumerate all call sites of a function before renaming it or changing its signature. Caveat: this is text-level identifier matching, NOT semantic resolution. Unrelated `foo`s in unrelated scopes (e.g. a local var `foo` in one function and a top-level function `foo` in another) will all be returned; disambiguate by inspecting the surrounding context.",
+            "name": "find_references",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "symbol": {
+                  "minLength": 1,
+                  "title": "Symbol",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "symbol"
+              ],
+              "title": "FindReferencesInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Apply substring edits to one file. `edits` MUST be an ARRAY of objects (NOT a JSON-encoded string), each with string fields {\"old_string\": \"...\", \"new_string\": \"...\"} and an OPTIONAL \"kind\" that defaults to \"replace\" (set kind=\"create\" only to make a new file). Each edit's `old_string` MUST occur EXACTLY ONCE in the file (whitespace, indentation, and line endings must match byte-for-byte). If `old_string` is not unique, expand it with more surrounding context. If `old_string` is not found, the on-disk file content likely differs from what you expect - re-read with `read_file` before retrying. Set kind='create' (with empty `old_string`) to create a new file; `new_string` is then the full file content and MUST be the only edit in the array. Pass `preview=true` for a dry-run: the unified diff and hunk count of the would-be change are returned WITHOUT touching disk. Use this to sanity-check large or risky multi-edit calls before committing to them; defaults to false (apply directly).",
+            "name": "apply_edit",
+            "parameters": {
+              "$defs": {
+                "EditPair": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "default": "replace",
+                      "pattern": "^(replace|create)$",
+                      "title": "Kind",
+                      "type": "string"
+                    },
+                    "new_string": {
+                      "title": "New String",
+                      "type": "string"
+                    },
+                    "old_string": {
+                      "default": "",
+                      "title": "Old String",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "new_string"
+                  ],
+                  "title": "EditPair",
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false,
+              "properties": {
+                "edits": {
+                  "items": {
+                    "$ref": "#/$defs/EditPair"
+                  },
+                  "minItems": 1,
+                  "title": "Edits",
+                  "type": "array"
+                },
+                "path": {
+                  "minLength": 1,
+                  "title": "Path",
+                  "type": "string"
+                },
+                "preview": {
+                  "default": false,
+                  "title": "Preview",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "edits"
+              ],
+              "title": "ApplyEditInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Apply a patch to one file. Two formats are accepted: (1) standard unified diff (`--- a/PATH`, `+++ b/PATH`, `@@ -L,N +L,N @@` hunks with ` `, `-`, `+` line prefixes; `--- /dev/null` to create a file), or (2) OpenAI's `*** Begin Patch` / `*** Update File: PATH` / `*** End Patch` format (context-anchored hunks, no line numbers). Context lines must match the on-disk file exactly (no fuzzy match). `path` is optional: when omitted it is taken from the patch headers. File deletion is not supported. One file per call. Pass `preview=true` for a dry-run: the diff and hunk count are echoed back WITHOUT writing to disk.",
+            "name": "apply_patch",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "patch": {
+                  "minLength": 1,
+                  "title": "Patch",
+                  "type": "string"
+                },
+                "path": {
+                  "default": "",
+                  "title": "Path",
+                  "type": "string"
+                },
+                "preview": {
+                  "default": false,
+                  "title": "Preview",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "patch"
+              ],
+              "title": "ApplyPatchInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Run the user-declared verify command in the sandbox. No arguments.",
+            "name": "run_verify_command",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "title": "RunVerifyInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Run a command in the sandbox. argv must be an array of strings (no shell). Requires `run_commands` capability != 'no' in config; if 'ask', the user is prompted. Under jailed isolation PATH is `/usr/bin:/bin` plus standard bin dirs; prefer absolute paths like `/usr/bin/python3` there (bare `python` may not resolve). Nothing is killed for taking too long: a command still running after the configured check-in is handed back with `returncode: null`, `still_running: true` and a `background_id`, and keeps running. Decide what to do the way your instructions say -- poll it with `read_background`, stop it with `stop_background`, or carry on and check later. The output it printed before the hand-back comes back with it. Pass `background: true` to skip the wait entirely and get that handle immediately -- for a server, a watcher, or anything you want running while you work. Under the default isolation a run's commands share one PRIVATE network, so a server you start here answers a later run_command at the address it prints, and nothing outside the run reaches it. Every background command is killed when the run ends, so never use one for work whose result you need afterwards.",
+            "name": "run_command",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "argv": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "title": "Argv",
+                  "type": "array"
+                },
+                "background": {
+                  "default": false,
+                  "title": "Background",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "argv"
+              ],
+              "title": "RunCommandInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Read another session in this project. A run, a plan and an ask are all sessions. Always returns the roster of this project's sessions, newest first, with each one's id, mode and task. Pass `id` to also get that session's conversation, or `query` to narrow the roster to sessions whose task or transcript contains that text. Read-only, and limited to this project. Use it to pick up what an earlier session worked out instead of redoing it.",
+            "name": "read_session",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "default": "",
+                  "title": "Id",
+                  "type": "string"
+                },
+                "max_chars": {
+                  "default": 20000,
+                  "maximum": 200000,
+                  "minimum": 500,
+                  "title": "Max Chars",
+                  "type": "integer"
+                },
+                "query": {
+                  "default": "",
+                  "title": "Query",
+                  "type": "string"
+                }
+              },
+              "title": "ReadSessionInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Read one https URL and return its text. For documentation, specs, changelogs and API references the repo does not contain. GET only, redirects are returned rather than followed, and the response must be text (1 MiB cap). Hosts the operator has allowed are read straight away; any other host asks them first, so prefer a URL you were given over one you guessed.",
+            "name": "fetch",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "minLength": 1,
+                  "title": "Url",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "title": "FetchInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Read what a background command has printed so far. Always returns the state of every background command this run started (running / exited with its code / stopped / died), so a command that ended on its own is visible the next time you look. Omit `id` for that roster alone, which never waits. With an `id`, this WAITS for that command to finish (up to `wait_s`, default: the run's configured check-in) and returns as soon as it does -- ask once rather than polling in a loop. Pass `wait_s: 0` to look without waiting.",
+            "name": "read_background",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "default": "",
+                  "title": "Id",
+                  "type": "string"
+                },
+                "tail_lines": {
+                  "default": 200,
+                  "maximum": 2000,
+                  "minimum": 1,
+                  "title": "Tail Lines",
+                  "type": "integer"
+                },
+                "wait_s": {
+                  "anyOf": [
+                    {
+                      "minimum": 0.0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Wait S"
+                }
+              },
+              "title": "ReadBackgroundInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Kill a background command and everything it started. Already-finished commands are left as they are; their output stays readable.",
+            "name": "stop_background",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "title": "Id",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "title": "StopBackgroundInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Run the user-declared metric command in the sandbox. Returns the command output plus the parsed score (the first capture group of the configured `pattern` regex, parsed as float). For metric-driven optimization runs: call this after each successful verify to see whether the change improved the score. Returns {returncode, stdout, stderr, duration_s, score}. `score` is null if the pattern didn't match or the capture group wasn't numeric. No arguments. Exposed to the agent loop so the agent itself decides when to verify.",
+            "name": "run_metric_command",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "title": "RunMetricInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Signal that the agent has completed its work and the workflow should exit cleanly. Call this when (a) the task is done and verify passes, or (b) the metric has plateaued and further work is unlikely to improve it, or (c) you are blocked and cannot make progress. `summary` is a one-paragraph description of what was done / left undone, surfaced to the operator. Do not call any other tools after finish_session.",
+            "name": "finish_session",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "result": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Optional structured JSON object. When the task instructs you to return data matching a named schema, put that object here; it is validated against the schema at the trust boundary.",
+                  "title": "Result"
+                },
+                "stale_gate": {
+                  "default": "",
+                  "description": "Set ONLY when the verify command no longer matches the task -- it tests behaviour this run deliberately changed, or it cannot run at all. Give the command you believe it should be. This never changes the gate and never makes the run pass; it records the proposal for the operator, who decides. Use it instead of reverting correct work to satisfy a stale gate: that is always the wrong move. Leave empty when the gate is simply failing -- then fix the work.",
+                  "title": "Stale Gate",
+                  "type": "string"
+                },
+                "summary": {
+                  "minLength": 1,
+                  "title": "Summary",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "summary"
+              ],
+              "title": "FinishSessionInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Ask the operator one or more questions and wait for the answers. CALL THIS whenever the task asks you to confirm, ask, check with, or get input from the operator, or for a genuine decision you cannot make from the repo + task (a product choice, an ambiguous requirement). Do NOT just write the question as text and stop -- the operator only sees a question you send through THIS tool. Batch related questions into ONE call (they are answered together and reviewed before submitting). `questions` is an ARRAY of objects, each {\"question\": \"...\", \"options\": [\"...\", ...]}; a single question may also be passed flat as {\"question\": \"...\"}. Give 2-4 `options` when the answer is a choice (the operator may also type free text). Returns {\"answers\": [<string>, ...]} aligned to `questions`. A live TUI/web front-end answers; only a headless run with nobody watching returns empty answers, so ask freely when input is wanted.",
+            "name": "ask_user",
+            "parameters": {
+              "$defs": {
+                "UserQuestion": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "options": {
+                      "default": [],
+                      "items": {
+                        "type": "string"
+                      },
+                      "title": "Options",
+                      "type": "array"
+                    },
+                    "question": {
+                      "minLength": 1,
+                      "title": "Question",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "question"
+                  ],
+                  "title": "UserQuestion",
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false,
+              "properties": {
+                "questions": {
+                  "items": {
+                    "$ref": "#/$defs/UserQuestion"
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "title": "Questions",
+                  "type": "array"
+                }
+              },
+              "required": [
+                "questions"
+              ],
+              "title": "AskUserInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Add a subtask to the persistent task graph. Use only when the task naturally decomposes into 3+ trackable steps; skip for one-shot or single-file work. `parent_id` attaches under an existing task (omit to attach under the run's root). `title` is a short imperative; `acceptance` is the verify-able condition. `after` places the new task directly after that sibling instead of last, which is how work is inserted between two existing steps. `depends_on` lists task ULIDs that must pass before this one is surfaced. `standing=true` makes a STANDING task: the run's never-finishing fallback goal, worked only when no ordinary task is ready; it never passes (retire it with skipped/obsolete) and the run re-enters it instead of ending. Returns the new task's 26-char ULID.",
+            "name": "add_task",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "acceptance": {
+                  "default": "",
+                  "title": "Acceptance",
+                  "type": "string"
+                },
+                "after": {
+                  "anyOf": [
+                    {
+                      "maxLength": 26,
+                      "minLength": 26,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "After"
+                },
+                "depends_on": {
+                  "default": [],
+                  "items": {
+                    "maxLength": 26,
+                    "minLength": 26,
+                    "type": "string"
+                  },
+                  "title": "Depends On",
+                  "type": "array"
+                },
+                "parent_id": {
+                  "anyOf": [
+                    {
+                      "maxLength": 26,
+                      "minLength": 26,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Parent Id"
+                },
+                "rationale": {
+                  "default": "",
+                  "title": "Rationale",
+                  "type": "string"
+                },
+                "relevant_paths": {
+                  "default": [],
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Relevant Paths",
+                  "type": "array"
+                },
+                "standing": {
+                  "default": false,
+                  "title": "Standing",
+                  "type": "boolean"
+                },
+                "title": {
+                  "minLength": 1,
+                  "title": "Title",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "title": "DagAddTaskInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Update a task: set `status` (pending | in_progress | passed | failed | skipped | obsolete) and/or append `depends_on` edges (task ULIDs this task must wait on; the harness only surfaces a task once every dependency has passed, and a cycle is rejected). Mark in_progress when starting a subtask and passed (only) after verify confirms it. Pass at least one of status / depends_on.",
+            "name": "update_task",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "depends_on": {
+                  "default": [],
+                  "items": {
+                    "maxLength": 26,
+                    "minLength": 26,
+                    "type": "string"
+                  },
+                  "title": "Depends On",
+                  "type": "array"
+                },
+                "id": {
+                  "maxLength": 26,
+                  "minLength": 26,
+                  "title": "Id",
+                  "type": "string"
+                },
+                "note": {
+                  "default": "",
+                  "title": "Note",
+                  "type": "string"
+                },
+                "status": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(pending|in_progress|passed|failed|skipped|obsolete)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Status"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "title": "DagUpdateTaskInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "List tasks in the DAG. Optional `status` filter (pending | in_progress | passed | failed | skipped | obsolete). Use to find a parent_id before add_task, or to check what's still pending. Returns {id, parent_id, title, status, acceptance, relevant_paths} per task.",
+            "name": "list_tasks",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "status": {
+                  "anyOf": [
+                    {
+                      "pattern": "^(pending|in_progress|passed|failed|skipped|obsolete)$",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "title": "Status"
+                }
+              },
+              "title": "DagListTasksInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Record a durable note that FUTURE agent runs on this repository will see in the <memories> block of their system prompt. `scope` is one of: facts (a stable observation about this codebase you had to discover), decisions (a choice the operator confirmed or you committed to), preferences (how the operator wants things done). `body` is ONE self-contained statement naming the concrete files, commands, or numbers. Do NOT record task progress (the task graph owns that), secrets, or anything a future run can read straight from the repo. Returns the new memory's 26-char id.",
+            "name": "add_memory",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "body": {
+                  "maxLength": 2000,
+                  "minLength": 1,
+                  "title": "Body",
+                  "type": "string"
+                },
+                "scope": {
+                  "enum": [
+                    "facts",
+                    "decisions",
+                    "preferences"
+                  ],
+                  "title": "Scope",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "scope",
+                "body"
+              ],
+              "title": "AddMemoryInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Mark a memory from the <memories> block as no longer true, so future runs stop seeing it. Non-destructive: the entry stays on disk for the operator's audit trail (`agent6 memory list --all`). Use when the repository or the operator contradicts a recorded memory. `id` is the 26-char id shown in the block; `reason` says what changed.",
+            "name": "invalidate_memory",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 26,
+                  "minLength": 26,
+                  "title": "Id",
+                  "type": "string"
+                },
+                "reason": {
+                  "maxLength": 500,
+                  "minLength": 1,
+                  "title": "Reason",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reason"
+              ],
+              "title": "InvalidateMemoryInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Read your durable scratchpad for this repository -- the same text that appears in the <notes> block of your system prompt. Use it before write_notes so you rewrite the current content rather than replacing it blind. Returns the notes, or empty when you have written none.",
+            "name": "read_notes",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "title": "ReadNotesInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "REPLACE your durable scratchpad with `content`, which future sessions on this repository will see in their <notes> block. Unlike add_memory (append-only, one fact per entry) this is one document you rewrite: reorganize it, delete what is resolved, merge what repeats. Read it first. Keep it a working document, not a log -- oversized notes are REFUSED so you prune rather than let them crowd out the task.",
+            "name": "write_notes",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "maxLength": 16000,
+                  "title": "Content",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "content"
+              ],
+              "title": "WriteNotesInput",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "headers": {
+      "accept": "text/event-stream",
+      "authorization": "<REDACTED>",
+      "content-type": "application/json",
+      "http-referer": "https://github.com/elesiuta/agent6",
+      "x-title": "agent6-swebench"
+    },
+    "url": "https://openrouter.ai/api/v1/chat/completions"
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "message": {
+            "content": "",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"path\":\"django/forms/models.py\",\"start_line\":1110,\"limit\":50}",
+                  "name": "read_file"
+                },
+                "id": "call_019ff220509c74728081203d",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "completion_tokens": 83,
+        "completion_tokens_details": {
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "reasoning_tokens": 0
+        },
+        "cost": 0.03516,
+        "cost_details": {
+          "upstream_inference_completions_cost": 0.001245,
+          "upstream_inference_cost": 0.03516,
+          "upstream_inference_prompt_cost": 0.033915
+        },
+        "is_byok": false,
+        "prompt_tokens": 11305,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cache_write_tokens": 0,
+          "cached_tokens": 0,
+          "video_tokens": 0
+        },
+        "total_tokens": 11388
+      }
+    },
+    "status": 200
+  },
+  "seat": "worker",
+  "seq": 2,
+  "ts": "20260811T184032622111Z"
+}

@@ -93,7 +93,9 @@ target-version = "py312"
 src = ["src", "tests"]
 # task repos under bench are AGENT-INPUT FIXTURES, some deliberately buggy;
 # linting them would force noqa markers that annotate the seeded defects.
-extend-exclude = ["bench/coreagent/tasks/*/repo"]
+# Demo seed repos included: the committed cassettes replay edits against
+# those exact bytes, so lint must not reshape them.
+extend-exclude = ["bench/coreagent/tasks/*/repo", "docs/screenshots/seed"]
 
 [tool.ruff.lint]
 select = [
