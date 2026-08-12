@@ -415,6 +415,35 @@ def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
     assert "Under hardened isolation" in hardened
 
 
+def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> None:
+    """The .git read-only bind exists only under strict with protect_git on;
+    every unjailed run (isolation none, e.g. the SWE-bench containers) was
+    told '.git/ is protected inside the jail' while nothing protected it."""
+    repo = _repo(tmp_path)
+    on = _cfg(verify=True)
+    off = Config.model_validate(
+        {"workflow": {"verify_command": ["true"]}, "sandbox": {"protect_git": False}}
+    )
+    marker = ".git/` is protected inside the jail"
+    for isolation, cfg, expect in (
+        ("strict", on, True),
+        ("strict", off, False),
+        ("hardened", on, False),
+        ("none", on, False),
+    ):
+        out = build_system_prompt(
+            config=cfg,
+            repo=repo,
+            mode="run",
+            memories=(),
+            notes="",
+            skills=None,
+            isolation=isolation,  # pyright: ignore[reportArgumentType]
+        )
+        assert (marker in out) is expect, (isolation, expect)
+        assert "__GIT_PROTECT_RULE__" not in out
+
+
 def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
     """A repo without AGENTS.md got an 'AGENTS.md (project conventions):
     (empty)' header on every run -- noise standing where signal goes."""

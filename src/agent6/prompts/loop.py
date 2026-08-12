@@ -58,13 +58,7 @@ __HARDENED_FS_RULE__- If the verify command itself no longer matches the task --
     does not pass either way, so this records the proposal for the operator
     instead of hiding the mismatch. Use it only for a mismatched gate: a
     gate that is simply failing means the work is not done.
-- If an edit fails verify and you need to revert it, do NOT call
-    `git checkout`, `git reset`, or other history-mutating git commands
-    through `run_command`: `.git/` is protected inside the jail and those
-    calls will fail. Instead read the previous content with a read-only
-    command such as `git show HEAD:path/to/file` and use `apply_patch` /
-    `apply_edit` to restore the file, or manually undo the bad hunk.
-- The harness AUTO-COMMITS after every verify-pass. You don't need to
+__GIT_PROTECT_RULE__- The harness AUTO-COMMITS after every verify-pass. You don't need to
   `git commit` manually - score is computed against the latest commit
   on this branch and the workflow's git-history rescue picks the
   best-scoring commit at the end. If you DO want a specific commit
@@ -110,6 +104,14 @@ takehomes that already ship a metric).
 # Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
 # resolved isolation is hardened: under strict (or none) the constraint does
 # not exist and stating it would misdirect the model.
+GIT_PROTECT_RULE = """- If an edit fails verify and you need to revert it, do NOT call
+    `git checkout`, `git reset`, or other history-mutating git commands
+    through `run_command`: `.git/` is protected inside the jail and those
+    calls will fail. Instead read the previous content with a read-only
+    command such as `git show HEAD:path/to/file` and use `apply_patch` /
+    `apply_edit` to restore the file, or manually undo the bad hunk.
+"""
+
 HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry

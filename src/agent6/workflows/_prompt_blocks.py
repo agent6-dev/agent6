@@ -22,6 +22,7 @@ from agent6.notes import NOTES_MAX_CHARS
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
+    GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
     MEMORIES_HEADER_READONLY,
@@ -303,6 +304,12 @@ def build_system_prompt(
     # The hardened filesystem caveat is real only under hardened; under strict
     # (or none) stating it would misdirect the model.
     base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if isolation == "hardened" else "")
+    # The .git read-only bind exists only under strict with protect_git on
+    # (policy.py); under hardened or none the claim would be false.
+    base = base.replace(
+        "__GIT_PROTECT_RULE__",
+        GIT_PROTECT_RULE if isolation == "strict" and config.sandbox.protect_git else "",
+    )
     parts = [base]
 
     # When the bench harness sets
