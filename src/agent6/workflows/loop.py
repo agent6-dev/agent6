@@ -362,6 +362,13 @@ class _LoopState:
     verify_finish_nudges_used: int = 0
     spec_recheck_done: bool = False
     ever_edited: bool = False
+    # Attemptless-stagnation notice: recall spirals make few calls with long
+    # reasoning between them, so the identical-signature repeat guard never
+    # sees them; wall clock with zero attempts does. Monotonic is
+    # process-relative, so neither field persists to the snapshot: a resumed
+    # run gets a fresh window.
+    started_monotonic: float = field(default_factory=time.monotonic)
+    stagnation_nudged: bool = False
     silent_no_work_nudges_used: int = 0
     plan_finish_nudged: bool = False
     # plan mode: the plan.md text the planner was last shown. Fresh per leg, so a
@@ -747,6 +754,11 @@ class Workflow:
     # the worker burn the rest of the budget circling the same call.
     # Set to 0 to disable forced termination (notice-only behaviour).
     loop_guard_kill_threshold: int = 10
+    # One factual notice when this much wall clock passes with zero edit and
+    # zero verify calls. Notice-only, never kills; 0 disables. Measured basis:
+    # recall-spiral runs die by timeout with 3-10 total calls, below every
+    # call-count guard's horizon.
+    stagnation_notice_after_s: float = 300.0
     # One-shot guard so a persistently unwritable state dir (full disk, quota,
     # read-only mount) warns once instead of every turn. Snapshot persistence is
     # recovery state; a failure disables resume/fork but must not abort the run.
@@ -2061,6 +2073,28 @@ class Workflow:
                 f" {state.repeat_streak}x in a row - injecting notice"
             )
             state.repeat_warning_emitted_at = turn.iteration
+        elapsed = time.monotonic() - state.started_monotonic
+        if (
+            self.stagnation_notice_after_s > 0
+            and not state.stagnation_nudged
+            and elapsed >= self.stagnation_notice_after_s
+            and not state.ever_edited
+            and state.last_verify_ok is None
+            and self.mode == "run"
+        ):
+            state.stagnation_nudged = True
+            minutes = max(1, int(elapsed // 60))
+            turn.tool_results.append(
+                Notice(
+                    f"[stagnation] {minutes} minutes in, no edit and no verify"
+                    " yet. The budget is finite: stop researching, derive the"
+                    " best fix you can from this checkout, apply it, and run"
+                    " the verify. If truly blocked, call `finish_session` and"
+                    " say why."
+                )
+            )
+            self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
+            self._log(f"  stagnation: {minutes}m with no attempt - injecting notice")
 
     def _turn_metric_plateau(self, state: _LoopState, turn: _TurnState) -> None:
         """Metric-plateau handling. When a verified metric merely ties the

@@ -438,3 +438,91 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path
     result = wf.run("do the thing")
     assert result.reason == "verify_command_unexecutable"
     assert "checkpoint (iter" in _git_log(repo)
+
+
+def _stagnation_blocks(messages: list[dict[str, Any]]) -> list[str]:
+    """Every [stagnation] block injected into user turns."""
+    out: list[str] = []
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if text.startswith("[stagnation]"):
+                    out.append(text)
+    return out
+
+
+def _final_messages(provider: MagicMock) -> list[dict[str, Any]]:
+    last_args = provider.call.call_args_list[-1]
+    return last_args.kwargs.get("messages") or last_args.args[1]
+
+
+def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
+    """Wall clock past the threshold with zero edit and zero verify calls
+    injects the notice exactly once, however many turns follow. Recall
+    spirals make 3-10 total calls with long reasoning between them, so the
+    identical-signature guard structurally never sees them (P1: 5 of 6
+    spiral empties ended by timeout, not guard)."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "a.txt"}, tu_id="t1"),
+        _resp_with_tool("read_file", {"path": "b.txt"}, tu_id="t2"),
+        # An attemptless prose end gets one silent-no-work nudge round first.
+        _resp_text("ok"),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"content": "x"})
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.stagnation_notice_after_s = 1e-9
+    result = wf.run("investigate")
+    assert result.completed is True
+    notices = _stagnation_blocks(_final_messages(provider))
+    assert len(notices) == 1, notices
+    assert "no edit and no verify" in notices[0]
+
+
+def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
+    """An edit attempt before the threshold crossing means no notice: the
+    guard targets attemptless runs only."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("apply_edit", {"path": "x.txt", "edits": []}, tu_id="t1"),
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t2"),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"content": "x"})
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.stagnation_notice_after_s = 1e-9
+    result = wf.run("fix it")
+    assert result.completed is True
+    assert _stagnation_blocks(_final_messages(provider)) == []
+
+
+def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),
+        _resp_text("ok"),
+        _resp_text("ok"),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = RawResult({"content": "x"})
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.stagnation_notice_after_s = 0.0
+    result = wf.run("look around")
+    assert result.completed is True
+    assert _stagnation_blocks(_final_messages(provider)) == []
