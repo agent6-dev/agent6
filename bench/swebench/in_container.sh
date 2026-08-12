@@ -34,22 +34,26 @@ WHL="/mnt/wheel/${AGENT6_SB_WHEEL:-$(basename "$(ls /mnt/wheel/*.whl | sort -V |
 uv python install 3.14 >/dev/null 2>&1
 uv tool install --python 3.14 "$WHL" >/dev/null 2>&1
 
-# Provider is chosen from the model slug: claude-* -> Anthropic (key from
-# secrets.toml [providers.anthropic]); everything else -> OpenRouter.
+# The worker's provider is chosen from the model slug (claude-* -> Anthropic,
+# else OpenRouter); BOTH provider blocks are always written so review seats
+# may reference either (a cross-model seat needs the other provider too).
+# An unused block is inert; keys resolve from the mounted secrets.
 if [[ "$MODEL" == claude-* ]]; then
   PROVIDER=anthropic
-  PROVIDER_BLOCK='[providers.anthropic]
-api_format = "anthropic"
-api_key_env = "ANTHROPIC_API_KEY"
-prompt_caching = true'
 else
   PROVIDER=openrouter
-  PROVIDER_BLOCK='[providers.openrouter]
+fi
+PROVIDER_BLOCK='[providers.anthropic]
+api_format = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+prompt_caching = true
+
+[providers.openrouter]
 api_format = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 extra_headers = { "HTTP-Referer" = "https://github.com/elesiuta/agent6", "X-Title" = "agent6-swebench" }'
-fi
+
 
 # Optional review panel (Fugu dimension). AGENT6_SB_REVIEW_SEATS is a
 # semicolon-separated list of "persona@provider/model" seats; when set the panel
