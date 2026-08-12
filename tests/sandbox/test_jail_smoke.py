@@ -21,15 +21,7 @@ import pytest
 
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.types import IsolationLevel, JailPolicy
-
-
-def _userns_available() -> bool:
-    res = subprocess.run(
-        ["unshare", "-U", "-r", "true"],
-        capture_output=True,
-        check=False,
-    )
-    return res.returncode == 0
+from tests.jail_env import require_userns_jail
 
 
 def _jail_binary() -> Path | None:
@@ -71,8 +63,7 @@ pytestmark = pytest.mark.needs_namespaces
 
 @pytest.fixture(scope="module")
 def jail_bin() -> Path:
-    if not _userns_available():
-        pytest.skip("unprivileged user namespaces not available")
+    require_userns_jail()
     bin_path = _jail_binary()
     if bin_path is None:
         if not os.environ.get("AGENT6_BUILD_JAIL"):

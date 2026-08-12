@@ -27,15 +27,9 @@ from agent6.config import Config
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.policy import jail_policy
 from agent6.types import JailPolicy, NetworkMode
+from tests.jail_env import require_userns_jail
 
 pytestmark = pytest.mark.needs_namespaces
-
-
-def _userns_available() -> bool:
-    return (
-        subprocess.run(["unshare", "-U", "-r", "true"], capture_output=True, check=False).returncode
-        == 0
-    )
 
 
 def _landlock_available() -> bool:
@@ -167,8 +161,7 @@ def test_a_network_confined_server_still_serves_its_tools(
     """network = "none" must confine the network WITHOUT breaking the pipe:
     the stdio fds are unaffected by unsharing a namespace, and a server that
     stopped answering would make the setting unusable."""
-    if not _userns_available():
-        pytest.skip("no unprivileged user namespaces")
+    require_userns_jail()
     ws, visible, _hidden = granted
     mgr = MCPManager.start(
         [

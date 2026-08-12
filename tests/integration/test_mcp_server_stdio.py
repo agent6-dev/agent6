@@ -14,16 +14,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from agent6.config.layer import resolved_state_dir
 from agent6.sessions.manifest import MANIFEST_VERSION
-
-
-def _userns_available() -> bool:
-    res = subprocess.run(["unshare", "-U", "-r", "true"], capture_output=True, check=False)
-    return res.returncode == 0
-
+from tests.jail_env import require_userns_jail
 
 _VALID_TOML = """
 [agent6]
@@ -160,8 +153,7 @@ def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: Path) -> None
     call against the real dispatcher catches it. verify_command is `["true"]`,
     which exits 0 inside the jail.
     """
-    if not _userns_available():
-        pytest.skip("unprivileged user namespaces not available")
+    require_userns_jail()
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
 
