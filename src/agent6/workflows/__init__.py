@@ -8,24 +8,17 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config
-from agent6.memory import MemoryEntry, MemoryStoreError
-from agent6.memory import list_entries as memory_list_entries
-from agent6.notes import NotesError, read_notes
+from agent6.memory import index_text as memory_index_text
+from agent6.memory import memory_dir
 from agent6.sandbox.detect import IsolationUnavailableError, detect, resolve_isolation
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import IsolationLevel
 from agent6.workflows._context import load_repo_summary
-from agent6.workflows._prompt_blocks import (
-    MEMORIES_MAX_CHARS,
-    MEMORY_ENTRY_MAX_CHARS,
-    build_system_prompt,
-)
+from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows.review import CodeReviewError, code_review
 
 __all__ = [
-    "MEMORIES_MAX_CHARS",
-    "MEMORY_ENTRY_MAX_CHARS",
     "CodeReviewError",
     "code_review",
     "system_prompt_for",
@@ -45,7 +38,7 @@ def system_prompt_for(
     AGENTS.md + recent commits + hot symbols + co-change + symbol outline) -- the
     same view the run loop sees, so prompt show matches reality.
 
-    Recorded memories, the notes scratchpad and installed skills are loaded on
+    The memory index and installed skills are loaded on
     the loop's own rules (none of the first two in machine/agent modes, skills
     in run mode only): omitting them printed "(none recorded yet)" for an
     operator checking what future runs would actually receive. *state_dir* is
@@ -62,8 +55,8 @@ def system_prompt_for(
         config=config,
         repo=repo,
         mode=mode,
-        memories=_active_memories(recall),
-        notes=_notes(recall),
+        memory_index=memory_index_text(recall) if recall is not None else "",
+        memory_dir_path=str(memory_dir(recall)) if recall is not None else "",
         skills=_installed_skills(root, config, mode),
         isolation=_shown_isolation(config),
     )
@@ -77,29 +70,6 @@ def _shown_isolation(config: Config) -> IsolationLevel:
         return resolve_isolation(config.sandbox.isolation, detect())
     except IsolationUnavailableError:
         return "none"
-
-
-def _notes(state_dir: Path | None) -> str:
-    """The loop's ``_load_notes`` rule: an unreadable scratchpad degrades to no
-    block (notes are context, not correctness)."""
-    if state_dir is None:
-        return ""
-    try:
-        return read_notes(state_dir)
-    except NotesError:
-        return ""
-
-
-def _active_memories(state_dir: Path | None) -> tuple[MemoryEntry, ...]:
-    """The loop's ``_load_memories`` rule: an unreadable store degrades to none
-    (memory is context, not correctness)."""
-    if state_dir is None:
-        return ()
-    try:
-        entries = memory_list_entries(state_dir)
-    except (MemoryStoreError, OSError):
-        return ()
-    return tuple(e for e in entries if e.is_active)
 
 
 def _installed_skills(

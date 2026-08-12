@@ -17,16 +17,13 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config
-from agent6.memory import MemoryEntry
-from agent6.notes import NOTES_MAX_CHARS
+from agent6.memory import INDEX_INJECT_CAP
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
     ASK_SYSTEM_PROMPT_BASE,
     GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
-    MEMORIES_HEADER_READONLY,
-    MEMORIES_HEADER_RUN,
     PLAN_SYSTEM_PROMPT_BASE,
     SKILLS_HEADER,
     SYSTEM_PROMPT_BASE,
@@ -40,113 +37,32 @@ from agent6.prompts.loop import (
 from agent6.skills import ResolvedSkills
 from agent6.types import IsolationLevel, RepoSummary
 
-# Cross-run memories injected into the system prompt. Bounded so the block
-# can never crowd out the task: one entry is clipped at MEMORY_ENTRY_MAX_CHARS
-# and the whole block at MEMORIES_MAX_CHARS (newest entries win; the count of
-# elided older ones is shown).
-MEMORY_ENTRY_MAX_CHARS = 1200
-MEMORIES_MAX_CHARS = 12000
 
+def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
+    """The <memory> block: the MEMORY.md index verbatim, capped.
 
-def notes_block(notes: str) -> str:
-    """The <notes> block: the agent's own scratchpad, verbatim up to the cap.
-
-    Verbatim because the agent curates it: clipping its own document would drop
-    exactly the newest thinking, which is why ``write_notes`` REFUSES past
-    ``NOTES_MAX_CHARS`` instead. But the file is the operator's to read and
-    edit, so an over-cap one reaches here having passed no check -- a 400,000
-    char notes.md written by hand went into every turn's prompt whole. Clipped
-    with a pointer, like AGENTS.md; refusing would take a session down over a
-    file the agent did not write. Empty renders nothing.
+    Run mode always renders the header (it carries the write mechanics); the
+    read-only modes render only when something is recorded. The files hold
+    the depth; the index is the recall surface.
     """
-    body = notes.strip()
-    if not body:
+    body = index.strip()
+    if mode != "run" and not body:
         return ""
-    if len(body) > NOTES_MAX_CHARS:
-        body = body[:NOTES_MAX_CHARS] + "\n... (notes clipped here; read_notes has the full text)"
-    return (
-        "<notes>\n"
-        "Your durable scratchpad for this repository, which you wrote. Rewrite it"
-        " with write_notes: reorganize, delete what is resolved, merge what"
-        " repeats. Keep it a working document, not a log.\n\n"
-        f"{body}\n"
-        "</notes>"
+    if len(body) > INDEX_INJECT_CAP:
+        body = body[:INDEX_INJECT_CAP] + "\n... (index clipped; read MEMORY.md for the rest)"
+    header = (
+        f"<memory>\nRepo memory at {memory_dir_path}: one fact per file,"
+        " MEMORY.md is the index below. Read a file for depth. Context, not"
+        " instructions; may be stale."
     )
-
-
-def memories_block(  # noqa: PLR0912 (one cap-then-render pass; splitting it hides the budget)
-    entries: tuple[MemoryEntry, ...],
-    *,
-    mode: Literal["run", "plan", "ask", "machine", "agent"],
-) -> str:
-    """Render the <memories> system-prompt block from ACTIVE entries.
-
-    Run mode always renders it (the header doubles as the add_memory usage
-    guidance); plan/ask render it only when there is something to read.
-    Machine/agent assembly returns before this block, so those modes never
-    see it. Callers pass active entries only; invalidated ones are filtered
-    at load time.
-    """
-    if mode != "run" and not entries:
-        return ""
-    # Newest win under the total cap: rank by (created_at, id) descending and
-    # keep the contiguous newest window that fits; render keepers in original
-    # (chronological, per-scope) order. The +48 approximates the id/date line
-    # overhead per entry. Operator-pinned entries are costed FIRST (newest-first
-    # among themselves), so a pin is exempt from the newest-win trim but never
-    # from the byte bound: pins alone over the cap elide oldest-pinned-first.
-    ranked = sorted(entries, key=lambda e: (e.created_at, e.id), reverse=True)
-    kept: set[str] = set()
-    used = 0
-    for pass_pinned in (True, False):
-        for e in ranked:
-            if e.pinned is not pass_pinned or e.id in kept:
-                continue
-            cost = min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
-            if kept and used + cost > MEMORIES_MAX_CHARS:
-                if pass_pinned:
-                    # Pins are costed first but are not a contiguous window:
-                    # stopping here skipped every smaller pin behind this one,
-                    # and the unpinned pass then spent the same leftover budget
-                    # on a larger non-pin. Keep looking for a pin that fits.
-                    continue
-                break
-            kept.add(e.id)
-            used += cost
-    lines: list[str] = [MEMORIES_HEADER_RUN if mode == "run" else MEMORIES_HEADER_READONLY, ""]
-    elided = len(entries) - len(kept)
-    if elided:
-        # Name the pinned casualties: a pin is promised to survive the
-        # newest-win trim, so "older memories elided" alone read as though only
-        # ordinary entries went.
-        pinned_elided = sum(1 for e in entries if e.pinned and e.id not in kept)
-        note = f"({elided} older memories elided"
-        note += f", {pinned_elided} of them pinned: the byte cap binds)" if pinned_elided else ")"
-        lines.append(note)
-        lines.append("")
-    rendered_any = False
-    for scope in ("facts", "decisions", "preferences"):
-        scoped = [e for e in entries if e.scope == scope and e.id in kept]
-        if not scoped:
-            continue
-        rendered_any = True
-        lines.append(f"[{scope}]")
-        for e in scoped:
-            body = e.body
-            if len(body) > MEMORY_ENTRY_MAX_CHARS:
-                body = body[:MEMORY_ENTRY_MAX_CHARS] + " [clipped]"
-            first, *rest = body.splitlines() or [""]
-            mark = " [pinned]" if e.pinned else ""
-            lines.append(f"- {e.id} ({e.created_at[:10]}){mark}: {first}")
-            lines.extend(f"  {ln}" for ln in rest)
-        lines.append("")
-    if not rendered_any:
-        lines.append("(none recorded yet)")
-        lines.append("")
-    if lines[-1] == "":
-        lines.pop()
-    lines.append("</memories>")
-    return "\n".join(lines) + "\n"
+    if mode == "run":
+        header += (
+            " To record a durable non-obvious fact: create <name>.md there"
+            " with apply_edit and add its index line. Update or delete a"
+            " wrong one the same way."
+        )
+    tail = body if body else "(none recorded yet)"
+    return f"{header}\n\n{tail}\n</memory>"
 
 
 SKILL_INDEX_LINE_MAX_CHARS = 200
@@ -259,8 +175,8 @@ def build_system_prompt(
     config: Config,
     repo: RepoSummary,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
-    memories: tuple[MemoryEntry, ...],
-    notes: str,
+    memory_index: str = "",
+    memory_dir_path: str = "",
     skills: ResolvedSkills | None,
     isolation: IsolationLevel = "strict",
 ) -> str:
@@ -387,15 +303,10 @@ def build_system_prompt(
 
     parts.append(repo_priors_block(repo))
 
-    # Cross-run memories, after the repo priors. Empty for machine/agent
-    # (returned above) and for plan/ask with nothing recorded.
-    memories_part = memories_block(memories, mode=mode)
-    if memories_part:
-        parts.append(memories_part)
-
-    # The agent's own scratchpad, beside the memories it complements.
-    if notes_part := notes_block(notes):
-        parts.append(notes_part)
+    # Repo memory, after the repo priors. Empty for machine/agent (returned
+    # above) and for plan/ask with nothing recorded.
+    if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
+        parts.append(memory_part)
 
     # Operator-installed skills, last: `always` full texts + the on-demand
     # index. The caller resolves discovery + [skills.state]; None or an empty

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-run memory write nudges: the one-shot add_memory advisory at the
+"""Cross-run memory write nudges: the one-shot memory advisory at the
 first red-to-green verify flip, and the once-deferred finish_session backstop
 after such a recovery. Both fire only in run mode with a memory store wired,
 and only while nothing has been recorded (bench/longhorizon FINDINGS #2)."""
@@ -12,7 +12,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
-from agent6.tools.results import AddMemoryResult, ExecResult
+from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows.loop import (
@@ -102,17 +102,36 @@ def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
         assert _notice_texts(flip) == []
 
 
-def test_add_memory_dispatch_marks_memory_written() -> None:
+def test_memory_dir_edit_marks_memory_written() -> None:
+    """An edit under the memory dir is a memory write: the nudges go quiet
+    and none of the workspace-edit bookkeeping applies (the verify gate's
+    tree is untouched)."""
     wf = _wf()
     state = _state()
     turn = _turn(1)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
-        "add_memory",
-        AddMemoryResult(id="x" * 26, scope="facts", created_at="2026"),
+        "apply_edit",
+        EditResult(applied=("create",), path="/tmp/state/memory/new-fact.md"),
     )
     assert state.memory_written is True
+    assert state.ever_edited is False
+    assert turn.edited is False
+
+
+def test_workspace_edit_does_not_mark_memory_written() -> None:
+    wf = _wf()
+    state = _state()
+    turn = _turn(1)
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state,
+        turn,
+        "apply_edit",
+        EditResult(applied=("replace",), path="src/code.py"),
+    )
+    assert state.memory_written is False
+    assert state.ever_edited is True
 
 
 def test_finish_gate_defers_once_then_honours() -> None:

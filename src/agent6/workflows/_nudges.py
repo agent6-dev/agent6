@@ -243,7 +243,7 @@ QUESTION_NUDGE = (
 
 
 # Cross-run memory write nudges. Measured (bench/longhorizon FINDINGS #2):
-# 46 legs across 2 models produced ZERO unprompted add_memory calls, so the
+# 46 legs across 2 models produced ZERO unprompted memory writes, so the
 # <memories> header alone never causes writes. Surface the tool at the two
 # moments a durable discovery is actually in hand: the first red-to-green
 # verify flip (advisory, free) and the first finish_session after such a recovery
@@ -256,15 +256,16 @@ QUESTION_NUDGE = (
 # did not.
 MEMORY_FLIP_NUDGE = (
     "[harness memory] Verify flipped green. If the fix rested on a durable"
-    " non-obvious fact about this repo, add_memory the general rule so"
-    " future runs skip the rediscovery; if ordinary, carry on."
+    " non-obvious fact about this repo, record the general rule in the"
+    " memory dir (a new <name>.md plus its MEMORY.md line); if ordinary,"
+    " carry on."
 )
 
 MEMORY_FINISH_NUDGE = (
     "[harness memory] finish_session deferred once: verify recovered earlier"
     " and nothing was recorded. If the root cause was a durable non-obvious"
-    " repo fact, add_memory the general rule; then call finish_session"
-    " again either way."
+    " repo fact, record the general rule in the memory dir; then call"
+    " finish_session again either way."
 )
 
 

@@ -6,12 +6,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cache
-from typing import Annotated, Any, ClassVar, Literal, get_args
+from typing import Annotated, Any, ClassVar, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from agent6.graph.models import NodeStatus
-from agent6.notes import NOTES_MAX_CHARS
 from agent6.types import session_kind
 
 # Derived from the NodeStatus Literal so the task-status vocabulary has ONE
@@ -357,44 +356,6 @@ class DagListTasksInput(_ToolInput):
 # the <memories> system-prompt block. Run mode only (LOOP_EXTRA_TOOLS).
 
 
-class AddMemoryInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "add_memory"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Record one durable, self-contained fact for future runs on this"
-        " repository. scope 'repo' or 'global'. Never task progress, secrets,"
-        " or anything obvious from the repo."
-    )
-
-    scope: Literal["facts", "decisions", "preferences"]
-    body: str = Field(min_length=1, max_length=2000)
-
-
-class ReadNotesInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "read_notes"
-    TOOL_DESCRIPTION: ClassVar[str] = "Read the run's scratchpad notes."
-
-
-class WriteNotesInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "write_notes"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Replace the run's scratchpad notes (persisted across resume; shown"
-        " to future runs on this repo). Keep it short and current."
-    )
-
-    content: str = Field(max_length=NOTES_MAX_CHARS)
-
-
-class InvalidateMemoryInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "invalidate_memory"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Mark a recorded memory wrong or stale by id, with the reason. It"
-        " stops appearing; the correction is kept for the operator."
-    )
-
-    id: str = Field(min_length=26, max_length=26)
-    reason: str = Field(min_length=1, max_length=500)
-
-
 class UseSkillInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -502,10 +463,6 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,
-    AddMemoryInput,
-    InvalidateMemoryInput,
-    ReadNotesInput,
-    WriteNotesInput,
     # Operator-installed skills (hidden by the dispatcher when none are
     # installed or [skills].enabled is off).
     UseSkillInput,

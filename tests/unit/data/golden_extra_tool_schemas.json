@@ -1,16 +1,5 @@
 [
   {
-    "name": "add_memory",
-    "required": [
-      "body",
-      "scope"
-    ],
-    "properties": {
-      "body": "string",
-      "scope": "string"
-    }
-  },
-  {
     "name": "add_task",
     "required": [
       "title"
@@ -71,27 +60,11 @@
     }
   },
   {
-    "name": "invalidate_memory",
-    "required": [
-      "id",
-      "reason"
-    ],
-    "properties": {
-      "id": "string",
-      "reason": "string"
-    }
-  },
-  {
     "name": "list_tasks",
     "required": [],
     "properties": {
       "status": "anyOf[null,string]"
     }
-  },
-  {
-    "name": "read_notes",
-    "required": [],
-    "properties": {}
   },
   {
     "name": "run_metric_command",
@@ -118,15 +91,6 @@
     "properties": {
       "file": "anyOf[null,string]",
       "name": "string"
-    }
-  },
-  {
-    "name": "write_notes",
-    "required": [
-      "content"
-    ],
-    "properties": {
-      "content": "string"
     }
   }
 ]

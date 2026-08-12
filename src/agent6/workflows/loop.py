@@ -52,10 +52,8 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.memory import MemoryEntry, MemoryStoreError
-from agent6.memory import list_entries as memory_list_entries
-from agent6.notes import NotesError
-from agent6.notes import read_notes as notes_read
+from agent6.memory import index_text as memory_index_text
+from agent6.memory import memory_dir
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -493,7 +491,7 @@ class _TurnState:
     verify_just_passed: bool = False
     verify_just_failed: bool = False
     # Verify went green THIS turn after the run's last verify was red; feeds
-    # the one-shot add_memory flip advisory in _turn_notices.
+    # the one-shot memory flip advisory in _turn_notices.
     verify_flipped_green: bool = False
     # An apply_edit/apply_patch AFTER a passing verify in the same turn changes
     # the tree that verify validated, so the green no longer applies. Tracked
@@ -546,7 +544,7 @@ class Workflow:
     # Per-repo state dir holding the cross-run memory store
     # (<state_dir>/memories/). When set, active memories are injected into
     # the system prompt at run start; the CLI wires the same path into the
-    # dispatcher so add_memory / invalidate_memory persist across runs.
+    # dispatcher so memory-dir edits persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.
     state_dir: Path | None = None
     # Rendered [git.commit].trailer line (render_commit_trailer), appended once
@@ -786,8 +784,8 @@ class Workflow:
             config=self.config,
             repo=repo,
             mode=self.mode,
-            memories=self._load_memories(),
-            notes=self._load_notes(),
+            memory_index=self._load_memory_index(),
+            memory_dir_path=str(memory_dir(self.state_dir)) if self.state_dir is not None else "",
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
         )
@@ -1481,11 +1479,19 @@ class Workflow:
             )
             if turn.verify_just_passed:
                 turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
-        elif name == "add_memory":
-            # Only successful dispatches reach here, so the write persisted;
-            # both memory nudges stay quiet for the rest of the run.
-            state.memory_written = True
         if name in ("apply_edit", "apply_patch"):
+            # An edit under the memory dir is a memory write, not workspace
+            # work: both memory nudges stay quiet for the rest of the run and
+            # none of the tree bookkeeping below applies (the gate's tree is
+            # untouched).
+            path = getattr(result, "path", "")
+            if (
+                self.state_dir is not None
+                and path.startswith("/")
+                and Path(path).is_relative_to(memory_dir(self.state_dir))
+            ):
+                state.memory_written = True
+                return
             turn.edited = True
             state.ever_edited = True
             # Invalidate a same-turn earlier verify pass: the commit
@@ -1994,7 +2000,7 @@ class Workflow:
     def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Memory write-side backstop: defer the first finish_session ONCE when the
         run recovered from a red verify to green and recorded nothing via
-        add_memory - the nudge asks for the root cause or an immediate re-finish
+        a memory write - the nudge asks for the root cause or an immediate re-finish
         (see _nudges for the measurement behind it). Explicit finish_session only: a
         went-quiet worker is never bounced here."""
         if not (
@@ -2022,7 +2028,7 @@ class Workflow:
 
         The memory flip advisory fires once per run, at the first verify that
         goes green after a red one, while nothing has been recorded via
-        add_memory: that is the moment a hard-won root cause is in hand (see
+        a memory write: that is the moment a hard-won root cause is in hand (see
         _nudges for the measurement behind it).
 
         The loop-guard notice fires when the same (tool, args) signature has
@@ -2043,7 +2049,7 @@ class Workflow:
         ):
             state.memory_flip_nudged = True
             turn.tool_results.append(Notice(MEMORY_FLIP_NUDGE))
-            self._log("  memory: verify flipped green - injecting add_memory advisory")
+            self._log("  memory: verify flipped green - injecting memory advisory")
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
         repeat_threshold = 3
         if (
@@ -3331,47 +3337,16 @@ class Workflow:
         disp = self.dispatcher if self.config.prompt.structural_priors else None
         return load_repo_summary(self.root, dispatcher=disp)
 
-    def _load_notes(self) -> str:
-        """The agent's scratchpad for the system prompt.
+    def _load_memory_index(self) -> str:
+        """The repo memory index for the system prompt.
 
         "" when no state_dir is wired, and for machine/agent modes (whose
-        prompt assembly drops repo context). An unreadable scratchpad degrades
-        to no block and says so: notes are context, not correctness, but a
-        silently missing block reads as "there are no notes" -- and the answer
-        to that is a write that would destroy them.
+        prompt assembly drops repo context). An unreadable index degrades to
+        "" inside the store: memory is context, not correctness.
         """
         if self.state_dir is None or self.mode in ("machine", "agent"):
             return ""
-        try:
-            return notes_read(self.state_dir)
-        except NotesError as exc:
-            self._log(f"LOOP: WARNING: notes unavailable: {exc}")
-            self._emit("loop.notes.unavailable", error=str(exc))
-            return ""
-
-    def _load_memories(self) -> tuple[MemoryEntry, ...]:
-        """Active cross-run memories for the system prompt.
-
-        () when no state_dir is wired, and for machine/agent modes (their
-        prompt assembly drops repo context, memories included). An unreadable
-        store logs loudly and returns () rather than aborting the run,
-        mirroring the snapshot-write policy: memory is context, not
-        correctness.
-        """
-        if self.state_dir is None or self.mode in ("machine", "agent"):
-            return ()
-        try:
-            entries = memory_list_entries(self.state_dir)
-        except (MemoryStoreError, OSError) as exc:
-            # An event, not just a log line: the console view filters "LOOP:"
-            # unless AGENT6_DEBUG=1 and a detached run's stdout is DEVNULL.
-            self._log(f"LOOP: WARNING: cross-run memories unavailable: {exc}")
-            self._emit("loop.memories.unavailable", error=str(exc))
-            return ()
-        active = tuple(e for e in entries if e.is_active)
-        if active:
-            self._log(f"LOOP: memories: {len(active)} active")
-        return active
+        return memory_index_text(self.state_dir)
 
     def _load_skills(self) -> ResolvedSkills | None:
         """Operator-installed skills for the system prompt, run mode only.

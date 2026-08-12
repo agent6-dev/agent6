@@ -20,7 +20,7 @@ from agent6.tools._result_format import passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 
 
-def workspace_for(config: Config, root: Path) -> Workspace:
+def workspace_for(config: Config, root: Path, *, memory_dir: Path | None = None) -> Workspace:
     """The in-process file boundary for a run rooted at *root*.
 
     The tools are the FRONT DOOR of the file axis -- an untrusted model reaches
@@ -35,12 +35,17 @@ def workspace_for(config: Config, root: Path) -> Workspace:
     sb = config.sandbox
     denied = hidden_paths(Path(p) for p in sb.hide_paths)
     writable = tuple(Path(p).resolve() for p in sb.extra_write_paths)
+    # The per-repo memory dir: model-writable state BY DESIGN (the memory
+    # index and entries are model-authored context). In-process tools only;
+    # jail_policy never mounts it, so commands still see nothing.
+    mem = (memory_dir.resolve(),) if memory_dir is not None else ()
     return Workspace(
         root=root.resolve(),
         denied=tuple(p.resolve() for p in denied),
         # Write implies read, matching the grants the jail mounts.
-        read_roots=(*(Path(p).resolve() for p in sb.extra_read_paths), *writable),
-        write_roots=writable,
+        read_roots=(*(Path(p).resolve() for p in sb.extra_read_paths), *writable, *mem),
+        write_roots=(*writable, *mem),
+        exempt=mem,
     )
 
 

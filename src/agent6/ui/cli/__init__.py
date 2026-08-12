@@ -75,14 +75,12 @@ from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve
 from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list
 from agent6.ui.cli.memory_cmds import (
     _cmd_memory_add,
-    _cmd_memory_invalidate,
     _cmd_memory_list,
-    _cmd_memory_pin,
-    _cmd_memory_unpin,
+    _cmd_memory_rm,
+    _cmd_memory_show,
 )
 from agent6.ui.cli.model import _cmd_model
 from agent6.ui.cli.net_cmds import exec_in_session, forward, listening_ports
-from agent6.ui.cli.notes_cmds import _cmd_notes_edit, _cmd_notes_show
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 from agent6.ui.cli.plan_watch import (
     _cmd_plan_edit,
@@ -548,23 +546,15 @@ def _dispatch_model(args: argparse.Namespace) -> int:
     )
 
 
-def _dispatch_notes(args: argparse.Namespace) -> int:
-    if args.notes_command == "show":
-        return _cmd_notes_show()
-    return _cmd_notes_edit()
-
-
 def _dispatch_memory(args: argparse.Namespace) -> int:
     if args.memory_command == "add":
-        return _cmd_memory_add(args.scope, args.body)
+        return _cmd_memory_add(args.name, args.body)
     if args.memory_command == "list":
-        return _cmd_memory_list(args.scope or None, include_invalidated=args.all)
-    if args.memory_command == "invalidate":
-        return _cmd_memory_invalidate(args.memory_id, args.reason)
-    if args.memory_command == "pin":
-        return _cmd_memory_pin(args.memory_id)
-    if args.memory_command == "unpin":
-        return _cmd_memory_unpin(args.memory_id)
+        return _cmd_memory_list()
+    if args.memory_command == "show":
+        return _cmd_memory_show(args.name)
+    if args.memory_command == "rm":
+        return _cmd_memory_rm(args.name)
     raise AssertionError("unreachable")  # pragma: no cover -- memory subparser is required
 
 
@@ -673,7 +663,6 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": _dispatch_check,
     "connect": _dispatch_connect,
     "model": _dispatch_model,
-    "notes": _dispatch_notes,
     "memory": _dispatch_memory,
     "skills": _dispatch_skills,
     "history": _dispatch_history,

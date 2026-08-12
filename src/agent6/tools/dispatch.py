@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
+from agent6.memory import memory_dir
 from agent6.paths import data_dir
 from agent6.sandbox.jail import (
     JailSession,
@@ -52,13 +53,6 @@ from agent6.skills import (
 from agent6.tools._control_tools import ask_user, finish_planning, finish_session
 from agent6.tools._dag_tools import add_task, list_tasks, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
-from agent6.tools._memory_tools import (
-    add_memory,
-    invalidate_memory,
-    read_notes,
-    use_skill,
-    write_notes,
-)
 from agent6.tools._nav_tools import (
     find_definition,
     find_references,
@@ -68,6 +62,7 @@ from agent6.tools._result_format import (
     parse_metric_score,
     truncate_args,
 )
+from agent6.tools._skill_tools import use_skill
 from agent6.tools.background import BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
@@ -92,7 +87,6 @@ from agent6.tools.results import (
 )
 from agent6.tools.schema import (
     ALL_TOOLS,
-    AddMemoryInput,
     Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
@@ -105,12 +99,10 @@ from agent6.tools.schema import (
     FindReferencesInput,
     FinishPlanningInput,
     FinishSessionInput,
-    InvalidateMemoryInput,
     ListDirInput,
     OutlineInput,
     ReadBackgroundInput,
     ReadFileInput,
-    ReadNotesInput,
     ReadSessionInput,
     RunCommandInput,
     RunMetricInput,
@@ -118,7 +110,6 @@ from agent6.tools.schema import (
     StopBackgroundInput,
     UserQuestion,
     UseSkillInput,
-    WriteNotesInput,
     mode_tools,
 )
 from agent6.tools.sessions import conversation, roster
@@ -308,7 +299,14 @@ class ToolDispatcher:
         self._config = config
         # The in-process file boundary. Every path-taking read/write tool
         # resolves through it, so the hidden set holds at every isolation level.
-        self._ws = workspace_for(config, self._root)
+        # The per-repo memory dir rides along when state is wired: memory files
+        # are read and edited with the ordinary tools (in-process only; the
+        # jail never mounts it).
+        self._ws = workspace_for(
+            config,
+            self._root,
+            memory_dir=memory_dir(state_dir) if state_dir is not None else None,
+        )
         # Public: the prompt builder reads it so the system prompt describes
         # THIS dispatcher's command behaviour (hardened-only caveats).
         self.isolation: IsolationLevel = isolation
@@ -337,10 +335,8 @@ class ToolDispatcher:
         # prefix to the manager. Discovered tool names are also added
         # to ``available_tool_names()`` so the workflow exposes them.
         self._mcp_manager = mcp_manager
-        # Per-repo state dir holding the cross-run memory store
-        # (<state_dir>/memories/). None (tests, review/one-off dispatchers)
-        # leaves add_memory / invalidate_memory unwired: they raise ToolError,
-        # like the DAG tools without a curator.
+        # Per-repo state dir: sessions roster reads plus the memory grant
+        # above. None (tests, review/one-off dispatchers) leaves both off.
         self._state_dir = state_dir
         # Background commands live under the run dir so they die with the run
         # and `sessions rm` clears them. None (tests, review dispatchers) leaves
@@ -394,12 +390,6 @@ class ToolDispatcher:
             DagAddTaskInput.TOOL_NAME: self._dag_add_task,
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
             DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
-            # Cross-run memory. Handlers raise ToolError if no
-            # state_dir was wired.
-            AddMemoryInput.TOOL_NAME: self._add_memory,
-            InvalidateMemoryInput.TOOL_NAME: self._invalidate_memory,
-            ReadNotesInput.TOOL_NAME: self._read_notes,
-            WriteNotesInput.TOOL_NAME: self._write_notes,
             # Operator-installed skills; resolved lazily from config + the
             # data dir on first use (see _resolved_skills).
             UseSkillInput.TOOL_NAME: self._use_skill,
@@ -984,23 +974,6 @@ class ToolDispatcher:
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> ToolResult:
         return list_tasks(self._curator, raw)
-
-    # Cross-run memory handlers. Writes go through trusted code
-    # (agent6.memory) to fixed markdown files under <state_dir>/memories/,
-    # outside the workspace and the jail; the LLM controls only the scope
-    # (schema-validated literal) and the note text, which is inert data.
-
-    def _read_notes(self, raw: dict[str, Any]) -> ToolResult:
-        return read_notes(self._state_dir, raw)
-
-    def _write_notes(self, raw: dict[str, Any]) -> ToolResult:
-        return write_notes(self._state_dir, raw)
-
-    def _add_memory(self, raw: dict[str, Any]) -> ToolResult:
-        return add_memory(self._state_dir, raw)
-
-    def _invalidate_memory(self, raw: dict[str, Any]) -> ToolResult:
-        return invalidate_memory(self._state_dir, raw)
 
     def resolved_skills(self) -> ResolvedSkills:
         """Discover + state-resolve operator skills, once per dispatcher.

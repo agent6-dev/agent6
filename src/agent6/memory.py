@@ -1,287 +1,99 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Persistent agent memories under ``<state_dir>/memories/``.
+"""Per-repo agent memory under ``<state_dir>/memory/``.
 
-Three scopes, each backed by a single markdown file:
-  - facts.md       (immutable observations)
-  - decisions.md   (policy / design choices the agent committed to)
-  - preferences.md (user preferences and style guidance)
-
-Entries are append-only. "Invalidation" is non-destructive: an extra
-header line marks the entry as superseded but the body remains so the
-audit trail stays intact.
-
-File format, one entry per `### <id>` h3, deterministic so ripgrep
-can search and we can parse without YAML:
-
-    ## facts
-
-    ### 01HX...
-    created_at: 2026-01-01T00:00:00Z
-    invalidated_at: 2026-02-01T00:00:00Z
-    invalidation_reason: superseded by 01HY...
-
-    body text, may span multiple lines and contain *markdown*.
-
-    ### 01HY...
-    created_at: 2026-02-01T00:00:00Z
-
-    another entry.
+One fact per markdown file plus a ``MEMORY.md`` index (one line per entry).
+The index is injected into every run's system prompt; the files are read and
+edited with the ordinary in-process tools through a narrow path grant, so
+recording or correcting a memory is a normal file edit. Model-authored
+context: never instructions, never secrets. Repo-only by design; sharing a
+memory across repos is the operator copying it.
 """
 
 from __future__ import annotations
 
-import contextlib
-import os
 import re
-from collections.abc import Generator
-from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from agent6.errors import OperatorError
-from agent6.graph.ulid import new_ulid
-from agent6.portable import atomic_write, lock_exclusive, unlock
 
-MemoryScope = Literal["facts", "decisions", "preferences"]
-_SCOPES: tuple[MemoryScope, ...] = ("facts", "decisions", "preferences")
-_ID_RE = re.compile(r"^### ([0-9A-HJKMNP-TV-Z]{26})\s*$")
-_KEY_RE = re.compile(r"^([a-z_]+):\s*(.+)$")
+MEMORY_DIR_NAME = "memory"
+INDEX_NAME = "MEMORY.md"
+# The index is injected whole; past the cap it is clipped with a pointer so
+# a runaway index cannot flood every prompt in the repo.
+INDEX_INJECT_CAP = 4_096
+
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
 class MemoryStoreError(OperatorError):
-    """Memory-store operation failed.
-
-    An OperatorError: a bad id/scope/body or an unreadable store refuses at
-    the CLI boundary; the run loop keeps its own degrade catches.
-    """
+    """Memory-store operation failed (bad name, unreadable store)."""
 
 
-@dataclass(frozen=True, slots=True)
-class MemoryEntry:
-    id: str
-    scope: MemoryScope
-    created_at: str
-    body: str
-    invalidated_at: str = ""
-    invalidation_reason: str = ""
-    # Operator-pinned (`agent6 memory pin`): exempt from the <memories> block's
-    # newest-win trim. Render-side only; invalidation still wins.
-    pinned: bool = False
-
-    @property
-    def is_active(self) -> bool:
-        return not self.invalidated_at
+def memory_dir(state_dir: Path) -> Path:
+    return state_dir / MEMORY_DIR_NAME
 
 
-def _memories_dir(state_dir: Path) -> Path:
-    return state_dir / "memories"
+def index_path(state_dir: Path) -> Path:
+    return memory_dir(state_dir) / INDEX_NAME
 
 
-def _scope_path(state_dir: Path, scope: MemoryScope) -> Path:
-    if scope not in _SCOPES:
-        raise MemoryStoreError(f"unknown memory scope: {scope!r} (want one of {_SCOPES})")
-    return _memories_dir(state_dir) / f"{scope}.md"
-
-
-def _now() -> str:
-    return datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _parse_file(path: Path, scope: MemoryScope) -> list[MemoryEntry]:
-    if not path.is_file():
-        return []
+def index_text(state_dir: Path) -> str:
+    """The index body for prompt injection; "" when absent or unreadable
+    (memory is context, one stray byte must not kill every run)."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, ValueError) as exc:
-        # The store's own error type, so the block builders' degrade-to-none
-        # guard covers an unreadable or non-UTF-8 file too: memory is context,
-        # and one stray byte must not kill every run in the repo.
-        raise MemoryStoreError(f"cannot read {path}: {exc}") from exc
-    lines = text.splitlines()
-    entries: list[MemoryEntry] = []
-    current_id: str | None = None
-    meta: dict[str, str] = {}
-    body_lines: list[str] = []
-    in_meta = True
+        return index_path(state_dir).read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return ""
 
-    def _flush() -> None:
-        if current_id is None:
-            return
-        body = "\n".join(body_lines).strip("\n")
-        entries.append(
-            MemoryEntry(
-                id=current_id,
-                scope=scope,
-                created_at=meta.get("created_at", ""),
-                invalidated_at=meta.get("invalidated_at", ""),
-                invalidation_reason=meta.get("invalidation_reason", ""),
-                body=body,
-                pinned=meta.get("pinned", "") == "true",
-            )
+
+def _check_name(name: str) -> str:
+    if not _NAME_RE.match(name):
+        raise MemoryStoreError(
+            f"bad memory name {name!r}: lowercase letters, digits, and dashes only"
         )
-
-    for raw in lines:
-        m = _ID_RE.match(raw)
-        if m is not None:
-            _flush()
-            current_id = m.group(1)
-            meta = {}
-            body_lines = []
-            in_meta = True
-            continue
-        if current_id is None:
-            continue
-        if in_meta:
-            if raw.strip() == "":
-                in_meta = False
-                continue
-            km = _KEY_RE.match(raw)
-            if km is not None:
-                meta[km.group(1)] = km.group(2)
-                continue
-            # not a meta line, treat the rest as body
-            in_meta = False
-            body_lines.append(raw)
-        else:
-            body_lines.append(raw)
-    _flush()
-    return entries
+    return name
 
 
-def _render_file(scope: MemoryScope, entries: list[MemoryEntry]) -> str:
-    out: list[str] = [f"## {scope}", ""]
-    for e in entries:
-        out.append(f"### {e.id}")
-        out.append(f"created_at: {e.created_at}")
-        if e.pinned:
-            out.append("pinned: true")
-        if e.invalidated_at:
-            out.append(f"invalidated_at: {e.invalidated_at}")
-        if e.invalidation_reason:
-            out.append(f"invalidation_reason: {e.invalidation_reason}")
-        out.append("")
-        if e.body:
-            out.append(e.body)
-        out.append("")
-    return "\n".join(out).rstrip() + "\n"
-
-
-@contextmanager
-def _lock_memories(state_dir: Path) -> Generator[None]:
-    """Serialize the whole-file read-modify-write both mutators do.
-
-    The scope files are shared by every run in the repo (cross-run memory) and
-    each mutation REWRITES the whole file (parse -> mutate -> atomic rename),
-    so two unlocked writers are a lost update: a concurrent add drops an
-    entry, and an add landing after an invalidate resurrects the retired
-    memory into every later run's memory block. Same flock shape as the graph
-    curator's; blocking, released on process death."""
-    memories = state_dir / "memories"
-    memories.mkdir(parents=True, exist_ok=True)
-    fd = os.open(memories / ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
-    try:
-        lock_exclusive(fd, blocking=True)
-        yield
-    finally:
-        with contextlib.suppress(OSError):
-            unlock(fd)
-        os.close(fd)
-
-
-def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
-    """Append a new entry. Returns the persisted entry (with assigned id)."""
+def add(state_dir: Path, name: str, body: str) -> Path:
+    """Operator CLI helper: write ``<name>.md`` and append its index line."""
     body = body.strip()
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
-    # A body line shaped like the entry delimiter (`### <ULID>`) would split this
-    # entry on the next parse+rewrite -- truncating it and forging a phantom entry
-    # under the embedded id. Refuse it loudly rather than corrupt the store.
-    if any(_ID_RE.match(line) for line in body.splitlines()):
-        raise MemoryStoreError(
-            "memory body has a line shaped like an entry delimiter (`### <26-char id>`); reword it"
-        )
-    path = _scope_path(state_dir, scope)
-    with _lock_memories(state_dir):
-        entries = _parse_file(path, scope)
-        entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
-        entries.append(entry)
-        atomic_write(path, _render_file(scope, entries))
-    return entry
+    d = memory_dir(state_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{_check_name(name)}.md"
+    if path.exists():
+        raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
+    path.write_text(body + "\n", encoding="utf-8")
+    hook = body.splitlines()[0][:120]
+    idx = index_path(state_dir)
+    existing = index_text(state_dir)
+    line = f"- {name}: {hook}"
+    idx.write_text((existing + "\n" if existing else "") + line + "\n", encoding="utf-8")
+    return path
 
 
-def list_entries(state_dir: Path, scope: MemoryScope | None = None) -> tuple[MemoryEntry, ...]:
-    scopes: tuple[MemoryScope, ...] = (scope,) if scope is not None else _SCOPES
-    out: list[MemoryEntry] = []
-    for s in scopes:
-        out.extend(_parse_file(_scope_path(state_dir, s), s))
-    return tuple(out)
+def remove(state_dir: Path, name: str) -> None:
+    """Operator CLI helper: delete ``<name>.md`` and its index line."""
+    _check_name(name)
+    path = memory_dir(state_dir) / f"{name}.md"
+    if not path.is_file():
+        raise MemoryStoreError(f"no memory named {name!r}")
+    path.unlink()
+    idx = index_path(state_dir)
+    kept = [
+        ln
+        for ln in index_text(state_dir).splitlines()
+        if not re.match(rf"^\s*[-*]\s*{re.escape(name)}\s*:", ln)
+    ]
+    idx.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
 
 
-def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
-    """Mark `memory_id` invalidated. Body is preserved."""
-    # The reason is a single-line `key: value` meta field; a newline in it would
-    # leak the tail into the entry body on the next parse. Flatten to one line.
-    reason = " ".join(reason.split())
-    if not reason:
-        raise MemoryStoreError("invalidation reason must be non-empty")
-    with _lock_memories(state_dir):
-        for scope in _SCOPES:
-            path = _scope_path(state_dir, scope)
-            entries = _parse_file(path, scope)
-            for i, e in enumerate(entries):
-                if e.id != memory_id:
-                    continue
-                if e.invalidated_at:
-                    raise MemoryStoreError(f"memory {memory_id} already invalidated")
-                updated = MemoryEntry(
-                    id=e.id,
-                    scope=scope,
-                    created_at=e.created_at,
-                    invalidated_at=_now(),
-                    invalidation_reason=reason,
-                    body=e.body,
-                    pinned=e.pinned,
-                )
-                entries[i] = updated
-                atomic_write(path, _render_file(scope, entries))
-                return updated
-    raise MemoryStoreError(f"no memory with id {memory_id!r}")
-
-
-def set_pinned(state_dir: Path, memory_id: str, pinned: bool) -> MemoryEntry:
-    """Pin or unpin `memory_id` (operator control over the block trim).
-
-    Errors loudly on an unknown id, a same-state call, and pinning an
-    invalidated entry (inactive entries never render, so a pin there would be
-    a silent no-op lie); unpinning an invalidated entry is allowed as cleanup.
-    """
-    with _lock_memories(state_dir):
-        for scope in _SCOPES:
-            path = _scope_path(state_dir, scope)
-            entries = _parse_file(path, scope)
-            for i, e in enumerate(entries):
-                if e.id != memory_id:
-                    continue
-                if e.pinned == pinned:
-                    state = "already pinned" if pinned else "not pinned"
-                    raise MemoryStoreError(f"memory {memory_id} {state}")
-                if pinned and e.invalidated_at:
-                    raise MemoryStoreError(
-                        f"memory {memory_id} is invalidated; invalidated memories cannot be pinned"
-                    )
-                updated = MemoryEntry(
-                    id=e.id,
-                    scope=scope,
-                    created_at=e.created_at,
-                    invalidated_at=e.invalidated_at,
-                    invalidation_reason=e.invalidation_reason,
-                    body=e.body,
-                    pinned=pinned,
-                )
-                entries[i] = updated
-                atomic_write(path, _render_file(scope, entries))
-                return updated
-    raise MemoryStoreError(f"no memory with id {memory_id!r}")
+def show(state_dir: Path, name: str) -> str:
+    _check_name(name)
+    path = memory_dir(state_dir) / f"{name}.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise MemoryStoreError(f"no memory named {name!r}") from exc

@@ -99,9 +99,25 @@ class Workspace:
     # extra_read_paths + extra_write_paths (write implies read).
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
+    # agent6's own carve-outs from ``denied``, not operator surface: today
+    # exactly the per-repo memory dir, a state subtree that is model-writable
+    # BY DESIGN (memory is model-authored context). An exempt path still needs
+    # a grant to be reachable; exemption only lifts the denial.
+    exempt: tuple[Path, ...] = ()
+
+    def _denying(self, abs_path: Path) -> Path | None:
+        """The denied root covering *abs_path*, or None. ONE owner for the
+        denial verdict: exemption is checked here, so no caller can consult
+        ``denied`` without it."""
+        if any(path_within(abs_path, e) for e in self.exempt):
+            return None
+        for d in self.denied:
+            if path_within(abs_path, d):
+                return d
+        return None
 
     def is_denied(self, abs_path: Path) -> bool:
-        return any(path_within(abs_path, d) for d in self.denied)
+        return self._denying(abs_path) is not None
 
     def resolve_read(self, candidate: str) -> SafePath:
         return self._resolve(candidate, (self.root, *self.read_roots))
@@ -134,9 +150,9 @@ class Workspace:
         # Refused, not answered empty: the jail masks because a command cannot
         # be handed an error, but a tool result can carry one, and inventing
         # "no such file" for a path that is plainly there is the surface lying.
-        for d in self.denied:
-            if path_within(sp.abs_path, d):
-                raise ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
+        d = self._denying(sp.abs_path)
+        if d is not None:
+            raise ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
 
 
 def contain(base: Path, candidate: str | Path) -> SafePath:

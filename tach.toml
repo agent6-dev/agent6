@@ -63,7 +63,6 @@ depends_on = [
   "agent6.app",
   "agent6.config",
   # the notes verbs read/edit the same store the loop injects
-  "agent6.notes",
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.write",
@@ -127,7 +126,7 @@ depends_on = [
   "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.memory",  # cross-run memories injected into the system prompt
-  "agent6.notes",  # the agent's own scratchpad, injected beside them
+  # the agent's own scratchpad, injected beside them
   "agent6.skills",  # operator-installed skills indexed in the system prompt
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
@@ -277,7 +276,7 @@ path = "agent6.tools"
 # effective command policy (config + the operator's session choice + away-mode)
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.notes", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
@@ -286,7 +285,7 @@ path = "agent6.tools.schema"
 # The session-mode vocabulary: what a mode may do is read off one record
 # rather than re-derived here from the bare string. notes: the scratchpad's
 # size cap is the tool's own max_length, so the two cannot disagree.
-depends_on = ["agent6.graph.models", "agent6.notes", "agent6.types"]
+depends_on = ["agent6.graph.models", "agent6.types"]
 
 [[modules]]
 path = "agent6.git_ops"
@@ -419,16 +418,10 @@ path = "agent6.directive"
 depends_on = []
 
 [[modules]]
-# The rewritable per-repo scratchpad, complementing the append-only memory
-# store. A leaf over the filesystem, like memory.
-path = "agent6.notes"
-depends_on = ["agent6.portable"]
-
-[[modules]]
 # MemoryStoreError subclasses OperatorError, so a store refusal presents as the
 # operator's at the CLI boundary while the run loop keeps its degrade catches.
 path = "agent6.memory"
-depends_on = ["agent6.errors", "agent6.graph.ulid", "agent6.portable"]
+depends_on = ["agent6.errors"]
 
 [[modules]]
 path = "agent6.skills"

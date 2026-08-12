@@ -101,7 +101,7 @@ def _directories_epilog() -> str:
     user = effective_user()
     rows = (
         ("config", global_config_path(user).parent, "config.toml, secrets.toml (0600)"),
-        ("state", state_base(user), "per-repo run history, notes, memories, reviews"),
+        ("state", state_base(user), "per-repo run history, memory, reviews"),
         ("data", data_dir(user), "installed skill packs (skills/)"),
         ("cache", cache_dir(user), "regenerable model lists"),
     )
@@ -229,37 +229,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_model_parser(sub)
 
-    notes_p = _sub(sub, "notes", help="Show or edit the agent's notes scratchpad.")
-    notes_sub = notes_p.add_subparsers(dest="notes_command", required=True, metavar="<subcommand>")
-    _sub(notes_sub, "show", help="Print this repo's notes.md and exit.")
-    _sub(notes_sub, "edit", help="Open this repo's notes.md in $EDITOR (default: vi).")
-
-    mem_p = _sub(sub, "memory", help="Manage persistent agent memories.")
+    mem_p = _sub(sub, "memory", help="Manage the repo's agent memory (one fact per file + index).")
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _sub(mem_sub, "add", help="Append a new memory entry.")
-    mem_add.add_argument(
-        "scope", choices=("facts", "decisions", "preferences"), help="Memory scope."
-    )
-    mem_add.add_argument("body", help="Entry body (in quotes).")
-    mem_list = _sub(mem_sub, "list", help="List memory entries.")
-    mem_list.add_argument(
-        "--scope",
-        choices=("facts", "decisions", "preferences"),
-        default="",
-        help="Limit to one scope; omit for all.",
-    )
-    mem_list.add_argument(
-        "--all", action="store_true", help="Include invalidated entries (default: hide)."
-    )
-    mem_inv = _sub(mem_sub, "invalidate", help="Mark a memory entry as invalidated.")
-    mem_inv.add_argument("memory_id", help="26-char ULID of the entry to invalidate.")
-    mem_inv.add_argument("reason", help="Why this entry is no longer valid.")
-    mem_pin = _sub(
-        mem_sub, "pin", help="Pin an entry: trimmed last (the <memories> byte cap still binds)."
-    )
-    mem_pin.add_argument("memory_id", help="26-char ULID of the entry to pin.")
-    mem_unpin = _sub(mem_sub, "unpin", help="Unpin an entry (newest-win trim applies again).")
-    mem_unpin.add_argument("memory_id", help="26-char ULID of the entry to unpin.")
+    mem_add = _sub(mem_sub, "add", help="Write <name>.md and its index line.")
+    mem_add.add_argument("name", help="Memory name (lowercase letters, digits, dashes).")
+    mem_add.add_argument("body", help="The fact (in quotes; first line becomes the index hook).")
+    _sub(mem_sub, "list", help="Print the MEMORY.md index.")
+    mem_show = _sub(mem_sub, "show", help="Print one memory file.")
+    mem_show.add_argument("name", help="Memory name.")
+    mem_rm = _sub(mem_sub, "rm", help="Delete a memory file and its index line.")
+    mem_rm.add_argument("name", help="Memory name.")
 
     _add_skills_parser(sub)
 

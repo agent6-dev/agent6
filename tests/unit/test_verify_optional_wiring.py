@@ -61,12 +61,8 @@ def test_adopt_verify_command_probes_the_jail_path(tmp_path: Path) -> None:
 
 def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    with_verify = build_system_prompt(
-        config=_cfg(verify=True), repo=repo, mode="run", memories=(), notes="", skills=None
-    )
-    gateless = build_system_prompt(
-        config=_cfg(verify=False), repo=repo, mode="run", memories=(), notes="", skills=None
-    )
+    with_verify = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run", skills=None)
+    gateless = build_system_prompt(config=_cfg(verify=False), repo=repo, mode="run", skills=None)
     assert "<verify-command>" in with_verify and "<no-verify-command>" not in with_verify
     assert "<no-verify-command>" in gateless and "<verify-command>" not in gateless
 
@@ -77,11 +73,9 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
     `finish_planning`, ask has no terminal tool at all, and neither can edit."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
-    run = build_system_prompt(config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None)
-    plan = build_system_prompt(
-        config=cfg, repo=repo, mode="plan", memories=(), notes="", skills=None
-    )
-    ask = build_system_prompt(config=cfg, repo=repo, mode="ask", memories=(), notes="", skills=None)
+    run = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    plan = build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
+    ask = build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)
 
     def block(text: str) -> str:
         start = text.index("<no-verify-command>")
@@ -404,11 +398,9 @@ def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
     prompt: the rule rendered unconditionally)."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
-    strict = build_system_prompt(
-        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None, isolation="strict"
-    )
+    strict = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None, isolation="strict")
     hardened = build_system_prompt(
-        config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None, isolation="hardened"
+        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened"
     )
     assert "Under hardened isolation" not in strict
     assert "__HARDENED_FS_RULE__" not in strict
@@ -435,8 +427,6 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> N
             config=cfg,
             repo=repo,
             mode="run",
-            memories=(),
-            notes="",
             skills=None,
             isolation=isolation,  # pyright: ignore[reportArgumentType]
         )
@@ -448,8 +438,6 @@ def test_agents_md_section_absent_when_repo_has_none(tmp_path: Path) -> None:
     """A repo without AGENTS.md got an 'AGENTS.md (project conventions):
     (empty)' header on every run -- noise standing where signal goes."""
     repo = _repo(tmp_path)
-    out = build_system_prompt(
-        config=_cfg(verify=True), repo=repo, mode="run", memories=(), notes="", skills=None
-    )
+    out = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run", skills=None)
     assert "AGENTS.md (project conventions):" not in out
     assert "(empty)" not in out

@@ -96,8 +96,6 @@ class TestBuildSystemPromptSkills:
             config=_config(tmp_path),
             repo=_repo(tmp_path),
             mode="run",
-            memories=(),
-            notes="",
             skills=_resolved(enabled=(_skill("tidy"),)),
         )
         assert "<skills>" in out
@@ -108,8 +106,6 @@ class TestBuildSystemPromptSkills:
             config=_config(tmp_path),
             repo=_repo(tmp_path),
             mode="run",
-            memories=(),
-            notes="",
             skills=None,
         )
         assert "<skills>" not in out
@@ -122,8 +118,6 @@ class TestBuildSystemPromptSkills:
             config=cfg,
             repo=_repo(tmp_path),
             mode="run",
-            memories=(),
-            notes="",
             skills=_resolved(enabled=(_skill("tidy"),)),
         )
         assert out.startswith("CUSTOM BASE")

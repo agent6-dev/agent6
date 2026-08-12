@@ -25,7 +25,6 @@ import pytest
 
 from agent6.tools import results as results_mod
 from agent6.tools.results import (
-    AddMemoryResult,
     AddTaskResult,
     AnswersResult,
     BackgroundResult,
@@ -37,11 +36,9 @@ from agent6.tools.results import (
     FetchResult,
     FinishPlanningResult,
     FinishSessionResult,
-    InvalidateMemoryResult,
     ListDirResult,
     ListTasksResult,
     MetricResult,
-    NotesResult,
     OutlineResult,
     PatchResult,
     PreviewResult,
@@ -183,9 +180,6 @@ CASES: list[tuple[str, ToolResult, str]] = [
     ("update_task", UpdateTaskResult(id="01A", status="done", title="t"), "done: t"),
     ("list_tasks", ListTasksResult(tasks=(_TASK, _TASK), count=2), "2 tasks"),
     # operator knowledge
-    ("read_notes", NotesResult(content="# open\n- x\n", chars=10), "10 chars"),
-    ("add_memory", AddMemoryResult(id="01M", scope="facts", created_at="2026"), "ok"),
-    ("invalidate_memory", InvalidateMemoryResult(id="01M", invalidated_at="2026"), "ok"),
     (
         "use_skill",
         SkillResult(skill="deploy", file="SKILL.md", content="12345"),

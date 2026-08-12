@@ -282,9 +282,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
         recent_log="",
         is_git=False,
     )
-    prompt = build_system_prompt(
-        config=load_config(cfg_path), repo=repo, mode="ask", memories=(), notes="", skills=None
-    )
+    prompt = build_system_prompt(config=load_config(cfg_path), repo=repo, mode="ask", skills=None)
     assert "not a git repository" in prompt
     assert "branch=" not in prompt  # no fake repo header
 

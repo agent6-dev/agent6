@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from agent6.skills import ResolvedSkills, discover_skills, resolve_states
-from agent6.tools._memory_tools import use_skill  # pyright: ignore[reportPrivateUsage]
+from agent6.tools._skill_tools import use_skill  # pyright: ignore[reportPrivateUsage]
 from agent6.tools.errors import ToolError
 
 
