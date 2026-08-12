@@ -151,6 +151,19 @@ git config user.email "swebench@agent6" 2>/dev/null
 git config user.name "agent6" 2>/dev/null
 BASE=$(git rev-parse HEAD)
 
+# Bench scaffolding, not product prompt: AGENTS.md is the operator-owned
+# channel for behavioural guidance and repo-priors ingests it. Famous-repo
+# issues tempt the model into recalling the upstream fix; steer to
+# derivation. Untracked, so it can never enter the prediction diff.
+if [ ! -f AGENTS.md ]; then
+  cat > AGENTS.md <<'AEOF'
+If the task matches a known public issue, still derive the fix from
+this checkout: never spend turns recalling or fetching the canonical
+upstream commit. Anything remembered about the upstream fix is an
+unverified hint, not a source.
+AEOF
+fi
+
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
 # no shell quoting can corrupt it.
 AGENT6_SB_TIMEOUT="$TIMEOUT_S" /opt/miniconda3/envs/testbed/bin/python - <<'PYEOF'
