@@ -330,3 +330,18 @@ Wrong-patch (contract misses against hidden gold tests) is the frontier:
 distinct-model review panels, contract search (find how the existing
 suite pins the surface), and stronger models (harness is model-agnostic;
 vendor-scaffold co-training is the competition's edge).
+
+### Cross-model health (dev-slice subsets, same harness)
+
+| model | resolved | empties | note |
+|---|---|---|---|
+| kimi-k3 (+veto seat) | 21/25 = 84% | 0 | full slice |
+| claude-sonnet-5 | 16/20 = 80% | 0 | first 20 |
+| claude-opus-5 | 4/4 | 0 | health check, n=4 |
+
+The harness is model-agnostic in behaviour: clean finishes, caching
+visible, extraction identical. Found live and fixed: direct-Anthropic
+ids were unpriced on a cold cache (the preflight now does a keyless
+TTL-gated OpenRouter catalog refresh), and opus consistently proposes a
+scoped verify over a 240s-capped full suite (stale_gate each run,
+mechanism working as designed).
