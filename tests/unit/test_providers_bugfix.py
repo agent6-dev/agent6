@@ -257,7 +257,11 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code == 422
+    # Retryable (no status): a usage-less reply is stream/gateway integrity
+    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # made ONE mangled stream kill a budgeted run.
+    assert ei.value.status_code is None
+    assert "usage accounting" in str(ei.value)
     assert budget.snapshot().per_model == {}
 
 
@@ -279,7 +283,11 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code == 422
+    # Retryable (no status): a usage-less reply is stream/gateway integrity
+    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # made ONE mangled stream kill a budgeted run.
+    assert ei.value.status_code is None
+    assert "usage accounting" in str(ei.value)
     assert budget.snapshot().per_model == {}
 
 
@@ -302,7 +310,11 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code == 422
+    # Retryable (no status): a usage-less reply is stream/gateway integrity
+    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # made ONE mangled stream kill a budgeted run.
+    assert ei.value.status_code is None
+    assert "usage accounting" in str(ei.value)
     assert budget.snapshot().per_model == {}
 
 
@@ -324,7 +336,11 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert ei.value.status_code == 422
+    # Retryable (no status): a usage-less reply is stream/gateway integrity
+    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # made ONE mangled stream kill a budgeted run.
+    assert ei.value.status_code is None
+    assert "usage accounting" in str(ei.value)
     assert budget.snapshot().per_model == {}
 
 
@@ -672,8 +688,9 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
 def test_metered_gate_coerces_gateway_typed_counts() -> None:
     """A gateway serializing counts as floats/strings ("700", 700.0) is
     meterable -- parse_response coerces them -- but the isinstance(int) gate
-    raised a NON-retryable 422, killing a budgeted run on its first call.
-    Absent/zero/non-numeric still fails closed."""
+    refused it, killing a budgeted run on its first call. Absent/zero/
+    non-numeric still fails closed, as a RETRYABLE refusal (see
+    test_*_requires_usage_tokens)."""
     from agent6.providers.anthropic import (
         _require_metered_usage as _anthropic_gate,  # pyright: ignore[reportPrivateUsage]
     )
@@ -687,7 +704,7 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
     for bad in ({"prompt_tokens": 0}, {"prompt_tokens": "abc"}, {}):
         with pytest.raises(ProviderError) as ei:
             _openai_gate(bad, source="t")
-        assert ei.value.status_code == 422
+        assert ei.value.status_code is None
 
 
 def test_boolean_reported_cost_reads_as_absent() -> None:

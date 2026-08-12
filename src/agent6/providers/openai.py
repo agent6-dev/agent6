@@ -82,21 +82,24 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     call it cannot meter."""
     if isinstance(usage, Mapping):
         # Coerce numerically, mirroring parse_response: a gateway serializing
-        # counts as JSON floats/strings (700.0, "700") is meterable, and the
-        # old isinstance(int) gate rejected it with a NON-retryable 422 --
-        # killing a budgeted run on its first call. Absent/zero/non-numeric
-        # still fails closed below. completion_tokens presence is not
-        # required: the docstring's contract gates on the input side only.
+        # counts as JSON floats/strings (700.0, "700") is meterable.
+        # Absent/zero/non-numeric still fails closed below. completion_tokens
+        # presence is not required: the contract gates on the input side only.
         try:
             prompt = int(usage.get("prompt_tokens") or 0)
         except (TypeError, ValueError):
             prompt = 0
         if prompt > 0:
             return
+    # No status code: a usage-less reply is a stream/gateway integrity failure
+    # (a degenerate stream the gateway cut, a proxy dropping the usage frame),
+    # so it rides the loop's bounded retry lane -- the failed attempt returns
+    # no response, so nothing unmetered enters the conversation, and repeated
+    # failure ends the run. A fake 422 here made ONE mangled stream kill a
+    # budgeted run with the task's budget unspent.
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
-        "budgeted runs require provider usage accounting",
-        status_code=422,
+        "budgeted runs require provider usage accounting"
     )
 
 

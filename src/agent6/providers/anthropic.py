@@ -114,8 +114,7 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     > 0, so a plain ``input_tokens > 0`` check would false-reject it."""
     if isinstance(usage, Mapping):
         # Coerce numerically (the streaming path already does): a proxy typing
-        # counts as floats/strings is meterable; the isinstance(int) gate
-        # rejected it with a NON-retryable 422. Absent/zero/non-numeric still
+        # counts as floats/strings is meterable. Absent/zero/non-numeric still
         # fails closed below.
         def _count(key: str) -> int:
             try:
@@ -130,10 +129,13 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
         )
         if total_input > 0:
             return
+    # No status code: retryable, same reasoning as the OpenAI guard -- a
+    # usage-less reply is stream/gateway integrity failure, not a permanent
+    # request defect; the failed attempt returns no response so nothing
+    # unmetered enters the conversation.
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.input_tokens missing or 0); "
-        "budgeted runs require provider usage accounting",
-        status_code=422,
+        "budgeted runs require provider usage accounting"
     )
 
 

@@ -354,8 +354,12 @@ def test_streaming_finish_reason_without_done_is_complete() -> None:
 
 
 def test_streaming_with_budget_requires_usage_trailer() -> None:
-    """A gateway that completes the stream ([DONE]) but meters nothing is a
-    permanent misconfiguration: fail closed and non-retryable."""
+    """A completed stream ([DONE]) with no usage trailer still fails closed --
+    but RETRYABLE: at the call site a permanently misconfigured gateway is
+    indistinguishable from one mangled stream (a degenerate stream the
+    gateway cut dropped the trailer live, killing a $1 run at $0.09), and
+    the bounded retry lane converts the permanent case into at-most-N
+    attempts while saving the transient one."""
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
@@ -378,7 +382,8 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _p: None,
         )
-    assert exc_info.value.status_code == 422
+    assert exc_info.value.status_code is None
+    assert "usage accounting" in str(exc_info.value)
     assert provider.budget is not None
     assert provider.budget.snapshot().per_model == {}
 

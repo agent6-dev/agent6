@@ -6259,3 +6259,20 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
+
+
+def test_call_with_retry_retries_a_usage_less_stream() -> None:
+    """The metering guard's refusal (no usage in the reply) carries NO status:
+    it is stream/gateway integrity failure, so one mangled stream costs a
+    retry, not the run. Observed live: a degenerate k3 stream arrived with no
+    usage frame, the guard's synthetic 422 classed it permanent, and the run
+    died at iteration 4 with $0.91 of its budget unspent."""
+    provider = MagicMock()
+    provider.call.side_effect = [
+        ProviderError("t reported no usage input tokens; budgeted runs require accounting"),
+        _resp("recovered"),
+    ]
+    wf = _wf(provider=provider, provider_retry_count=3)
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    assert out.text == "recovered"
+    assert provider.call.call_count == 2
