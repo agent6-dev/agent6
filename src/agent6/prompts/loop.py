@@ -83,6 +83,11 @@ minimum-necessary edits matching the file's existing style. Tests are
 the authoritative behavioural specification - if a test says X must
 happen, match that behaviour even if a docstring says otherwise.
 
+If the task matches a known public issue, still derive the fix from
+this checkout: never spend turns recalling or fetching the canonical
+upstream commit. Anything remembered about the upstream fix is an
+unverified hint, not a source.
+
 When the task is to ADD behaviour (not fix a regression in code that
 already had a test), prefer the TDD loop: write or extend a test that
 encodes the desired behaviour FIRST, run `run_verify_command` to
