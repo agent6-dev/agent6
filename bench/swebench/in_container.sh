@@ -76,9 +76,10 @@ CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python 2>/dev/null | head -1)
 CONDA_PY="${CONDA_PY:-python3}"
 if [ -z "${AGENT6_SB_VERIFY:-}" ]; then
   if [ -f /testbed/tests/runtests.py ]; then
-    AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1"
+    AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1 --parallel 2"
   elif "$CONDA_PY" -m pytest --version >/dev/null 2>&1; then
-    AGENT6_SB_VERIFY="$CONDA_PY -m pytest -q"
+    # -x: first failure is the signal; a green pass still runs the suite.
+    AGENT6_SB_VERIFY="$CONDA_PY -m pytest -q -x"
   elif [ -x /testbed/bin/test ]; then
     # A repo that ships its own top-level test runner (and whose env lacks
     # pytest); use it rather than a dead `pytest` that runs no tests and lets
@@ -133,6 +134,8 @@ branch_per_run = false
 
 [workflow]
 $VERIFY_TOML
+# Half a 1200s run died in ONE 600s full-suite verify; fast signal wins.
+verify_timeout_s = 240
 
 [prompt]
 revise_prompt = "off"
