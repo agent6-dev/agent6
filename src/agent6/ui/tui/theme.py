@@ -46,11 +46,11 @@ AGENT6_DARK = Theme(
     secondary="#9ECE6A",  # green; no agent6 widget styles it directly (textual palette slot)
     accent="#06F5F3",  # focus borders, button/action text, key hints -- a vivid neon cyan
     foreground="#C0CAF5",
-    # Near-black neutral charcoal (not a blue navy): screen < card < panel, so
+    # Near-black teal (the cyan brand's neutral): screen < card < panel, so
     # tables/panels read as raised surfaces over an almost-black background.
-    background="#161618",
-    surface="#202023",
-    panel="#2C2C30",
+    background="#0f1414",
+    surface="#161c1c",
+    panel="#1e2626",
     success="#9ECE6A",
     warning="#E0AF68",
     error="#F7768E",
@@ -63,10 +63,10 @@ AGENT6_DARK = Theme(
         "footer-description-foreground": "#E0E0E0",
         # Scrollbar tracks default to near-black (#000002); match the surface so the
         # track meshes with its panel (only the thumb shows) instead of a black gap.
-        "scrollbar-background": "#202023",  # == surface
-        "scrollbar-background-hover": "#202023",
-        "scrollbar-background-active": "#202023",
-        "scrollbar-corner-color": "#202023",
+        "scrollbar-background": "#161c1c",  # == surface
+        "scrollbar-background-hover": "#161c1c",
+        "scrollbar-background-active": "#161c1c",
+        "scrollbar-corner-color": "#161c1c",
     },
 )
 
