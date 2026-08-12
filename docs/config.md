@@ -158,16 +158,18 @@ drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
 
 ## `[sandbox]`
 
-The security boundary; the model is [security.md](security.md) (§3 isolation,
-§8 network). This is the field summary.
+The security boundary. The model:
+[Isolation-level selection](security.md#3-isolation-level-selection) and
+[State-machine egress](security.md#8-state-machine-egress-script-bundles) in
+security.md. This is the field summary.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `isolation` | `"auto"` | `auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse where unsupported, never downgrade. Explicit `none` runs UNSANDBOXED (also `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`). |
 | `network` | `"auto"` | Which network jailed commands join. `auto`: the run's PRIVATE network (commands reach each other, nothing off the box, nothing outside reaches in), enforced on `strict`, degraded to the host's with a warning on `hardened`/`none`. `session`: the same, refusing where unenforceable. `only_explicit_states`: strict-only; machine `tool` states opt in. `host`: the machine's network. No per-command `none`: a run's commands share one launcher. |
 | `run_commands` | `"ask"` | May the LLM run commands (`run_command`, `run_verify_command`, `stop_background`: one decision for all three): `yes` auto-approves, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with session-wide allow/deny answers. `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run that cannot ask anyone refuses to start. |
-| `fetch_hosts` | `[]` | Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL prefixes. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned not followed: SECURITY §4). Hidden when `network = "host"`; withheld from machine/agent states. A GET can still encode data in its path, hence the empty default. |
-| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands (else one can plant a git filter that agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount namespace (SECURITY §5). On `hardened` the default degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse `.git` writes everywhere regardless. |
+| `fetch_hosts` | `[]` | Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL prefixes. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned not followed: security.md, Fixed tool surface). Hidden when `network = "host"`; withheld from machine/agent states. A GET can still encode data in its path, hence the empty default. |
+| `protect_git` | `true` | Keep `.git/` unwritable by jailed commands (else one can plant a git filter that agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a mount namespace (security.md, Git invariants). On `hardened` the default degrades with a warning; an explicit `true` refuses. The in-process edit tools refuse `.git` writes everywhere regardless. |
 | `memory_limit_mb` | `0` (off) | `RLIMIT_DATA` cap (MiB) per jailed process (inherited). Off by default: the kernel already handles a memory bomb, and a cap costs real builds more than it buys. Set one to bound a specific task; a runaway then fails as an ordinary command error. |
 | `extra_read_paths` | `[]` | Extra absolute paths **the run** may **read + execute**, at their real locations: a toolchain or interpreter outside the repo (conda, Go/Rust/Node, a shared data dir). Mounted for jailed commands, readable by the in-process tools (name one with an absolute path). Loosens confinement; list only what the build needs. |
 | `extra_write_paths` | `[]` | Extra absolute paths **the run** may **read + write**, at their real locations: a build cache, an output dir, a sibling checkout the task edits. Write implies read. List only what the task writes. |

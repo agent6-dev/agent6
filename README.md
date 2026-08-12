@@ -28,9 +28,9 @@ open-ended agent loop.
 
 ## Features
 
-- Sandboxed execution for every LLM-chosen child process, jailed individually
-  with Landlock + seccomp; the default `strict` isolation adds namespaces +
-  `pivot_root`, rebinds `.git` read-only, and gives jailed commands no network
+- LLM-chosen commands run in a kernel sandbox (Landlock + seccomp); the default
+  `strict` isolation adds user namespaces + `pivot_root`, rebinds `.git`
+  read-only, and gives jailed commands no network
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
 - Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, a hard
@@ -42,11 +42,11 @@ open-ended agent loop.
   another session's context (the source is untouched -- keeping a session's mode is
   `fork`), a session can read this project's other sessions, and `/btw <question>`
   asks a one-off question beside a live run without interrupting it -- the answer
-  prints whole at the next turn boundary and stays resumable as the ask it is
+  prints whole at the next turn boundary and stays resumable
 - Long jobs do not hold a turn open: `run_command` with `background: true` starts a slow build or a
   watcher, `read_background` polls it, `/shells` lists what a run started and how each
   one ended, and nothing a run started outlives it
-- Transparent, steerable context compaction: every surface shows what left the
+- Context compaction: every surface shows what left the
   model's context, and the conversation view shows the summary a restart
   continued from; `/compact [focus]` compacts on demand, `/pin <text>` makes an
   instruction survive compaction verbatim, and `agent6 memory pin` keeps a
@@ -91,7 +91,7 @@ building from source.
 
 ```bash
 # Connect a provider once (stored in ~/.config/agent6/, key in a 0600 secrets file).
-# Already connected on this machine? Skip both; `agent6 check` verifies it.
+# If already connected, skip both; `agent6 check` verifies it.
 agent6 connect                # interactive: pick provider, paste API key
 agent6 model worker anthropic claude-sonnet-4-6
 
@@ -112,7 +112,7 @@ agent6 resume <session-id>
 agent6 fork <session-id> --at-turn 7
 ```
 
-That is the whole loop. See [getting started](https://agent6.dev/getting-started/) for the
+See [getting started](https://agent6.dev/getting-started/) for the
 full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone,
 [configuration](https://agent6.dev/config/) for every field, and the
 [security model](https://agent6.dev/security/) for what the sandbox enforces.
@@ -126,7 +126,7 @@ refuses `push`, `--force`, and history rewrites unconditionally.
 
 ## Benchmarks
 
-Reproducible harnesses live under [bench/](bench/). The headline one is the
+Reproducible harnesses live under [bench/](bench/). The main one is the
 cross-model sweep ([bench/sweep](bench/sweep/)): replicated runs on real-world
 tasks, scored out-of-band by each project's own test suite, reported with
 confidence intervals for success rate and cost plus a latency comparison.

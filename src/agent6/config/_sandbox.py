@@ -95,7 +95,8 @@ class SandboxConfig(BaseModel):
             'operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as '
             "a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL "
             "prefixes. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned "
-            'not followed: SECURITY §4). Hidden when `network = "host"`; withheld from '
+            "not followed: security.md, Fixed tool surface). Hidden when "
+            '`network = "host"`; withheld from '
             "machine/agent states. A GET can still encode data in its path, hence the empty "
             "default."
         ),
@@ -115,7 +116,8 @@ class SandboxConfig(BaseModel):
         description=(
             "Keep `.git/` unwritable by jailed commands (else one can plant a git filter that "
             "agent6's host-side auto-commit executes). STRICT-ONLY: a read-only bind needs a "
-            "mount namespace (SECURITY §5). On `hardened` the default degrades with a warning; "
+            "mount namespace (security.md, Git invariants). On `hardened` the "
+            "default degrades with a warning; "
             "an explicit `true` refuses. The in-process edit tools refuse `.git` writes "
             "everywhere regardless."
         ),

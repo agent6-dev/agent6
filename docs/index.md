@@ -31,10 +31,10 @@ open-ended agent loop.
 <div class="a6-grid" markdown>
 
 <div class="a6-card" markdown>
-### Per-command sandbox
-Each command the model runs is jailed on its own with Landlock + seccomp; the default
+### Command sandbox
+Commands the model runs are jailed with Landlock + seccomp; the default
 `strict` isolation adds user namespaces + `pivot_root`, a read-only `.git`, and no
-network for jailed commands. Not one coarse container around everything.
+network for jailed commands.
 </div>
 
 <div class="a6-card" markdown>

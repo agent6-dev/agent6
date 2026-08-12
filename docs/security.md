@@ -39,12 +39,14 @@ Under that adversary, agent6 aims to hold:
     - A network-only block on a process with unconfined filesystem access is a
       partial mitigation that reads as a guarantee: code executing there could
       write `~/.ssh/authorized_keys` or a cron entry and exfiltrate on its own
-      schedule regardless. agent6 does not ship that non-claim (§1).
+      schedule regardless. agent6 does not ship that non-claim (see
+[The agent process is trusted](#1-the-agent-process-is-trusted-and-no-level-confines-it)).
     - What IS bounded is what a COMMAND reaches: `sandbox.network`
-      (default `auto`; §8). That boundary is per-jailed-child and unchanged.
+      (default `auto`; see
+[State-machine egress](#8-state-machine-egress-script-bundles)). That boundary is per-jailed-child and unchanged.
 
 4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
-   --hard`s** (§5).
+   --hard`** (see [Git invariants](#5-git-invariants)).
     - This does NOT bind a `git` the model runs via `run_command`; that path is
       bounded by the sandbox (`protect_git` keeps `.git` unwritable under
       `strict`; push needs egress).
@@ -79,7 +81,8 @@ network, the approval mode, and the secrets posture, with the cause named when
 The agent's own Python process runs unconfined at every isolation level: it
 holds the provider keys, writes the per-repo state dir, and spawns the jail.
 Every security boundary is the jail's, applied per command; isolation levels
-differ only in which jail features the launcher enables (§2). A partial
+differ only in which jail features the launcher enables (see
+[`agent6-jail`](#2-agent6-jail-rust-for-every-child-command)). A partial
 confinement of a trusted process (a port filter, a bind ban) reads as a
 guarantee it cannot keep -- one HTTPS endpoint is enough to exfiltrate from a
 process with filesystem access -- so agent6 states the boundary honestly
@@ -129,7 +132,7 @@ name, which live outside that root. Anywhere else (`hardened`, a dispatcher with
 no run) each command gets its own launcher. Under `strict` it:
 
 - Forks a new user/mount/PID/IPC/UTS/net namespace.
-- `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd +
+- calls `pivot_root` into a minimal bind-mount rootfs on a fresh tmpfs: cwd +
   private `/tmp` writable; system paths read-only; `extra_read_paths` and
   `extra_write_paths` at their real paths; operator-tool dirs as read+exec
   mounts. EVERY mount is at the path it has outside, the cwd included, so a
@@ -192,7 +195,7 @@ no run) each command gets its own launcher. Under `strict` it:
   and allowlist, reaching the same result for these by omission.
 - Sets `NO_NEW_PRIVS`, so the kernel ignores setuid bits (`sudo`/setuid can't
   escalate).
-- `execve`s the binary and SIGKILLs the group at the wall-clock timeout.
+- calls `execve` on the binary and SIGKILLs the group at the wall-clock timeout.
 
 Notes:
 
@@ -247,15 +250,16 @@ can't expand it.
 
 ### 2b. Host-side subprocess allowlist
 
-Everything the model can influence runs through `run_in_jail` (§2). A fixed set
+Everything the model can influence runs through `run_in_jail` (see
+[`agent6-jail`](#2-agent6-jail-rust-for-every-child-command)). A fixed set
 of modules also shells out directly with `subprocess.run`/`Popen`; each has
 fixed argv depending only on operator input, never LLM output.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with
 `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `git_ops.py`: agent6's own git operations (§5).
+- `git_ops.py`: agent6's own git operations (see [Git invariants](#5-git-invariants)).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/exec_confined.py`: confines itself, then `execvp`s the argv after
+- `sandbox/exec_confined.py`: confines itself, then calls `execvp` on the argv after
   `--` — the restrict-self-then-exec shim for a long-lived child agent6 spawns
   but does not drive (a configured MCP server; the jail launcher owns stdio,
   which cannot host a live MCP pipe). Both mechanisms are inherited by
@@ -344,7 +348,7 @@ syscall for hardened), never guessed from the kernel version.
 - **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`, no namespaces.
     - Works in default-seccomp Docker (the container blocks the inner
       `clone(CLONE_NEW*)`); the container is the blast radius.
-    - With no PID namespace, teardown is the agent's job (§5): it holds
+    - With no PID namespace, teardown is the agent's job: it holds
       `PR_SET_CHILD_SUBREAPER`, and each command kills every process that
       appeared during it from outside the agent's session. A survivor the
       sweep cannot kill fails the command rather than passing silently.
@@ -486,7 +490,8 @@ syscall for hardened), never guessed from the kernel version.
     - During a run agent6 opens no listening socket (an MCP server is spawned on
       stdio or DIALLED at an operator-set `url` -- outbound either way, never a
       listener; the web UI is
-      private unix socket); the only accept-side socket is opt-in `agent6 web` (§7).
+      private unix socket); the only accept-side socket is opt-in `agent6 web` (see
+[No agent-owned network surface](#7-no-agent-owned-network-surface-except-opt-in-agent6-web)).
 - **Running as root is refused without an explicit opt-in.**
     - `--allow-root` / `AGENT6_ALLOW_ROOT=1` (+ a banner). Under `sudo`, agent6
       reads the *real* user's config/secrets (from `SUDO_UID`/`SUDO_USER`), not
@@ -514,7 +519,8 @@ syscall for hardened), never guessed from the kernel version.
 ### 6b. Parallel lanes (fan-out / coordinator dispatch)
 
 `agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel`
-steer directive (§ [architecture.md](architecture.md#parallel-runs-fan-out-and-coordinator-dispatch))
+steer directive (see
+[architecture.md, Parallel runs](architecture.md#parallel-runs-fan-out-and-coordinator-dispatch))
 each spawn subordinate work. Nothing here loosens the sandbox:
 
 - **Every lane is an ordinary run.** A lane is a plain detached `agent6 run` on
@@ -534,7 +540,8 @@ each spawn subordinate work. Nothing here loosens the sandbox:
 - **No new subprocess call site.** `workflows/subrun.py`, `app/parallel.py`,
   and `ui/cli/parallel.py` add no direct `subprocess` use; lane git plumbing
   (clone/fetch/merge) goes through `git_ops.py` and lane spawning goes through
-  `ui/spawn.py`, both already on the §2b allowlist. The
+  `ui/spawn.py`, both already on the
+[host-side subprocess allowlist](#2b-host-side-subprocess-allowlist). The
   `tests/security/test_subprocess_allowlist.py` pin needed no new entry.
 - **Dirty-tree refusal, not auto-stash.** A lane starts from committed state
   only (the fan-out clones HEAD; a coordinator dispatch cuts lanes at the

@@ -137,8 +137,10 @@ drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
 
 ## `[sandbox]`
 
-The security boundary; the model is [security.md](security.md) (§3 isolation,
-§8 network). This is the field summary.
+The security boundary. The model:
+[Isolation-level selection](security.md#3-isolation-level-selection) and
+[State-machine egress](security.md#8-state-machine-egress-script-bundles) in
+security.md. This is the field summary.
 
 <!-- config-table: sandbox -->
 
