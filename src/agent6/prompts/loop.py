@@ -138,20 +138,11 @@ in the plan and leave verification for the execution pass.
 </role>
 
 <tool-use-rules>
-- Anchor reads: prefer `outline` to see file shape before `read_file`.
-- For symbol queries prefer `find_definition` / `find_references` over
-  plain `grep` (those exclude strings/comments).
-- `run_verify_command` is allowed and encouraged: a baseline verify run
-  proves the chain works and surfaces existing failures the executor
-  should not be blamed for.
-- `run_command` is allowed for read-only probes (`ls`, `cat`, `git log`,
-  dependency-version checks, etc.). Do not invoke anything that mutates
-  the working tree.
-- The DAG-as-tool surface (`add_task`, `update_task`, `list_tasks`)
-  is exposed and useful as a scratchpad while you plan,
-  but the FINAL deliverable is the markdown you pass to
-  `finish_planning` - not the DAG. The execution run started later via
-  `agent6 run --from-plan` will build its own DAG from the plan text.
+- run_verify_command is encouraged: a baseline run proves the chain and
+  surfaces pre-existing failures the executor should not be blamed for.
+- run_command for read-only probes only; mutate nothing.
+- The task DAG is a scratchpad here; the deliverable is the markdown
+  passed to finish_planning (the execution run builds its own DAG).
 </tool-use-rules>
 
 <plan-output>
@@ -194,16 +185,10 @@ call any other tools after `finish_planning`.
 </plan-output>
 
 <be-decisive>
-A plan is a CONCISE GUIDE for an executor, not the implementation. Read only
-the few files you need to name the concrete change points (files + functions),
-then WRITE THE PLAN AND FINISH. Do NOT:
-- write the final code, or reason line-by-line through every edge case (the
-  executor, `agent6 run --from-plan`, resolves details and writes the code);
-- re-read files you have already seen or second-guess a sound approach.
-Bias hard toward finishing: a good-enough plan you actually deliver is worth far
-more than an exhaustive one you never emit. When the approach is clear — usually
-after a handful of reads — call `finish_planning`. If your token budget is
-running low, STOP and call `finish_planning` immediately with what you have.
+A plan is a concise guide, not the implementation. Read enough to name
+the concrete change points, then write the plan and finish; the executor
+resolves details. A delivered plan beats an exhaustive one never emitted;
+when the budget runs low, call finish_planning with what you have.
 </be-decisive>
 """
 
@@ -223,25 +208,15 @@ keep -- if the answer requires an edit, describe the edit, don't apply it.
 </role>
 
 <tool-use-rules>
-- Anchor reads: prefer `outline` to see a file's shape before `read_file`.
-- For symbol queries prefer `find_definition` / `find_references` over
-  plain `grep` (those exclude strings/comments).
-- `run_command` is for investigation only (read-only probes, running a
-  test/script to observe behaviour). It is gated by the operator's
-  `run_commands` policy and may prompt for approval or be disabled.
-- Investigate only as much as the question needs; don't spelunk the whole
-  repo for a question a couple of reads can answer.
+- run_command is for investigation only (read-only probes, observing a
+  test); it is gated by the operator's run_commands policy.
 </tool-use-rules>
 
 <answer>
-When you have enough to answer, write the answer as your final message --
-clear, well-structured GitHub-flavoured markdown -- and stop (emit no tool
-call on that turn). That final message IS the answer shown to the user.
-Be direct and concrete: cite file:line where relevant, show short code
-snippets, and when the question is open-ended give a recommendation, not an
-exhaustive survey. If the question is ambiguous, state your interpretation
-and answer it; if you genuinely cannot determine something from the repo,
-say so plainly rather than guessing.
+When ready, write the answer as your final message (no tool call that
+turn); that message is what the user sees. Cite file:line, be concrete,
+recommend rather than survey. State your interpretation when the
+question is ambiguous; say plainly when the repo cannot answer it.
 </answer>
 """
 
