@@ -195,6 +195,54 @@ def sandbox_available() -> bool:
     return sys.platform.startswith("linux")
 
 
+def _read_max_userns() -> str | None:
+    try:
+        return Path("/proc/sys/user/max_user_namespaces").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _userns_block_cause(env: Environment) -> str:
+    """Name the mechanism blocking unprivileged user namespaces on this host."""
+    if apparmor_userns_restricted():
+        return (
+            "unprivileged user namespaces are blocked by AppArmor "
+            "(kernel.apparmor_restrict_unprivileged_userns=1, the Ubuntu 23.10+ default); "
+            "`agent6 system apparmor install` grants userns to just the jail binary"
+        )
+    if _read_max_userns() == "0":
+        return (
+            "unprivileged user namespaces are disabled (user.max_user_namespaces = 0); "
+            "raise it for strict"
+        )
+    if env.in_container:
+        return (
+            "unprivileged user namespaces are blocked in this container "
+            "(the runtime's seccomp/AppArmor policy)"
+        )
+    return "unprivileged user namespaces are blocked on this host (`unshare -U -r true` fails)"
+
+
+def degrade_reason(env: Environment) -> str | None:
+    """Why `auto` resolves below `strict` here, or None at full strength.
+
+    ONE owner for the why: every surface that reports an auto-selected level
+    below strict (check sandbox, check config, the run-entry warning) prints
+    this, so a degraded level never appears without its cause.
+    """
+    if not env.sandbox_available:
+        return f"there is no Linux kernel sandbox on {sys.platform!r}"
+    if env.userns_supported:
+        return None
+    cause = _userns_block_cause(env)
+    if env.landlock_abi < 1:
+        return (
+            f"{cause}; this kernel offers no Landlock either "
+            "(needs Linux >= 5.13 with the Landlock LSM enabled)"
+        )
+    return cause
+
+
 def detect() -> Environment:
     """Detect kernel + container indicators + userns/Landlock capability."""
     signals = detect_container_signals()

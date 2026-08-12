@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from agent6.app import _setup
+from agent6.sandbox import detect
 from agent6.sandbox.detect import Environment, KernelInfo
 
 
@@ -80,3 +81,38 @@ def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(_setup, "detect", lambda: _env(False, sandbox=False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)  # not consulted
     assert _setup.detect_env().userns_supported is False
+
+
+def test_degrade_reason_full_strength_is_none() -> None:
+    assert detect.degrade_reason(_env(True)) is None
+
+
+def test_degrade_reason_names_the_blocking_mechanism(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reason names the MECHANISM (AppArmor sysctl / max_user_namespaces /
+    container policy), because each has a different fix; every reporting
+    surface prints this one line."""
+    e = _env(False)
+    monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: True)
+    assert "apparmor_restrict_unprivileged_userns" in (detect.degrade_reason(e) or "")
+    assert "agent6 system apparmor install" in (detect.degrade_reason(e) or "")
+
+    monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: False)
+    monkeypatch.setattr(detect, "_read_max_userns", lambda: "0")
+    assert "user.max_user_namespaces = 0" in (detect.degrade_reason(e) or "")
+
+    monkeypatch.setattr(detect, "_read_max_userns", lambda: "58135")
+    from dataclasses import replace
+
+    assert "container" in (detect.degrade_reason(replace(e, in_container=True)) or "")
+    assert "unshare -U -r true" in (detect.degrade_reason(e) or "")
+
+
+def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: False)
+    monkeypatch.setattr(detect, "_read_max_userns", lambda: None)
+    from dataclasses import replace
+
+    no_landlock = replace(_env(False), landlock_abi=0)
+    reason = detect.degrade_reason(no_landlock) or ""
+    assert "no Landlock" in reason
+    assert detect.degrade_reason(_env(False, sandbox=False)) is not None

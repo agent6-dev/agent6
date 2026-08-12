@@ -30,7 +30,7 @@ from agent6.sandbox import (
 )
 from agent6.sandbox.detect import (
     IsolationUnavailableError,
-    apparmor_userns_restricted,
+    degrade_reason,
     resolve_isolation,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
@@ -89,8 +89,14 @@ def _cmd_check_sandbox() -> int:
         )
     )
 
-    isolation = resolve_isolation("auto", detect_env())
+    env = detect_env()
+    isolation = resolve_isolation("auto", env)
     print(f"  effective isolation (auto): {isolation}")
+    reason = degrade_reason(env)
+    if reason is not None:
+        # A degraded level never appears without its why (same line the run
+        # warning and check config print; one owner in detect.degrade_reason).
+        print(f"  not strict: {reason}")
     # What that level GIVES, in general terms rather than a catalogue of cases:
     # someone whose tool misbehaves needs to know which boundaries exist here
     # before they can guess why, and these words are what to search the docs for.
@@ -100,23 +106,18 @@ def _cmd_check_sandbox() -> int:
         # Where someone is actually asking. Not a per-run warning: on a normal
         # machine every uv-installed tool in ~/.local/bin points into
         # ~/.local/share, so it is the ordinary state of a dev box.
+        how = (
+            "mounted read-only into the jail and readable by"
+            if isolation == "strict"
+            else "granted read-only (Landlock path rules) and readable by"
+        )
         print(
             f"  {len(notes.exposes_home_dir)} tool(s) resolve out of their bin dir, so those"
-            " target directories are\n  mounted read-only into the jail and readable by"
+            f" target directories are\n  {how}"
             " jailed commands:"
         )
         for tool in notes.exposes_home_dir:
             print(f"    {tool}")
-    if isolation == "hardened" and apparmor_userns_restricted():
-        print(
-            "  NOTE: strict is unavailable because unprivileged user namespaces are\n"
-            "  blocked by kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+\n"
-            "  default). For the stronger strict isolation, install the bundled agent6-jail\n"
-            "  AppArmor isolation (grants userns to just that binary):\n"
-            "    agent6 system apparmor install\n"
-            "  (or, less surgically, set the sysctl to 0). hardened is still real,\n"
-            "  kernel-enforced isolation."
-        )
     if isolation == "none":
         # No kernel sandbox to test (a non-Linux host, or a deliberate `none`
         # opt-out), and running the boundary probes unconfined would let the
@@ -297,6 +298,9 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
             f"  -> selected isolation: {selected}"
             f"  commands' network: {resolve_network(cfg, selected)}"
         )
+        reason = degrade_reason(env)
+        if cfg.sandbox.isolation == "auto" and reason is not None:
+            print(f"  -> not strict: {reason}")
         # The tools' file boundary is NOT the selected isolation's: it follows
         # the config values at every level, so print it beside them rather than
         # leaving the operator to infer it from the level.

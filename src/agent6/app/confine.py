@@ -17,7 +17,7 @@ from pathlib import Path
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.paths import hidden_paths, is_root, private_dirs
-from agent6.sandbox.detect import Environment
+from agent6.sandbox.detect import Environment, degrade_reason
 from agent6.sandbox.jail import tool_mount_notes
 from agent6.types import IsolationLevel
 
@@ -56,9 +56,23 @@ def warn_sandbox_gaps(
     than refuses -- but on `hardened` it says what the widening costs, since
     the granted system set stops being narrowed by file permissions there.
     """
+    if cfg.sandbox.isolation == "auto":
+        reason = degrade_reason(env)
+        if reason is not None:
+            # The degrade ITSELF, not just its consequences below: 'auto'
+            # landing under strict never happens silently, and the why is the
+            # same line check sandbox / check config print (one owner).
+            reporter.err(
+                f"[agent6] WARNING: 'auto' selected '{isolation}', not 'strict': {reason}."
+            )
     if isolation == "none":
+        origin = (
+            "sandbox.isolation = 'none'"
+            if cfg.sandbox.isolation == "none"
+            else "'auto' found no confinement mechanism on this host"
+        )
         reporter.err(
-            "[agent6] WARNING: running UNSANDBOXED (sandbox.isolation = 'none'). "
+            f"[agent6] WARNING: running UNSANDBOXED ({origin}). "
             "Commands -- including the LLM's run_command and verify_command -- "
             "and any spawned MCP server execute as plain subprocesses with NO "
             "filesystem, network, or syscall confinement and no memory cap "

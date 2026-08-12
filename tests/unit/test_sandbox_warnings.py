@@ -26,9 +26,9 @@ def _env(landlock_abi: int) -> Environment:
     )
 
 
-def _cfg(tool_network: str = "auto") -> Config:
+def _cfg(tool_network: str = "auto", isolation: str = "auto") -> Config:
     return Config(
-        sandbox=SandboxConfig(network=tool_network)  # type: ignore[arg-type]
+        sandbox=SandboxConfig(network=tool_network, isolation=isolation)  # type: ignore[arg-type]
     )
 
 
@@ -271,3 +271,56 @@ def test_a_normal_user_on_hardened_is_not_told_about_root(
     monkeypatch.setattr("agent6.app.confine.is_root", lambda: False)
     warn_sandbox_gaps("hardened", _env(4), Config(sandbox=SandboxConfig(protect_git=False)))
     assert "running as root" not in capsys.readouterr().err
+
+
+def test_auto_degrade_warns_with_the_reason(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The degrade ITSELF is loud, not only its consequences: auto landing on
+    hardened printed the network/protect_git consequences but never why strict
+    was skipped. One owner (detect.degrade_reason) feeds this line, check
+    sandbox, and check config."""
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+
+    def _why(_env: object) -> str:
+        return "userns blocked (test)"
+
+    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    warn_sandbox_gaps("hardened", _env(4), _cfg())
+    err = capsys.readouterr().err
+    assert "'auto' selected 'hardened', not 'strict': userns blocked (test)" in err
+
+
+def test_explicit_hardened_has_no_degrade_line(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator who WROTE hardened chose it; nothing degraded."""
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+
+    def _why(_env: object) -> str:
+        return "userns blocked (test)"
+
+    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    warn_sandbox_gaps("hardened", _env(4), _cfg(isolation="hardened"))
+    err = capsys.readouterr().err
+    assert "not 'strict'" not in err
+
+
+def test_unsandboxed_origin_says_auto_or_the_operator(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The UNSANDBOXED banner attributed `isolation = 'none'` to the operator
+    even when `auto` resolved there on a host with no confinement mechanism."""
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+
+    def _why(_env: object) -> str:
+        return "nothing here (test)"
+
+    monkeypatch.setattr("agent6.app.confine.degrade_reason", _why)
+    warn_sandbox_gaps("none", _env(0), _cfg())
+    err = capsys.readouterr().err
+    assert "'auto' found no confinement mechanism" in err
+    assert "sandbox.isolation = 'none'" not in err
+    warn_sandbox_gaps("none", _env(0), _cfg(isolation="none"))
+    err = capsys.readouterr().err
+    assert "sandbox.isolation = 'none'" in err

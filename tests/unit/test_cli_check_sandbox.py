@@ -37,9 +37,15 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[JailPolicy]:
     return seen
 
 
-def _force_profile(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
+def _force_profile(
+    monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None
+) -> None:
     monkeypatch.setattr(check_cmds, "detect_env", object)  # returns a throwaway env stub
-    monkeypatch.setattr(check_cmds, "apparmor_userns_restricted", lambda: False)  # no advisory
+
+    def _reason(_env: object) -> str | None:
+        return reason
+
+    monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
 
     def fake_select(_req: str, _env: object) -> str:
         return isolation
@@ -86,3 +92,29 @@ def test_check_sandbox_none_skips_probes(
     assert rc == 1, out
     assert "effective isolation (auto): none" in out
     assert stub_jail == []
+
+
+def test_check_sandbox_degraded_names_why(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A degraded level never appears without its cause. Reproduced on a
+    userns-blocked host (user.max_user_namespaces = 0): the line read
+    `effective isolation (auto): hardened` and nothing said why, while
+    `check config` did (Eric hit exactly this)."""
+    from agent6.sandbox.jail import ToolMountNotes
+
+    why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
+    _force_profile(monkeypatch, "hardened", reason=why)
+    monkeypatch.setattr(
+        check_cmds,
+        "tool_mount_notes",
+        lambda: ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
+    )
+    rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert f"not strict: {why}" in out
+    # Under hardened nothing is MOUNTED (no mount namespace): the tool-dir
+    # exposure is a Landlock read grant and the words must say so.
+    assert "granted read-only (Landlock path rules)" in out
+    assert "mounted read-only into the jail" not in out
