@@ -317,9 +317,8 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
     text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run", memories=(), notes="", skills=None
     )
-    assert "automatically runs this" in text
+    assert "harness runs it and injects" in text
     assert "[harness metric]" in text
-    assert "flat/worse" in text
     # Run-mode only: plan/ask do not expose `run_metric_command`, and the
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
