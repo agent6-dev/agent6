@@ -49,8 +49,8 @@ open-ended agent loop.
 - Context compaction: every surface shows what left the
   model's context, and the conversation view shows the summary a restart
   continued from; `/compact [focus]` compacts on demand, `/pin <text>` makes an
-  instruction survive compaction verbatim, and `agent6 memory pin` keeps a
-  load-bearing memory in every run's prompt (trimmed last, under the block's cap)
+  instruction survive compaction verbatim; repo memory (one fact per file,
+  model- and operator-editable) injects its index into every run
 - State machines (`agent6 machine`) for long-running automated tasks: LLM-drafted,
   operator-reviewed, journaled, and replayable; they can pause for operator input,
   accept events, be steered from any front-end, and notify you when they need attention

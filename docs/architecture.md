@@ -177,39 +177,19 @@ Notes:
   records and re-injects verbatim into every tier-2 restart (total pins
   capped at 4000 chars; an over-cap pin is delivered as an ordinary steer
   and the refusal is loud). Pins persist in the resume snapshot.
-- **Cross-run memory.** At run start the loop loads the active entries
-  from the per-repo memory store (`<state-dir>/<repo-id>/memories/`,
-  written by `agent6 memory add` or a previous run) and injects them as a
-  size-capped `<memories>` block after the repo priors; newest entries win
-  when the cap trims. The worker persists new knowledge with `add_memory`
-  and retires stale entries with `invalidate_memory` (non-destructive; the
-  body stays on disk for `agent6 memory list --all`). Run mode only: plan
-  and ask read memories but cannot write them, machine modes see neither.
-  A resumed run keeps the `<memories>` block frozen in its snapshot, like
-  the rest of its system prompt. Because models never call `add_memory`
-  unprompted (measured: 46 bench legs, zero calls), the loop surfaces it
-  twice: an advisory when verify first goes green after a red one, and a
+- **Repo memory.** One fact per markdown file under
+  `<state-dir>/<repo-id>/memory/` plus a `MEMORY.md` index (one line per
+  entry). The index injects into every run's prompt as a capped `<memory>`
+  block after the repo priors; a run that needs depth reads the file. The
+  worker records or corrects a memory with the ordinary edit tools through
+  a narrow grant to exactly that directory (in-process tools only; the
+  jail never mounts it). Run mode writes; plan and ask read; machine modes
+  see none. Because models never write memory unprompted (measured: 46
+  bench legs, zero writes), the loop surfaces the mechanism twice: an
+  advisory when verify first goes green after a red one, and a
   once-deferred `finish_session` after such a recovery if nothing was
-  recorded. Each fires at most once per run and never on a run whose
-  verify never failed. `agent6 memory pin <id>` exempts a load-bearing
-  entry from the block's newest-win trim (never from the byte bound:
-  pins over the cap elide oldest-first, and `memory list` warns).
-- **Notes scratchpad.** One durable rewritable document per repo
-  (`<state-dir>/<repo-id>/notes.md`, 16000 chars), injected verbatim as
-  `<notes>` and rewritten whole with `write_notes`; `read_notes` re-reads it
-  mid-session. `agent6 notes show` prints it and `agent6 notes edit` opens it
-  in `$EDITOR`, so the operator reads and edits the same file the agent does. Where memories are append-only so an invalidation keeps its
-  audit trail, notes are restructured freely -- resolved items deleted,
-  duplicates merged -- which is what keeps a working document readable past
-  twenty sessions. Whole-file replace, not patch. Over the cap the write is
-  refused, not truncated: dropping the tail loses the newest thinking, and
-  the refusal is what forces a prune. The block clips at the same cap on the
-  way in, because the file is the operator's to edit and one written by hand
-  reaches the prompt having passed no check. Never in the workspace, so never
-  in a diff and never mounted into the jail. Same mode rule as memories: machine
-  and agent modes see none. A resumed run keeps the `<notes>` block frozen in
-  its snapshot like the rest of its system prompt, but `read_notes` always
-  reads the file, so a later leg can still pick up what it wrote.
+  recorded. `agent6 memory add/list/show/rm` is the operator surface over
+  the same files.
 - **Skills.** At run start the loop resolves operator-installed SKILL.md
   packs (`<data-dir>/skills/`, plus `[skills].extra_dirs`) through the
   dispatcher's single resolution, so the `<skills>` system-prompt index and
@@ -574,8 +554,7 @@ graph`).
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (SessionState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
 | Front-end write bridge           | [src/agent6/ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) (spawn detached) + [src/agent6/ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py) (desktop notify), [src/agent6/sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
-| Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
-| Notes scratchpad                 | [src/agent6/notes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/notes.py) (store), `<state-dir>/<repo-id>/notes.md` (data) |
+| Repo memory                      | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memory/` (data) |
 | Session state on disk            | `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` (out of the workspace)    |
 
 ## Pre-1.0 stability

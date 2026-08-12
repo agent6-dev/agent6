@@ -376,28 +376,23 @@ syscall for hardened), never guessed from the kernel version.
   becomes a filename, and the model picks the name.
 - **The LLM only sees the fixed set in `src/agent6/tools/schema.py`.**
     - Structured edits, read-only navigation, fixed-argv verify/metric commands,
-      `finish_session`, `ask_user`, a curator task notepad, a cross-run memory
-      notepad, and capability-gated `run_command`.
+      `finish_session`, `ask_user`, a curator task notepad, and
+      capability-gated `run_command`.
     - No `shell`, no `write_file` (writes go through `apply_edit`, which refuses
       paths outside cwd), no `web_fetch`, no `eval`.
     - Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
-- **The memory notepad and notes scratchpad are prompt-injection persistence
-  channels.**
-    - `add_memory`/`invalidate_memory` (run mode) write fixed markdown under
-      `<state-dir>/<repo-id>/memories/` (code picks the path; the model supplies
-      only a schema-validated scope + text); active notes join later runs' system
-      prompt on the same repo. `write_notes` replaces one fixed file,
-      `<state-dir>/<repo-id>/notes.md`, on the same terms: code owns the path,
-      the model supplies only a length-bounded string.
-    - Mitigated: both are inert data (never executed), the injected blocks are
-      size-capped and framed as untrusted, and both stores are operator-auditable
-      (`agent6 memory list --all`, `agent6 memory invalidate` keeps the trail;
-      notes are one readable markdown file). Neither is ever mounted into the
-      jail, so a jailed command cannot reach or rewrite them.
-    - Notes are whole-file replace, so a hostile write can erase earlier notes.
-      That is the same authority the agent already has over its own context and
-      costs nothing outside it; memories, which carry the audit trail, stay
-      append-only precisely because they must survive this.
+- **Repo memory is a prompt-injection persistence channel.**
+    - The memory dir (`<state-dir>/<repo-id>/memory/`) is the one state
+      subtree the in-process edit tools may write: model-authored context by
+      design (see the exempt list in `tools/_path_safety.py`). Its `MEMORY.md`
+      index joins later runs' system prompt on the same repo.
+    - Mitigated: entries are inert data (never executed), the injected index
+      is size-capped and framed as untrusted, the store is operator-auditable
+      (`agent6 memory list/show`), and the jail never mounts it, so a jailed
+      command cannot reach or rewrite it.
+    - Files are freely editable, so a hostile write can erase earlier
+      memories. That is the same authority the agent already has over its own
+      context; the operator surface is the audit.
     - Neither weakens a boundary here: sandbox/egress/git policy come from config,
       not prompt content.
 
