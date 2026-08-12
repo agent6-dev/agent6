@@ -345,3 +345,11 @@ ids were unpriced on a cold cache (the preflight now does a keyless
 TTL-gated OpenRouter catalog refresh), and opus consistently proposes a
 scoped verify over a 240s-capped full suite (stale_gate each run,
 mechanism working as designed).
+
+### Review-seat experiments (dev slice, veto before finish, same $1 cap)
+
+Same-model k3 seat: 21/25, all finishes approved. Cross-model sonnet-5
+seat: 22/25, zero vetoes in 22 reviews (+1 is variance; the gate never
+fired). A diff-tier reviewer of either family approves the worker's
+confident contract misses; catching them likely needs a reviewer that
+runs tests or sees more than the diff.
