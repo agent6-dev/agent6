@@ -25,7 +25,7 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "section",
         nargs="?",
         default="all",
-        choices=("all", "sandbox", "config", "mcp", "verify"),
+        choices=("all", "sandbox", "config", "boundaries", "mcp", "verify"),
         help=(
             "Limit the report to one section. 'all' (default) runs every check"
             " and prints a single PASS/FAIL summary."

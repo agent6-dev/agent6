@@ -69,6 +69,11 @@ Under that adversary, agent6 aims to hold:
 
 ## Defense layers
 
+`agent6 check boundaries` prints the resolved picture on a host: per actor
+(in-process tools, jailed commands, each MCP server) the reachable paths, the
+network, the approval mode, and the secrets posture, with the cause named when
+`auto` selected less than `strict`.
+
 ### 1. The agent process is trusted, and no level confines it
 
 The agent's own Python process runs unconfined at every isolation level: it
