@@ -68,6 +68,8 @@ def run_one(
     max_usd: float,
     timeout_s: int,
     prompt_file: Path | None = None,
+    container_script: Path = IN_CONTAINER,
+    extra_mounts: tuple[str, ...] = (),
 ) -> dict:
     iid = inst["instance_id"]
     pred_path = out_dir / "preds" / f"{model_label(model)}__{iid}.json"
@@ -117,6 +119,7 @@ def run_one(
             if prompt_file is not None
             else []
         ),
+        *(f for m in extra_mounts for f in ("-v", m)),
         "-v",
         f"{uv}:/usr/local/bin/uv:ro",
         "-v",
@@ -124,7 +127,7 @@ def run_one(
         "-v",
         f"{SECRETS}:/root/.config/agent6/secrets.toml:ro",
         "-v",
-        f"{IN_CONTAINER}:/mnt/in_container.sh:ro",
+        f"{container_script.resolve()}:/mnt/in_container.sh:ro",
         "-v",
         f"{work / 'problem.txt'}:/mnt/problem.txt:ro",
         "-v",
@@ -197,6 +200,18 @@ def main() -> int:
         default=None,
         help="mount as prompt.system_prompt_file inside the container (A/B arm)",
     )
+    ap.add_argument(
+        "--container-script",
+        type=Path,
+        default=IN_CONTAINER,
+        help="script run inside the container (default: the agent6 leg)",
+    )
+    ap.add_argument(
+        "--extra-mount",
+        action="append",
+        default=[],
+        help="extra docker -v mount SRC:DST[:ro] (repeatable)",
+    )
     args = ap.parse_args()
 
     rows = {r["instance_id"]: r for r in json.loads(args.instances.read_text())}
@@ -233,6 +248,8 @@ def main() -> int:
                 max_usd=args.max_usd,
                 timeout_s=args.timeout,
                 prompt_file=args.prompt_file,
+                container_script=args.container_script,
+                extra_mounts=tuple(args.extra_mount),
             ): (inst["instance_id"], m)
             for inst, m in jobs
         }
