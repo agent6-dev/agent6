@@ -82,7 +82,7 @@ a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot sn
 of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
-  <source src="/screenshots/out/cli-demo.webm" type="video/webm">
+  <source src="/screenshots/out/temps-demo.webm" type="video/webm">
 </video>
 
 ---
