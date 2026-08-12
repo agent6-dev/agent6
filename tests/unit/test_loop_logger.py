@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import time
 
 
-def _drive(mode: str, stream: str) -> float:
+def _drive(mode: str, stream: str) -> bool:
     """Run the *mode* headless logger in a child that logs then sleeps 3s, with
-    the given std *stream* piped. Return seconds from spawn to the line arriving
-    (a buffered logger would only flush at exit, ~3s)."""
+    the given std *stream* piped. Return whether the child was STILL ALIVE when
+    its line arrived: a flushing logger delivers mid-sleep; a block-buffered one
+    delivers only at exit. Structural, not wall-clock -- a timing threshold
+    here flaked under machine load, where the child's cold import alone
+    outspent the budget."""
     code = (
         "import time\n"
         "from agent6.ui.cli._live import loop_logger\n"
@@ -34,22 +36,21 @@ def _drive(mode: str, stream: str) -> float:
         stderr=pipe if stream == "stderr" else subprocess.DEVNULL,
         text=True,
     )
-    start = time.monotonic()
     fh = proc.stdout if stream == "stdout" else proc.stderr
     assert fh is not None
     line = fh.readline()  # blocks until a line is flushed to the pipe
-    elapsed = time.monotonic() - start
+    alive_at_line = proc.poll() is None
     proc.kill()
     proc.wait()
     assert "LOAD_CONTEXT" in line, line
-    return elapsed
+    return alive_at_line
 
 
 def test_headless_run_logger_flushes_each_line() -> None:
-    # run mode logs to stdout; the line must arrive well before the 3s sleep.
-    assert _drive("run", "stdout") < 2.0
+    # run mode logs to stdout; the line must arrive while the child still runs.
+    assert _drive("run", "stdout")
 
 
 def test_ask_logger_flushes_each_line() -> None:
     # ask keeps stdout for the answer and logs to stderr; that must flush too.
-    assert _drive("ask", "stderr") < 2.0
+    assert _drive("ask", "stderr")
