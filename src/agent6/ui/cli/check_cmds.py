@@ -109,7 +109,9 @@ def _cmd_check_sandbox() -> int:
     # before they can guess why, and these words are what to search the docs for.
     print(f"  {_isolation_means(isolation)}")
     notes = tool_mount_notes()
-    if notes.exposes_home_dir:
+    # Under "none" nothing is confined, so grant language about tool dirs
+    # would describe a boundary that does not exist; the block is jail-only.
+    if notes.exposes_home_dir and isolation != "none":
         # Where someone is actually asking. Not a per-run warning: on a normal
         # machine every uv-installed tool in ~/.local/bin points into
         # ~/.local/share, so it is the ordinary state of a dev box.

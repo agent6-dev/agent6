@@ -85,13 +85,24 @@ def test_check_sandbox_strict_runs_network_probe(
 def test_check_sandbox_none_skips_probes(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from agent6.sandbox.jail import ToolMountNotes
+
     _force_profile(monkeypatch, "none")
+    monkeypatch.setattr(
+        check_cmds,
+        "tool_mount_notes",
+        lambda: ToolMountNotes(exposes_home_dir=("~/.local/bin/x -> ~/.local/share/x",)),
+    )
     rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     # No kernel sandbox -> reported FAIL, and no jail invocations attempted.
     assert rc == 1, out
     assert "effective isolation (auto): none" in out
     assert stub_jail == []
+    # Nothing is confined under "none": grant language about tool dirs would
+    # describe a boundary that does not exist, so the block is absent.
+    assert "granted read-only" not in out
+    assert "mounted read-only" not in out
 
 
 def test_check_sandbox_degraded_names_why(
