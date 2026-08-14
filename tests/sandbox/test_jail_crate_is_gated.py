@@ -63,9 +63,12 @@ def test_the_crate_compiles_for_every_target_the_release_builds(target: str) -> 
     arch-missing constant fails) without needing a cross-linker. Skipped when
     the target is not installed, since a contributor need not carry both.
     """
-    installed = subprocess.run(
-        ["rustup", "target", "list", "--installed"], capture_output=True, text=True, check=False
-    )
+    try:
+        installed = subprocess.run(
+            ["rustup", "target", "list", "--installed"], capture_output=True, text=True, check=False
+        )
+    except FileNotFoundError:
+        pytest.skip("rustup not on PATH")
     if target not in installed.stdout:
         pytest.skip(f"{target} not installed (`rustup target add {target}`)")
     done = _cargo("clippy", "--release", "--locked", "--target", target, "--", "-D", "warnings")
