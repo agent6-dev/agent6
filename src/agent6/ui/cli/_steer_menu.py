@@ -76,12 +76,12 @@ MENU_COMMANDS: dict[str, str] = {
 }
 
 
-def _without_btw() -> dict[str, str]:
+def _without_btw(config_path: Path | None = None) -> dict[str, str]:
     """The menu minus `/btw`, for a surface with nothing to spawn one from."""
     return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
 
 
-def skill_menu_table() -> dict[str, tuple[str, str]]:
+def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, str]]:
     """``/name`` -> (description, full SKILL.md text) for enabled skills.
 
     Built-in commands always win a name collision, so ``/status`` can never
@@ -89,7 +89,7 @@ def skill_menu_table() -> dict[str, tuple[str, str]]:
     commands, loudly, without breaking the pause prompt.
     """
     try:
-        cfg = load_effective(Path.cwd()).config
+        cfg = load_effective(Path.cwd(), config_path).config
         if not cfg.skills.enabled:
             return {}
         found, _warns = discover_skills(
@@ -258,10 +258,15 @@ _ACTIONS: dict[str, str] = {
 }
 
 
-def _run_info_command(cmd: str, session_dir: Path, btw_runner: BtwRunner | None = None) -> None:
+def _run_info_command(
+    cmd: str,
+    session_dir: Path,
+    btw_runner: BtwRunner | None = None,
+    config_path: Path | None = None,
+) -> None:
     """Run a print-and-re-prompt command (everything not in ``_ACTIONS``)."""
     if cmd == "/help":
-        _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw())
+        _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw(config_path))
     elif cmd == "/status":
         _print_status(session_dir)
     elif cmd == "/tasks":
@@ -286,15 +291,16 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     *,
     input_fn: Callable[[str], str] | None = None,
     btw_runner: BtwRunner | None = None,
+    config_path: Path | None = None,
 ) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
     continue, 'abort' stop now, 'detach' background, else the instruction sent
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
-    skills = skill_menu_table()
+    skills = skill_menu_table(config_path)
     # A surface that cannot spawn a sibling session never offers `/btw`: an
     # offered command that answers "needs a live run" is not offered.
-    offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
+    offered = MENU_COMMANDS if btw_runner is not None else _without_btw(config_path)
     if input_fn is None:
         if menu_capable():
             _RECALL.seed(session_dir)
@@ -357,4 +363,4 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         elif matches[0] in skills:
             return skill_steer_payload(matches[0][1:], skills[matches[0]][1], "")
         else:
-            _run_info_command(matches[0], session_dir, btw_runner)
+            _run_info_command(matches[0], session_dir, btw_runner, config_path)

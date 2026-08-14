@@ -609,9 +609,10 @@ class ConfigScreen(Screen[None]):
     )
     COMMANDS: ClassVar = Screen.COMMANDS | {_ConfigCommands}
 
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: Path, config_path: Path | None = None) -> None:
         super().__init__()
         self.repo_root = repo_root
+        self.config_path = config_path
         self._eff: EffectiveConfig | None = None
         self._view: ConfigView | None = None
         self._settings: dict[str, ConfigSetting] = {}
@@ -661,7 +662,7 @@ class ConfigScreen(Screen[None]):
         return self._view.sections if self._view is not None else ()
 
     def _rebuild_view(self) -> None:
-        eff = load_effective(self.repo_root, None)
+        eff = load_effective(self.repo_root, self.config_path)
         self._eff = eff
         self._view = build_config_view(eff, resolved=resolved_adaptive_values(eff.config))
         self._settings = {s.key: s for s in self._view.settings}
@@ -955,9 +956,10 @@ class ConfigScreen(Screen[None]):
         *provider_name* from the live listing -- the same fetch+cache the CLI
         completion uses (cache-first; falls back to the cache on any failure)."""
         repo = self.repo_root
+        overlay = self.config_path
 
         def fetch() -> list[str]:
-            entry = load_effective(repo, None).config.providers.get(provider_name)
+            entry = load_effective(repo, overlay).config.providers.get(provider_name)
             if entry is None:
                 return cached_models(provider_name)
             # Best-effort listing: a broken secrets.toml (unsafe perms, invalid

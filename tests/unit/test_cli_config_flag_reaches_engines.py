@@ -94,3 +94,59 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     session = Session(acp_id="t", cwd=tmp_path)
     assert bridge.run(session, "task") == "refusal"
     assert seen == [cfg_path]
+
+
+def test_hub_spawns_stamp_the_explicit_config_into_argv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A hub started with --config F propagates F into everything it spawns,
+    so spawned work runs under the config the operator gave the hub."""
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.web import actions as web_actions
+
+    argvs: list[list[str]] = []
+
+    def fake_spawn(argv: list[str], cwd: Path, **_kw: Any) -> tuple[Path | None, str]:
+        argvs.append(argv)
+        return None, "stubbed"
+
+    cfg = tmp_path / "overlay.toml"
+    monkeypatch.setattr(web_actions, "spawn_and_locate", fake_spawn)
+    web_actions._spawn_run(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, "run", "t", "", spec="", config_path=cfg
+    )
+    monkeypatch.setattr(tui_home, "spawn_and_locate", fake_spawn)
+    tui_home._spawn_run(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, tmp_path, "run", "t", preset="", spec="", config_path=cfg
+    )
+    for argv in argvs:
+        flag = argv.index("--config")
+        assert argv[flag + 1] == str(cfg)
+        assert flag < argv.index("run"), "--config is a top-level flag: before the subcommand"
+
+
+def test_detached_resume_reapplies_the_overlay(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import agent6.ui.spawn as spawn_mod
+
+    seen: list[list[str]] = []
+
+    class _Proc:
+        pid = 4242
+
+    def fake_popen(argv: list[str], **_kw: Any) -> Any:
+        seen.append(list(argv))
+        return _Proc()
+
+    monkeypatch.setattr(spawn_mod.subprocess, "Popen", fake_popen)
+
+    def _no_sweep(_pid: int) -> None:
+        pass
+
+    monkeypatch.setattr(spawn_mod, "keep_out_of_the_sweep", _no_sweep)
+    cfg = tmp_path / "overlay.toml"
+    assert spawn_mod.spawn_detached_resume(tmp_path, "run-1", config_path=cfg) == ""
+    (argv,) = seen
+    assert argv[1:3] == ["--config", str(cfg)]
+    assert "resume" in argv

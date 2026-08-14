@@ -50,4 +50,4 @@ def _cmd_web(
             file=sys.stderr,
         )
         return 2
-    return run_web(target, host=eff_host, port=eff_port)
+    return run_web(target, host=eff_host, port=eff_port, config_path=config_path)

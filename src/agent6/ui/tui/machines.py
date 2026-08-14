@@ -655,10 +655,11 @@ class MachinesScreen(Screen[None]):
     ]
     COMMANDS: ClassVar = Screen.COMMANDS | {_MachineCommands}
 
-    def __init__(self, agent6_dir: Path, repo_cwd: Path) -> None:
+    def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
         self.agent6_dir = agent6_dir  # per-repo state dir; machine-create drafts live under it
         self.repo_cwd = repo_cwd
+        self.config_path = config_path
         self._machines: list[Path] = []
 
     def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:
@@ -739,8 +740,11 @@ class MachinesScreen(Screen[None]):
             # held, network refusal, bad bundle) exits nonzero before that and
             # its stderr surfaces here instead of a watch screen on nothing.
             instance = self.agent6_dir / "machines" / spec.machine
+            argv = [agent6_exe()]
+            if self.config_path is not None:
+                argv += ["--config", str(self.config_path)]
             err = spawn_and_confirm(
-                [agent6_exe(), "machine", "run", str(path)],
+                [*argv, "machine", "run", str(path)],
                 self.repo_cwd,
                 started=lambda pid: read_worker_pid(instance) == pid,
             )
@@ -777,8 +781,11 @@ class MachinesScreen(Screen[None]):
         # draft it produces so the authoring agent's reasoning + tool calls are
         # watchable live, exactly like a run. The create keeps running detached,
         # so quitting the dashboard is safe.
+        argv = [agent6_exe()]
+        if self.config_path is not None:
+            argv += ["--config", str(self.config_path)]
         draft_dir, error = spawn_and_locate(
-            [agent6_exe(), "machine", "create", task],
+            [*argv, "machine", "create", task],
             self.repo_cwd,
             before=set(_list_drafts(self.agent6_dir)),
             list_dirs=lambda: _list_drafts(self.agent6_dir),

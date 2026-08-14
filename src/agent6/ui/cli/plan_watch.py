@@ -124,7 +124,14 @@ def _most_recent_plan_session_id(plans_dir: Path) -> str | None:
     return candidates[0].name if candidates else None
 
 
-def _cmd_watch(session_id: str, *, tui: bool = False, since: int = 0, raw: bool = False) -> int:
+def _cmd_watch(
+    session_id: str,
+    *,
+    tui: bool = False,
+    since: int = 0,
+    raw: bool = False,
+    config_path: Path | None = None,
+) -> int:
     """Read-only live view of a run directory.
 
     Default follows the run's conversation (the same render as ``agent6 run``).
@@ -160,7 +167,7 @@ def _cmd_watch(session_id: str, *, tui: bool = False, since: int = 0, raw: bool 
             file=sys.stderr,
         )
         return 3
-    return run_tui(target)
+    return run_tui(target, config_path=config_path)
 
 
 def _resolve_session_dir(repo_root: Path, session_id: str) -> Path | None:
@@ -393,7 +400,7 @@ def _print_task_tree(session_dir: Path) -> None:
                 print(f"  {line}")
 
 
-def _cmd_tui() -> int:
+def _cmd_tui(config_path: Path | None = None) -> int:
     """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
     the home screen and the run view (the conversation; Ctrl+D toggles the
     dashboard), opening a run watches it, then returns here on close."""
@@ -412,11 +419,11 @@ def _cmd_tui() -> int:
     # which appends `sessions/` itself.
     agent6_dir = _state_dir(cwd)
     while True:
-        session_dir = run_home(agent6_dir, cwd)
+        session_dir = run_home(agent6_dir, cwd, config_path)
         if session_dir is None:
             return 0
         # Esc in the dashboard returns here (reopen home); q quits the hub.
-        if run_tui(session_dir, from_hub=True) == QUIT_HUB_CODE:
+        if run_tui(session_dir, from_hub=True, config_path=config_path) == QUIT_HUB_CODE:
             return 0
 
 

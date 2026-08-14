@@ -77,13 +77,13 @@ def _available_presets(repo_cwd: Path) -> list[str]:
     return available_preset_names(repo_cwd, None)
 
 
-def _available_models(repo_cwd: Path) -> list[str]:
+def _available_models(repo_cwd: Path, config_path: Path | None = None) -> list[str]:
     """Model ids for the new-work modal's `/parallel` autocomplete: the worker's
     model plus the worker provider's cached listing (lanes inherit the worker
     provider; cache-only, no network) -- exactly the set `run --parallel`
     validation accepts. Empty on any config error; the affordance is best-effort."""
     try:
-        cfg = load_effective(repo_cwd, None).config
+        cfg = load_effective(repo_cwd, config_path).config
     except ConfigError:
         return []
     return sorted(known_models(cfg))
@@ -383,12 +383,14 @@ class HomeScreen(Screen[None]):
                 if handler is not None:
                     yield (item.label, handler, menu.title)
 
-    def __init__(self, agent6_dir: Path, repo_cwd: Path) -> None:
+    def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
         self.agent6_dir = agent6_dir
         # The repo to launch new runs in. The state dir is out of the workspace,
         # so it can't be derived from agent6_dir; the caller passes it.
         self.repo_cwd = repo_cwd
+        # The hub's `--config F`, stamped into everything it spawns or loads.
+        self.config_path = config_path
         self._runs: list[Path] = []
 
     def compose(self) -> ComposeResult:
@@ -495,7 +497,10 @@ class HomeScreen(Screen[None]):
 
     def action_new_work(self) -> None:
         self.app.push_screen(
-            _NewWorkModal(_available_presets(self.repo_cwd), _available_models(self.repo_cwd)),
+            _NewWorkModal(
+                _available_presets(self.repo_cwd),
+                _available_models(self.repo_cwd, self.config_path),
+            ),
             self._on_new_work,
         )
 
@@ -521,7 +526,7 @@ class HomeScreen(Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_merge_cli(self.repo_cwd, session_id)
+            ok, msg = _run_merge_cli(self.repo_cwd, session_id, self.config_path)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -535,7 +540,7 @@ class HomeScreen(Screen[None]):
         from agent6.config.layer import load_effective  # noqa: PLC0415
 
         try:
-            load_effective(self.repo_cwd, None)
+            load_effective(self.repo_cwd, self.config_path)
         except ConfigError as exc:
             self.app.notify(
                 "Config is invalid, so it can't be opened. Run `agent6 config fix` in a"
@@ -544,10 +549,10 @@ class HomeScreen(Screen[None]):
                 timeout=15.0,
             )
             return
-        self.app.push_screen(ConfigScreen(self.repo_cwd))
+        self.app.push_screen(ConfigScreen(self.repo_cwd, self.config_path))
 
     def action_open_machines(self) -> None:
-        self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd))
+        self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd, self.config_path))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)
@@ -573,7 +578,12 @@ class HomeScreen(Screen[None]):
             return
         mode, task, preset = result
         session_dir, error = _spawn_and_locate(
-            self.agent6_dir, self.repo_cwd, mode, task, preset=preset
+            self.agent6_dir,
+            self.repo_cwd,
+            mode,
+            task,
+            preset=preset,
+            config_path=self.config_path,
         )
         if session_dir is not None:
             self.app.exit(session_dir)
@@ -610,14 +620,15 @@ class Agent6HomeApp(MuxPointerShapes, App[Path | None]):
     """
     )
 
-    def __init__(self, agent6_dir: Path, repo_cwd: Path) -> None:
+    def __init__(self, agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> None:
         super().__init__()
         self.agent6_dir = agent6_dir
         self.repo_cwd = repo_cwd
+        self.config_path = config_path
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
-        self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd))
+        self.push_screen(HomeScreen(self.agent6_dir, self.repo_cwd, self.config_path))
 
     def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
         # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot"
@@ -631,7 +642,13 @@ class Agent6HomeApp(MuxPointerShapes, App[Path | None]):
 
 
 def _spawn_and_locate(
-    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str = ""
+    agent6_dir: Path,
+    repo_cwd: Path,
+    mode: str,
+    task: str,
+    *,
+    preset: str = "",
+    config_path: Path | None = None,
 ) -> tuple[Path | None, str]:
     """Spawn `agent6 <mode> [--preset <name>] <task>` detached and return the new
     run dir (to be watched by the dashboard), or (None, diagnostic) on failure. A
@@ -651,15 +668,23 @@ def _spawn_and_locate(
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        return _spawn_run(agent6_dir, repo_cwd, mode, task, preset=preset, spec="")
-    refusal = directive_model_refusal(repo_cwd, segments)
+        return _spawn_run(
+            agent6_dir, repo_cwd, mode, task, preset=preset, spec="", config_path=config_path
+        )
+    refusal = directive_model_refusal(repo_cwd, segments, config_path)
     if refusal is not None:
         return None, refusal
     first: Path | None = None
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
         session_dir, err = _spawn_run(
-            agent6_dir, repo_cwd, "run", seg.task, preset=preset, spec=seg.spec or "1"
+            agent6_dir,
+            repo_cwd,
+            "run",
+            seg.task,
+            preset=preset,
+            spec=seg.spec or "1",
+            config_path=config_path,
         )
         if session_dir is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
@@ -674,13 +699,24 @@ def _spawn_and_locate(
 
 
 def _spawn_run(
-    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
+    agent6_dir: Path,
+    repo_cwd: Path,
+    mode: str,
+    task: str,
+    *,
+    preset: str,
+    spec: str,
+    config_path: Path | None = None,
 ) -> tuple[Path | None, str]:
     """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
     return its located run dir, or (None, diagnostic)."""
     # --preset is a per-subcommand flag, so it goes after <mode> and before the
     # positional <task> -> `agent6 <mode> --preset <name> <task>`.
-    argv = [agent6_exe(), mode]
+    argv = [agent6_exe()]
+    if config_path is not None:
+        # The hub's overlay follows into the run it spawns.
+        argv += ["--config", str(config_path)]
+    argv.append(mode)
     if preset:
         argv += ["--preset", preset]
     if spec:
@@ -703,12 +739,17 @@ def _spawn_run(
     )
 
 
-def _run_merge_cli(repo_cwd: Path, session_id: str) -> tuple[bool, str]:
+def _run_merge_cli(
+    repo_cwd: Path, session_id: str, config_path: Path | None = None
+) -> tuple[bool, str]:
     """Run `agent6 sessions merge <session_id>` (capturing output) and return (ok, message).
     The hub shells out to the same CLI a user would, so merging stays a CLI concern
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
-    return run_cli_capture([agent6_exe(), "sessions", "merge", session_id], repo_cwd)
+    argv = [agent6_exe()]
+    if config_path is not None:
+        argv += ["--config", str(config_path)]
+    return run_cli_capture([*argv, "sessions", "merge", session_id], repo_cwd)
 
 
-def run_home(agent6_dir: Path, repo_cwd: Path) -> Path | None:
-    return Agent6HomeApp(agent6_dir, repo_cwd).run()
+def run_home(agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> Path | None:
+    return Agent6HomeApp(agent6_dir, repo_cwd, config_path).run()

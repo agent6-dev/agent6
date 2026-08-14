@@ -790,10 +790,17 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     ]
 
     def __init__(
-        self, session_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False
+        self,
+        session_dir: Path,
+        *,
+        exit_on_end: bool = False,
+        from_hub: bool = False,
+        config_path: Path | None = None,
     ) -> None:
         super().__init__()
         self.session_dir = session_dir
+        # The invocation's `--config F`; a detach-resume it spawns re-applies F.
+        self.config_path = config_path
         # When launched from the hub loop, Esc returns to it and q quits the hub
         # (signalled by the exit code); standalone, both just close the dashboard.
         self.from_hub = from_hub
@@ -1131,7 +1138,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         `agent6 resume --steer`, which seeds the steer files AFTER its stale-
         state clear; a pre-seed here would be wiped by that clear). The new
         session's steer poll injects the text at its first boundary."""
-        err = spawn_detached_resume(Path.cwd(), self.session_dir.name, steer=text)
+        err = spawn_detached_resume(
+            Path.cwd(), self.session_dir.name, steer=text, config_path=self.config_path
+        )
         self.notify(
             err or f"resuming {self.session_dir.name} with your instruction…",
             severity="error" if err else "information",
@@ -1244,7 +1253,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         if self.session_controllable():
             self.notify("the session is still going -- nothing to resume", severity="warning")
             return
-        err = spawn_detached_resume(Path.cwd(), self.session_dir.name)
+        err = spawn_detached_resume(Path.cwd(), self.session_dir.name, config_path=self.config_path)
         self.notify(
             err or f"resuming {self.session_dir.name} in the background…",
             severity="error" if err else "information",
@@ -1341,8 +1350,16 @@ def _append_colored_diff(dt: Text, patch: str) -> None:
             dt.append(line + "\n")
 
 
-def run_tui(session_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> int:
-    app = Agent6TUI(session_dir, exit_on_end=exit_on_end, from_hub=from_hub)
+def run_tui(
+    session_dir: Path,
+    *,
+    exit_on_end: bool = False,
+    from_hub: bool = False,
+    config_path: Path | None = None,
+) -> int:
+    app = Agent6TUI(
+        session_dir, exit_on_end=exit_on_end, from_hub=from_hub, config_path=config_path
+    )
     rc = app.run() or 0
     if app.detached:
         sid = session_dir.name

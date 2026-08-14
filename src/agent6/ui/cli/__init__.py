@@ -361,7 +361,12 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
 
 def _dispatch_attach(args: argparse.Namespace) -> int:
     return _cmd_watch_target(
-        args.target, tui=args.tui, json_out=args.json, since=args.since, raw=args.raw
+        args.target,
+        tui=args.tui,
+        json_out=args.json,
+        since=args.since,
+        raw=args.raw,
+        config_path=args.config,
     )
 
 
@@ -452,7 +457,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 
 def _dispatch_tui(args: argparse.Namespace) -> int:
-    return _cmd_tui()
+    return _cmd_tui(args.config)
 
 
 def _dispatch_completions(args: argparse.Namespace) -> int:
@@ -584,7 +589,7 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
 
 def _dispatch_init(args: argparse.Namespace) -> int:
-    return _cmd_init(ecosystem=args.ecosystem, assume_yes=args.yes)
+    return _cmd_init(ecosystem=args.ecosystem, assume_yes=args.yes, config_path=args.config)
 
 
 def _dispatch_review(args: argparse.Namespace) -> int:

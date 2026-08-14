@@ -78,7 +78,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
 
     spawned: list[tuple[str, str]] = []
 
-    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "") -> str:
+    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "", config_path: object = None) -> str:
         spawned.append((rid, steer))
         return ""
 

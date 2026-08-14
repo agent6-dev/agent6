@@ -5,6 +5,7 @@ presentation seam, and hand the lifecycle to `agent6.app.run.run_task`."""
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 from pathlib import Path
@@ -103,7 +104,7 @@ def _asks_dir(session_dir: Path) -> Path:
     return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
-def session_frontend() -> SessionFrontend:
+def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view cell is run-scoped). The console
     view is created lazily on ``attach_console_view``; the builders that need it
@@ -162,6 +163,7 @@ def session_frontend() -> SessionFrontend:
                 ),
                 events=events,
             ),
+            config_path=config_path,
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,
@@ -196,7 +198,7 @@ def session_frontend() -> SessionFrontend:
             )
         ),
         agent6_exe=agent6_exe,
-        spawn_detached_resume=spawn_detached_resume,
+        spawn_detached_resume=functools.partial(spawn_detached_resume, config_path=config_path),
     )
 
 
@@ -333,7 +335,7 @@ def _cmd_run(  # noqa: PLR0911
     return run_task(
         cfg,
         task,
-        frontend=session_frontend(),
+        frontend=session_frontend(config_path),
         session_id=session_id,
         interactive=interactive,
         tui=tui,

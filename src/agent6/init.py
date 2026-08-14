@@ -167,10 +167,12 @@ def _update_gitignore(root: Path, *, ecosystem: str) -> str:
     return f".gitignore: {verb} {len(missing)} entries ({', '.join(missing)})"
 
 
-def _setup_verify_command(root: Path, *, ecosystem: str, ask: _Ask) -> None:
+def _setup_verify_command(
+    root: Path, *, ecosystem: str, ask: _Ask, config_path: Path | None = None
+) -> None:
     """Set workflow.verify_command if unset, inferring it from the repo. Warns
     (and asks) before overriding a command already set in any layer."""
-    leaf = effective_leaf(load_effective(root), "workflow.verify_command")
+    leaf = effective_leaf(load_effective(root, config_path), "workflow.verify_command")
     value, source = leaf or ((), "default")
     already = bool(value)
     if already:
@@ -240,6 +242,7 @@ def init_workspace(
     ecosystem: str = "",
     repo_config_target: Path | None = None,
     interactive: bool = False,
+    config_path: Path | None = None,
 ) -> int:
     """Run the granular setup wizard. Returns a CLI exit code.
 
@@ -268,7 +271,7 @@ def init_workspace(
         print("  skipped; using the global config + built-in defaults.")
 
     # 2. verify_command (optional; inferred).
-    _setup_verify_command(root, ecosystem=detected, ask=ask)
+    _setup_verify_command(root, ecosystem=detected, ask=ask, config_path=config_path)
 
     # 3. .gitignore (idempotent).
     if ask("Add secret + build-artifact entries to .gitignore?", True):

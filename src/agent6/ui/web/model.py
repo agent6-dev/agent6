@@ -354,7 +354,7 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
     return json.loads(render_show(eff, as_json=True))
 
 
-def config_suggestions(cwd: Path, key: str) -> list[str]:
+def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
     """Value suggestions for one open-text config leaf, from the same sources
     the TUI config page and CLI TAB completion use: ``models.<role>.provider``
     offers the configured provider names, ``models.<role>.model`` the role's
@@ -369,12 +369,12 @@ def config_suggestions(cwd: Path, key: str) -> list[str]:
     `run --parallel` validation accepts -- cache-only so a keystroke never
     blocks the server on the network."""
     if key == "parallel.models":
-        return _parallel_model_suggestions(cwd)
+        return _parallel_model_suggestions(cwd, config_path)
     parts = key.split(".")
     if len(parts) != 3 or parts[0] != "models" or parts[2] not in ("provider", "model"):
         return []
     try:
-        cfg = load_effective(cwd).config
+        cfg = load_effective(cwd, config_path).config
     except ConfigError:
         return []
     return _role_value_suggestions(cfg, parts[1], parts[2])
@@ -395,12 +395,12 @@ def _role_value_suggestions(cfg: Config, role: str, kind: str) -> list[str]:
     return list_models(provider, entry, api_key)
 
 
-def _parallel_model_suggestions(cwd: Path) -> list[str]:
+def _parallel_model_suggestions(cwd: Path, config_path: Path | None = None) -> list[str]:
     """Model ids a `/parallel` lane can run (worker-scoped, via `known_models`),
     for the spec autocomplete in the new-work composer. Cache-only; a broken
     config suggests nothing."""
     try:
-        cfg = load_effective(cwd).config
+        cfg = load_effective(cwd, config_path).config
     except ConfigError:
         return []
     return sorted(known_models(cfg))

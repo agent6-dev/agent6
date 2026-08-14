@@ -314,7 +314,7 @@ def test_plan_resume_builds_the_planner_provider(
     def _yes(*_a: object) -> bool:
         return True
 
-    def _frontend() -> object:
+    def _frontend(_cp: object = None) -> object:
         return dataclasses.replace(session_frontend(), confirm_unconfined_autorun=_yes)
 
     def _none(*_a: object, **_k: object) -> None:

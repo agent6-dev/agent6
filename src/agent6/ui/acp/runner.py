@@ -20,6 +20,7 @@ connection: a second prompt waits rather than running in the wrong repository.
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 import threading
@@ -298,7 +299,9 @@ class RunBridge:
                     # can do nothing.
                     capabilities=self.server.client_capabilities or FrontendCapabilities(),
                     agent6_exe=agent6_exe,
-                    spawn_detached_resume=spawn_detached_resume,
+                    spawn_detached_resume=functools.partial(
+                        spawn_detached_resume, config_path=self.config_path
+                    ),
                 ),
                 session_id=session.session_id,
                 explicit_leaves=frozenset(effective.sources),

@@ -31,7 +31,9 @@ def agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
-def spawn_detached_resume(cwd: Path, session_id: str, *, steer: str = "") -> str:
+def spawn_detached_resume(
+    cwd: Path, session_id: str, *, steer: str = "", config_path: Path | None = None
+) -> str:
     """Fire-and-forget a detached ``agent6 resume <session_id>`` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
 
@@ -48,6 +50,10 @@ def spawn_detached_resume(cwd: Path, session_id: str, *, steer: str = "") -> str
     to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
     success, else an error message."""
     argv = [agent6_exe(), "resume", session_id]
+    if config_path is not None:
+        # The overlay the parent ran under; a resume re-applies it only when
+        # told, so the spawned continuation matches the run it continues.
+        argv[1:1] = ["--config", str(config_path)]
     if steer:
         argv.append(f"--steer={steer}")
     try:

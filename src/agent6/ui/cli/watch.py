@@ -96,7 +96,13 @@ def _machine_watch_tui(machine_dir: Path) -> int:
 
 
 def _cmd_watch_target(  # noqa: PLR0911
-    target: str, *, tui: bool, json_out: bool, since: int, raw: bool
+    target: str,
+    *,
+    tui: bool,
+    json_out: bool,
+    since: int,
+    raw: bool,
+    config_path: Path | None = None,
 ) -> int:
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
     cwd = Path.cwd()
@@ -113,7 +119,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     # Empty target, or one that resolves to a run id: watch the run.
     if is_run:
         if not json_out:
-            return _cmd_watch(target, tui=tui, since=since, raw=raw)
+            return _cmd_watch(target, tui=tui, since=since, raw=raw, config_path=config_path)
         session_dir = _resolve_session_dir(cwd, target)
         if session_dir is None or not session_dir.is_dir():
             print_no_session_match(target, runs_dir.parent)

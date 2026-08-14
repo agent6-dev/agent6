@@ -139,7 +139,7 @@ def test_spawn_new_work_parallel_refuses_unknown_model_before_spawn(
 
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
 
-    def _eff(_cwd: object) -> _Eff:
+    def _eff(_cwd: object, _cp: object = None) -> _Eff:
         return _Eff(_provider_cfg())
 
     monkeypatch.setattr(models_validate, "load_effective", _eff)
@@ -162,7 +162,7 @@ def test_spawn_new_work_parallel_unknown_model_no_cache_proceeds(
 
     from agent6.models import validate as models_validate
 
-    def _eff(_cwd: object) -> _Eff:
+    def _eff(_cwd: object, _cp: object = None) -> _Eff:
         return _Eff(_provider_cfg())
 
     monkeypatch.setattr(models_validate, "load_effective", _eff)
@@ -207,7 +207,7 @@ def test_parallel_partial_spawn_failure_surfaces(
     (navigate XOR toast) must not navigate away from a swallowed failure."""
 
     def fake_spawn(
-        cwd: Path, mode: str, task: str, preset: str, spec: str
+        cwd: Path, mode: str, task: str, preset: str, spec: str, config_path: object = None
     ) -> tuple[str | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -215,7 +215,7 @@ def test_parallel_partial_spawn_failure_surfaces(
 
     monkeypatch.setattr(actions, "_spawn_run", fake_spawn)
 
-    def no_refusal(cwd: Path, segments: object) -> None:
+    def no_refusal(cwd: Path, segments: object, config_path: object = None) -> None:
         return None
 
     monkeypatch.setattr(actions, "directive_model_refusal", no_refusal)
@@ -517,7 +517,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     )
     spawned: list[str] = []
 
-    def _spawn(_cwd: Path, _session_id: str, *, steer: str = "") -> str:
+    def _spawn(_cwd: Path, _session_id: str, *, steer: str = "", config_path: object = None) -> str:
         spawned.append(steer)
         return ""
 

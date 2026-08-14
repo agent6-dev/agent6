@@ -32,7 +32,7 @@ def _cmd_resume(
     return resume_task(
         config_path,
         session_id,
-        frontend=session_frontend(),
+        frontend=session_frontend(config_path),
         force=force,
         tui=tui,
         budget_overrides=budget_overrides,

@@ -146,10 +146,13 @@ class WebServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, addr: tuple[str, int], cwd: Path, target: str) -> None:
+    def __init__(
+        self, addr: tuple[str, int], cwd: Path, target: str, config_path: Path | None = None
+    ) -> None:
         super().__init__(addr, _Handler)
         self.cwd = cwd
         self.target = target
+        self.config_path = config_path
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
 
@@ -232,7 +235,9 @@ def _display_host(host: str) -> str:
     return f"[{host}]" if _is_ipv6_literal(host) else host
 
 
-def _create_web_server(host: str, port: int, cwd: Path, target: str) -> WebServer:
+def _create_web_server(
+    host: str, port: int, cwd: Path, target: str, config_path: Path | None = None
+) -> WebServer:
     bind_host = _bind_host(host)
     server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
     return server_cls((bind_host, port), cwd, target)
@@ -248,6 +253,10 @@ class _Handler(BaseHTTPRequestHandler):
     @property
     def cwd(self) -> Path:
         return self.server.cwd
+
+    @property
+    def config_path(self) -> Path | None:
+        return self.server.config_path
 
     # -- routing --------------------------------------------------------------
 
@@ -352,12 +361,14 @@ class _Handler(BaseHTTPRequestHandler):
         # /api/new  /api/sessions/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
-            session_id, err = actions.spawn_new_work(self.cwd, body.mode, body.task, body.preset)
+            session_id, err = actions.spawn_new_work(
+                self.cwd, body.mode, body.task, body.preset, self.config_path
+            )
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
         if path == "/api/sessions/rm_asks":
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.remove_asks(self.cwd)
+            ok, msg = actions.remove_asks(self.cwd, self.config_path)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/sessions/prune":
@@ -365,25 +376,29 @@ class _Handler(BaseHTTPRequestHandler):
             # params: an unread body would sit on the keep-alive socket and the
             # next request line would be parsed with it prepended.
             self._read_body()
-            ok, msg = actions.prune_sessions(self.cwd)
+            ok, msg = actions.prune_sessions(self.cwd, self.config_path)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/config":
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:
-                ok, msg = actions.unset_config(self.cwd, body.key, repo=body.repo)
+                ok, msg = actions.unset_config(
+                    self.cwd, body.key, repo=body.repo, config_path=self.config_path
+                )
             else:
-                ok, msg = actions.set_config(self.cwd, body.key, body.value, repo=body.repo)
+                ok, msg = actions.set_config(
+                    self.cwd, body.key, body.value, repo=body.repo, config_path=self.config_path
+                )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/machine/create":
             body = MachineCreateBody.model_validate(self._read_body())
-            draft, err = actions.spawn_machine_create(self.cwd, body.task)
+            draft, err = actions.spawn_machine_create(self.cwd, body.task, self.config_path)
             self._ok_or_err(draft is not None, {"draft": draft}, err)
             return
         if path == "/api/machine/run":
             body = MachineRunBody.model_validate(self._read_body())
-            ok, msg = actions.spawn_machine_run(self.cwd, body.file)
+            ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_path)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         # /api/session/<id>/<verb>
@@ -414,7 +429,9 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.answer_question(self.cwd, session_id, qb.id, qb.answers)
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
-            ok, msg = actions.merge_run(self.cwd, session_id, mb.strategy)
+            ok, msg = actions.merge_run(
+                self.cwd, session_id, mb.strategy, config_path=self.config_path
+            )
         elif verb == "undo":
             self._read_body()  # no parameters; drain the (empty) body
             payload, err = actions.undo_session(self.cwd, session_id)
@@ -422,7 +439,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         elif verb == "resume":
             rb = ResumeBody.model_validate(self._read_body())
-            ok, msg = actions.resume_run(self.cwd, session_id, rb.text)
+            ok, msg = actions.resume_run(
+                self.cwd, session_id, rb.text, config_path=self.config_path
+            )
         elif verb == "stop_step":
             self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.stop_after_step(self.cwd, session_id)
@@ -431,7 +450,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.compact_run(self.cwd, session_id)
         elif verb == "rm":
             self._read_body()  # drain the `{}` body (keep-alive framing)
-            ok, msg = actions.remove_session(self.cwd, session_id)
+            ok, msg = actions.remove_session(self.cwd, session_id, self.config_path)
         else:
             self._post_not_found(f"run/{session_id}/{verb}")
             return
@@ -490,11 +509,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(model.hub_payload(self.cwd))
             return
         if path == "/api/config":
-            self._send_json(model.config_payload(self.cwd))
+            self._send_json(model.config_payload(self.cwd, self.config_path))
             return
         if path.startswith("/api/config/suggest/"):
             key = path.removeprefix("/api/config/suggest/")
-            self._send_json({"values": model.config_suggestions(self.cwd, key)})
+            self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_path)})
             return
         parts = path.strip("/").split("/")
         # /api/session/<id>[/conversation|/restate|/events]
@@ -797,13 +816,20 @@ class _Handler(BaseHTTPRequestHandler):
             time.sleep(_MACHINE_POLL_S)
 
 
-def run_web(target: str, *, host: str, port: int, cwd: Path | None = None) -> int:
+def run_web(
+    target: str,
+    *,
+    host: str,
+    port: int,
+    cwd: Path | None = None,
+    config_path: Path | None = None,
+) -> int:
     """Serve the web UI on host:port until interrupted. `target` deep-links the
     page to a run id or machine name on load (empty opens the hub)."""
     workdir = cwd or Path.cwd()
     bind_host = _bind_host(host)
     try:
-        server = _create_web_server(bind_host, port, workdir, target)
+        server = _create_web_server(bind_host, port, workdir, target, config_path)
     except OSError as exc:
         print(f"agent6 web: cannot bind {bind_host}:{port}: {exc}", file=sys.stderr)
         return 2

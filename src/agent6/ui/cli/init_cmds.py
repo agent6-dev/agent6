@@ -116,7 +116,7 @@ def _print_next_steps() -> None:
     print('  agent6 run "<task>"            # verify is inferred if you skipped it above')
 
 
-def _cmd_init(*, ecosystem: str, assume_yes: bool = False) -> int:
+def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | None = None) -> int:
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
     if not assume_yes and not sys.stdin.isatty():
@@ -134,6 +134,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False) -> int:
             ecosystem=ecosystem,
             repo_config_target=target,
             interactive=interactive,
+            config_path=config_path,
         )
     except ConfigError as exc:
         # init loads the effective config to infer a verify command; it is also

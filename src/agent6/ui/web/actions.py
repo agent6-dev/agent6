@@ -49,8 +49,16 @@ from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_ref
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
 
 
+def _exe_argv(config_path: Path | None) -> list[str]:
+    """The agent6 argv head; a hub started with `--config F` stamps F into
+    every command it spawns, so spawned work runs under the config the
+    operator gave the hub."""
+    exe = [agent6_exe()]
+    return [*exe, "--config", str(config_path)] if config_path is not None else exe
+
+
 def spawn_new_work(  # noqa: PLR0911
-    cwd: Path, mode: str, task: str, preset: str = ""
+    cwd: Path, mode: str, task: str, preset: str = "", config_path: Path | None = None
 ) -> tuple[str | None, str]:
     """Spawn `agent6 <mode> [--preset P] <task>` detached and return the new run
     id (its dir name) to open, or (None, diagnostic). Mirrors the TUI hub: the
@@ -86,14 +94,16 @@ def spawn_new_work(  # noqa: PLR0911
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        return _spawn_run(cwd, mode, task, preset, spec="")
-    refusal = directive_model_refusal(cwd, segments)
+        return _spawn_run(cwd, mode, task, preset, spec="", config_path=config_path)
+    refusal = directive_model_refusal(cwd, segments, config_path)
     if refusal is not None:
         return None, refusal
     first: str | None = None
     failures: list[str] = []
     for i, seg in enumerate(segments, 1):
-        session_id, err = _spawn_run(cwd, "run", seg.task, preset, spec=seg.spec or "1")
+        session_id, err = _spawn_run(
+            cwd, "run", seg.task, preset, spec=seg.spec or "1", config_path=config_path
+        )
         if session_id is None:
             failures.append(f"lane {i} ({seg.task}): {err}")
         elif first is None:
@@ -107,11 +117,11 @@ def spawn_new_work(  # noqa: PLR0911
 
 
 def _spawn_run(
-    cwd: Path, mode: str, task: str, preset: str, *, spec: str
+    cwd: Path, mode: str, task: str, preset: str, *, spec: str, config_path: Path | None = None
 ) -> tuple[str | None, str]:
     """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
     return its located run dir name, or (None, diagnostic)."""
-    argv = [agent6_exe(), mode]
+    argv = [*_exe_argv(config_path), mode]
     if preset:
         argv += ["--preset", preset]
     if spec:
@@ -132,13 +142,15 @@ def _spawn_run(
     return (session_dir.name if session_dir is not None else None), err
 
 
-def spawn_machine_create(cwd: Path, task: str) -> tuple[str | None, str]:
+def spawn_machine_create(
+    cwd: Path, task: str, config_path: Path | None = None
+) -> tuple[str | None, str]:
     """Spawn `agent6 machine create <task>` detached and return the draft dir name
     to watch (its logs.jsonl carries the authoring agent's reasoning), or None."""
     if not task.strip():
         return None, "empty task"
     draft, err = spawn_and_locate(
-        [agent6_exe(), "machine", "create", "--", task],
+        [*_exe_argv(config_path), "machine", "create", "--", task],
         cwd,
         before=set(model.draft_dir_paths(cwd)),
         list_dirs=lambda: model.draft_dir_paths(cwd),
@@ -146,7 +158,9 @@ def spawn_machine_create(cwd: Path, task: str) -> tuple[str | None, str]:
     return (draft.name if draft is not None else None), err
 
 
-def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
+def spawn_machine_run(
+    cwd: Path, machine_file: str, config_path: Path | None = None
+) -> tuple[bool, str]:
     """Spawn `agent6 machine run <file>` detached. `machine_file` must be one of
     the authored files the hub listed (validated against list_machine_files so the
     browser cannot point it at an arbitrary path).
@@ -164,7 +178,7 @@ def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
         return False, f"invalid machine file: {exc}"
     instance = model.machines_root(cwd) / spec.machine
     err = spawn_and_confirm(
-        [agent6_exe(), "machine", "run", machine_file],
+        [*_exe_argv(config_path), "machine", "run", machine_file],
         cwd,
         started=lambda pid: read_worker_pid(instance) == pid,
     )
@@ -242,7 +256,9 @@ def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str
     return {"new_session_id": child, "undone_text": text}, ""
 
 
-def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:
+def resume_run(
+    cwd: Path, session_id: str, text: str = "", config_path: Path | None = None
+) -> tuple[bool, str]:
     """Resume a finished/stopped run detached, optionally seeding *text* as the
     first steering instruction (the composer's Enter on a finished run). Refused
     while the run's worker is alive: a live run is steered, not resumed."""
@@ -256,7 +272,7 @@ def resume_run(cwd: Path, session_id: str, text: str = "") -> tuple[bool, str]:
         # land on a process nobody is reading and the composer would report
         # "resuming" for a run that never started.
         return False, needs_new_work_refusal(session_id)
-    err = spawn_detached_resume(cwd, session_dir.name, steer=text)
+    err = spawn_detached_resume(cwd, session_dir.name, steer=text, config_path=config_path)
     return (err == ""), (err or "resuming")
 
 
@@ -421,51 +437,57 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
     return True, "steer requested"
 
 
-def merge_run(cwd: Path, session_id: str, strategy: str = "") -> tuple[bool, str]:
+def merge_run(
+    cwd: Path, session_id: str, strategy: str = "", config_path: Path | None = None
+) -> tuple[bool, str]:
     """Merge a run's branch: `agent6 sessions merge <id> [--strategy S]`. `--` before
     the client-supplied run id so a dashy value cannot be read as a flag."""
-    argv = [agent6_exe(), "sessions", "merge"]
+    argv = [*_exe_argv(config_path), "sessions", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
     argv += ["--", session_id]
     return run_cli_capture(argv, cwd)
 
 
-def prune_sessions(cwd: Path) -> tuple[bool, str]:
+def prune_sessions(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
     """Prune merged/obsolete run branches: `agent6 sessions prune`."""
-    return run_cli_capture([agent6_exe(), "sessions", "prune"], cwd)
+    return run_cli_capture([*_exe_argv(config_path), "sessions", "prune"], cwd)
 
 
-def remove_session(cwd: Path, session_id: str) -> tuple[bool, str]:
+def remove_session(cwd: Path, session_id: str, config_path: Path | None = None) -> tuple[bool, str]:
     """Delete one run's history: `agent6 sessions rm <id>`. History only -- the run
     branch is git's, and `sessions prune` is the branch verb. The CLI refuses a live
     run, so this surface inherits that."""
-    return run_cli_capture([agent6_exe(), "sessions", "rm", "--", session_id], cwd)
+    return run_cli_capture([*_exe_argv(config_path), "sessions", "rm", "--", session_id], cwd)
 
 
-def remove_asks(cwd: Path) -> tuple[bool, str]:
+def remove_asks(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
     """Clear every saved ask: `agent6 sessions rm --asks`. The bucket that
     accumulates, since an ask runs in any directory."""
-    return run_cli_capture([agent6_exe(), "sessions", "rm", "--asks"], cwd)
+    return run_cli_capture([*_exe_argv(config_path), "sessions", "rm", "--asks"], cwd)
 
 
-def set_config(cwd: Path, key: str, value: str, *, repo: bool = False) -> tuple[bool, str]:
+def set_config(
+    cwd: Path, key: str, value: str, *, repo: bool = False, config_path: Path | None = None
+) -> tuple[bool, str]:
     """Set one config leaf: `agent6 config set <key> <value> [--repo]`. The CLI
     validates the key and value; the write lands in the global config by default.
     `--` before the body-derived key/value so a dashy value cannot be read as a
     flag."""
-    argv = [agent6_exe(), "config", "set"]
+    argv = [*_exe_argv(config_path), "config", "set"]
     if repo:
         argv.append("--repo")
     argv += ["--", key, value]
     return run_cli_capture(argv, cwd)
 
 
-def unset_config(cwd: Path, key: str, *, repo: bool = False) -> tuple[bool, str]:
+def unset_config(
+    cwd: Path, key: str, *, repo: bool = False, config_path: Path | None = None
+) -> tuple[bool, str]:
     """Unset one config leaf: `agent6 config unset <key> [--repo]`, reverting it
     to the next-lower layer / built-in default. Same fixed-argv CLI bridge as
     set_config (`--` guards a dashy key)."""
-    argv = [agent6_exe(), "config", "unset"]
+    argv = [*_exe_argv(config_path), "config", "unset"]
     if repo:
         argv.append("--repo")
     argv += ["--", key]

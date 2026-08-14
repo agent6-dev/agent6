@@ -262,6 +262,7 @@ def install_steer_sigint(
     console_view: ConsoleView | None = None,
     session_facts: Callable[[], SessionFacts] | None = None,
     btw_runner: BtwRunner | None = None,
+    config_path: Path | None = None,
 ) -> SteerState:
     """Install a SIGINT handler with escalating stages.
 
@@ -357,7 +358,7 @@ def install_steer_sigint(
                 if menu_capable():
                     # The interactive pause menu: line editing, history, and a
                     # fish-style Tab preview of the slash commands.
-                    return pause_menu(session_dir, btw_runner=btw_runner)
+                    return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
                 return normalize_steer_choice(
                     tty_prompt(
                         "[agent6] paused: [enter] continue · type to steer · q stop · d detach: "
@@ -424,6 +425,7 @@ def make_steer_state(
     console_view: ConsoleView | None = None,
     session_facts: Callable[[], SessionFacts] | None = None,
     btw_runner: BtwRunner | None = None,
+    config_path: Path | None = None,
 ) -> SteerState:
     """Install the steer SIGINT handler when a controlling terminal exists
     (covers run/plan/ask with or without the TUI); else steer purely over the
@@ -433,4 +435,6 @@ def make_steer_state(
             pass
     except OSError:
         return file_bridge_steer(session_dir)
-    return install_steer_sigint(events, session_dir, console_view, session_facts, btw_runner)
+    return install_steer_sigint(
+        events, session_dir, console_view, session_facts, btw_runner, config_path
+    )

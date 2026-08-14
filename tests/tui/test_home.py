@@ -360,7 +360,14 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
     from agent6.ui.tui import home
 
     def fake_spawn(
-        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
+        agent6_dir: Path,
+        repo_cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str,
+        spec: str,
+        config_path: object = None,
     ) -> tuple[Path | None, str]:
         if "task B" in task:
             return None, "boom"
@@ -368,7 +375,7 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
 
     monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
 
-    def _no_refusal(repo_cwd: Path, segments: object) -> None:
+    def _no_refusal(repo_cwd: Path, segments: object, config_path: object = None) -> None:
         return None
 
     monkeypatch.setattr(home, "directive_model_refusal", _no_refusal)  # type: ignore[attr-defined]
@@ -380,7 +387,14 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
 
     # reversed: first lane fails, second succeeds -- lane 1's diagnostic survives
     def fake_spawn_rev(
-        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, preset: str, spec: str
+        agent6_dir: Path,
+        repo_cwd: Path,
+        mode: str,
+        task: str,
+        *,
+        preset: str,
+        spec: str,
+        config_path: object = None,
     ) -> tuple[Path | None, str]:
         if "task A" in task:
             return None, "boom"
@@ -529,7 +543,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
 
     calls: list[str] = []
 
-    def _fake_merge(cwd: Path, session_id: str) -> tuple[bool, str]:
+    def _fake_merge(cwd: Path, session_id: str, config_path: object = None) -> tuple[bool, str]:
         calls.append(session_id)
         return True, "merged"
 
@@ -680,7 +694,7 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     monkeypatch.chdir(tmp_path)
     seen: list[Path] = []
 
-    def _capture(base: Path, _cwd: Path) -> None:
+    def _capture(base: Path, _cwd: Path, _cp: object = None) -> None:
         seen.append(base)
 
     monkeypatch.setattr(home, "run_home", _capture)

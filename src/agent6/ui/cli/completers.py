@@ -36,6 +36,14 @@ from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 from agent6.viewmodel.config_view import build_config_view
 
 
+def _explicit_config(kw: dict[str, object]) -> Path | None:
+    """The ``--config FILE`` already typed on the line being completed, so
+    completions describe the config the command will actually run under."""
+    parsed = kw.get("parsed_args")
+    raw = getattr(parsed, "config", None)
+    return raw if isinstance(raw, Path) else None
+
+
 def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
     """Suggestions or nothing -- never an exception.
 
@@ -85,12 +93,12 @@ def _complete_models(
     return [m for m in _models_for(None, provider) if m.startswith(prefix)]
 
 
-def _all_parallel_model_names() -> list[str]:
+def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
     """Model ids a `/parallel` lane can actually run: the WORKER provider's
     catalog (lanes inherit the worker provider; only the model is overridden per
     lane), from the same live + configured source `agent6 model` completes from."""
     try:
-        eff = load_effective(Path.cwd(), None)
+        eff = load_effective(Path.cwd(), config_path)
     except ConfigError:
         return []
     worker = eff.config.models.worker
@@ -100,13 +108,14 @@ def _all_parallel_model_names() -> list[str]:
 
 
 @_never_raises
-def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
+def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
     """argcomplete for `run --parallel`: the worker provider's model ids,
     completing the token after the last comma so a `m1,m2,...` list completes
     member by member (an integer lane count is typed, not completed)."""
     head, sep, frag = prefix.rpartition(",")
     lead = head + sep  # "" for the first/only model, "m1," while extending a list
-    return sorted(lead + m for m in _all_parallel_model_names() if m.startswith(frag))
+    names = _all_parallel_model_names(_explicit_config(kw))
+    return sorted(lead + m for m in names if m.startswith(frag))
 
 
 # Values TAB must not offer even though the schema allows them, keyed by leaf.
@@ -115,12 +124,12 @@ def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
 _WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozenset({"none"})}
 
 
-def _config_enum_choices() -> dict[str, tuple[str, ...]]:
+def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str, ...]]:
     """Every enum leaf's allowed values, read from the schema through the same
     view the config surfaces render. A hand-kept copy drifted: leaves added
     since offered nothing on TAB."""
     try:
-        view = build_config_view(load_effective(Path.cwd(), None))
+        view = build_config_view(load_effective(Path.cwd(), config_path))
     except ConfigError:
         # A config that does not load still gets completion: the schema is
         # what carries the choices, and a default config is all schema.
@@ -146,7 +155,7 @@ def _user_preset_names() -> list[str]:
 
 
 @_never_raises
-def _complete_config_keys(prefix: str, *, settable: bool = True, **_kw: object) -> list[str]:
+def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -> list[str]:
     """argcomplete: known dotted config leaf paths (effective + enum keys).
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already).
@@ -156,12 +165,13 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **_kw: object) 
     set yet) and `[presets.*]` paths (stripped before validation) are inputs
     `get` rejects, and a completer must offer what its command accepts.
     """
+    explicit = _explicit_config(kw)
     try:
-        keys = set(leaf_keys(load_effective(Path.cwd(), None)))
+        keys = set(leaf_keys(load_effective(Path.cwd(), explicit)))
     except ConfigError:
         keys = set()
     if settable:
-        keys |= set(_config_enum_choices())
+        keys |= set(_config_enum_choices(explicit))
     if settable and prefix.startswith("preset"):
         pool = {k for k in keys if k != "preset"}
         keys |= {f"presets.{name}.{k}" for name in _user_preset_names() for k in pool}
@@ -186,7 +196,8 @@ def _complete_config_values(
     key = getattr(parsed_args, "key", "") or ""
     if key == "preset":
         return _complete_presets(prefix)
-    choices = list(_config_enum_choices().get(key, ()))
+    raw = getattr(parsed_args, "config", None)
+    choices = list(_config_enum_choices(raw if isinstance(raw, Path) else None).get(key, ()))
     if key.endswith(".extra_body"):
         choices += list(_EXTRA_BODY_RECIPES)
     return [v for v in choices if v.startswith(prefix)]

@@ -230,7 +230,9 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
     return "\n".join(lines)
 
 
-def directive_model_refusal(cwd: Path, segments: Sequence[Segment]) -> str | None:
+def directive_model_refusal(
+    cwd: Path, segments: Sequence[Segment], config_path: Path | None = None
+) -> str | None:
     """Refuse a `/parallel` directive that names a model the configured
     providers' cache says doesn't exist, before any spawn (the surface's normal
     error path, nothing spawned). None = every model checks out, or there is no
@@ -238,7 +240,7 @@ def directive_model_refusal(cwd: Path, segments: Sequence[Segment]) -> str | Non
     lane's own preflight warns). A malformed or over-`max_lanes` spec surfaces
     its grammar error."""
     try:
-        cfg = load_effective(cwd).config
+        cfg = load_effective(cwd, config_path).config
     except ConfigError:
         return None  # a broken config is its own separate error; don't mask it here
     try:

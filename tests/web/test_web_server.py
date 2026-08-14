@@ -238,7 +238,9 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
     calls: list[tuple[Path, str, str]] = []
 
-    def fake_resume(cwd: Path, session_id: str, *, steer: str = "") -> str:
+    def fake_resume(
+        cwd: Path, session_id: str, *, steer: str = "", config_path: object = None
+    ) -> str:
         calls.append((cwd, session_id, steer))
         return ""
 

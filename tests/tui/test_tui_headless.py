@@ -628,7 +628,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
 
     spawned: list[tuple[str, str]] = []
 
-    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "") -> str:
+    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "", config_path: object = None) -> str:
         spawned.append((rid, steer))
         return ""
 
@@ -1134,7 +1134,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
 
     spawned: list[tuple[str, str]] = []
 
-    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "") -> str:
+    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "", config_path: object = None) -> str:
         spawned.append((rid, steer))
         return ""
 
