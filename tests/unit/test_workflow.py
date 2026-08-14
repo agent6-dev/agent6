@@ -6273,3 +6273,33 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None
         wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
     assert [e for e in events if e["type"] == "loop.auto_commit"] == []
     assert turn.committed is False
+
+
+def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
+    """The failure reporter's two directions: a benign nothing-changed variant
+    stays silent (no failure event for a non-failure), and a real GitError
+    emits loop.auto_commit.failed carrying the error and the subject. A
+    regression in the benign filter would spam failure events on every clean
+    green, or hide real failures."""
+    from agent6.git_ops import GitError
+
+    events: list[dict[str, Any]] = []
+    wf = _wf(root=tmp_path, mode="run", commit_per_step=True)
+
+    def _capture(_type: str, **f: Any) -> None:
+        events.append({"type": _type, **f})
+
+    wf.events = MagicMock()
+    wf.events.emit = _capture  # type: ignore[method-assign]
+
+    for benign in ("nothing to commit, working tree clean", "no changes added to commit"):
+        wf._report_auto_commit_failure(GitError(benign), "s", iteration=1)  # pyright: ignore[reportPrivateUsage]
+    assert events == []  # a non-failure never claims to be one
+
+    wf._report_auto_commit_failure(  # pyright: ignore[reportPrivateUsage]
+        GitError("fatal: unable to write new index file"), "agent6 iter 2: fix", iteration=2
+    )
+    (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
+    assert evt["iteration"] == 2
+    assert "unable to write" in evt["error"]
+    assert evt["commit_subject"] == "agent6 iter 2: fix"
