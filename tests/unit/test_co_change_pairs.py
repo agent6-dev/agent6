@@ -105,3 +105,13 @@ def test_co_change_pairs_skips_merge_commits(tmp_path: Path) -> None:
     # But a<->c should NOT be present (only the merge commit "linked"
     # them, and merges are excluded).
     assert ("a.py", "c.py") not in pair_set
+
+
+def test_co_change_pairs_counts_extensionless_files(tmp_path: Path) -> None:
+    """A dotless, slashless path (Makefile, LICENSE) is a real file: pairs
+    involving it must count, not be silently filtered out."""
+    _setup_repo(tmp_path)
+    for i in range(3):
+        _commit(tmp_path, {"Makefile": f"all:{i}\n", "build.py": f"# {i}\n"}, f"c{i}")
+    pairs = co_change_pairs(tmp_path, min_pair_count=2)
+    assert ("Makefile", "build.py", 3) in pairs

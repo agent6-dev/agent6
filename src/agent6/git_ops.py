@@ -1352,9 +1352,8 @@ def co_change_pairs(
     # commit. Split on NUL to get per-commit file lists.
     pair_counter: Counter[tuple[str, str]] = Counter()
     for chunk in res.stdout.split("\x00"):
-        files = [line.strip() for line in chunk.strip().splitlines() if line.strip()]
-        # Skip binary-marker lines and any non-file entries (defensive).
-        files = sorted(set(f for f in files if "/" in f or "." in f))
+        # --name-only emits only paths and blank lines; blanks are gone above.
+        files = sorted({line.strip() for line in chunk.strip().splitlines() if line.strip()})
         if len(files) < 2:
             continue
         for i in range(len(files)):
