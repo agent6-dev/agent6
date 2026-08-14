@@ -555,6 +555,20 @@ def branch_exists(path: Path, name: str) -> bool:
     return _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False).ok
 
 
+def valid_branch_name(name: str) -> bool:
+    """True if *name* is usable as a git branch name (`git check-ref-format
+    --branch`), the strictest of the ref roles a run id fills.
+
+    A run's id becomes a branch (`agent6/<id>`) and a chain ref
+    (`refs/agent6/<id>/head`); a value git's ref grammar rejects (a space, any of
+    `~^:?*[\\`, `..`, `@{`, a leading `-`/`.`, a trailing `.`/`.lock`, ...) makes
+    every auto/final commit's `update-ref` fail. A valid branch name is safe in
+    both roles, so this is the one check `validate_explicit_session_id` needs. A
+    pure string check with no repo side effects; run from "/" (always exists),
+    like `clone_repo`."""
+    return _run(Path("/"), "check-ref-format", "--branch", name, check=False).ok
+
+
 def list_run_branches(path: Path) -> tuple[str, ...]:
     """Local branches under the `agent6/` namespace (run branches), sorted."""
     res = _run(path, "for-each-ref", "--format=%(refname:short)", "refs/heads/agent6/", check=False)

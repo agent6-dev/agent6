@@ -271,6 +271,56 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     assert "runs merge" not in out
 
 
+def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """branch_per_run named agent6/<id>, but no commit ever landed on it -- the
+    chain's update-ref failed and the loop swallowed the error. The footer used
+    to print "changes are on agent6/<id>" and tell the operator to
+    `agent6 sessions merge` a branch that does not exist, while the run reported
+    success and the edits sat uncommitted. It must state the truth instead."""
+    import subprocess as sp
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    # The agent's edit is left in the tree; no agent6/miss branch was ever cut.
+    (repo / "work.txt").write_text("stranded agent work\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    layout = _layout(
+        tmp_path,
+        "miss",
+        [
+            {"type": "session.start", "session_id": "miss", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    layout.manifest_path.write_text(
+        json.dumps({"run_branch": "agent6/miss", "base_branch": "main"}), encoding="utf-8"
+    )
+    result = SessionResult(
+        completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
+    )
+    print_session_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "changes are on agent6/miss" not in out
+    assert "sessions merge" not in out  # never advertise merge for a missing branch
+    assert "no commit reached agent6/miss" in out  # the truthful warning
+    assert "uncommitted in the working tree" in out
+
+
 def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -293,6 +343,13 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
         )
 
     monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
+
+    # Being ON the branch means it exists; the footer only names it once its
+    # commits actually landed.
+    def _branch_present(_p: Path, _n: str) -> bool:
+        return True
+
+    monkeypatch.setattr(_finalize, "branch_exists", _branch_present)
     result = SessionResult(
         completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
     )

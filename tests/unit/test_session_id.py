@@ -28,6 +28,50 @@ def test_validate_explicit_run_id_rejects_traversal() -> None:
     assert validate_explicit_session_id(friendly_token())
 
 
+def test_validate_explicit_run_id_rejects_git_forbidden_names() -> None:
+    """The id becomes a branch (`agent6/<id>`) and a chain ref
+    (`refs/agent6/<id>/head`); a value git's ref grammar rejects must be refused
+    up front, not accepted into a run whose every commit's `update-ref` then
+    fails while it reports success. The traversal check alone misses all of
+    these (no separator, no dot name)."""
+    for bad in (
+        "has space",
+        "ti~lde",
+        "ca^ret",
+        "col:on",
+        "quest?ion",
+        "star*x",
+        "brack[et",
+        "end.lock",
+        "trailing.",
+        "dou..ble",
+        "at@{brace",
+        "-leading",
+        ".leading",
+    ):
+        with pytest.raises(SessionIdError):
+            validate_explicit_session_id(bad)
+
+
+def test_validate_explicit_run_id_accepts_only_ids_git_can_ref(tmp_path: Path) -> None:
+    """Whatever the validator accepts must actually work as BOTH refs the run
+    builds -- the guarantee the traversal-only check could not make."""
+    import subprocess
+
+    def git_accepts(ref: str) -> bool:
+        return (
+            subprocess.run(
+                ["git", "check-ref-format", ref], capture_output=True, cwd=tmp_path, check=False
+            ).returncode
+            == 0
+        )
+
+    for good in ("my-run-1", "sunny-otter-K4Q7B2", "machine-foo", "a.b.c", "UPPER_case-1"):
+        assert validate_explicit_session_id(good) == good
+        assert git_accepts(f"refs/heads/agent6/{good}"), good  # the run branch
+        assert git_accepts(f"refs/agent6/{good}/head"), good  # the chain ref
+
+
 def test_friendly_token_shape() -> None:
     for _ in range(50):
         rid = friendly_token()

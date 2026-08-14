@@ -246,6 +246,15 @@ def print_session_end(
     _print_stale_gate(result, reporter=reporter)
     reporter.out(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
+    _print_run_branch_footer(result, layout=layout, reporter=reporter)
+
+
+def _print_run_branch_footer(
+    result: SessionResult, *, layout: SessionLayout, reporter: Reporter
+) -> None:
+    """The where-are-my-changes footer: merged, on the run branch, uncommitted,
+    or a resume hint. Every claim is checked against git reality -- merge/diff
+    are only offered for a branch that actually exists."""
     run_branch = ""
     base_branch = ""
     merged_into = ""
@@ -260,7 +269,7 @@ def print_session_end(
         # have deleted it); don't tell the operator to merge it again.
         reporter.out(f"\nchanges merged into {merged_into}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
-    elif result.completed and run_branch:
+    elif result.completed and run_branch and branch_exists(Path.cwd(), run_branch):
         reporter.out(f"\nchanges are on {run_branch}")
         reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
@@ -272,6 +281,26 @@ def print_session_end(
             current = git_status(Path.cwd()).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
+    elif result.completed and run_branch:
+        # branch_per_run promised agent6/<id> but no commit ever reached it (an
+        # update-ref failure the loop's best-effort commit absorbed, or nothing
+        # to commit). A dirty tree means edits are stranded (a real failure); a
+        # clean tree means the run simply recorded nothing.
+        dirty = False
+        with contextlib.suppress(GitError):
+            dirty = not git_status(Path.cwd()).is_clean
+        if dirty:
+            reporter.out(
+                f"\nWARNING: the run finished but no commit reached {run_branch}"
+                " -- the branch was never created."
+            )
+            reporter.out(
+                "  Edits are left uncommitted in the working tree (the commit failed;"
+                " see the run log)."
+            )
+            reporter.out(f"  retry after fixing the cause:  agent6 resume {layout.session_id}")
+        else:
+            reporter.out("\nno changes were committed")
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
 

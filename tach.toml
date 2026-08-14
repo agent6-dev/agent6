@@ -464,8 +464,9 @@ depends_on = []
 path = "agent6.sessions.id"
 # The bucket layout: minting an id means checking the directory it would name,
 # so the generator and the guard sit together rather than each caller spelling
-# the path out.
-depends_on = ["agent6._data", "agent6.graph.ulid", "agent6.sessions.layout"]
+# the path out. git_ops: an explicit --session-id must be a valid git branch
+# name (it becomes agent6/<id> and refs/agent6/<id>/head) before state creation.
+depends_on = ["agent6._data", "agent6.git_ops", "agent6.graph.ulid", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6._data"

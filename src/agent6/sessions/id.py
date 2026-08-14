@@ -23,6 +23,7 @@ import os
 from pathlib import Path
 
 from agent6._data.words import ADJECTIVES, NOUNS
+from agent6.git_ops import valid_branch_name
 from agent6.graph.ulid import new_ulid
 from agent6.sessions.layout import bucket_dir
 
@@ -40,16 +41,29 @@ class SessionIdError(Exception):
 
 
 def validate_explicit_session_id(session_id: str) -> str:
-    """Return *session_id* if it is a safe single path component, else raise.
+    """Return *session_id* if it can name both a run directory and a git ref,
+    else raise. Checked BEFORE any run state is created, since the id fills both
+    roles at once and a value that fails either produces a broken run.
 
-    A run id becomes a directory name under the state dir (``state_dir/<subdir>/
-    <session_id>`). An operator `--session-id` with a separator, `..``, or an
-    absolute path would place run state outside the state dir; reject those so an
-    explicit id can only ever name a run, never a traversal. Generated ids are
-    slug-safe by construction and skip this."""
+    - DIRECTORY: a run id becomes a directory name under the state dir
+      (``state_dir/<subdir>/<session_id>``). A separator, `.`/`..`, or an
+      absolute path would place run state outside the state dir.
+    - GIT REF: the run's commits land on a branch (`agent6/<id>`) and a chain
+      ref (`refs/agent6/<id>/head`). A value git's ref grammar rejects (a space,
+      any of `~^:?*[\\`, `..`, `@{`, a leading `-`/`.`, a trailing `.`/`.lock`)
+      makes every commit's `update-ref` fail; caught here, the run never starts
+      rather than reporting success while its work stays uncommitted.
+
+    Generated ids are slug-safe by construction and skip this."""
     if not session_id or session_id in (".", "..") or "/" in session_id or "\\" in session_id:
         raise SessionIdError(
             f"invalid --session-id {session_id!r}: must be a single name with no '/', '\\', or '..'"
+        )
+    if not valid_branch_name(session_id):
+        raise SessionIdError(
+            f"invalid --session-id {session_id!r}: must be usable as a git branch name "
+            "(no spaces or any of ~^:?*[\\, no '..' or '@{', "
+            "no leading '-'/'.', no trailing '.' or '.lock')"
         )
     return session_id
 
