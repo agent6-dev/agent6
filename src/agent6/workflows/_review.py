@@ -31,6 +31,7 @@ from agent6.providers import (
     output_cap_truncated,
 )
 from agent6.tools.results import ToolResult
+from agent6.workflows._llm_json import extract_json
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
     Finding,
@@ -89,55 +90,6 @@ def _build_user_message(ctx: ReviewContext) -> str:
         parts.append(f"ALREADY RAISED (do not repeat): {already}")
     parts.append(f"DIFF:\n{ctx.diff[:60_000]}")
     return "\n\n".join(parts)
-
-
-def _balanced_objects(text: str) -> list[str]:
-    """Every TOP-LEVEL balanced ``{...}`` span in *text* (brace depth, honoring
-    string literals + escapes), so prose / markdown fences / a stray pre-amble
-    object don't truncate or mis-capture the real verdict."""
-    spans: list[str] = []
-    depth = 0
-    start: int | None = None
-    in_str = esc = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start is not None:
-                spans.append(text[start : i + 1])
-                start = None
-    return spans
-
-
-def _extract_json(text: str) -> dict[str, Any] | None:
-    """Parse the reviewer's reply as the verdict object, tolerating fences/prose
-    and a stray object before the real one: prefer the LAST balanced object that
-    carries a ``verdict``/``findings`` key, else the last parseable dict."""
-    objs: list[dict[str, Any]] = []
-    for span in _balanced_objects(text):
-        try:
-            obj = json.loads(span)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(obj, dict):
-            objs.append(obj)
-    for obj in reversed(objs):
-        if "verdict" in obj or "findings" in obj:
-            return obj
-    return objs[-1] if objs else None
 
 
 def _coerce_findings(raw: object) -> tuple[Finding, ...]:
@@ -199,7 +151,7 @@ def structured_review(
         )
     except ProviderError as exc:
         return ReviewVerdict(seat=seat, model=model, verdict="pass", error=f"provider: {exc}")
-    obj = _extract_json(resp.text)
+    obj = extract_json(resp.text, prefer=("verdict", "findings"))
     if obj is None:
         return ReviewVerdict(seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp))
     return _verdict_from_obj(obj, seat, model)
@@ -249,7 +201,7 @@ def explore_review(
             return ReviewVerdict(seat=seat, model=model, verdict="pass", error=f"provider: {exc}")
         messages.append({"role": "assistant", "content": resp.raw.get("content") or []})
         if not resp.tool_uses:
-            obj = _extract_json(resp.text)
+            obj = extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is None:
                 return ReviewVerdict(
                     seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
@@ -260,7 +212,7 @@ def explore_review(
         # verdict, skip the dispatches: no model call follows to consume their
         # results, so executing them only spends tool time on an abstention.
         if i == max_iters - 1:
-            obj = _extract_json(resp.text)
+            obj = extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is not None and ("verdict" in obj or "findings" in obj):
                 return _verdict_from_obj(obj, seat, model)
             break

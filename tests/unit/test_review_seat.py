@@ -11,11 +11,11 @@ import pytest
 
 from agent6.providers import Provider, ProviderError
 from agent6.tools.results import RawResult, ToolResult
+from agent6.workflows._llm_json import extract_json
 from agent6.workflows._panel import ReviewContext
 from agent6.workflows._review import (
     ReviewSeat,
     _coerce_findings,  # pyright: ignore[reportPrivateUsage]
-    _extract_json,  # pyright: ignore[reportPrivateUsage]
     run_panel,
     structured_review,
 )
@@ -371,12 +371,15 @@ def test_extract_json_prefers_the_verdict_object_over_a_stray_preamble() -> None
         'I will think first {"note": "scratch"} and here is my answer:\n'
         '```json\n{"verdict": "pass", "summary": "ok", "findings": []}\n```\n'
     )
-    obj = _extract_json(text)
+    obj = extract_json(text, prefer=("verdict", "findings"))
     assert obj is not None and obj["verdict"] == "pass" and obj["summary"] == "ok"
 
 
 def test_extract_json_ignores_braces_inside_strings() -> None:
-    obj = _extract_json('{"verdict": "block", "summary": "a } brace { in text", "findings": []}')
+    obj = extract_json(
+        '{"verdict": "block", "summary": "a } brace { in text", "findings": []}',
+        prefer=("verdict", "findings"),
+    )
     assert obj is not None and obj["verdict"] == "block"
 
 

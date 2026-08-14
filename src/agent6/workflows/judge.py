@@ -15,7 +15,6 @@ judge call raises.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -23,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from agent6.budget import BudgetExceeded
 from agent6.prompts.judge import JUDGE_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError
+from agent6.workflows._llm_json import extract_json
 
 
 class JudgeError(Exception):
@@ -73,54 +73,6 @@ def _build_user_message(candidates: list[CandidateBrief]) -> str:
     return "\n\n".join(parts)
 
 
-def _balanced_objects(text: str) -> list[str]:
-    """Every top-level balanced ``{...}`` span in *text* (brace depth, honoring
-    string literals + escapes), tolerating prose/markdown fences around the
-    real verdict object. Mirrors `_review._balanced_objects`."""
-    spans: list[str] = []
-    depth = 0
-    start: int | None = None
-    in_str = esc = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start is not None:
-                spans.append(text[start : i + 1])
-                start = None
-    return spans
-
-
-def _extract_json(text: str) -> dict[str, Any] | None:
-    """Parse the judge's reply as the verdict object: prefer the LAST balanced
-    object carrying a ``ranking`` key, else the last parseable dict."""
-    objs: list[dict[str, Any]] = []
-    for span in _balanced_objects(text):
-        try:
-            obj = json.loads(span)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if isinstance(obj, dict):
-            objs.append(obj)
-    for obj in reversed(objs):
-        if "ranking" in obj:
-            return obj
-    return objs[-1] if objs else None
-
-
 def _parse_verdict(obj: dict[str, Any], session_ids: set[str]) -> CompareVerdict | None:
     """None if ``ranking`` isn't a list of strings naming exactly `session_ids`."""
     ranking_raw = obj.get("ranking")
@@ -168,7 +120,7 @@ def compare(
             # rank() falls back to mechanical ranking.
             last_err = f"judge budget exhausted ({model}): {exc}"
             continue
-        obj = _extract_json(resp.text)
+        obj = extract_json(resp.text, prefer=("ranking",))
         if obj is None:
             last_err = f"unparseable judge output ({model})"
             continue
