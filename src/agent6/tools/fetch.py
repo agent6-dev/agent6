@@ -84,11 +84,16 @@ class Checked:
     host: str
 
     def prompt(self) -> str:
-        """The approval line: the parsed host, never the raw URL, so the name
+        """The approval line: the parsed host (never the raw URL, so the name
         shown is exactly the one the connection is proved against and the one
-        `fetch_hosts` would have to name."""
-        path = urlsplit(self.url).path or "/"
-        return f"{self.host} {path[:200]}"
+        `fetch_hosts` would have to name), then the full path and query. A GET
+        carries data out in its query string, so clipping the path or dropping
+        the query is consent to an exfiltration the operator never saw."""
+        parts = urlsplit(self.url)
+        tail = parts.path or "/"
+        if parts.query:
+            tail += f"?{parts.query}"
+        return f"{self.host} {tail}"
 
 
 def check_url(url: str) -> Checked:

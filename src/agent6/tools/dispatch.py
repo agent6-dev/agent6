@@ -720,7 +720,9 @@ class ToolDispatcher:
         server grants that server, never the command tools and never a sibling
         server. `approve = "yes"` (or `--auto-approve`) is the standing consent.
         The ARGUMENTS are in the prompt because they are the whole risk: the
-        server's actions are fixed, what the model chose to send is not.
+        server's actions are fixed, what the model chose to send is not. They go
+        in WHOLE, never the log preview: a clipped arg is consent to an
+        operation the operator never saw.
         """
         server, _tool = split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
@@ -735,7 +737,7 @@ class ToolDispatcher:
             raise ToolError(f"{name} is not available ({server!r} was denied for this session)")
         if entry.approve == "yes":
             return
-        args = json.dumps(truncate_args(raw_input), ensure_ascii=False, sort_keys=True)
+        args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
         if not self._approver(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
             raise ToolDenied(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"

@@ -73,6 +73,29 @@ def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: Path) ->
     assert scope == "mcp.fake"
 
 
+def test_the_prompt_carries_the_arguments_in_full(tmp_path: Path) -> None:
+    """The arguments ARE the risk, so the consent line carries them whole. The
+    telemetry preview (strings clipped at 200 chars, lists at 10 items) had
+    leaked into this boundary, so the operator approved a call whose payload --
+    the only part the model controls -- they never saw."""
+    seen: list[str] = []
+
+    def _capture(prompt: str, /, *, scope: str | None = None) -> bool:
+        seen.append(prompt)
+        return False  # deny after the prompt is built; the server never sees it
+
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=_capture)
+        with pytest.raises(ToolDenied):
+            d.dispatch("mcp__fake__echo", {"text": "x" * 500, "items": list(range(20))})
+    finally:
+        mgr.close()
+    assert len(seen) == 1
+    assert "x" * 500 in seen[0], "a clipped string is consent to an unseen payload"
+    assert "16, 17, 18, 19]" in seen[0], "the list was cut at 10 items"
+
+
 def test_a_denied_call_never_reaches_the_server(tmp_path: Path) -> None:
     mgr = _manager()
     try:

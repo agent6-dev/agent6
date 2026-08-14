@@ -124,7 +124,8 @@ def test_the_allow_list_matches_hosts_not_prefixes(
 
 def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     """The list is the standing approval; a host off it is the operator's call.
-    The ask shows the parsed host and path, never the raw URL."""
+    The ask shows the parsed host plus the full path and query (the query is a
+    GET's exfil channel), never the raw URL."""
     asked: list[str] = []
 
     def _deny(prompt: str, /, *, scope: str | None = None) -> bool:
@@ -134,7 +135,7 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)
     with pytest.raises(ToolDenied, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
-    assert asked == ["Allow fetch: example.com /x"]
+    assert asked == ["Allow fetch: example.com /x?k=v"]
 
 
 def test_an_allowed_host_is_never_prompted_for(
@@ -172,6 +173,18 @@ def test_a_url_naming_one_host_and_dialling_another_is_refused() -> None:
     `docs.python.org` while the query string goes to `evil.example`."""
     with pytest.raises(FetchRefused, match="credentials"):
         check_url("https://docs.python.org@evil.example/exfil?k=SECRET")
+
+
+def test_the_approval_prompt_shows_the_full_path_and_query() -> None:
+    """The consent line is the operator's whole view of the operation, and a GET
+    carries data out in its query string. The path was clipped at 200 chars and
+    the query dropped entirely, so `example.com /doc` was consent to
+    `?leak=SECRET` -- the exact exfiltration the fetch gate exists to catch."""
+    secret = "SECRET_EXFIL_TOKEN"
+    long_path = "/" + "p" * 300
+    prompt = check_url(f"https://example.com{long_path}?leak={secret}").prompt()
+    assert secret in prompt, "the query string is the exfil channel; it must be shown"
+    assert long_path in prompt, "a clipped path hides where the GET really goes"
 
 
 def test_allowing_every_command_does_not_allow_the_network(
