@@ -99,22 +99,25 @@ def effective_user() -> RealUser:
     return RealUser(uid=uid, gid=gid, name=name, home=home, via_sudo=False)
 
 
-def global_config_dir(user: RealUser | None = None) -> Path:
-    """The agent6 global config directory.
-
-    Precedence: ``AGENT6_CONFIG_HOME`` > ``$XDG_CONFIG_HOME/agent6`` (only
-    when not running through sudo, where root's XDG would be wrong) >
-    ``<real-user-home>/.config/agent6``.
-    """
-    override = os.environ.get(_GLOBAL_DIR_ENV)
+def _user_dir(user: RealUser | None, override_env: str, xdg_env: str, *home_parts: str) -> Path:
+    """One precedence dance for every agent6 user dir: ``<override_env>`` >
+    ``$<xdg_env>/agent6`` (only when not running through sudo, where root's
+    XDG would be wrong) > ``<real-user-home>/<home_parts>/agent6``."""
+    override = os.environ.get(override_env)
     if override:
         return Path(override).expanduser()
     user = user or effective_user()
     if not user.via_sudo:
-        xdg = os.environ.get("XDG_CONFIG_HOME")
+        xdg = os.environ.get(xdg_env)
         if xdg:
             return Path(xdg) / "agent6"
-    return user.home / ".config" / "agent6"
+    return user.home.joinpath(*home_parts) / "agent6"
+
+
+def global_config_dir(user: RealUser | None = None) -> Path:
+    """The agent6 global config directory: ``AGENT6_CONFIG_HOME`` >
+    ``$XDG_CONFIG_HOME/agent6`` > ``~/.config/agent6``."""
+    return _user_dir(user, _GLOBAL_DIR_ENV, "XDG_CONFIG_HOME", ".config")
 
 
 def global_config_path(user: RealUser | None = None) -> Path:
@@ -139,45 +142,22 @@ _CACHE_DIR_ENV = "AGENT6_CACHE_HOME"  # points at the agent6 cache dir itself
 
 
 def cache_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user cache directory (for non-authoritative, regenerable data).
-
-    Precedence mirrors :func:`global_config_dir`: ``AGENT6_CACHE_HOME`` >
-    ``$XDG_CACHE_HOME/agent6`` (only when not running through sudo) >
-    ``<real-user-home>/.cache/agent6``. Holds throwaway caches such as the
-    provider model-list snapshots used for shell completion; safe to delete.
-    """
-    override = os.environ.get(_CACHE_DIR_ENV)
-    if override:
-        return Path(override).expanduser()
-    user = user or effective_user()
-    if not user.via_sudo:
-        xdg = os.environ.get("XDG_CACHE_HOME")
-        if xdg:
-            return Path(xdg) / "agent6"
-    return user.home / ".cache" / "agent6"
+    """The agent6 user cache directory: ``AGENT6_CACHE_HOME`` >
+    ``$XDG_CACHE_HOME/agent6`` > ``~/.cache/agent6``. Holds throwaway,
+    regenerable data such as the provider model-list snapshots used for
+    shell completion; safe to delete."""
+    return _user_dir(user, _CACHE_DIR_ENV, "XDG_CACHE_HOME", ".cache")
 
 
 _DATA_DIR_ENV = "AGENT6_DATA_HOME"  # points at the agent6 data dir itself
 
 
 def data_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user data directory (operator-installed durable content).
-
-    Precedence mirrors :func:`cache_dir`: ``AGENT6_DATA_HOME`` >
-    ``$XDG_DATA_HOME/agent6`` (only when not running through sudo) >
-    ``<real-user-home>/.local/share/agent6``. Holds installed skills
-    (``<data>/skills/<name>/``); unlike the cache it is authoritative and
-    not regenerable.
-    """
-    override = os.environ.get(_DATA_DIR_ENV)
-    if override:
-        return Path(override).expanduser()
-    user = user or effective_user()
-    if not user.via_sudo:
-        xdg = os.environ.get("XDG_DATA_HOME")
-        if xdg:
-            return Path(xdg) / "agent6"
-    return user.home / ".local" / "share" / "agent6"
+    """The agent6 user data directory: ``AGENT6_DATA_HOME`` >
+    ``$XDG_DATA_HOME/agent6`` > ``~/.local/share/agent6``. Holds installed
+    skills (``<data>/skills/<name>/``); unlike the cache it is authoritative
+    and not regenerable."""
+    return _user_dir(user, _DATA_DIR_ENV, "XDG_DATA_HOME", ".local", "share")
 
 
 # Per-repo agent6 state lives OUT of the workspace, under an XDG state base,
@@ -187,21 +167,10 @@ _STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itse
 
 
 def state_base(user: RealUser | None = None) -> Path:
-    """The agent6 state BASE directory (per-repo config + run state).
-
-    Precedence: ``AGENT6_STATE_HOME`` > ``$XDG_STATE_HOME/agent6`` (only when
-    not running through sudo, where root's XDG would be wrong) >
-    ``<real-user-home>/.local/state/agent6``. Each repo gets ``<base>/<repo-id>/``.
-    """
-    override = os.environ.get(_STATE_DIR_ENV)
-    if override:
-        return Path(override).expanduser()
-    user = user or effective_user()
-    if not user.via_sudo:
-        xdg = os.environ.get("XDG_STATE_HOME")
-        if xdg:
-            return Path(xdg) / "agent6"
-    return user.home / ".local" / "state" / "agent6"
+    """The agent6 state BASE directory (per-repo config + run state):
+    ``AGENT6_STATE_HOME`` > ``$XDG_STATE_HOME/agent6`` >
+    ``~/.local/state/agent6``. Each repo gets ``<base>/<repo-id>/``."""
+    return _user_dir(user, _STATE_DIR_ENV, "XDG_STATE_HOME", ".local", "state")
 
 
 def private_dirs() -> tuple[Path, ...]:

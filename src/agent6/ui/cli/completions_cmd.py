@@ -196,19 +196,11 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     return 0
 
 
-def _install_fish(code: str) -> int:
-    target = _fish_completions_path()
+def _install_autoloaded(code: str, target: Path, shell: str) -> int:
+    """fish and xonsh share the auto-load model: write the file, done."""
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(code, encoding="utf-8")
-    print(f"[agent6] wrote {target} (fish loads it automatically)")
-    return 0
-
-
-def _install_xonsh(code: str) -> int:
-    target = _xonsh_rc_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(code, encoding="utf-8")
-    print(f"[agent6] wrote {target} (xonsh loads it automatically)")
+    print(f"[agent6] wrote {target} ({shell} loads it automatically)")
     return 0
 
 
@@ -228,7 +220,7 @@ def cmd_completions(shell_arg: str | None, *, print_only: bool) -> int:
         print(code)
         return 0
     if shell == "fish":
-        return _install_fish(code)
+        return _install_autoloaded(code, _fish_completions_path(), "fish")
     if shell == "xonsh":
-        return _install_xonsh(code)
+        return _install_autoloaded(code, _xonsh_rc_path(), "xonsh")
     return _install_bash_zsh(shell, code)

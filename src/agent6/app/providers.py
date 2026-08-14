@@ -321,6 +321,30 @@ class InstrumentedProvider:
         )
 
 
+def _reviewer_seat_provider(
+    cfg: Config,
+    seat: str,
+    *,
+    transcript_sink: TranscriptSink,
+    budget: BudgetTracker,
+    events: EventSink | None,
+) -> Provider:
+    """The reviewer role routed under *seat*'s label, instrumented."""
+    inner = build_role_provider(
+        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat
+    )
+    rm = cfg.models.resolve("reviewer")
+    assert rm is not None  # "reviewer" resolves to the reviewer or worker model
+    return InstrumentedProvider(
+        inner=inner,
+        role=seat,
+        model=rm.model,
+        provider_name=rm.provider,
+        events=events,
+        budget=budget,
+    )
+
+
 def build_critic_provider(
     cfg: Config,
     *,
@@ -333,18 +357,8 @@ def build_critic_provider(
     disabled so Workflow leaves the critic path inert."""
     if cfg.review.trigger == "off":
         return None
-    critic_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="critic"
-    )
-    rm = cfg.models.resolve("reviewer")
-    assert rm is not None  # critic only runs once a worker/reviewer model exists
-    return InstrumentedProvider(
-        inner=critic_inner,
-        role="critic",
-        model=rm.model,
-        provider_name=rm.provider,
-        events=events,
-        budget=budget,
+    return _reviewer_seat_provider(
+        cfg, "critic", transcript_sink=transcript_sink, budget=budget, events=events
     )
 
 
@@ -484,18 +498,8 @@ def build_prompt_reviser_provider(
     """Route the reviewer role as a one-shot prompt reviser."""
     if cfg.prompt.revise_prompt == "off":
         return None
-    reviser_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="prompt_reviser"
-    )
-    rm = cfg.models.resolve("reviewer")
-    assert rm is not None  # reviser only runs once a worker/reviewer model exists
-    return InstrumentedProvider(
-        inner=reviser_inner,
-        role="prompt_reviser",
-        model=rm.model,
-        provider_name=rm.provider,
-        events=events,
-        budget=budget,
+    return _reviewer_seat_provider(
+        cfg, "prompt_reviser", transcript_sink=transcript_sink, budget=budget, events=events
     )
 
 
@@ -509,16 +513,6 @@ def build_summariser_provider(
     """Route the reviewer role as the tier-2 context summariser. Always
     available (context compaction can fire on any run) and cheaper than the
     worker model."""
-    summariser_inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="summariser"
-    )
-    rm = cfg.models.resolve("reviewer")
-    assert rm is not None  # summariser falls back to the worker model
-    return InstrumentedProvider(
-        inner=summariser_inner,
-        role="summariser",
-        model=rm.model,
-        provider_name=rm.provider,
-        events=events,
-        budget=budget,
+    return _reviewer_seat_provider(
+        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
     )
