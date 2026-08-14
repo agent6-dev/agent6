@@ -181,6 +181,27 @@ def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
     assert check_workspace_outside_private_dirs(ordinary) is None
 
 
+def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relocated `[agent6].state_dir` INSIDE the workspace exposes transcripts
+    and keys to jailed commands and stages them into commits, so preflight
+    refuses the overlap in this direction too (masking alone does not stop the
+    auto-commit from staging them)."""
+    from agent6.app.confine import check_workspace_outside_private_dirs
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    a6state = workspace / ".a6state"
+    (cfg_home / "config.toml").write_text(f'[agent6]\nstate_dir = "{a6state}"\n', encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+
+    refusal = check_workspace_outside_private_dirs(workspace)
+    assert refusal is not None and "inside the workspace" in refusal
+
+
 # --- operator grants ---------------------------------------------------------
 
 

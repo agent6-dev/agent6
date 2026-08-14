@@ -144,13 +144,15 @@ def warn_sandbox_gaps(
 
 
 def check_workspace_outside_private_dirs(root: Path) -> str | None:
-    """A refusal message when the workspace IS or sits inside one of agent6's
-    own private dirs, else None.
+    """A refusal message when the workspace and one of agent6's own private dirs
+    (config, state base) OVERLAP in either direction, else None.
 
-    Those dirs are denied to the in-process tools, so a run rooted inside one
-    could not read or write its own workspace: every tool call would refuse.
-    Refusing up front names the reason instead of leaving a run that fails on
-    every path. Not an isolation-level question -- it is wrong everywhere.
+    Workspace inside a private dir: the dir is denied to every in-process tool,
+    so the run could not read or write its own files. Private dir inside the
+    workspace (a relocated `[agent6].state_dir`): its transcripts and keys become
+    readable by jailed commands whose cwd is the workspace, and the auto-commit
+    stages them into the run's commits. Wrong everywhere, not an isolation-level
+    question.
     """
     resolved = root.resolve()
     for private in private_dirs():
@@ -161,6 +163,13 @@ def check_workspace_outside_private_dirs(root: Path) -> str | None:
                 f" directory {str(p)!r}, which is hidden from every tool: the run"
                 " could not read or write its own files. Work in a directory"
                 " outside it."
+            )
+        if p.is_relative_to(resolved):
+            return (
+                f"agent6's private directory {str(p)!r} is inside the workspace"
+                f" {str(resolved)!r}: its transcripts and keys would be readable"
+                " by jailed commands and staged into commits. Keep agent6's state"
+                " base outside the workspace."
             )
     return None
 

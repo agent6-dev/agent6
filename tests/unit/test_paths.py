@@ -48,6 +48,25 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert paths.state_dir(repo, base_override="/custom") == Path("/custom") / rid
 
 
+def test_state_base_honors_the_global_state_dir_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`[agent6].state_dir` relocates the state base. `private_dirs` (jail mask,
+    workspace policy, grant validators) must mask THAT base -- the one the writer
+    uses -- not the XDG default it recomputed before, which left a relocated
+    state dir readable and writable inside a jailed command's workspace."""
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    override = tmp_path / "relocated-state"
+    (cfg_home / "config.toml").write_text(f'[agent6]\nstate_dir = "{override}"\n', encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "xdg-state"))
+
+    assert paths.state_base() == override
+    assert override in paths.private_dirs()
+    assert tmp_path / "xdg-state" not in paths.private_dirs()
+
+
 def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
     a = tmp_path / "a"
     b = tmp_path / "b"

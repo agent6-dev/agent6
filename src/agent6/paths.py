@@ -33,6 +33,7 @@ import contextlib
 import hashlib
 import os
 import pwd
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -166,10 +167,33 @@ def data_dir(user: RealUser | None = None) -> Path:
 _STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itself
 
 
+def _state_dir_override() -> str | None:
+    """`[agent6].state_dir` from the GLOBAL config file, or None.
+
+    `state_base` honors it so every private-path consumer (jail mask, workspace
+    policy, boundary preflight, grant validators) masks the SAME base the
+    writer uses. Best-effort read: config load (`config.layer`) is where a
+    missing or malformed file, or a non-absolute value, fails loudly.
+    """
+    try:
+        data = tomllib.loads(global_config_path().read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    section = data.get("agent6")
+    sd = section.get("state_dir") if isinstance(section, dict) else None
+    return sd if isinstance(sd, str) else None
+
+
 def state_base(user: RealUser | None = None) -> Path:
     """The agent6 state BASE directory (per-repo config + run state):
-    `AGENT6_STATE_HOME` > `$XDG_STATE_HOME/agent6` >
-    `~/.local/state/agent6`. Each repo gets `<base>/<repo-id>/`."""
+    `[agent6].state_dir` (global config) > `AGENT6_STATE_HOME` >
+    `$XDG_STATE_HOME/agent6` > `~/.local/state/agent6`. Each repo gets
+    `<base>/<repo-id>/`.
+
+    The override wins so the base masked from every jail is the one runs
+    actually write to; `state_dir` applies the same precedence for the writer."""
+    if (override := _state_dir_override()) is not None:
+        return Path(override).expanduser()
     return _user_dir(user, _STATE_DIR_ENV, "XDG_STATE_HOME", ".local", "state")
 
 
