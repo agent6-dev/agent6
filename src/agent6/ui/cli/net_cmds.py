@@ -116,9 +116,9 @@ def forward(
     come back out of a namespace, and the parent must stay outside to keep
     accepting, so the fork is the bridge rather than a design flourish.
     """
-    # Refuse before binding, not per connection: the join happens in the child
-    # that handles a connection, so a run with no network to join used to print
-    # "forwarding" and then drop every connection in silence.
+    # Refuse before binding, not per connection: the join happens in the
+    # per-connection child, so a bind-first flow prints "forwarding" and then
+    # drops every connection in silence when there is no network to join.
     if read_session_netns_pid(layout.session_dir) is None:
         print(
             f"agent6 forward: {layout.session_id} has no network of its own to"

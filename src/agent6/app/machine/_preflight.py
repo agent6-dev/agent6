@@ -47,9 +47,8 @@ def machine_network_refusal(
     has_allow = any(s.network == "host" for s in tool_states)
     has_block = any(s.network == "none" for s in tool_states)
     if has_allow and no_tool_net:
-        # Name the ACTUAL value (auto or block), not a hardcoded 'block': the
-        # default is now 'auto', so telling the operator their setting is 'block'
-        # misstates their config on a refusal surface.
+        # Name the ACTUAL value: a hardcoded 'block' misstates an 'auto'
+        # config on a refusal surface.
         if isolation == "hardened":
             return (
                 'a tool state sets network = "host" but sandbox.network ='

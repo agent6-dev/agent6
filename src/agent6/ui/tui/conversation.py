@@ -629,8 +629,8 @@ class ConversationScreen(Screen[None]):
                 live.display = False
                 return
             # Mid-run with nothing streaming (the model is being called, or
-            # tools are executing): the pane used to VANISH here, which read
-            # as frozen for the whole stretch. Keep something moving instead.
+            # tools are executing): a vanished pane reads as frozen for the
+            # whole stretch, so keep something moving.
             body = Text()
             body.append(f"{frame} working… ", style="bold cyan")
             live.display = True

@@ -175,9 +175,9 @@ class SessionSnapshot(BaseModel):
     gateless_ever_committed: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
-    # The last verify observation, so a resumed leg is not born amnesiac: a
-    # green finish resumed and finished untouched used to read "unverified"
-    # (and before that, "the gate is red"). Carried into the new leg only when
+    # The last verify observation, so a resumed leg is not born amnesiac:
+    # without it a green finish resumed and finished untouched reads
+    # "unverified". Carried into the new leg only when
     # head_sha still matches a clean worktree (see _carry_verify_verdict);
     # baseline_ok is about the BASE commit, which resume never moves. Additive
     # defaults: an older snapshot loads as "nothing observed", exactly its truth.

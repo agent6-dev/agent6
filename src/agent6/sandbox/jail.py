@@ -1270,8 +1270,8 @@ class JailSession:
 
         Without a PID namespace the command's escapees (a `setsid` daemon, a
         double-fork) survive the launcher's process-group kill and reparent to
-        this process, so they are swept here -- the bound a per-command launcher
-        used to provide.
+        this process, so they are swept here: the sweep is what bounds a
+        command's process lifetime.
 
         *interrupted* is polled while waiting for the answer. Once it says yes,
         the launcher is asked to hand the command back NOW rather than at
