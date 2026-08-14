@@ -9,10 +9,15 @@ dependency.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import signal
 import sys
 import textwrap
 import threading
+import time
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +27,7 @@ from agent6.tools.mcp_client import (
     MCPManager,
     MCPServerSpec,
 )
+from agent6.types import JailPolicy
 
 
 def _fake_server_argv(
@@ -153,6 +159,25 @@ def test_manager_routes_calls_to_right_server_and_tool() -> None:
         assert echo["content"][0]["text"] == "hi"
         shout = mgr.call(f"{MCP_TOOL_PREFIX}fake__shout", {"text": "hi"})
         assert shout["content"][0]["text"] == "HI"
+    finally:
+        mgr.close()
+
+
+def test_call_tool_rejects_unadvertised_tool_name() -> None:
+    """The tool name rides in from the LLM. A name the server never advertised
+    (one filtered at registration, or a hidden tool the model was told to reach)
+    must be refused HERE, before any tools/call leaves agent6 -- otherwise the
+    fake server below happily echoes it back as a successful result."""
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake", command=_fake_server_argv(), startup_timeout_s=5.0, call_timeout_s=5.0
+            )
+        ]
+    )
+    try:
+        with pytest.raises(MCPError, match="did not advertise"):
+            mgr.call(f"{MCP_TOOL_PREFIX}fake__sneaky", {"text": "hi"})
     finally:
         mgr.close()
 
@@ -359,3 +384,78 @@ def test_an_oversized_echo_result_comes_back_bounded() -> None:
         assert "kept up to" in block["text"]
     finally:
         mgr.close()
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="setsid sweep is Linux-only")
+def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
+    """Closing an MCP server must not leave a process behind. A server with no
+    PID namespace (`hardened`, or `none` here) that forks a `setsid` child puts
+    that child outside the launcher's process group, so it reparents onto the
+    agent and survives a kill of the launcher pid alone. close() must run the
+    escapee sweep, not just signal the launcher."""
+    from agent6.sandbox.jail import _become_subreaper  # pyright: ignore[reportPrivateUsage]
+
+    # So the escapee reparents onto THIS process, where the sweep looks.
+    _become_subreaper()
+    marker = tmp_path / "escapee.pid"
+    script = (
+        "import json, os, sys, time\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"  # leave the launcher's group: only the sweep catches this
+        "    with open(sys.argv[1], 'w') as f:\n"
+        "        f.write(str(os.getpid()))\n"
+        "    time.sleep(30)\n"
+        "    os._exit(0)\n"
+        "def reply(i, r):\n"
+        "    sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': i, 'result': r}) + '\\n')\n"
+        "    sys.stdout.flush()\n"
+        "for line in sys.stdin:\n"
+        "    m = json.loads(line or '{}')\n"
+        "    if m.get('method') is None or 'id' not in m:\n"
+        "        continue\n"
+        "    if m['method'] == 'initialize':\n"
+        "        reply(m['id'], {'protocolVersion': '2024-11-05', 'capabilities': {}})\n"
+        "    elif m['method'] == 'tools/list':\n"
+        "        reply(m['id'], {'tools': []})\n"
+        "    else:\n"
+        "        reply(m['id'], {})\n"
+    )
+    argv = (sys.executable, "-c", script, str(marker))
+    spec = MCPServerSpec(
+        name="esc",
+        command=argv,
+        startup_timeout_s=10.0,
+        call_timeout_s=10.0,
+        policy=JailPolicy(
+            cwd=tmp_path, argv=argv, isolation="none", network="none", timeout_s=30.0
+        ),
+    )
+    gc_pid: int | None = None
+    mgr = MCPManager.start([spec])
+    try:
+        assert mgr.failures == (), mgr.failures
+        for _ in range(100):
+            text = marker.read_text().strip() if marker.exists() else ""
+            if text:
+                gc_pid = int(text)
+                break
+            time.sleep(0.05)
+        assert gc_pid is not None, "the escapee never recorded its pid"
+        assert _pid_alive(gc_pid), "the escapee should be running before close"
+        mgr.close()
+        assert not _pid_alive(gc_pid), f"the setsid escapee {gc_pid} survived MCPManager.close()"
+    finally:
+        mgr.close()
+        if gc_pid is not None:
+            with contextlib.suppress(ProcessLookupError, OSError):
+                os.kill(gc_pid, signal.SIGKILL)

@@ -28,7 +28,7 @@ def _attack(script: str, cwd: Path, **policy_kw: object) -> str:
     policy = jail_policy(cwd, Config(), "strict", argv, network="none", **policy_kw)  # pyright: ignore[reportArgumentType]
     proc = spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    ).popen
     out, err = proc.communicate(timeout=30)
     return out.decode(errors="replace") + err.decode(errors="replace")
 
@@ -159,7 +159,7 @@ def test_killing_agent6_takes_the_server_with_it(tmp_path: Path) -> None:
     policy = jail_policy(tmp_path, Config(), "strict", argv, network="none")
     proc = spawn_in_jail(
         policy, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-    )
+    ).popen
     assert proc.stdout is not None
     assert b"UP" in proc.stdout.readline()
     proc.kill()
@@ -212,7 +212,9 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
         "    sys.stderr.write('A' * 65536)\n"
     )
     argv = ("/usr/bin/python3", "-c", flood)
-    proc = _spawn_server(argv, jail_policy(tmp_path, Config(), "strict", argv, network="none"), ())
+    proc = _spawn_server(
+        argv, jail_policy(tmp_path, Config(), "strict", argv, network="none"), ()
+    ).popen
     keep: list[bytes] = []
     assert proc.stderr is not None
     threading.Thread(target=_drain_stderr, args=(proc.stderr, keep), daemon=True).start()
@@ -242,7 +244,7 @@ def test_a_finished_launcher_stops_shielding_its_pid(tmp_path: Path) -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-    )
+    ).popen
     pid = proc.pid
     live = jail_mod._live_launchers  # pyright: ignore[reportPrivateUsage]
     assert pid in live

@@ -40,7 +40,7 @@ def _net_of(cwd: Path, network: NetworkMode, session_net: SessionNetwork | None)
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         session_net=session_net,
-    )
+    ).popen
     out, _ = proc.communicate(timeout=30)
     return out.decode().strip()
 
@@ -82,7 +82,7 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=net,
-        )
+        ).popen
         assert listener.stdout is not None
         assert b"UP" in listener.stdout.readline()
 
@@ -104,7 +104,7 @@ def test_a_private_child_reaches_a_sibling_and_never_the_internet(tmp_path: Path
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             session_net=net,
-        )
+        ).popen
         out, err = client.communicate(timeout=30)
         text = out.decode() + err.decode()
         assert "SIBLING OK" in text, f"a private child could not reach its sibling: {text}"
@@ -134,7 +134,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=net,
-        )
+        ).popen
         assert listener.stdout is not None
         assert b"UP" in listener.stdout.readline()
 
@@ -152,7 +152,7 @@ def test_an_isolated_child_cannot_reach_the_private_network(tmp_path: Path) -> N
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=net,
-        )
+        ).popen
         out, _ = outsider.communicate(timeout=30)
         assert b"REACHED" not in out, f"an isolated child reached the session network: {out!r}"
         assert b"REFUSED" in out, out
@@ -184,7 +184,7 @@ def test_a_private_child_cannot_re_enter_a_network_after_the_run_drops_it(tmp_pa
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             session_net=net,
-        )
+        ).popen
         out, err = proc.communicate(timeout=30)
         text = out.decode() + err.decode()
         assert "FDS []" in text, f"the child inherited a descriptor: {text}"
@@ -465,7 +465,7 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=net,
-        )
+        ).popen
         assert victim.stdout is not None
         assert b"UP" in victim.stdout.readline()
 
@@ -488,7 +488,7 @@ def test_members_of_the_private_network_cannot_see_or_signal_each_other(tmp_path
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             session_net=net,
-        )
+        ).popen
         out, _ = attacker.communicate(timeout=30)
         text = out.decode()
         # PID 1 is its own launcher-init, 2 is itself: nobody else exists here.
@@ -566,7 +566,7 @@ def test_a_member_cannot_retune_the_network_everyone_shares(tmp_path: Path) -> N
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             session_net=net,
-        )
+        ).popen
         out, _ = proc.communicate(timeout=30)
         text = out.decode()
         assert "READ" in text, f"the probe never ran: {text}"
@@ -603,7 +603,7 @@ def test_joining_a_network_costs_no_other_layer(tmp_path: Path) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             session_net=net,
-        )
+        ).popen
         out, err = proc.communicate(timeout=30)
         text = out.decode() + err.decode()
         assert "SECRETS MASKED" in text, f"a joined child saw agent6's private dirs: {text}"
@@ -665,7 +665,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=first,
-        )
+        ).popen
         assert listener.stdout is not None
         assert b"UP" in listener.stdout.readline()
 
@@ -684,7 +684,7 @@ def test_one_runs_network_cannot_reach_another_runs(tmp_path: Path) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             session_net=second,  # the OTHER run's network
-        )
+        ).popen
         out, _ = intruder.communicate(timeout=30)
         assert b"REACHED" not in out, f"a run reached another run's service: {out!r}"
         assert b"REFUSED" in out, out

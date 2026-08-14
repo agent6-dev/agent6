@@ -639,6 +639,55 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
             time.sleep(0.01)  # killing one layer orphans the next onto this process
 
 
+class JailedProcess:
+    """A jailed child agent6 talks to for a whole session -- an MCP server on a
+    JSON-RPC pipe -- not one it collects (`run_in_jail`) or serves many through
+    (`JailSession`).
+
+    `close` bounds the child's whole lifetime. `hardened` has no PID namespace,
+    so the server sits in the launcher's process group and a setsid child
+    reparents onto the agent; signalling the launcher pid alone leaves both
+    running. Close signals the group, reaps it, then runs the same escapee sweep
+    the one-shot path does, excluding the own-children snapshot taken before the
+    spawn.
+    """
+
+    def __init__(self, proc: subprocess.Popen[bytes], before: frozenset[int] | None = None) -> None:
+        self.popen = proc
+        # The child's three streams as plain attributes, like the Popen they
+        # come from, so a caller's None-check narrows the later use.
+        self.stdin = proc.stdin
+        self.stdout = proc.stdout
+        self.stderr = proc.stderr
+        # `spawn_in_jail` passes the own-children set snapshotted before the
+        # launcher; construction time is the fallback for a direct caller.
+        self._before = frozenset(_own_children()) if before is None else before
+
+    def close(self) -> None:
+        """Best-effort and idempotent. Close stdin for a graceful exit, take the
+        launcher's process group down, reap it, then sweep the escapees that
+        reparented onto the agent."""
+        proc = self.popen
+        if proc.stdin is not None:
+            with contextlib.suppress(OSError):
+                proc.stdin.close()
+        if proc.poll() is None:
+            # start_new_session made it its own group leader, and Popen holds it
+            # unreaped, so its pgid is its pid and cannot have been recycled.
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(OSError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=1.0)
+        with _sweep_lock:
+            _live_launchers.discard(proc.pid)
+        _kill_escapees(self._before | {proc.pid})
+
+
 def spawn_in_jail(
     policy: JailPolicy,
     *,
@@ -646,13 +695,16 @@ def spawn_in_jail(
     stdout: int | None = None,
     stderr: int | None = None,
     session_net: SessionNetwork | None = None,
-) -> subprocess.Popen[bytes]:
-    """Start `policy.argv` inside the sandbox and hand back the live process.
+) -> JailedProcess:
+    """Start `policy.argv` inside the sandbox and hand back a `JailedProcess`.
 
     The third transport, beside `run_in_jail` (collect a command) and
     `JailSession` (serve many): for a child agent6 TALKS to for the whole
     session rather than collects -- an MCP server and its JSON-RPC pipe. The
-    same policy, the same launcher, the same layers.
+    same policy, the same launcher, the same layers. The handle's `close` bounds
+    the child's lifetime: it takes the launcher's whole process group down and
+    sweeps the escapees a `hardened` server's setsid child leaves behind, which
+    signalling the launcher pid alone would miss.
 
     The child's stdio is whatever the caller passes, straight through: fork,
     unshare, pivot_root, Landlock, seccomp and execve none of them touch the
@@ -664,15 +716,21 @@ def spawn_in_jail(
     path `run_in_jail` documents.
     """
     argv = list(policy.argv)
+    # Snapshot before the spawn: any later child of this process that is not in
+    # it escaped the server, and `JailedProcess.close` sweeps exactly that set.
+    before = frozenset(_own_children())
     if policy.isolation == "none":
-        return subprocess.Popen(
-            argv,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            env=dict(policy.env),
-            cwd=policy.cwd,
-            start_new_session=True,
+        return JailedProcess(
+            subprocess.Popen(
+                argv,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                env=dict(policy.env),
+                cwd=policy.cwd,
+                start_new_session=True,
+            ),
+            before,
         )
     binary = _require_jail_binary()
     spec = json.loads(_policy_to_json(policy))
@@ -703,7 +761,7 @@ def spawn_in_jail(
     # buffer (a long path list) would otherwise block forever on the write.
     with os.fdopen(policy_w, "wb") as handle:
         handle.write((json.dumps(spec) + "\n").encode())
-    return proc
+    return JailedProcess(proc, before)
 
 
 def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> CommandResult:

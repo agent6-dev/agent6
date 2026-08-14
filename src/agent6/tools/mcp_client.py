@@ -52,7 +52,12 @@ from dataclasses import dataclass, field
 from typing import IO, Any
 
 from agent6.child_env import curated_env
-from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, spawn_in_jail
+from agent6.sandbox.jail import (
+    JailedProcess,
+    JailUnavailableError,
+    SessionNetwork,
+    spawn_in_jail,
+)
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
 from agent6.types import JailPolicy
 
@@ -181,7 +186,7 @@ def _spawn_server(
     policy: JailPolicy | None,
     pass_env: tuple[str, ...],
     session_net: SessionNetwork | None = None,
-) -> subprocess.Popen[bytes]:
+) -> JailedProcess:
     """Start one stdio server: through the jail when it has a policy, as a
     plain subprocess when the operator opted it out.
 
@@ -205,21 +210,23 @@ def _spawn_server(
             stderr=subprocess.PIPE,
             session_net=session_net,
         )
-    return subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        bufsize=0,
-        # A curated env, not this process's: the full one carries the provider
-        # API keys, and an MCP server is third-party code that may log or
-        # forward what it was given. A server that needs a token names it in
-        # `pass_env`.
-        env=curated_env(passthrough=pass_env, desktop=True),
-        # Its own session: a terminal Ctrl-C signals the foreground process
-        # group, and an MCP server that dies with it breaks its tools for the
-        # rest of the run.
-        start_new_session=True,
+    return JailedProcess(
+        subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            # A curated env, not this process's: the full one carries the
+            # provider API keys, and an MCP server is third-party code that may
+            # log or forward what it was given. A server that needs a token
+            # names it in `pass_env`.
+            env=curated_env(passthrough=pass_env, desktop=True),
+            # Its own session: a terminal Ctrl-C signals the foreground process
+            # group, and an MCP server that dies with it breaks its tools for
+            # the rest of the run.
+            start_new_session=True,
+        )
     )
 
 
@@ -294,7 +301,7 @@ class _MCPServer:
     # rather than spawning, so it owns none of that server's environment,
     # lifetime or confinement.
     http: HttpTransport | None = None
-    _proc: subprocess.Popen[bytes] | None = None
+    _proc: JailedProcess | None = None
     # The tail of this server's stderr, drained by a thread and read only to
     # explain a failure.
     _errors: list[bytes] = field(default_factory=list)
@@ -426,6 +433,11 @@ class _MCPServer:
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._proc is None and self.http is None:
             raise MCPError(f"server {self.name!r} is not running")
+        # The name rides in from the LLM: a name outside the negotiated set
+        # (filtered at registration, or never advertised by the server) is
+        # refused before any request leaves agent6.
+        if tool_name not in {d.tool_name for d in self._tools}:
+            raise MCPError(f"server {self.name!r} did not advertise tool {tool_name!r}")
         result = self._request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
@@ -462,18 +474,10 @@ class _MCPServer:
         if proc is None:
             return
         try:
-            if proc.stdin is not None:
-                with contextlib.suppress(OSError):
-                    proc.stdin.close()
-            with contextlib.suppress(ProcessLookupError, OSError):
-                proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError, OSError):
-                    proc.kill()
-                with contextlib.suppress(subprocess.TimeoutExpired):
-                    proc.wait(timeout=1.0)
+            # The handle takes the whole process group down and sweeps a
+            # `hardened` server's setsid escapees, which signalling the launcher
+            # pid alone would miss.
+            proc.close()
         finally:
             # Wake any thread blocked on _pending_cv so it can exit
             # cleanly instead of hanging on a server this teardown just killed.

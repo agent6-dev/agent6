@@ -38,7 +38,7 @@ def _probe(script: str, cwd: Path, *, network: NetworkMode = "none") -> str:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-    )
+    ).popen
     out, _err = proc.communicate(timeout=30)
     return out.decode(errors="replace")
 
