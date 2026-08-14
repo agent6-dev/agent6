@@ -44,6 +44,23 @@ def test_bash_install_is_idempotent(capsys: pytest.CaptureFixture[str], home: Pa
     assert "activate now" in capsys.readouterr().out
 
 
+def test_bash_block_does_not_execute_a_path_with_shell_metacharacters(
+    home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The script path is serialized into rc text the operator's shell sources,
+    so a `$(...)` in AGENT6_CONFIG_HOME must be inert on source, not executed."""
+    import shlex
+    import subprocess
+
+    # A config dir whose name is a command substitution (no slash, so it stays
+    # one path component); if it executes on source it creates PWNED in cwd.
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "$(touch PWNED)" / "agent6"))
+    assert cmd_completions("bash", print_only=False) == 0
+    rc = home / ".bashrc"
+    subprocess.run(["bash", "-c", f"source {shlex.quote(str(rc))}"], cwd=tmp_path, check=False)
+    assert not (tmp_path / "PWNED").exists()
+
+
 def test_zsh_respects_zdotdir(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

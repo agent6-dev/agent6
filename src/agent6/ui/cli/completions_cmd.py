@@ -31,6 +31,7 @@ current session.
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -180,11 +181,10 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(code, encoding="utf-8")
     rc = _rc_path(shell)
-    block = (
-        f"\n{_MARK_BEGIN}\n"
-        f'[ -f "{script}" ] && source "{script}"  # agent6 tab-completion\n'
-        f"{_MARK_END}\n"
-    )
+    # The path (from AGENT6_CONFIG_HOME/XDG) lands in shell text the operator's
+    # shell later sources; shlex.quote keeps any metacharacter in it inert.
+    q = shlex.quote(str(script))
+    block = f"\n{_MARK_BEGIN}\n[ -f {q} ] && source {q}  # agent6 tab-completion\n{_MARK_END}\n"
     existing = read_operator_file(rc) if rc.exists() else ""
     if _MARK_BEGIN in existing:
         print(f"[agent6] refreshed {script} (already sourced from {rc})")
