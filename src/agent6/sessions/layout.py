@@ -96,15 +96,6 @@ class SessionLayout:
     def logs_path(self) -> Path:
         return self.session_dir / LOGS_NAME
 
-    @property
-    def user_inputs_path(self) -> Path:
-        """JSONL audit log of every interactive prompt + the operator's answer.
-
-        Separate from logs.jsonl so the human-decision trail stays readable
-        without grepping through machine telemetry.
-        """
-        return self.session_dir / "user_inputs.jsonl"
-
     def ensure(self) -> None:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.graph_dir.mkdir(exist_ok=True)
