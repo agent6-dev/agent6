@@ -766,6 +766,8 @@ class Workflow:
     # the loop's own session.end emitters use.
     iterations_reached: int = field(default=0, init=False)
 
+    # ---- run / resume entry ----------------------------------------------------
+
     def run(self, user_task: str) -> SessionResult:
         """Drive the single-loop agent to completion."""
         self.steer_reset()  # a leg starts with no armed Ctrl-C
@@ -993,6 +995,8 @@ class Workflow:
         if status.is_clean and status.head_sha == snap.head_sha:
             state.verify.last_ok = snap.last_verify_ok
             state.verify.edited_since = snap.edited_since_verify
+
+    # ---- the turn pipeline -----------------------------------------------------
 
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
@@ -1786,6 +1790,8 @@ class Workflow:
             if critique is not None:
                 turn.critic_text = critique.text
 
+    # ---- finish gates ----------------------------------------------------------
+
     def _turn_finish_gates(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
@@ -2013,6 +2019,8 @@ class Workflow:
         turn.tool_results.append(Notice(MEMORY_FINISH_NUDGE))
         self._log(f"  finish_session deferred once: memory backstop at iter {turn.iteration}")
         self._emit("loop.memory_finish.gated", iteration=turn.iteration)
+
+    # ---- turn notices and spiral guards ----------------------------------------
 
     def _turn_notices(self, state: _LoopState, turn: _TurnState) -> None:
         """Append the turn's advisory texts to the tool_results block: critic
@@ -2385,6 +2393,8 @@ class Workflow:
         state.no_progress_nudges_used = 0
         state.plateau_nudges_used = 0
         conversation.notice(nudge)
+
+    # ---- stop checks, silent finish, went-quiet --------------------------------
 
     def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
@@ -3092,6 +3102,8 @@ class Workflow:
             tool_calls=state.tool_calls,
         )
 
+    # ---- snapshots and carryover -----------------------------------------------
+
     def _seed_root_task(self, user_task: str) -> str | None:
         """Create the run's root task in the DAG when the curator
         is wired. Returns the new node id, or None if no curator.
@@ -3444,6 +3456,8 @@ class Workflow:
             return 0
         return self.curator.graph_version
 
+    # ---- metric ----------------------------------------------------------------
+
     def _record_metric_result(
         self,
         history: list[MetricSample],
@@ -3606,6 +3620,8 @@ class Workflow:
         if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
+
+    # ---- context compaction drivers --------------------------------------------
 
     def _maybe_compact(self, conversation: Conversation, state: _LoopState) -> bool:
         """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
@@ -3920,6 +3936,8 @@ class Workflow:
             " not just abandon it. Then finish_session once the list is clear."
         )
 
+    # ---- prompt revision and provider retry ------------------------------------
+
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
         if self.revise_prompt == "off":
             return user_task
@@ -4093,6 +4111,8 @@ class Workflow:
         # Kept for type-checker exhaustiveness in case the loop body changes.
         assert last_exc is not None
         raise last_exc
+
+    # ---- review and critic -----------------------------------------------------
 
     def _has_reviewer(self) -> bool:
         """A second opinion is available: the review panel (seats) or the legacy
@@ -4299,6 +4319,8 @@ class Workflow:
             satisfied=satisfied,
         )
         return CritiqueResult(text=text, satisfied=satisfied)
+
+    # ---- steering and operator boundaries --------------------------------------
 
     def _operator_boundary(
         self, conversation: Conversation, iteration: int, state: _LoopState
@@ -4568,6 +4590,8 @@ class Workflow:
         self._dispatch_parallel(conversation, iteration, state, segments)
         return True
 
+    # ---- parallel lane dispatch ------------------------------------------------
+
     def _dispatch_parallel(
         self,
         conversation: Conversation,
@@ -4781,6 +4805,8 @@ class Workflow:
     ) -> None:
         """Inject the lane-outcome summary so the model continues informed."""
         conversation.notice(summary_text(group, joined))
+
+    # ---- chain commits, events, infra ------------------------------------------
 
     def _log(self, msg: str) -> None:
         self.logger(f"[agent6] {msg}")
