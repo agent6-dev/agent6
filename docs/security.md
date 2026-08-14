@@ -31,9 +31,12 @@ We do NOT assume the adversary controls:
 Under that adversary, agent6 aims to hold:
 
 1. **No writes outside the workspace.**
+    - `sandbox.extra_write_paths` and the per-repo memory dir widen it,
+      explicitly and visibly (`config show`).
 2. **No reads outside the workspace and a read-only system set.**
-    - The system set (`/usr /bin /sbin /lib /lib64 /etc /dev /proc /tmp`) exists
-      so installed toolchains resolve; `sandbox.extra_read_paths` adds more.
+    - The system set (`/usr /bin /sbin /lib /lib64 /etc /dev /proc`) exists so
+      installed toolchains resolve; `/tmp` is a private writable tmpfs;
+      `sandbox.extra_read_paths` adds more.
 3. **The agent process's own egress is NOT bounded.** agent6 talks to the
    configured providers; nothing stops the PROCESS reaching elsewhere.
     - A network-only block on a process with unconfined filesystem access is a
@@ -260,21 +263,12 @@ fixed argv depending only on operator input, never LLM output.
 
 - `git_ops.py`: agent6's own git operations (see [Git invariants](#5-git-invariants)).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/exec_confined.py`: confines itself, then calls `execvp` on the argv after
-  `--` — the restrict-self-then-exec shim for a long-lived child agent6 spawns
-  but does not drive (a configured MCP server; the jail launcher owns stdio,
-  which cannot host a live MCP pipe). Both mechanisms are inherited by
-  everything the server spawns: the Landlock domain is irrevocable across
-  `execve`, and `network = "none"` unshares a user + network namespace that
-  the stdio pipes survive. Each stands alone; asked for neither, the shim
-  refuses rather than exec unconfined while looking confined. An applied
-  domain grants the five inert `/dev` nodes ahead of the operator's paths. A
-  kernel forbidding unprivileged userns makes a `network = "none"` server
-  refuse rather than start connected. Argv and paths are the operator's, from
-  config.
 - `sandbox/jail.py`: the jail launcher itself.
-
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
+  A server with a sandbox policy spawns through the ONE jail (`spawn_in_jail`,
+  the same launcher and JailPolicy a jailed command gets); a server the
+  operator opted out is a plain subprocess. Argv is the operator's, from
+  config.
 - `providers/token_command.py`: the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv from config.
 - `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without /proc (macOS) for
@@ -293,7 +287,7 @@ fixed argv depending only on operator input, never LLM output.
   machine notification; the message is inert data, never a command or an
   option.
 - `ui/cli/` helpers:
-    - `$EDITOR` for plan, notes and steer editing.
+    - `$EDITOR` for plan and steer editing.
     - `git diff/log` for the review subcommand and the `sessions`/`ask` diff views;
       argv from the run manifest the CLI wrote outside the jail.
     - `rg` for history search.
@@ -379,8 +373,9 @@ syscall for hardened), never guessed from the kernel version.
     - Structured edits, read-only navigation, fixed-argv verify/metric commands,
       `finish_session`, `ask_user`, a curator task notepad, and
       capability-gated `run_command`.
-    - No `shell`, no `write_file` (writes go through `apply_edit`, which refuses
-      paths outside cwd), no `web_fetch`, no `eval`.
+    - No `shell`, no `write_file` (writes go through `apply_edit`, bounded to
+      the workspace plus the operator's `extra_write_paths` and the memory
+      dir), no `web_fetch`, no `eval`.
     - Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
 - **Repo memory is a prompt-injection persistence channel.**
     - The memory dir (`<state-dir>/<repo-id>/memory/`) is the one state
@@ -404,7 +399,9 @@ syscall for hardened), never guessed from the kernel version.
       the safe ops (status, add, commit, diff, branch, checkout) and refuses
       `push`, `reset --hard`, `commit --amend`, `rebase`,
       `filter-branch`/`filter-repo`, `branch -D`/`--force`, and any `--force`/`-f`
-      on a destructive verb.
+      on a destructive verb. ONE operator-only exception: `sessions prune
+      --delete-squashed` force-deletes a run branch the manifest confirms was
+      squash-merged (content-safe; the commit survives in the reflog).
 - **A `git` the model runs via `run_command` is bounded by the sandbox, not this
   list, and its argv is NOT screened.**
     - `protect_git` (default on) keeps `.git` unwritable under `strict`, which
@@ -451,8 +448,8 @@ syscall for hardened), never guessed from the kernel version.
       together: a grant on a directory is RECURSIVE (no "this directory
       only"), and stacked rulesets INTERSECT (an access needs every layer to
       allow it). To deny `.git` some layer must not grant it, which by
-      recursion means not granting the workspace root either. Measured, both
-      shapes: granting the root allows `.git` too; a children-only carve
+      recursion means not granting the workspace root either: granting the
+      root allows `.git` too, and a children-only carve
       denies every NEW top-level entry (`touch`, `mkdir`, `mkfifo` fail at
       the root) -- too much to pay for a protection `strict` provides
       properly.
@@ -485,8 +482,8 @@ syscall for hardened), never guessed from the kernel version.
       `--no-verify` to skip).
     - During a run agent6 opens no listening socket (an MCP server is spawned on
       stdio or DIALLED at an operator-set `url` -- outbound either way, never a
-      listener; the web UI is
-      private unix socket); the only accept-side socket is opt-in `agent6 web` (see
+      listener); the only accept-side socket is opt-in `agent6 web`, a loopback
+      TCP bind by default (see
 [No agent-owned network surface](#7-no-agent-owned-network-surface-except-opt-in-agent6-web)).
 - **Running as root is refused without an explicit opt-in.**
     - `--allow-root` / `AGENT6_ALLOW_ROOT=1` (+ a banner). Under `sudo`, agent6
@@ -609,11 +606,13 @@ By `network` (cells = `strict`, the only level with namespaces to give):
 | jailed command | `auto` *(def)* | `session` | `only_explicit_states` | `host` |
 |---|---|---|---|---|
 | `run_command` | the run's session network | same | same | host network |
-| `tool`, `network` `auto`(def)/`block` | own, alone | own, alone | own, alone | own, alone |
+| `tool`, `network` `auto`(def)/`none` | own, alone | own, alone | own, alone | own, alone |
 | `tool`, `network = host` | ⛔ refuse | ⛔ refuse | host network | host network |
 
-An MCP server takes the same vocabulary per server, defaulting to `none`; a
-server set to `session` joins the run's network, which is how a browser server
+An MCP server takes the same vocabulary per server, defaulting to `auto`
+(a network of its own where the host can give one, degrading to the host's
+with a warning; `none` is the enforce form that refuses instead). A server
+set to `session` joins the run's network, which is how a browser server
 reaches the dev server a background command started.
 
 `auto` is the secure default that runs everywhere (see AGENTS.md "Secure by
@@ -629,8 +628,8 @@ explicit unsandboxed opt-out with its own loud warning, below.)
 | Configuration | When |
 |---|---|
 | a `tool` sets `network = host` under `network` `auto`/`session` | machine start |
-| `network = only_explicit_states`, or explicit `network = private` | run start, `hardened` ¹ |
-| a machine with `tool` states, or a `tool` with `network = none`, under `network` `auto`/`session` | machine start, `hardened` ¹ |
+| `network = only_explicit_states`, or explicit `network = session` | run start, `hardened` ¹ |
+| a machine under `network = session`, or any `tool` with `network = none` | machine start, `hardened` ¹ |
 
 - ⚠ `none` (non-Linux, or explicit opt-out) is unsandboxed: nothing enforced,
   nothing refused, loud warning.
@@ -644,8 +643,9 @@ More fail-closed properties:
 
 - **Operator-gated policy.** `network` is read only from the
   operator's config; a machine's `[config]` overlay is rejected at load if it
-  declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `git.run_repo_hooks`,
-  or `git.run_repo_filters`.
+  declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`,
+  `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, or
+  `git.run_repo_filters`.
     - Otherwise a strategy preset or a host `[machine.notify]` argv could splice
       into the resolved config, and `run_repo_hooks`/`run_repo_filters` would run
       repo `.git/hooks` or a content driver

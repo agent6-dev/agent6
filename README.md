@@ -28,9 +28,10 @@ open-ended agent loop.
 
 ## Features
 
-- LLM-chosen commands run in a kernel sandbox (Landlock + seccomp); the default
-  `strict` isolation adds user namespaces + `pivot_root`, rebinds `.git`
-  read-only, and gives jailed commands no network
+- LLM-chosen commands run in a kernel sandbox (Landlock + seccomp); the
+  default (`auto`) resolves to `strict` where the host allows, adding user
+  namespaces + `pivot_root`, rebinding `.git` read-only, and giving jailed
+  commands no network
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
 - Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, a hard
@@ -57,7 +58,8 @@ open-ended agent loop.
 - Skills: install standard SKILL.md packs (superpowers, caveman, any
   agentskills.io repo) with `agent6 skills install <url>`; they index into the
   system prompt, load on demand via a read-only tool, and fire as `/name`
-  pause-menu commands or `run --skill`; nothing in a skill is ever executed.
+  pause-menu commands or `run --skill`; a skill's scripts run only if the
+  model runs them through the jailed command path, subject to `run_commands`.
   The format is shared with Claude Code and Pi, and `[skills].extra_dirs` loads
   an existing `~/.claude/skills`-style collection in place. Repo instructions
   are read from `AGENTS.md` (a repo using `CLAUDE.md` can symlink it)
@@ -122,7 +124,9 @@ then the per-repo config (out of the workspace, per-machine, not committed), the
 explicit `--config FILE`. Every field has a default; security-sensitive fields default to
 the safe value (`network = "auto"`,
 `run_commands = "ask"`, `protect_git = true`), and `git_ops.py`
-refuses `push`, `--force`, and history rewrites unconditionally.
+refuses `push`, `--force`, and history rewrites (one operator-only
+exception: `sessions prune --delete-squashed` deletes branches the manifest
+confirms were squash-merged).
 
 ## Benchmarks
 

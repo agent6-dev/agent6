@@ -279,8 +279,8 @@ class AgentState(BaseModel):
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
     # Optional per-state overrides for how this agent loop is driven. When
-    # unset each falls back to the effective config (machine ``[config]``
-    # overlay < repo < global < defaults). ``provider`` selects which
+    # unset each falls back through the effective config (machine ``[config]``
+    # overlay, then repo, then global, then the built-in default). ``provider`` selects which
     # ``[providers.*]`` entry backs the call; ``thinking`` and ``temperature``
     # tune reasoning/sampling; the budget caps bound this single agent slice.
     # Secrets/connection keys are never expressed here, only the provider

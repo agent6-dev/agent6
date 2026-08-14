@@ -33,8 +33,8 @@ open-ended agent loop.
 <div class="a6-card" markdown>
 ### Command sandbox
 Commands the model runs are jailed with Landlock + seccomp; the default
-`strict` isolation adds user namespaces + `pivot_root`, a read-only `.git`, and no
-network for jailed commands.
+(`auto`) resolves to `strict` where the host allows, adding user namespaces +
+`pivot_root`, a read-only `.git`, and no network for jailed commands.
 </div>
 
 <div class="a6-card" markdown>

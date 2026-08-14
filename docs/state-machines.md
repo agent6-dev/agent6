@@ -263,8 +263,8 @@ verify slot over shelling out where you can.
 
 The optional per-state knobs above tune *how* that loop runs: `provider`
 / `thinking` / `temperature` select and tune the model, and the
-`max_usd` / `max_tokens_fallback` caps bound this one agent slice. Each falls back to the effective config (machine `[config]`
-overlay < repo < global < defaults; see
+`max_usd` / `max_tokens_fallback` caps bound this one agent slice. Each falls back through the effective config (machine `[config]`
+overlay, then repo, then global, then the built-in default; see
 [Machine config overlay](#47-machine-config-overlay-config)) when omitted. Connection
 secrets are never expressed here, only a `provider` *name* that must
 already exist in the effective config.
@@ -302,11 +302,12 @@ A `list`-typed variable spliced as a bare argv element
 `scan-inbox` here is an illustrative stand-in; a `tool` state runs
 whatever audited command the operator names.
 
-**Network (opt-in, default off).** A `tool`'s `network` is one of
-`"auto"` (default, no network), `"allow"` (wants the host network), or
-`"block"` (no network, *required*; refuses to run on `hardened`, which can't
-isolate a single tool). A tool reaches the network only when it sets `network =
-"allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
+**Network (opt-in, host network off by default).** A `tool`'s `network` is
+one of `"auto"` (default: a network of its own where the host can give one,
+degrading to the host's with a warning on `hardened`), `"none"` (the same,
+*required*: refuses on `hardened`, which can't isolate a single tool), or
+`"host"`. A tool reaches the host network only when it sets `network =
+"host"`. Because the machine engine is a host-netns *supervisor* (each `agent`
 state runs in its own subprocess; see
 [Security considerations](#9-security-considerations-must-not-weaken-anything-in-agentsmd)),
 an opt-in `tool` can reach the host

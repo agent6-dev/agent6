@@ -185,15 +185,14 @@ def _spawn_server(
     plain subprocess when the operator opted it out.
 
     The confined path is `spawn_in_jail`, the same launcher and the same
-    JailPolicy a jailed command gets -- MCP had a second confinement stack of
-    its own, which is how it ended up without seccomp, without a private
-    /proc, and unable to mask a hidden path.
+    JailPolicy a jailed command gets: a second confinement stack would drift
+    (no seccomp, no private /proc, no hidden-path masking).
 
     Stderr is a PIPE the caller drains, not /dev/null: everything that can go
     wrong before the handshake -- a command that does not exist, a grant the
     kernel refused, the launcher's own setup -- says so there and nowhere
-    else, and discarding it turned every one of those into the same "died
-    before responding to initialize". Drained rather than collected, and
+    else; discarded, every one of those reads as the same "died before
+    responding to initialize". Drained rather than collected, and
     capped: an undrained pipe blocks the writer at 64 KB, and a file grows
     until the disk is gone.
     """

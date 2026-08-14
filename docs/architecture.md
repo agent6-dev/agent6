@@ -130,7 +130,7 @@ Notes:
   turn. If the focus task holds for many turns with no forward motion
   (a weak model grinding one task without concluding or decomposing it), a
   nudge offers to split / pass / skip it -- re-firing periodically up to a
-  small cap (a weak model was seen ignoring a single nudge); any progress
+  small cap (one nudge alone is ignorable); any progress
   resets the counter, so a healthy run never sees it.
 - **Standing tasks and the park.** A run can carry a STANDING task
   (`run --standing "<goal>"`, or `add_task(standing=true)`): the frontier's
