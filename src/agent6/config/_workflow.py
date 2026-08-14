@@ -170,6 +170,13 @@ class ContextConfig(BaseModel):
             "the window. Must exceed `drop_at_chars`."
         ),
     )
+    keep_recent_chars: int = Field(
+        ge=0,
+        default=80_000,
+        description=(
+            "Verbatim recent-history tail kept through a tier-2 restart (chars; 0 keeps none)."
+        ),
+    )
     summary_max_tokens: int = Field(
         gt=0,
         default=2048,

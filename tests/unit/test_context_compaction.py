@@ -421,3 +421,30 @@ def test_context_chars_counts_an_unknown_block_type() -> None:
     conv = Conversation()
     conv.assistant([{"type": "something_new", "payload": "P" * 5_000}])
     assert context_chars(conv) >= 5_000
+
+
+def test_recent_tail_start_respects_cap_and_boundaries() -> None:
+    from agent6.workflows._compaction import recent_tail_start
+    from agent6.workflows._conversation import Conversation, ToolResultItem
+
+    conv = Conversation()
+    conv.notice("task")
+    conv.assistant([{"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}}])
+    last = conv.turns[-1]
+    conv.results([ToolResultItem(tool_use_id="t1", content="x" * 100, for_call=last.tool_uses[0])])  # type: ignore[union-attr]
+    conv.assistant([{"type": "text", "text": "y" * 100}])
+    turns = conv.turns
+
+    # Cap covering only the final text turn: the tail starts there.
+    assert recent_tail_start(turns, 150) == 3
+    # Cap reaching the results turn but not its call turn: a results-turn
+    # start is unsafe (its call was summarised away), so it advances past it.
+    assert recent_tail_start(turns, 210) == 3
+    # Cap covering the balanced call+result+text triple keeps all three.
+    assert recent_tail_start(turns, 100_000) == 1
+    # Cap 0 keeps nothing.
+    assert recent_tail_start(turns, 0) == len(turns)
+    # A cap smaller than the newest exchange keeps that exchange anyway (its
+    # results may be undelivered; paraphrasing them away is the one loss the
+    # tail exists to prevent).
+    assert recent_tail_start(turns, 50) == 3

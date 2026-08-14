@@ -210,14 +210,22 @@ class Conversation:
         ):
             self._turns.pop()
 
-    def restart(self, summary_text: str) -> None:
+    def restart(self, summary_text: str, keep: Sequence[Turn] = ()) -> None:
         """Tier-2 restart: keep the initial turn, replace everything after it
-        with one summary notice. Marks outside the kept turn are dropped (the
-        blocks they pointed at are gone)."""
+        with one summary notice plus the verbatim *keep* tail (the most recent
+        turns, already balanced). Marks outside the kept turns are dropped
+        (the blocks they pointed at are gone).
+
+        *keep* must not lead with a tool_result user turn: it would answer an
+        assistant turn the restart just summarised away, and an unanswered
+        pairing is a provider refusal.
+        """
         first = self._turns[0]
         if isinstance(first, AssistantTurn) and first.tool_uses:
             raise ValueError("conversation invariant: cannot restart from a tool_use turn")
-        self._turns[:] = [first, UserTurn(items=(Notice(summary_text),))]
+        if keep and isinstance(keep[0], UserTurn) and _result_ids(keep[0]):
+            raise ValueError("conversation invariant: a kept tail cannot lead with tool_results")
+        self._turns[:] = [first, UserTurn(items=(Notice(summary_text),)), *keep]
         self._marks = [m for m in self._marks if m[0] == 0]
 
     def set_result_content(self, turn_idx: int, item_idx: int, content: str) -> None:

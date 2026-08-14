@@ -3184,7 +3184,8 @@ def test_maybe_compact_returns_restart_signal() -> None:
     # Over the threshold -> restart, returns True.
     big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
     assert _compact_via_wire(wf, big) is True
-    assert len(big) == 2  # history was replaced
+    # History was replaced: [task, restart+summary, verbatim recent tail].
+    assert len(big) == 3
 
 
 def test_compact_request_forces_a_tier2_restart() -> None:
@@ -3904,9 +3905,12 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: Path) -> No
     _compact_via_wire(wf, messages)
 
     assert summ.calls == 1  # tier-2 summariser ran
-    assert len(messages) == 2  # restarted to [original task, restart+summary]
+    # Restarted to [original task, restart+summary, verbatim recent tail]:
+    # the trailing small turn fits keep_recent_chars and survives verbatim.
+    assert len(messages) == 3
     assert messages[0]["content"][0]["text"] == "TASK: optimize the kernel"
     assert "PROGRESS SUMMARY" in messages[1]["content"][0]["text"]
+    assert messages[2]["content"][0]["text"] == "keep going"
     assert _ctx_chars(messages) < 500_000  # context actually shrank
 
 

@@ -400,3 +400,36 @@ def test_wire_leads_with_tool_results_never_notice_text() -> None:
     )
     blocks = healed.to_wire()[-1]["content"]
     assert [b["type"] for b in blocks] == ["tool_result", "text"]
+
+
+def test_restart_with_kept_tail_preserves_recent_turns_verbatim() -> None:
+    """pi-shaped tier-2: the most recent turns survive the restart after the
+    summary notice, so fresh work is never paraphrased away."""
+    conv = Conversation()
+    conv.notice("the task")
+    conv.assistant([{"type": "text", "text": "old thinking"}])
+    conv.assistant([_tool_use_block("t1", path="a.py")])
+    _result(conv, "old file body")
+    conv.assistant([_tool_use_block("t2", path="b.py")])
+    _result(conv, "fresh file body")
+    tail = conv.turns[-2:]  # the t2 call + its result: a balanced tail
+    conv.restart("[restart] summary", keep=tail)
+    turns = conv.turns
+    assert len(turns) == 4  # task, summary, t2 call, t2 result
+    assert isinstance(turns[2], AssistantTurn) and turns[2].tool_uses[0].id == "t2"
+    last = turns[3]
+    assert isinstance(last, UserTurn)
+    item = last.items[0]
+    assert isinstance(item, ToolResultItem) and item.content == "fresh file body"
+
+
+def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
+    """A kept tail starting on a results turn answers an assistant turn the
+    restart summarised away; the wire would refuse the orphan pairing."""
+    conv = Conversation()
+    conv.notice("the task")
+    conv.assistant([_tool_use_block("t1", path="a.py")])
+    _result(conv, "body")
+    orphan_tail = conv.turns[-1:]  # the results turn alone
+    with pytest.raises(ValueError, match="kept tail"):
+        conv.restart("[restart] summary", keep=orphan_tail)

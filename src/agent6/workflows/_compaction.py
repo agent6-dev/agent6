@@ -31,6 +31,8 @@ from agent6.workflows._conversation import (
     AssistantTurn,
     Conversation,
     ToolResultItem,
+    Turn,
+    UserTurn,
 )
 
 # Stable prefix shared by every placeholder variant: idempotency checks and
@@ -347,23 +349,74 @@ def context_chars(conversation: Conversation) -> int:
     ZERO, so tier-2 waited on a number that omitted the largest thing in the
     context. A block type nobody has met yet must not be free either.
     """
+    return sum(turn_chars(turn) for turn in conversation.turns)
+
+
+def turn_chars(turn: Turn) -> int:
+    """One turn's contribution to :func:`context_chars`."""
+    if isinstance(turn, AssistantTurn):
+        total = 0
+        for item in turn.raw_content:
+            if not isinstance(item, dict):
+                total += len(str(item))
+                continue
+            # "type" is the discriminator, not payload; everything else is.
+            total += sum(
+                len(v if isinstance(v, str) else str(v))
+                for k, v in item.items()
+                if k != "type" and v is not None
+            )
+        return total
+    return sum(
+        len(item.content if isinstance(item, ToolResultItem) else item.text) for item in turn.items
+    )
+
+
+# Verbatim recent-history tail kept through a tier-2 restart, sized to pi's
+# keepRecentTokens default (20k tokens ~= 80k chars). `[context]
+# keep_recent_chars` overrides.
+KEEP_RECENT_CHARS = 80_000
+
+
+def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
+    """The index where a tier-2 restart's verbatim tail begins: the largest
+    tail of whole turns within *cap_chars* that starts on a wire-safe
+    boundary. Returns ``len(turns)`` when nothing is kept (cap 0, or no safe
+    boundary fits).
+
+    A safe start is any turn except a user turn carrying tool_results: that
+    turn answers the assistant turn BEFORE it, which the restart summarised
+    away, and an unanswered pairing is a provider refusal. Turn 0 (the task)
+    is never part of the tail; the restart always keeps it separately.
+    """
+    if cap_chars <= 0:
+        return len(turns)
     total = 0
-    for turn in conversation.turns:
-        if isinstance(turn, AssistantTurn):
-            for item in turn.raw_content:
-                if not isinstance(item, dict):
-                    total += len(str(item))
-                    continue
-                # "type" is the discriminator, not payload; everything else is.
-                total += sum(
-                    len(v if isinstance(v, str) else str(v))
-                    for k, v in item.items()
-                    if k != "type" and v is not None
-                )
-        else:
-            for item in turn.items:
-                total += len(item.content if isinstance(item, ToolResultItem) else item.text)
-    return total
+    start = len(turns)
+    i = len(turns) - 1
+    while i >= 1:
+        size = turn_chars(turns[i])
+        if total + size > cap_chars:
+            break
+        total += size
+        start = i
+        i -= 1
+    while start < len(turns) and _starts_with_results(turns[start]):
+        start += 1
+    if start == len(turns):
+        # The newest exchange alone exceeds the cap: keep it anyway. It holds
+        # the model's freshest (possibly still undelivered) results, and
+        # paraphrasing those away is the one loss the tail exists to prevent.
+        assistant_idxs = [i for i in range(1, len(turns)) if isinstance(turns[i], AssistantTurn)]
+        if assistant_idxs:
+            start = assistant_idxs[-1]
+    return start
+
+
+def _starts_with_results(turn: Turn) -> bool:
+    return isinstance(turn, UserTurn) and any(
+        isinstance(item, ToolResultItem) for item in turn.items
+    )
 
 
 # First target header in a unified diff (`+++ b/PATH`) or a v4a patch

@@ -92,6 +92,7 @@ from agent6.types import RepoSummary
 from agent6.verify_infer import infer_verify_command
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
+    KEEP_RECENT_CHARS,
     SUMMARISE_AT_CHARS,
     GistRequest,
     cap_tool_result,
@@ -100,6 +101,7 @@ from agent6.workflows._compaction import (
     count_elisions,
     parse_checkoff,
     parse_gist_lines,
+    recent_tail_start,
     recently_edited_paths,
     strip_checkoff,
 )
@@ -595,6 +597,9 @@ class Workflow:
     # Tiered context compaction thresholds (chars).
     compact_drop_at_chars: int = DROP_BLOCKS_AT_CHARS
     compact_summarise_at_chars: int = SUMMARISE_AT_CHARS
+    # Verbatim recent-history tail kept through a tier-2 restart (chars; 0
+    # keeps none). Sized to pi's keepRecentTokens default.
+    keep_recent_chars: int = KEEP_RECENT_CHARS
     # Retry the provider call on transient ProviderError before aborting the
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
     # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
@@ -3717,8 +3722,16 @@ class Workflow:
         context is kept and the run continues).
         """
         provider = self.summariser_provider or self.provider
+        turns = conversation.turns
+        # The verbatim tail survives the restart, so the summary covers only
+        # what is actually dropped (pi's keepRecentTokens shape).
+        tail_start = recent_tail_start(turns, self.keep_recent_chars)
+        if tail_start <= 1:
+            # A cap that swallows the whole history would make the restart
+            # grow the context instead of shrinking it; keep nothing.
+            tail_start = len(turns)
         transcript = format_tail_for_critic(
-            conversation.turns[1:], max_messages=len(conversation), max_chars=60_000
+            turns[1:tail_start], max_messages=len(conversation), max_chars=60_000
         )
         # The DAG is agent6's compaction memory: at each restart we ask the
         # summariser to check off finished tasks and surface newly-found ones, so
@@ -3794,8 +3807,16 @@ class Workflow:
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         summary = strip_checkoff(raw) if open_tasks else raw
-        conversation.restart(context_restart_notice(self.mode, pins=state.pins) + summary)
-        self._emit("loop.compact.summarise.done", summary_chars=len(summary), summary=summary)
+        conversation.restart(
+            context_restart_notice(self.mode, pins=state.pins) + summary,
+            keep=turns[tail_start:],
+        )
+        self._emit(
+            "loop.compact.summarise.done",
+            summary_chars=len(summary),
+            summary=summary,
+            kept_turns=len(turns) - tail_start,
+        )
         return True
 
     def _open_tasks_for_checkoff(self) -> list[tuple[str, str]]:
