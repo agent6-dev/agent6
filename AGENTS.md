@@ -151,6 +151,10 @@ dogfoods daily and feels what tests can't.
 - A tool reporting success is not evidence the edit landed: a scripted
   replace that matches nothing rewrites the file unchanged, and lint and
   typecheck both pass on it. Confirm by behaviour.
+- A new regression pin is proven to bite: red without the fix, green with
+  it. A test whose setup dodges the real path (a stand-in for the real
+  state-dir topology, a stub granting what the surface under test never
+  does) pins nothing, however green it runs.
 - Don't flag-and-skip. Surface pre-existing breakage early as a decision,
   not in a final summary as "out of scope". Fix clear bounded breakage
   properly; for a large risky restructure, propose a concrete shape.
@@ -168,6 +172,15 @@ carries the point wins.
   an overstuffed sentence to recast.
 - Concrete over abstract: name the command, the field, the number. Write
   "retries twice, then fails the run", not "robustly handles failures".
+- Statements, not questions: a docstring, heading, or comment that asks
+  ("Did X happen?", "X: what Y does") is recast to assert.
+- Prose that names code is a claim to verify: every symbol, default, flag,
+  and behaviour it states must match the source, and when prose and code
+  disagree, decide which side is wrong -- sometimes the fix is the code.
+  Prose someone acts on (a tool description, help text, an error, a
+  refusal) is an interface: it states exactly what is accepted and
+  returned, naming the resolved fact over the mechanism when it can
+  ("default: detected zsh", not "default: detect from $SHELL").
 - One idea per sentence, one topic per paragraph; short bullets over prose
   when listing facts.
 - Comments and docs state the current state only: a constraint, an
@@ -175,7 +188,8 @@ carries the point wins.
   line, never keep the incident a change fixed (commits own that). "Now",
   "no longer", "previously", "used to" in a comment is a story about a
   change: cut it. Test docstrings are the exception: the regression they pin
-  is their spec.
+  is their spec. A comment earns its keep by saying what the code and a grep
+  cannot; restating either is noise that invites drift.
 - Commit messages: imperative subject; a body only for a non-obvious why, in
   point form.
 - Flat documents: a heading plus short paragraphs or bullets. Bold is for
@@ -243,7 +257,10 @@ carries the point wins.
   never appended.
 - Everything committed is public the moment it is written: no emails,
   absolute home paths, hostnames, or real names outside the author field; no
-  session shorthand. Hygiene is prevention, never a pre-push sweep.
+  session shorthand -- a message reads identically to someone with no access
+  to the conversation, so session structure (rounds, batches) and decision
+  provenance (who asked, what was ruled) never appear. Hygiene is
+  prevention, never a pre-push sweep.
 - Never push; the operator signs and pushes from another machine. Never
   reference commit hashes (signing changes them) or branch names (transient)
   in messages or docs.
