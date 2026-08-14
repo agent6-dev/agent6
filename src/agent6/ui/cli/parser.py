@@ -44,6 +44,19 @@ _GLOBAL_VALUE_OPTS = frozenset({"--config"})
 _GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
 
 
+def _shell_default_help() -> str:
+    """The completions `shell` help, naming what detection resolves to RIGHT
+    NOW so the default reads as a fact, not a mechanism. Detection walks the
+    process tree (a fish inside bash detects fish); unknown keeps generic
+    wording."""
+    from agent6.ui.cli.completions_cmd import detect_shell  # noqa: PLC0415
+
+    detected = detect_shell()
+    if detected in ("bash", "zsh", "fish", "xonsh"):
+        return f"Target shell (default: detected {detected})."
+    return "Target shell (default: detect the running shell)."
+
+
 def _command_index(argv: list[str]) -> int | None:
     """Index of the subcommand token, skipping leading global options.
 
@@ -165,8 +178,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         sub,
         "completions",
         help=(
-            "Install shell tab-completion for agent6 (detects your shell from"
-            " $SHELL; bash/zsh get a guarded source line in their rc, fish and"
+            "Install shell tab-completion for agent6 (detects the shell you"
+            " are running; bash/zsh get a guarded source line in their rc, fish and"
             " xonsh a native auto-loaded file). --print emits the script"
             " instead, for `eval` or manual setup."
         ),
@@ -180,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default=None,
         choices=["bash", "zsh", "fish", "xonsh"],
         metavar="{bash,zsh,fish,xonsh}",
-        help="Target shell (default: detect from $SHELL).",
+        help=_shell_default_help(),
     )
     completions_p.add_argument(
         "--print",

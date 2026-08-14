@@ -89,14 +89,17 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--host",
         default=None,
         metavar="ADDR",
-        help="Bind address (default 127.0.0.1). A non-loopback bind widens the network surface.",
+        help=(
+            "Bind address (default: [web].host, 127.0.0.1 unless configured)."
+            " A non-loopback bind widens the network surface."
+        ),
     )
     web_p.add_argument(
         "--port",
         type=int,
         default=None,
         metavar="N",
-        help="Listen port (default 7658).",
+        help="Listen port (default: [web].port, 7658 unless configured).",
     )
     web_p.add_argument(
         "--allow-non-loopback",

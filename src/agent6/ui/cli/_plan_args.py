@@ -7,6 +7,7 @@ subcommand tree (see `_inject_default_verb`)."""
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from agent6.ui.cli._common import _add_budget_flags, _add_sandbox_flags, _sub
@@ -68,7 +69,10 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     plan_edit = _sub(
         plan_sub,
         "edit",
-        help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
+        help=(
+            "Open the plan.md for a prior plan run in $EDITOR"
+            f" (currently: {os.environ.get('EDITOR', '') or 'vi'}) and exit."
+        ),
     )
     plan_edit_id = plan_edit.add_argument(
         "session_id",
