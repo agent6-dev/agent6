@@ -19,11 +19,10 @@ from typing import Any
 
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.directive import DirectiveError, Segment, parse_compact, parse_directive, parse_spec
+from agent6.config.layer import resolved_state_dir
+from agent6.directive import DirectiveError, parse_compact, parse_directive
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
-from agent6.models.validate import refusal_message, validate_spec_models
+from agent6.models.validate import directive_model_refusal
 from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
@@ -88,7 +87,7 @@ def spawn_new_work(  # noqa: PLR0911
             return None, str(exc)
     if segments is None:
         return _spawn_run(cwd, mode, task, preset, spec="")
-    refusal = _model_refusal(cwd, segments)
+    refusal = directive_model_refusal(cwd, segments)
     if refusal is not None:
         return None, refusal
     first: str | None = None
@@ -105,25 +104,6 @@ def spawn_new_work(  # noqa: PLR0911
         return None, "; ".join(failures)
     assert first is not None  # no failures => every segment produced an id
     return first, ""
-
-
-def _model_refusal(cwd: Path, segments: list[Segment]) -> str | None:
-    """Refuse a `/parallel` directive that names a model the configured providers'
-    cache says doesn't exist, before any spawn (the composer's normal error path,
-    nothing spawned). None = every model checks out, or there is no cache to check
-    against (a fresh/offline machine proceeds; the detached lane's own preflight
-    warns). A malformed or over-`max_lanes` spec surfaces its grammar error."""
-    try:
-        cfg = load_effective(cwd).config
-    except ConfigError:
-        return None  # a broken config is its own separate error; don't mask it here
-    try:
-        cap = cfg.parallel.max_lanes
-        models = [m for seg in segments for m in parse_spec(seg.spec, limit=cap)]
-    except DirectiveError as exc:
-        return str(exc)
-    verdict = validate_spec_models(models, cfg)
-    return refusal_message(verdict, directive=True) if verdict.refused else None
 
 
 def _spawn_run(

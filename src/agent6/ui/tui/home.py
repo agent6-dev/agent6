@@ -37,8 +37,8 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
-from agent6.models.validate import known_models, refusal_message, validate_spec_models
+from agent6.directive import DirectiveError, parse_directive
+from agent6.models.validate import directive_model_refusal, known_models
 from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
@@ -547,7 +547,7 @@ class HomeScreen(Screen[None]):
         self.app.push_screen(ConfigScreen(self.repo_cwd))
 
     def action_open_machines(self) -> None:
-        self.app.push_screen(MachinesScreen(self.repo_cwd, self.agent6_dir))
+        self.app.push_screen(MachinesScreen(self.agent6_dir, self.repo_cwd))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)
@@ -652,7 +652,7 @@ def _spawn_and_locate(
             return None, str(exc)
     if segments is None:
         return _spawn_run(agent6_dir, repo_cwd, mode, task, preset=preset, spec="")
-    refusal = _model_refusal(repo_cwd, segments)
+    refusal = directive_model_refusal(repo_cwd, segments)
     if refusal is not None:
         return None, refusal
     first: Path | None = None
@@ -671,25 +671,6 @@ def _spawn_and_locate(
         return None, "\n".join(failures)
     assert first is not None  # no failures => every segment produced a dir
     return first, ""
-
-
-def _model_refusal(repo_cwd: Path, segments: list[Segment]) -> str | None:
-    """Refuse a `/parallel` directive that names a model the configured providers'
-    cache says doesn't exist, before any spawn (the modal's normal error path,
-    nothing spawned). None = every model checks out, or there is no cache to check
-    against (a fresh/offline machine proceeds; the detached lane's own preflight
-    warns). A malformed or over-`max_lanes` spec surfaces its grammar error."""
-    try:
-        cfg = load_effective(repo_cwd).config
-    except ConfigError:
-        return None  # a broken config is its own separate error; don't mask it here
-    try:
-        cap = cfg.parallel.max_lanes
-        models = [m for seg in segments for m in parse_spec(seg.spec, limit=cap)]
-    except DirectiveError as exc:
-        return str(exc)
-    verdict = validate_spec_models(models, cfg)
-    return refusal_message(verdict, directive=True) if verdict.refused else None
 
 
 def _spawn_run(

@@ -29,9 +29,13 @@ dispatcher share one policy without a UI or workflows dependency.
 from __future__ import annotations
 
 import difflib
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
-from agent6.config import Config, RoleName
+from agent6.config import Config, ConfigError, RoleName
+from agent6.config.layer import load_effective
+from agent6.directive import DirectiveError, Segment, parse_spec
 from agent6.models.cache import cached_models, fetch_models_live
 from agent6.models.registry import normalize_model_id
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
@@ -39,6 +43,7 @@ from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 __all__ = [
     "ModelValidation",
     "configured_model_refusal",
+    "directive_model_refusal",
     "known_models",
     "refusal_message",
     "validate_configured_model",
@@ -223,6 +228,26 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
     if directive:
         lines.append("backtick the word if you meant it as task text.")
     return "\n".join(lines)
+
+
+def directive_model_refusal(cwd: Path, segments: Sequence[Segment]) -> str | None:
+    """Refuse a `/parallel` directive that names a model the configured
+    providers' cache says doesn't exist, before any spawn (the surface's normal
+    error path, nothing spawned). None = every model checks out, or there is no
+    cache to check against (a fresh/offline machine proceeds; the detached
+    lane's own preflight warns). A malformed or over-`max_lanes` spec surfaces
+    its grammar error."""
+    try:
+        cfg = load_effective(cwd).config
+    except ConfigError:
+        return None  # a broken config is its own separate error; don't mask it here
+    try:
+        cap = cfg.parallel.max_lanes
+        models = [m for seg in segments for m in parse_spec(seg.spec, limit=cap)]
+    except DirectiveError as exc:
+        return str(exc)
+    verdict = validate_spec_models(models, cfg)
+    return refusal_message(verdict, directive=True) if verdict.refused else None
 
 
 def warning_message(v: ModelValidation) -> str:

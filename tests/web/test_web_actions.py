@@ -142,7 +142,7 @@ def test_spawn_new_work_parallel_refuses_unknown_model_before_spawn(
     def _eff(_cwd: object) -> _Eff:
         return _Eff(_provider_cfg())
 
-    monkeypatch.setattr(actions, "load_effective", _eff)
+    monkeypatch.setattr(models_validate, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     session_id, err = actions.spawn_new_work(
         tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it"
@@ -160,10 +160,12 @@ def test_spawn_new_work_parallel_unknown_model_no_cache_proceeds(
     # preflight warns. The spawn happens.
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
 
+    from agent6.models import validate as models_validate
+
     def _eff(_cwd: object) -> _Eff:
         return _Eff(_provider_cfg())
 
-    monkeypatch.setattr(actions, "load_effective", _eff)
+    monkeypatch.setattr(models_validate, "load_effective", _eff)
     captured = _capture_locate(monkeypatch)
     actions.spawn_new_work(tmp_path, "run", "/parallel made-up/model fix it")
     assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]
@@ -216,7 +218,7 @@ def test_parallel_partial_spawn_failure_surfaces(
     def no_refusal(cwd: Path, segments: object) -> None:
         return None
 
-    monkeypatch.setattr(actions, "_model_refusal", no_refusal)
+    monkeypatch.setattr(actions, "directive_model_refusal", no_refusal)
     session_id, err = actions.spawn_new_work(
         tmp_path, "run", "/parallel 2 task A /parallel 3 task B"
     )

@@ -388,7 +388,7 @@ depends_on = ["agent6.config", "agent6.models.cache"]
 # re-fetches the live listing (secrets: the key for the authed fetch) so a
 # refusal never rests on a stale snapshot.
 path = "agent6.models.validate"
-depends_on = ["agent6.config", "agent6.models.cache", "agent6.models.registry", "agent6.secrets"]
+depends_on = ["agent6.config", "agent6.models.cache", "agent6.models.registry", "agent6.secrets", "agent6.config.layer", "agent6.directive"]
 
 [[modules]]
 path = "agent6.sandbox.detect"

@@ -367,7 +367,11 @@ def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: ob
         return tmp_path / "r1", ""
 
     monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "_model_refusal", lambda repo_cwd, segments: None)  # type: ignore[attr-defined]
+
+    def _no_refusal(repo_cwd: Path, segments: object) -> None:
+        return None
+
+    monkeypatch.setattr(home, "directive_model_refusal", _no_refusal)  # type: ignore[attr-defined]
     session_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
         tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", preset=""
     )
@@ -434,7 +438,7 @@ def test_spawn_parallel_refuses_unknown_model_before_spawn(
         raise AssertionError("no spawn on a model refusal")
 
     monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "load_effective", lambda _cwd, _cp=None: _Eff())  # type: ignore[attr-defined]
+    monkeypatch.setattr(models_validate, "load_effective", lambda _cwd, _cp=None: _Eff())  # type: ignore[attr-defined]
     a6 = tmp_path / ".agent6"
     a6.mkdir()
 
