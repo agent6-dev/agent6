@@ -12,7 +12,7 @@ dependencies = [
     "httpx2>=2.3",
     "pydantic>=2.7,<3",
     "ruff>=0.6,<1",  # runtime, not dev: lints the scripts `machine create` generates
-    "textual>=0.86",  # the live dashboard; without it `--tui` falls back to the plain CLI stream
+    "textual>=0.86",
     "tree-sitter==0.25.2",
     "tree-sitter-language-pack==1.8.1",
     "ty>=0.0.46,<0.1",  # runtime: typechecks the scripts `machine create` generates
@@ -35,8 +35,8 @@ artifacts = ["src/agent6/sandbox/_bin/agent6-jail"]
 # Ship the compiled binary, not the Rust crate it is built from.
 exclude = ["src/agent6/jail"]
 
-# Bundle the reference docs into the wheel (agent6/_docs/) for the agent6_docs
-# tool. Sources are lowercase under docs/; they ship under uppercase names.
+# Bundle the reference docs into the wheel (agent6/_docs/) for the
+# agent6_docs tool.
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "agent6/_docs/README.md"
 "AGENTS.md" = "agent6/_docs/AGENTS.md"
@@ -44,18 +44,15 @@ exclude = ["src/agent6/jail"]
 "docs/config.md" = "agent6/_docs/CONFIG.md"
 "docs/security.md" = "agent6/_docs/SECURITY.md"
 
-# Compile agent6-jail during the wheel build and bundle it under
-# agent6/sandbox/_bin/, so `uv sync` or `uv build` is self-contained with no
-# separate cargo step. Without cargo the hook falls back to a pure-Python wheel
-# (`agent6 check sandbox` then explains the missing binary). CI sets
-# AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl so the binary is static and runs
-# on any glibc.
+# Compile agent6-jail during the wheel build; without cargo the hook builds a
+# pure-Python wheel (`agent6 check sandbox` explains the missing binary). CI
+# sets AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl for a static binary.
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
-# Ship the Rust crate sources (under src/agent6) so the jail can be built from
-# the sdist; the binary and build dir are excluded below.
+# Rust crate sources ride the sdist so the jail can build from it; the binary
+# and build dir stay out.
 include = [
     "src/agent6",
     "hatch_build.py",
@@ -68,7 +65,6 @@ include = [
     "tach.toml",
     "LICENSE",
 ]
-# No built binary or Rust artifacts in the sdist; the hook rebuilds it.
 exclude = [
     "src/agent6/sandbox/_bin",
     "src/agent6/jail/target",
@@ -76,8 +72,6 @@ exclude = [
 
 [dependency-groups]
 dev = [
-    # Validates every ACP notification we emit against the vendored protocol
-    # schema; three wire-shape bugs got written from the prose docs first.
     "jsonschema>=4",
     "pyan3>=2.6.2",
     "pyright>=1.1.380",
@@ -91,10 +85,8 @@ dev = [
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
-# task repos under bench are AGENT-INPUT FIXTURES, some deliberately buggy;
-# linting them would force noqa markers that annotate the seeded defects.
-# Demo seed repos included: the committed cassettes replay edits against
-# those exact bytes, so lint must not reshape them.
+# bench task repos are agent-input fixtures (some deliberately buggy); demo
+# seeds replay committed cassettes byte-exact. Lint must not touch either.
 extend-exclude = ["bench/coreagent/tasks/*/repo", "docs/screenshots/seed"]
 
 [tool.ruff.lint]
@@ -138,10 +130,8 @@ reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
 
-# cli/ is one CLI split across modules that share underscore-prefixed helpers.
-# That cross-module sharing is the package's internal API, so the private-usage
-# and unused-symbol checks (which assume `_name` is file-local) only add noise
-# here; they stay strict everywhere else.
+# cli/ shares _-prefixed helpers across its modules as the package-internal
+# API; the file-local private/unused checks only add noise here.
 [[tool.pyright.executionEnvironments]]
 root = "src/agent6/ui/cli"
 reportPrivateUsage = false
@@ -156,12 +146,7 @@ reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# The source tree, not the installed package: a src-layout project wants its
-# own `src` on the path so the suite tests what is checked out. (This used to
-# be load-bearing for a different reason -- the jail remapped the repo to
-# /workspace, so an editable install's .pth pointed at a path that did not
-# exist inside and `import agent6` found nothing. The jail binds the repo at
-# its real path now, so an editable install imports itself in or out of it.)
+# src layout: the suite tests the checkout, not an installed copy.
 pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
