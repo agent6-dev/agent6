@@ -52,7 +52,7 @@ prompt_caching = true
 api_format = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
-extra_headers = { "HTTP-Referer" = "https://github.com/elesiuta/agent6", "X-Title" = "agent6-swebench" }'
+extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Title" = "agent6-swebench" }'
 
 
 # Optional review panel (Fugu dimension). AGENT6_SB_REVIEW_SEATS is a

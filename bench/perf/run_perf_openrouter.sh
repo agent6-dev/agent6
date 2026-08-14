@@ -135,7 +135,7 @@ config_version = 1
 api_format = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
-extra_headers = { "HTTP-Referer" = "https://github.com/elesiuta/agent6", "X-Title" = "agent6-bench" }
+extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Title" = "agent6-bench" }
 
 [models.worker]
 provider = "openrouter"

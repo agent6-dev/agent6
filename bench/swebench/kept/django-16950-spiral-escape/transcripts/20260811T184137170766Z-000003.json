@@ -808,7 +808,7 @@
       "accept": "text/event-stream",
       "authorization": "<REDACTED>",
       "content-type": "application/json",
-      "http-referer": "https://github.com/elesiuta/agent6",
+      "http-referer": "https://github.com/agent6-dev/agent6",
       "x-title": "agent6-swebench"
     },
     "url": "https://openrouter.ai/api/v1/chat/completions"
