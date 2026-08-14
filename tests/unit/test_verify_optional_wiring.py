@@ -19,6 +19,7 @@ from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
 from agent6.workflows._prompt_blocks import build_system_prompt
+from agent6.workflows._verify_verdict import VerifyVerdict
 
 
 def _cfg(*, verify: bool) -> Config:
@@ -154,8 +155,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     wf.dispatcher = MagicMock()
     wf.dispatcher.command_policy.return_value = "no"  # denied mid-run
     state = MagicMock(spec=_LoopState)
-    state.last_verify_ok = False
-    state.edited_since_verify = False
+    state.verify = VerifyVerdict(last_ok=False, edited_since=False)
 
     assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
 

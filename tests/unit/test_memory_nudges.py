@@ -15,6 +15,7 @@ from agent6.config import Config
 from agent6.tools.results import EditResult, ExecResult
 from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
+from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     Workflow,
     _LoopState,  # pyright: ignore[reportPrivateUsage]
@@ -60,7 +61,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     state = _state()
     fail = _turn(1)
     _verify(wf, state, fail, rc=1)
-    assert state.verify_ever_failed is True
+    assert state.verify.ever_failed is True
     assert fail.verify_flipped_green is False
 
     flip = _turn(2)
@@ -95,7 +96,7 @@ def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
         (_wf(), {"memory_written": True}),
         (_wf(mode="ask"), {}),
     ):
-        state = _state(last_verify_ok=False, verify_ever_failed=True, **state_kw)
+        state = _state(**state_kw, verify=VerifyVerdict(last_ok=False, ever_failed=True))
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
         wf._turn_notices(state, flip)  # pyright: ignore[reportPrivateUsage]
@@ -136,7 +137,7 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
 
 def test_finish_gate_defers_once_then_honours() -> None:
     wf = _wf()
-    state = _state(verify_ever_failed=True, last_verify_ok=True)
+    state = _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))
 
     first = _turn(5, finish_signal="done", finish_payload={"k": "v"})
     wf._gate_memory_finish(state, first)  # pyright: ignore[reportPrivateUsage]
@@ -155,15 +156,15 @@ def test_finish_gate_quiet_without_a_recovery_or_after_a_write() -> None:
     wf = _wf()
     cases = [
         # Verify never failed: a smooth run is never interrogated.
-        (wf, _state(last_verify_ok=True)),
+        (wf, _state(verify=VerifyVerdict(last_ok=True))),
         # Still red at finish: nothing proven to record.
-        (wf, _state(verify_ever_failed=True, last_verify_ok=False)),
+        (wf, _state(verify=VerifyVerdict(ever_failed=True, last_ok=False))),
         # The worker already recorded something.
-        (wf, _state(verify_ever_failed=True, last_verify_ok=True, memory_written=True)),
+        (wf, _state(memory_written=True, verify=VerifyVerdict(ever_failed=True, last_ok=True))),
         # No memory store wired.
-        (_wf(state_dir=None), _state(verify_ever_failed=True, last_verify_ok=True)),
+        (_wf(state_dir=None), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
         # Not a run-mode workflow.
-        (_wf(mode="ask"), _state(verify_ever_failed=True, last_verify_ok=True)),
+        (_wf(mode="ask"), _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))),
     ]
     for gated_wf, state in cases:
         turn = _turn(5, finish_signal="done")

@@ -89,7 +89,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     )
     wf = _wf(resume_state_path=snap, config=config)
     state = _LoopState(original_task="t", tool_calls=2)
-    state.verify_ever_passed = True
+    state.verify.ever_passed = True
     state.gateless_ever_committed = True
     state.metric_history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]

@@ -26,6 +26,7 @@ from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import Workflow
 
 _GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
@@ -159,7 +160,10 @@ def test_run_silent_finish_stays_silent_finish() -> None:
     # implicit silent_finish, not "answered".
     wf = _wf(mode="run")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=5
+        "Done.",
+        Conversation(),
+        _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
+        iteration=5,
     )
     assert result is not None
     assert result.reason == "silent_finish"
@@ -193,7 +197,7 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
         "I tried, but the tests still fail.",
         Conversation(),
-        _state(ever_edited=True, verify_ever_passed=True, last_verify_ok=False),
+        _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True, last_ok=False)),
         iteration=5,
     )
     assert result is not None and result.reason == "silent_finish"
@@ -210,9 +214,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
         Conversation(),
         _state(
             ever_edited=True,
-            verify_ever_passed=True,
-            last_verify_ok=True,
-            edited_since_verify=False,
+            verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False),
         ),
         iteration=5,
     )
@@ -5176,7 +5178,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     )
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
-    assert st.verify_broken_warned is True
+    assert st.verify.broken_warned is True
 
     # a second dead verify does not re-warn
     turn2 = _turn(iteration=2)
@@ -5216,7 +5218,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
     )
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert not any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
-    assert st.verify_broken_warned is False
+    assert st.verify.broken_warned is False
 
 
 def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> None:
@@ -5869,9 +5871,8 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     )
     state = _state(
         ever_edited=True,
-        verify_ever_passed=True,
-        last_verify_ok=True,
-        edited_since_verify=True,  # the green verify predates the last edit
+        # The green verify predates the last edit.
+        verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=True),
     )
     with patch.object(wf, "_worktree_dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
@@ -5898,10 +5899,7 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
         metric_plateau_finish="score plateaued at 10",
     )
     state = _state(
-        ever_edited=True,
-        verify_ever_passed=True,
-        last_verify_ok=True,
-        edited_since_verify=False,
+        ever_edited=True, verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False)
     )
     with patch.object(wf, "_worktree_dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, Conversation())  # pyright: ignore[reportPrivateUsage]
@@ -5941,8 +5939,8 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
         ),
     )
     state = _state()
-    state.last_verify_ok = False  # red tree: all_passed must stay False
-    state.edited_since_verify = True
+    state.verify.last_ok = False  # red tree: all_passed must stay False
+    state.verify.edited_since = True
     events: list[dict[str, Any]] = []
     wf._emit = lambda event_type, **fields: events.append({"type": event_type, **fields})  # pyright: ignore[reportPrivateUsage]
 
@@ -6147,7 +6145,7 @@ def test_standing_task_converts_silent_finish_into_reentry() -> None:
     curator.nodes.return_value = _standing_nodes()
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = Conversation()
-    state = _state(ever_edited=True, verify_ever_passed=True)
+    state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
     first = wf._handle_silent_finish("Done.", conv, state, iteration=3)  # pyright: ignore[reportPrivateUsage]
     assert first is None  # absorbed: the run continues
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
@@ -6226,7 +6224,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         steer_prompt=lambda: next(steers),
     )
     conv = Conversation()
-    state = _state(ever_edited=True, verify_ever_passed=True)
+    state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
     parked = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
     assert parked is None  # steered onward, same conversation
     wire = conv.to_wire()
@@ -6240,7 +6238,10 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         steer_prompt=lambda: next(aborts),
     )
     ended = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=4
+        "Done.",
+        Conversation(),
+        _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
+        iteration=4,
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "steer_abort"
 
@@ -6249,7 +6250,10 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     # Non-interactive: unchanged silent_finish end.
     wf = _wf(mode="run", interactive=False)
     ended = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=4
+        "Done.",
+        Conversation(),
+        _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
+        iteration=4,
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     # A standing goal outranks the park: autonomy first, the absorb nudge (not
@@ -6259,7 +6263,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
     conv = Conversation()
     out = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", conv, _state(ever_edited=True, verify_ever_passed=True), iteration=4
+        "Done.", conv, _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)), iteration=4
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]

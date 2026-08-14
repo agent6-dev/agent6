@@ -11,6 +11,7 @@ from typing import Any, Literal
 from unittest.mock import MagicMock
 
 from agent6.config import Config
+from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     Workflow,
     _LoopState,  # pyright: ignore[reportPrivateUsage]
@@ -34,33 +35,33 @@ def _wf(
     )
 
 
-def _green(wf: Workflow, **state_kw: Any) -> bool | None:
-    state = _LoopState(original_task="t", tool_calls=0, **state_kw)
+def _green(wf: Workflow, **verdict_kw: Any) -> bool | None:
+    state = _LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf._tree_is_verify_green(state)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_no_verify_command_is_not_gated() -> None:
     # Nothing to gate on -> None -> finish is always an honest pass.
-    assert _green(_wf(verify=False), last_verify_ok=None) is None
-    assert _green(_wf(verify=False), last_verify_ok=False) is None
+    assert _green(_wf(verify=False), last_ok=None) is None
+    assert _green(_wf(verify=False), last_ok=False) is None
 
 
 def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
     wf = _wf(verify=True)
-    assert _green(wf, last_verify_ok=True, edited_since_verify=False) is True
+    assert _green(wf, last_ok=True, edited_since=False) is True
     # Never verified, or last verify failed -> not green.
-    assert _green(wf, last_verify_ok=None) is False
-    assert _green(wf, last_verify_ok=False) is False
+    assert _green(wf, last_ok=None) is False
+    assert _green(wf, last_ok=False) is False
     # A green verify that has since been edited over is stale -> not green.
-    assert _green(wf, last_verify_ok=True, edited_since_verify=True) is False
+    assert _green(wf, last_ok=True, edited_since=True) is False
 
 
 def test_require_verify_to_finish_defaults_off() -> None:
     assert Config().workflow.require_verify_to_finish is False
 
 
-def _verified(wf: Workflow, **state_kw: Any) -> str:
-    state = _LoopState(original_task="t", tool_calls=0, **state_kw)
+def _verified(wf: Workflow, **verdict_kw: Any) -> str:
+    state = _LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf._verification(state)  # pyright: ignore[reportPrivateUsage]
 
 
@@ -73,18 +74,16 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     leg" into it printed "the gate is red" over a gate that never ran and sent
     the operator to bisect the base commit for a failure that never happened;
     those finishes are "unverified"."""
-    assert _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=False) == "passed"
-    assert _verified(_wf(verify=True), last_verify_ok=False) == "failed"
+    assert _verified(_wf(verify=True), last_ok=True, edited_since=False) == "passed"
+    assert _verified(_wf(verify=True), last_ok=False) == "failed"
     # Red, then edited without re-verifying: the red observation stands.
-    assert _verified(_wf(verify=True), last_verify_ok=False, edited_since_verify=True) == "failed"
+    assert _verified(_wf(verify=True), last_ok=False, edited_since=True) == "failed"
     # Green but edited since: no observation covers the final tree.
-    assert (
-        _verified(_wf(verify=True), last_verify_ok=True, edited_since_verify=True) == "unverified"
-    )
+    assert _verified(_wf(verify=True), last_ok=True, edited_since=True) == "unverified"
     # Never observed this leg: not red, not green.
-    assert _verified(_wf(verify=True), last_verify_ok=None) == "unverified"
+    assert _verified(_wf(verify=True), last_ok=None) == "unverified"
     # Gateless: nothing ever gated this run, so there is no verdict to claim.
-    assert _verified(_wf(verify=False), last_verify_ok=None) == "not_applicable"
+    assert _verified(_wf(verify=False), last_ok=None) == "not_applicable"
 
 
 def test_a_gateless_end_and_its_verdict_agree() -> None:
@@ -99,16 +98,16 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     def _capture(_type: str, **fields: Any) -> None:
         emitted.append(fields)
 
-    cases: tuple[tuple[bool, dict[str, Any], bool, str], ...] = (
-        (False, {"last_verify_ok": None}, False, "not_applicable"),
-        (True, {"last_verify_ok": True, "edited_since_verify": False}, True, "passed"),
-        (True, {"last_verify_ok": False}, False, "failed"),
+    cases: tuple[tuple[bool, VerifyVerdict, bool, str], ...] = (
+        (False, VerifyVerdict(last_ok=None), False, "not_applicable"),
+        (True, VerifyVerdict(last_ok=True, edited_since=False), True, "passed"),
+        (True, VerifyVerdict(last_ok=False), False, "failed"),
     )
-    for verify, state_kw, all_passed, verdict in cases:
+    for verify, verify_verdict, all_passed, verdict in cases:
         wf = _wf(verify=verify)
         wf.events = MagicMock(emit=_capture)
         wf.events.emit = _capture  # type: ignore[method-assign]
-        state = _LoopState(original_task="t", tool_calls=0, **state_kw)
+        state = _LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
         emitted.clear()
         wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
             reason="finish_session", iteration=1, state=state
@@ -128,8 +127,8 @@ def test_plan_and_ask_are_never_gated_on_verify() -> None:
     INFERS a verify command for plan, and plan never runs it, so the tree read
     as red) while its own journal and every listing said passed."""
     for mode in ("plan", "ask"):
-        assert _verified(_wf(verify=True, mode=mode), last_verify_ok=None) == "not_applicable"
-        assert _verified(_wf(verify=True, mode=mode), last_verify_ok=False) == "not_applicable"
+        assert _verified(_wf(verify=True, mode=mode), last_ok=None) == "not_applicable"
+        assert _verified(_wf(verify=True, mode=mode), last_ok=False) == "not_applicable"
 
 
 def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: Path) -> None:
@@ -207,12 +206,13 @@ def test_a_resumed_leg_carries_the_verify_verdict_over_an_unmoved_tree(tmp_path:
     wf = _wf(verify=True, root=tmp_path)
     snap = _snap(head_sha=head, last_verify_ok=True, edited_since_verify=False, baseline_ok=False)
     state = _resumed_state(wf, snap)
-    assert state.last_verify_ok is True
-    assert state.edited_since_verify is False
-    assert state.baseline_ok is False
+    assert state.verify.last_ok is True
+    assert state.verify.edited_since is False
+    assert state.verify.baseline_ok is False
     assert wf._verification(state) == "passed"  # pyright: ignore[reportPrivateUsage]
     # A red observation carries the same way: the resumed leg stays answerable.
-    assert _resumed_state(wf, _snap(head_sha=head, last_verify_ok=False)).last_verify_ok is False
+    red = _resumed_state(wf, _snap(head_sha=head, last_verify_ok=False))
+    assert red.verify.last_ok is False
 
 
 def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> None:
@@ -228,12 +228,12 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
     # Worktree dirtied between legs.
     (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
     state = _resumed_state(wf, _snap(head_sha=head, **green))
-    assert state.last_verify_ok is None
-    assert state.baseline_ok is True  # the base commit did not move
+    assert state.verify.last_ok is None
+    assert state.verify.baseline_ok is True  # the base commit did not move
 
     # HEAD moved forward between legs.
     sp.run(["git", "commit", "-qam", "operator work"], cwd=tmp_path, check=True)
-    assert _resumed_state(wf, _snap(head_sha=head, **green)).last_verify_ok is None
+    assert _resumed_state(wf, _snap(head_sha=head, **green)).verify.last_ok is None
 
     # No head recorded at write time: nothing to compare against.
-    assert _resumed_state(wf, _snap(head_sha="", **green)).last_verify_ok is None
+    assert _resumed_state(wf, _snap(head_sha="", **green)).verify.last_ok is None

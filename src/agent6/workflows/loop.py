@@ -224,6 +224,7 @@ from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
 )
+from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
     SubrunError,
@@ -319,25 +320,10 @@ class _LoopState:
     # pass; once it hits review_max_total_rejections the gate auto-disarms to
     # advisory for the rest of the run (oscillation can't burn the budget).
     review_rejections_total: int = 0
-    # Last verify result the panel grounds against (None = no verify yet).
-    last_verify_ok: bool | None = None
-    # Was the gate already failing before this run touched anything? Recorded
-    # when a verify runs against an unmodified tree, which is what happens
-    # whenever the model's first move is to see where things stand. None means
-    # no such verify happened, and "I do not know" is the honest answer then.
-    baseline_ok: bool | None = None
-    last_verify_tail: str = ""
-    # No-progress spiral guard: consecutive verify failures sharing one
-    # normalized signature. Green verify or a new signature resets the streak
-    # (and the nudge allowance -- a NEW stuck point may nudge again).
-    verify_fail_signature: str = ""
-    verify_fail_streak: int = 0
-    verify_broken_warned: bool = False
+    # The verify verdict: the one object every "is the run green" consumer
+    # reads (gates, review grounding, snapshot, notices).
+    verify: VerifyVerdict = field(default_factory=VerifyVerdict)
     no_progress_nudges_used: int = 0
-    # True once the tree has been edited since the last green verify (spans
-    # iterations, unlike the per-iteration edit_since_verify_pass). Makes a
-    # stale earlier pass not count as "currently green" for the finish gate.
-    edited_since_verify: bool = False
     # Degenerate-loop guard: a back-to-back streak of the same (tool, args)
     # signature. Reset on any change so a normal re-read after edits is fine.
     last_tool_signature: str | None = None
@@ -387,7 +373,6 @@ class _LoopState:
     # verify-settled completion (run mode): once verify has passed -- or, on a
     # gateless run, once an edit has been committed -- count no-progress
     # iterations; nudge then stop a worker that spins after success.
-    verify_ever_passed: bool = False
     gateless_ever_committed: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
@@ -400,7 +385,6 @@ class _LoopState:
     # advisory when verify first goes green after failing, one deferred
     # finish_session as the backstop. Both suppressed once the worker records
     # anything; a run whose verify never failed is never nudged.
-    verify_ever_failed: bool = False
     memory_written: bool = False
     memory_flip_nudged: bool = False
     memory_finish_nudged: bool = False
@@ -436,7 +420,7 @@ def _restore_completion_state(state: _LoopState, snap: SessionSnapshot) -> None:
     idle). A fresh run() never calls this and keeps _LoopState's defaults. Adding a
     persisted completion field is one field on SessionSnapshot plus one line here."""
     state.review_rejections_total = snap.review_rejections_total
-    state.verify_ever_passed = snap.verify_ever_passed
+    state.verify.ever_passed = snap.verify_ever_passed
     state.gateless_ever_committed = snap.gateless_ever_committed
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)
@@ -998,7 +982,7 @@ class Workflow:
         baseline probe, so the leg starts unobserved rather than wrongly green
         or red. ``baseline_ok`` is about the BASE commit, which resume never
         moves: it carries unconditionally."""
-        state.baseline_ok = snap.baseline_ok
+        state.verify.baseline_ok = snap.baseline_ok
         state.standing_tools_mark = snap.standing_tools_mark
         if snap.last_verify_ok is None or not snap.head_sha:
             return
@@ -1007,8 +991,8 @@ class Workflow:
         except (GitError, OSError):
             return
         if status.is_clean and status.head_sha == snap.head_sha:
-            state.last_verify_ok = snap.last_verify_ok
-            state.edited_since_verify = snap.edited_since_verify
+            state.verify.last_ok = snap.last_verify_ok
+            state.verify.edited_since = snap.edited_since_verify
 
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
@@ -1398,7 +1382,7 @@ class Workflow:
         exoneration, so an unreadable git records nothing.
         """
         if (
-            state.verify_ever_passed
+            state.verify.ever_passed
             or result.exec_failed
             or result.returncode == self._EXIT_TIMEOUT
             or verify_did_not_run(result.stdout, result.stderr, result.duration_s)
@@ -1415,47 +1399,41 @@ class Workflow:
         """Verify bookkeeping: pass/fail flags, the grounding tail, and the
         no-progress streak (consecutive fails sharing one signature)."""
         rc = result.returncode
+        verdict = state.verify
         if rc == 0:
             turn.verify_just_passed = True
-            if state.last_verify_ok is False:
+            if verdict.last_ok is False:
                 turn.verify_flipped_green = True
             # This verify validated the current tree; any earlier
             # edit is now covered.
             turn.edit_since_verify_pass = False
-            state.edited_since_verify = False
         else:
             turn.verify_just_failed = True
-            state.verify_ever_failed = True
             # A verify that exited instantly without running any tests (runner
             # absent) is a broken verify, not a real failure: flag it once so
             # the model does not "fix" working code or finish unchecked.
-            if not state.verify_broken_warned and verify_did_not_run(
+            if not verdict.broken_warned and verify_did_not_run(
                 result.stdout, result.stderr, result.duration_s
             ):
-                state.verify_broken_warned = True
+                verdict.broken_warned = True
                 turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
-        state.last_verify_ok = rc == 0
-        if state.baseline_ok is None and self._judged_the_base_commit(state, result):
+        if verdict.baseline_ok is None and self._judged_the_base_commit(state, result):
             # This verify judged the run's BASE commit, so it IS the
             # baseline: no second gate run is needed to learn the same answer.
-            state.baseline_ok = rc == 0
+            verdict.baseline_ok = rc == 0
             self._emit("loop.baseline", ok=rc == 0, iteration=turn.iteration)
             if rc != 0:
                 turn.tool_results.append(Notice(BASELINE_RED_NOTICE))
         tail = f"{result.stdout}\n{result.stderr}"
-        state.last_verify_tail = tail.strip()[-2000:]
+        verdict.last_tail = tail.strip()[-2000:]
         if rc == 0:
-            state.verify_fail_signature = ""
-            state.verify_fail_streak = 0
+            verdict.note_pass()
             state.no_progress_nudges_used = 0
             return
-        sig = verify_failure_signature(result.stdout, result.stderr)
-        if sig == state.verify_fail_signature:
-            state.verify_fail_streak += 1
-        else:
-            state.verify_fail_signature = sig
-            state.verify_fail_streak = 1
+        verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
+        if verdict.fail_streak == 1:
+            # A NEW stuck point: the nudge allowance starts over with it.
             state.no_progress_nudges_used = 0
 
     def _left_the_tree_dirty(self, name: str) -> bool:
@@ -1512,7 +1490,7 @@ class Workflow:
             # Invalidate a same-turn earlier verify pass: the commit
             # gate must not label this edited tree "verify passed".
             turn.edit_since_verify_pass = True
-            state.edited_since_verify = True
+            state.verify.note_edit()
         elif self._left_the_tree_dirty(name):
             # A command (or an MCP tool) can change the tree just as an edit
             # tool can, and a green verify must not survive it: the tree the
@@ -1520,7 +1498,7 @@ class Workflow:
             # than assumed from the tool name, so a read-only `ls` or `grep`
             # through run_command keeps the pass it had.
             turn.edit_since_verify_pass = True
-            state.edited_since_verify = True
+            state.verify.note_edit()
         if name in DAG_MUTATING_TOOLS:
             turn.dag_mutated = True  # snapshot once after the turn
 
@@ -1973,7 +1951,7 @@ class Workflow:
             # A gate that was already red before this run touched anything is
             # not something the worker can be pushed to fix: demanding green
             # there is demanding it repair whatever it inherited.
-            and state.baseline_ok is not False
+            and state.verify.baseline_ok is not False
             and self.config.workflow.require_verify_to_finish
             and state.verify_finish_nudges_used < VERIFY_FINISH_PATIENCE
         ):
@@ -2023,8 +2001,8 @@ class Workflow:
             and turn.finish_kind == "finish_session"
             and self.mode == "run"
             and self.state_dir is not None
-            and state.verify_ever_failed
-            and state.last_verify_ok is True
+            and state.verify.ever_failed
+            and state.verify.last_ok is True
             and not state.memory_written
             and not state.memory_finish_nudged
         ):
@@ -2100,7 +2078,7 @@ class Workflow:
             and not state.stagnation_nudged
             and elapsed >= self.stagnation_notice_after_s
             and not state.ever_edited
-            and state.last_verify_ok is None
+            and state.verify.last_ok is None
             and self.mode == "run"
         ):
             state.stagnation_nudged = True
@@ -2189,12 +2167,10 @@ class Workflow:
         commit, so the settled detector must defer to them. (Gating the
         bookkeeping here also keeps the worktree-dirty git check off the
         metric hot path.)"""
-        if turn.verify_just_passed:
-            state.verify_ever_passed = True
         non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         # "Settled" once the run reached a good state: a green verify, or (on a
         # gateless run, where verify never fires) a committed edit.
-        settled_seeded = state.verify_ever_passed or state.gateless_ever_committed
+        settled_seeded = state.verify.ever_passed or state.gateless_ever_committed
         if non_metric_run and settled_seeded:
             made_progress = turn.committed or turn.edited or self._worktree_dirty()
             if made_progress:
@@ -2329,7 +2305,7 @@ class Workflow:
         non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         if not non_metric_run or not turn.verify_just_failed:
             return
-        streak = state.verify_fail_streak
+        streak = state.verify.fail_streak
         if streak >= NO_PROGRESS_STOP_AFTER and state.no_progress_nudges_used >= 2:
             # Both nudges delivered and the identical failure persists: stop in
             # the stop checks rather than burn the rest of the budget.
@@ -2405,7 +2381,7 @@ class Workflow:
         turn.no_progress_stop = False
         turn.plateau_should_stop = False
         state.verify_settled_idle = 0
-        state.verify_fail_streak = 0
+        state.verify.fail_streak = 0
         state.no_progress_nudges_used = 0
         state.plateau_nudges_used = 0
         conversation.notice(nudge)
@@ -2444,7 +2420,7 @@ class Workflow:
         if turn.no_progress_stop:
             self._log(
                 f"LOOP: no_progress stop at iter {turn.iteration}"
-                f" (streak {state.verify_fail_streak})"
+                f" (streak {state.verify.fail_streak})"
             )
             self._final_checkpoint(turn.iteration)
             self._emit(
@@ -2458,7 +2434,7 @@ class Workflow:
                 reason="no_progress",
                 summary=(
                     "stopped: the same verify failure persisted through"
-                    f" {state.verify_fail_streak} consecutive runs despite two"
+                    f" {state.verify.fail_streak} consecutive runs despite two"
                     " harness interventions; resume with a new approach or a"
                     " bigger budget"
                 ),
@@ -2474,7 +2450,7 @@ class Workflow:
             # followed by un-reverified edits must not settle as "passed"
             # (finish_session grounds on the same probe, so the two clean ends
             # cannot disagree).
-            if state.verify_ever_passed and self._tree_is_verify_green(state) is not False:
+            if state.verify.ever_passed and self._tree_is_verify_green(state) is not False:
                 self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
                 return SessionResult(
                     completed=True,
@@ -2488,7 +2464,7 @@ class Workflow:
             # verified the FINAL tree, so this end never claims "passed".
             self._pass_pending_root_tasks()
             self._emit("session.end", reason="settled", iterations=turn.iteration, all_passed=False)
-            if state.verify_ever_passed:
+            if state.verify.ever_passed:
                 summary = (
                     "the worker settled, but edits after the last green verify were"
                     " never re-verified"
@@ -2831,7 +2807,7 @@ class Workflow:
             self.mode == "run"
             and iteration <= 3
             and not state.ever_edited
-            and not state.verify_ever_passed
+            and not state.verify.ever_passed
             and state.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
         ):
             state.silent_no_work_nudges_used += 1
@@ -3255,7 +3231,7 @@ class Workflow:
             return "not_applicable"
         if green:
             return "passed"
-        return "failed" if state.last_verify_ok is False else "unverified"
+        return "failed" if state.verify.last_ok is False else "unverified"
 
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
         """Emit a successful ``session.end``, first auto-passing any still-pending
@@ -3272,7 +3248,7 @@ class Workflow:
         'finished over a red or stale verify'."""
         if not self.config.workflow.verify_command:
             return None
-        return state.last_verify_ok is True and not state.edited_since_verify
+        return state.verify.green_and_untouched
 
     def _finish_reason(self, turn: _TurnState, state: _LoopState) -> SessionEndReason:
         """What this finish is called.
@@ -3292,7 +3268,7 @@ class Workflow:
         if turn.finish_kind == "finish_session" and self._tree_is_verify_green(state) is False:
             if turn.finish_stale_gate:
                 return "gate_stale"
-            if state.baseline_ok is False:
+            if state.verify.baseline_ok is False:
                 return "gate_red_at_base"
         return turn.finish_kind
 
@@ -3415,15 +3391,15 @@ class Workflow:
             original_task=state.original_task,
             verify_command=self.config.workflow.verify_command,
             review_rejections_total=state.review_rejections_total,
-            verify_ever_passed=state.verify_ever_passed,
+            verify_ever_passed=state.verify.ever_passed,
             gateless_ever_committed=state.gateless_ever_committed,
             parallel_groups_dispatched=state.parallel_groups_dispatched,
             pins=tuple(state.pins),
             metric_best_score=best.score if best is not None else None,
             metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
-            last_verify_ok=state.last_verify_ok,
-            edited_since_verify=state.edited_since_verify,
-            baseline_ok=state.baseline_ok,
+            last_verify_ok=state.verify.last_ok,
+            edited_since_verify=state.verify.edited_since,
+            baseline_ok=state.verify.baseline_ok,
             standing_tools_mark=state.standing_tools_mark,
             head_sha=self._checkpoint_head_sha(),
             graph_version=self._checkpoint_graph_version(),
@@ -4204,8 +4180,8 @@ class Workflow:
             task=state.original_task,
             agents_md=self._read_agents_md(),
             diff=diff,
-            verify_ok=state.last_verify_ok,
-            verify_output=state.last_verify_tail,
+            verify_ok=state.verify.last_ok,
+            verify_output=state.verify.last_tail,
         )
         self._emit(
             "loop.review.start", iteration=iteration, trigger=trigger, seats=len(self.review_seats)

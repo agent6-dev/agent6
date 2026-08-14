@@ -67,7 +67,7 @@ def test_a_verify_at_the_base_commit_is_the_baseline(
     wf = _wf()
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(rc))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is (rc == 0)
+    assert state.verify.baseline_ok is (rc == 0)
 
 
 def test_the_worker_is_told_when_it_inherited_a_red_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,7 +90,7 @@ def test_a_leg_that_moved_past_the_base_claims_nothing(monkeypatch: pytest.Monke
     wf = _wf(head="c" * 40)
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
+    assert state.verify.baseline_ok is None
 
 
 def test_a_dirty_tree_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +98,7 @@ def test_a_dirty_tree_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     wf = _wf(clean=False)
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
+    assert state.verify.baseline_ok is None
 
 
 def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,18 +112,18 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
     state, turn = _state(), _turn()
     monkeypatch.setattr("agent6.workflows.loop.git_status", _boom)
     _wf()._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
+    assert state.verify.baseline_ok is None
 
 
 def test_a_run_that_already_went_green_owns_its_later_red(monkeypatch: pytest.MonkeyPatch) -> None:
     """It demonstrably could pass, so a later red is its own -- even if the
     gate was red at the base."""
     state, turn = _state(), _turn()
-    state.verify_ever_passed = True
+    state.verify.ever_passed = True
     wf = _wf()
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, _verify(1))  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
+    assert state.verify.baseline_ok is None
 
 
 @pytest.mark.parametrize(
@@ -149,7 +149,7 @@ def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
     wf = _wf()
     _patch_git(monkeypatch, wf)
     wf._note_verify_result(state, turn, result)  # pyright: ignore[reportPrivateUsage]
-    assert state.baseline_ok is None
+    assert state.verify.baseline_ok is None
 
 
 def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
@@ -161,8 +161,8 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
         workflow=SimpleNamespace(verify_command=("pytest",))
     )
     state = _state()
-    state.baseline_ok = False
-    state.last_verify_ok = False
+    state.verify.baseline_ok = False
+    state.verify.last_ok = False
     turn = _turn()
     turn.finish_kind = "finish_planning"
     assert wf._finish_reason(turn, state) == "finish_planning"  # pyright: ignore[reportPrivateUsage]
@@ -204,8 +204,8 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
         workflow=SimpleNamespace(verify_command=("pytest",), require_verify_to_finish=True)
     )
     state = _LoopState(original_task="t", tool_calls=0)
-    state.last_verify_ok = False
-    state.baseline_ok = False
+    state.verify.last_ok = False
+    state.verify.baseline_ok = False
     turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     turn.finish_signal = MagicMock()
     turn.finish_kind = "finish_session"
