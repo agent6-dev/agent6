@@ -327,12 +327,23 @@ class ToolState(BaseModel):
     network: Literal["auto", "host", "none"] = "auto"
 
 
+def _seconds_as_str(value: object) -> object:
+    # The field is a string because it may be a template ("{{ config.poll }}"),
+    # but a bare TOML integer is the natural spelling; refusing `every_secs =
+    # 30` with "Input should be a valid string" tripped machine authors (model
+    # and human alike). Floats stay refused: sub-second waits are not a thing
+    # here, and silently truncating one would lie.
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
 class WaitState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"]
     notify: _NotifySpecT | None = None
-    every_secs: str | None = None
+    every_secs: Annotated[str, BeforeValidator(_seconds_as_str)] | None = None
     until: str | None = None
     cron: str | None = None
     on: dict[str, str]

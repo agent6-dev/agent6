@@ -692,3 +692,22 @@ def test_agent_state_best_effort_field_is_gone(tmp_path: Path) -> None:
     )
     with pytest.raises(MachineError, match="best_effort_usd_limit"):
         load_machine(_write(tmp_path, body))
+
+
+def test_wait_every_secs_accepts_a_bare_integer() -> None:
+    """`every_secs = 30` (the natural TOML spelling) coerces to the string the
+    template-capable field carries; refusing it with "Input should be a valid
+    string" tripped machine authors (caught by a live machine-create run).
+    Floats stay refused: truncating a sub-second wait would lie."""
+    from pydantic import ValidationError
+
+    from agent6.machine.model import WaitState
+
+    st = WaitState.model_validate({"kind": "wait", "every_secs": 30, "on": {"tick": "done"}})
+    assert st.every_secs == "30"
+    templated = WaitState.model_validate(
+        {"kind": "wait", "every_secs": "{{ config.poll }}", "on": {"tick": "done"}}
+    )
+    assert templated.every_secs == "{{ config.poll }}"
+    with pytest.raises(ValidationError):
+        WaitState.model_validate({"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}})
