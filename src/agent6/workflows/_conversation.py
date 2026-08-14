@@ -228,6 +228,30 @@ class Conversation:
         self._turns[:] = [first, UserTurn(items=(Notice(summary_text),)), *keep]
         self._marks = [m for m in self._marks if m[0] == 0]
 
+    def strip_thinking(self, turn_idx: int) -> int:
+        """Drop thinking blocks from one assistant turn, rebuilding it in
+        place; returns chars removed (0 when it had none). tool_use blocks
+        survive verbatim, so pairing is untouched."""
+        turn = self._turns[turn_idx]
+        if not isinstance(turn, AssistantTurn):
+            raise ValueError("strip_thinking targets an assistant turn")
+        dropped = [
+            b
+            for b in turn.raw_content
+            if isinstance(b, dict) and b.get("type") in ("thinking", "redacted_thinking")
+        ]
+        if not dropped:
+            return 0
+        kept = tuple(b for b in turn.raw_content if b not in dropped)
+        removed = sum(
+            len(v if isinstance(v, str) else str(v))
+            for b in dropped
+            for k, v in b.items()
+            if k != "type" and v is not None
+        )
+        self._turns[turn_idx] = AssistantTurn(raw_content=kept, tool_uses=turn.tool_uses)
+        return removed
+
     def set_result_content(self, turn_idx: int, item_idx: int, content: str) -> None:
         """Rewrite one tool_result's content in place (tier-1 elision). The
         id and pairing are untouched, so the wire stays balanced."""

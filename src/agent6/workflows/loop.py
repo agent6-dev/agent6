@@ -104,6 +104,7 @@ from agent6.workflows._compaction import (
     recent_tail_start,
     recently_edited_paths,
     strip_checkoff,
+    strip_old_thinking,
 )
 from agent6.workflows._context import agents_md_text, load_repo_summary
 from agent6.workflows._conversation import (
@@ -600,6 +601,10 @@ class Workflow:
     # Verbatim recent-history tail kept through a tier-2 restart (chars; 0
     # keeps none). Sized to pi's keepRecentTokens default.
     keep_recent_chars: int = KEEP_RECENT_CHARS
+    # Thinking blocks are dropped from assistant turns older than this many
+    # assistant turns, at tier-1 moments. 0 (default) keeps all thinking,
+    # today's and pi's behavior; Claude Code clears old thinking.
+    keep_thinking_turns: int = 0
     # Retry the provider call on transient ProviderError before aborting the
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
     # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
@@ -3655,6 +3660,19 @@ class Workflow:
             protect_paths=recently_edited_paths(conversation),
             gister=self._distill_gists if self.compact_elision_gists else None,
         )
+        if self.keep_thinking_turns > 0 and (
+            stats.deduped
+            or stats.elided
+            or context_chars(conversation) > self.compact_drop_at_chars
+        ):
+            # Same cache-bundling rule as dedup: only at tier-1 pressure
+            # moments, never as a rolling per-iteration rewrite.
+            n_turns, n_chars = strip_old_thinking(conversation, keep_turns=self.keep_thinking_turns)
+            if n_turns:
+                self._log(
+                    f"LOOP: compaction dropped thinking from {n_turns} old turns ({n_chars} chars)"
+                )
+                self._emit("loop.compact.thinking_dropped", turns=n_turns, chars=n_chars)
         if stats.deduped:
             self._log(f"LOOP: compaction deduplicated {stats.deduped} identical tool results")
             self._emit("loop.compact.deduped", n=stats.deduped, calls=list(stats.deduped_calls))

@@ -381,6 +381,24 @@ def turn_chars(turn: Turn) -> int:
 KEEP_RECENT_CHARS = 80_000
 
 
+def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[int, int]:
+    """Drop thinking blocks from assistant turns older than the newest
+    *keep_turns* assistant turns (Claude Code clears old thinking the same
+    way). The newest stay: Anthropic requires the signed thinking block of a
+    tool_use still being answered, so callers pass ``keep_turns >= 1``.
+    Returns (turns stripped, chars removed)."""
+    assistant_idxs = [
+        i for i, turn in enumerate(conversation.turns) if isinstance(turn, AssistantTurn)
+    ]
+    n = chars = 0
+    for idx in assistant_idxs[:-keep_turns]:
+        removed = conversation.strip_thinking(idx)
+        if removed:
+            n += 1
+            chars += removed
+    return n, chars
+
+
 def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
     """The index where a tier-2 restart's verbatim tail begins: the largest
     tail of whole turns within *cap_chars* that starts on a wire-safe

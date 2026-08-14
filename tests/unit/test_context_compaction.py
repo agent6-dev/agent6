@@ -518,3 +518,56 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
     # "tiny" is under the dedup floor; the 900-char bodies differ: no dedup.
     assert stats.deduped == 0
+
+
+def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:
+    """Claude-side thinking eviction behind the keep_thinking_turns knob: old
+    assistant turns lose their thinking blocks, the newest keep theirs
+    (Anthropic needs the signed block of a pending tool_use)."""
+    from agent6.workflows._compaction import strip_old_thinking
+    from agent6.workflows._conversation import AssistantTurn, Conversation
+
+    conv = Conversation()
+    conv.notice("task")
+    for i in range(3):
+        conv.assistant(
+            [
+                {"type": "thinking", "thinking": f"reasoning {i} " + "t" * 100},
+                {"type": "text", "text": f"answer {i}"},
+            ]
+        )
+    n_turns, n_chars = strip_old_thinking(conv, keep_turns=1)
+    assert n_turns == 2 and n_chars > 200
+    assistants = [t for t in conv.turns if isinstance(t, AssistantTurn)]
+    kinds = [[b["type"] for b in t.raw_content] for t in assistants]
+    assert kinds == [["text"], ["text"], ["thinking", "text"]]
+    # Idempotent: nothing left to strip on the older turns.
+    assert strip_old_thinking(conv, keep_turns=1) == (0, 0)
+
+
+def test_strip_thinking_preserves_tool_use_pairing() -> None:
+    from agent6.workflows._conversation import Conversation, ToolResultItem
+
+    conv = Conversation()
+    conv.notice("task")
+    conv.assistant(
+        [
+            {"type": "thinking", "thinking": "hmm"},
+            {"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}},
+        ]
+    )
+    last = conv.turns[-1]
+    conv.results(
+        [ToolResultItem(tool_use_id="t1", content="body", for_call=last.tool_uses[0])]  # type: ignore[union-attr]
+    )
+    conv.assistant([{"type": "text", "text": "done"}])
+    removed = conv.strip_thinking(1)
+    assert removed > 0
+    wire = conv.to_wire()
+    # The tool_use block and its result still pair on the wire.
+    assert any(
+        b.get("type") == "tool_use" and b.get("id") == "t1"
+        for m in wire
+        if isinstance(m.get("content"), list)
+        for b in m["content"]
+    )

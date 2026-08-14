@@ -178,6 +178,15 @@ class ContextConfig(BaseModel):
             "Verbatim recent-history tail kept through a tier-2 restart (chars; 0 keeps none)."
         ),
     )
+    keep_thinking_turns: int = Field(
+        ge=0,
+        default=0,
+        description=(
+            "Drop thinking from assistant turns older than N assistant turns, at tier-1 "
+            "moments. `0` (default) keeps all thinking, matching pi; Claude Code clears old "
+            "thinking. Anthropic-format providers only: the openai wire never re-sends thinking."
+        ),
+    )
     summary_max_tokens: int = Field(
         gt=0,
         default=2048,

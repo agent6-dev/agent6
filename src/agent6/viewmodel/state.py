@@ -664,6 +664,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"deduplicated {event.get('n')} identical tool results"
             if named:
                 salient += f": {named[:160]}"
+        case "loop.compact.thinking_dropped":
+            salient = (
+                f"dropped thinking from {event.get('turns')} old turns ({event.get('chars')} chars)"
+            )
         case "loop.compact.gists":
             parts = []
             if event.get("gisted"):
