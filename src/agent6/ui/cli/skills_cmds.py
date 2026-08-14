@@ -489,6 +489,16 @@ def _cmd_skills_disable(name: str, *, repo: bool, config_path: Path | None = Non
 
 
 def _cmd_skills_remove(name: str, config_path: Path | None = None) -> int:
+    """Delete the installed skill *name* from the managed skills dir.
+
+    The name becomes a path component under that dir and an rmtree target, so
+    it must be one safe component (the same gate install applies).
+    """
+    if not is_valid_skill_name(name):
+        raise OperatorError(
+            f"invalid skill name {name!r} "
+            "(letters, digits, and hyphens only, starting alphanumeric)"
+        )
     target = _installed_dir() / name
     if not target.is_dir():
         # Distinguish "managed elsewhere" from "unknown" for a useful error.

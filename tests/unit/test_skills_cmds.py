@@ -266,6 +266,17 @@ class TestRemoveListComplete:
         with pytest.raises(OperatorError, match="not installed"):
             _cmd_skills_remove("tidy")
 
+    def test_remove_refuses_a_traversal_name(self, env: Path) -> None:
+        """The name becomes an rmtree target; a `../` name must be refused before
+        any path op, not delete a sibling outside the managed skills dir."""
+        (env / "data" / "skills").mkdir(parents=True, exist_ok=True)
+        victim = env / "data" / "victim"
+        victim.mkdir()
+        (victim / "keep.txt").write_text("important", encoding="utf-8")
+        with pytest.raises(OperatorError, match="invalid skill name"):
+            _cmd_skills_remove("../victim")
+        assert victim.is_dir()  # never touched
+
     def test_list_shows_state_and_origin(
         self, env: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
