@@ -6321,3 +6321,25 @@ def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
         messages.append({"role": "user", "content": [{"type": "text", "text": "go on"}]})
     assert _compact_via_wire(wf, messages, state=state) is True
     assert summ.calls == 2
+
+
+def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: Path) -> None:
+    """A green verify with no new edits makes chain_commit return "" (nothing
+    changed since the tip); an event or log line for it would claim a commit
+    that never happened (a live run printed `auto-commit: ` with a blank
+    sha)."""
+    events: list[dict[str, Any]] = []
+    wf = _wf(root=tmp_path, mode="run", commit_per_step=True)
+
+    def _capture(_type: str, **f: Any) -> None:
+        events.append({"type": _type, **f})
+
+    wf.events = MagicMock()
+    wf.events.emit = _capture  # type: ignore[method-assign]
+    turn = _turn(iteration=3)
+    turn.verify_just_passed = True
+    turn.edit_since_verify_pass = False
+    with patch.object(wf, "_chain_commit", return_value=""):
+        wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+    assert [e for e in events if e["type"] == "loop.auto_commit"] == []
+    assert turn.committed is False

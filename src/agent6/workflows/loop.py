@@ -1627,10 +1627,14 @@ class Workflow:
         sha = ""
         try:
             sha = self._chain_commit(commit_subject)
-            self._log(f"  auto-commit: {sha[:12]}")
-            self._emit(
-                "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
-            )
+            if sha:
+                # "" is chain_commit's nothing-changed answer (a green verify
+                # with no new edits); an event or log line for it would claim
+                # a commit that never happened.
+                self._log(f"  auto-commit: {sha[:12]}")
+                self._emit(
+                    "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
+                )
             turn.committed = bool(sha)
             if gateless and sha:
                 # Seed the idle-stop net for gateless runs (no green verify
