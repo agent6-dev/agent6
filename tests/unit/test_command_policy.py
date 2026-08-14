@@ -100,11 +100,15 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
         assert "--auto-approve" in err and "--no-commands" in err
 
 
-def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> None:
+def test_a_single_no_refuses_one_call_and_withdraws_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The asymmetry that matters: "no" to THIS command is not "no commands".
     Only deny-for-session, `run_commands = "no"` and `--no-commands` withdraw
     the tools; a single answer -- either way -- decides a single call."""
+    from agent6.sandbox.jail import CommandResult
     from agent6.sessions.ipc import session_deny_set
+    from agent6.types import JailPolicy
 
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
@@ -123,3 +127,15 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(tmp_path: Path) -> N
         assert not session_deny_set(tmp_path, COMMAND_SCOPE)
         assert d.command_policy() == "ask"
         assert set(d.available_tool_names()) >= _COMMAND_TOOLS
+
+    # The mirror: the third call's single "yes" runs exactly that call (the
+    # jail stubbed out) and widens nothing either -- still "ask" for the next.
+    def _ran(policy: JailPolicy, **_kw: object) -> CommandResult:
+        return CommandResult(
+            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.01
+        )
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", _ran)
+    assert d.dispatch("run_command", {"argv": ["true"]}).to_wire()["returncode"] == 0
+    assert d.command_policy() == "ask"
+    assert not session_deny_set(tmp_path, COMMAND_SCOPE)

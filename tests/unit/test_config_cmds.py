@@ -251,7 +251,9 @@ def test_revalidate_machine_accepts_valid_spec(
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
 
-    assert cc._revalidate_machine(target, None) is None  # pyright: ignore[reportPrivateUsage]
+    # prior_text=_GOOD makes _machine_is_valid true, so load_machine(target)
+    # actually runs (None would skip the machine check and pass vacuously).
+    assert cc._revalidate_machine(target, _GOOD) is None  # pyright: ignore[reportPrivateUsage]
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
 

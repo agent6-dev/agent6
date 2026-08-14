@@ -107,7 +107,7 @@ def test_a_confined_server_cannot_reach_a_live_listener(tmp_path: Path) -> None:
         blocked = _probe(script, tmp_path, network="none")
         allowed = _probe(script, tmp_path, network="host")
     assert "CONNECT 0" not in blocked, f"a confined server reached the host: {blocked}"
-    assert "CONNECT 0" in allowed, f"network = allow did not reach the listener: {allowed}"
+    assert "CONNECT 0" in allowed, f"network = host did not reach the listener: {allowed}"
 
 
 def test_the_jail_binary_is_what_confines_a_server(tmp_path: Path) -> None:

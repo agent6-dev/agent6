@@ -14,7 +14,9 @@ def test_composer_intercepts_ctrl_r_only() -> None:
     # The intercept lives in the composer's own keydown (fires only while the
     # textarea holds focus) and requires the bare Ctrl chord.
     assert "e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey" in CLIENT_JS
-    # There is no document-level Ctrl-R hook: reload survives everywhere else.
+    # That chord is the ONLY ctrlKey site: no document-level hook, so the
+    # browser keeps its reload everywhere outside the composer.
+    assert CLIENT_JS.count("ctrlKey") == 1
     assert "openHistorySearch" in CLIENT_JS
 
 

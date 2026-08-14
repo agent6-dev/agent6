@@ -75,20 +75,23 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
 
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:
-    register_frontend(tmp_path, 999999999)  # a live-ish pid so read doesn't early-out
+    # No front-end claim: consumption is claim-free (the answer's existence is
+    # the proof); liveness only paces the wait for one that has yet to land.
     write_question_answers(tmp_path, "q1", ["use B"])
     assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("use B",)
 
 
 def test_read_question_answer_returns_none_when_no_tui(tmp_path: Path) -> None:
-    # No front-end claim -> frontend_is_live False -> immediate None (don't block headless).
-    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) is None
+    # With no front-end claim the read gives up after dead_grace_s, NOT the
+    # full timeout: a headless run must not sit out the whole answer window.
+    start = time.monotonic()
+    assert read_question_answers(tmp_path, "q1", timeout_s=10.0, dead_grace_s=0.05) is None
+    assert time.monotonic() - start < 5.0, "the dead-front-end grace never broke the wait"
 
 
 def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
     # The answer file is unlinked after reading, so a later prompt with the same
     # id (counters reset on resume) can't re-read a stale answer.
-    register_frontend(tmp_path, 999999999)
     write_question_answers(tmp_path, "q1", ["first"])
     assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("first",)
     assert not (questions_dir(tmp_path) / "q1.answer").exists()
@@ -602,7 +605,7 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
     import agent6.ui.tui.home as home_mod
     from agent6.ui.tui.home import Agent6HomeApp
 
-    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2, raising=False)
+    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 0.2)
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -635,7 +638,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     import agent6.ui.tui.home as home_mod
     from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
 
-    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0, raising=False)  # manual refresh only
+    monkeypatch.setattr(home_mod, "_HUB_POLL_S", 3600.0)  # manual refresh only
     a6 = tmp_path / ".agent6"
     for name, ts in (("r1", 1000), ("r2", 2000), ("r3", 3000)):
         rd = _write_run(a6, "runs", name, [{"type": "session.start", "mode": "run"}])

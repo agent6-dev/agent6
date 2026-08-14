@@ -66,14 +66,10 @@ def test_effective_cost_derives_for_unpriced_anthropic_only() -> None:
         "output_tokens": 1_000_000,
     }
     assert abs(stats.effective_cost(opus) - 30.0) < 1e-6
-    # A measured (OpenRouter) cost is always preferred over derivation.
-    kimi = {
-        "model_slug": "moonshotai/kimi-k2.6-20260420",
-        "cost_usd": 0.05,
-        "input_tokens": 1,
-        "output_tokens": 1,
-    }
-    assert stats.effective_cost(kimi) == 0.05
+    # A measured cost is preferred over derivation: same priced slug and
+    # tokens as above (derivation would say $30), but the measured $0.05 wins.
+    measured = dict(opus, cost_usd=0.05)
+    assert stats.effective_cost(measured) == 0.05
     # Unknown unpriced model stays at its measured (0) cost, not invented.
     unknown = {"model_slug": "x/y", "cost_usd": 0.0, "input_tokens": 9, "output_tokens": 9}
     assert stats.effective_cost(unknown) == 0.0

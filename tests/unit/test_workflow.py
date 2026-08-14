@@ -1,15 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for -era Workflow additions.
-
-Covers the helpers that loop.py landed at the same time as the audit pass:
-* _call_with_retry  - ProviderError single-retry behaviour (finding #5)
-* _maybe_handle_steer - operator steering between iterations (finding #32)
-
-Termination-reason distinction (finding #1) is exercised end-to-end in the
-integration suite; the helpers above are pure-Python so they're cheaper
-to test directly.
-"""
+"""Unit tests for the Workflow loop: provider retry, operator steering, the
+tool-error ladder, finish gates, and the other drive-loop mechanics, driven
+directly with scripted providers and dispatchers. Termination-reason
+distinctions are exercised end-to-end in the integration suite."""
 
 from __future__ import annotations
 
@@ -940,11 +934,12 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
 
 def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
     """The up-front resume steer check is inert when no steer is seeded: a resume
-    with no `--steer` behaves exactly as before (no phantom injection)."""
+    with no `--steer` puts no phantom OPERATOR STEERING block on the wire."""
+    captured: list[str] = []
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
-            del kwargs
+            captured.append(str(kwargs["messages"]))
             return _resp("done")
 
     config = SimpleNamespace(
@@ -982,6 +977,8 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
     )
 
     assert result.reason == "silent_finish"  # unchanged behaviour without a seeded steer
+    # The named property: nothing was injected ahead of the first resumed call.
+    assert captured and "OPERATOR STEERING" not in captured[0]
 
 
 def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -> None:
@@ -5014,11 +5011,10 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
 
 def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path) -> None:
     """A streak of policy refusals (ToolDenied) is nudged as 'refused, stop
-    retrying', never 'your call is malformed', and a stale binary recorded by
-    an earlier REAL run_command failure (git, present on every host) must not
-    resurface the sandbox-reachability note for what is pure policy."""
+    retrying', never 'your call is malformed', and the stale binary a REAL
+    exec failure recorded first (git at streak 1; the note fires at 2) must
+    not be resurfaced by what is pure policy."""
     from agent6.tools.errors import ToolDenied as _TD
-    from agent6.tools.errors import ToolError as _TE
     from agent6.workflows.loop import (
         TOOL_DENIED_NUDGE,  # pyright: ignore[reportPrivateUsage]
         TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
@@ -5053,8 +5049,16 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.calls += 1
             if self.calls == 1:
-                # A real execution failure first: records argv[0]="git".
-                raise _TE("run_command: git exploded for real")
+                # A real exec failure (the jail's 127 shape) records
+                # argv[0]="git" in the reachability tracker; a raised ToolError
+                # would record nothing (denials/errors never entered the jail).
+                return ExecResult(
+                    returncode=127,
+                    stdout="",
+                    stderr="git: command not found or not executable",
+                    duration_s=0.0,
+                    exec_failed=True,
+                )
             raise _TD("run_command not approved (sandbox.run_commands='ask')")
 
     provider = ProviderStub()

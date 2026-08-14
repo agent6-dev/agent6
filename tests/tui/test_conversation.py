@@ -43,7 +43,9 @@ def _nlines(app: App[None]) -> int:
 _EVENTS: list[dict[str, object]] = [
     {"type": "session.start", "user_task": "do X"},
     {"type": "role.call", "role": "worker"},
-    {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here"},
+    # Multi-line on purpose: collapsed shows only the first line, so expanded
+    # is distinguishable from collapsed by the second line's presence.
+    {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here\nsecond thought"},
     {"type": "role.text_delta", "role": "worker", "text": "on it"},
     {"type": "role.result", "role": "worker"},
     {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
@@ -84,9 +86,10 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
             # summary (with a more-count when it spans lines), not the bulk.
             assert "thinking hard here" in body_text()
             assert body_text().count("thinking hard here") == 1
+            assert "second thought" not in body_text()  # the bulk stays folded
             screen.action_cycle_detail()  # collapsed -> expanded
             await pilot.pause()
-            assert "thinking hard here" in body_text()  # full reasoning now shown
+            assert "second thought" in body_text()  # the bulk is now shown
             screen.action_cycle_detail()  # expanded -> hidden
             await pilot.pause()
             assert "thinking" not in body_text()  # thinking omitted entirely

@@ -157,7 +157,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    base = _setup_run_on_branch(
+    _setup_run_on_branch(
         tmp_path,
         "run-AM3333",
         commits=[("conflict.txt", "from-run\n", "agent6 iter 1: edit")],
@@ -167,6 +167,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     (tmp_path / "conflict.txt").write_text("from-base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "base edits the same file")
+    diverged = _git(tmp_path, "rev-parse", "HEAD")
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
@@ -178,9 +179,10 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     assert "conflict" in err.lower()
     assert _git(tmp_path, "status", "--porcelain") == ""  # nothing touched, no partial merge
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # never switched
-    # the run branch still has its commit
+    # the run branch still has its commit, and the conflicted merge advanced
+    # main by nothing (a clean tree alone would also pass with a LANDED merge)
     assert "agent6 iter 1: edit" in _git(tmp_path, "log", "--oneline", "agent6/run-AM3333")
-    _ = base
+    assert _git(tmp_path, "rev-parse", "main") == diverged
 
 
 def test_auto_merge_skips_when_base_branch_is_gone(

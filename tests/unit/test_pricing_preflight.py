@@ -57,8 +57,10 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(_setup, "load_secrets", dict)
     monkeypatch.setattr(_setup, "resolve_api_key", _key)
     monkeypatch.setattr(_setup, "list_models", _models)
+    # A BARE claude-* id through openrouter: the one shape where the guard
+    # decides (a non-claude model skips the refresh before the guard is read).
     cfg = _cfg(
-        "moonshotai/kimi-k3",
+        "claude-opus-5",
         {
             "openrouter": {
                 "api_format": "openai",

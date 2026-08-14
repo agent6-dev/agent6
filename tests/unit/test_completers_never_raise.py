@@ -27,9 +27,23 @@ def test_there_are_completers_to_check() -> None:
     assert len(_COMPLETERS) >= 10, [n for n, _ in _COMPLETERS]
 
 
-@pytest.mark.parametrize(("name", "fn"), _COMPLETERS, ids=[n for n, _ in _COMPLETERS])
+# The completers that consult the per-repo state dir when called with a bare
+# prefix. The other nine never reach `_state_dir` (they return early or read
+# config only), so parametrizing them here forced nothing; the decorator test
+# below carries their never-raise promise.
+_STATE_DIR_CONSUMERS = [
+    "_complete_session_ids",
+    "_complete_resumable_ids",
+    "_complete_plan_session_ids",
+    "_complete_machine_ids",
+    "_complete_watch_targets",
+    "_complete_machine_files",
+]
+
+
+@pytest.mark.parametrize("name", _STATE_DIR_CONSUMERS)
 def test_an_unresolvable_state_dir_does_not_reach_the_shell(
-    name: str, fn: object, monkeypatch: pytest.MonkeyPatch
+    name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The realistic failure: the config does not parse, so resolving the state
     dir raises. Forced directly -- pointing cwd at a bad config passed without
@@ -38,14 +52,19 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
     from agent6.config import ConfigError
     from agent6.ui.cli import _common
 
-    def _boom(_root: Path) -> Path:
+    calls: list[Path] = []
+
+    def _boom(root: Path) -> Path:
+        calls.append(root)
         raise ConfigError("config is not valid TOML")
 
-    monkeypatch.setattr(completers, "_state_dir", _boom, raising=False)
+    monkeypatch.setattr(completers, "_state_dir", _boom)
     monkeypatch.setattr(_common, "_state_dir", _boom)
 
-    result = fn("", parsed_args=None)  # pyright: ignore[reportCallIssue, reportGeneralTypeIssues]
+    fn = getattr(completers, name)
+    result = fn("", parsed_args=None)
     assert isinstance(result, list), f"{name} returned {result!r}"
+    assert calls, f"{name} never consulted the state dir; drop it from _STATE_DIR_CONSUMERS"
 
 
 def test_any_completer_bug_yields_no_suggestions_not_a_traceback() -> None:

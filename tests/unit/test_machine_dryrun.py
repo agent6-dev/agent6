@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Phase 5: `machine test` dry-run — per-state synthesis + per-branch routing."""
+"""`machine test` dry-run: per-state synthesis + per-branch routing."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -182,7 +183,9 @@ def test_cli_machine_test_with_blackboard(
     bb.write_text("approved = true\n", encoding="utf-8")
     assert main(["machine", "test", str(f), "--blackboard", str(bb)]) == 0
     out = capsys.readouterr().out
-    assert "judge" in out  # branch now routes to the agent state
+    # The branch ROW must show clause 0 routing to judge ("judge" alone also
+    # matches the unconditional per-state row, proving nothing about routing).
+    assert re.search(r"check\s+\[0\]\s+judge", out), out
 
 
 def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:

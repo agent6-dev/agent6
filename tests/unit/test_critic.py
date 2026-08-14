@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows import loop as loopmod
-from agent6.workflows._conversation import Conversation
+from agent6.workflows._conversation import AssistantTurn, Conversation
 from agent6.workflows.loop import Workflow
 
 _GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
@@ -317,44 +317,35 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
 
 
 def test_before_finish_satisfied_resets_rejection_counter() -> None:
-    """A SATISFIED verdict must reset the consecutive-rejection counter
-    so a later transient NEEDS_WORK doesn't get instantly cap-accepted."""
-    # NEEDS_WORK -> rejected.
-    # SATISFIED -> accepted. Counter should reset.
-    worker = MagicMock()
-    worker.call.side_effect = [
-        _resp_with_tool_use("try 1", _finish_tool_use("tu1", "v1")),
-        _resp_with_tool_use("try 2", _finish_tool_use("tu2", "v2")),
-    ]
+    """A SATISFIED verdict resets the consecutive-rejection counter: a later
+    finish gate (metric, verify, tasks) can still revoke the accepted finish,
+    and a stale count would let the next transient NEEDS_WORK be instantly
+    cap-accepted. Driven directly: through `_drive_loop` a SATISFIED accept
+    ends the session, so the reset is unobservable there."""
     critic = MagicMock()
-    critic.call.side_effect = [
-        _resp("VERDICT: NEEDS_WORK"),
-        _resp("VERDICT: SATISFIED"),
-    ]
-    dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = RawResult({"ok": True})
-
+    critic.call.return_value = _resp("VERDICT: SATISFIED")
     wf = _wf(
-        provider=worker,
-        dispatcher=dispatcher,
         critic_provider=critic,
         critic_mode="before_finish",
         max_consecutive_critic_rejections=2,
     )
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": [{"type": "text", "text": "TASK:\nfix it\n\nBegin."}]}
-    ]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="S",
-        conversation=Conversation.from_wire(messages),
-        tool_calls=0,
-        start_iteration=1,
-        root_task_id=None,
-        original_task="t",
+    state = loopmod._LoopState(original_task="t", tool_calls=0)  # pyright: ignore[reportPrivateUsage]
+    state.consecutive_critic_rejections = 1
+    turn = loopmod._TurnState(  # pyright: ignore[reportPrivateUsage]
+        iteration=2,
+        resp=_resp("done"),
+        assistant=AssistantTurn(raw_content=(), tool_uses=()),
+        finish_signal="tu1",
     )
-    assert result.iterations == 2
-    assert result.reason == "finish_session"
-    assert result.summary == "v2"
+    conversation = Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix it\n\nBegin."}]}]
+    )
+
+    wf._gate_before_finish_critic(state, turn, conversation)  # pyright: ignore[reportPrivateUsage]
+
+    assert critic.call.call_count == 1
+    assert turn.finish_signal == "tu1"  # the accept leaves the finish armed
+    assert state.consecutive_critic_rejections == 0  # and clears the streak
 
 
 def test_critic_mode_off_never_calls_critic() -> None:

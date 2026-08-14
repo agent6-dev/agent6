@@ -329,9 +329,16 @@ def test_scenario_exercises_the_shaping_paths(tmp_path: Path) -> None:
     # results (a text block ahead of a tool_result 400s the anthropic wire).
     results_turn = calls[1][2]["content"]
     assert [b["type"] for b in results_turn] == ["tool_result", "tool_result", "text"]
-    # Steering injected; went-quiet assistant popped (no empty assistant turn).
+    # Steering injected; the went-quiet turn is thinking-only, so a pop
+    # regression would leak a NON-empty assistant turn: assert the popped
+    # content is gone and every surviving assistant turn is substantive.
     assert "focus on the parser first" in json.dumps(calls[2])
-    assert all(m["content"] != [] for m in calls[2] if m["role"] == "assistant")
+    assert "pondering silently" not in json.dumps(calls[2])
+    assert all(
+        any(b["type"] in ("text", "tool_use") for b in m["content"])
+        for m in calls[2]
+        if m["role"] == "assistant"
+    )
     # Tier-1 gist elision landed before call 4.
     assert "distilled" in json.dumps(calls[3])
     # Tier-2 restart: call 5 sees (original task + restart notice) only.

@@ -1007,15 +1007,25 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
             await pilot.pause()
             assert len(dash._visible_tools) == 2  # unfiltered: both
 
+            def log_text() -> str:
+                return " ".join(strip.text for strip in dash.query_one("#log", RichLog).lines)
+
+            def diff_text() -> str:
+                return str(dash.query_one("#diff-body", Static).content)
+
             dash._selected_task_id = "t1"  # filter to task one (the handler re-renders)
             dash.render_state()
             await pilot.pause()
             assert [tc.name for tc in dash._visible_tools] == ["read_file"]
+            assert "read_file" in log_text() and "apply_edit" not in log_text()
+            assert "+one" in diff_text() and "+two" not in diff_text()
 
             dash._selected_task_id = "t2"
             dash.render_state()
             await pilot.pause()
             assert [tc.name for tc in dash._visible_tools] == ["apply_edit"]
+            assert "apply_edit" in log_text() and "read_file" not in log_text()
+            assert "+two" in diff_text() and "+one" not in diff_text()
 
     asyncio.run(scenario())
 

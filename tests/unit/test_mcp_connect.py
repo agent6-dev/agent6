@@ -183,20 +183,24 @@ def test_the_probe_leaves_no_server_running(
 ) -> None:
     """It starts one to ask what it can do, and must not leak it into the
     operator's session."""
+    import os
     import subprocess
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
     marker = tmp_path / "alive"
+    # The token rides the -c script, so a leaked server's /proc cmdline would
+    # carry it and pgrep -f would find it; pid-suffixed so parallel runs and
+    # stale processes cannot collide. The marker file proves the probe really
+    # spawned this argv.
+    token = f"agent6-leak-probe-{os.getpid()}"
     argv = _server_argv()
-    argv[2] = f"open({json.dumps(str(marker))}, 'w').close()\n" + argv[2]
+    argv[2] = f"# {token}\nopen({json.dumps(str(marker))}, 'w').close()\n" + argv[2]
 
     assert cmd_mcp_connect("p", command=argv, url="", token_env="", pass_env=[], to_repo=False) == 0
     assert marker.exists(), "the probe really did start it"
-    left = subprocess.run(
-        ["pgrep", "-f", "agent6-test-marker-none"], capture_output=True, check=False
-    )
-    assert left.returncode != 0
+    left = subprocess.run(["pgrep", "-f", token], capture_output=True, check=False)
+    assert left.returncode != 0, f"probe server leaked: pids {left.stdout.decode()!r}"
 
 
 def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:

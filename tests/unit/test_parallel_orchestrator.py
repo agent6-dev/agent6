@@ -567,7 +567,9 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", model=None)
     res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
-    statuses = iter(["waiting", "failed"])  # blocked first poll, terminal next
+    # One poll only: "waiting" prints the hint, and the dead worker makes that
+    # same poll terminal (_lane_terminal), so a second status is never read.
+    statuses = iter(["waiting"])
 
     def fake_summary(rd: Path) -> SessionSummary:
         return SessionSummary(

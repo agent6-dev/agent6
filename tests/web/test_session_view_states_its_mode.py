@@ -40,9 +40,11 @@ def test_the_snapshot_carries_the_mode(tmp_path: Path, bucket: str, mode: str) -
 
 
 def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:
-    """A hard-coded 'Run' is right one time in three."""
+    """A hard-coded 'Run' is right one time in three: paintRun must write the
+    snapshot's mode into the heading (the old absence check passed forever
+    without saying what the page does instead)."""
     client = (Path(model.__file__).with_name("client.js")).read_text(encoding="utf-8")
-    assert "opts.title || 'Run'" not in client
+    assert "cards._head_title.textContent = s.mode" in client
 
 
 def test_conversation_route_paints_the_prompts_it_claims_to_answer() -> None:

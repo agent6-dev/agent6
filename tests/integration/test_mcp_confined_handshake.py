@@ -40,7 +40,7 @@ def _landlock_available() -> bool:
         return False
 
 
-def _reader_server_argv(probe: Path) -> tuple[str, ...]:
+def _reader_server_argv() -> tuple[str, ...]:
     """A minimal MCP server exposing one tool: read the file it is asked for,
     and report what happened. Enough to prove the pipe survives confinement
     AND to observe the filesystem boundary from inside the server."""
@@ -75,7 +75,6 @@ def _reader_server_argv(probe: Path) -> tuple[str, ...]:
                 reply(mid, {})
         """
     )
-    _ = probe
     # The SYSTEM python, not sys.executable: a jailed command's binary has to
     # exist inside the assembled root, and a venv interpreter in some other
     # checkout does not. Real servers are `npx`/`node`/`python3` for the same
@@ -139,10 +138,10 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
         [
             MCPServerSpec(
                 name="reader",
-                command=_reader_server_argv(visible),
+                command=_reader_server_argv(),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                policy=_policy(_reader_server_argv(visible), ws, read=(visible.parent,)),
+                policy=_policy(_reader_server_argv(), ws, read=(visible.parent,)),
             )
         ]
     )
@@ -162,15 +161,15 @@ def test_closing_the_manager_leaves_no_confined_server_running(
     outlives the run."""
     if not _landlock_available():
         pytest.skip("no Landlock on this kernel")
-    ws, visible, _hidden = granted
+    ws, _visible, _hidden = granted
     mgr = MCPManager.start(
         [
             MCPServerSpec(
                 name="reader",
-                command=_reader_server_argv(visible),
+                command=_reader_server_argv(),
                 startup_timeout_s=20.0,
                 call_timeout_s=20.0,
-                policy=_policy(_reader_server_argv(visible), ws),
+                policy=_policy(_reader_server_argv(), ws),
             )
         ]
     )

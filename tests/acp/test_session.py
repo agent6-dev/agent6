@@ -58,11 +58,16 @@ def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     session = Session(acp_id="s1", cwd=Path("/repo"))
     sessions._by_id["s1"] = session  # pyright: ignore[reportPrivateUsage]
     payload = _msg(2, "session/prompt", sessionId="s1", prompt=[{"type": "text", "text": "fix it"}])
-    replies = _drive(payload + b"\n", sessions)
+    # Parse the output only after the turn thread joined: the reply is written
+    # by the turn, so reading at serve() return raced it (and a server that
+    # never replied could pass as "no reply yet").
+    out = io.BytesIO()
+    ACPServer(stdin=io.BytesIO(payload + b"\n"), stdout=out, sessions=sessions).serve()
     if session.thread is not None:
         session.thread.join(timeout=5)
+    replies = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
     assert ran == ["fix it"]
-    assert replies == [] or replies[0]["result"]["stopReason"] == "end_turn"
+    assert [r["result"]["stopReason"] for r in replies if r.get("id") == 2] == ["end_turn"]
 
 
 def test_the_read_loop_stays_free_while_a_turn_runs() -> None:

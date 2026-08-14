@@ -23,8 +23,10 @@ from agent6.ui.cli import main
 def _session(state: Path, bucket: str, session_id: str, mode: str) -> None:
     session = bucket_dir(state, bucket) / session_id
     session.mkdir(parents=True)
+    # The task text is neutral on purpose: `f"a {mode}"` would put the mode
+    # word in the TASK column and satisfy the mode-column assertions vacuously.
     (session / "logs.jsonl").write_text(
-        json.dumps({"type": "session.start", "mode": mode, "user_task": f"a {mode}"}) + "\n",
+        json.dumps({"type": "session.start", "mode": mode, "user_task": "a task"}) + "\n",
         encoding="utf-8",
     )
 
