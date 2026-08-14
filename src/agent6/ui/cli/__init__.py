@@ -170,7 +170,8 @@ def cli_main(argv: list[str] | None = None) -> int:
         except OSError:
             pass  # never let crash-reporting itself crash the exit path
         print(
-            "  re-run with AGENT6_DEBUG=1 to see it inline; please report this if it persists.",
+            "  re-run with AGENT6_DEBUG=1 to see it inline; if it persists, report it:"
+            " https://github.com/agent6-dev/agent6/issues",
             file=sys.stderr,
         )
         return 1

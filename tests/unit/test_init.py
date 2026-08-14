@@ -42,7 +42,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
 ) -> None:
     """A pre-existing INVALID (but TOML-parseable) config makes `agent6 init` exit
     2 with a clean ERROR plus init's own repair pointer, not a crash through the
-    generic "unexpected ... please report this" handler. init loads the effective
+    generic "unexpected ..." crash handler. init loads the effective
     config to infer a verify command; it is the user's setup to fix, and init is
     the repair command."""
     from agent6.ui.cli import cli_main
