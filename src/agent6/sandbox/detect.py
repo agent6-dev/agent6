@@ -320,5 +320,13 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
                 "confinement at all. Set isolation = 'auto', or 'none' to run "
                 "unsandboxed."
             )
+        if env.landlock_abi < 3:
+            raise IsolationUnavailableError(
+                "sandbox.isolation = 'hardened' requires Landlock ABI 3 (Linux 6.2) "
+                "to confine file truncation, but this kernel's Landlock is ABI "
+                f"{env.landlock_abi}: a jailed command could truncate "
+                "(truncate/ftruncate) files OUTSIDE its write grants. Set isolation "
+                "= 'auto' to run with a warning, or upgrade the kernel."
+            )
         return "hardened"
     raise IsolationUnavailableError(f"unknown sandbox.isolation: {requested!r}")

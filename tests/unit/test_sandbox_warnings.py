@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """`warn_sandbox_gaps`: the run-entry warning when the resolved isolation
-confines less than its name promises (`none`, or strict without Landlock)."""
+confines less than its name promises (`none`, strict without Landlock, or
+hardened on Landlock below ABI 3, where truncation is unconfined)."""
 
 from __future__ import annotations
 
@@ -101,6 +102,26 @@ def test_hardened_auto_warns_tool_network_degrade(capsys: pytest.CaptureFixture[
     warn_sandbox_gaps("hardened", _env(4), _cfg("auto"))
     err = capsys.readouterr().err
     assert "WARNING" in err and "network" in err and "network namespace" in err
+
+
+@pytest.mark.parametrize("abi", [1, 2])
+def test_hardened_below_abi3_warns_truncate_unconfined(
+    capsys: pytest.CaptureFixture[str], abi: int
+) -> None:
+    """Landlock ABI 1/2 does not confine truncate, so on hardened a jailed
+    command can truncate files outside its write grants. `auto` keeps resolving
+    to hardened on these ABI-1/2 hosts, so the over-promise must be said once
+    per run, naming ABI 3 / Linux 6.2."""
+    warn_sandbox_gaps("hardened", _env(abi), _cfg("host"))
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "truncat" in err
+    assert "ABI 3" in err and "6.2" in err
+
+
+def test_hardened_abi3_plus_is_silent_on_truncate(capsys: pytest.CaptureFixture[str]) -> None:
+    """From ABI 3 up Landlock confines truncation, so no truncate warning."""
+    warn_sandbox_gaps("hardened", _env(3), _cfg("host"))
+    assert "truncat" not in capsys.readouterr().err
 
 
 def test_hardened_allow_says_nothing_about_the_network(

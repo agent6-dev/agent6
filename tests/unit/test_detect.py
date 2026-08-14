@@ -104,9 +104,11 @@ def test_select_profile_strict_passes_when_supported() -> None:
     assert resolve_isolation("strict", _env(userns=True)) == "strict"
 
 
-def test_select_profile_hardened_ok_with_landlock() -> None:
-    assert resolve_isolation("hardened", _env(userns=True)) == "hardened"
-    assert resolve_isolation("hardened", _env(userns=False, landlock_abi=1)) == "hardened"
+def test_select_profile_hardened_ok_at_abi3_plus() -> None:
+    """ABI 3 (Linux 6.2) is the floor for explicit hardened: from there up
+    Landlock confines truncate, so the label keeps its promise."""
+    assert resolve_isolation("hardened", _env(userns=True)) == "hardened"  # abi 4
+    assert resolve_isolation("hardened", _env(userns=False, landlock_abi=3)) == "hardened"
 
 
 def test_select_profile_hardened_refuses_without_landlock() -> None:
@@ -114,6 +116,29 @@ def test_select_profile_hardened_refuses_without_landlock() -> None:
     # back is refused with a remedy, never silently under-delivered.
     with pytest.raises(IsolationUnavailableError, match="Landlock"):
         resolve_isolation("hardened", _env(userns=False, landlock_abi=0))
+
+
+@pytest.mark.parametrize("abi", [1, 2])
+def test_select_profile_hardened_refuses_below_abi3(abi: int) -> None:
+    """Landlock ABI 1/2 confines path writes but NOT truncation, so an explicit
+    `hardened` would let a jailed command truncate files outside its write
+    grants -- the label over-promising. Fail closed like the other explicit
+    settings: name what's unsupported (ABI 3 / Linux 6.2) and the fix (auto)."""
+    with pytest.raises(IsolationUnavailableError, match="truncat") as exc:
+        resolve_isolation("hardened", _env(userns=False, landlock_abi=abi))
+    msg = str(exc.value)
+    assert "ABI 3" in msg and "6.2" in msg and "auto" in msg
+
+
+@pytest.mark.parametrize("abi", [1, 2, 3])
+def test_select_profile_auto_stays_hardened_below_abi3(abi: int) -> None:
+    """`auto` on ABI 1/2 still resolves to hardened (real Landlock v1/v2 +
+    seccomp): dropping to none would leave common ABI-1/2 hosts (Debian 12,
+    kernel 6.1) unconfined. The partial write-confinement below ABI 3 is a
+    run-entry warning (test_sandbox_warnings), never a relabel or a refusal."""
+    env = _env(userns=False, landlock_abi=abi)
+    assert env.detected_isolation == "hardened"
+    assert resolve_isolation("auto", env) == "hardened"
 
 
 def _env_c(*, userns: bool, in_container: bool) -> Environment:

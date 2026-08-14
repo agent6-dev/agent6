@@ -49,6 +49,11 @@ def warn_sandbox_gaps(
     shares the host's, and we say so once per run. Explicit `session` never
     reaches here (check_network_support refused it on hardened).
 
+    Landlock below ABI 3 (Linux 6.2) does not confine file truncation, so on
+    `hardened` there a jailed command can truncate files OUTSIDE its write
+    grants; we warn once per run. Explicit `hardened` never reaches here
+    (resolve_isolation refused it below ABI 3).
+
     `protect_git` degrades the same way: strict-only, because it is a read-only
     bind. An explicitly-set one refuses (check_protect_git_support).
 
@@ -120,6 +125,15 @@ def warn_sandbox_gaps(
             "hardened does not confine. Run on 'strict' for a session "
             "network, or set sandbox.network = 'session' to refuse rather "
             "than run here."
+        )
+    if isolation == "hardened" and env.landlock_abi < 3:
+        reporter.err(
+            f"[agent6] WARNING: 'hardened' on Landlock ABI {env.landlock_abi} (< 3) "
+            "does not confine file truncation: a jailed command can truncate "
+            "(truncate/ftruncate) files OUTSIDE its write grants, discarding their "
+            "contents; its other writes stay confined. Full write-confinement needs "
+            "Landlock ABI 3 (Linux 6.2). Run on 'strict' -- its mount namespace "
+            "confines truncation on any ABI -- or upgrade the kernel."
         )
     for hidden, region in unmaskable_exposures(cfg, isolation):
         reporter.err(

@@ -329,12 +329,14 @@ syscall for hardened), never guessed from the kernel version.
 | `sandbox.isolation` | Host | Effective |
 |---|---|---|
 | `auto` *(default)* | Linux + user namespaces | `strict` |
-| `auto` | Linux, no userns, Landlock | `hardened` |
+| `auto` | Linux, no userns, Landlock ABI >= 3 | `hardened` |
+| `auto` | Linux, no userns, Landlock ABI 1-2 | `hardened` (loud warning: truncate unconfined) |
 | `auto` | Linux, no userns, no Landlock | `none` (loud warning) |
 | `auto` | non-Linux | `none` |
 | `strict` | Linux + user namespaces | `strict` |
 | `strict` | else | ⛔ refuse |
-| `hardened` | Linux + Landlock | `hardened` |
+| `hardened` | Linux + Landlock ABI >= 3 | `hardened` |
+| `hardened` | Linux + Landlock ABI 1-2 | ⛔ refuse (truncate needs ABI 3 / Linux 6.2) |
 | `hardened` | else | ⛔ refuse (Landlock is hardened's only FS boundary) |
 | `none` *(opt-out)* | any | `none` (the environment is the boundary) |
 
@@ -344,6 +346,12 @@ syscall for hardened), never guessed from the kernel version.
       loud once-per-run warning; hardened has no mounts to fall back on, so it
       refuses instead.
 - **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`, no namespaces.
+    - Landlock is hardened's only filesystem boundary, so it needs ABI 3
+      (Linux 6.2) to confine file truncation: below it a jailed command could
+      truncate files outside its write grants. `auto` still resolves here on
+      ABI 1-2 (real path confinement + seccomp beat `none`) with a loud
+      once-per-run warning; explicit `hardened` refuses. strict is unaffected --
+      its read-only binds block truncation on any ABI.
     - Works in default-seccomp Docker (the container blocks the inner
       `clone(CLONE_NEW*)`); the container is the blast radius.
     - With no PID namespace, teardown is the agent's job: it holds
