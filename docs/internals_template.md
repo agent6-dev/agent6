@@ -23,3 +23,21 @@ calls between the phase methods; deeper tiers regenerate from source with
 the same extractor.
 
 <!-- diagram: turn-pipeline -->
+
+## The run lifecycle
+
+`app/run.py`'s `run_task` composes the stage functions: config clamp and
+refusals, isolation selection, git preflight, gate inference, manifest,
+provider and tool assembly, then the loop, then finalize (stash recovery,
+auto-merge, the end report, the notify hook).
+
+<!-- diagram: run-lifecycle -->
+
+## Tool dispatch
+
+Every LLM tool call enters `dispatch`: audit events wrap it, the mode
+backstop refuses out-of-surface names, and the handler table routes the
+call (dashed edges: reached via the table, not direct calls). Commands and
+verify run jailed; file tools resolve through the workspace boundary.
+
+<!-- diagram: tool-dispatch -->

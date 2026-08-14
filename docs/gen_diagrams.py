@@ -88,9 +88,11 @@ def _layering_mermaid() -> str:
     return "\n".join(lines)
 
 
-def _pipeline_mermaid() -> str:
-    tree = ast.parse((_ROOT / "src/agent6/workflows/loop.py").read_text(encoding="utf-8"))
-    tier = set(_PIPELINE_TIER)
+def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
+    """Mermaid callgraph of the named tier in one file: edges are direct
+    calls (``self.X(...)`` or bare ``X(...)``) between tier members."""
+    tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
+    members = set(tier)
     edges: set[tuple[str, str]] = set()
 
     class V(ast.NodeVisitor):
@@ -105,32 +107,87 @@ def _pipeline_mermaid() -> str:
         visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
 
         def visit_Call(self, node: ast.Call) -> None:
+            name = None
             if (
                 isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
                 and node.func.value.id == "self"
-                and node.func.attr in tier
-                and self.cur in tier
-                and node.func.attr != self.cur
             ):
-                edges.add((self.cur, node.func.attr))
+                name = node.func.attr
+            elif isinstance(node.func, ast.Name):
+                name = node.func.id
+            if name in members and self.cur in members and name != self.cur:
+                edges.add((self.cur, name))
             self.generic_visit(node)
 
     V().visit(tree)
     connected = {n for e in edges for n in e}
     lines = ["graph TD"]
-    for name in _PIPELINE_TIER:
+    for name in tier:
         if name in connected:
-            label = name.lstrip("_")
-            lines.append(f'    {name.lstrip("_")}["{label}"]')
+            lines.append(f'    {name.lstrip("_")}["{name.lstrip("_")}"]')
     for a, b in sorted(edges):
         lines.append(f"    {a.lstrip('_')} --> {b.lstrip('_')}")
     return "\n".join(lines)
 
 
+# The run lifecycle's stage functions (app/run.py composes them) and the
+# dispatcher's gate chain; curated like the pipeline tier.
+_RUN_LIFECYCLE_TIER = (
+    "run_task",
+    "session_config",
+    "headless_approval_refusal",
+    "select_isolation",
+    "git_preflight",
+    "infer_verify_if_unset",
+    "drop_gate_if_unrunnable",
+    "pin_gate",
+    "write_session_manifest",
+    "build_session_providers",
+    "build_session_tools",
+    "finalize_auto_stash",
+    "finalize_auto_merge",
+    "print_session_end",
+    "fire_notify_hook",
+    "session_exit_code",
+)
+_DISPATCH_TIER = (
+    "dispatch",
+    "_dispatch_inner",
+    "_run_handler",
+    "_approve_mcp_call",
+)
+
+
+def _dispatch_mermaid() -> str:
+    """The dispatch gate chain plus the handler TABLE: handlers are reached
+    through ``self._handlers[name]``, not direct calls, so those edges are
+    read out of the table literal and drawn dashed (via table)."""
+    graph = _tier_callgraph("src/agent6/tools/dispatch.py", _DISPATCH_TIER)
+    tree = ast.parse((_ROOT / "src/agent6/tools/dispatch.py").read_text(encoding="utf-8"))
+    handlers: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Attribute)
+            and node.target.attr == "_handlers"
+            and isinstance(node.value, ast.Dict)
+        ):
+            for v in node.value.values:
+                if isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name):
+                    handlers.append(v.attr)
+    lines = [graph]
+    for h in handlers:
+        lines.append(f'    {h.lstrip("_")}["{h.lstrip("_")}"]')
+        lines.append(f"    run_handler -.->|table| {h.lstrip('_')}")
+    return "\n".join(lines)
+
+
 _DIAGRAMS = {
     "layering": _layering_mermaid,
-    "turn-pipeline": _pipeline_mermaid,
+    "turn-pipeline": lambda: _tier_callgraph("src/agent6/workflows/loop.py", _PIPELINE_TIER),
+    "run-lifecycle": lambda: _tier_callgraph("src/agent6/app/run.py", _RUN_LIFECYCLE_TIER),
+    "tool-dispatch": _dispatch_mermaid,
 }
 
 
