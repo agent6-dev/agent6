@@ -1295,7 +1295,7 @@ class Workflow:
             try:
                 result = self.dispatcher.dispatch(name, tool_input)
                 content = json.dumps(result.to_wire(), ensure_ascii=False)
-                self._note_tool_effects(state, turn, name, result)
+                self._note_tool_effects(state, turn, name, result, tool_input)
                 # Dedupe a back-to-back identical (name, args) call whose result
                 # bytes are unchanged: serve a short stub instead of re-sending
                 # the full payload, so a re-read spiral cannot grow the context.
@@ -1433,7 +1433,12 @@ class Workflow:
         return self._worktree_dirty()
 
     def _note_tool_effects(
-        self, state: _LoopState, turn: _TurnState, name: str, result: ToolResult
+        self,
+        state: _LoopState,
+        turn: _TurnState,
+        name: str,
+        result: ToolResult,
+        tool_input: Any,
     ) -> None:
         """Record a dispatched tool's side effects on the turn: verify results
         (they feed auto-commit-on-verify-pass and ground the review panel:
@@ -1457,12 +1462,15 @@ class Workflow:
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
             # none of the tree bookkeeping below applies (the gate's tree is
-            # untouched).
-            path = getattr(result, "path", "")
+            # untouched). Judged on the MODEL'S input path: the store sits
+            # outside the workspace root, so only an absolute path reaches it
+            # (EditResult.path is store-relative and matched nothing, which
+            # made a memory write withdraw a green verify -- caught live).
+            raw_path = str(tool_input.get("path", "")) if isinstance(tool_input, dict) else ""
             if (
                 self.state_dir is not None
-                and path.startswith("/")
-                and Path(path).is_relative_to(memory_dir(self.state_dir))
+                and raw_path.startswith("/")
+                and Path(raw_path).resolve().is_relative_to(memory_dir(self.state_dir))
             ):
                 state.memory_written = True
                 return

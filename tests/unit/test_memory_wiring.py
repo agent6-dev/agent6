@@ -143,3 +143,45 @@ def test_the_memory_dir_exists_the_moment_the_grant_does(
     assert not memory_dir(state).exists()
     ToolDispatcher(root=repo, config=cfg, state_dir=state)
     assert memory_dir(state).is_dir()
+
+
+def test_a_memory_write_does_not_withdraw_a_green_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EditResult.path is store-relative, so the old exclusion (which tested
+    result.path for an absolute prefix) never matched: the model's memory
+    write after a green verify counted as a tree edit, and the run ended
+    gate_red_at_base with all_passed=false over the very suite it had just
+    fixed (caught live). The predicate now judges the model's INPUT path."""
+    from unittest.mock import MagicMock
+
+    from agent6.memory import memory_dir
+    from agent6.workflows.loop import (
+        Workflow,
+        _LoopState,  # pyright: ignore[reportPrivateUsage]
+        _TurnState,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    state_dir = tmp_path / "statehome" / "repo-id"
+    state_dir.mkdir(parents=True)
+
+    wf = Workflow.__new__(Workflow)
+    wf.state_dir = state_dir
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.verify.note_pass()
+    turn = MagicMock(spec=_TurnState)
+    target = memory_dir(state_dir) / "fact.md"
+
+    result = MagicMock()
+    result.path = "fact.md"  # the store-relative spelling EditResult uses
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "apply_edit", result, {"path": str(target), "edits": []}
+    )
+    assert state.memory_written is True
+    assert state.verify.green_and_untouched  # the green survived
+    # A workspace edit still marks the tree.
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "apply_edit", result, {"path": "src/x.py", "edits": []}
+    )
+    assert not state.verify.green_and_untouched

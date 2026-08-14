@@ -49,6 +49,7 @@ def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
         turn,
         "run_verify_command",
         ExecResult(returncode=rc, stdout="", stderr="", duration_s=0.0, exec_failed=False),
+        {},
     )
 
 
@@ -114,7 +115,10 @@ def test_memory_dir_edit_marks_memory_written() -> None:
         state,
         turn,
         "apply_edit",
-        EditResult(applied=("create",), path="/tmp/state/memory/new-fact.md"),
+        # EditResult spells memory paths store-relative; the INPUT path is
+        # what identifies a memory write.
+        EditResult(applied=("create",), path="new-fact.md"),
+        {"path": "/tmp/state/memory/new-fact.md", "edits": []},
     )
     assert state.memory_written is True
     assert state.ever_edited is False
@@ -130,6 +134,7 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
         turn,
         "apply_edit",
         EditResult(applied=("replace",), path="src/code.py"),
+        {"path": "src/code.py", "edits": []},
     )
     assert state.memory_written is False
     assert state.ever_edited is True
