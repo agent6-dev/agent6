@@ -220,6 +220,7 @@ from agent6.workflows._session_state import (
     Verification,
     load_session_snapshot,
 )
+from agent6.workflows._spiral_guards import SpiralGuard
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
@@ -324,28 +325,16 @@ class _LoopState:
     # reads (gates, review grounding, snapshot, notices).
     verify: VerifyVerdict = field(default_factory=VerifyVerdict)
     no_progress_nudges_used: int = 0
-    # Degenerate-loop guard: a back-to-back streak of the same (tool, args)
-    # signature. Reset on any change so a normal re-read after edits is fine.
-    last_tool_signature: str | None = None
-    repeat_streak: int = 0
-    # Byte-for-byte content of the immediately-previous tool result, to elide
-    # a back-to-back identical re-serve (a spiral re-reading the same 60KB
-    # file). None until the first result lands.
-    last_tool_result_content: str | None = None
-    # Tool-error spiral: consecutive same-signature tool errors, reset by any
-    # tool success or a different error.
-    last_tool_error_sig: str | None = None
-    tool_error_streak: int = 0
-    tool_error_nudges_used: int = 0
+    # The dispatch loop's degenerate-spiral bookkeeping (repeat + error
+    # streaks and the last-served bytes), transitions owned by the guard.
+    spiral: SpiralGuard = field(default_factory=SpiralGuard)
     # Sandbox-reachability signal: argv[0] of a run_command the JAIL failed to
     # exec (exec_failed, not a nonzero exit) and its consecutive-failure count.
     # Only executed commands feed it; validation errors and denials never
     # entered the jail, so they say nothing about reachability.
     jail_exec_failed_binary: str = ""
     jail_exec_failed_streak: int = 0
-    last_error_was_denial: bool = False
     sandbox_reachability_warned: bool = False
-    repeat_warning_emitted_at: int = 0
     # Intervention nudge counters (each capped by a module-level patience const).
     went_quiet_nudges_used: int = 0
     plateau_nudges_used: int = 0
@@ -1294,16 +1283,12 @@ class Workflow:
             # degenerate-loop signature tracking. Stable
             # JSON so dict key order does not break equality. Same
             # (name, args) back-to-back across iterations increments
-            # `state.repeat_streak`; anything else resets it.
+            # `state.spiral.call_streak`; anything else resets it.
             try:
                 sig = f"{name}:{json.dumps(tool_input, sort_keys=True, ensure_ascii=False)}"
             except (TypeError, ValueError):
                 sig = f"{name}:<unhashable>"
-            if sig == state.last_tool_signature:
-                state.repeat_streak += 1
-            else:
-                state.last_tool_signature = sig
-                state.repeat_streak = 1
+            state.spiral.note_call(sig)
             self._emit("loop.tool.call", name=name, iteration=turn.iteration)
             served = None
             try:
@@ -1315,11 +1300,7 @@ class Workflow:
                 # the full payload, so a re-read spiral cannot grow the context.
                 # The call still dispatched (a CHANGED result serves in full);
                 # only the redundant re-serve is elided.
-                if (
-                    state.repeat_streak >= 2
-                    and content == state.last_tool_result_content
-                    and len(content) > _DEDUPE_MIN_CHARS
-                ):
+                if state.spiral.stub_repeat(content, min_chars=_DEDUPE_MIN_CHARS):
                     served = json.dumps(
                         {
                             "repeated": (
@@ -1331,12 +1312,7 @@ class Workflow:
                             )
                         }
                     )
-                state.last_tool_result_content = content
-                # A successful tool call is progress: clear any error spiral.
-                state.tool_error_streak = 0
-                state.last_tool_error_sig = None
-                state.tool_error_nudges_used = 0
-                state.last_error_was_denial = False
+                state.spiral.note_success(content)
                 self._note_jail_exec_failure(state, turn, name, tool_input, result)
                 # Only a DISPATCHED finish counts: a refused finish tool (mode
                 # backstop, schema error) is an error result the model recovers
@@ -2054,14 +2030,14 @@ class Workflow:
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
         repeat_threshold = 3
         if (
-            state.repeat_streak >= repeat_threshold
-            and state.repeat_warning_emitted_at < turn.iteration - 1
+            state.spiral.call_streak >= repeat_threshold
+            and state.spiral.warned_at_iteration < turn.iteration - 1
         ):
             # Strip the args-JSON suffix for the user-facing text.
-            latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+            latched_name = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
             notice = (
                 f"[loop-guard] You have called `{latched_name}` with"
-                f" identical arguments {state.repeat_streak} times in a row."
+                f" identical arguments {state.spiral.call_streak} times in a row."
                 " The tool result has not changed. Re-issuing the same"
                 " call again will not yield new information. Change"
                 " your approach: try different arguments, a different"
@@ -2073,13 +2049,13 @@ class Workflow:
                 "loop.loop_guard.triggered",
                 iteration=turn.iteration,
                 tool=latched_name,
-                streak=state.repeat_streak,
+                streak=state.spiral.call_streak,
             )
             self._log(
                 f"  loop-guard: {latched_name} called"
-                f" {state.repeat_streak}x in a row - injecting notice"
+                f" {state.spiral.call_streak}x in a row - injecting notice"
             )
-            state.repeat_warning_emitted_at = turn.iteration
+            state.spiral.warned_at_iteration = turn.iteration
         elapsed = time.monotonic() - state.started_monotonic
         if (
             self.stagnation_notice_after_s > 0
@@ -2215,16 +2191,12 @@ class Workflow:
         denial/binary records the reachability note reads, and the
         same-signature streak the nudge ladder climbs."""
         content = json.dumps({"error": str(exc)})
-        state.last_tool_result_content = content
         self._log(f"  tool_error: {name}: {exc}")
-        state.last_error_was_denial = isinstance(exc, ToolDenied)
-        sig = tool_error_signature(name, str(exc))
-        if sig == state.last_tool_error_sig:
-            state.tool_error_streak += 1
-        else:
-            state.last_tool_error_sig = sig
-            state.tool_error_streak = 1
-            state.tool_error_nudges_used = 0
+        state.spiral.note_error(
+            tool_error_signature(name, str(exc)),
+            denial=isinstance(exc, ToolDenied),
+            content=content,
+        )
         return content
 
     def _maybe_tool_error_ladder(self, state: _LoopState, turn: _TurnState) -> None:
@@ -2235,21 +2207,21 @@ class Workflow:
         non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         if not non_metric_run:
             return
-        streak = state.tool_error_streak
-        if streak >= TOOL_ERROR_STOP_AFTER and state.tool_error_nudges_used >= 2:
+        streak = state.spiral.error_streak
+        if streak >= TOOL_ERROR_STOP_AFTER and state.spiral.error_nudges_used >= 2:
             turn.tool_error_stop = True
             return
         # A denial streak is a POLICY outcome: "your call is malformed" would
         # be false, and a refusal says nothing about jail reachability.
-        denial = state.last_error_was_denial
+        denial = state.spiral.last_error_was_denial
         nudge = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_NUDGE
         escalation = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_ESCALATION
-        if streak >= TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
-            state.tool_error_nudges_used = 2
+        if streak >= TOOL_ERROR_ESCALATE_AFTER and state.spiral.error_nudges_used == 1:
+            state.spiral.error_nudges_used = 2
             turn.tool_results.append(Notice(escalation))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
-        elif streak >= TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
-            state.tool_error_nudges_used = 1
+        elif streak >= TOOL_ERROR_NUDGE_AFTER and state.spiral.error_nudges_used == 0:
+            state.spiral.error_nudges_used = 1
             turn.tool_results.append(Notice(nudge))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
 
@@ -2406,7 +2378,8 @@ class Workflow:
         self._absorb_soft_stop(state, turn, conversation)
         if turn.tool_error_stop:
             self._log(
-                f"LOOP: tool_error stop at iter {turn.iteration} (streak {state.tool_error_streak})"
+                f"LOOP: tool_error stop at iter {turn.iteration}"
+                f" (streak {state.spiral.error_streak})"
             )
             self._final_checkpoint(turn.iteration)
             self._emit(
@@ -2420,7 +2393,7 @@ class Workflow:
                 reason="tool_error_stuck",
                 summary=(
                     "stopped: the same tool call failed"
-                    f" {state.tool_error_streak} times with the identical error"
+                    f" {state.spiral.error_streak} times with the identical error"
                     " despite two harness interventions; resume with a different"
                     " approach"
                 ),
@@ -2524,12 +2497,12 @@ class Workflow:
         # essential when triaging "why did my run die at iter N".
         if (
             self.loop_guard_kill_threshold > 0
-            and state.repeat_streak >= self.loop_guard_kill_threshold
+            and state.spiral.call_streak >= self.loop_guard_kill_threshold
         ):
-            latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+            latched_name = (state.spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
             self._log(
                 f"LOOP: loop_guard_killed at iter {turn.iteration} -"
-                f" {latched_name} called {state.repeat_streak}x in a row"
+                f" {latched_name} called {state.spiral.call_streak}x in a row"
                 f" (threshold={self.loop_guard_kill_threshold})"
             )
             self._final_checkpoint(turn.iteration)
@@ -2539,14 +2512,14 @@ class Workflow:
                 iterations=turn.iteration,
                 all_passed=False,
                 tool=latched_name,
-                streak=state.repeat_streak,
+                streak=state.spiral.call_streak,
             )
             return SessionResult(
                 completed=False,
                 reason="loop_guard_killed",
                 summary=(
                     f"loop-guard killed run: `{latched_name}`"
-                    f" called {state.repeat_streak}x in a row with"
+                    f" called {state.spiral.call_streak}x in a row with"
                     f" identical arguments (threshold"
                     f" {self.loop_guard_kill_threshold})"
                 ),

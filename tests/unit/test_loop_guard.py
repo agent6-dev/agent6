@@ -180,7 +180,7 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: Path) -> None:
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     notices = _loop_guard_blocks(final_messages)
     # The guard fires once when streak hits 3. The
-    # `repeat_warning_emitted_at < iteration - 1` gate suppresses
+    # `spiral.warned_at_iteration < iteration - 1` gate suppresses
     # re-emission at iter 4 (consecutive) but allows re-emission at
     # iter 5 (one-iteration gap) if the streak persists. So we expect
     # 1 or 2 notices, but NOT one per iteration.
