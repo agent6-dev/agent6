@@ -46,14 +46,13 @@ import contextlib
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any
 
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.egress import http_stream
 from agent6.providers.types import (
     ProviderAborted,
     ProviderError,
@@ -74,6 +73,15 @@ STREAM_THINKING_IDLE_TIMEOUT_S = 300.0
 # short: this bounds how long a Stop/steer/detach waits to end a long in-flight
 # turn. A quarter second reads as immediate without the impatient second Ctrl-C.
 STREAM_WATCHDOG_TICK_S = 0.25
+
+
+@contextlib.contextmanager
+def http_stream(
+    method: str, url: str, *, headers: dict[str, str], content: bytes, timeout: float
+) -> Generator[httpx2.Response]:
+    """Streaming POST seam: tests stub this name, never ``httpx2`` globally."""
+    with httpx2.stream(method, url, headers=headers, content=content, timeout=timeout) as resp:
+        yield resp
 
 
 class StreamClock:

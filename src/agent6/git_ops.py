@@ -152,7 +152,7 @@ _GIT_EGRESS_HARDENING: tuple[str, ...] = (
 # code, so honoring it on agent6's commit is a host-RCE vector for an adversarial
 # repo. Set once from `git.run_repo_hooks` at run/review startup. A module-level
 # dict (mutated, not rebound) keeps the process-wide policy without a `global`
-# statement -- same shape as providers.egress._BROKER_ROUTES.
+# statement.
 _hook_policy: dict[str, bool] = {"honor_repo_hooks": False}
 
 

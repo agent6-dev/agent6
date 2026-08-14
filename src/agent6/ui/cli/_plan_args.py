@@ -102,7 +102,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "task",
         nargs="?",
         default="",
-        help='Question (in quotes), e.g. "why does the broker drop large requests?".',
+        help='Question (in quotes), e.g. "why does the retry loop double the timeout?".',
     )
     ask_query.add_argument(
         "--config",

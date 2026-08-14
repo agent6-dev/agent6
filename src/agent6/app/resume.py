@@ -390,11 +390,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         if writes_code and not require_git_repo(cwd):
             return 2
 
-        # Snapshot version guard, BEFORE maybe_start_egress spawns a broker +
-        # netns: a v1 snapshot cannot be resumed, and the refusal must land in
-        # preflight (like `fork`) with the checkout and the network untouched --
-        # not after a broker + preamble already printed. wf.resume() re-validates
-        # the same snapshot; a corrupt/old file refuses identically here (exit 1).
+        # Snapshot version guard in preflight: a v1 snapshot cannot be resumed,
+        # and the refusal must land here (like `fork`) with the checkout and the
+        # session network untouched, not after the preamble already printed.
+        # wf.resume() re-validates the same snapshot; a corrupt/old file refuses
+        # identically here (exit 1).
         try:
             snapshot = load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
@@ -713,10 +713,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # lets the kernel reclaim it.
                 session_net.close()
                 clear_session_netns_pid(layout.session_dir)
-            # Egress teardown is owned by the outer finally (a single call).
-            # Doing it here too would reap the broker pid, then the auto-merge
-            # git subprocesses and the notify hook below could recycle it before
-            # the outer close() signalled the pid again.
             if (
                 not interrupted
                 and result is not None
@@ -781,8 +777,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         )
         return session_exit_code(result)
     finally:
-        # Single owner of worker.pid + egress teardown for every resume exit
-        # path, refusals and Ctrl-C during verify inference included.
+        # Single owner of worker.pid for every resume exit path, refusals and
+        # Ctrl-C during verify inference included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.session_dir)
         release_single_writer(repo_lock_fd)

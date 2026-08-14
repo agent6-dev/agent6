@@ -187,10 +187,10 @@ def apparmor_userns_restricted() -> bool:
 def sandbox_available() -> bool:
     """Return True iff the Linux kernel sandbox can be used on this host.
 
-    The sandbox (jail launcher + Landlock + seccomp + namespaces + egress
-    broker) is Linux-only. On every other platform there is no confinement
-    mechanism, so we run unsandboxed (`isolation = none`) and refuse any config
-    that explicitly asked for isolation.
+    The sandbox (jail launcher + Landlock + seccomp + namespaces) is
+    Linux-only. On every other platform there is no confinement mechanism, so
+    we run unsandboxed (`isolation = none`) and refuse any config that
+    explicitly asked for isolation.
     """
     return sys.platform.startswith("linux")
 

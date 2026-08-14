@@ -433,8 +433,8 @@ def build_machine_agent_runner(
     spawned with a fixed argv (no LLM-derived content) and handed the request via
     a temp file; the operator-authored prompt travels in that file, never on the
     command line. ``timeout_secs`` is enforced by killing the subprocess's whole
-    process group (true mid-call cancellation, and the per-agent broker is torn
-    down with it).
+    process group (true mid-call cancellation, and the per-agent session-network
+    holder dies with it).
 
     ``events_log`` is per CALL: the live World passes each agent-state execution
     its own ``<instance>/states/<seq>-<state>/logs.jsonl`` and `machine create`
@@ -493,7 +493,7 @@ def build_machine_agent_runner(
                 str(out_file),
             ]
             # Own session/process group so the timeout kill takes the agent
-            # subprocess AND its broker/jail children with it.
+            # subprocess AND its jail children with it.
             proc = subprocess.Popen(argv, start_new_session=True)
             try:
                 proc.wait(timeout=request.timeout_s)

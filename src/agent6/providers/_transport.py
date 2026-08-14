@@ -23,7 +23,6 @@ from typing import Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.egress import http_post
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
     ProviderError,
@@ -31,6 +30,13 @@ from agent6.providers.types import (
     TranscriptRecorder,
     parse_retry_after,
 )
+
+
+def http_post(
+    url: str, *, headers: dict[str, str], content: bytes, timeout: float
+) -> httpx2.Response:
+    """POST seam: tests stub this name, never ``httpx2`` globally."""
+    return httpx2.post(url, headers=headers, content=content, timeout=timeout)
 
 
 def _has_assistant_output(data: dict[str, Any]) -> bool:
