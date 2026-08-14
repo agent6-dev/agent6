@@ -249,6 +249,7 @@ def _model_squash_message(
             max_tokens=500,
         )
     except Exception:
+        # Drafting is best-effort; the caller falls back to a fixed subject.
         return None
     return (resp.text or "").strip() or None
 
