@@ -31,6 +31,7 @@ import httpx2
 
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry, ProviderEntry
 from agent6.paths import cache_dir
+from agent6.providers.types import ProviderError
 from agent6.providers.wire import auth_header
 
 __all__ = ["cached_context_window", "list_models"]
@@ -221,7 +222,12 @@ def probe_provider_key(
         return KeyProbeResult(
             ok=True, status="unsupported", detail="no /models listing for this deployment"
         )
-    url, headers = _models_endpoint(entry, api_key)
+    try:
+        url, headers = _models_endpoint(entry, api_key)
+    except ProviderError as exc:
+        # A credential auth_header refuses (control char / non-ASCII) is an
+        # unusable key: report it as such rather than crashing `connect`.
+        return KeyProbeResult(ok=False, status="auth_failed", detail=str(exc)[:200])
     # OpenRouter's /models is public (200 for any key); probe its auth-gated /key
     # instead. Match the parsed host, not a base_url substring (a proxy URL could
     # merely contain the string).
@@ -285,7 +291,9 @@ def fetch_models_live(
     """
     try:
         models, pricing, context = _fetch(entry, api_key, timeout_s)
-    except (httpx2.HTTPError, ValueError, OSError):
+    except (httpx2.HTTPError, ValueError, OSError, ProviderError):
+        # ProviderError: a malformed credential auth_header refused. It falls
+        # back like any other fetch failure, keeping the "Never raises" contract.
         return None
     if not models:
         return None

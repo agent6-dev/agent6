@@ -11,9 +11,12 @@ from typing import Any
 from unittest import mock
 
 import httpx2
+import pytest
 
 from agent6.providers.anthropic import AnthropicProvider
 from agent6.providers.openai import OpenAIProvider
+from agent6.providers.types import ProviderError
+from agent6.providers.wire import auth_header, request_url
 
 _VERTEX_ANTHROPIC = (
     "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
@@ -138,3 +141,69 @@ def test_api_key_header_is_redacted_in_transcripts() -> None:
     assert redacted["api-key"] == "<REDACTED>"
     assert redacted["x-api-key"] == "<REDACTED>"
     assert redacted["content-type"] == "json"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "sk-secret\r\nX-Injected: 1",  # CRLF header injection
+        "sk-secret\nX-Injected: 1",  # bare LF
+        "sk-\x00secret",  # NUL
+        "tok\x7f",  # DEL
+        "tokén",  # non-ASCII (httpx2 cannot encode it as an ascii header)
+    ],
+)
+def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> None:
+    """A credential carrying a newline/NUL/DEL/non-ASCII byte is refused at the
+    single chokepoint, before it reaches httpx2/h11 -- where a transport error
+    would carry the secret into a log or transcript. The refusal names the fault
+    but never the value."""
+    for style in ("bearer", "x_api_key", "api_key_header"):
+        with pytest.raises(ProviderError) as excinfo:
+            auth_header(style, bad)  # type: ignore[arg-type]
+        # The secret must not leak into the error text (nor its distinctive bits).
+        msg = str(excinfo.value)
+        assert "sk-secret" not in msg and "X-Injected" not in msg and "tok" not in msg
+
+
+def test_auth_header_still_accepts_an_ordinary_ascii_token() -> None:
+    tok = "sk-ant_AZ-09.~+/="
+    assert auth_header("bearer", tok) == ("authorization", f"Bearer {tok}")
+    assert auth_header("x_api_key", "azkey-123") == ("x-api-key", "azkey-123")
+
+
+def test_a_bad_credential_never_reaches_the_http_client() -> None:
+    """The provider call path routes through auth_header, so a malformed key
+    fails as a ProviderError with no HTTP request attempted at all."""
+    p = OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
+    with (
+        mock.patch("httpx2.post", side_effect=AssertionError("must not be called")),
+        pytest.raises(ProviderError),
+    ):
+        p.call(system="s", messages=[{"role": "user", "content": "q"}])
+
+
+@pytest.mark.parametrize(
+    "raw, quoted",
+    [("family/model", "family%2Fmodel"), ("m?x=1", "m%3Fx%3D1"), ("a b", "a%20b")],
+)
+def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> None:
+    """Vertex-Anthropic and Azure carry the model/deployment id in the URL path;
+    an unquoted slash, `?`, or space would reshape the URL (a different path, an
+    injected query) away from the base_url host the egress allow-list trusts."""
+    vurl, in_body = request_url(
+        api_format="anthropic",
+        deployment="vertex",
+        base_url=_VERTEX_ANTHROPIC,
+        model=raw,
+        streaming=False,
+    )
+    assert vurl == f"{_VERTEX_ANTHROPIC}/{quoted}:rawPredict" and in_body is False
+    aurl, _ = request_url(
+        api_format="openai",
+        deployment="azure",
+        base_url="https://res.openai.azure.com",
+        model=raw,
+        streaming=False,
+    )
+    assert aurl == f"https://res.openai.azure.com/openai/deployments/{quoted}/chat/completions"

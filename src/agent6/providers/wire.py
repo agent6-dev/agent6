@@ -21,12 +21,20 @@ derived from the same `base_url` host) and the redaction set honest.
 
 from __future__ import annotations
 
+import re
 from typing import Literal
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+
+from agent6.providers.types import ProviderError
 
 ApiFormat = Literal["anthropic", "openai"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
+
+# An RFC 7230 field-value byte, minus obs-text: HTAB plus printable ASCII.
+# Real credentials are ASCII (JWT, hex, base64), so a byte outside this set is
+# a control char, DEL, or non-ASCII -- nothing an auth header may carry.
+_HEADER_SAFE_VALUE = re.compile(r"[\t\x20-\x7e]*")
 
 
 def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
@@ -35,9 +43,21 @@ def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
     Returns None for `none` or an empty token (an unauthenticated local
     endpoint sends no auth header). httpx2 lowercases header names anyway; we do
     it here so callers and the transcript-redaction set agree on the spelling.
+
+    The single place a credential becomes a header, so the single place it is
+    checked header-safe: a token carrying a newline, NUL, or non-ASCII byte is
+    refused here, before httpx2/h11 can raise a transport error that echoes the
+    secret. The refusal never prints the value.
     """
     if style == "none" or not token:
         return None
+    if not _HEADER_SAFE_VALUE.fullmatch(token):
+        raise ProviderError(
+            "provider credential is not a valid HTTP header value: it holds a"
+            " control character, newline, or non-ASCII byte (a stray newline"
+            " from copy-paste is the usual cause). The value is not shown, to"
+            " keep it out of logs."
+        )
     if style == "bearer":
         return ("authorization", f"Bearer {token}")
     if style == "x_api_key":
@@ -73,12 +93,16 @@ def request_url(
     from the JSON body.
     """
     base = base_url.rstrip("/")
+    # In these branches the model/deployment id rides in the URL path, quoted
+    # to one segment: a `/`, `?`, `#`, or space in it must not reshape the URL
+    # away from the base_url host the egress allow-list is derived from.
     if deployment == "vertex" and api_format == "anthropic":
         verb = "streamRawPredict" if streaming else "rawPredict"
-        url, model_in_body = f"{base}/{model}:{verb}", False
+        url, model_in_body = f"{base}/{quote(model, safe='')}:{verb}", False
     elif deployment == "azure":
         # api_format is validated to be "openai" for azure at config load.
-        url, model_in_body = f"{base}/openai/deployments/{model}/chat/completions", False
+        seg = quote(model, safe="")
+        url, model_in_body = f"{base}/openai/deployments/{seg}/chat/completions", False
     elif api_format == "anthropic":
         url, model_in_body = f"{base}/messages", True
     else:
