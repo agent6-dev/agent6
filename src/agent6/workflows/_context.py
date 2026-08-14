@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared helpers used by multiple workflows."""
+"""Repo context for the system prompt: AGENTS.md discovery and the
+structural repo summary (file map + priors)."""
 
 from __future__ import annotations
 

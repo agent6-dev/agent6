@@ -228,8 +228,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(f"[agent6] resuming most recent session: {session_id}")
     # Across buckets: an ask is a session like any other, so `agent6 resume`
     # continues one by id instead of only finding what lives under runs/.
-    # One resolver, no per-bucket fallback: falling back to a runs/-only lookup
-    # made an id that prefixed BOTH a run and an ask silently pick the run.
+    # One resolver, no per-bucket fallback: a runs/-only fallback would make an
+    # id that prefixes BOTH a run and an ask silently pick the run.
     layout = session_layout(state_dir, session_id)
     if layout is None:
         candidates = session_matches(state_dir, session_id)
@@ -241,9 +241,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     session_id = layout.session_id
     # Read the manifest BEFORE taking the lock or clearing any state: resume
-    # reaches every bucket, and a machine draft (or anything else it cannot
-    # continue) had its worker pid and pending answers clobbered on the way to
-    # discovering that.
+    # reaches every bucket, and clearing first would clobber a machine draft's
+    # worker pid and pending answers on the way to discovering resume cannot
+    # continue it.
     try:
         manifest = read_manifest(layout.session_dir)
         mode = manifest.session_mode()
@@ -383,10 +383,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # so a resumed ask skips the commit-oriented git preflight the same way
         # a fresh one does: the repo guard, the divergence guard (nothing it
         # would resume onto is code it wrote), the identity check and the run
-        # branch. Otherwise `resume <ask-id>` refused with branch talk about
+        # branch. Otherwise `resume <ask-id>` would refuse with talk of
         # branches an ask never cuts.
         writes_code = mode != "ask"
-        # Friendly no-repo guard BEFORE any git-touching check (which would
+        # The no-repo guard runs BEFORE any git-touching check (which would
         # otherwise print zeroed-out heads first, then the real error).
         if writes_code and not require_git_repo(cwd):
             return 2
@@ -630,9 +630,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 undo_forker=_undo_forker,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan resume, and inside a lane -- depth 1). Under a
-                # strict egress netns, lane_launcher(guard) hands lanes the same
-                # host-spawner escape this resume's own detach uses.
+                # (None in plan resume, and inside a lane -- depth 1).
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     cwd,

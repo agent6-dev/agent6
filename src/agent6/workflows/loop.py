@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Minimal single-loop agent workflow.
-
-See ``bench/improvement_plan.md`` for the full rationale. tl;dr: one
-large system prompt, one LLM driving via tool calls, deterministic
-harness (jail + budget + verify timeout + DAG curator for
-persistence/resume). No planner/critic/triage subagent cascade.
-
-The workflow also auto-commits on every verify-pass: the agent shouldn't
-need to remember to ``git commit`` after a green verify, so the workflow
-does it for them and score.sh sees the actual improvements that were made.
-
-Not implemented yet:
-- Alignment guard (no rigid plan to drift from)
+"""The agent loop: one system prompt, one model driving tool calls, and a
+deterministic harness around it (jail, budget, verify timeout, DAG curator
+for persistence and resume). One driver, no subagent cascade: the critic
+and review panel gate checkpoints, they never steer. Green verifies
+auto-commit, so the chain records each tree a verify certified.
 """
 
 from __future__ import annotations
@@ -1043,9 +1035,8 @@ class Workflow:
                 return wire
             # Rebuilt per turn, not per leg: a gate adopted mid-run, or a
             # policy the operator denies mid-run, changes what the worker has.
-            # A frozen list told it to run a tool that was not there (commits
-            # stopped, the run finished red) or kept offering one that only
-            # raised.
+            # A frozen list offers a tool that is gone, or keeps offering one
+            # that only raises.
             got = self._turn_provider_call(
                 system,
                 conversation,
@@ -1341,14 +1332,14 @@ class Workflow:
     _EXIT_TIMEOUT = 124
 
     def _judged_the_base_commit(self, state: _LoopState, result: ExecResult) -> bool:
-        """Did this verify judge the commit the RUN started from?
+        """True when this verify judged the commit the RUN started from.
 
-        Not "has the model edited yet": every reason an operator resumes -- a
-        budget stop, an iteration cap, a provider error -- commits the leg's
-        work first, so leg two opens on a clean tree whose HEAD already carries
-        leg one's breakage. Reading that as the base told the worker its own
-        failures were inherited. `/parallel` does the same by merging lane
-        commits into the workspace.
+        "The model has not edited yet" is the wrong test: every reason an
+        operator resumes -- a budget stop, an iteration cap, a provider error --
+        commits the leg's work first, so leg two opens on a clean tree whose
+        HEAD already carries leg one's breakage, and reading that as the base
+        would tell the worker its own failures are inherited. `/parallel` does
+        the same by merging lane commits into the workspace.
 
         So: HEAD must still BE the base commit, the tree must be clean, and the
         gate must have actually produced a verdict -- a runner that was absent
@@ -1418,12 +1409,12 @@ class Workflow:
             state.no_progress_nudges_used = 0
 
     def _left_the_tree_dirty(self, name: str) -> bool:
-        """Did a child-process tool leave uncommitted changes behind?
+        """True when a child-process tool left uncommitted changes behind.
 
         Only `run_command` and MCP tools are asked: `run_verify_command` and
         `run_metric_command` are the operator's own gates, and the caches they
-        drop must not invalidate the pass they just produced. Git answers the
-        question, so a read-only probe (`ls`, `grep`) costs its pass nothing --
+        drop must not invalidate the pass they just produced. Git itself decides,
+        so a read-only probe (`ls`, `grep`) costs its pass nothing --
         and gitignored build artifacts never count as a change.
         """
         if name != "run_command" and not name.startswith(MCP_TOOL_PREFIX):
@@ -1464,8 +1455,8 @@ class Workflow:
             # none of the tree bookkeeping below applies (the gate's tree is
             # untouched). Judged on the MODEL'S input path: the store sits
             # outside the workspace root, so only an absolute path reaches it
-            # (EditResult.path is store-relative and matched nothing, which
-            # made a memory write withdraw a green verify -- caught live).
+            # (EditResult.path is store-relative; matching on it never fires,
+            # and the write would fall through to the tree bookkeeping).
             raw_path = str(tool_input.get("path", "")) if isinstance(tool_input, dict) else ""
             if (
                 self.state_dir is not None
@@ -1607,9 +1598,8 @@ class Workflow:
     ) -> SessionResult | None:
         """Auto-commit the turn's work, then take the automatic metric sample.
 
-        With a verify command, commits are gated on a green verify (the agent
-        shouldn't need to remember to ``git commit`` after a green verify);
-        with none configured (a gateless run), each editing step is committed
+        With a verify command, commits are gated on a green verify; with none
+        configured (a gateless run), each editing step is committed
         as an un-gated checkpoint so resume + the audit trail still work.
         ``turn.edited`` (apply_edit/apply_patch) is the cheap fast-path; the
         worktree-dirty fallback catches run_command-authored edits (else they'd
@@ -1686,8 +1676,8 @@ class Workflow:
                 )
         if not turn.metric_after_verify_pass:
             # The auto path raises OperatorCommandUnexecutable just like a
-            # manual run_metric_command would; abort the same graceful way
-            # the per-tool handler does (it is a distinct exception, NOT a
+            # manual run_metric_command would; abort the same way the
+            # per-tool handler does (it is a distinct exception, NOT a
             # ToolError, so _auto_metric_feedback does not swallow it).
             try:
                 turn.metric_feedback = self._auto_metric_feedback(
@@ -3621,8 +3611,7 @@ class Workflow:
         tool_use inputs + surviving tool_results, via ``context_chars``)
         crosses ``compact_summarise_at_chars``, summarise the elided history
         into a compact progress block and restart the conversation from
-        (original task + summary). Measuring only tool_results here -- which
-        tier 1 just capped -- left tier 2 unreachable. Fail-safe: if
+        (original task + summary). Fail-safe: if
         summarisation errors or returns nothing, the conversation is left
         untouched (tier-1 elision already ran) and the run continues.
 

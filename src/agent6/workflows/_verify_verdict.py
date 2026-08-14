@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run's central truth: what the verify gate last said, and whether the
+"""The run's central truth: the verify gate's last verdict, and whether the
 tree moved since.
 
 Every consumer of "is the run green" (the finish gates, the review panel's

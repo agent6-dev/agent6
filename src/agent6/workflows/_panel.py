@@ -92,7 +92,7 @@ def inconclusive_note(result: PanelResult) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Diff grounding: which (path, line) citations does this diff actually support?
+# Diff grounding: the (path, line) citations this diff supports.
 # ----------------------------------------------------------------------------
 
 # Capture BOTH the old-side (-A,B) and new-side (+C,D) line numbers so deletions

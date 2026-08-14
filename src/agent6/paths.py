@@ -13,7 +13,7 @@ Single source of truth for:
   the user's config/secrets (not root's) and never leave root-owned files
   scattered in their repository.
 
-Security model (see SECURITY.md):
+Security model (see docs/security.md):
 
 - Running an LLM-driven agent as root is dangerous. agent6 refuses to run
   as root unless the operator explicitly opts in via ``--allow-root`` or

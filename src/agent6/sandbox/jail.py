@@ -80,15 +80,16 @@ def _never_mounted(p: Path) -> bool:
     return any(p.is_relative_to(d) or d.is_relative_to(p) for d in private_dirs())
 
 
-# The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
-# and strict mounts a fresh /proc, so /proc/1/environ is readable by the jailed
-# command -- inheriting the agent's env put the operator's provider key there.
-# The launcher reads nothing from the environment (its policy arrives on stdin
-# and the child's env is passed explicitly in it), so it gets none.
 # How long the answer wait sleeps between checks. Short enough that an
 # operator Stop reads as immediate, long enough to cost nothing while a
 # command runs for minutes.
 _ANSWER_POLL_S = 0.2
+
+# The launcher's OWN environment. It becomes PID 1 of the jail's PID namespace
+# and strict mounts a fresh /proc, so /proc/1/environ is readable by the jailed
+# command -- inheriting the agent's env would put the operator's provider key
+# there. The launcher reads nothing from the environment (its policy arrives on
+# stdin and the child's env is passed explicitly in it), so it gets none.
 _LAUNCHER_ENV: dict[str, str] = {}
 
 
@@ -214,7 +215,7 @@ def _lossy_text(v: object) -> str:
     return v if isinstance(v, str) else ""
 
 
-# Override for tests; checked first.
+# Operator/test override (docs/config.md); checked before the bundled binary.
 _ENV_VAR = "AGENT6_JAIL_BIN"
 
 
@@ -417,7 +418,9 @@ def _policy_to_json(policy: JailPolicy) -> str:
 def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     """Run `policy.argv` as a plain subprocess (no confinement).
 
-    Used only for the `none` isolation on non-Linux hosts. Inherits the parent
+    Used for the `none` isolation: the explicit opt-out, the
+    dangerously-disable escape hatch, or `auto` on a host with no confinement
+    mechanism. Inherits the parent
     environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
     runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
     memory_limit_mb) have no effect here, there is no kernel mechanism to
@@ -425,10 +428,10 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     """
     env = {**os.environ, **{k: v for k, v in policy.env}}
     start = time.monotonic()
-    # Unsandboxed escape hatch (non-Linux only); see run_in_jail docstring.
-    # Output is captured as bytes and decoded lossily: the strict text=True
-    # decode raised UnicodeDecodeError out of communicate() on any non-UTF-8
-    # byte, breaking the return-a-result contract.
+    # Unsandboxed escape hatch; see run_in_jail's docstring. Output is
+    # captured as bytes and decoded lossily: a strict text=True decode would
+    # raise UnicodeDecodeError out of communicate() on any non-UTF-8 byte,
+    # breaking the return-a-result contract.
     try:
         proc = subprocess.run(
             list(policy.argv),
@@ -845,10 +848,10 @@ def _with_launcher_warnings(result: CommandResult, launcher_stderr: str) -> Comm
 
     The child's stderr arrives in the result JSON, so anything on the
     launcher's stderr is agent6 reporting on the jail it just built: a mount it
-    could not make, a grant or protect_path it had to skip. Reading them only
-    when the LAUNCHER failed dropped every one from a working run, which is
-    the case they exist for -- an empty /proc reached the caller as
-    "cannot open shared object file" with nothing naming the jail.
+    could not make, a grant or protect_path it had to skip. Read on SUCCESS
+    too: a degraded-but-working jail is the case they exist for, and on
+    failure an empty /proc surfaces as "cannot open shared object file" with
+    nothing else naming the jail.
     """
     warnings = launcher_stderr.strip()
     if not warnings:
@@ -1039,11 +1042,8 @@ class BackgroundJob:
         )
 
     def stop(self) -> str:
-        """Kill the command and everything it started. Idempotent.
-
-        Answers "" when the command is gone, else why it might not be: a
-        surface that prints "stopped" over a live process is stating the one
-        thing an operator acts on, wrongly.
+        """Kill the command and everything it started. Idempotent; the same
+        answer contract as :meth:`LocalJob.stop`.
 
         The kill takes the launcher down before it can write the exit code, so
         the ending is recorded here -- otherwise a surface in another process
@@ -1099,7 +1099,6 @@ class SessionJob:
         return ""
 
     def _settle(self, status: BackgroundStatus) -> None:
-        """Record the command's end, and write its exit code down."""
         self._final = status
         if status.returncode is not None:
             _write_outcome(self._outcome_dir, status.returncode)
@@ -1407,15 +1406,15 @@ class JailSession:
         return self._proc.stdout.readline()
 
     def close(self) -> None:
-        """Shut the request channel; the PID namespace takes the rest down.
+        """Shut the request channel; the launcher exits on the EOF, and under
+        strict its PID namespace takes any survivors with it.
 
         ``communicate()`` closes stdin itself (signalling the serve loop's EOF)
         and drains stdout/stderr. It is NOT preceded by a manual
         ``stdin.close()``: on Python 3.12/3.13 ``communicate()`` then flushes
         the already-closed pipe and raises ``ValueError: flush of closed file``
         (3.14 tolerates it), which would be an unhandled crash in
-        ``ToolDispatcher.close()`` teardown on the project's minimum Python. The
-        ``ValueError`` stays suppressed as a belt-and-suspenders."""
+        ``ToolDispatcher.close()`` teardown on the project's minimum Python."""
         with contextlib.suppress(OSError):
             os.close(self._interrupt_w)
         with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):

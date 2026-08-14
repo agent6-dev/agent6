@@ -1,14 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Model-capability registry: what agent6 knows about specific models.
-
-Curated, evidence-backed model facts consumed on the run path: context
-windows (to size adaptive compaction) and which models measurably benefit
-from decompose-first prompting. The live model cache (`models.cache`)
-covers context windows for models the bundled table omits; capability
-entries here change only with bench evidence (bench/coreagent/FINDINGS.md).
-Everything is read-only and best-effort: lookups never raise and never
-touch the network.
+"""Model facts for the run path: context windows (they size adaptive
+compaction) and decompose-first families. Entries change only with bench
+evidence; the live cache covers windows this table omits. Lookups never
+raise and never touch the network.
 """
 
 from __future__ import annotations
@@ -27,13 +22,10 @@ __all__ = [
     "resolved_adaptive_values",
 ]
 
-# Curated context windows (TOKENS) for models we have tested or that are
-# popular, used to size adaptive compaction without a network round-trip and to
-# cover providers whose listing omits the window (Anthropic's /models does not
-# report it). The live cache (``context_length`` from the provider listing)
-# covers everything else; this table just guarantees good behaviour offline and
-# on the first run before any listing has been fetched, and wins over the live
-# cache when both know a model. Keep ids canonical (no date/`:tag` suffix --
+# Context windows in TOKENS for tested-or-popular models. Bundled because a
+# provider listing can omit the window (Anthropic's /models does not report
+# it) and the first run has no cache yet; wins over the live cache when both
+# know a model. Keep ids canonical (no date/`:tag` suffix --
 # ``normalize_model_id`` strips those before matching).
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     # Anthropic. The 5-family ships 1M as the default AND maximum (no beta

@@ -8,18 +8,17 @@ The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
 here. `parse_event` turns one raw event dict into exactly one of those frozen
 families, or a `RawEvent` passthrough for every other type -- the compatibility
 surface that keeps old run dirs folding: a type this module does not know becomes
-`RawEvent`, which the fold drops (its old `case _`), never a crash.
+`RawEvent`, which the fold drops, never a crash.
 
-Why hand-rolled frozen dataclasses, not pydantic (unlike `machine/journal.py`):
-logs.jsonl is append-only history, so the fold MUST reproduce byte-for-byte the
-coercion the fold did inline before this module existed (`str()`/`int()`/`bool()`
-with per-field defaults, `_as_int`'s swallow-to-zero, the isinstance guards). A
-pydantic model would impose pydantic's own coercion and validation-failure
-semantics, changing how a malformed old line folds; these parsers instead move the
-existing coercion verbatim into one place per family. `parse_event` is total for
-unknown types (RawEvent) but preserves the fold's pre-existing latent raises on a
-non-coercible known field (e.g. `verify.end` exit_code) -- "degrade exactly as
-today", not "never raise".
+Hand-rolled frozen dataclasses, not pydantic (unlike `machine/journal.py`):
+logs.jsonl is append-only history, so the fold MUST keep the exact coercion
+semantics old run dirs were written against (`str()`/`int()`/`bool()` with
+per-field defaults, `_as_int`'s swallow-to-zero, the isinstance guards). A
+pydantic model would impose its own coercion and validation-failure semantics,
+changing how a malformed old line folds; these parsers hold that coercion in
+one place per family. `parse_event` never raises on an unknown type (RawEvent)
+but keeps the latent raise on a non-coercible known field (e.g. `verify.end`
+exit_code).
 """
 
 from __future__ import annotations

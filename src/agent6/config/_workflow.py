@@ -153,8 +153,8 @@ class ContextConfig(BaseModel):
     # the window from a bundled table of tested models + the live model cache
     # (see ``models.registry.compaction_thresholds``). Pin them by setting BOTH
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
-    # to stay adaptive. When the window is unknown the historical 256k/768k
-    # fixed defaults apply.
+    # to stay adaptive. When the window is unknown, fixed 256k/768k
+    # defaults apply.
     drop_at_chars: int | None = Field(
         default=None,
         gt=0,

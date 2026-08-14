@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """The machine engine: a pure reducer loop driven by journaled facts (§5.1).
 
-The engine executes one state at a time. The *only* impure step is
-:meth:`World.run_tool` / :meth:`World.sleep_until` / :meth:`World.now`; its
-result is passed through ``reduce`` for validation, then journaled before the
-returned blackboard replaces the current one.
+The engine executes one state at a time. Every impure step is a
+:class:`World` method (tools, agent runs, waits, the clock, poke files,
+notify); an observed result is passed through ``reduce`` for validation, then
+journaled before the returned blackboard replaces the current one.
 ``reduce`` and ``next_state`` are pure, so:
 
 * **Crash recovery**, on restart, recorded facts are replayed through the
@@ -139,9 +139,9 @@ class AgentRequest(BaseModel):
     # means "fall back to the effective config" in the world implementation.
     # `model` is optional too: a `machine run` agent state always sets it
     # (AgentState.model is min_length=1), but `machine create`'s authoring
-    # agent has no state and must INHERIT the operator's worker model -- an
-    # empty-string override there overwrote the worker model with "" and failed
-    # min_length validation, breaking the command outright.
+    # agent has no state and must INHERIT the operator's worker model: an
+    # empty-string override there would overwrite the worker model with "" and
+    # fail min_length validation.
     model: str | None = None
     provider: str | None = None
     thinking: str | None = None
@@ -268,8 +268,9 @@ class LiveWorld:
 
     A ``wait`` blocks in-process until its absolute instant (§4.3) or until an
     operator drops a ``signal`` file in the machine directory, whichever comes
-    first. Because the wake instant is journaled, a future persisted-wake
-    driver replays the identical file with no format change.
+    first. Because the wake instant is journaled, the persisted-wake driver
+    (``drive(exit_on_wait=True)``) replays the identical file with no format
+    change.
 
     ``agent`` states are delegated to an injected ``agent_runner`` so the engine
     module need not import the provider / workflow stack; the CLI wires the real
@@ -367,7 +368,7 @@ class LiveWorld:
         # raise TimeoutExpired (the Rust launcher and jail.py both collapse a
         # timeout to rc 124). Deriving timed_out from that is what makes a tool
         # state's on.timeout transition reachable; an `except TimeoutExpired`
-        # here was dead code that left every real timeout labelled not-timed-out.
+        # here would be dead code, every real timeout labelled not-timed-out.
         return ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
@@ -648,7 +649,7 @@ def _execute(
         argv = render_command(state.command, blackboard, where="command")
         # Under the explicit-only model a tool reaches the network iff it set
         # network = "host" (the operator-set ceiling + hardened limits are
-        # enforced as machine-run startup refusals). "auto"/"block" → isolated.
+        # enforced as machine-run startup refusals). "auto"/"none" → isolated.
         result = world.run_tool(
             tuple(argv),
             float(state.timeout_secs),
@@ -695,8 +696,6 @@ def _execute(
                 temperature=state.temperature,
                 max_usd=state.max_usd,
                 max_tokens_fallback=state.max_tokens_fallback,
-                # Per-state: "agent" (default) is a read-only structured-output
-                # judge; "run" lets the state do real coding work (opt-in).
                 mode=state.mode,
                 # So the live World can give this execution its own watchable log.
                 state_name=state_name,
@@ -884,9 +883,6 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
             )
         # Emit a state's `notify` on entry (§4.3), before executing it. At-least-
         # once across a crash: a resume re-enters the current state and re-emits.
-        # `notify` is presentation only (§4.3): a render failure must NEVER affect
-        # control flow, so it is swallowed (never fails the machine, and in
-        # particular never flips a terminal's real ok/failed status).
         # A wait whose PendingWait is already armed is NOT a fresh entry: every
         # --exit-on-wait scheduler tick re-drives into the parked state, and
         # without this guard the notify (and the operator hook: a page, an
@@ -953,9 +949,6 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
             # the --exit-on-wait paths. Broader EngineError faults still propagate.
             return _end_failed(journal, world, state, transitions, exc)
         # Deliver a signal poke's payload to the next tool (both wait paths).
-        # Written atomically + fsync'd BEFORE the StepEvent fsync, so if the step
-        # is durable poke.json is too: crash recovery replays the step and finds
-        # the identical file without re-materializing (§4.3 poke).
         if isinstance(fact, WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
         # Apply the capture BEFORE journaling the StepEvent. If a malformed output

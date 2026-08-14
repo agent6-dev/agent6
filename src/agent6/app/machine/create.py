@@ -61,7 +61,7 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
     Defense-in-depth: unlink a pre-existing symlink at the target before writing
     so a planted `scripts/<name>` -> elsewhere link can't redirect the write out
     of the bundle. `validate_bundle` (run by check/run before any execution) is
-    the comprehensive backstop for symlinks anywhere in the tree."""
+    the backstop for symlinks anywhere in the tree."""
     for rel, content in scripts.items():
         p = base_dir / rel
         p.parent.mkdir(parents=True, exist_ok=True)

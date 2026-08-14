@@ -12,7 +12,7 @@ Accepts standard `diff -u` output:
     +added
      context
 
-Design choices (pre-1.0, opinionated):
+Design choices (pre-1.0):
 
 - One file per patch. Multi-file patches are rejected. Callers loop.
 - Zero fuzz. Context lines must match the on-disk file exactly. If any

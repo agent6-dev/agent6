@@ -19,8 +19,8 @@ fetched by this invocation, so a just-pulled local model or a just-published
 listing entry is never refused off a stale snapshot. A failed fetch (offline,
 provider down) degrades the miss to `warned` and the run proceeds -- the first
 provider call is the final arbiter. With no cache at all nothing is fetched and
-nothing blocks: a fresh/offline machine, or a provider that lists no models,
-keeps its existing behaviour. Never raises.
+nothing blocks (a fresh/offline machine, or a provider that lists no models).
+Never raises.
 
 Lives in the models layer so all three front-ends and the coordinator's group
 dispatcher share one policy without a UI or workflows dependency.
@@ -205,7 +205,7 @@ def configured_model_refusal(v: ModelValidation, role: str) -> str:
     """Refusal text for a typo'd CONFIGURED role model (a refused
     `validate_configured_model`): name the bad model, its closest known ids, and
     how to fix it. The listing was re-fetched live before this refusal, so
-    "refresh the cache" is no longer a remediation."""
+    refreshing the cache cannot fix it."""
     model = v.unknown[0]
     close = v.suggestions.get(model, ())
     suffix = f" Closest: {', '.join(close)}." if close else ""

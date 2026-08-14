@@ -228,7 +228,7 @@ def headless_approval_refusal(
     `run_commands = "ask"` needs someone to answer. With no TUI, no way for the
     front-end to ask, and no away-mode telling us what an absent operator meant,
     the first command PAUSES indefinitely -- and the verify gate is a command
-    too, so that is essentially every run, every `/parallel` lane included.
+    too, so nearly every run hits this, every `/parallel` lane included.
     Refuse with the fix rather than hang: a run that cannot ask should not start.
 
     *can_ask* is the front-end's own declaration. Testing the tty here instead

@@ -7,7 +7,7 @@ a provider's own models endpoint (fetched + cached by ``agent6.models.cache``,
 which stores it alongside the model list under
 ``$XDG_CACHE_HOME/agent6/models/<provider>.json``) or it is unknown. An
 outdated hardcoded price is worse than no price: reports render unknown models
-as "$?" and the USD budget conversion simply does not apply.
+as "$?" and the USD budget conversion does not apply.
 
 Today OpenRouter publishes per-model pricing on its /models endpoint.
 Anthropic's models API does not include pricing (verified live 2026-07), so a

@@ -103,9 +103,8 @@ def _acquire_lock(lock_path: Path) -> int | None:
 def locked_file(target: Path) -> Generator[bool]:
     """Serialize read-modify-write cycles on *target* across processes.
 
-    Yields whether the lock is actually HELD. The fail-open contract below is
-    unchanged; the bool exists for the one caller class that must NOT act on
-    a fiction of serialization -- a transaction that would restore a
+    Yields whether the lock is actually HELD, for the one caller class that
+    must NOT act on a fiction of serialization -- a transaction that would restore a
     whole-file snapshot on failure can erase a concurrent writer's
     just-validated update when the cycle never was serialized, so it degrades
     to keep-and-warn instead (see ``config.layer._revalidate``).
@@ -122,8 +121,8 @@ def locked_file(target: Path) -> Generator[bool]:
     (refused by ``O_NOFOLLOW``), or a stale root-owned lock a killed ``sudo``
     writer left that a later non-root process can't reopen -- the body runs
     unserialized rather than wedging or following the symlink. Worst case is
-    the unlocked write we already tolerated before this guard existed; it is
-    never a way to redirect or block a write.
+    an unserialized write, which atomic_write already keeps all-or-nothing; a
+    lock failure is never a way to redirect or block a write.
 
     The lock file is unlinked on release (no residue in a config dir or repo
     worktree); the fstat/stat identity check after acquire detects a

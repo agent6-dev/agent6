@@ -344,8 +344,8 @@ class AnthropicProvider:
             # Adaptive is the only on-mode on these models; where display
             # defaults to omitted ask for a summary so a long think streams
             # progress, and map the level onto effort. Temperature is dropped
-            # for thinking as before (the transport also one-shot-adapts a
-            # temperature 400).
+            # for thinking, same as the legacy branch (the transport also
+            # one-shot-adapts a temperature 400).
             thinking_cfg: dict[str, Any] = {"type": "adaptive"}
             if _summarise_thinking_display(self.model):
                 thinking_cfg["display"] = "summarized"

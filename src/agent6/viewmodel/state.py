@@ -179,7 +179,7 @@ class SessionState:
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
-    # against its own "seen" count to pop a steer modal exactly once per press.
+    # against its own "seen" count to react exactly once per press.
     steer_requests: int = 0
     # Context-compaction truth for the status surfaces: elision markers and
     # live gists in the CURRENT context (a demoted gist is back to a bare
@@ -247,7 +247,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
     # The idle anchor for every "working… Ns" timer: the EVENT's own ts, so a
     # viewer that replays history (attach, the web/TUI catch-up) measures from
     # when the run last spoke, not from when it started watching -- an arrival
-    # anchor made a run wedged 40 minutes read "working… 3s".
+    # anchor would read "working… 3s" on a run wedged 40 minutes.
     if (ep := events.event_epoch(event.get("ts"))) is not None:
         state = replace(state, last_event_ep=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
@@ -790,17 +790,16 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         d["policy"] = session_policy(session_dir).line()
         d["session_id"] = d["session_id"] or session_dir.name
         # The MODE is dir-backed identity too: without it a client cannot say
-        # WHAT it is showing, and the web session view headed every session
-        # "Run" -- right one time in three.
+        # WHAT it is showing and heads every session "Run", right one time in
+        # three.
         d["mode"] = d.get("mode") or ""
         with contextlib.suppress(ManifestError):
             manifest = read_manifest(session_dir)
             d["user_task"] = d["user_task"] or manifest.user_task
             d["mode"] = d["mode"] or manifest.mode
     else:
-        # A genuinely dir-less stream (the machine reasoning snapshot): the fold
-        # reads every unfinished state as "running"; only a run dir knows
-        # parked/starting/stale/waiting, so liveness is unknowable here.
+        # A genuinely dir-less stream (the machine reasoning snapshot):
+        # liveness is unknowable here.
         d["live"] = None
         word, reason = status_word(
             finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason

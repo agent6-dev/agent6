@@ -3,12 +3,12 @@
 """The TUI config viewer/editor — a thin renderer over the shared config
 view-model (``config_layer.build_config_view``) and the shared edit path
 (``config_layer.set_config_value`` / ``unset_config_value``). All config logic
-lives in those layers, so this page and a future web UI never drift.
+lives in those layers, so this page and the web editor never drift.
 
 Discoverability is driven by ONE action registry (:data:`CONFIG_ACTIONS`): the
 same list generates the on-screen action bar (clickable + keyboard-navigable
 buttons), the key bindings shown in the footer, the help/keys overlay, and the
-command-palette entries — nothing to memorize, nothing to keep in sync by hand.
+command-palette entries.
 """
 
 from __future__ import annotations

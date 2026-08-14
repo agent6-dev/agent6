@@ -62,7 +62,7 @@ Read a session's manifest.json into the typed SessionManifest. The single reader
 
 [`agent6.workflows._session_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_session_state.py) &middot; pydantic model
 
-How a session ends and how it resumes: the SessionResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
+Session end and resume: the SessionResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
 
 **SessionSnapshot** &mdash; The persisted state of an in-flight session: what `resume` re-enters and what `fork` clones.
 

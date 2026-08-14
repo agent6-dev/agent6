@@ -78,15 +78,15 @@ def host_allowed(host: str, allowed: tuple[str, ...]) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Checked:
-    """A vetted URL that has not touched the network: what the gate runs on."""
+    """A vetted URL that has not touched the network: the gate's input."""
 
     url: str
     host: str
 
     def prompt(self) -> str:
-        """What the operator is asked. The parsed host, never the raw URL: the
-        name shown is exactly the one the connection will be proved against,
-        and the one `fetch_hosts` would have to name."""
+        """The approval line: the parsed host, never the raw URL, so the name
+        shown is exactly the one the connection is proved against and the one
+        `fetch_hosts` would have to name."""
         path = urlsplit(self.url).path or "/"
         return f"{self.host} {path[:200]}"
 

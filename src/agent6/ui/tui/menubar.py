@@ -10,7 +10,7 @@ the same handlers and never drift.
 
 Every action is therefore reachable by mouse (click a title, click an item), by
 keyboard (``Alt+<letter>`` opens a menu; arrows + Enter pick; Esc closes), and
-by name in the command palette — nothing to memorize.
+by name in the command palette.
 """
 
 from __future__ import annotations

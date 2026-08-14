@@ -143,7 +143,7 @@ _STATUS_NOW_EVENTS = SESSION_START_EVENTS | {
 
 # A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
 # an answered ask, a gateless settle, a finish over red) is not a failure;
-# painting it red called correct outcomes broken. Involuntary ends
+# red would call a correct outcome broken. Involuntary ends
 # (provider_error, went_quiet, budget_exhausted, stuck) stay red.
 _DELIBERATE_END_REASONS = frozenset(
     {
@@ -164,8 +164,7 @@ def _end_color(all_passed: bool | None, end_reason: str) -> str:
 
 
 class _DashboardCommands(Provider):
-    """The dashboard's menu actions in the Ctrl+P palette, from the same MENUS
-    registry as the menu bar and key bindings -- so the surfaces never drift."""
+    """Ctrl+P palette provider over the dashboard's palette_commands()."""
 
     @property
     def _dash(self) -> DashboardScreen:
@@ -190,7 +189,8 @@ QUIT_HUB_CODE = 99
 
 
 class _ScrollPane(VerticalScroll):
-    """A scrollable pane that can be tabbed to and maximized (f). VerticalScroll is
+    """A scrollable pane that can be tabbed to and maximized (View menu).
+    VerticalScroll is
     focusable but disables maximize by default, so re-enable it; the content is a
     child Static the dashboard updates in place."""
 
@@ -212,13 +212,13 @@ class DashboardScreen(Screen[None]):
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
     /* The tool table spans the full width so all four columns stay visible. */
     #tools { height: 20%; border: round $primary; }
-    /* Maximized (press f), a pane fills the screen instead of holding its resting
+    /* Maximized, a pane fills the screen instead of holding its resting
        size -- textual tags the maximized widget with `-maximized`. The tool table
        drops its 20% height; the task graph drops its 32% width (else it stays a
        narrow column when maximized, like the tool table stayed short). */
     #tools.-maximized { height: 1fr; }
     #plan.-maximized { width: 1fr; }
-    /* Log and diff share the tallest row; press f to maximize either full-screen. */
+    /* Log and diff share the tallest row; either maximizes full-screen. */
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
@@ -294,7 +294,8 @@ class DashboardScreen(Screen[None]):
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
         # What each pane last rendered (strong refs; the fold's replace() keeps
         # untouched fields identical, so `is` says "nothing to redo"). Rebuilding
-        # the tree/table/diff on every structural event was most of the burst cost.
+        # the tree/table/diff on every structural event would be most of a
+        # burst's cost.
         self._rendered_tree: tuple[object, object] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._rendered_diff: tuple[object, object, object, object] | None = None
@@ -339,7 +340,7 @@ class DashboardScreen(Screen[None]):
             # operator is already at the bottom).
             # max_lines == the state log window: a burst that outruns the window
             # between coalesced paints evicts the pre-burst lines, so the inline
-            # pane stays a gapless recent window (full history is under `l`).
+            # pane stays a gapless recent window (Full log is the history).
             yield RichLog(
                 id="log",
                 highlight=False,
@@ -437,7 +438,7 @@ class DashboardScreen(Screen[None]):
         self.app.action_focus_previous()
 
     def action_fullscreen(self) -> None:
-        """Maximize the focused pane; Esc or f again restores the dashboard."""
+        """Maximize the focused pane; Esc (or the action again) restores it."""
         if self.maximized is not None:
             self.minimize()
         elif self.focused is not None and self.focused.allow_maximize:
@@ -488,8 +489,7 @@ class DashboardScreen(Screen[None]):
             )
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[str | None]) -> None:
-        """Select a task in the #plan tree to filter tools/log/diff to it; select it
-        again (or a different task) to change the filter, clearing when re-selected."""
+        """Task-filter click handler for the #plan tree (see __init__'s notes)."""
         if event.control.id != "plan":
             return
         tid = event.node.data
@@ -542,8 +542,8 @@ class DashboardScreen(Screen[None]):
     def render_heartbeat(self) -> None:
         """The CHEAP once-a-second repaint: the top status line, the composer
         bar's labels, and the live stream pane. The full pane rebuild
-        (render_state) runs only when events actually arrive -- rebuilding the
-        task tree and tool table every heartbeat was most of the idle churn."""
+        (render_state) runs only when events actually arrive: rebuilding the
+        task tree and tool table every heartbeat would be pure idle churn."""
         tui = self._tui
         s = tui.state
         # Relabel every paint: mode flips on finished, and the context readout
@@ -690,8 +690,7 @@ class DashboardScreen(Screen[None]):
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
         # sliding window, so a length-based diff freezes once it saturates.
         # Sticky-bottom: only snap to the newest line if the operator was already
-        # at the bottom, so scrolling up to read holds position (the pane no
-        # longer "plays through" out from under them). End (pane focused) / Full
+        # at the bottom, so scrolling up to read holds position. End (pane focused) / Full
         # log jump back to the live tail. A filter change forces one full
         # re-render (the RichLog is append-only, so it cannot re-window itself
         # incrementally).
@@ -871,8 +870,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self.sub_title = self.run_title()  # menu-bar title context
         # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
         # detached, whose session.steer_requested replays on open); only prompt for ones
-        # that arrive AFTER we start watching, so opening a run never pops a stale,
-        # already-handled steer modal. Seed with the SAME fold _tick compares
+        # that arrive AFTER we start watching, so opening a run never re-prompts
+        # for a stale, already-handled steer request. Seed with the SAME fold _tick compares
         # against: a byte-substring count also matched the literal inside event
         # payloads (a grep of the source for the event name), over-seeding the
         # baseline and swallowing the next real steer.
@@ -883,7 +882,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # Pushed (not the app's default screen): only the push path loads a
         # screen's CSS, and the hub pushes its HomeScreen the same way. The
         # conversation opens on top -- the primary view -- with the dashboard
-        # beneath it; Ctrl+D (or t from the dashboard) toggles between them.
+        # beneath it; Ctrl+D toggles between them.
         # Installed, so popping the conversation hides rather than destroys it.
         self.push_screen(self._dash)
         self.install_screen(self._conv, "conversation")
@@ -892,7 +891,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # polled from a timer in the app's OWN loop and exits there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
         # but exiting from a timer callback does. The same timer also drives the
-        # approval / question / steer modals.
+        # approval / question modals and the steer composer focus.
         self.set_interval(0.2, self._tick)
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
@@ -921,8 +920,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def seconds_since_event(self) -> int:
         """Idle seconds for the "working… Ns" heartbeat, anchored to the last
         EVENT's ts (the fold carries it), not to when this viewer folded it:
-        the catch-up replay sets an arrival anchor too, so attaching to a run
-        wedged 40 minutes read "working… 3s". Falls back to the fold time for
+        an arrival anchor would read "working… 3s" on attach to a run wedged
+        40 minutes. Falls back to the fold time for
         a log whose events carry no ts."""
         if self.state.last_event_ep is None:
             return int(time.monotonic() - self.last_event_at)
@@ -947,15 +946,13 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             # A terminal / leg-boundary / operator-blocking event changes the
             # status NOW: refresh synchronously so the chip, the label, and the
             # composer routing never serve the previous state for up to a
-            # heartbeat (the chip read "waiting · needs answer" on film while
-            # the log pane already showed the answer and the verify).
+            # heartbeat.
             self._refresh_dir_status()
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would
-        # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
-        # the burst, so the tour video skipped past the dashboard). Streaming
-        # deltas only move the live stream pane, so they take the LIGHT repaint
-        # (a reasoning burst was triggering full tree/table rebuilds 5x/s).
+        # rebuild the whole dashboard per event (UI thrash). Streaming deltas
+        # only move the live stream pane, so they take the LIGHT repaint (a
+        # reasoning burst would otherwise force full rebuilds 5x/s).
         if event.get("type") in STREAM_DELTA_EVENTS:
             self._light_dirty = True
         else:
@@ -1075,9 +1072,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     # --- run control (dispatched from the composer bars, keys, and menus) --
 
     def _seed_steer(self, text: str) -> None:
-        """Write the steer request + instruction over the file bridge: discard
-        any stale answer, mark the request, and provide the answer in one
-        shot."""
+        """Seed the file bridge with this steer; any stale answer goes first."""
         clear_steer_answer(self.session_dir)
         request_steer(self.session_dir)
         write_steer_answer(self.session_dir, text)

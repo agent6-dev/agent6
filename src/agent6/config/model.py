@@ -10,15 +10,15 @@ default, and security-sensitive fields default to the *safe* value
 (``sandbox.network = "auto"``,
 ``sandbox.run_commands = "ask"``, ``sandbox.protect_git = true``; git push,
 ``--force``, and history rewrites are refused unconditionally by ``git_ops``,
-with no config override at all). This means a config can be layered (global ``$XDG_CONFIG_HOME``
-defaults, per-repo config (out of the workspace, under the state dir) overrides)
-and a repo can be
-zero-config when the global config supplies providers + models. Use
+with no config override at all). Configs layer: global ``$XDG_CONFIG_HOME``
+defaults, then the per-repo config (out of the workspace, under the state
+dir), so a repo is zero-config when the global config supplies providers +
+models. Use
 ``agent6 config show`` to audit the *effective* value of every field and
 exactly where it came from (default / global / repo / flag). The one thing a
 run genuinely cannot guess, a provider+key, is checked by
-:meth:`Config.require_runnable` with a friendly pointer to ``agent6 connect``
-rather than a load-time failure, so ``config show`` always works. The repo's
+:meth:`Config.require_runnable` with a pointer to ``agent6 connect`` rather
+than a load-time failure, so ``config show`` always works. The repo's
 ``verify_command`` is optional: `agent6 run`/`plan` infer one per run when it
 is unset (see :mod:`agent6.verify_infer`), else run gateless.
 """

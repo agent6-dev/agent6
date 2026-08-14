@@ -180,9 +180,9 @@ def set_provider_key_env(names: Iterable[str]) -> None:
 # and `merge.<n>.driver` -- run during agent6's git ops (the auto-commit's
 # `git add`, the chain merge's `merge-tree`). Default false: a driver defined
 # in `.git/config` is a host command, an RCE vector for a cloned poisoned repo.
-# Git-LFS is why they exist, so honoring them is the LFS opt-in. Same shape as
-# _hook_policy; there is no blanket `-c` off switch, so `_run` neutralizes each
-# repo-defined driver by NAME.
+# Git-LFS is why they exist, so honoring them is the LFS opt-in. There is no
+# blanket `-c` off switch, so `_run` neutralizes each repo-defined driver by
+# NAME.
 _filter_policy: dict[str, bool] = {"honor_repo_filters": False}
 
 
@@ -328,9 +328,6 @@ def _run(
         env=env,
     )
     try:
-        # A local git op is fast; a bound turns a pathological hang (a wedged
-        # NFS/filesystem, an index.lock held by a crashed process) into a
-        # loud error instead of a silent freeze with no feedback.
         stdin_bytes = stdin_text.encode() if stdin_text is not None else None
         out, err = proc.communicate(input=stdin_bytes, timeout=_GIT_TIMEOUT_S)
     except subprocess.TimeoutExpired as exc:
@@ -366,9 +363,7 @@ def _run(
         # Surface stdout too. `git commit` writes its informational
         # output (including "nothing to commit, working tree clean", pre-
         # commit hook output, and most user-facing messages) to STDOUT,
-        # not stderr. Capturing only stderr produced empty error strings
-        # like "git commit -m <subject> failed: " that gave the operator
-        # zero signal when triaging a failed auto-commit in the wild.
+        # not stderr; stderr alone is empty for most commit failures.
         stderr_msg = result.stderr.strip()
         stdout_msg = result.stdout.strip()
         if stderr_msg and stdout_msg:
@@ -643,7 +638,7 @@ def chain_ref_for(session_id: str) -> str:
 
 def set_ref(path: Path, ref: str, sha: str) -> None:
     """Point *ref* at *sha* (plain `update-ref`, no checkout). For agent6's own
-    refs (:func:`chain_ref`); branches go through create_branch_at."""
+    refs (:func:`chain_ref_for`); branches go through create_branch_at."""
     _run(path, "update-ref", ref, sha)
 
 
@@ -852,11 +847,10 @@ def chain_commit(
     so resume and concurrent runs compose without bookkeeping. When the ref
     does not exist yet the parent is *fallback_parent* (HEAD at run start;
     None = a root commit in an unborn repo). Advances *ref*
-    (:func:`chain_ref`, the gc anchor) and, when *also_branch* is set,
+    (:func:`chain_ref_for`, the gc anchor) and, when *also_branch* is set,
     `refs/heads/<also_branch>` -- a plain ref move, never a checkout. Returns
     the new sha, or None when the tree is identical to the parent's (nothing
-    to record). Tolerant of concurrent model or operator git activity by
-    construction: the shared index and HEAD are never read or written.
+    to record).
     """
     tree = _worktree_tree(path)
     parent = chain_tip(path, ref) or fallback_parent
@@ -959,8 +953,8 @@ def _commit(
     argv = ["commit", "-m", full_message]
     if only_paths is not None:
         # Path-limited commit: record only these paths (from the worktree),
-        # disregarding anything else already staged. Callers that want the
-        # whole index (commit_all, record_commit) pass no only_paths.
+        # disregarding anything else already staged; with no only_paths the
+        # whole index is committed (commit_all).
         argv.extend(["--", *only_paths])
     _run(path, *argv, env_extra=env_extra)
     return _run(path, "rev-parse", "HEAD").stdout.strip()
@@ -1335,9 +1329,8 @@ def co_change_pairs(
     tuple is (file_a, file_b, count). Sorted by count descending, ties
     broken alphabetically.
 
-    Cheap signal for the planner: "file A and file B change together
-    73% of the time" is a strong prior for "if you edit A, you probably
-    also need to touch B". Returns an empty list if git history is too
+    A cheap prior for the planner: files that repeatedly change together
+    hint that an edit to one implicates the other. Returns an empty list if git history is too
     shallow to find any qualifying pairs (e.g. the fresh-clone bench
     case with --depth=1).
 
@@ -1407,7 +1400,7 @@ def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
 
 
 def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
-    """Return `git show --stat <sha>` truncated to *max_bytes* for telemetry.
+    """Return `git show --stat --patch <sha>` truncated to *max_bytes* for telemetry.
 
     Best-effort: returns empty string on error rather than raising.
     """

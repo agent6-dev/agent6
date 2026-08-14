@@ -130,8 +130,8 @@ def pid_alive(pid: int) -> bool:
     PermissionError reads as DEAD: agent6's workers and front-ends are always
     spawned by the same user that later probes them, so a foreign-owned pid
     can only mean the original process died and the kernel reused the number
-    for another user's process -- a run rendered "running" forever off such a
-    pid hung the /parallel lane await permanently."""
+    for another user's process; reading that pid as live would render a dead
+    run "running" forever and hang the /parallel lane await."""
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OSError):
@@ -187,9 +187,9 @@ def read_session_netns_pid(session_dir: Path) -> int | None:
 
     A pid whose /proc entry is gone is a run that ended (or never had one), not
     a network to join. Nor is a pid the kernel has since handed to someone else:
-    the recorded start time settles that, because joining on liveness alone put
+    the recorded start time settles that: joining on liveness alone would put
     `agent6 exec` and `agent6 forward` inside an unrelated process's namespaces
-    while telling the operator it was the run's.
+    while calling them the run's.
     """
     rec = _parse_pid_record(session_dir / NETNS_PID_FILE)
     if rec is None:
@@ -213,8 +213,8 @@ def write_worker_pid(session_dir: Path, pid: int) -> None:
     The start-time identity rides along after the pid (/proc ticks on Linux,
     `ps` lstart text elsewhere) so a recycled pid -- same number, different
     process, after a SIGKILL'd worker left the file behind -- cannot make a
-    dead run read running forever, which blocked resume and hung the
-    /parallel lane await."""
+    dead run read running forever (blocking resume and the /parallel lane
+    await)."""
     # Atomic like every sibling publish: a plain write truncates first, so a
     # reader in that window sees a PREFIX of the pid with the identity stripped
     # -- and a prefix naming a live process you own reads alive with nothing
@@ -286,9 +286,9 @@ def _claim_is_live(claim: Path, pid: int) -> bool:
 
     The same test :func:`worker_is_alive` applies to the worker: alive AND, when
     a start time was recorded, still the process that recorded it. Liveness
-    alone is not identity -- a front-end that died and had its pid reused by any
-    other process of ours read as live forever, and an approval then waited out
-    its whole timeout instead of the dead-grace, which is exactly the stall
+    alone is not identity: a front-end that died and had its pid reused by
+    another process of ours would read live forever, and an approval would then
+    wait out its whole timeout instead of the dead-grace -- exactly the stall
     away-mode exists to avoid. A claim with no recorded start time is trusted,
     as the worker's is.
     """
@@ -696,9 +696,9 @@ def request_compact(session_dir: Path, focus: str = "") -> bool:
     empty/partial focus it consumed (and then cleared) as the real one.
 
     Returns whether the marker landed. A failed write must not raise into a TUI
-    action or a web handler, but every front-end reported "compaction requested"
-    unconditionally, so a read-only or full state dir looked like success and
-    nothing ever compacted."""
+    action or a web handler, and must not read as success either: on a
+    read-only or full state dir an unconditional "compaction requested" would
+    be a claim nothing ever honors."""
     try:
         atomic_write(session_dir / COMPACT_REQUEST_FILE, focus)
     except OSError:

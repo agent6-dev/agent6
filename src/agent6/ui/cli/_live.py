@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""How a run is watched live: the optional dashboard TUI co-process, the
+"""Live run watching: the optional dashboard TUI co-process, the
 worker stream modes, and the loop's console logger."""
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
     go through the file bridge. On `session.end` the TUI holds the finished
     dashboard until the user leaves (Ctrl+Q); we wait for that, so the terminal
     stays theirs until they are done looking. A spawn failure degrades
-    gracefully to a normal (TUI-less) run rather than aborting."""
+    to a normal (TUI-less) run rather than aborting."""
     if not enabled:
         yield
         return

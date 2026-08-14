@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""How a session ends and how it resumes: the SessionResult the workflow returns, the
+"""Session end and resume: the SessionResult the workflow returns, the
 ResumeError it raises, and the provider-agnostic resume snapshot written before
 each LLM call (load here; the loop owns saving it)."""
 

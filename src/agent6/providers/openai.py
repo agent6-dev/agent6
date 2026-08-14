@@ -95,8 +95,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     # (a degenerate stream the gateway cut, a proxy dropping the usage frame),
     # so it rides the loop's bounded retry lane -- the failed attempt returns
     # no response, so nothing unmetered enters the conversation, and repeated
-    # failure ends the run. A fake 422 here made ONE mangled stream kill a
-    # budgeted run with the task's budget unspent.
+    # failure ends the run. A permanent classification here (a fake 422) would
+    # let ONE mangled stream kill a budgeted run with its budget unspent.
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
         "budgeted runs require provider usage accounting"

@@ -3,8 +3,8 @@
 """Minimal stdio MCP (Model Context Protocol) client.
 
 agent6 spawns each configured MCP server as a long-lived subprocess and
-talks JSON-RPC 2.0 over stdin/stdout. We implement the small subset of
-the protocol we actually need:
+talks JSON-RPC 2.0 over stdin/stdout. Only the subset the loop needs is
+implemented:
 
 * ``initialize`` (handshake).
 * ``notifications/initialized`` (we send it; we ignore incoming
@@ -25,8 +25,7 @@ included (the spawn passes no ``env``). The argv comes exclusively from
 your config (``[mcp.servers.<name>] command = [...]``); the LLM cannot
 influence it: operator-controlled argv, full user authority, no
 sandboxing. (The ``[notify]`` hook is NARROWER -- it runs under a curated
-``hook_env`` -- so this is not that trust model; an MCP server sees the
-keys a notify hook does not -- its env is curated.)
+``hook_env`` -- so an MCP server sees keys a notify hook does not.)
 
 What the LLM *can* influence is the *arguments* to ``tools/call`` once
 a server is connected. The MCP server is responsible for validating

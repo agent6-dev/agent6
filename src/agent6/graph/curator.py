@@ -29,8 +29,7 @@ Fail-safe: a mutation updates ``self._nodes`` in memory BEFORE writing to disk,
 so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
 ``write_node``) can leave in-memory state ahead of disk. ``_mutating`` reloads
 from disk (the source of truth) before surfacing such a fault, so a later read
-never observes a node that was never persisted. This replaces the old
-subprocess die->reload fail-safe with an in-process reload.
+never observes a node that was never persisted.
 """
 
 from __future__ import annotations

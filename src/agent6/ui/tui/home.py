@@ -3,7 +3,7 @@
 """The `agent6 tui` hub: a home screen to browse recent runs and start new work.
 
 CLI-first by design, the hub never reimplements the workflow. "Start a run /
-plan / ask" simply spawns the normal `agent6` CLI as a detached subprocess
+plan / ask" spawns the normal `agent6` CLI as a detached subprocess
 (whose non-TTY stdout means it won't try to open its own TUI) and then opens the
 read-only dashboard on the run directory it creates. So everything here is a
 thin driver over the CLI + the same file/event contract the dashboard reads.

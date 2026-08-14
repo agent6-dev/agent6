@@ -109,9 +109,9 @@ class LaneRuntime:
       compares its lanes).
 
     Lane liveness (`worker_is_alive`) and stop requests (`request_stop`) are the
-    run-dir bridge itself (`agent6.sessions.ipc`), imported directly below: `app`
-    already depends on it (`run.py`, `machine_agent.py`), so routing them through
-    this front-end seam was a dead pass-through."""
+    run-dir bridge itself (`agent6.sessions.ipc`), imported at module top: `app`
+    already depends on it (`run.py`, `machine_agent.py`), so the seam does not
+    re-export them."""
 
     spawn: SpawnRun
     build_provider: BuildProvider
@@ -167,8 +167,8 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
     lane_cfg = cfg.with_machine_agent_overrides(model=spec.model) if spec.model else cfg
     # A lane's branch IS how its work comes back (the import fetches
     # agent6/<session_id>), so the origin's branch_per_run=false must not ride
-    # along: every lane ran to completion, billed, and then failed the import
-    # with a raw git "couldn't find remote ref".
+    # along: with it, every lane runs to completion, bills, and then fails the
+    # import with a raw git "couldn't find remote ref".
     lane_cfg = lane_cfg.model_copy(
         update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
     )
@@ -195,11 +195,7 @@ def bridge_spawner(
     background). `ok=False` when the clone or spawn fails; the orchestrator
     records it and moves on. `auto_approve` forwards the coordinator/fan-out's
     own `--auto-approve` to the lane's argv, same as `max_usd`. The detached
-    spawn + run-dir locate is *runtime*.spawn (the front-end's primitive), except
-    when *host_lane_launch* is set: the coordinator is confined to the egress
-    netns, so the lane's `agent6 run` is launched through the pre-forked host
-    spawner (escaping the netns) rather than a plain child that would inherit the
-    empty namespace and die with no provider reachable."""
+    spawn + run-dir locate is *runtime*.spawn (the front-end's primitive)."""
     branch = f"agent6/{spec.session_id}"
     try:
         clone_workspace(origin, spec.workdir)
@@ -351,9 +347,7 @@ def run_lane_to_completion(
     success. The coordinator runs a group of these on a thread pool, so
     each is self-contained per lane; *import_lock*, when given, serializes the
     git-mutating import step across that group (concurrent fetches into one repo
-    race on refs/objects). *host_lane_launch* (set when the coordinator is inside
-    the egress netns) routes the default bridge spawner's lane launch through the
-    host spawner. Tests inject a fake *spawner*.
+    race on refs/objects). Tests inject a fake *spawner*.
 
     *should_stop* interrupts the await (the coordinator's abort channel or the
     group teardown): the lane gets a clean stop request, then a bounded grace
@@ -497,8 +491,8 @@ def build_lane_spawner(
             # The coordinator's immediate-stop channel: a front-end Stop (or
             # Ctrl-C steer -> abort) writes the "abort" steer answer, which the
             # loop consumes at the boundary AFTER this dispatch returns.
-            # Without this poll, a stop during a /parallel group sat blocked
-            # until every lane finished on its own.
+            # Without this poll, a stop during a /parallel group would sit
+            # blocked until every lane finishes on its own.
             return hard_stop.is_set() or steer_answer_is_abort(coord_dir)
 
         def one(pair: tuple[LaneSpec, LaneTask]) -> LaneResult:
@@ -523,9 +517,8 @@ def build_lane_spawner(
 
         pairs = list(zip(specs, lanes, strict=True))
         if len(pairs) > 1:
-            # Not a with-block: on KeyboardInterrupt __exit__ would join every
-            # lane await (each blocked until its lane ends on its own) -- the
-            # pool "remained alive after SIGINT and required termination".
+            # Not a with-block: on KeyboardInterrupt __exit__ would join
+            # every lane await, each blocked until its lane ends on its own.
             pool = ThreadPoolExecutor(max_workers=len(pairs))
             try:
                 futures = [pool.submit(one, p) for p in pairs]
@@ -570,8 +563,7 @@ def build_coordinator_spawner(
     dispatch depth 1 by construction. run.py / resume.py call this to build the
     loop's `lane_spawner`, passing the coordinator run's own effective
     `--auto-approve` (same as `max_usd`) so a lane never sits on an approval
-    nothing detached can answer, and *host_lane_launch* (from `egress.lane_launcher`)
-    so lanes escape the coordinator's egress netns when it is confined."""
+    nothing detached can answer."""
     if mode != "run" or os.environ.get("AGENT6_SUBRUN"):
         return None
     return build_lane_spawner(
@@ -878,8 +870,8 @@ def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, cfg: Config) -> No
 def fanout_exit_code(candidates: list[CandidateBrief]) -> int:
     """The fan-out's exit, from the lanes' gate verdicts: 1 nothing rankable,
     0 some lane verified green (or no lane had a gate), 4 gates ran and none
-    passed -- an all-red fan-out used to crown a rank 1 and exit 0, reading as
-    success to every script."""
+    passed: a distinct code, so a script never reads an all-red fan-out as
+    success."""
     if not candidates:
         return 1
     if any(c.verify_ok is True for c in candidates):
@@ -932,7 +924,9 @@ def run_parallel(
 ) -> int:
     """Run *lanes* to completion, import them, and print a ranked comparison.
 
-    Returns 0 when at least one lane imported, 1 when none did, 130 on Ctrl+C.
+    Returns `fanout_exit_code` over the lanes (0 a lane verified green or no
+    lane had a gate, 1 nothing rankable, 4 gates ran and none passed), 2 with
+    no lanes or an unreadable origin, 130 on Ctrl+C.
     *spawner* defaults to the real bridge spawner; tests inject a fake.
     `auto_approve` forwards to every lane's argv, same as `max_usd`.
     """

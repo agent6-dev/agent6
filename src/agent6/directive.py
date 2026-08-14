@@ -15,7 +15,7 @@ the coordinator steer parser (``workflows/loop.py``) and the web + TUI composers
   it is indistinguishable from a task word. The flip side: a task whose FIRST
   word is a path (``src/foo.py``) parses as a bogus model spec, refused
   pre-spawn with a did-you-mean (``models.validate``) when a model cache exists
-  to check against, else run and failed at the provider call; start with a verb.
+  to check against, else it runs and fails at the provider call; start with a verb.
 - The exact token ``/parallel``, whitespace-delimited, separates tasks. A
   message is a directive only when it STARTS with the exact ``/parallel`` token;
   ``/parallelfoo ...`` stays ordinary text, byte-for-byte. A mid-task

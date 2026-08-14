@@ -2,21 +2,21 @@
 # Copyright 2026 Eric Lesiuta
 """Layered config resolution + auditing for agent6.
 
-Config is assembled from up to four layers, lowest precedence first:
+Config is assembled from layered sources, lowest precedence first:
 
 1. ``default``, the secure defaults baked into the pydantic model,
 2. ``global`` , ``$XDG_CONFIG_HOME/agent6/config.toml`` (user-wide),
 3. ``repo``   , the per-repo config under the state dir (out of the workspace,
    ``<state-base>/<repo-id>/config.toml``; see ``agent6.paths.state_dir``),
-4. ``flag``   , an explicit ``--config FILE`` (power users / CI).
+4. ``flag``   , an explicit ``--config FILE`` (power users / CI),
+5. ``machine``, the machine agent's per-state overlay,
 
-Raw TOML dicts are deep-merged in that order and validated **once**, so a
-repo can override a single field without restating the rest. Every leaf
-remembers which layer last set it, which powers ``agent6 config show``,
-the audit surface that makes the effective config and its provenance
-obvious at a glance.
+plus a selected preset, injected as below. Raw TOML dicts are deep-merged in
+that order and validated **once**, so a repo can override a single field
+without restating the rest. Every leaf remembers which layer last set it,
+which powers ``agent6 config show``.
 
-A selected ``preset`` preset is injected just ABOVE the config layer that
+A selected preset is injected just ABOVE the config layer that
 SELECTED it (``--preset`` flag / repo / global top-level ``preset``), so the
 preset OVERRIDES that config while a more-specific config layer (or an explicit
 ``--config FILE`` / machine overlay) still overrides the preset. Only the
@@ -191,7 +191,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "quick": {
         "review": {"trigger": "off"},
     },
-    # The "ultracode" tier: a 3-seat grounded panel that advises + gates by quorum.
+    # The "ultracode" tier: a 3-seat grounded panel that advises + gates.
     "ultra": {
         "review": {
             "trigger": "before_finish",
@@ -228,8 +228,8 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
 
     "standard" is not special-cased: it is a built-in like any other (an empty
     override), so a user table of that name replaces it exactly as the docs
-    promise. Short-circuiting it here dropped those overrides silently while
-    `config presets` reported them applied."""
+    promise. A short-circuit here would drop those overrides silently while
+    `config presets` reports them applied."""
     if not name:
         return {}
     if name in user_presets:
@@ -524,11 +524,8 @@ def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
 def load_effective(
     repo_root: Path, explicit_path: Path | None = None, *, preset: str = ""
 ) -> EffectiveConfig:
-    """Merge + validate all layers and record per-leaf provenance. A named
-    ``preset`` (CLI flag or top-level ``preset``) is injected just above the
-    config layer that selected it, so it OVERRIDES that config (a more-specific
-    config layer / flag still wins); ``[presets.<name>]`` tables in config
-    define custom ones. See :func:`_apply_preset`."""
+    """Merge + validate all layers and record per-leaf provenance; a named
+    ``preset`` is injected per :func:`_apply_preset`."""
     layers = discover_layers(repo_root, explicit_path)
     layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)")

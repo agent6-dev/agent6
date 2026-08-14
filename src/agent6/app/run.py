@@ -161,8 +161,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     preset instead of deriving it from *preset*. A parked resume has no
     ``--preset`` flag but must record the ORIGINAL submission's stamp so a
     later resume/fork replays the same precedence (fork carries it likewise);
-    deriving from the empty *preset* dropped it, and the veto a flag-selected
-    preset carried vanished on the next leg.
+    deriving it from the empty *preset* would drop the stamp, and the flag's
+    veto with it, on the next leg.
 
     When ``mode="plan"`` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
@@ -177,12 +177,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # command unwatched, whether it is starting here or resuming -- unless the
     # operator granted this invocation, which lands after the clamp.
     cfg = session_config(cfg, mode, sandbox_overrides)
-    # Refuse an unanswerable run BEFORE anything is created. Refusing after the
-    # session dir and its manifest existed left a run that never started listed
-    # forever, and poisoned its own id: the operator applied the fix the message
-    # names, `--session-id` then answered "already exists, use resume", and
-    # resume found no snapshot. Everything this needs is known here; the clamp
-    # above is the last thing that can change `run_commands`.
+    # Refuse an unanswerable run BEFORE anything is created: refusing after
+    # the session dir and its manifest exist would leave a never-started run
+    # listed forever and poison its id (`--session-id` retries answer "already
+    # exists, use resume", and resume finds no snapshot). Everything this needs
+    # is known here; the clamp above is the last thing that can change
+    # `run_commands`.
     tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
     refusal = headless_approval_refusal(
         cfg,
@@ -605,9 +605,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # Any other escape (a broken stdout pipe from `| head`, an
                 # unexpected fault) also leaves the loop without a session.end,
                 # and the outer finally then clears worker.pid -- the only
-                # immediate liveness evidence -- so every surface read the
-                # dead run as "running" until the silence window expired.
-                # Record the end, then let the error surface as before.
+                # immediate liveness evidence -- so every surface would read
+                # the dead run as "running" until the silence window expires.
+                # Record the end, then re-raise.
                 with contextlib.suppress(EventWriteError):
                     events.emit(
                         "session.end",

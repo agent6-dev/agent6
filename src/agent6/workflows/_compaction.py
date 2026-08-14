@@ -166,9 +166,9 @@ def elision_gist_placeholder(described: str, gist: str) -> str:
 
     Takes the caller's ``call_label`` rather than rebuilding one, so the gist
     and bare markers carry the SAME identity (the conversation differ dedupes a
-    gist->bare demotion on it). Rebuilding it from the path alone dropped a
-    ranged read's start_line/limit and every demotion re-reported as a fresh
-    elision.
+    gist->bare demotion on it). Rebuilt from the path alone it would drop a
+    ranged read's start_line/limit, and every demotion would re-report as a
+    fresh elision.
     """
     return (
         f"{ELISION_GIST_PREFIX}: the result of {described} was replaced "
@@ -221,15 +221,11 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
     return out
 
 
-# per-tool-result cap. was a hard 20_000 char slice
-# applied mid-JSON, which produced a malformed result the model could
-# not parse. Weak models then conclude the
-# tool result was "cut off" and re-called `read_file` repeatedly trying
-# to see the rest, latching the loop-guard. The fix: lift the cap to
-# 60_000 chars (~15k tokens, comfortably fits most source files) AND
-# when truncation is unavoidable, wrap the result in a fresh,
-# well-formed JSON object that explicitly tells the model what
-# happened and how to get the rest.
+# Per-tool-result cap: 60_000 chars (~15k tokens) fits most source files
+# whole. Anything over it is wrapped by cap_tool_result in a well-formed JSON
+# truncation notice: a raw mid-JSON slice reads as a malformed result, and a
+# weak model re-calls `read_file` to "see the rest" until the loop-guard
+# latches.
 TOOL_RESULT_CHAR_CAP = 60_000
 
 # compaction thresholds (chars, not tokens - approximate; tokens
@@ -495,11 +491,11 @@ def _tool_result_pointers(
 
 
 def count_elisions(conversation: Conversation) -> tuple[int, int]:
-    """How many elision markers a context carries, and how many are live gists.
+    """The count of elision markers in the context, and of live gists among them.
 
-    A resumed or forked leg re-announces these: a fork's fresh logs.jsonl has no
-    compact.dropped events to fold, so the status surfaces reported zero over a
-    restored context full of markers.
+    A resumed or forked leg re-announces these: a fork's fresh logs.jsonl has
+    no compact.dropped events to fold, so the status surfaces would otherwise
+    report zero over a restored context full of markers.
     """
     elided = gists = 0
     for turn in conversation.turns:
@@ -573,9 +569,7 @@ def compact_old_tool_results(
     # The undelivered batch is always in the last tool_result-bearing turn:
     # at top-of-iteration only text-only steer/nudge user turns can trail the
     # fresh results, and the delivering provider call runs after this compaction.
-    # Exempt that whole turn -- see docstring. Keying on the final turn
-    # index alone missed a trailing steer/nudge, and one turn can carry several
-    # such blocks, so this is broader than keep_recent or the final index.
+    # Exempt that whole turn.
     last_tool_result_idx = max(turn_idx for turn_idx, _, _ in pointers)
     candidates = pointers[:-keep_recent]
     if protect_paths:

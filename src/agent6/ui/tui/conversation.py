@@ -9,8 +9,7 @@ glyphs the CLI stream uses.
 
 Completed turns scroll in the main pane; a docked live pane at the bottom streams
 the turn IN PROGRESS -- a reasoning model can think for 30-60s before producing a
-tool call, so without it the view looks frozen. Bindings and menu entries are
-declared in BINDINGS/MENUS.
+tool call, so without it the view looks frozen.
 
 The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
 ``RichLog`` renders as line Strips, which the framework's text selection cannot
@@ -132,7 +131,7 @@ def composer_labels(*, live: bool) -> tuple[str, str]:
     """(border title, key hint) for the composer.
 
     One conversation view serves runs, plans and asks, so it says "session":
-    a fixed "the run" was wrong two times in three.
+    a fixed "the run" is wrong two times in three.
     """
     if live:
         return ("steer this session (/pin, /compact [focus])", "Enter sends · Ctrl-J newline")
@@ -453,8 +452,8 @@ class ConversationScreen(Screen[None]):
         self, logs_path: Path, *, title: Callable[[str], str], primary: bool = False
     ) -> None:
         """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
-        toggles the dashboard); pushed read-only viewers (the hub, the dashboard's
-        t) leave it False, where Esc just dismisses."""
+        toggles the dashboard); pushed read-only viewers (the hub, the dashboard)
+        leave it False, where Esc just dismisses."""
         super().__init__()
         self._logs_path = logs_path
         self._title = title
@@ -617,8 +616,8 @@ class ConversationScreen(Screen[None]):
         if not self._host_live():
             # The deltas of the turn a killed worker never finished sit in the
             # buffers forever (only role.call/role.result clear them), so this
-            # pane kept saying "thinking…" over a corpse -- on the primary view,
-            # which carries no status label to contradict it.
+            # pane would keep saying "thinking…" over a corpse -- on the primary
+            # view, which carries no status label to contradict it.
             live.display = False
             return
         think = "".join(self._live_think).strip()
@@ -702,9 +701,8 @@ class ConversationScreen(Screen[None]):
         if not new_events:
             # No data this tick, but a live run's pane must keep moving: the
             # spinner is the only sign of life between events. Same follow
-            # discipline as the data path -- a pane repaint can resize the
-            # viewport, and losing bottom-follow on a QUIET tick is exactly
-            # the kind of drift nobody can reproduce later.
+            # discipline as the data path: a pane repaint can resize the
+            # viewport and drop bottom-follow on a quiet tick.
             if self._live and self._host_live():
                 scroll = self._scroll()
                 following = self._at_bottom(scroll)
@@ -748,9 +746,9 @@ class ConversationScreen(Screen[None]):
         primary view) and keep its labels matching the run's state. The
         liveness and context readout come from the Agent6TUI host when there is
         one -- its dir status knows a dead worker and a parked run, which the
-        event stream alone cannot (this screen's own _live stayed True over a
-        corpse, so typed steers went to a run that would never read them);
-        pushed viewers on another host keep the event-derived tracking."""
+        event stream alone cannot (this screen's own _live stays True over a
+        corpse, so a typed steer would go to a run that never reads it); pushed
+        viewers on another host keep the event-derived tracking."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
             shown = self._bar_shown()
@@ -793,10 +791,10 @@ class ConversationScreen(Screen[None]):
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
         """A line typed into the composer bar. With an Agent6TUI host, the host
         owns the routing (submit_instruction): live steer vs resume by its dir
-        status, plus the `/compact [focus]` parse -- this screen's own live
-        path sent '/compact …' to the model as a literal steer while the bar's
-        title advertised it. A pushed viewer on another host keeps the direct
-        live-steer bridge."""
+        status, plus the `/compact [focus]` parse: routed by this screen's own
+        live path, '/compact …' would reach the model as a literal steer while
+        the bar's title advertises it. A pushed viewer on another host keeps
+        the direct live-steer bridge."""
         submit = getattr(self.app, "submit_instruction", None)  # the Agent6TUI host
         if callable(submit):
             submit(message.text)
@@ -856,9 +854,7 @@ class ConversationScreen(Screen[None]):
         return "\n".join(parts) if parts else None
 
     def get_selected_text(self) -> str | None:
-        """Copy the transcript body only. Textual's screen-wide gather -- used by
-        the built-in Ctrl+C copy -- would otherwise include footer-key or live-pane
-        text a drag strayed over; restrict every copy path to the body."""
+        """Textual's copy entry point, restricted to the transcript body."""
         return self._body_selection()
 
     def _copy_text(self, text: str, *, method: str) -> str:

@@ -2,9 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Tool dispatch: validates incoming LLM tool calls and executes them.
 
-All filesystem reads/writes are clamped to *root* (the repo cwd). All command
-execution goes through agent6.sandbox.jail.run_in_jail. Capability gating
-(`run_commands = "no" | "ask" | "yes"`) is enforced here.
+File reads/writes resolve through the workspace boundary: *root* (the repo
+cwd) plus the operator's extra grants and the per-repo memory dir. Commands
+run jailed -- the run's `JailSession`, or a per-command `run_in_jail` when no
+session exists. Capability gating (`run_commands = "no" | "ask" | "yes"`) is
+enforced here.
 """
 
 from __future__ import annotations
@@ -174,8 +176,8 @@ _READ_HEAD_CHARS = 300
 def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
     """Capped output excerpts an execution/read tool's result carries into its
     tool.result event, else {}. Commands get stdout/stderr tails; read_file
-    gets a head preview + the true line count, so a transcript can show what
-    was read without opening the transcripts."""
+    gets a head preview + the true line count, so logs.jsonl shows what was
+    read without opening the transcripts."""
     if isinstance(result, ExecResult | MetricResult) and name in _EXEC_OUTPUT_TOOLS:
         return {
             "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
@@ -219,7 +221,7 @@ def _default_questioner(  # pragma: no cover — interactive
 ) -> tuple[str, ...]:
     """Fallback for `ask_user` when no TUI/CLI bridge is wired: numbered stdin
     prompts, one per question. A non-TTY/headless stdin returns "" for each so a run
-    never hangs (mirrors run.py's _default_stdin_questioner)."""
+    never hangs (mirrors ui/cli/_interact.py's default_stdin_questioner)."""
     if not sys.stdin.isatty():
         return tuple("" for _ in questions)
     answers: list[str] = []
@@ -305,8 +307,8 @@ class ToolDispatcher:
         mem = memory_dir(state_dir) if state_dir is not None else None
         if mem is not None:
             # The grant's target must exist: the model cannot mkdir outside
-            # the jail, so a fresh repo's FIRST organic memory write failed
-            # with ENOENT before this (caught live).
+            # the jail, so a fresh repo's FIRST organic memory write would
+            # fail with ENOENT.
             mem.mkdir(parents=True, exist_ok=True)
         self._ws = workspace_for(config, self._root, memory_dir=mem)
         # Public: the prompt builder reads it so the system prompt describes
@@ -965,8 +967,7 @@ class ToolDispatcher:
     def _finish_planning(self, raw: dict[str, Any]) -> ToolResult:
         return finish_planning(raw)
 
-    # DAG-as-tool handlers. All raise ToolError if no curator
-    # was wired so standalone test instantiation works unchanged.
+    # DAG-as-tool handlers.
 
     def _dag_add_task(self, raw: dict[str, Any]) -> ToolResult:
         return add_task(self._curator, self._run_root_node_id, raw)
@@ -1112,7 +1113,8 @@ class ToolDispatcher:
             return self._session
 
     def close_jail_session(self) -> None:
-        """End the run's jail process; its PID namespace takes the rest down."""
+        """End the run's jail process (under strict, its PID namespace takes
+        any survivors with it)."""
         with self._session_lock:
             if self._session is not None:
                 self._session.close()

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `[sandbox]` and `[mcp]` models: what a jailed child, and a spawned MCP
-server on top of one, may reach."""
+"""The `[sandbox]` and `[mcp]` models bounding what a jailed child, and a
+spawned MCP server on top of one, may reach."""
 
 from __future__ import annotations
 

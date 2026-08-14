@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The presentation seam: what a front-end injects into the run/resume
-lifecycle (`SessionFrontend` + its capability and steer contracts), and the
-away-mode policy applied when a launcher spawns a run detached."""
+"""The presentation seam a front-end injects into the run/resume lifecycle
+(`SessionFrontend` + its capability and steer contracts), and the away-mode
+policy applied when a launcher spawns a run detached."""
 
 from __future__ import annotations
 

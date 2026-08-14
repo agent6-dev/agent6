@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Shared run-listing helpers, used by every front-end's hub/watch listing.
 
-The last-activity time and the task snippet were copied into the CLI, the TUI,
-and the web hub and drifted; this is the one place they live now.
+The last-activity time and the task snippet live only here; the CLI, TUI,
+and web hub all read them, so the three listings cannot disagree.
 """
 
 from __future__ import annotations
@@ -225,15 +225,14 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
     liveness (worker.pid). The pure fold's ``session_status_label``
     is only for a stream with genuinely no dir (``attach --json``); a surface
     with a run dir that folds events alone reads every non-``session.end`` state
-    as "running" and disagrees with the hub -- parked/starting/created/stale/
-    waiting each shipped a real surface-disagreement bug before this existed.
+    as "running" and disagrees with the hub.
 
     A started session is live iff its worker is: the pid is written before
     session.start, so no pid file means the worker cleared it on the way out.
-    Log silence used to stand in for this, and inverted the evidence -- a
-    `kill -9` LEAVES the pid file and read "stale" at once, while an abnormal
-    exit through the finally (SIGPIPE from `run ... | head`) cleared it and
-    read "running" for the whole 600s window.
+    Log silence cannot stand in for this; it inverts the evidence. A `kill -9`
+    LEAVES the pid file (silence would read "stale" at once) while an abnormal
+    exit through the finally (SIGPIPE from `run ... | head`) clears it
+    (silence would read "running" for the whole 600s window).
     """
     if facts.finished:
         return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
@@ -252,8 +251,8 @@ def _unstarted_status(session_dir: Path) -> tuple[str, str]:
     worker is a parked submission (the busy-checkout refusal saved it; resume
     starts it), a worker that died launching (its pid file survives the kill;
     a clean refusal clears it), or a never-started dir (`fork --no-run`) ->
-    "created". The dead-pid case used to read "created" too, hiding a killed
-    preflight -- and its real dollar figure -- behind the never-ran word."""
+    "created". The dead-pid case is kept distinct from "created": a killed
+    preflight spent real dollars and must not wear the never-ran word."""
     if worker_is_alive(session_dir):
         return "starting", ""
     with contextlib.suppress(ManifestError):
@@ -550,7 +549,7 @@ def summarize_session_dir(session_dir: Path) -> SessionSummary:
         # (verify inference is a ~80s LLM call BEFORE the loop's first turn), a
         # manifest-only `fork --no-run`, or a forked/resumed leg whose log holds
         # only loop.resume.start (which begins a leg but records no mode/task).
-        # saw_start alone is now true in that last case, so gate on the missing
+        # saw_start alone is true in that last case, so gate on the missing
         # mode+task instead. The `not task` guard keeps a session.start that carried
         # a user_task but no `mode` field (mode stays "?") from being blanked.
         # Read mode+task from the manifest so the row shows its real work, not a

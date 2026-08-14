@@ -68,7 +68,7 @@ class JournalError(MachineError):
     """Raised when on-disk journal state (journal, pending wait, source, lock) is
     missing, corrupt, or unusable.
 
-    A `MachineError` subclass so every surface that degrades gracefully on a
+    A `MachineError` subclass so every surface that degrades on a
     broken machine file (hub listing, machine page, SSE stream) degrades the
     same way on a broken journal instead of crashing.
     """

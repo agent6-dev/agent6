@@ -16,7 +16,7 @@ Key resolution order for a provider (most explicit first):
 1. the environment variable named by ``[providers.<name>].api_key_env``
    (when set and non-empty), keeps CI/secret-manager workflows working,
 2. ``[providers.<name>].api_key`` in ``secrets.toml``,
-3. nothing (the caller raises a friendly "run ``agent6 connect``" error).
+3. nothing (the caller raises a "run ``agent6 connect``" error).
 
 Secrets are never written to transcripts, never printed by ``config
 show`` (always redacted), and never mounted into the jail, provider
