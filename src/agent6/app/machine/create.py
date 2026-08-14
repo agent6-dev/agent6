@@ -256,7 +256,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # Any failure becomes a retry diagnostic so the agent fixes it itself.
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
-            problems = lint_and_typecheck(scratch / "scripts")
+            problems = lint_and_typecheck(scratch / "scripts", fix=True)
             problems.extend(run_offline_tests(scratch, isolation))
             report = dry_run(candidate_spec, None)
             problems.extend(

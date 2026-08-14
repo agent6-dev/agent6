@@ -92,12 +92,27 @@ def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     return f"{label} found problems:\n{_trim(out)}"
 
 
-def lint_and_typecheck(scripts_dir: Path) -> list[str]:
+def _write_back_fixes(fixed_copy: Path, scripts_dir: Path) -> None:
+    """Copy ruff-repaired files from the temp copy back over the originals
+    (machine create's own generated bundle only; see lint_and_typecheck)."""
+    for fixed in sorted(fixed_copy.rglob("*.py")):
+        target = scripts_dir / fixed.relative_to(fixed_copy)
+        if target.read_bytes() != fixed.read_bytes():
+            target.write_bytes(fixed.read_bytes())
+
+
+def lint_and_typecheck(scripts_dir: Path, *, fix: bool = False) -> list[str]:
     """Lint (ruff) and type-check (ty) the bundle's Python scripts, no execution.
 
     Works on a private temp copy of *scripts_dir* so neither tool picks up the
     user's repo config. Returns human-readable problems (empty = clean / tools
-    absent). ``*_test.py`` files are linted but not type-checked."""
+    absent). ``*_test.py`` files are linted but not type-checked.
+
+    ``fix=True`` (machine create only, on its OWN generated bundle) applies
+    ruff's safe fixes to the copy, writes the fixed files back, and reports
+    only what remains: a whole authoring attempt burned on fixable lint
+    otherwise. Operator-facing verbs (`machine check`/`test`) never fix --
+    a check must not mutate the operator's files."""
     if not scripts_dir.is_dir() or not any(scripts_dir.rglob("*.py")):
         return []
     problems: list[str] = []
@@ -110,11 +125,12 @@ def lint_and_typecheck(scripts_dir: Path) -> list[str]:
         dst = work / "scripts"
         shutil.copytree(scripts_dir, dst, symlinks=True)
         if ruff := _resolve_tool("ruff"):
-            problem = _run_static(
-                [*ruff, "check", "--isolated", "--output-format", "concise", str(dst)],
-                work,
-                "ruff (lint)",
-            )
+            argv = [*ruff, "check", "--isolated", "--output-format", "concise"]
+            if fix:
+                argv.append("--fix")
+            problem = _run_static([*argv, str(dst)], work, "ruff (lint)")
+            if fix:
+                _write_back_fixes(dst, scripts_dir)
             if problem:
                 problems.append(problem)
         else:

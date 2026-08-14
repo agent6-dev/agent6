@@ -286,3 +286,21 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
     monkeypatch.setattr(scriptcheck, "run_in_jail", run)
     assert scriptcheck.run_offline_tests(bundle, "strict") == []
     assert seen_cwds and all("statehome" not in c for c in seen_cwds)
+
+
+def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
+    """machine create validates its OWN generated bundle: a fixable-only
+    problem (an unused import) must be fixed in place and not fail the
+    attempt — a whole authoring round burned on it before. The default
+    (operator-facing check/test) never mutates."""
+    _need("ruff")
+    body = "import json\nimport os\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
+    _write(tmp_path / "scripts", "fixable.py", body)
+    # Default: reported, file untouched.
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert (tmp_path / "scripts" / "fixable.py").read_text() == body
+    # Fix mode: repaired in place, nothing reported for the fixable part.
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts", fix=True)
+    fixed = (tmp_path / "scripts" / "fixable.py").read_text()
+    assert "import os" not in fixed
+    assert not any("ruff" in p for p in problems)
