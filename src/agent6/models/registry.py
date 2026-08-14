@@ -36,8 +36,12 @@ __all__ = [
 # cache when both know a model. Keep ids canonical (no date/`:tag` suffix --
 # ``normalize_model_id`` strips those before matching).
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
-    # Anthropic (standard window; the 1M-context beta is opt-in, so pin it
-    # explicitly in [workflow] if you enable it).
+    # Anthropic. The 5-family ships 1M as the default AND maximum (no beta
+    # header, standard pricing); the 4.x standard window is 200k with the 1M
+    # beta opt-in, so pin [context] explicitly if you enable that beta.
+    "claude-fable-5": 1_000_000,
+    "claude-opus-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
     "claude-opus-4-8": 200_000,
     "claude-sonnet-4-6": 200_000,
     "claude-sonnet-4-5": 200_000,

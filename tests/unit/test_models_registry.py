@@ -32,6 +32,11 @@ def _cfg(model: str, decompose: str = "auto") -> Config:
 def test_context_window_bundled_and_normalized(cache_home: Path) -> None:
     # Bundled table: exact + a dated/tagged id normalised to the canonical key.
     assert models_registry.context_window("anthropic", "claude-sonnet-4-6") == 200_000
+    # The 5-family's 1M default: a missing row silently fell back to the fixed
+    # 256k thresholds, over-compacting flagship models (caught live on a
+    # sonnet-5 dogfood run).
+    assert models_registry.context_window("anthropic", "claude-sonnet-5") == 1_000_000
+    assert models_registry.context_window("anthropic", "claude-fable-5") == 1_000_000
     assert models_registry.context_window("anthropic", "claude-haiku-4-5-20251001") == 200_000
     assert models_registry.context_window("openrouter", "qwen/qwen3-coder:free") == 1_048_576
     assert models_registry.context_window("openrouter", "vendor/totally-unknown") is None
