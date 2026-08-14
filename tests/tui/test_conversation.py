@@ -243,7 +243,11 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             await _wait_for(
                 pilot, lambda: scroll.max_scroll_y > overflow_before, "the live pane to grow"
             )
-            assert _following(scroll)  # still following despite the live pane growing
+            # Follow re-pins on the app's next tick, one frame after the growth
+            # is first visible: wait for it to settle rather than asserting on
+            # that first frame (a real follow break never re-pins, so a broken
+            # regression still times this out).
+            await _wait_for(pilot, lambda: _following(scroll), "follow to re-pin after growth")
 
     asyncio.run(scenario())
 
