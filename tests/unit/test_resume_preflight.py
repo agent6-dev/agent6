@@ -121,7 +121,7 @@ def _stub_start_of_run(resume: object, monkeypatch: pytest.MonkeyPatch) -> dict[
         return 0
 
     monkeypatch.setattr(resume, "load_effective", _load)
-    monkeypatch.setattr(resume, "apply_git_egress_policy", _hook_policy)
+    monkeypatch.setattr(resume, "apply_git_ops_policy", _hook_policy)
     monkeypatch.setattr(resume, "run_task", _capture_run_task)
     return captured
 

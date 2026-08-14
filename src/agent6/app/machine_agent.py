@@ -37,7 +37,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.app._setup import apply_git_egress_policy
+from agent6.app._setup import apply_git_ops_policy
 from agent6.app.confine import check_hide_paths_support, check_network_support
 from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
@@ -315,7 +315,7 @@ def run_one(
     except (ConfigError, ValidationError) as exc:
         reporter.err(f"REFUSING: machine agent config error: {exc}")
         return _result("error", None, None)
-    apply_git_egress_policy(cfg)
+    apply_git_ops_policy(cfg)
     # A mode="run" state commits its work, but this confined process can't read
     # ~/.gitconfig (not a Landlock read root): export the host-resolved identity
     # so git uses it regardless of where the config lives.

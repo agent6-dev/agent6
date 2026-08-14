@@ -138,7 +138,7 @@ def _git() -> str:
 # `filter.*` and `merge.*.driver` -- are the same RCE class but have no blanket
 # `-c` off switch, so `_repo_driver_overrides` neutralizes each by NAME, gated
 # by `run_repo_filters` (the Git-LFS opt-in, since LFS uses exactly these).
-_GIT_EGRESS_HARDENING: tuple[str, ...] = (
+_GIT_HARDENING: tuple[str, ...] = (
     "-c",
     "core.fsmonitor=false",
     "-c",
@@ -274,14 +274,14 @@ DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
 
 def git_hardening_flags() -> tuple[str, ...]:
     """The `-c` overrides every agent6 git invocation must carry (see
-    _GIT_EGRESS_HARDENING). Public so the few callers that shell out to git
+    _GIT_HARDENING). Public so the few callers that shell out to git
     outside this module (`agent6 review`/`sessions diff` collectors) apply the
     same hardening; place them BEFORE the subcommand. Diff/show callers also add
     DIFF_SHOW_SAFETY_FLAGS after the subcommand."""
     if _hook_policy["honor_repo_hooks"]:
-        return _GIT_EGRESS_HARDENING
+        return _GIT_HARDENING
     # /dev/null is not a directory, so git finds (and runs) no hooks there.
-    return (*_GIT_EGRESS_HARDENING, "-c", "core.hooksPath=/dev/null")
+    return (*_GIT_HARDENING, "-c", "core.hooksPath=/dev/null")
 
 
 def _run(

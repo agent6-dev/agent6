@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.app._setup import apply_git_egress_policy
+from agent6.app._setup import apply_git_ops_policy
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
@@ -146,7 +146,7 @@ def git_preflight(
     that opted into its own hooks silently kept them off under an editor -- a
     knob `config show` reports and one surface ignored.
     """
-    apply_git_egress_policy(cfg)
+    apply_git_ops_policy(cfg)
     identity = CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
     # so it skips the commit-oriented git pre-flight entirely.

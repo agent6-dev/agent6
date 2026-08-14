@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import apply_git_egress_policy
+from agent6.app._setup import apply_git_ops_policy
 from agent6.app.manifest import write_manifest
 from agent6.app.providers import InstrumentedProvider, build_role_provider
 from agent6.budget import BudgetTracker
@@ -273,7 +273,7 @@ def execute_merge(
     with *strategy* and record the merge. Ref plumbing only: the checkout is
     never switched and the worktree is never required clean. The caller
     validates first; this mutates."""
-    apply_git_egress_policy(cfg)
+    apply_git_ops_policy(cfg)
     if not branch_exists(cwd, target):
         # The merge target must already exist; never fabricate it. runs merge
         # pre-checks this for a nicer message; auto_merge relies on this guard

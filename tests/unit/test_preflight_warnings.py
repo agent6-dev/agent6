@@ -63,7 +63,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     def _capture(captured: Config) -> None:
         seen.append(captured.git.run_repo_hooks)
 
-    monkeypatch.setattr(preflight_mod, "apply_git_egress_policy", _capture)
+    monkeypatch.setattr(preflight_mod, "apply_git_ops_policy", _capture)
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set

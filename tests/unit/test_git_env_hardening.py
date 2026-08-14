@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from agent6 import git_ops
-from agent6.app._setup import apply_git_egress_policy
+from agent6.app._setup import apply_git_ops_policy
 from agent6.config import Config
 
 
@@ -46,7 +46,7 @@ def test_a_configured_provider_key_is_stripped_from_gits_environment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret-should-not-reach-git")
-    apply_git_egress_policy(
+    apply_git_ops_policy(
         Config.model_validate(
             {
                 "providers": {
@@ -65,7 +65,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
 ) -> None:
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i /home/me/.ssh/id_ed25519")
     monkeypatch.setenv("SOME_OTHER_TOKEN", "not-a-configured-key")
-    apply_git_egress_policy(
+    apply_git_ops_policy(
         Config.model_validate(
             {
                 "providers": {
@@ -87,6 +87,6 @@ def test_no_providers_configured_strips_nothing(
     """Keys living only in secrets.toml never enter the environment, so there
     is nothing to strip and no false positive on a same-named var."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
-    apply_git_egress_policy(Config())
+    apply_git_ops_policy(Config())
     env = _captured_git_env(monkeypatch, tmp_path)
     assert env.get("ANTHROPIC_API_KEY") == "from-the-shell"

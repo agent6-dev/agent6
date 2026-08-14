@@ -125,7 +125,7 @@ class SandboxOverrides:
         )
 
 
-def apply_git_egress_policy(cfg: Config) -> None:
+def apply_git_ops_policy(cfg: Config) -> None:
     """Set how agent6's OWN git ops (run outside the jail) treat repo-controlled
     host code and provider secrets, from the run's config. One call per entry
     point (run, resume, merge, machine), so the policy is set the same way
