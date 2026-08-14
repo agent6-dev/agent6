@@ -91,6 +91,64 @@ class _ToolSpec:
 _COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
 
 
+def _schema_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
+    """First way *value* fails *schema*, or None.
+
+    tools/list publishes each tool's inputSchema with `additionalProperties:
+    false`; a client that ignores it must still be held to it here, or an
+    unknown field rides through and a wrong-typed one reaches the jail. Covers
+    the JSON-Schema subset the tool table uses: object (properties, required,
+    additionalProperties), array (items, minItems), string (minLength).
+    """
+    typ = schema.get("type")
+    if typ == "object":
+        return _object_violation(value, schema, where)
+    if typ == "array":
+        return _array_violation(value, schema, where)
+    if typ == "string":
+        return _string_violation(value, schema, where)
+    return None
+
+
+def _object_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
+    if not isinstance(value, dict):
+        return f"{where} must be an object"
+    props: dict[str, Any] = schema.get("properties", {})
+    if schema.get("additionalProperties") is False:
+        unknown = sorted(k for k in value if k not in props)
+        if unknown:
+            return f"{where} has unknown field(s): {', '.join(unknown)}"
+    for req in schema.get("required", ()):
+        if req not in value:
+            return f"{where} is missing required field {req!r}"
+    for key, sub in props.items():
+        if key in value and (nested := _schema_violation(value[key], sub, f"{where}.{key}")):
+            return nested
+    return None
+
+
+def _array_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
+    if not isinstance(value, list):
+        return f"{where} must be an array"
+    if len(value) < schema.get("minItems", 0):
+        return f"{where} must have at least {schema['minItems']} item(s)"
+    item_schema = schema.get("items")
+    if isinstance(item_schema, dict):
+        for i, item in enumerate(value):
+            if nested := _schema_violation(item, item_schema, f"{where}[{i}]"):
+                return nested
+    return None
+
+
+def _string_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
+    # bool is an int in Python but never a str, so this rejects true/false.
+    if not isinstance(value, str):
+        return f"{where} must be a string"
+    if len(value) < schema.get("minLength", 0):
+        return f"{where} must be at least {schema['minLength']} character(s)"
+    return None
+
+
 def _no_one_to_ask(config: Config) -> Config:
     """Withdraw the command tools when the config would prompt for them.
 
@@ -355,6 +413,9 @@ class MCPServer:
             raise _RpcError(-32601, f"unknown tool: {name!r}")
         if raw_args is not None and not isinstance(raw_args, dict):
             raise _RpcError(-32602, "arguments must be an object")
+        violation = _schema_violation(args, self._tools[name].input_schema, "arguments")
+        if violation is not None:
+            raise _RpcError(-32602, violation)
         try:
             payload = self._tools[name].handler(args)
         except (ToolError, OperatorCommandUnexecutable) as exc:

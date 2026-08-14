@@ -81,6 +81,26 @@ def test_auto_degrades_with_a_warning_naming_the_server(
     assert "MCP server 's'" in err and "network" in err
 
 
+def test_a_table_less_server_degrades_with_the_same_warning(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A server with no `[sandbox]` table has effective network `auto`, exactly
+    like one that wrote `network = "auto"`: the spawn policy already gives it a
+    network of its own (degrading to the host's on hardened). The degrade
+    warning has to agree, or a table-less server keeps the host's network on
+    hardened with nothing said -- the policy and the warning read the same
+    effective value now."""
+    from agent6.app._setup import start_mcp_manager_if_enabled
+
+    cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
+    assert cfg.mcp.servers["s"].sandbox is None
+    assert cfg.mcp.servers["s"].effective_network == "auto"
+    assert check_mcp_network_support(cfg, "hardened") is None  # auto never refuses
+    start_mcp_manager_if_enabled(cfg, tmp_path, "hardened")
+    err = capsys.readouterr().err
+    assert "MCP server 's'" in err and "network" in err
+
+
 def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     """An operator who granted the network asked for it; nothing degraded."""
     from agent6.app._setup import start_mcp_manager_if_enabled

@@ -6,6 +6,7 @@ spawned MCP server on top of one, may reach."""
 from __future__ import annotations
 
 import ipaddress
+import re
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -475,6 +476,14 @@ class MCPServerEntry(BaseModel):
             )
         return self
 
+    @property
+    def effective_network(self) -> Literal["auto", "none", "session", "host"]:
+        """The network this server joins, resolving an absent `[sandbox]` table
+        to the same `auto` default a present table's field carries. One value
+        for the spawn policy, the degrade warning, and the refusal, so they
+        cannot disagree on the table-less case."""
+        return self.sandbox.network if self.sandbox else "auto"
+
 
 def _is_loopback(url: str) -> bool:
     """Whether *url*'s host is this machine. The operator dialling their own
@@ -505,7 +514,8 @@ def mcp_server_name_refusal(name: str) -> str:
     name carrying `]` and a newline could close the table and open one of its
     own choosing.
     """
-    if not name or not all(c.isalnum() or c in "_-" for c in name):
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        # ASCII fullmatch: no Unicode look-alikes, no trailing newline.
         return f"[mcp.servers.<name>] keys must be [A-Za-z0-9_-]+: {name!r}"
     if "__" in name:
         return (

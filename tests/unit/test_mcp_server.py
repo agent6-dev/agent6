@@ -375,7 +375,8 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
         return ExecResult(returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False)
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
-    # Empty argv -> tool error.
+    # Empty argv fails the published schema (minItems 1) at the call boundary:
+    # an invalid-params JSON-RPC error, not a tool-level isError result.
     resps = _roundtrip(
         server,
         [
@@ -396,8 +397,56 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
             },
         ],
     )
-    assert resps[0]["result"]["isError"] is True
+    assert resps[0]["error"]["code"] == -32602
     assert resps[1]["result"]["structuredContent"]["stdout"] == "ok"
+
+
+def test_tool_arguments_are_checked_against_the_published_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tools/list advertises each tool's inputSchema with additionalProperties:
+    false and typed fields; a client that ignores it is still held to it at the
+    call boundary. An unknown field, a wrong-typed element, a missing required
+    field, or a wrong scalar type is a -32602 invalid-params error, not a value
+    that rides through to the handler and the jail."""
+    server = _server(tmp_path, run_commands="yes")
+
+    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
+        raise AssertionError("handler must not run on a schema-invalid call")
+
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    resps = _roundtrip(
+        server,
+        [
+            {  # unknown field, additionalProperties:false
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "run_verify", "arguments": {"surprise": 1}},
+            },
+            {  # argv items must be strings
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "run_in_sandbox", "arguments": {"argv": ["ok", 3]}},
+            },
+            {  # missing required "patch"
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "apply_patch_in_sandbox", "arguments": {"path": "f"}},
+            },
+            {  # session_id must be a string
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "query_dag", "arguments": {"session_id": 5}},
+            },
+        ],
+    )
+    for r in resps:
+        assert "error" in r and r["error"]["code"] == -32602, r
+    assert "unknown field" in resps[0]["error"]["message"]
 
 
 def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

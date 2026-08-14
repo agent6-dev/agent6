@@ -198,6 +198,19 @@ class _ProviderBase(BaseModel):
             raise ValueError("token_command must be a non-empty argv of non-empty strings")
         return v
 
+    @model_validator(mode="after")
+    def _none_auth_takes_no_credential(self) -> _ProviderBase:
+        """`auth_style = "none"` sends no auth header, so a credential source
+        named beside it is dead config that reads as authenticated; refuse
+        rather than silently ignore the key."""
+        if self.auth_style == "none" and (self.api_key_env or self.token_command):
+            named = "api_key_env" if self.api_key_env else "token_command"
+            raise ValueError(
+                f"auth_style = 'none' sends no auth header, so {named} would never"
+                " be used; drop one or the other"
+            )
+        return self
+
 
 class AnthropicProviderEntry(_ProviderBase):
     """`api_format = "anthropic"` -- the Anthropic Messages wire format.

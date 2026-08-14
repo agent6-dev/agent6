@@ -31,7 +31,11 @@ from agent6.types import JailPolicy
 
 
 def _fake_server_argv(
-    *, hang: bool = False, crash_after_init: bool = False, bad_tool: bool = False
+    *,
+    hang: bool = False,
+    crash_after_init: bool = False,
+    bad_tool: bool = False,
+    newline_tool: bool = False,
 ) -> tuple[str, ...]:
     """Return argv that runs a tiny Python MCP server inline.
 
@@ -50,6 +54,7 @@ def _fake_server_argv(
         HANG = {hang!r}
         CRASH = {crash_after_init!r}
         BAD_TOOL = {bad_tool!r}
+        NEWLINE_TOOL = {newline_tool!r}
         def reply(req_id, result):
             sys.stdout.write(json.dumps({{
                 "jsonrpc": "2.0", "id": req_id, "result": result,
@@ -85,6 +90,9 @@ def _fake_server_argv(
                 ]
                 if BAD_TOOL:
                     tools.append({{"name": "has a space", "description": "invalid",
+                                   "inputSchema": {{"type": "object"}}}})
+                if NEWLINE_TOOL:
+                    tools.append({{"name": "sneaky\\n", "description": "trailing newline",
                                    "inputSchema": {{"type": "object"}}}})
                 reply(msg["id"], {{"tools": tools}})
                 continue
@@ -134,6 +142,29 @@ def test_manager_skips_tools_with_invalid_names() -> None:
             MCPServerSpec(
                 name="fake",
                 command=_fake_server_argv(bad_tool=True),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ]
+    )
+    try:
+        names = sorted(d.qualified_name for d in mgr.descriptors())
+        assert names == [f"{MCP_TOOL_PREFIX}fake__echo", f"{MCP_TOOL_PREFIX}fake__shout"]
+    finally:
+        mgr.close()
+
+
+def test_a_tool_name_with_a_trailing_newline_is_skipped() -> None:
+    """`re.match` against a `^[A-Za-z0-9_-]+$` pattern accepts a terminal
+    newline: `$` matches just before it, so a tool advertised as "sneaky\\n"
+    passed the filter and registered as mcp__fake__sneaky\\n -- a newline
+    spliced into the LLM-visible tool definition. fullmatch admits no trailing
+    newline, so the tool is skipped like any other invalid name."""
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="fake",
+                command=_fake_server_argv(newline_tool=True),
                 startup_timeout_s=5.0,
                 call_timeout_s=5.0,
             )

@@ -132,6 +132,20 @@ def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_mcp_server_name_is_ascii_only() -> None:
+    """The stated contract is ASCII `[A-Za-z0-9_-]+`, but `str.isalnum()` also
+    accepts Unicode letters and digits, so a name built from a Cyrillic
+    homoglyph, a superscript digit, or a trailing newline slipped through the
+    check that guards a TOML table header and the mcp__<server>__ prefix."""
+    from agent6.config import mcp_server_name_refusal
+
+    assert mcp_server_name_refusal("good-name_9") == ""
+    assert mcp_server_name_refusal("\u0430dmin")  # Cyrillic a + "dmin"
+    assert mcp_server_name_refusal("srv\u00b2")  # superscript two
+    assert mcp_server_name_refusal("name\n")  # terminal newline a bare $ admits
+    assert mcp_server_name_refusal("")  # empty stays refused
+
+
 def test_extra_read_paths_accepts_clean_absolute(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
         "protect_git = true",
@@ -702,6 +716,21 @@ def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
     body = _with_openai_provider('[providers.x]\napi_format = "openai"\nauth_style = "none"')
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "cred_line",
+    ['api_key_env = "OPENAI_API_KEY"', 'token_command = ["mint-token"]'],
+)
+def test_none_auth_with_a_credential_source_is_refused(tmp_path: Path, cred_line: str) -> None:
+    """auth_style = 'none' sends no auth header, so also naming api_key_env or
+    token_command is a contradiction: the credential reads as configured yet is
+    never sent. Refuse rather than silently ignore it."""
+    body = _with_openai_provider(
+        f'[providers.x]\napi_format = "openai"\nauth_style = "none"\n{cred_line}'
+    )
+    with pytest.raises(ConfigError, match="auth_style"):
+        load_config(_write(tmp_path, body))
 
 
 def test_skills_defaults() -> None:

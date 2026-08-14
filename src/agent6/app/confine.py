@@ -281,9 +281,9 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
     if isolation != "hardened":
         return None
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.sandbox is not None and srv.sandbox.network in ("none", "session"):
+        if srv.enabled and srv.effective_network in ("none", "session"):
             return (
-                f"MCP server {name!r} sets sandbox.network = {srv.sandbox.network!r},"
+                f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r},"
                 " which needs a network namespace and so the strict isolation; this"
                 f" host resolved to {isolation!r}. Use 'auto' to run with a warning,"
                 " or 'host' to accept the machine's network."

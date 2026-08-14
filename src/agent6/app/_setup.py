@@ -204,8 +204,7 @@ def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
     if cfg.sandbox.network != "host":
         return True
     return cfg.mcp.enabled and any(
-        srv.enabled and srv.sandbox is not None and srv.sandbox.network == "session"
-        for srv in cfg.mcp.servers.values()
+        srv.enabled and srv.effective_network == "session" for srv in cfg.mcp.servers.values()
     )
 
 
@@ -233,7 +232,7 @@ def mcp_server_policy(
     # auto and none both mean "a network of its own"; they differ only in what
     # happens when the host cannot provide one (warn vs refuse, which preflight
     # owns). `session` is the run's shared one; `host` is the machine's.
-    configured = sandbox.network if sandbox else "auto"
+    configured = srv.effective_network
     network: NetworkMode = "none" if configured == "auto" else configured
     return jail_policy(
         root,
@@ -310,7 +309,7 @@ def _warn_servers_that_keep_the_network(
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.sandbox is not None and srv.sandbox.network == "auto":
+        if srv.enabled and srv.effective_network == "auto":
             reporter.err(
                 f"[agent6] WARNING: MCP server {name!r} keeps this host's network:"
                 f" taking it away needs the network namespace only 'strict' has, and"

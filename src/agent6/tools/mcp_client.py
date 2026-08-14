@@ -138,7 +138,9 @@ def split_tool_name(qualified_name: str) -> tuple[str, str]:
 # `[A-Za-z0-9_-]{1,64}`. A name with whitespace/dots/other chars would make
 # the qualified name an invalid tool definition (rejected by the API) or shadow
 # a built-in, so tools whose names don't match are skipped at registration.
-_VALID_MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+# Matched with fullmatch, not `$`: `$` also matches just before a terminal
+# newline, so `foo\n` would pass and splice a newline into the tool name.
+_VALID_MCP_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
 # The 64-char cross-provider bound from that grammar, applied to the WHOLE
 # qualified name (prefix + operator server name + separators + tool name):
@@ -401,7 +403,7 @@ class _MCPServer:
             tname = entry.get("name")
             if not isinstance(tname, str) or not tname:
                 continue
-            if not _VALID_MCP_TOOL_NAME.match(tname) or tname in seen:
+            if not _VALID_MCP_TOOL_NAME.fullmatch(tname) or tname in seen:
                 # Skip tools whose names can't form a valid provider tool name
                 # (mcp__<server>__<tool> must be [A-Za-z0-9_-]) and duplicates
                 # of an already-registered name (first wins): either would
