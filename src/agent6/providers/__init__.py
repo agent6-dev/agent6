@@ -61,6 +61,24 @@ class Provider(Protocol):
     ) -> ProviderResponse: ...
 
 
+def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int) -> str | None:
+    """One guarded text-only call: the stripped reply, or None on ANY failure.
+
+    For best-effort drafting (commit messages) where the caller holds a
+    deterministic fallback: the broad except is the point, a drafting hiccup
+    must never surface as a run error."""
+    try:
+        resp = provider.call(
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            tools=None,
+            max_tokens=max_tokens,
+        )
+    except Exception:
+        return None
+    return (resp.text or "").strip() or None
+
+
 __all__ = [
     "AnthropicProvider",
     "CommandToken",
@@ -74,5 +92,6 @@ __all__ = [
     "ToolDefinition",
     "TranscriptRecorder",
     "TranscriptSink",
+    "call_for_text",
     "output_cap_truncated",
 ]

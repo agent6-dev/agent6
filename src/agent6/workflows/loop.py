@@ -72,6 +72,7 @@ from agent6.providers import (
     ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
+    call_for_text,
     output_cap_truncated,
 )
 from agent6.sessions.ipc import emit_session_start
@@ -4845,31 +4846,20 @@ class Workflow:
         return agent6_subject
 
     def _model_commit_message(self, changes: Sequence[tuple[str, str]], *, hint: str) -> str | None:
-        """One small provider call writing the message from git facts only;
-        None on any failure (the caller degrades to the agent6 style)."""
-        try:
-            listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
-            resp = self.provider.call(
-                system=(
-                    "Write a git commit message for the change set: one"
-                    " imperative subject line under 72 characters, optionally a"
-                    " blank line and a short body. Use only the facts given."
-                    " Output the message text only."
-                ),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Summary hint: {hint}\nChanged files (status\tpath):\n{listing}"
-                        ),
-                    }
-                ],
-                tools=None,
-                max_tokens=400,
-            )
-        except Exception:
-            return None
-        return (resp.text or "").strip() or None
+        """Model-drafted checkpoint message from git facts only; None on any
+        failure (the caller degrades to the agent6 style)."""
+        listing = "\n".join(f"{s}\t{p}" for s, p in changes[:200])
+        return call_for_text(
+            self.provider,
+            system=(
+                "Write a git commit message for the change set: one"
+                " imperative subject line under 72 characters, optionally a"
+                " blank line and a short body. Use only the facts given."
+                " Output the message text only."
+            ),
+            user=f"Summary hint: {hint}\nChanged files (status\tpath):\n{listing}",
+            max_tokens=400,
+        )
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. Lets

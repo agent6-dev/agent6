@@ -38,7 +38,7 @@ from agent6.git_ops import (
     plumb_merge,
     range_name_status,
 )
-from agent6.providers import TranscriptSink
+from agent6.providers import TranscriptSink, call_for_text
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 
@@ -229,29 +229,23 @@ def _model_squash_message(
         files = "\n".join(
             f"{s}\t{p}" for s, p in range_name_status(cwd, base_sha, run_branch)[:200]
         )
-        resp = provider.call(
+        return call_for_text(
+            provider,
             system=(
                 "Write a git commit message for a squashed branch: one"
                 " imperative subject line under 72 characters, a blank line,"
                 " then a short body. Use only the facts given. Output the"
                 " message text only."
             ),
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"Task: {task}\nPer-step subjects:\n{steps}\n"
-                        f"Changed files (status\tpath):\n{files}"
-                    ),
-                }
-            ],
-            tools=None,
+            user=(
+                f"Task: {task}\nPer-step subjects:\n{steps}\nChanged files (status\tpath):\n{files}"
+            ),
             max_tokens=500,
         )
     except Exception:
-        # Drafting is best-effort; the caller falls back to a fixed subject.
+        # Building the drafting provider is best-effort too; the caller
+        # falls back to a fixed subject.
         return None
-    return (resp.text or "").strip() or None
 
 
 def execute_merge(
