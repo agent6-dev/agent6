@@ -246,6 +246,31 @@ def mcp_server_policy(
     )
 
 
+def readonly_probe_refusal(srv: MCPServerEntry) -> str | None:
+    """Why a read-only diagnostic can't start *srv*, or None when it can.
+
+    `agent6 check` starts each server only to enumerate its tools, in a
+    throwaway directory so a startup write lands nowhere real (see
+    `_doctor_check_mcp`). A server that runs unconfined (no jail to hold it to
+    that directory) or asks for write grants can still write elsewhere, so the
+    check reports it and leaves it unstarted; it starts normally in a real run.
+    """
+    sandbox = srv.sandbox
+    if sandbox is None:
+        return None
+    if sandbox.unconfined:
+        return (
+            "runs unconfined (sandbox.unconfined = true), which a read-only check"
+            " cannot confine; not started. Set unconfined = false to check it."
+        )
+    if sandbox.write_paths:
+        return (
+            "requests write access (sandbox.write_paths), which a read-only check"
+            " does not grant; not started. It starts normally in a run."
+        )
+    return None
+
+
 def start_mcp_manager_if_enabled(
     cfg: Config,
     root: Path,
@@ -254,6 +279,7 @@ def start_mcp_manager_if_enabled(
     reporter: Reporter = STDIO_REPORTER,
     events: EventSink | None = None,
     session_net: SessionNetwork | None = None,
+    probe: bool = False,
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from `cfg.mcp`. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
@@ -264,6 +290,10 @@ def start_mcp_manager_if_enabled(
     when *events* is given. Stderr is only visible from a terminal -- under an
     editor it is a log pane, and the operator sees a run quietly missing the
     tools they configured.
+
+    `probe` is the read-only diagnostic (`agent6 check`): a server that would
+    need write access to start (`readonly_probe_refusal`) is left unstarted, so
+    starting it in a throwaway *root* keeps the check from writing anywhere real.
     """
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
@@ -287,11 +317,11 @@ def start_mcp_manager_if_enabled(
             ),
         )
         for name, srv in cfg.mcp.servers.items()
-        if srv.enabled
+        if srv.enabled and not (probe and readonly_probe_refusal(srv))
     ]
     if not configs:
         return None
-    _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
+    _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter, probe=probe)
     manager = MCPManager.start(configs, logger=reporter.err, session_net=session_net)
     if events is not None:
         for failure in manager.failures:
@@ -300,15 +330,18 @@ def start_mcp_manager_if_enabled(
 
 
 def _warn_servers_that_keep_the_network(
-    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
+    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter, probe: bool = False
 ) -> None:
     """`network = "auto"` is the secure default and cannot be honoured without
     a network namespace, so where it degrades it says so -- per server, here,
     where the operator is already being told about their servers. An explicit
-    `block` refused long before this (check_mcp_network_support)."""
+    `block` refused long before this (check_mcp_network_support). A `probe`
+    warns only about servers it actually starts."""
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
+        if probe and readonly_probe_refusal(srv):
+            continue
         if srv.enabled and srv.effective_network == "auto":
             reporter.err(
                 f"[agent6] WARNING: MCP server {name!r} keeps this host's network:"
