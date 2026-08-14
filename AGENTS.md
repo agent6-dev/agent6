@@ -257,6 +257,28 @@ version that still carries the point wins.
   `docs/config.md`, `docs/security.md`, `docs/state-machines.md`, `README.md`,
   this file).
 
+### Dev environment and session practice
+
+- Dogfood the installed binary (`.venv/bin/agent6`) from throwaway git
+  repos outside this one; never `uv run --directory <elsewhere>` (cwd
+  config and git still point here) and never seed scratch repos inside it.
+- Run the five-gate in its own systemd unit (`systemd-run --user
+  --collect` with RuntimeMaxSec/MemoryMax caps) and read its `EXIT=` line
+  from the log. A contended machine produces false timing reds; certify on
+  a quiet one.
+- Sandbox tests need unprivileged userns: on Ubuntu 24.04-class machines
+  `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (CI does
+  the same; the jail-test gate names this when blocked).
+- Bench workspaces live on disk (e.g. `~/agent6-bench`), never `/tmp`:
+  tmpfs is RAM-backed and an OOM there kills the session scope.
+- Any in-container or leg config gets ONE live single-instance smoke
+  before a fleet launch; any mechanism with two enforcement sites gets a
+  live smoke even after unit-green (unit fixtures can pass vacuously).
+- Benchmarks: unmodified official scorers, dev/eval split registered
+  before tuning, report split + n verbatim, and replicate small effects
+  before shipping them; one paired run at n=25 has shipped a false
+  positive.
+
 ### Git and commit practices
 
 - Commit messages follow
