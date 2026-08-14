@@ -490,6 +490,9 @@ def build_machine_agent_runner(
             req_file.write_text(payload.model_dump_json(), encoding="utf-8")
             argv = [
                 sys.executable,
+                # -P keeps cwd (the workspace) off sys.path: a model-planted
+                # `agent6/` must not shadow the installed package on the host.
+                "-P",
                 "-m",
                 "agent6.ui.cli.machine_agent",
                 str(req_file),

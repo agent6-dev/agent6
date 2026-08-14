@@ -134,8 +134,18 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         yield
         return
     try:
+        # -P keeps cwd (the workspace) off sys.path: a top-level `agent6/` in
+        # the repo must not shadow the installed package in this co-process.
         proc = subprocess.Popen(
-            [sys.executable, "-m", "agent6.ui.tui", "--watch", str(session_dir), "--exit-on-end"]
+            [
+                sys.executable,
+                "-P",
+                "-m",
+                "agent6.ui.tui",
+                "--watch",
+                str(session_dir),
+                "--exit-on-end",
+            ]
         )
     except OSError as exc:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
