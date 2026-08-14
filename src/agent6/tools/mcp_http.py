@@ -78,6 +78,9 @@ class HttpTransport:
     # here and never logged, never written to a transcript, and never part of
     # an error message.
     token_env: str = ""
+    # Forward httpx's trust_env (default off): the ambient HTTP(S)_PROXY is
+    # ignored, so this server's bearer token never routes to a proxy. See `send`.
+    httpx_trust_env: bool = False
     # The streamable-HTTP session id: captured from the `initialize` response
     # (see `send`), echoed on every later request (see `_headers`), and cleared
     # on the 404 that means the server expired it. Stays "" for a stateless
@@ -120,16 +123,19 @@ class HttpTransport:
         """POST one JSON-RPC message; return the response, or None for a
         notification the server acknowledged with no body.
 
-        `trust_env=False`: an ambient `HTTP_PROXY` would otherwise capture this
-        connection -- loopback included, since httpx has no implicit bypass --
-        sending the bearer token to the proxy in cleartext while the operator's
-        own server received nothing.
+        `trust_env` is off by default: an ambient `HTTP_PROXY` would otherwise
+        capture this connection -- loopback included, since httpx has no implicit
+        bypass -- sending the bearer token to the proxy while the operator's own
+        server received nothing. `[mcp.servers.<name>].httpx_trust_env` opts a
+        server in (one reachable only through the environment's proxy).
         """
         deadline = time.monotonic() + timeout_s
         body = bytearray()
         try:
             with (
-                httpx2.Client(timeout=timeout_s, follow_redirects=False, trust_env=False) as client,
+                httpx2.Client(
+                    timeout=timeout_s, follow_redirects=False, trust_env=self.httpx_trust_env
+                ) as client,
                 client.stream(
                     "POST",
                     self.url,

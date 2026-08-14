@@ -437,6 +437,15 @@ class MCPServerEntry(BaseModel):
         default=60.0,
         description="Per `tools/call` timeout.",
     )
+    httpx_trust_env: bool = Field(
+        default=False,
+        description=(
+            "For a `url` server: forward httpx's `trust_env`, so the connection honors the "
+            "ambient HTTP(S)_PROXY (and .netrc / SSL_CERT_FILE). Off by default so a local "
+            "server's bearer token never routes to a proxy; set it for a server reachable only "
+            "through the environment's proxy."
+        ),
+    )
 
     @model_validator(mode="after")
     def _one_transport(self) -> MCPServerEntry:
@@ -455,6 +464,10 @@ class MCPServerEntry(BaseModel):
             # Nothing is spawned, so there is no environment to pass. Refusing
             # loudly beats accepting a setting that can never take effect.
             raise ValueError("pass_env is for spawned servers; a `url` one uses token_env")
+        if self.httpx_trust_env and not self.url:
+            raise ValueError(
+                "httpx_trust_env is for `url` servers; a spawned one has no http client"
+            )
         if self.token_env and self.url.startswith("http://") and not _is_loopback(self.url):
             raise ValueError(
                 "a token over plain http would cross the network in cleartext;"

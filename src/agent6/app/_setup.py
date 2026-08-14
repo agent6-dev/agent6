@@ -277,7 +277,14 @@ def start_mcp_manager_if_enabled(
             pass_env=srv.pass_env,
             policy=mcp_server_policy(cfg, root, isolation, srv),
             http=(
-                HttpTransport(name=name, url=srv.url, token_env=srv.token_env) if srv.url else None
+                HttpTransport(
+                    name=name,
+                    url=srv.url,
+                    token_env=srv.token_env,
+                    httpx_trust_env=srv.httpx_trust_env,
+                )
+                if srv.url
+                else None
             ),
         )
         for name, srv in cfg.mcp.servers.items()

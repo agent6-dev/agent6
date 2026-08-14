@@ -446,6 +446,7 @@ unconfined process is still a way out — name the narrowest paths that work.
 | `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers THIS server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |
 | `servers.<name>.startup_timeout_s` | `10.0` | `initialize` + `tools/list` budget. |
 | `servers.<name>.call_timeout_s` | `60.0` | Per `tools/call` timeout. |
+| `servers.<name>.httpx_trust_env` | `false` | For a `url` server: forward httpx's `trust_env`, so the connection honors the ambient HTTP(S)_PROXY (and .netrc / SSL_CERT_FILE). Off by default so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
 
 ### `[mcp.servers.<name>.sandbox]`
 

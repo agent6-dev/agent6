@@ -117,6 +117,44 @@ def test_the_token_is_read_from_the_environment_never_the_config(
         httpd.shutdown()
 
 
+def test_httpx_trust_env_reaches_the_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The per-server httpx_trust_env flag reaches the httpx client verbatim:
+    off by default so a local server's bearer token never routes to an ambient
+    proxy, on when the operator opts a proxied server in."""
+    from agent6.tools import mcp_http
+
+    seen: list[Any] = []
+    real = mcp_http.httpx2.Client
+
+    def _spy(**kwargs: Any) -> Any:
+        seen.append(kwargs.get("trust_env"))
+        return real(**kwargs)
+
+    monkeypatch.setattr(mcp_http.httpx2, "Client", _spy)
+    url, _s, httpd = _serve(_mcp_reply)
+    try:
+        HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=5.0)
+        HttpTransport(name="s", url=url, httpx_trust_env=True).send(
+            {"jsonrpc": "2.0", "id": 2}, timeout_s=5.0
+        )
+    finally:
+        httpd.shutdown()
+    assert seen == [False, True]
+
+
+def test_httpx_trust_env_is_rejected_on_a_spawned_server() -> None:
+    """It only affects the http client dialling a `url` server; a spawned
+    (command) server has no client, so the setting is refused rather than
+    silently dead."""
+    Config.model_validate(
+        {"mcp": {"servers": {"r": {"url": "https://h/mcp", "httpx_trust_env": True}}}}
+    )
+    with pytest.raises(Exception, match="httpx_trust_env is for"):
+        Config.model_validate(
+            {"mcp": {"servers": {"s": {"command": ["srv"], "httpx_trust_env": True}}}}
+        )
+
+
 def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
     """The same bound the stdio reader applies: a runaway server must not be
     able to buffer an unbounded body into the agent."""
