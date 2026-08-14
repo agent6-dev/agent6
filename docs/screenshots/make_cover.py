@@ -13,7 +13,7 @@ a hairline border and rounded corners on the canvas.
 
 Inputs come from the docs media pipeline (docs/screenshots/out/): the TUI PNG
 from tour.tape, web-shot.png from web_demo.py's desktop tour, and a frame
-pulled out of cli-demo.webm. Output: out/cover.png (1600x900, RGBA). Runs in
+pulled out of temps-demo.webm. Output: out/cover.png (1600x900, RGBA). Runs in
 the pages workflow after the media steps; needs Pillow and ffmpeg.
 
   python3 docs/screenshots/make_cover.py [--out PATH]
@@ -116,7 +116,7 @@ def main() -> None:
 
     tui_png = OUT_DIR / "02-run-dashboard.png"
     web_png = OUT_DIR / "web-shot.png"
-    cli_webm = OUT_DIR / "cli-demo.webm"
+    cli_webm = OUT_DIR / "temps-demo.webm"
     for p in (tui_png, web_png, cli_webm):
         if not p.exists():
             sys.exit(f"make_cover.py: missing input {p} (run the media pipeline first)")

@@ -58,7 +58,7 @@ framing the product in an unrelated theme's.
 
 ## Demo videos (record/replay)
 
-The two demo videos (`cli-demo.webm`, `machine-demo.webm`) are **real agent6 runs**,
+The demo videos (`temps-demo.webm`, `rename-demo.webm`, `machine-demo.webm`) are **real agent6 runs**,
 not seeded fixtures: a real loop, real tools, real verify + commit. Determinism
 comes from `llm_proxy.py`, a tiny stdlib HTTP server agent6 talks to as a local
 model (no agent6 changes, no monkey-patching):
