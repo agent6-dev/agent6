@@ -307,6 +307,11 @@ class _LoopState:
     original_task: str
     tool_calls: int
     metric_history: list[MetricSample] = field(default_factory=list)
+    # Tier-2 re-fires only after the context grew 25% past the last restart's
+    # size: a restart that lands near the threshold (tiny explicit thresholds,
+    # or a huge kept tail) must not summarise every other iteration. Leg-local
+    # (not snapshotted): a resumed leg rebuilds a small context anyway.
+    tier2_floor_chars: int = 0
     # Consecutive before_finish critic rejections, so a stubborn worker can't
     # burn the budget bouncing off the critic.
     consecutive_critic_rejections: int = 0
@@ -3696,8 +3701,10 @@ class Workflow:
         total = context_chars(conversation)
         # Tier 2 needs at least an original-task turn plus enough history
         # to be worth summarising; below that a restart would lose more than
-        # it saves.
-        over = total > self.compact_summarise_at_chars
+        # it saves. The growth floor (see _LoopState.tier2_floor_chars) keeps
+        # a restart that lands near the threshold from summarising every
+        # other iteration; a forced (operator) compaction bypasses it.
+        over = total > self.compact_summarise_at_chars and total >= state.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
             return self._summarise_and_restart(conversation, state, focus=forced or "")
         if forced is not None:
@@ -3832,6 +3839,7 @@ class Workflow:
             context_restart_notice(self.mode, pins=state.pins) + summary,
             keep=turns[tail_start:],
         )
+        state.tier2_floor_chars = int(context_chars(conversation) * 1.25)
         self._emit(
             "loop.compact.summarise.done",
             summary_chars=len(summary),

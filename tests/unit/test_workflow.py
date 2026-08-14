@@ -6280,3 +6280,40 @@ def test_call_with_retry_retries_a_usage_less_stream() -> None:
     out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "recovered"
     assert provider.call.call_count == 2
+
+
+def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:
+    """A restart that lands ABOVE the threshold (tiny explicit thresholds, a
+    large summary) must not re-summarise every iteration: tier-2 re-fires only
+    after the context grew 25% past the last restart's size."""
+
+    class SummariserStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            return _resp("PROGRESS SUMMARY: " + "s" * 4_000)  # bigger than the threshold
+
+    summ = SummariserStub()
+    wf = _wf(
+        root=tmp_path,
+        summariser_provider=summ,
+        compact_drop_at_chars=2_000,
+        compact_summarise_at_chars=3_000,
+    )
+    state = _state()
+    messages = _big_text_history("TASK: t", blocks=4, block_chars=1_000)
+    assert _compact_via_wire(wf, messages, state=state) is True
+    assert summ.calls == 1
+    # The restarted context already exceeds the threshold (the 4k summary),
+    # but with zero growth the next pass must NOT re-summarise.
+    assert _compact_via_wire(wf, messages, state=state) is False
+    assert summ.calls == 1
+    # Real growth past the floor re-arms tier-2.
+    for _ in range(6):
+        messages.append({"role": "assistant", "content": [{"type": "text", "text": "y" * 1_000}]})
+        messages.append({"role": "user", "content": [{"type": "text", "text": "go on"}]})
+    assert _compact_via_wire(wf, messages, state=state) is True
+    assert summ.calls == 2
