@@ -107,7 +107,10 @@ def warn_sandbox_gaps(
             "[agent6] WARNING: 'hardened' cannot protect .git -- that is a "
             "read-only bind, which needs the mount namespace only 'strict' has. "
             "A jailed command can write .git here; the in-process edit tools "
-            "still refuse to. Use 'strict' for the real thing."
+            "still refuse to. The same missing mount namespace makes /tmp the "
+            "host's shared /tmp, not a private tmpfs, and HOME (/tmp/agent6-home) "
+            "a real host dir that persists and is shared across every run on this "
+            "host. Use 'strict' for a private /tmp and a protected .git."
         )
     if isolation == "hardened" and cfg.sandbox.network == "auto":
         reporter.err(

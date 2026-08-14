@@ -115,6 +115,21 @@ def test_hardened_allow_says_nothing_about_the_network(
     assert "cannot protect .git" in err
 
 
+def test_hardened_warning_names_shared_tmp_and_persistent_home(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """'strict' gives each run a private /tmp tmpfs with HOME
+    (/tmp/agent6-home) inside it, gone when the run ends. 'hardened' has no
+    mount namespace, so /tmp is the host's shared /tmp and that HOME is a real
+    host dir that persists and is shared across runs. The run-entry warning must
+    say so rather than imply strict's private tmpfs."""
+    warn_sandbox_gaps("hardened", _env(4), _cfg())
+    err = capsys.readouterr().err
+    assert "/tmp/agent6-home" in err
+    assert "shared /tmp" in err
+    assert "persists" in err
+
+
 def test_explicit_block_refuses_on_hardened() -> None:
     """network='session' is an ENFORCE setting: it needs a netns only strict
     provides, so on hardened we refuse (name what's unsupported + the fix)

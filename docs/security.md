@@ -35,8 +35,11 @@ Under that adversary, agent6 aims to hold:
       explicitly and visibly (`config show`).
 2. **No reads outside the workspace and a read-only system set.**
     - The system set (`/usr /bin /sbin /lib /lib64 /etc /dev /proc`) exists so
-      installed toolchains resolve; `/tmp` is a private writable tmpfs;
-      `sandbox.extra_read_paths` adds more.
+      installed toolchains resolve; `sandbox.extra_read_paths` adds more. `/tmp`
+      is writable at every level but a private tmpfs (gone with the run) only
+      under `strict`; `hardened` has no mount namespace, so there `/tmp` is the
+      host's shared `/tmp` and `HOME` (`/tmp/agent6-home`) is a real host dir
+      that persists and is shared across every run on the host.
 3. **The agent process's own egress is NOT bounded.** agent6 talks to the
    configured providers; nothing stops the PROCESS reaching elsewhere.
     - A network-only block on a process with unconfined filesystem access is a
