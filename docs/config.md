@@ -75,7 +75,7 @@ non-default host).
 | `extra_headers` | `{}` | Extra HTTP headers on every request. Not for secrets. |
 | `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered), e.g. OpenRouter routing options. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
-| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read). |
+| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (read/write; connect is bounded at 20s). |
 | `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |
 
 ### Deployments

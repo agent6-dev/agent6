@@ -154,13 +154,14 @@ class _ProviderBase(BaseModel):
         default_factory=dict,
         description="Extra URL query params (e.g. Azure's `api-version`).",
     )
-    # per-HTTP-call timeout (connect + read) in seconds. Default 600s streams a
-    # long response yet fails a stuck connection before it burns the budget
-    # window; lower it on benches that should fail fast.
+    # Per-HTTP-call read/write budget in seconds; the connect phase is bounded
+    # separately (providers._transport.CONNECT_TIMEOUT_S) so a blackholed
+    # connect fails in seconds, not this. Default 600s streams a long response;
+    # lower it on benches that should fail fast.
     http_timeout_s: float = Field(
         gt=0.0,
         default=600.0,
-        description="Per-HTTP-call timeout (connect + read).",
+        description="Per-HTTP-call timeout (read/write; connect is bounded at 20s).",
     )
 
     @model_validator(mode="before")

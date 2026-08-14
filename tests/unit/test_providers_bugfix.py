@@ -757,3 +757,50 @@ def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
         for p in (Path(tmp_path) / "transcripts").glob("*.json")
     )
     assert statuses == [200, 401]
+
+
+def test_connect_phase_is_bounded_below_the_read_budget() -> None:
+    """A blackholed connect must fail in seconds: the stream watchdog has no
+    response to close until the connect returns, so with a single-float
+    timeout the 600s read default sat on a dropped SYN for ten minutes
+    (caught live: verify inference wedged an ACP run)."""
+    from agent6.providers._transport import CONNECT_TIMEOUT_S, granular_timeout
+
+    t = granular_timeout(600.0)
+    assert t.connect == CONNECT_TIMEOUT_S
+    assert t.read == 600.0
+    assert t.write == 600.0
+    # A budget tighter than the connect bound wins: the operator asked for it.
+    assert granular_timeout(5.0).connect == 5.0
+
+
+def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    import contextlib
+
+    import httpx2
+
+    from agent6.providers import _stream, _transport
+
+    seen: list[object] = []
+
+    def fake_post(url: str, **kw: object) -> object:
+        seen.append(kw["timeout"])
+        raise httpx2.ConnectError("stop")
+
+    @contextlib.contextmanager
+    def fake_stream(method: str, url: str, **kw: object):
+        seen.append(kw["timeout"])
+        raise httpx2.ConnectError("stop")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(_transport.httpx2, "post", fake_post)
+    monkeypatch.setattr(_stream.httpx2, "stream", fake_stream)
+    with contextlib.suppress(httpx2.HTTPError):
+        _transport.http_post("https://x", headers={}, content=b"", timeout=600.0)
+    with (
+        contextlib.suppress(httpx2.HTTPError),
+        _stream.http_stream("POST", "https://x", headers={}, content=b"", timeout=600.0),
+    ):
+        pass  # pragma: no cover -- the stub raises before yielding
+    assert [type(t) for t in seen] == [httpx2.Timeout, httpx2.Timeout]
+    assert all(t.connect == _transport.CONNECT_TIMEOUT_S for t in seen)  # type: ignore[union-attr]

@@ -31,12 +31,23 @@ from agent6.providers.types import (
     parse_retry_after,
 )
 
+# TCP+TLS handshake bound. A healthy endpoint connects in well under this;
+# only a blackhole (dropped SYN, dead proxy) takes longer, and *timeout*'s
+# 600s default would sit on it for ten minutes -- the stream watchdog cannot
+# help there, it has no response to close until the connect returns.
+CONNECT_TIMEOUT_S = 20.0
+
+
+def granular_timeout(timeout: float) -> httpx2.Timeout:
+    """*timeout* for read/write/pool, ``CONNECT_TIMEOUT_S`` for connect."""
+    return httpx2.Timeout(timeout, connect=min(CONNECT_TIMEOUT_S, timeout))
+
 
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
     """POST seam: tests stub this name, never ``httpx2`` globally."""
-    return httpx2.post(url, headers=headers, content=content, timeout=timeout)
+    return httpx2.post(url, headers=headers, content=content, timeout=granular_timeout(timeout))
 
 
 def _has_assistant_output(data: dict[str, Any]) -> bool:
