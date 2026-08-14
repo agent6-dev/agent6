@@ -3,10 +3,10 @@
 """A slim, universal menu bar for the TUI: classic ``File / Edit / View / Help``
 titles with a mnemonic letter, each opening a dropdown of actions (with their
 shortcut keys shown). One widget, reused on every screen — each screen just
-passes its own :class:`Menu` list. Selecting an item posts
-:class:`MenuBar.Selected`, which the host turns into ``action_<id>`` — so the
-menu, the buttons, the key bindings, and the command palette all dispatch the
-same handlers and never drift.
+passes its own :class:`Menu` list. Selecting an item runs the host screen's
+``action_<id>`` (falling back to app actions), dispatched by the bar itself —
+so the menu, the buttons, the key bindings, and the command palette all reach
+the same handlers and never drift.
 
 Every action is therefore reachable by mouse (click a title, click an item), by
 keyboard (``Alt+<letter>`` opens a menu; arrows + Enter pick; Esc closes), and
@@ -15,6 +15,7 @@ by name in the command palette — nothing to memorize.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import accumulate, pairwise
@@ -385,11 +386,28 @@ class MenuBar(Horizontal):
     """
 
     class Selected(Message):
-        """An item was chosen; the host should run ``action_<action>``."""
+        """An item was chosen. The bar handles its own message
+        (:meth:`on_menu_bar_selected`); the message hop, rather than a direct
+        call from the dropdown's pick handler, lets the dropdown finish
+        closing before the action runs."""
 
         def __init__(self, action: str) -> None:
             self.action = action
             super().__init__()
+
+    async def on_menu_bar_selected(self, event: Selected) -> None:
+        # ONE dispatcher for every screen: the host screen's action_<id> first,
+        # then app-level built-ins (quit, command_palette); await coroutines.
+        # The menu, the key bindings, and the command palette all reach the
+        # same handlers, so the surfaces cannot diverge.
+        event.stop()
+        handler = getattr(self.screen, f"action_{event.action}", None) or getattr(
+            self.app, f"action_{event.action}", None
+        )
+        if handler is not None:
+            result = handler()
+            if inspect.isawaitable(result):
+                await result
 
     def __init__(self, menus: tuple[Menu, ...]) -> None:
         super().__init__()
@@ -492,6 +510,4 @@ class MenuBar(Horizontal):
             t.remove_class("-open")
 
     def _dispatch(self, action: str) -> None:
-        # Posted from the bar (in-tree) so it bubbles to the host screen's
-        # @on(MenuBar.Selected); the dropdown itself lives on the screen.
         self.post_message(self.Selected(action))

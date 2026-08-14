@@ -12,7 +12,6 @@ validation, and graph -- which is why ui depends on agent6.machine for this page
 
 from __future__ import annotations
 
-import inspect
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -678,17 +677,6 @@ class MachinesScreen(Screen[None]):
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
-
-    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        # Screen actions first, then app-level built-ins (quit, command_palette),
-        # which are coroutines -- await results. Mirrors the hub + config page.
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     def on_mount(self) -> None:
         table = self.query_one("#machines", DataTable)

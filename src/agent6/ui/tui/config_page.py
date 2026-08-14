@@ -13,7 +13,6 @@ command-palette entries — nothing to memorize, nothing to keep in sync by hand
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -191,7 +190,32 @@ def _provider_preset_base_url(key: str) -> str:
     return ""
 
 
-class EditModal(ModalScreen[tuple[str, str, bool] | None]):
+class _FormModal[ResultT](ModalScreen[ResultT]):
+    """Shared form-modal keys. One vertical ↑↓ chain: ChoiceField hands off at
+    its own edges; Inputs and action items release ↑↓ here so it flows through
+    them too. ←/→ stay text-editing keys inside an Input and move between the
+    flat action items; an activated ActionItem dispatches to ``action_<id>``."""
+
+    def on_key(self, event: events.Key) -> None:
+        focused = self.focused
+        if event.key in ("left", "right") and isinstance(focused, ActionItem):
+            actions = list(self.query(ActionItem))
+            step = 1 if event.key == "right" else -1
+            actions[(actions.index(focused) + step) % len(actions)].focus()
+            event.stop()
+        elif event.key == "up" and isinstance(focused, (Input, ActionItem)):
+            focus_neighbor(focused, -1)
+            event.stop()
+        elif event.key == "down" and isinstance(focused, Input):
+            focus_neighbor(focused, 1)
+            event.stop()
+
+    @on(ActionItem.Activated)
+    def _action_activated(self, event: ActionItem.Activated) -> None:
+        getattr(self, f"action_{event.action}")()
+
+
+class EditModal(_FormModal[tuple[str, str, bool] | None]):
     """Edit one setting with a natural terminal chooser: a [x]/[ ] list (↑↓ select
     as they move) for enum choices and bools -- with an inline "custom" row for
     values the choices don't cover -- a text box otherwise. The action row (Save
@@ -311,27 +335,6 @@ class EditModal(ModalScreen[tuple[str, str, bool] | None]):
                 classes="edit-label",
             )
 
-    def on_key(self, event: events.Key) -> None:
-        # One vertical ↑↓ chain: ChoiceField hands off at its own edges; here we
-        # release Inputs and action items so ↑↓ flow through them too. ←/→ stay
-        # for text editing in an Input and move between the flat action items.
-        focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, ActionItem):
-            actions = list(self.query(ActionItem))
-            step = 1 if event.key == "right" else -1
-            actions[(actions.index(focused) + step) % len(actions)].focus()
-            event.stop()
-        elif event.key == "up" and isinstance(focused, (Input, ActionItem)):
-            focus_neighbor(focused, -1)
-            event.stop()
-        elif event.key == "down" and isinstance(focused, Input):
-            focus_neighbor(focused, 1)
-            event.stop()
-
-    @on(ActionItem.Activated)
-    def _action_activated(self, event: ActionItem.Activated) -> None:
-        getattr(self, f"action_{event.action}")()
-
     def _new_value(self) -> str:
         w = self.query_one("#edit-value")
         if isinstance(w, (ChoiceField, TypeaheadField)):
@@ -364,7 +367,7 @@ class EditModal(ModalScreen[tuple[str, str, bool] | None]):
             self.action_cancel()
 
 
-class ProviderModal(ModalScreen[None]):
+class ProviderModal(_FormModal[None]):
     """Add a ``[providers.<name>]`` entry via a form instead of hand-editing a
     TOML dict: dropdowns for the fixed-choice fields (api_format, deployment,
     from the schema) and inputs for the free ones (name, base_url, api_key_env).
@@ -395,26 +398,6 @@ class ProviderModal(ModalScreen[None]):
 
     def on_mount(self) -> None:
         self.query_one("#prov-name", Input).focus()
-
-    def on_key(self, event: events.Key) -> None:
-        # Same vertical ↑↓ chain as EditModal (see its on_key); ChoiceField hands
-        # off at its edges, Inputs/action items release ↑↓ here.
-        focused = self.focused
-        if event.key in ("left", "right") and isinstance(focused, ActionItem):
-            actions = list(self.query(ActionItem))
-            step = 1 if event.key == "right" else -1
-            actions[(actions.index(focused) + step) % len(actions)].focus()
-            event.stop()
-        elif event.key == "up" and isinstance(focused, (Input, ActionItem)):
-            focus_neighbor(focused, -1)
-            event.stop()
-        elif event.key == "down" and isinstance(focused, Input):
-            focus_neighbor(focused, 1)
-            event.stop()
-
-    @on(ActionItem.Activated)
-    def _action_activated(self, event: ActionItem.Activated) -> None:
-        getattr(self, f"action_{event.action}")()
 
     def compose(self) -> ComposeResult:
         choices = provider_choices()
@@ -877,19 +860,6 @@ class ConfigScreen(Screen[None]):
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
-
-    @on(MenuBar.Selected)
-    async def _on_menu(self, event: MenuBar.Selected) -> None:
-        # A menu item, its key binding, and the command palette all route to the
-        # same action_<id> handler -- one place, so the surfaces never diverge.
-        # Fall back to app-level actions (command_palette); await coroutines.
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     def action_search(self) -> None:
         self.query_one("#search", Input).focus()  # the inline filter box

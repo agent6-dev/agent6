@@ -11,7 +11,6 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
-import inspect
 import os
 import re
 import time
@@ -399,17 +398,6 @@ class HomeScreen(Screen[None]):
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
-
-    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        # Screen actions first, then app-level built-ins (quit, command_palette).
-        # action_quit (and other app actions) are coroutines, so await results.
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     def on_mount(self) -> None:
         table = self.query_one("#sessions", DataTable)

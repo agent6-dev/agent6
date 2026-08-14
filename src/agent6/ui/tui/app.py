@@ -23,7 +23,6 @@ mirror this contract.
 from __future__ import annotations
 
 import contextlib
-import inspect
 import os
 import subprocess
 import threading
@@ -521,17 +520,6 @@ class DashboardScreen(Screen[None]):
 
     def action_choose_copy_method(self) -> None:
         open_copy_method_picker(self.app)
-
-    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        # Screen actions first, then app-level built-ins (command_palette), which
-        # are coroutines -- await results. Mirrors the hub / config / machines.
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     # --- rendering ---------------------------------------------------
 

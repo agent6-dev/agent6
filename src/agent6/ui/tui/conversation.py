@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import bisect
 import contextlib
-import inspect
 import os
 import subprocess
 from collections.abc import Callable, Iterator
@@ -231,7 +230,7 @@ _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls inter
 
 # The run-control menu, shared verbatim by the two run views (this primary
 # conversation and the dashboard) so they cannot drift. Every action resolves on
-# the Agent6TUI app (each screen's on_menu_bar_selected falls back to the app).
+# the Agent6TUI app (the menu bar's dispatcher falls back to app actions).
 RUN_MENU = Menu(
     "Run",
     (
@@ -548,17 +547,6 @@ class ConversationScreen(Screen[None]):
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
-
-    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        # Screen actions first, then app-level built-ins (command_palette), which are
-        # coroutines -- await results. Mirrors the hub / config / machines screens.
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     def action_help(self) -> None:
         self.app.push_screen(

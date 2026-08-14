@@ -25,7 +25,6 @@ the conversation view, and Esc/q back.
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
@@ -110,15 +109,6 @@ class LogScreen(Screen[None]):
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
-
-    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        handler = getattr(self, f"action_{event.action}", None) or getattr(
-            self.app, f"action_{event.action}", None
-        )
-        if handler is not None:
-            result = handler()
-            if inspect.isawaitable(result):
-                await result
 
     def action_help(self) -> None:
         self.app.push_screen(HelpScreen(self.MENUS, self, title="agent6 — log"))
