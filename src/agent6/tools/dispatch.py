@@ -535,9 +535,9 @@ class ToolDispatcher:
                 # MCP tools are arbitrary external capabilities agent6 cannot
                 # classify as read-only, so every non-run mode refuses them --
                 # the same dispatcher backstop the built-in mutating tools get,
-                # covering the documented read-only guarantee of plan/ask and
+                # covering the withheld edit/DAG tools of plan/ask and
                 # the machine-authoring "do not edit or run anything" contract.
-                raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
+                raise ToolError(f"{name} is not available in {self._mode} mode (run mode only)")
             if self._mcp_manager is None:
                 raise ToolError(f"{name}: MCP is not configured")
             self._approve_mcp_call(name, raw_input)

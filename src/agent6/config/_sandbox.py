@@ -72,7 +72,7 @@ class SandboxConfig(BaseModel):
             "May the LLM run commands (`run_command`, `run_verify_command`, `stop_background`: "
             "one decision for all three): `yes` auto-approves, `no` withholds the tools (and the "
             "verify gate with them), `ask` prompts per call with session-wide allow/deny "
-            "answers. `agent6 ask` clamps `yes` to `ask`. Per-invocation: `--auto-approve` "
+            "answers. `agent6 ask`/`plan` clamp `yes` to `ask`. Per-invocation: `--auto-approve` "
             "(never over a configured `no`), `--no-commands`. A run that cannot ask anyone "
             "refuses to start."
         ),

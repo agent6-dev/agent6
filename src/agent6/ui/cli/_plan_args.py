@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Parser builders for `plan` and `ask`: alternate single-loop modes (planning-
-only, read-only Q&A) alongside the main `run`, each with its own default-verb
+only, Q&A) alongside the main `run`, each with its own default-verb
 subcommand tree (see `_inject_default_verb`)."""
 
 from __future__ import annotations

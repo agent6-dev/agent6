@@ -173,9 +173,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """
     role = session_kind(mode).role
 
-    # Before anything reads a knob (see session_config): an ask never runs a
-    # command unwatched, whether it is starting here or resuming -- unless the
-    # operator granted this invocation, which lands after the clamp.
+    # Before anything reads a knob (see session_config): an interactive session
+    # (ask / plan) never runs a command unwatched, whether it is starting here
+    # or resuming -- unless the operator granted this invocation, which lands
+    # after the clamp.
     cfg = session_config(cfg, mode, sandbox_overrides)
     # Refuse an unanswerable run BEFORE anything is created: refusing after
     # the session dir and its manifest exist would leave a never-started run

@@ -46,7 +46,7 @@ class SessionLayout:
     state_dir: Path
     session_id: str
     # Top-level bucket under state_dir. "runs" for `agent6 run`/`plan`; "asks"
-    # for `agent6 ask` so read-only Q&A sessions stay separate from real runs.
+    # for `agent6 ask` so Q&A sessions stay separate from real runs.
     subdir: str = "runs"
 
     @property

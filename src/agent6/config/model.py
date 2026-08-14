@@ -129,7 +129,7 @@ class ModelsConfig(BaseModel):
     - `worker` drives the single-loop agent (`agent6 run` / ``agent6
       resume``); its pricing also drives the USD -> token budget
       conversion.
-    - `planner` drives `agent6 plan` (the read-only planning pass).
+    - `planner` drives `agent6 plan` (the planning pass).
       Unset -> falls back to `worker` (set it to a frontier model + high
       thinking for careful up-front planning).
     - `reviewer` drives the one-shot `agent6 review` subcommand and the
@@ -156,7 +156,7 @@ class ModelsConfig(BaseModel):
     )
     planner: RoleModel | None = Field(
         default=None,
-        description="Drives `agent6 plan` (read-only planning). Unset falls back to `worker`.",
+        description="Drives `agent6 plan` (the planning pass). Unset falls back to `worker`.",
     )
 
     def configured(self) -> dict[str, RoleModel]:
@@ -390,15 +390,16 @@ class Config(BaseModel):
         data.setdefault("workflow", {})["verify_command"] = list(argv)
         return Config.model_validate(data)
 
-    def clamped_for_ask(self) -> Config:
-        """Return a copy with `sandbox.run_commands` clamped for `agent6 ask`.
+    def with_run_commands_clamped(self) -> Config:
+        """Return a copy with `sandbox.run_commands` clamped for an interactive
+        mode (`agent6 ask` / `agent6 plan`).
 
-        An ask is a question with the operator sitting there, often in a
-        directory that is not even a repo, so it must never execute anything
-        unwatched: `"yes"` becomes `"ask"`. Only ever tightens -- `"no"`
-        stays refused, because a run can never loosen a boundary the operator
-        set. IN-MEMORY only, like `with_verify_command`: `config show` keeps
-        reporting what the operator actually configured.
+        Ask and plan run with the operator sitting there, often in a directory
+        that is not even a repo, so they must never execute anything unwatched:
+        `"yes"` becomes `"ask"`. Only ever tightens -- `"no"` stays refused,
+        because a run can never loosen a boundary the operator set. IN-MEMORY
+        only, like `with_verify_command`: `config show` keeps reporting what the
+        operator actually configured.
         """
         if self.sandbox.run_commands != "yes":
             return self

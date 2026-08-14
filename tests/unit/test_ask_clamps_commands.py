@@ -21,21 +21,21 @@ def test_auto_approval_becomes_a_prompt_in_ask() -> None:
     """An ask is a question with the operator sitting there, often in a
     directory that is not a repo. `run_commands = "yes"` there means the answer
     to "give me a command to convert these files" could run it first."""
-    assert _cfg("yes").clamped_for_ask().sandbox.run_commands == "ask"
+    assert _cfg("yes").with_run_commands_clamped().sandbox.run_commands == "ask"
 
 
 @pytest.mark.parametrize("setting", ["ask", "no"])
 def test_the_clamp_only_ever_tightens(setting: str) -> None:
     """`no` must stay refused: a run may narrow a boundary the operator set,
     never widen one. `ask` is already the clamped value."""
-    assert _cfg(setting).clamped_for_ask().sandbox.run_commands == setting
+    assert _cfg(setting).with_run_commands_clamped().sandbox.run_commands == setting
 
 
 def test_the_clamp_leaves_the_rest_of_the_config_alone() -> None:
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "yes", "protect_git": True}, "preset": "quick"}
     )
-    clamped = cfg.clamped_for_ask()
+    clamped = cfg.with_run_commands_clamped()
     assert clamped.sandbox.protect_git is True
     assert clamped.preset == "quick"
     assert cfg.sandbox.run_commands == "yes"  # the operator's config is untouched

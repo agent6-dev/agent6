@@ -270,17 +270,18 @@ def session_facts_provider(
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
     """The effective config for a session of *mode*.
 
-    Both lifecycles call this before anything reads a knob, so a fresh ask and
-    a resumed one are governed identically. Today it is the ask clamp; anything
-    else mode-dependent belongs here rather than at one call site.
+    Both lifecycles call this before anything reads a knob, so a fresh session
+    and a resumed one are governed identically. Today it is the interactive-mode
+    clamp (ask, plan); anything else mode-dependent belongs here rather than at
+    one call site.
 
     *overrides* are the operator's per-invocation flags, and they land LAST:
-    the most specific layer, and the one the LLM cannot reach. The ask clamp
-    exists to catch a STANDING `run_commands = "yes"` that nobody is watching,
-    not an explicit `--auto-approve` on this invocation -- clamping that made
-    the flag inert and every headless `ask --auto-approve` refused. Tightening
-    still wins outright: `--no-commands` pins "no", and `--auto-approve`
-    never resurrects a withheld one.
+    the most specific layer, and the one the LLM cannot reach. The clamp exists
+    to catch a STANDING `run_commands = "yes"` that nobody is watching, not an
+    explicit `--auto-approve` on this invocation -- clamping that made the flag
+    inert and every headless `ask --auto-approve` refused. Tightening still wins
+    outright: `--no-commands` pins "no", and `--auto-approve` never resurrects a
+    withheld one.
     """
-    clamped = cfg.clamped_for_ask() if session_kind(mode).clamps_commands else cfg
+    clamped = cfg.with_run_commands_clamped() if session_kind(mode).clamps_commands else cfg
     return clamped if overrides is None else overrides.apply(clamped)

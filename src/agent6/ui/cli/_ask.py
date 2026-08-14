@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 ask` read-only Q&A flow: listing past asks, building a run
+"""The `agent6 ask` Q&A flow: listing past asks, building a run
 digest for context, the interactive ask REPL, and saving ask transcripts.
 """
 

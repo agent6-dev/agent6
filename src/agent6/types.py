@@ -68,16 +68,18 @@ SESSION_KINDS: dict[str, SessionKind] = {
             clamps_commands=False,
             resumable=True,
         ),
+        # Operator-present like ask, so it clamps run_commands yes->ask.
         SessionKind(
             name="plan",
             role="planner",
             edits=False,
             runs_commands=True,
-            clamps_commands=False,
+            clamps_commands=True,
             resumable=True,
         ),
-        # Read-only Q&A, kept out of the run history: `agent6 ask` investigates
-        # with approval-gated commands and answers, it does not change things.
+        # `agent6 ask`, kept out of the run history: investigates and answers
+        # with no edit/DAG tools. run_command runs jailed and may write the
+        # workspace, so its writes are approval-gated (clamps_commands).
         SessionKind(
             name="ask",
             role="worker",
