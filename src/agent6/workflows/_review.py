@@ -273,8 +273,8 @@ def _run_seats_concurrently(
 
     Deliberately not a ThreadPoolExecutor: its workers are non-daemon and
     joined at interpreter exit, and an in-flight seat call is a non-streaming
-    provider POST with no abort hook -- Ctrl-C on `agent6 review` therefore
-    hung until every in-flight AND queued seat finished instead of exiting.
+    provider POST with no abort hook -- Ctrl-C on `agent6 review` would hang
+    until every in-flight AND queued seat finished.
     Daemon threads die with the process, and the timeout-polling wait lets
     KeyboardInterrupt land promptly on the main thread."""
     slots: list[ReviewVerdict | None] = [None] * len(seats)

@@ -49,9 +49,9 @@ __DAG_RULES_BLOCK__
 # surface-current-task + finish-gate machinery walks it one focused task at a
 # time. Aimed at small/open models that lose track of multi-part tasks; a capable
 # model needs neither, which is why this is opt-in (measured per model).
-# Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
-# resolved isolation is hardened: under strict (or none) the constraint does
-# not exist and stating it would misdirect the model.
+# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel ONLY under strict
+# isolation with protect_git on: elsewhere the constraint does not exist and
+# stating it would misdirect the model.
 GIT_PROTECT_RULE = """- If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those
@@ -60,6 +60,9 @@ GIT_PROTECT_RULE = """- If an edit fails verify and you need to revert it, do NO
     `apply_edit` to restore the file, or manually undo the bad hunk.
 """
 
+# Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
+# resolved isolation is hardened: under strict (or none) the constraint does
+# not exist and stating it would misdirect the model.
 HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry

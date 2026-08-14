@@ -40,8 +40,8 @@ def system_prompt_for(
 
     The memory index and installed skills are loaded on
     the loop's own rules (none of the first two in machine/agent modes, skills
-    in run mode only): omitting them printed "(none recorded yet)" for an
-    operator checking what future runs would actually receive. *state_dir* is
+    in run mode only): omitting them would print "(none recorded yet)" for
+    an operator checking what future runs actually receive. *state_dir* is
     the per-repo state dir those live under, injected by the caller exactly as
     the loop's is."""
     dispatcher = (

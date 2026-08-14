@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Minimal ctypes wrapper for the Linux Landlock LSM.
+"""Minimal ctypes wrapper for the Linux Landlock LSM: the ABI probe.
 
-Applied to the agent process at startup. Once applied, the restrictions are
-irrevocable, even root cannot remove them. This is intentional: a compromised
-Python interpreter can't undo it.
+`landlock_abi()` feeds isolation resolution (sandbox.detect). Landlock rules
+themselves are applied per-command by the jail launcher (jail/src/main.rs),
+never to the agent process (see app/confine.py).
 
 References:
 - Documentation/userspace-api/landlock.rst in the Linux kernel tree

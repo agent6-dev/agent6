@@ -113,7 +113,7 @@ def compare(
         except BudgetExceeded as exc:
             # The judge's tracker seeds max_usd from the run's own USD limit,
             # and every provider raises BudgetExceeded from its up-front
-            # budget.check(). Escaping here crashed the whole --parallel
+            # budget.check(). Escaping here would crash the whole --parallel
             # compare step AFTER the expensive fan-out (no winner stamp, no
             # ranked report) instead of the documented degrade: treat it like
             # any judge failure so the second miss raises JudgeError and

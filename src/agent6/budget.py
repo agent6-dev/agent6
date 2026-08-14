@@ -20,7 +20,7 @@ against ``max_tokens_fallback``. Both caps: -1 unlimited, 0 refuse that
 ledger, > 0 the cap (see `[budget]` in config).
 
 This module is import-light (stdlib + agent6.models.pricing, which is itself
-stdlib + cache-file reads); the AnthropicProvider wires it in via
+stdlib + cache-file reads); both providers wire it in via
 constructor.
 """
 
@@ -163,8 +163,8 @@ class BudgetTracker:
     triggers ``BudgetExceeded`` on the *next* ``check()``, so a single call may
     cross the line but no further call is issued.
 
-    Both caps are REQUIRED: ``[budget]`` is where their defaults live, and a
-    tracker carrying its own copy meant an unconfigured one silently metered
+    Both caps are REQUIRED constructor arguments: ``[budget]`` is where the
+    defaults live, and a tracker carrying its own copy could silently meter
     against a different number than the operator set.
     """
 
@@ -321,9 +321,9 @@ class BudgetTracker:
         pricing table, or a priced model with unpriced calls. Either way the
         figure is a lower bound.
 
-        Shared between the end-of-run text summary, the live TUI cost
-        meter, and the in-record USD ceiling so they all quote the same
-        number from the same arithmetic.
+        The live TUI cost meter and the in-record USD ceiling read this;
+        the end-of-run summary iterates ``_model_cost_usd`` itself, the same
+        arithmetic per model.
         """
         with self._lock:
             return self._estimate_usd_locked()

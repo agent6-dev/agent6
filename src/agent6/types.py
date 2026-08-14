@@ -3,8 +3,9 @@
 """Internal value types, frozen dataclasses, constructed by us only.
 
 Compare with the pydantic models at the trust boundaries: `agent6.config.model`
-(config), `agent6.providers.types` (LLM I/O), `agent6.tools.schema` (tool
-inputs), `agent6.machine.model` (machine files).
+(config), `agent6.tools.schema` (tool inputs), `agent6.machine.model` (machine
+files). `agent6.providers.types` is the provider-neutral wire vocabulary,
+plain dataclasses like these.
 """
 
 from __future__ import annotations

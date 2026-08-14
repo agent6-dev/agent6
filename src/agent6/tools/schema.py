@@ -171,8 +171,8 @@ class RunCommandInput(_ToolInput):
 class FetchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "fetch"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Fetch an http(s) URL (GET). Returns status, headers, and body text"
-        " (truncated at a cap). Requires network reach from this run."
+        "Fetch an http(s) URL (GET). Returns status, content type, and body"
+        " text (truncated at a cap). Requires network reach from this run."
     )
 
     url: str = Field(min_length=1)
@@ -181,8 +181,8 @@ class FetchInput(_ToolInput):
 class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read another session's transcript summary by id (or the latest when"
-        " omitted). Use to continue or review earlier work; read-only."
+        "Read another session's transcript summary by id; with no id, list"
+        " the sessions. Use to continue or review earlier work; read-only."
     )
 
     id: str = ""
@@ -193,9 +193,10 @@ class ReadSessionInput(_ToolInput):
 class ReadBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read a background command's output. `background_id` from run_command;"
-        " `offset` skips bytes already seen. Returns output, running state,"
-        " and returncode when finished."
+        "Read a background command's output. `id` from run_command's"
+        " hand-back; `tail_lines` bounds the tail; `wait_s` waits for exit up"
+        " to that many seconds (0 = look now). Returns the output tail,"
+        " running state, and returncode when finished."
     )
 
     id: str = ""
@@ -330,8 +331,8 @@ class DagUpdateTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Update a task: status (in_progress moves focus; passed only after"
-        " verify confirms), title, acceptance, or depends_on (task ULIDs that"
-        " must pass first). Fields omitted stay unchanged."
+        " verify confirms), note, or depends_on (task ULIDs that must pass"
+        " first). Fields omitted stay unchanged."
     )
 
     id: str = Field(min_length=26, max_length=26)
@@ -343,7 +344,7 @@ class DagUpdateTaskInput(_ToolInput):
 class DagListTasksInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_tasks"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "List the task graph: ids, titles, statuses, dependencies, and the current focus."
+        "List the task graph: ids, titles, statuses, and dependencies."
     )
 
     # The same status enum update_task uses, so a typo is a schema rejection
@@ -366,7 +367,7 @@ class OutlineInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Structural outline of a source file: top-level and nested defs,"
-        " classes, and their line ranges. Cheaper than reading the file when"
+        " classes, and their line numbers. Cheaper than reading the file when"
         " you need shape, not content."
     )
 
@@ -377,8 +378,8 @@ class FindDefinitionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_definition"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Find where a symbol is defined (tree-sitter; excludes strings and"
-        " comments). Returns file:line with a snippet. Cheaper than grep for"
-        " symbols."
+        " comments). Returns name, kind, and file:line rows. Cheaper than"
+        " grep for symbols."
     )
 
     symbol: str = Field(min_length=1)
@@ -388,7 +389,7 @@ class FindReferencesInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "find_references"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List references to a symbol across the repo (tree-sitter; excludes"
-        " strings and comments). Returns file:line rows with a snippet."
+        " strings and comments). Returns file:line rows."
     )
 
     symbol: str = Field(min_length=1)
@@ -466,7 +467,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 # execution-mode terminal tool (`finish_session`) and the metric tool
 # (planning never iterates a metric); adds `finish_planning` instead.
 # Plan-mode also filters `apply_edit` / `apply_patch` out of `ALL_TOOLS`
-# at the workflow layer so a planner cannot accidentally mutate source.
+# (mode_tools below) so a planner cannot accidentally mutate source.
 PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddTaskInput,
     DagUpdateTaskInput,
@@ -475,7 +476,7 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 )
 
 # Tool list for ask mode (`agent6 ask`). Edit-free Q&A: like plan it filters
-# `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, and it
+# `apply_edit`/`apply_patch` out of `ALL_TOOLS` (mode_tools below), and it
 # exposes NO control tools (no DAG, no finish_planning, no finish_session -- the
 # agent answers by emitting its final message as prose, a "silent finish"). It
 # DOES add `agent6_docs` so it can answer "how do I use agent6" questions.

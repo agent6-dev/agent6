@@ -4,8 +4,8 @@
 
 Pure helpers over the curator's nodes dict. The loop keeps a small/weak
 worker on ONE task at a time: each turn it computes the current task -- the
-curator cursor when it still points at an open subtask (the worker's explicit
-choice wins), else the first dependency-satisfied open subtask in creation
+curator cursor while it still points at a focusable subtask (the worker's
+explicit choice wins), else the first dependency-satisfied open subtask in creation
 order -- advances the cursor to it, and injects a focus banner when the focus
 first appears, changes, or was wiped by a tier-2 restart. The banner survives
 tier-1 elision, so the worker keeps seeing it between those events without

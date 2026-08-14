@@ -7,7 +7,8 @@ A background command outlives the tool call that started it but never the run:
 
 Every state a caller can see is derived from the live process and the files on
 disk, never from a cached guess, so a command that dies on its own reads as
-dead the next time anyone looks. Nothing here blocks: there is no wait.
+dead the next time anyone looks. Nothing blocks unasked: `read` waits only
+when the caller passes `wait_s`, and nothing else waits at all.
 """
 
 from __future__ import annotations

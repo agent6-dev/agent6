@@ -480,8 +480,3 @@ def reachable_states(spec: MachineSpec) -> frozenset[str]:
             seen.add(current)
             stack.extend(adjacency[current])
     return frozenset(seen)
-
-
-# --------------------------------------------------------------------------
-# Loading
-# --------------------------------------------------------------------------

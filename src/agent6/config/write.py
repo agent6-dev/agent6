@@ -401,7 +401,7 @@ def provider_choices() -> dict[str, list[str]]:
 # OpenAI-compatible hosts, the default base_url. Both `agent6 connect` and the
 # TUI add-provider form consult this so well-known names (openrouter, ollama)
 # land on the right host instead of the bare (api_format, deployment) fallback
-# in `config._default_base_url` -- which only knows api.openai.com for the
+# in `config._providers._default_base_url` -- which only knows api.openai.com for the
 # `openai` format and would otherwise point an "openrouter" provider at OpenAI.
 # Advanced deployments (vertex/azure/token_command) are hand-edited per CONFIG.md.
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {

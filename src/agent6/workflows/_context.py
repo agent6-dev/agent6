@@ -75,9 +75,9 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
 
     Takes the already-resolved tracked-file list (shared with ``file_count`` so
     git ls-files runs once). Returns an empty string for an empty list. Output is
-    hard-capped at ``_REPO_MAP_MAX_LINES`` rows so it never dominates the system
-    prompt; directories beyond the cap are summarised as a single
-    ``... (K more directories)`` line.
+    capped at ``_REPO_MAP_MAX_LINES`` rows (plus one ``... (K more
+    directories)`` summary line past the cap) so it never dominates the
+    system prompt.
     """
     if not tracked:
         return ""

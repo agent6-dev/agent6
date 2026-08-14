@@ -4,9 +4,8 @@
 
 Two pure renderers over the same validated graph: `mermaid`
 (`stateDiagram-v2`, the default) and Graphviz `dot`. Both consume the
-edges and reachability already computed by `agent6.machine.model`, so a
-diagram is just a render of a machine that has already passed
-`machine check`.
+edges already computed by `agent6.machine.model`, so a diagram is just a
+render of a machine that has already passed `machine check`.
 """
 
 from __future__ import annotations

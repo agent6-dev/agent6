@@ -171,13 +171,17 @@ class NotifyConfig(BaseModel):
 
     When ``on_complete`` is set, agent6 runs the argv tuple after the
     workflow returns (``agent6 run`` or ``agent6 resume``). The argv is
-    operator-controlled, it never includes LLM output, and runs in the
-    user's shell environment, NOT in the jail, with these env vars:
+    operator-controlled, it never includes LLM output, and runs OUTSIDE the
+    jail under a curated env (PATH/HOME/locale + desktop vars, never provider
+    keys; see `child_env.curated_env`) with these vars added:
 
     - ``AGENT6_SESSION_ID``      , session id under the per-repo state dir
     - ``AGENT6_SESSION_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
     - ``AGENT6_SESSION_REASON``  , workflow termination reason (e.g. ``finish_session``,
                                  ``budget_exhausted``, ``provider_error``)
+    - ``AGENT6_SESSION_VERIFIED``, ``passed`` / ``failed`` / ``unverified`` (the
+                                 verify gate's verdict; a hook wanting "green"
+                                 reads this, not ``OK``)
     - ``AGENT6_SESSION_DIR``     , absolute path to the session dir
 
     Use cases: desktop notification (``notify-send``), shell-bell, ssh

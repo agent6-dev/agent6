@@ -50,9 +50,9 @@ def coerce_metric_score(value: Any) -> float | None:
 # ``< 1487`` in ``assert cycles() < 1487``. Underscores in the literal
 # (Python int separators) are tolerated and stripped.
 # (?<![-=<>!]) rejects the '>' inside '->' / '=>' arrows (and the tail of
-# '>>' / '!>'): grader progress logs like 'epoch 2 -> 27.0' were captured as
-# thresholds, fabricating an unmeetable 'drive the metric above <current>'
-# directive from the grader's own echo of the score.
+# '>>' / '!>'): a grader progress log like 'epoch 2 -> 27.0' would otherwise
+# be captured as a threshold, fabricating an unmeetable 'drive the metric
+# above <current>' directive from the grader's own echo of the score.
 METRIC_TARGET_RE = re.compile(r"(?<![-=<>!])(<=|>=|<|>)\s*([0-9][0-9_]*(?:\.[0-9]+)?)")
 
 
@@ -93,8 +93,8 @@ def next_metric_target(
 ) -> float | None:
     """The nearest threshold the current score has not yet met. A target is
     met only when the score is STRICTLY beyond it in the improving direction:
-    the thresholds come from strict comparisons (``assert x < N``), which
-    still fail at ``x == N``, so equality is unmet. Returns the largest
+    equality stays unmet, matching a strict ``assert x < N`` (and holding the
+    conservative reading for a ``<=`` bound). Returns the largest
     not-yet-undercut ``<`` bound (minimize) or the smallest not-yet-exceeded
     ``>`` bound (maximize); None when all are met or there is nothing to aim
     at."""

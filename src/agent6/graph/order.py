@@ -12,9 +12,9 @@ def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
 
     The children list is the order the frontier executes, so this is the order
     every surface shows -- the renderers, and the `list_tasks` the model reads
-    its own plan back from. Iterating the node map instead gave insertion order
-    live and filesystem order after a resume, so a task placed second showed up
-    last.
+    its own plan back from. Iterating the node map instead would give insertion
+    order live and filesystem order after a resume (a task placed second
+    showing up last).
 
     A child named by a parent but absent from *nodes* is skipped, and a node no
     walk reached (a cycle, a dangling parent_id) is appended in id order, so

@@ -3,7 +3,7 @@
 """Authoritative in-process graph mutator.
 
 `GraphCurator` is the single source of truth for one run's task graph. It runs
-in-process in the agent (`app/run.py`/`app/resume.py` construct it directly),
+in-process in the agent (`app/_session.py` constructs it for run and resume),
 inheriting that process's confinement and writing the run's graph under the
 out-of-tree per-repo state dir. Unit tests instantiate it the same way.
 
@@ -22,8 +22,9 @@ construction, so a second live instance would still lose updates. One curator
 per run is the invariant; the lock only bounds the damage if it is broken. The
 CLI upholds the invariant with a run-level single-writer flock
 (``sessions.lock.acquire_single_writer`` on ``<session-dir>/worker.lock``, the analogue
-of ``machine_lock``): a second ``agent6 run``/``resume``/``fork`` on the same
-run dir refuses rather than constructing a second curator.
+of ``machine_lock``): a second ``agent6 run``/``resume`` on the same run dir
+refuses rather than constructing a second curator (`fork` copies under the
+graph flock and never constructs one).
 
 Fail-safe: a mutation updates ``self._nodes`` in memory BEFORE writing to disk,
 so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
@@ -74,7 +75,8 @@ class CuratorError(Exception):
 class _JournalBase(BaseModel):
     """Base of the typed graph.jsonl entries: what each mutation appends to the
     append-only audit log. The node `.md` files are the source of truth; the
-    only field read back is ``graph_version`` (``_compute_graph_version``),
+    fields read back are ``graph_version`` (``_compute_graph_version``) and,
+    by ``graph.replay`` for `fork --at-turn`, each entry's mutation fields,
     stamped by ``_post_mutation`` after the bump (0 only pre-stamp). The
     ``ts`` timestamp is added by ``storage.write_journal``, which also sorts
     keys, so field order here is presentational only.

@@ -48,9 +48,9 @@ def segment_lanes(seg: Segment, pins: Sequence[str] = (), *, limit: int) -> list
     promises an instruction "stays binding for the rest of the run", and a
     lane is work done for that run whose branch is merged back into the
     coordinator's -- so a lane that never saw the pin could violate a
-    standing instruction and have it land anyway. Folding the pins into the
-    task text made them the lane's manifest user_task (every listing and the
-    judge's brief led with the pin header); the spawner's --pin channel seeds
+    standing instruction and have it land anyway. Folded into the task text
+    they would become the lane's manifest user_task (every listing and the
+    judge's brief leading with the pin header); the spawner's --pin channel seeds
     the lane's own pin state instead, which renders the same block a restart
     re-shows.
     """

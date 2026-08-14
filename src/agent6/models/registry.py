@@ -105,8 +105,9 @@ def compaction_thresholds(
 
     Explicit config wins (both set, by construction -- the config validator
     requires both-or-neither). Otherwise size from the model's context window
-    (tier-1 ~45%, tier-2 ~80%); if the window is unknown, the historical fixed
-    defaults. Never raises.
+    (tier-1 at ~45% of it, tier-2 at the window minus a fixed 16k-token
+    reserve); if the window is unknown, the fixed 256k/768k defaults. Never
+    raises.
     """
     if drop_override is not None and summarise_override is not None:
         return drop_override, summarise_override

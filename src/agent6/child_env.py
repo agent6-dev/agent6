@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The environment a process agent6 spawns OUTSIDE the jail inherits.
 
-A leaf, because the two callers sit on opposite sides of the layering: the
-operator's notify hooks (``app``) and the MCP servers (``tools``). One owner,
-so their env-scope claims cannot drift apart.
+A leaf, because its callers sit on opposite sides of the layering: the
+operator's notify hooks (``app``), the MCP servers (``tools`` and the app
+setup). One owner, so their env-scope claims cannot drift apart.
 
 Jailed commands do not come here -- ``sandbox.jail`` builds their env from the
 policy, which is narrower still.
@@ -35,7 +35,6 @@ _KEEP = (
 # gladly run a command on the caller's behalf. Landlock gates filesystem
 # paths, not `connect()` to a unix socket, so a server denied `/etc/passwd`
 # directly could still have systemd read it and write the result anywhere.
-# Proved end to end before this split existed.
 _DESKTOP = (
     "DISPLAY",
     "WAYLAND_DISPLAY",

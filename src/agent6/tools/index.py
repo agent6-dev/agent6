@@ -2,11 +2,13 @@
 # Copyright 2026 Eric Lesiuta
 """Tree-sitter symbol index for the LLM-visible navigation tools.
 
-Provides a `SymbolIndex` over a project root that supports three operations:
+Provides a `SymbolIndex` over a project root:
 
-    outline(path)            -> top-level symbol declarations in one file
+    outline(path)            -> symbol declarations in one file (nested too)
     find_definition(name)    -> every declaration of `name` across the project
     find_references(name)    -> every identifier occurrence of `name` (incl. def)
+    hot_symbols()            -> cross-file reference ranking (repo priors)
+    file_outlines()          -> per-file symbol lists across the index
 
 The index is built lazily on the first query, then updated incrementally when
 the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
@@ -442,7 +444,7 @@ class SymbolIndex:
         return qualifying[:max_symbols]
 
     def file_outlines(self) -> dict[Path, list[Symbol]]:
-        """Per-file top-level symbol lists across the whole index.
+        """Per-file symbol lists (nested included) across the whole index.
 
         Returns a fresh dict mapping absolute file path -> in-source-order
         list of Symbol records. Used by the system-prompt repo map to

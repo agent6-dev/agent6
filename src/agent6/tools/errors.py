@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tool-layer exceptions, homed here so callers (mcp_server, the loop,
-tools/__init__) import them without importing the whole dispatch module."""
+"""Tool-layer exceptions, homed here so the handler modules and mcp_server
+import them without importing the whole dispatch module."""
 
 from __future__ import annotations
 

@@ -65,7 +65,7 @@ Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 class SessionResult:
     """Final state of a session.
 
-    ``reason`` values (each constructed in loop.py):
+    ``reason`` values (constructed in loop.py unless noted):
       finish_session        - agent called the finish_session tool explicitly.
       finish_planning   - plan-mode agent called the finish_planning tool.
       silent_finish     - agent emitted text but no tool_use (talking).
@@ -197,8 +197,8 @@ class SessionSnapshot(BaseModel):
     # a snapshot written before pins existed loads with none).
     pins: tuple[str, ...] = ()
     # Fork extras: the workspace HEAD and curator graph_version at this turn.
-    # ``fork --at-turn N`` cuts the branch at head_sha; graph_version is recorded
-    # but the DAG is copied at its latest state, not rebuilt (see app/fork.py).
+    # ``fork --at-turn N`` cuts the branch at head_sha; graph_version names
+    # the exact past graph the fork REBUILDS via replay (see app/fork.py).
     # Best-effort at write time: "" / 0 when git/curator was unreadable. Plain
     # resume reads head_sha (its divergence guard) only.
     head_sha: str = ""

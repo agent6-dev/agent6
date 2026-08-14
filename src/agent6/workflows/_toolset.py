@@ -47,8 +47,9 @@ def tool_definitions(
     out: list[ToolDefinition] = []
     for cls in (*surface.base, *surface.extras):
         if cls.TOOL_NAME not in available and cls not in surface.extras:
-            # Extras (finish_session / finish_planning / run_metric / dag_*) are
-            # always exposed even though they're not in ALL_TOOLS.
+            # Extras (finish_session/finish_planning, run_metric_command,
+            # the task tools, ask_user, use_skill) are always exposed even
+            # though they're not in ALL_TOOLS.
             continue
         if cls.TOOL_NAME == UseSkillInput.TOOL_NAME and not dispatcher.skills_available():
             # No installed/enabled skills (or [skills].enabled off): hide the

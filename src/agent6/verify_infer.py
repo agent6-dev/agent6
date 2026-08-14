@@ -80,7 +80,7 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
 
 
 def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
-    """The first ``` fenced block at/after *start*, or None within a few lines."""
+    """The first ``` fenced block opening within 12 lines of *start*, else None."""
     i = start
     # Allow a short prose gap between the heading and its code fence.
     while i < len(lines) and i < start + 12:

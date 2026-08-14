@@ -5,7 +5,7 @@ finished lane's branch and run dir back into the origin, and join a
 subordinate branch into the current branch.
 
 Pure git plumbing over `agent6.git_ops` -- no LLM, no UI, no process
-spawning. Later parallel-runs work drives a `LaneSpawner` over these.
+spawning. `app.parallel` drives a `LaneSpawner` over these.
 """
 
 from __future__ import annotations
@@ -70,8 +70,9 @@ class GroupLaneSpawner(Protocol):
 
     One call is synchronous-complete: clone + spawn each lane on its own model,
     await them all to terminal, and import each finished branch + run dir into the
-    coordinator's repo. All spawn/await/import machinery is the ui side's (see
-    `ui/cli/parallel.py`); the coordinator loop supplies only the per-lane tasks
+    coordinator's repo. All spawn/await/import machinery is `app.parallel`'s
+    (over the front-end's `LaneRuntime`); the coordinator loop supplies only
+    the per-lane tasks
     and a *group* id (`p<seq>`), so `workflows` never imports ui. On a lane that
     failed to start, is still running at teardown, or whose import was refused,
     that lane's `LaneResult.ok` is False and the coordinator's repo is left

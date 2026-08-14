@@ -107,7 +107,7 @@ def locked_file(target: Path) -> Generator[bool]:
     must NOT act on a fiction of serialization -- a transaction that would restore a
     whole-file snapshot on failure can erase a concurrent writer's
     just-validated update when the cycle never was serialized, so it degrades
-    to keep-and-warn instead (see ``config.layer._revalidate``).
+    to keep-and-warn instead (see ``config.write.keep_or_rollback``).
 
     Blocks on a sibling ``<name>.lock`` file, NOT the target: atomic_write
     replaces the target's inode on publish, so a lock taken on the target
@@ -194,10 +194,10 @@ def atomic_write(path: Path, data: str | bytes) -> None:
     tmp_name = ""
     try:
         fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-        # Preserve an existing target's mode across a re-publish; for a NEW file
-        # keep mkstemp's owner-only 0o600 rather than widening to a hardcoded
-        # 0o644 (which bypassed the umask). These are per-user run/machine state
-        # files; owner-only is the secure default.
+        # Preserve an existing target's mode across a re-publish; a NEW file
+        # keeps mkstemp's owner-only 0o600 (a hardcoded wider mode would bypass
+        # the umask). These are per-user run/machine state files; owner-only is
+        # the secure default.
         # chmod the fd before writing (the two mode-specific branches below only
         # differ in text vs binary, which pyright needs narrowed for `fh.write`).
         mode = _existing_mode(path)

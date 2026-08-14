@@ -292,9 +292,9 @@ def coerce_text_tool_calls(  # noqa: PLR0911
     Returns ``(tool_uses, remaining_text)``. ``tool_uses`` is empty when
     nothing tool-call-shaped is found, in which case ``remaining_text``
     equals the original ``text``. The parsing is deliberately strict
-    (exact JSON, a single fenced JSON object, ``<tool_call>`` tags, or the
-    ``<function=...>`` XML form) so prose that merely mentions a tool name is
-    never misread as a call.
+    (exact JSON, a single fenced JSON object, ``<tool_call>`` tags, the
+    ``<function=...>`` XML form, or a ``tool_code`` fence) so prose that
+    merely mentions a tool name is never misread as a call.
     """
     if not text or not tool_names:
         return [], text

@@ -3,10 +3,10 @@
 """Pure core of the adversarial review panel: the verdict types and the
 grounded aggregator.
 
-The aggregator is where the panel earns its keep over the deleted pre-0.0.4
-``reviewer.py``. That reviewer false-blocked correct, green-verify work because
-its "don't block on speculation" rule was *prose*, and models rationalize around
-prose. Here the rule is **executable**: a reviewer's ``block`` only gates if a
+The aggregator is where the panel earns its keep: a "don't block on
+speculation" rule held as *prose* gets rationalized around, and correct
+green-verify work gets false-blocked. Here the rule is **executable**: a
+reviewer's ``block`` only gates if a
 machine check passes (the cited line is actually in the diff it was shown, and
 the category is one we allow to block). Everything else is mechanically
 downgraded to ``warn`` before any veto/quorum counting. ``warn``/``nit`` never
@@ -166,10 +166,9 @@ def _split_cite(file_line: str) -> tuple[str, tuple[int, int] | None]:
 
     The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4',
     'foo.py:2:' and 'foo.py:12:5' (the standard compiler/grep -n
-    ``path:line:col``). ONE owner, because grounding and dedup each parsed this
-    with a single rpartition: a line:col citation read the COLUMN as the line
-    and 'foo.py:12' as the path, so grounding missed and a real block was
-    silently downgraded to a warning.
+    ``path:line:col``). ONE owner: a per-consumer single-rpartition parse would read a line:col
+    citation's COLUMN as the line and 'foo.py:12' as the path, so grounding
+    would miss and a real block silently downgrade to a warning.
     """
     cite = file_line.strip().rstrip(":")
     if not cite:

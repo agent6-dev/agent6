@@ -155,10 +155,10 @@ def parse_response(  # noqa: PLR0912, PLR0915
     # ProviderError-only retry wrapper and kills the run.
     prompt_total = int(usage.get("prompt_tokens") or 0)
     # Clamp cached to the prompt total as the SINGLE source of truth: a
-    # misbehaving upstream that reports cached > prompt would otherwise make
-    # input_tokens negative (clamped below) AND leave cache_read_tokens -- billed
-    # at the 10% cache rate in budget.py -- inconsistent with that clamped input.
-    # Clamping once here keeps both fields consistent.
+    # misbehaving upstream that reports cached > prompt would otherwise drive
+    # input_tokens negative AND leave cache_read_tokens -- billed at the 10%
+    # cache rate in budget.py -- inconsistent with it. One clamp keeps both
+    # fields consistent.
     cached = min(cached, prompt_total)
     fresh_input = prompt_total - cached
     # Build a content-blocks raw payload mirroring Anthropic's response

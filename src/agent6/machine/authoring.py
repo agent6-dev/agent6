@@ -47,11 +47,12 @@ def build_authoring_prompt(
 ) -> str:
     """Assemble the user-task prompt for one draft→check→fix attempt.
 
-    On the first attempt only the grammar guide and the operator's task are
-    included. On a retry, the prior draft, its scripts, and the validation
-    diagnostics are appended so the model can PATCH its own output instead of
-    re-deriving everything (most retries are a one-line script fix; without the
-    prior script source the model regenerates every file blind).
+    The first attempt carries the grammar guide, the operator's task, and the
+    return contract (payload shape + production-readiness rules). On a retry,
+    the prior draft, its scripts, and the validation diagnostics are appended
+    so the model can PATCH its own output instead of re-deriving everything
+    (most retries are a one-line script fix; without the prior script source
+    the model regenerates every file blind).
 
     """
     parts = [

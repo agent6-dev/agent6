@@ -265,7 +265,7 @@ class IsolationUnavailableError(Exception):
 
 
 def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
-    """Resolve `[sandbox] isolation` ("auto"|"strict"|"hardened") against the host.
+    """Resolve `[sandbox] isolation` ("auto"|"strict"|"hardened"|"none") against the host.
 
     Raises `IsolationUnavailableError` if the user asked for an isolation level the kernel
     + container cannot provide. This is the "no silent downgrade" rule: we never

@@ -206,7 +206,7 @@ def hidden_paths(extra: Iterable[Path]) -> tuple[Path, ...]:
 # 271-byte names that failed to create with ENAMETOOLONG.
 _ID_BYTES_MAX = 100
 # Only the elided form needs a hash, and there it is the only thing separating
-# two paths that elide alike; 24 bits of it was brute-forceable in seconds.
+# two paths that elide alike; 12 hex chars = 48 bits, past casual brute force.
 _ID_HASH_LEN = 12
 
 
@@ -287,9 +287,10 @@ def project_root(start: Path) -> Path:
 def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
     """The per-repo agent6 state directory (``<base>/<repo-id>``).
 
-    Keyed on the PROJECT, not on where the operator was standing: keyed on the
-    cwd, every cross-session feature (`sessions`, `resume`, `read_session`, memory)
-    silently found an empty project from any subdirectory.
+    Keyed on the PROJECT (``project_root``), not on where the operator is
+    standing: keyed on the cwd, every cross-session feature (`sessions`,
+    `resume`, `read_session`, memory) would silently find an empty project
+    from any subdirectory.
 
     ``base_override`` is the global ``[agent6].state_dir`` (an absolute base
     path); when set it replaces the XDG base. ``repo_id`` is always appended,
@@ -317,7 +318,8 @@ def root_optin_enabled(cli_flag: bool) -> bool:
 
 
 def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
-    """Create *path* (with any missing ancestors) and hand back what was created.
+    """Create *path* (with any missing ancestors), chowning what was created
+    back to the real user.
 
     Under ``sudo`` a bare ``mkdir(parents=True)`` creates the missing ancestry
     as root, and a root-owned base blocks every later non-root sibling (the
@@ -342,10 +344,11 @@ def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
 
     No-op unless the process is root and was launched through sudo.
 
-    Every chown names its target relative to an open directory fd and never
-    follows a link, so no path component can be swapped between the walk and
-    the call: a jailed command holds RW on some of these trees, and root
-    resolving a swapped parent would chown anything on the host.
+    The walk names every target relative to an open directory fd and never
+    follows a link, so no walked component can be swapped between the walk
+    and the call: a jailed command holds RW on some of these trees, and root
+    resolving a swapped parent would chown anything on the host. The tree
+    root itself is one ``lchown`` by path (links never followed).
     Best-effort: permission errors are swallowed (the file is still usable by
     root), and we never weaken perms to compensate.
     """

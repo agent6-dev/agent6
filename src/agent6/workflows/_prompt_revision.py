@@ -119,7 +119,7 @@ def format_effective_task(raw_task: str, revision: PromptRevision) -> str:
     return "\n\n".join(pieces)
 
 
-# A `plan` run injects a one-shot "finish now" directive once its token budget
-# drops below this fraction OR it has taken `PLAN_NUDGE_AFTER_ITERS` turns.
-# Verbose reasoning models otherwise read forever,
+# A `plan` run injects a one-shot "finish now" directive once its budget or
+# turn allowance runs low (PLAN_BUDGET_NUDGE_BELOW / PLAN_NUDGE_AFTER_ITERS
+# in _nudges.py). Verbose reasoning models otherwise read forever,
 # cheaply, under prompt caching, and never call finish_planning, yielding NO

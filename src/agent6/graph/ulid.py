@@ -4,8 +4,8 @@
 
 We use ULIDs (rather than uuid4) because they are time-sortable in lexicographic
 order, which makes the on-disk graph trivially diff-friendly: nodes created
-earlier sort earlier in `ls` output, and `_first_ready_subtask` relies on id
-sort as creation order. Ids created in the same millisecond are made monotonic
+earlier sort earlier in `ls` output, and `first_ready_subtask` falls back
+to id sort as creation order. Ids created in the same millisecond are made monotonic
 by incrementing the previous random part (the standard ULID monotonicity rule);
 without that, same-ms ids sort randomly. Implementing this here avoids a
 runtime dependency on `python-ulid`.

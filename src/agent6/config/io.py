@@ -3,7 +3,7 @@
 """Comment-preserving TOML read/write surgery for config writers.
 
 Low-level, UI-agnostic: used by the `config` CLI subcommands, by
-`config_layer`'s shared edit path, and (through it) by the TUI/web config
+`config.write`'s shared edit path, and (through it) by the TUI/web config
 editors, so every writer preserves comments + siblings identically."""
 
 from __future__ import annotations
@@ -107,8 +107,9 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]
 
 # What a config leaf can hold, matching what `format_toml_value` serializes:
 # scalars, and a list for an array-valued leaf like an argv. `None` omits the
-# leaf. Declaring only `str | bool` made a caller pre-serialize an array into a
-# string, which then validated as a tuple of characters.
+# leaf. Kept in sync with `format_toml_value`: a type this union omits makes a
+# caller pre-serialize (an array passed as a string validates as a tuple of
+# characters).
 ConfigLeafValue = str | bool | int | float | Sequence[str] | None
 
 
@@ -482,7 +483,7 @@ def remove_toml_table(path: Path, table: str) -> bool:
 def read_toml_file(path: Path) -> dict[str, Any]:
     """Parse *path* as TOML, or return an empty dict if it does not exist.
 
-    Wrap a parse error in ``ConfigError`` (matching ``config_layer._read_toml``)
+    Wrap a parse error in ``ConfigError`` (matching ``config.layer._read_toml``)
     so the ``config ... --machine-file FILE`` commands surface a clean message
     instead of letting a raw ``TOMLDecodeError`` traceback escape -- and, for
     ``set``/``add``, so the malformed file is reported before it is rewritten.

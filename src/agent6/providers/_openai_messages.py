@@ -125,11 +125,10 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             # user (or other) message: tool_results MUST come first
             # because OpenAI requires every `role=tool` message to
             # immediately follow the assistant turn whose `tool_calls`
-            # it answers. we emitted text_chunks FIRST then
-            # tool_results, which (a) inserted a user message between
-            # the assistant's tool_calls and the tool replies, most
-            # OpenAI-compatible gateways tolerate this but it is
-            # technically malformed, and (b) made injected
+            # it answers. Emitting text_chunks FIRST would (a) insert a
+            # user message between the assistant's tool_calls and the tool
+            # replies -- most OpenAI-compatible gateways tolerate that, but
+            # it is technically malformed -- and (b) make injected
             # "[loop-guard]" / "[harness]" / "[critic]" notices arrive
             # before the tool result they were commenting on, so weak
             # models lost the causal link entirely. Tool results first,

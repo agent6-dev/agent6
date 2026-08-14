@@ -2,7 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """agent6 state machines, declarative, replayable mini-agents.
 
-Load + validate a `.asm.toml` (`model`), render it as a diagram (`graph`), and
+Load + validate a `.asm.toml` (`_semantics`, shapes in `model`), render it as
+a diagram (`graph`), and
 execute it deterministically (`engine`) over an append-only `journal` with
 crash recovery and offline replay. The `agent` state kind runs a normal agent6
 loop through an injected runner; `machine status`/`poke` and the

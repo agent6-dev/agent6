@@ -4,7 +4,8 @@
 
 A bad value or unreadable file from the operator raises :class:`OperatorError`;
 ``cli_main`` turns that into a one-line ``ERROR:`` refusal at exit 2, and
-everything else into a crash report. Subsystem error types for operator-owned
+any other fault into a crash report (Ctrl-C exits 130 with a plain line;
+argparse exits pass through). Subsystem error types for operator-owned
 input (``ConfigError``) subclass it, so no reader needs its own except arm to
 keep an operator mistake out of the crash reporter.
 """

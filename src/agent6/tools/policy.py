@@ -90,10 +90,9 @@ def jail_policy(
     One owner, so every caller is confined identically: a foreground command, a
     detached one (`background: true`), the baseline gate re-run, and a spawned
     MCP server all get the same protect paths, env, tool mounts and memory cap.
-    The baseline once built its own and inherited no PATH, so every real gate
-    exited 127 and the run was told its failure pre-existed; MCP servers had a
-    whole parallel confinement stack, which is how they ended up without
-    seccomp, without a private /proc, and unable to mask a hidden path.
+    A second policy builder would drift: a gate with its own env misses PATH
+    and exits 127 (a failure blamed on the tree), and a parallel confinement
+    stack ends up without seccomp, a private /proc, or hidden-path masking.
 
     Callers name only what is EXTRA. Everything a child needs to exist -- the
     system dirs, the operator's tool dirs, a writable /tmp as HOME -- is here,
