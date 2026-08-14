@@ -20,7 +20,9 @@ exclude_docs: |
   .gitignore
   gen_contracts.py
   gen_config.py
+  gen_diagrams.py
   config_template.md
+  internals_template.md
   screenshots/*.tape
   screenshots/*.sh
   screenshots/*.py
@@ -136,5 +138,6 @@ nav:
   - Configuration: config.md
   - Security: security.md
   - Architecture: architecture.md
+  - Internals: internals.md
   - Data contracts: data-contracts.md
   - State machines: state-machines.md

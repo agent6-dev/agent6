@@ -31,3 +31,5 @@ bench/swebench/instances_verified.json
 
 # mkdocs build output (docs/mkdocs.yml builds here via site_dir: ../site)
 /site/
+# Generated at pages build (docs/gen_diagrams.py); never committed.
+docs/internals.md

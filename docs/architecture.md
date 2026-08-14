@@ -4,7 +4,7 @@ This document is a map of how agent6 runs end-to-end. The diagrams
 are mermaid (`mermaid` fenced blocks render natively on GitHub). For
 per-file conventions and stability rules see [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
 For the security model (threat model, defense layers, sandbox isolation),
-see [security.md](security.md).
+see [security.md](security.md). Generated maps of the current source (module layering, the loop's turn pipeline) are on [internals.md](internals.md).
 
 ## Layering
 

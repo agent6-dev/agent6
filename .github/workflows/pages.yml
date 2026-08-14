@@ -122,6 +122,11 @@ jobs:
           /tmp/pw/bin/pip install --quiet pillow
           /tmp/pw/bin/python docs/screenshots/make_cover.py
 
+      - name: Generate the internals diagrams
+        # Built from the current source (tach module graph + AST callgraph),
+        # never committed; mkdocs --strict needs the page to exist.
+        run: uv run python docs/gen_diagrams.py
+
       - name: Build the site (strict)
         run: >
           uvx --with mkdocs-material==9.7.6 --with mkdocs-glightbox==0.5.2
