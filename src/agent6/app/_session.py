@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """One owner for the session assembly `run_task` and `resume_task` share: the
-isolation preflight, the egress/landlock start, and the provider/dispatcher
-build. The lifecycles keep their own workspace steps (branch cut + manifest
-vs snapshot guards) and their Workflow wiring."""
+isolation preflight and the provider/dispatcher/tools build. The lifecycles
+keep their own workspace steps (branch cut + manifest vs snapshot guards) and
+their Workflow wiring."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from agent6.app.confine import (
     check_workspace_outside_private_dirs,
     warn_sandbox_gaps,
 )
+from agent6.app.frontend import SessionFacts
 from agent6.app.preflight import (
     SessionRefused,
     budget_preflight,
@@ -245,6 +246,25 @@ def build_session_tools(
         compact_summarise_at_chars=compact_summarise,
         cfg=cfg,
     )
+
+
+def session_facts_provider(
+    budget: BudgetTracker, model: str, run_commands: str, isolation: str
+) -> Callable[[], SessionFacts]:
+    """The live-facts thunk the front-end's pause banner reads. The fixed
+    fields bind now (they never change for the leg); spend reads live."""
+
+    def facts() -> SessionFacts:
+        spend, partial = budget.estimate_usd()
+        return SessionFacts(
+            spend_usd=spend,
+            spend_partial=partial,
+            model=model,
+            run_commands=run_commands,
+            isolation=isolation,
+        )
+
+    return facts
 
 
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:

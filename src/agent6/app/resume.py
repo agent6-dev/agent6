@@ -17,6 +17,7 @@ from agent6.app._session import (
     build_session_tools,
     select_isolation,
     session_config,
+    session_facts_provider,
     warn_install_inside_workspace,
 )
 from agent6.app._setup import (
@@ -36,7 +37,6 @@ from agent6.app.finalize import (
     session_exit_code,
 )
 from agent6.app.frontend import (
-    SessionFacts,
     SessionFrontend,
     apply_spawned_away_default,
     approval_scopes,
@@ -539,20 +539,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter=reporter,
         )
 
-        # Bound now, not read in the handler: these never change for the leg.
-        facts_model, facts_commands = session.rm_role.model, cfg.sandbox.run_commands
-
-        def _session_facts() -> SessionFacts:
-            spend, partial = budget.estimate_usd()
-            return SessionFacts(
-                spend_usd=spend,
-                spend_partial=partial,
-                model=facts_model,
-                run_commands=facts_commands,
-                isolation=isolation,
-            )
-
-        steer_state = frontend.make_steer_state(events, layout.session_dir, _session_facts)
+        steer_state = frontend.make_steer_state(
+            events,
+            layout.session_dir,
+            session_facts_provider(
+                budget, session.rm_role.model, cfg.sandbox.run_commands, isolation
+            ),
+        )
 
         interrupted = False
         dispatcher: ToolDispatcher | None = None

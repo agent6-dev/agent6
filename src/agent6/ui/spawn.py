@@ -16,6 +16,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import IO
 
 from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.sessions.layout import LOGS_NAME
@@ -148,8 +149,7 @@ def spawn_and_confirm(
         keep_out_of_the_sweep(proc.pid)
 
         def err_tail() -> str:
-            err.flush()
-            return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
+            return _stderr_tail(err)
 
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
@@ -168,6 +168,12 @@ def spawn_and_confirm(
         # unlinked-but-open inode as its stderr until it exits.
         err.close()
         Path(err.name).unlink(missing_ok=True)
+
+
+def _stderr_tail(err: IO[str]) -> str:
+    """The last 600 chars of a spawn's captured-stderr temp file."""
+    err.flush()
+    return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
 
 
 def _located(list_dirs: Callable[[], list[Path]], before: set[Path]) -> Path | None:
@@ -216,8 +222,7 @@ def spawn_and_locate(
         keep_out_of_the_sweep(proc.pid)
 
         def err_tail() -> str:
-            err.flush()
-            return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
+            return _stderr_tail(err)
 
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
