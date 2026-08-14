@@ -45,9 +45,10 @@ instead.
 
 The verify command is the success gate. If the repo has not set
 `workflow.verify_command`, agent6 infers one per run (from AGENTS.md, then the repo's
-manifest files, then a cheap model call) and prints what it picked. If none can be
-inferred the run still proceeds, committing every editing step without a green gate. Pin
-one in the per-repo config, or with `agent6 init`, to make it deterministic.
+manifest files, then a model call over those manifests -- skipped when there are none)
+and prints what it picked. If none can be inferred the run still proceeds, committing
+every editing step without a green gate. Pin one in the per-repo config, or with
+`agent6 init`, to make it deterministic.
 
 `agent6 run` is headless by default: it streams the run in your terminal. `--tui` opens
 the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+D);

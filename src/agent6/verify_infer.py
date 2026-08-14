@@ -236,7 +236,10 @@ def infer_verify_command(
     """Infer a verify command (AGENTS.md -> repo signals -> LLM). None if unknown.
 
     `llm_call` takes the gathered repo context and returns the model's raw
-    text; pass None to skip the LLM tier (deterministic-only).
+    text; pass None to skip the LLM tier (deterministic-only). The LLM tier
+    reads manifest content and AGENTS.md prose; with neither present it is
+    skipped: a bare filename listing can only confirm "none" or invent a
+    gate, and a project created mid-run is adopted by the mid-run check.
     """
     argv = verify_from_agents_md(agents_md)
     if argv is not None:
@@ -244,7 +247,10 @@ def infer_verify_command(
     sig = verify_from_repo_signals(repo_root)
     if sig is not None:
         return InferredVerify(argv=sig[0], source=sig[1])
-    if llm_call is not None:
+    readable = bool(agents_md.strip()) or any(
+        (repo_root / name).is_file() for name in _MANIFEST_FILES
+    )
+    if llm_call is not None and readable:
         context = gather_repo_manifests(repo_root, agents_md)
         try:
             raw = llm_call(context)

@@ -288,8 +288,9 @@ def infer_verify_if_unset(
     """When `workflow.verify_command` is unset for a run/plan, infer one and
     inject it IN-MEMORY (never persisted -- runs do not mutate config).
 
-    Layered cheapest-first (AGENTS.md -> repo signals -> a cheap reviewer-role
-    LLM call); see `agent6.verify_infer`. Emits `loop.verify_inferred` and
+    Layered cheapest-first (AGENTS.md -> repo signals -> a reviewer-role LLM
+    call over the manifests, skipped when there are none to read); see
+    `agent6.verify_infer`. Emits `loop.verify_inferred` and
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 

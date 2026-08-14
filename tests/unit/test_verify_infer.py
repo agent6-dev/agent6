@@ -121,16 +121,18 @@ def test_infer_layering_prefers_agents_md(tmp_path: Path) -> None:
 
 
 def test_infer_falls_back_to_signals_then_llm(tmp_path: Path) -> None:
-    # No AGENTS.md hint, no manifests -> only the LLM tier can answer.
     calls: list[str] = []
 
     def fake_llm(ctx: str) -> str:
         calls.append(ctx)
         return '["make","verify"]'
 
+    # A manifest with no static match (package.json without scripts.test) is
+    # what the LLM tier exists to read.
+    (tmp_path / "package.json").write_text('{"scripts": {"check": "x"}}', encoding="utf-8")
     got = infer_verify_command(tmp_path, "", llm_call=fake_llm)
     assert got is not None and got.source == "llm" and got.argv == ("make", "verify")
-    assert calls, "llm tier should have been consulted"
+    assert calls and "package.json" in calls[0]
 
     # A repo signal short-circuits before the LLM.
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
@@ -140,11 +142,38 @@ def test_infer_falls_back_to_signals_then_llm(tmp_path: Path) -> None:
     assert not calls, "repo signal should short-circuit the LLM"
 
 
+def test_infer_skips_the_llm_when_there_is_nothing_to_read(tmp_path: Path) -> None:
+    """No manifests and no AGENTS.md: the LLM tier's context would be a bare
+    filename listing, whose only non-"none" outcome is an invented gate. The
+    run starts gateless for free; the mid-run adopter owns a project that
+    appears later."""
+    calls: list[str] = []
+
+    def fake_llm(ctx: str) -> str:
+        calls.append(ctx)
+        return '["make","verify"]'
+
+    (tmp_path / "notes.txt").write_text("just a file\n", encoding="utf-8")
+    assert infer_verify_command(tmp_path, "", llm_call=fake_llm) is None
+    assert not calls, "the LLM tier fired with nothing to read"
+
+    # AGENTS.md prose alone (no fenced command) still qualifies: the LLM
+    # reads prose the fenced-block tier cannot.
+    got = infer_verify_command(tmp_path, "Run make verify before committing.", llm_call=fake_llm)
+    assert calls and got is not None and got.source == "llm"
+
+
 def test_infer_llm_failure_is_safe(tmp_path: Path) -> None:
-    def boom(_ctx: str) -> str:
+    # A manifest so the LLM tier is genuinely reached before it fails.
+    (tmp_path / "package.json").write_text('{"scripts": {"check": "x"}}', encoding="utf-8")
+    reached: list[str] = []
+
+    def boom(ctx: str) -> str:
+        reached.append(ctx)
         raise RuntimeError("provider down")
 
     assert infer_verify_command(tmp_path, "", llm_call=boom) is None
+    assert reached, "the failure path was never exercised"
 
 
 def test_gather_repo_manifests_clips_and_includes(tmp_path: Path) -> None:
