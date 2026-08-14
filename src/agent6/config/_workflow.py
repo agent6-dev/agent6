@@ -148,7 +148,8 @@ class ContextConfig(BaseModel):
     # ``summary_max_tokens`` caps the summarizer's output.
     #
     # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker
-    # model's context window (tier-1 at ~45%, tier-2 at ~80% of it), resolving
+    # model's context window (tier-1 at ~45% of it, tier-2 at the window
+    # minus a 16k-token reserve), resolving
     # the window from a bundled table of tested models + the live model cache
     # (see ``models.registry.compaction_thresholds``). Pin them by setting BOTH
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
@@ -166,8 +167,8 @@ class ContextConfig(BaseModel):
         default=None,
         gt=0,
         description=(
-            "Tier 2: summarise elided history and restart (the task DAG survives). Unset ≈ 80% of "
-            "the window. Must exceed `drop_at_chars`."
+            "Tier 2: summarise elided history and restart (the task DAG survives). Unset = the "
+            "window minus a 16k-token reserve. Must exceed `drop_at_chars`."
         ),
     )
     keep_recent_chars: int = Field(

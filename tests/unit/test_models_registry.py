@@ -48,7 +48,9 @@ def test_compaction_thresholds_adaptive_from_window(cache_home: Path) -> None:
         "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarise_override=None
     )
     assert drop == int(262_144 * 4 * 0.45)
-    assert summarise == int(262_144 * 4 * 0.80)
+    # Tier-2 is a near-edge valve: the window minus a 16k-token reserve
+    # (pi's reserveTokens shape), not a mid-window fraction.
+    assert summarise == (262_144 - 16_384) * 4
     assert drop < summarise  # tier-2 escalates above tier-1
 
 

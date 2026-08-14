@@ -247,7 +247,7 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | Field | Default | Meaning |
 |---|---|---|
 | `drop_at_chars` | _adaptive_ | Tier 1: oldest tool results become placeholders. Unset sizes from the worker's context window (~45%); set BOTH thresholds to pin. |
-| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset ≈ 80% of the window. Must exceed `drop_at_chars`. |
+| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset = the window minus a 16k-token reserve (a near-edge valve). Must exceed `drop_at_chars`. |
 | `keep_recent_chars` | `80000` | Verbatim recent-history tail kept through a tier-2 restart (chars; `0` keeps none). |
 | `summary_max_tokens` | `2048` | Cap on the tier-2 summary (and gist distillation calls). |
 | `elision_gists` | `true` | Tier 1 decays a large `read_file` to a model-written gist before the bare marker (demoted under continued pressure so the byte bound holds). `false` = straight to bare markers. |

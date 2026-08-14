@@ -57,11 +57,13 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
 
 # Adaptive sizing. tokens ~= chars/4 (matches the loop's ``context_chars``
 # approximation). Tier-1 elides old tool_results once they pass ~45% of the
-# window; tier-2 summarises+restarts at ~80%, leaving headroom for the next
-# turn's output and the summary call itself.
+# window (Claude Code's continuous local tiers); tier-2 summarise-and-restart
+# is a near-edge valve, firing only within a fixed reserve of the window
+# (pi's reserveTokens shape; Claude's autocompact likewise). The reserve
+# leaves room for the next turn's output and the summary call itself.
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
-_SUMMARISE_FRACTION = 0.80
+_RESERVE_TOKENS = 16_384
 # Used when the window is unknown: the historical fixed defaults, so behaviour
 # is unchanged for unsizable models. Mirrors workflows._compaction
 # DROP_BLOCKS_AT_CHARS / SUMMARISE_AT_CHARS.
@@ -116,7 +118,7 @@ def compaction_thresholds(
     if ctx is None or ctx <= 0:
         return _FALLBACK_DROP_CHARS, _FALLBACK_SUMMARISE_CHARS
     drop = int(ctx * _CHARS_PER_TOKEN * _DROP_FRACTION)
-    summarise = int(ctx * _CHARS_PER_TOKEN * _SUMMARISE_FRACTION)
+    summarise = max(drop + 1, (ctx - _RESERVE_TOKENS) * _CHARS_PER_TOKEN)
     return drop, summarise
 
 
