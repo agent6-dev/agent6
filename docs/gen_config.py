@@ -142,7 +142,12 @@ def render_table(sections: list[str], all_leaves: dict[str, tuple[str, str]]) ->
 
 def render(template: str) -> str:
     all_leaves = leaves()
-    out: list[str] = []
+    out: list[str] = [
+        # The output must say it is output: a hand edit here is overwritten by
+        # the next regeneration and fails the drift test.
+        "<!-- Generated from docs/config_template.md by docs/gen_config.py;"
+        " edit those, then regenerate. -->",
+    ]
     for line in template.splitlines():
         marker = _MARKER.match(line)
         if marker is None:

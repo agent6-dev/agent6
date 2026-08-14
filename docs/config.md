@@ -1,3 +1,4 @@
+<!-- Generated from docs/config_template.md by docs/gen_config.py; edit those, then regenerate. -->
 # Configuration
 
 agent6 is **secure by default**: every field has a default (security-sensitive
@@ -247,9 +248,9 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | Field | Default | Meaning |
 |---|---|---|
 | `drop_at_chars` | _adaptive_ | Tier 1: oldest tool results become placeholders. Unset sizes from the worker's context window (~45%); set BOTH thresholds to pin. |
-| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset = the window minus a 16k-token reserve (a near-edge valve). Must exceed `drop_at_chars`. |
-| `keep_recent_chars` | `80000` | Verbatim recent-history tail kept through a tier-2 restart (chars; `0` keeps none). |
-| `keep_thinking_turns` | `0` | Drop thinking from assistant turns older than N assistant turns, at tier-1 moments. `0` keeps all (pi's behavior); Claude Code clears old thinking. Anthropic-format providers only: the openai wire never re-sends thinking. |
+| `summarise_at_chars` | _adaptive_ | Tier 2: summarise elided history and restart (the task DAG survives). Unset = the window minus a 16k-token reserve. Must exceed `drop_at_chars`. |
+| `keep_recent_chars` | `80000` | Verbatim recent-history tail kept through a tier-2 restart (chars; 0 keeps none). |
+| `keep_thinking_turns` | `0` | Drop thinking from assistant turns older than N assistant turns, at tier-1 moments. `0` (default) keeps all thinking, matching pi; Claude Code clears old thinking. Anthropic-format providers only: the openai wire never re-sends thinking. |
 | `summary_max_tokens` | `2048` | Cap on the tier-2 summary (and gist distillation calls). |
 | `elision_gists` | `true` | Tier 1 decays a large `read_file` to a model-written gist before the bare marker (demoted under continued pressure so the byte bound holds). `false` = straight to bare markers. |
 
