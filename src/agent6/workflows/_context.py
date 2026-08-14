@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.budget import BudgetExceeded
-from agent6.git_ops import co_change_pairs, is_git_repo, recent_log, status, tracked_files
+from agent6.git_ops import co_change_pairs, is_git_repo, recent_log, status, toplevel, tracked_files
 from agent6.types import CoChangePair, HotSymbol, RepoSummary
 from agent6.workflows._symbol_outline import build_symbol_outline_block
 
@@ -17,10 +17,56 @@ if TYPE_CHECKING:
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
-# Bound the AGENTS.md injected into every turn's prompt. Generous enough to
-# carry a normal conventions file whole; truncates a pathological 50KB one so it
-# can't dominate the prefix. The model is pointed at read_file for the rest.
-_AGENTS_MD_MAX_CHARS = 16000
+# AGENTS.md is injected whole (pi and Claude Code both do); past this size the
+# operator is warned at session start instead of the text being clipped.
+AGENTS_MD_WARN_CHARS = 40_000
+
+
+def _read_text(path: Path) -> str:
+    """Tolerant read: a Windows-1252 byte or a permission-denied file must
+    degrade, not crash the run AFTER session.start with no session.end (a dead
+    run that listed as running)."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
+    except OSError:
+        return ""
+
+
+def agents_md_text(root: Path) -> str:
+    """The AGENTS.md text a session at *root* injects, whole (never clipped).
+
+    When *root* sits below a git toplevel, the toplevel's file loads first and
+    *root*'s own (if any) follows under a heading naming its directory, so a
+    subdirectory start still carries the repo's conventions (pi and Claude Code
+    collect ancestor files the same way)."""
+    own = _read_text(root / "AGENTS.md")
+    top = toplevel(root)
+    if top is None or top == root:
+        return own
+    root_text = _read_text(top / "AGENTS.md")
+    if not root_text:
+        return own
+    if not own:
+        return root_text
+    return f"{root_text}\n\n# AGENTS.md in {root.name}/ (this run's working directory)\n\n{own}"
+
+
+def agents_md_notices(root: Path) -> tuple[str, ...]:
+    """Session-start operator lines about the injected AGENTS.md: which files
+    load when starting from a subdirectory, and an oversize warning (the text
+    is injected whole; the remedy is trimming the file)."""
+    out: list[str] = []
+    top = toplevel(root)
+    if top is not None and top != root and (top / "AGENTS.md").is_file():
+        also = " plus this directory's" if (root / "AGENTS.md").is_file() else ""
+        out.append(f"loading the repo root's AGENTS.md ({top}){also}")
+    total = len(agents_md_text(root))
+    if total > AGENTS_MD_WARN_CHARS:
+        out.append(
+            f"WARNING: AGENTS.md totals {total // 1000}k chars and rides in the"
+            " system prompt of every model call; consider trimming it."
+        )
+    return tuple(out)
 
 
 def _build_repo_map(tracked: tuple[str, ...]) -> str:
@@ -89,21 +135,7 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     # startup. tracked is reused by _build_repo_map below.
     tracked = tracked_files(root) if in_git else ()
     file_count = len(tracked)
-    agents_md_path = root / "AGENTS.md"
-    # Tolerant read (mirrors the loop's own AGENTS.md reads): a Windows-1252
-    # byte or a permission-denied file must degrade, not crash the run AFTER
-    # session.start with no session.end -- a dead run that listed as "running"/"stale".
-    agents_md = ""
-    if agents_md_path.is_file():
-        try:
-            agents_md = agents_md_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            agents_md = ""
-    if len(agents_md) > _AGENTS_MD_MAX_CHARS:
-        agents_md = (
-            agents_md[:_AGENTS_MD_MAX_CHARS]
-            + "\n... (AGENTS.md truncated here; use read_file for the full text)\n"
-        )
+    agents_md = agents_md_text(root)
     hot: tuple[HotSymbol, ...] = ()
     co_change: tuple[CoChangePair, ...] = ()
     symbol_outline = ""

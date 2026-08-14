@@ -107,6 +107,7 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
+from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import SessionEndReason, load_session_snapshot
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
@@ -480,6 +481,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         warn_install_inside_workspace(cwd, reporter=reporter)
+        for line in agents_md_notices(cwd):
+            reporter.err(f"[agent6] {line}")
 
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
         refusal = headless_approval_refusal(

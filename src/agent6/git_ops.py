@@ -384,6 +384,16 @@ def is_git_repo(path: Path) -> bool:
     return res.ok and res.stdout.strip() == "true"
 
 
+def toplevel(path: Path) -> Path | None:
+    """The enclosing work tree's root directory, or None outside a git repo
+    (or inside `.git` itself, where git reports no toplevel)."""
+    res = _run(path, "rev-parse", "--show-toplevel", check=False)
+    if not res.ok:
+        return None
+    text = res.stdout.strip()
+    return Path(text) if text else None
+
+
 def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
     """True iff any of ``rel_paths`` has uncommitted changes (untracked,
     modified, or staged) versus HEAD, i.e. a path-limited commit of just those

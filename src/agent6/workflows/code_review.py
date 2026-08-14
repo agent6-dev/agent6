@@ -55,10 +55,10 @@ def code_review(
     """Ask the reviewer model to critique *diff*. Returns markdown text."""
     parts: list[str] = []
     if agents_md.strip():
-        # AGENTS.md holds the conventions the reviewer is told to check, so the
-        # bound is generous (the diff itself gets 60k): it must fit a realistic
-        # AGENTS.md whole, while still capping a pathological one.
-        parts.append(f"AGENTS.md:\n{agents_md.strip()[:16000]}")
+        # Whole, like the run prompt's copy: the reviewer checks against the
+        # same conventions the worker saw, and a clipped tail could hide the
+        # very rule under review.
+        parts.append(f"AGENTS.md:\n{agents_md.strip()}")
     if recent_log.strip():
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")
     if extra_context.strip():

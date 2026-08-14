@@ -103,7 +103,7 @@ from agent6.workflows._compaction import (
     recently_edited_paths,
     strip_checkoff,
 )
-from agent6.workflows._context import load_repo_summary
+from agent6.workflows._context import agents_md_text, load_repo_summary
 from agent6.workflows._conversation import (
     AssistantTurn,
     Conversation,
@@ -4105,13 +4105,9 @@ class Workflow:
         return diff_since(self.root, self.base_sha)
 
     def _read_agents_md(self) -> str:
-        path = self.root / "AGENTS.md"
-        try:
-            # errors="replace": a non-UTF-8 byte is a degraded read, not a
-            # UnicodeDecodeError the OSError guard would miss.
-            return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
-        except OSError:
-            return ""
+        # The same text the run prompt injects (repo root's file included on a
+        # subdirectory start), so review and worker see one set of conventions.
+        return agents_md_text(self.root)
 
     def _readonly_review_tools(self) -> tuple[list[ToolDefinition], ReviewDispatch]:
         return build_readonly_review_tools(self.dispatcher)

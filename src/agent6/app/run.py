@@ -103,6 +103,7 @@ from agent6.sessions.lock import (
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import session_bucket, session_kind
+from agent6.workflows._context import agents_md_notices
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import SessionResult, Workflow
 
@@ -376,6 +377,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         events = EventSink(layout.logs_path)
 
         warn_install_inside_workspace(cwd, reporter=reporter)
+        for line in agents_md_notices(cwd):
+            reporter.err(f"[agent6] {line}")
 
         # Write the run manifest. This is the canonical record of where the
         # run started (base_sha + base_branch), which model+provider drove
