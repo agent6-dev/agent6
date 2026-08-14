@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
+from agent6.viewmodel.transcript import TranscriptItem
 
 # Which ACP update a fold item becomes. `thinking` is the model's reasoning and
 # ACP has a distinct channel for it; an editor renders it collapsed rather than
@@ -94,23 +94,6 @@ def _ending(item: TranscriptItem) -> str:
         parts.append(f"- {item.detail}")
     ending = " ".join(parts)
     return f"{item.body}\n\n{ending}" if item.body.strip() else ending
-
-
-def updates_for_events(
-    events: list[dict[str, Any]], *, acp_session_id: str
-) -> list[dict[str, Any]]:
-    """Every notification a run's events produce, in order.
-
-    One fold instance across the whole sequence, because the fold is stateful:
-    deltas accumulate and flush at a turn boundary. Feeding events to fresh
-    folds would emit each partial message as if it were whole.
-    """
-    fold = TranscriptFold()
-    out: list[dict[str, Any]] = []
-    for event in events:
-        for item in fold.feed(event):
-            out.extend(updates_for(item, acp_session_id=acp_session_id))
-    return out
 
 
 def message_update(acp_session_id: str, text: str) -> dict[str, Any]:

@@ -11,8 +11,21 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.ui.acp.updates import updates_for, updates_for_events
-from agent6.viewmodel.transcript import TranscriptItem
+from agent6.ui.acp.updates import updates_for
+from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
+
+
+def updates_for_events(
+    events: list[dict[str, Any]], *, acp_session_id: str
+) -> list[dict[str, Any]]:
+    """One fold instance across the whole sequence, as the runner drives it;
+    fresh folds per event would emit each partial message as if it were whole."""
+    fold = TranscriptFold()
+    out: list[dict[str, Any]] = []
+    for event in events:
+        for item in fold.feed(event):
+            out.extend(updates_for(item, acp_session_id=acp_session_id))
+    return out
 
 
 def _kinds(updates: list[dict[str, Any]]) -> list[str]:

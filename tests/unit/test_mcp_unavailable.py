@@ -97,18 +97,17 @@ def test_the_conversation_shows_it_on_every_surface() -> None:
 def test_the_editor_is_told_too() -> None:
     """The whole reason it is an event: ACP projects the same fold, so the
     editor gets it in the conversation instead of a log pane it may not show."""
-    from agent6.ui.acp.updates import updates_for_events
+    from agent6.ui.acp.updates import updates_for
+    from agent6.viewmodel.transcript import TranscriptFold
 
-    updates = updates_for_events(
-        [
-            {
-                "type": "mcp.server_unavailable",
-                "server": "notes",
-                "error": "could not spawn MCP server 'notes': boom",
-            }
-        ],
-        acp_session_id="s",
-    )
+    event = {
+        "type": "mcp.server_unavailable",
+        "server": "notes",
+        "error": "could not spawn MCP server 'notes': boom",
+    }
+    updates = [
+        u for item in TranscriptFold().feed(event) for u in updates_for(item, acp_session_id="s")
+    ]
     assert updates, "the editor was told nothing"
     text = updates[0]["params"]["update"]["content"]["text"]
     assert "notes" in text and "tools are missing" in text

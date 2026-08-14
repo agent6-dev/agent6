@@ -47,21 +47,8 @@ from agent6.viewmodel.transcript_style import item_lines
 # --- directory layout --------------------------------------------------------
 
 
-def state_dir_for(cwd: Path) -> Path:
-    """The per-repo agent6 state dir (runs/asks/machines live under it)."""
-    return resolved_state_dir(cwd)
-
-
-def runs_root(cwd: Path) -> Path:
-    return bucket_dir(state_dir_for(cwd), "runs")
-
-
-def asks_root(cwd: Path) -> Path:
-    return bucket_dir(state_dir_for(cwd), "asks")
-
-
 def machines_root(cwd: Path) -> Path:
-    return state_dir_for(cwd) / "machines"
+    return resolved_state_dir(cwd) / "machines"
 
 
 def is_safe_component(name: str) -> bool:
@@ -70,25 +57,22 @@ def is_safe_component(name: str) -> bool:
     return bool(name) and "/" not in name and "\\" not in name and name not in {".", ".."}
 
 
-_safe_component = is_safe_component
-
-
 def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     """Locate a session dir by exact id across the hub buckets (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a session_id
     that is not a single safe path component. Husks are skipped so an orphaned
     dir in runs/ cannot shadow a real ask of the same id."""
-    if not _safe_component(session_id):
+    if not is_safe_component(session_id):
         return None
     for sub in HUB_BUCKETS:
-        d = bucket_dir(state_dir_for(cwd), sub) / session_id
+        d = bucket_dir(resolved_state_dir(cwd), sub) / session_id
         if d.is_dir() and not is_session_husk(d):
             return d
     return None
 
 
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
-    if not _safe_component(name):
+    if not is_safe_component(name):
         return None
     d = machines_root(cwd) / name
     return d if d.is_dir() else None
@@ -97,9 +81,9 @@ def machine_dir_for(cwd: Path, name: str) -> Path | None:
 def draft_dir_for(cwd: Path, name: str) -> Path | None:
     """A `machine create` draft dir by name. Its logs.jsonl is a run-style log of
     the authoring agent, so it is watched through the run endpoints."""
-    if not _safe_component(name):
+    if not is_safe_component(name):
         return None
-    d = bucket_dir(state_dir_for(cwd), "machines") / name
+    d = bucket_dir(resolved_state_dir(cwd), "machines") / name
     return d if d.is_dir() else None
 
 
@@ -107,7 +91,7 @@ def session_dir_paths(cwd: Path) -> list[Path]:
     """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
     out: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = bucket_dir(state_dir_for(cwd), sub)
+        d = bucket_dir(resolved_state_dir(cwd), sub)
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir())
     return out
@@ -115,7 +99,7 @@ def session_dir_paths(cwd: Path) -> list[Path]:
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
     """Every machine-create draft directory (where `machine create` writes)."""
-    d = bucket_dir(state_dir_for(cwd), "machines")
+    d = bucket_dir(resolved_state_dir(cwd), "machines")
     return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
 
@@ -149,7 +133,7 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     Husks (never-started dirs) are skipped, the same rule as `agent6 sessions`."""
     dirs: list[Path] = []
     for sub in HUB_BUCKETS:
-        d = bucket_dir(state_dir_for(cwd), sub)
+        d = bucket_dir(resolved_state_dir(cwd), sub)
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     summaries = [_session_summary(p) for p in dirs]

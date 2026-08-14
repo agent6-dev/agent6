@@ -10,11 +10,17 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
+from agent6.sessions.layout import bucket_dir
 from agent6.ui.web import model
 
 
+def _bucket(cwd: Path, sub: str) -> Path:
+    return bucket_dir(resolved_state_dir(cwd), sub)
+
+
 def _run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> Path:
-    d = model.runs_root(cwd) / session_id
+    d = _bucket(cwd, "runs") / session_id
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return d
@@ -57,7 +63,7 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: Path) -> None:
 def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
     # A live writer can leave the log's last line torn mid multibyte UTF-8
     # sequence; the hub summary must fold the complete lines, not raise.
-    d = model.runs_root(tmp_path) / "torn"
+    d = _bucket(tmp_path, "runs") / "torn"
     d.mkdir(parents=True)
     full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
     cut = full.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é
@@ -116,7 +122,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: Path) -> Non
     run folds it empty. The wire owner (session_state_as_dict) fills it from the
     manifest -- ONE task field; a second fallback_task the client had to
     coalesce is gone."""
-    d = model.runs_root(tmp_path) / "parked1"
+    d = _bucket(tmp_path, "runs") / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "queued work", "parked_task": "queued work"}),
@@ -154,7 +160,7 @@ def test_conversation_payload_carries_operator_inputs(tmp_path: Path) -> None:
 
 
 def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
-    d = model.runs_root(tmp_path) / "r2b"
+    d = _bucket(tmp_path, "runs") / "r2b"
     d.mkdir(parents=True)
     assert model.conversation_payload(d) == {
         "session_id": "r2b",
@@ -267,7 +273,7 @@ def test_hub_payload_shape(tmp_path: Path) -> None:
 
 
 def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
-    draft = model.state_dir_for(tmp_path) / "sessions" / "machines" / "breezy-fern-AB12CD"
+    draft = resolved_state_dir(tmp_path) / "sessions" / "machines" / "breezy-fern-AB12CD"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "author a triage machine"})
@@ -283,8 +289,8 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
 def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     # A husk (neither manifest nor logs) is not listed, and must not shadow a
     # real ask of the same id when resolving #/session/<id>.
-    (model.runs_root(tmp_path) / "echo-fern-AA11BB").mkdir(parents=True)
-    ask = model.asks_root(tmp_path) / "echo-fern-AA11BB"
+    (_bucket(tmp_path, "runs") / "echo-fern-AA11BB").mkdir(parents=True)
+    ask = _bucket(tmp_path, "asks") / "echo-fern-AA11BB"
     ask.mkdir(parents=True)
     (ask / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "ask", "user_task": "q"}) + "\n",
@@ -370,7 +376,7 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
     """A parked run (the busy-checkout refusal saved the task) has no events by
     construction, so the event fold alone reads it as "running" while the hub row
     says parked. The run page must not disagree with the hub about the same run."""
-    d = model.runs_root(tmp_path) / "parked1"
+    d = _bucket(tmp_path, "runs") / "parked1"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps({"session_id": "parked1", "parked_task": "do the thing"}), encoding="utf-8"
@@ -410,7 +416,7 @@ def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
     write_worker_pid(d, os.getpid())
     assert model.session_snapshot(d)["status_label"] == "waiting · needs answer"
 
-    e = model.runs_root(tmp_path) / "fresh1"
+    e = _bucket(tmp_path, "runs") / "fresh1"
     e.mkdir(parents=True)
     (e / "manifest.json").write_text(json.dumps({"session_id": "fresh1"}), encoding="utf-8")
     write_worker_pid(e, os.getpid())
@@ -447,7 +453,7 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
 
     from agent6.sessions.ipc import write_worker_pid
 
-    parked = model.runs_root(tmp_path) / "parked2"
+    parked = _bucket(tmp_path, "runs") / "parked2"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
         json.dumps({"session_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
@@ -487,7 +493,7 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
     and a resume that died on spawn was reported as success -- the spawn's
     stderr goes to DEVNULL, so nothing else could surface it. `live` is what
     separates the two, and both these states must read false."""
-    parked = model.runs_root(tmp_path) / "parked-live"
+    parked = _bucket(tmp_path, "runs") / "parked-live"
     parked.mkdir(parents=True)
     (parked / "manifest.json").write_text(
         json.dumps({"session_id": "parked-live", "parked_task": "t"}), encoding="utf-8"
