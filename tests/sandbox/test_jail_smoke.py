@@ -545,7 +545,7 @@ def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: P
         # mount_setattr(dirfd=AT_FDCWD, path, flags=0, attr=NULL, size=0):
         # NULL attr makes it a pure permission probe -- EPERM (seccomp) vs
         # EFAULT/EINVAL (syscall reached the kernel) is what we assert on.
-        "r = libc.syscall(442, -100, b'/workspace/.git', 0, 0, 0)\n"
+        f"r = libc.syscall(442, -100, {str(git_dir).encode()!r}, 0, 0, 0)\n"
         "e = ctypes.get_errno()\n"
         "print('EPERM' if (r == -1 and e == 1) else f'REACHED:{e}')\n"
     )

@@ -443,7 +443,9 @@ def test_machine_answer_id_traversal_is_contained(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    _inst, _state = _make_machine_with_state(tmp_path, "travm", "0000-review")
+    # running=True so the liveness gate passes and the id-component check is
+    # the only thing that can refuse -- otherwise the traversal is never tested.
+    _inst, _state = _make_machine_with_state(tmp_path, "travm", "0000-review", running=True)
     escape = tmp_path / "pwned.answer"
     status, _ = _post(port, "/api/machine/travm/answer", {"id": "../../pwned", "answers": ["x"]})
     assert status != 200
@@ -1239,7 +1241,8 @@ def test_machine_answer_state_hint_traversal_is_contained(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _srv, port = server
-    _make_machine_with_state(tmp_path, "adv3", "0001-work")
+    # running=True so the refusal rests on the state-hint component check.
+    _make_machine_with_state(tmp_path, "adv3", "0001-work", running=True)
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
         port,

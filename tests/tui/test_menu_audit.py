@@ -26,15 +26,11 @@ from agent6.ui.tui.menubar import Menu, _Dropdown
 
 
 def _resolve(host: object, action: str) -> Callable[..., object] | None:
-    # Mirror Textual action namespaces: "app.foo"/"screen.foo" target that object;
-    # a bare name tries the host (screen/app) then the app for built-ins. A
-    # framework action like focus_next lives on App only, so it MUST be written
-    # "app.focus_next" -- a bare "focus_next" would not resolve as a binding.
+    # EXACTLY the real dispatcher (MenuBar.on_menu_bar_selected / palette
+    # commands): getattr on the screen, then the app. No dotted-namespace
+    # parsing -- a dotted "app.foo" item is dead in every real consumer, so the
+    # audit must not resolve it either.
     app = getattr(host, "app", host)
-    if "." in action:
-        namespace, _, name = action.partition(".")
-        target = {"app": app, "screen": host}.get(namespace)
-        return getattr(target, f"action_{name}", None) if target is not None else None
     return getattr(host, f"action_{action}", None) or getattr(app, f"action_{action}", None)
 
 

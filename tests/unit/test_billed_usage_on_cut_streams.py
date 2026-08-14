@@ -158,3 +158,6 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     snap = budget.snapshot()
     assert snap.input_total == 0
     assert snap.output_total == 0
+    # per_model is where a spurious zero-count record would show: a stream that
+    # reported nothing must not seed a model entry at all.
+    assert snap.per_model == {}

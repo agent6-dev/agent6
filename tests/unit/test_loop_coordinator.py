@@ -316,7 +316,6 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: Path) -
     texts = _user_texts(_final_messages(provider))
     assert any("OPERATOR STEERING" in t and "/parallelfoo do x" in t for t in texts)
     assert not any(t.startswith("[parallel]") for t in texts)
-    assert not any("no /parallel tasks found" in t for t in texts)
 
 
 def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:

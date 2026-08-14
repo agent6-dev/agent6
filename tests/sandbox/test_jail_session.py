@@ -249,7 +249,9 @@ def test_closing_the_session_takes_the_namespace_down(tmp_path: Path) -> None:
     started = _run(session, ("sh", "-c", "(sleep 300 &) ; echo bg"))
     assert started.returncode == 0, started.stderr
     session.close()
-    with pytest.raises(Exception):
+    # The closed session refuses with its OWN error (a bare Exception would
+    # swallow the raw-OSError failure mode the sibling test guards against).
+    with pytest.raises(JailUnavailableError):
         _run(session, ("true",))
 
 

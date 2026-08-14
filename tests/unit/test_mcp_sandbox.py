@@ -53,12 +53,19 @@ def test_a_confined_server_loses_the_session_bus() -> None:
     bus, ask the UNCONFINED `systemd --user` to read it, and have the result
     written outside its write set. Any reachable unconfined spawner is a way
     out, so a confined child does not get the addresses that reach one."""
+    import pytest
+
     from agent6.child_env import curated_env
 
-    confined = curated_env(desktop=False)
-    for var in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY"):
-        assert var not in confined, f"{var} reaches a process that is not confined"
-    assert "PATH" in curated_env(desktop=False), "it still has to be able to run"
+    # Set them in the parent first: an unset var is absent from any allowlist,
+    # so without this the assertions pass even if desktop=False were a no-op.
+    with pytest.MonkeyPatch().context() as mp:
+        for var in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY"):
+            mp.setenv(var, "set-in-parent")
+        confined = curated_env(desktop=False)
+        for var in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "WAYLAND_DISPLAY"):
+            assert var not in confined, f"{var} reaches a process that is not confined"
+        assert "PATH" in confined, "it still has to be able to run"
 
 
 def test_a_notify_hook_keeps_the_desktop_it_needs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,7 +153,7 @@ def test_a_server_name_is_refused_before_it_becomes_a_table_header(
     )
     assert rc != 0
     assert "[A-Za-z0-9_-]+" in capsys.readouterr().err
-    written = tmp_path / "cfg" / "agent6" / "config.toml"
+    written = tmp_path / "cfg" / "config.toml"
     assert not written.exists() or "isolation" not in written.read_text(encoding="utf-8")
 
 

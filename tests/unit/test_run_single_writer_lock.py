@@ -12,6 +12,7 @@ first's parent->child links, and would interleave commits. The run-level flock
 from __future__ import annotations
 
 import multiprocessing
+import os
 import time
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
@@ -68,7 +69,10 @@ def _hold_lock(session_dir: str, ready: EventType, done: EventType) -> None:
         return
     ready.set()
     done.wait(timeout=5.0)
-    release_single_writer(fd)
+    # NO explicit release: the flock must drop on process exit, which is the
+    # crash path this test exists to pin (a voluntary release would test the
+    # ordinary path the sibling already covers).
+    os._exit(0)
 
 
 def test_cross_process_contention_and_release_on_death(tmp_path: Path) -> None:

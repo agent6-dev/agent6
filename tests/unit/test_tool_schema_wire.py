@@ -27,8 +27,8 @@ from agent6.tools.schema import (
 )
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_tool_schemas.json"
-# The loop-only control tools (finish_session, run_metric, dag_*, memory, use_skill),
-# plan's finish_planning, ask's agent6_docs, and machine's finish_session -- the
+# The loop-only control tools (finish_session, run_metric_command, the task
+# tools, ask_user, use_skill), plan's finish_planning, ask's agent6_docs -- the
 # LLM-facing surface OUTSIDE ALL_TOOLS that schemas_as_provider_tools() (and so
 # _GOLDEN) does not cover. Pinned as a deduped, name-sorted digest.
 _GOLDEN_EXTRA = Path(__file__).parent / "data" / "golden_extra_tool_schemas.json"

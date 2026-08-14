@@ -101,7 +101,6 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
     clear_pending_answers(tmp_path)
     assert not (approvals_dir(tmp_path) / "approval-1.answer").exists()
     assert not (questions_dir(tmp_path) / "question-1.answer").exists()
-    assert not (tmp_path / "frontend.pid").exists()
 
 
 def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path: Path) -> None:

@@ -53,7 +53,8 @@ def test_apply_multi_hunk_offset_tracking() -> None:
 
 
 def test_apply_pure_insertion_hunk() -> None:
-    # `@@ -3,0 +4,2 @@` style: zero lines in original, anchored at line 3.
+    # An insertion anchored on a context line (@@ -3,1 +3,3 @@): old_count == 1,
+    # so the `else` arm of the buf_start branch.
     original = "a\nb\nc\n"
     patch = "--- a/f.txt\n+++ b/f.txt\n@@ -3,1 +3,3 @@\n c\n+x\n+y\n"
     _, new = apply_patch_text(patch, original)

@@ -71,7 +71,10 @@ _PATH_TRAVERSAL_CORPUS = [
 @pytest.mark.parametrize("evil_path", _PATH_TRAVERSAL_CORPUS)
 def test_read_file_rejects_traversal(tmp_path: Path, evil_path: str) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(ToolError):
+    # match= the containment message: a bare ToolError also covers "Not a file",
+    # which a corpus path under a nonexistent parent raises even with the `..`
+    # guard removed.
+    with pytest.raises(ToolError, match=r"(contains '\.\.'|[Aa]bsolute|outside)"):
         d.dispatch("read_file", {"path": evil_path})
 
 

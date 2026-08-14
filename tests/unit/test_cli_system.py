@@ -28,12 +28,18 @@ def priv_calls(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return recorded
 
 
-def test_status_reports_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_status_reports_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
-    rc = main(["system", "apparmor", "status"])
-    assert rc == 0
+    assert main(["system", "apparmor", "status"]) == 0
+    assert "AppArmor profile: installed" in capsys.readouterr().out
+    # and a missing profile reads not-installed
+    monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(tmp_path / "absent"))
+    assert main(["system", "apparmor", "status"]) == 0
+    assert "AppArmor profile: not installed" in capsys.readouterr().out
 
 
 def test_install_refused_on_non_apparmor_host(

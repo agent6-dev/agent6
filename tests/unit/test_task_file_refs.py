@@ -31,17 +31,16 @@ def test_does_not_touch_email_addresses(tmp_path: Path) -> None:
 
 
 def test_rejects_escape_via_parent(tmp_path: Path) -> None:
-    # Create a file OUTSIDE root; the @ref should fail the relative_to check.
-    outside = tmp_path.parent / "agent6_test_escape.txt"
+    # The bait sits where `@../escape` RESOLVES (one up from root), so it is a
+    # real, readable file outside root -- the relative_to guard is the only
+    # reason the read is refused, not an is_file() miss.
+    sub = tmp_path / "work"
+    sub.mkdir()
+    outside = tmp_path / "agent6_test_escape.txt"
     outside.write_text("secret\n", encoding="utf-8")
-    try:
-        sub = tmp_path / "work"
-        sub.mkdir()
-        out = expand_task_file_refs("look at @../agent6_test_escape.txt", sub)
-        assert "secret" not in out
-        assert "@../agent6_test_escape.txt" in out
-    finally:
-        outside.unlink(missing_ok=True)
+    out = expand_task_file_refs("look at @../agent6_test_escape.txt", sub)
+    assert "secret" not in out
+    assert "@../agent6_test_escape.txt" in out
 
 
 def test_ignores_directories(tmp_path: Path) -> None:

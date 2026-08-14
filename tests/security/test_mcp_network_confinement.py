@@ -116,6 +116,9 @@ def test_the_jail_binary_is_what_confines_a_server(tmp_path: Path) -> None:
     (The Python Landlock shim MCP used to carry is gone; if it comes back,
     this fails.)"""
     assert not (Path(__file__).parents[2] / "src/agent6/sandbox/exec_confined.py").exists()
-    script = "print(open('/proc/self/cmdline','rb').read().split(b'\\0')[0].decode())\n"
+    # A confined server is PID 2 in its OWN pid namespace (the launcher is PID
+    # 1). An unconfined spawn keeps a host pid, so this fails if confinement is
+    # ever bypassed -- unlike "python3 is in the cmdline", true of any spawn.
+    script = "import os; print('PID', os.getpid())\n"
     out = _probe(script, tmp_path)
-    assert "python3" in out
+    assert "PID 2" in out, out

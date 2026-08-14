@@ -303,6 +303,13 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     assert after.returncode == 42  # not the 0 it wrote
     assert after.command == shlex.join(argv)  # not the name it wrote
     assert any("exited 42" in line for line in roster_from_dir(tmp_path / "shells"))
+    # The trail lives in the shell dir the command was never granted, so its
+    # result.json carries the real 42 and no forged returncode=0 reached it.
+    shell_dir = next((tmp_path / "shells").iterdir())
+    import json as _json
+
+    result = _json.loads((shell_dir / "result.json").read_text(encoding="utf-8"))
+    assert result["returncode"] == 42
 
 
 def test_a_sweep_never_signals_a_process_group_it_does_not_own() -> None:
