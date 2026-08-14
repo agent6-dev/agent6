@@ -291,6 +291,13 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
     assert stop_reason(130) == "cancelled"
 
 
+def test_a_deliberate_finish_over_a_red_gate_is_end_turn() -> None:
+    """Exit 4 is "finished deliberately, gate not green": the agent answered,
+    so the editor must not be told the turn was refused (a live smoke saw a
+    committed, summarised fix reported as stopReason=refusal)."""
+    assert stop_reason(4) == "end_turn"
+
+
 def test_an_editor_driven_run_is_not_refused_for_lack_of_a_terminal() -> None:
     """`agent6 acp`'s stdin is the protocol pipe, never a tty.
 

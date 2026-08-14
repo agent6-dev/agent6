@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.frontend import FrontendCapabilities
 from agent6.app.reporter import Reporter
 from agent6.app.run import run_task
@@ -104,14 +105,15 @@ def option_kind(text: str, standing: bool | None) -> str:
 def stop_reason(code: int) -> StopReason:
     """ACP's vocabulary, from the lifecycle's exit code.
 
-    ACP has no "the run failed": a red gate, a provider error and a budget stop
-    are all `refusal`. The DETAIL is already on the wire -- `updates_for` sends
-    how the run ended as a message -- so the stop reason only has to be one the
-    editor will not drop the turn over.
+    A deliberate finish is `end_turn` even when the verify gate stayed red
+    (exit 4): the agent answered, and the gate's state is already on the wire
+    as messages. `refusal` is for a run that could not complete -- it broke,
+    was refused, or hit its budget; ACP has no finer failure word, and the
+    DETAIL again arrives as messages.
     """
     if code == 130:
         return "cancelled"
-    return "end_turn" if code == 0 else "refusal"
+    return "end_turn" if code in (0, EXIT_VERIFY_FAILED) else "refusal"
 
 
 def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
