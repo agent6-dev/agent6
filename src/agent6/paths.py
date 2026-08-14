@@ -5,23 +5,23 @@
 Single source of truth for:
 
 - the global (user-level) config + secrets directory under XDG
-  (``$XDG_CONFIG_HOME/agent6`` or ``~/.config/agent6``),
-- the per-repo config path (``<state_dir>/config.toml``, out of the repo),
-- the run-state directory (``$XDG_STATE_HOME/agent6/<repo-id>`` by default,
+  (`$XDG_CONFIG_HOME/agent6` or `~/.config/agent6`),
+- the per-repo config path (`<state_dir>/config.toml`, out of the repo),
+- the run-state directory (`$XDG_STATE_HOME/agent6/<repo-id>` by default,
   overridable from the global config), and
-- the *real* operator when agent6 is invoked through ``sudo``, so we read
+- the *real* operator when agent6 is invoked through `sudo`, so we read
   the user's config/secrets (not root's) and never leave root-owned files
   scattered in their repository.
 
 Security model (see docs/security.md):
 
 - Running an LLM-driven agent as root is dangerous. agent6 refuses to run
-  as root unless the operator explicitly opts in via ``--allow-root`` or
-  ``AGENT6_ALLOW_ROOT=1``, and prints a loud banner either way.
-- When ``euid == 0`` and the process was launched through ``sudo`` we
-  resolve the invoking user from ``SUDO_UID`` / ``SUDO_GID`` / ``SUDO_USER``
-  and ``chown`` anything we create back to them. We do NOT drop privileges
-  in-process: the whole point of ``sudo agent6`` is that verify/run
+  as root unless the operator explicitly opts in via `--allow-root` or
+  `AGENT6_ALLOW_ROOT=1`, and prints a loud banner either way.
+- When `euid == 0` and the process was launched through `sudo` we
+  resolve the invoking user from `SUDO_UID` / `SUDO_GID` / `SUDO_USER`
+  and `chown` anything we create back to them. We do NOT drop privileges
+  in-process: the whole point of `sudo agent6` is that verify/run
   commands need root, and those run inside the jail as root regardless, so
   juggling euid in the bookkeeping code would be theatre. The jail remains
   the real boundary.
@@ -46,8 +46,8 @@ _GLOBAL_DIR_ENV = "AGENT6_CONFIG_HOME"  # points at the agent6 global dir itself
 class RealUser:
     """The human operator agent6 is acting on behalf of.
 
-    Differs from the process euid only when agent6 runs under ``sudo``:
-    there ``uid``/``gid``/``home`` describe the user who typed ``sudo``,
+    Differs from the process euid only when agent6 runs under `sudo`:
+    there `uid`/`gid`/`home` describe the user who typed `sudo`,
     not root.
     """
 
@@ -73,7 +73,7 @@ def _passwd_home(uid: int) -> Path | None:
 def effective_user() -> RealUser:
     """Resolve the operator agent6 should act as.
 
-    Under ``sudo`` (euid 0 + ``SUDO_UID`` set) this is the invoking user;
+    Under `sudo` (euid 0 + `SUDO_UID` set) this is the invoking user;
     otherwise it is the current process user.
     """
     euid = os.geteuid()
@@ -100,9 +100,9 @@ def effective_user() -> RealUser:
 
 
 def _user_dir(user: RealUser | None, override_env: str, xdg_env: str, *home_parts: str) -> Path:
-    """One precedence dance for every agent6 user dir: ``<override_env>`` >
-    ``$<xdg_env>/agent6`` (only when not running through sudo, where root's
-    XDG would be wrong) > ``<real-user-home>/<home_parts>/agent6``."""
+    """One precedence dance for every agent6 user dir: `<override_env>` >
+    `$<xdg_env>/agent6` (only when not running through sudo, where root's
+    XDG would be wrong) > `<real-user-home>/<home_parts>/agent6`."""
     override = os.environ.get(override_env)
     if override:
         return Path(override).expanduser()
@@ -115,8 +115,8 @@ def _user_dir(user: RealUser | None, override_env: str, xdg_env: str, *home_part
 
 
 def global_config_dir(user: RealUser | None = None) -> Path:
-    """The agent6 global config directory: ``AGENT6_CONFIG_HOME`` >
-    ``$XDG_CONFIG_HOME/agent6`` > ``~/.config/agent6``."""
+    """The agent6 global config directory: `AGENT6_CONFIG_HOME` >
+    `$XDG_CONFIG_HOME/agent6` > `~/.config/agent6`."""
     return _user_dir(user, _GLOBAL_DIR_ENV, "XDG_CONFIG_HOME", ".config")
 
 
@@ -129,7 +129,7 @@ def secrets_path(user: RealUser | None = None) -> Path:
 
 
 def ui_settings_path(user: RealUser | None = None) -> Path:
-    """UI-only preferences (theme, etc.), a sibling of ``config.toml``.
+    """UI-only preferences (theme, etc.), a sibling of `config.toml`.
 
     Kept separate from the agent config on purpose: a theme is a machine-wide
     viewer preference, not agent behavior, so it never goes through the config
@@ -142,8 +142,8 @@ _CACHE_DIR_ENV = "AGENT6_CACHE_HOME"  # points at the agent6 cache dir itself
 
 
 def cache_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user cache directory: ``AGENT6_CACHE_HOME`` >
-    ``$XDG_CACHE_HOME/agent6`` > ``~/.cache/agent6``. Holds throwaway,
+    """The agent6 user cache directory: `AGENT6_CACHE_HOME` >
+    `$XDG_CACHE_HOME/agent6` > `~/.cache/agent6`. Holds throwaway,
     regenerable data such as the provider model-list snapshots used for
     shell completion; safe to delete."""
     return _user_dir(user, _CACHE_DIR_ENV, "XDG_CACHE_HOME", ".cache")
@@ -153,9 +153,9 @@ _DATA_DIR_ENV = "AGENT6_DATA_HOME"  # points at the agent6 data dir itself
 
 
 def data_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user data directory: ``AGENT6_DATA_HOME`` >
-    ``$XDG_DATA_HOME/agent6`` > ``~/.local/share/agent6``. Holds installed
-    skills (``<data>/skills/<name>/``); unlike the cache it is authoritative
+    """The agent6 user data directory: `AGENT6_DATA_HOME` >
+    `$XDG_DATA_HOME/agent6` > `~/.local/share/agent6`. Holds installed
+    skills (`<data>/skills/<name>/`); unlike the cache it is authoritative
     and not regenerable."""
     return _user_dir(user, _DATA_DIR_ENV, "XDG_DATA_HOME", ".local", "share")
 
@@ -168,8 +168,8 @@ _STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itse
 
 def state_base(user: RealUser | None = None) -> Path:
     """The agent6 state BASE directory (per-repo config + run state):
-    ``AGENT6_STATE_HOME`` > ``$XDG_STATE_HOME/agent6`` >
-    ``~/.local/state/agent6``. Each repo gets ``<base>/<repo-id>/``."""
+    `AGENT6_STATE_HOME` > `$XDG_STATE_HOME/agent6` >
+    `~/.local/state/agent6`. Each repo gets `<base>/<repo-id>/`."""
     return _user_dir(user, _STATE_DIR_ENV, "XDG_STATE_HOME", ".local", "state")
 
 
@@ -190,11 +190,11 @@ def private_dirs() -> tuple[Path, ...]:
 
 
 def hidden_paths(extra: Iterable[Path]) -> tuple[Path, ...]:
-    """Every tree hidden from a run: the operator's ``[sandbox].hide_paths``
+    """Every tree hidden from a run: the operator's `[sandbox].hide_paths`
     plus :func:`private_dirs`.
 
     ONE owner, because two enforcers read it -- the jail masks these from a
-    jailed command, and the in-process ``Workspace`` refuses them to the tools
+    jailed command, and the in-process `Workspace` refuses them to the tools
     -- and a boundary they disagree about is a hole.
     """
     return (*extra, *private_dirs())
@@ -213,14 +213,14 @@ _ID_HASH_LEN = 12
 def repo_id(repo_root: Path) -> str:
     """A directory name that identifies *repo_root*, and only it.
 
-    ``/`` becomes ``-``, and a trailing tag records which dashes were slashes:
-    one bit per dash, most significant first, in hex. ``/a/b/c`` -> ``a-b-c-3``,
-    ``/a/b-c`` -> ``a-b-c-2``, ``/a-b-c`` -> ``a-b-c-0``. The mapping is
+    `/` becomes `-`, and a trailing tag records which dashes were slashes:
+    one bit per dash, most significant first, in hex. `/a/b/c` -> `a-b-c-3`,
+    `/a/b-c` -> `a-b-c-2`, `/a-b-c` -> `a-b-c-0`. The mapping is
     reversible, so two different paths cannot produce the same id -- there is no
     hash in the common case and nothing to collide.
 
     Leading zeros need no sentinel: the name fixes how many dashes there are,
-    so the tag's bit LENGTH is known and ``01`` cannot be read as ``1``.
+    so the tag's bit LENGTH is known and `01` cannot be read as `1`.
 
     Keyed on the RESOLVED path, so two checkouts never share state. Moving or
     renaming a checkout changes its id: its prior runs are simply not found
@@ -265,14 +265,14 @@ def _tail_bytes(s: str, limit: int) -> str:
 def project_root(start: Path) -> Path:
     """The repo *start* is inside, or *start* itself outside one.
 
-    Walks for ``.git`` rather than asking git: this is on the path of every
+    Walks for `.git` rather than asking git: this is on the path of every
     command, read-only ones included, and a subprocess per invocation is not.
-    A worktree's ``.git`` is a file, hence ``exists`` and not ``is_dir``.
+    A worktree's `.git` is a file, hence `exists` and not `is_dir`.
 
-    No stop at ``$HOME``: with ``git init $HOME`` every directory under it
+    No stop at `$HOME`: with `git init $HOME` every directory under it
     really IS one repo, and one repo has to be one project. Breaking the walk
     there gave each subdirectory its own state dir -- and its own
-    ``repo.lock``, while ``git -C`` still resolved every one of them to the
+    `repo.lock`, while `git -C` still resolved every one of them to the
     same working tree, so two runs committed into it at once. That is exactly
     the interleaving the lock exists to prevent. Sharing state across a
     dotfiles repo is the operator's own choice; losing the lock is not.
@@ -285,15 +285,15 @@ def project_root(start: Path) -> Path:
 
 
 def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
-    """The per-repo agent6 state directory (``<base>/<repo-id>``).
+    """The per-repo agent6 state directory (`<base>/<repo-id>`).
 
-    Keyed on the PROJECT (``project_root``), not on where the operator is
+    Keyed on the PROJECT (`project_root`), not on where the operator is
     standing: keyed on the cwd, every cross-session feature (`sessions`,
     `resume`, `read_session`, memory) would silently find an empty project
     from any subdirectory.
 
-    ``base_override`` is the global ``[agent6].state_dir`` (an absolute base
-    path); when set it replaces the XDG base. ``repo_id`` is always appended,
+    `base_override` is the global `[agent6].state_dir` (an absolute base
+    path); when set it replaces the XDG base. `repo_id` is always appended,
     so one global base namespaces every repo without collision.
     """
     base = Path(base_override).expanduser() if base_override else state_base()
@@ -301,7 +301,7 @@ def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
 
 
 def repo_config_path(repo_root: Path, base_override: str | None = None) -> Path:
-    """The per-repo config file (``<state_dir>/config.toml``), out of the repo."""
+    """The per-repo config file (`<state_dir>/config.toml`), out of the repo."""
     return state_dir(repo_root, base_override) / "config.toml"
 
 
@@ -321,7 +321,7 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
     """Create *path* (with any missing ancestors), chowning what was created
     back to the real user.
 
-    Under ``sudo`` a bare ``mkdir(parents=True)`` creates the missing ancestry
+    Under `sudo` a bare `mkdir(parents=True)` creates the missing ancestry
     as root, and a root-owned base blocks every later non-root sibling (the
     second repo's state dir, the next skill's install dir). The handover covers
     the topmost directory this call created, recursively -- pre-existing
@@ -340,7 +340,7 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
 
 
 def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
-    """Recursively ``chown`` *path* back to the real operator.
+    """Recursively `chown` *path* back to the real operator.
 
     No-op unless the process is root and was launched through sudo.
 
@@ -348,7 +348,7 @@ def chown_to_real_user(path: Path, user: RealUser | None = None) -> None:
     follows a link, so no walked component can be swapped between the walk
     and the call: a jailed command holds RW on some of these trees, and root
     resolving a swapped parent would chown anything on the host. The tree
-    root itself is one ``lchown`` by path (links never followed).
+    root itself is one `lchown` by path (links never followed).
     Best-effort: permission errors are swallowed (the file is still usable by
     root), and we never weaken perms to compensate.
     """

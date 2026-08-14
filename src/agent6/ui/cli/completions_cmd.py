@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""``agent6 completions``: install (or print) shell tab-completion.
+"""`agent6 completions`: install (or print) shell tab-completion.
 
-The argcomplete docs' ``eval "$(register-python-argcomplete agent6)"`` needs
+The argcomplete docs' `eval "$(register-python-argcomplete agent6)"` needs
 that register script on PATH, which a uv-tool install does not guarantee. This
-command is self-contained: ``argcomplete.shellcode()`` emits the equivalent
+command is self-contained: `argcomplete.shellcode()` emits the equivalent
 registration, and the default action INSTALLS it. For bash/zsh the script is
-written under the agent6 config dir and one marker-guarded ``source`` line is
+written under the agent6 config dir and one marker-guarded `source` line is
 appended to the shell's rc file (idempotent: rerunning refreshes the script and
 never duplicates the block). Fish gets a file in its native completions dir --
 no rc edit, and fish picks it up automatically.
@@ -15,16 +15,16 @@ Xonsh is not an argcomplete target, so it gets a small generated completer
 instead: argcomplete speaks a shell-agnostic protocol (env vars in, candidates
 out on a side channel), and the completer drives it directly, so it stays
 correct as agent6's arguments change without agent6 depending on xonsh. It
-lands in the xonsh ``rc.d`` auto-load dir, so like fish it needs no rc edit.
+lands in the xonsh `rc.d` auto-load dir, so like fish it needs no rc edit.
 
 The shell is detected by walking up the process tree to the nearest known
-shell (a fish started from bash leaves ``$SHELL=bash``), falling back to
-``$SHELL``; pass ``bash``, ``zsh``, ``fish``, or ``xonsh`` explicitly when
+shell (a fish started from bash leaves `$SHELL=bash`), falling back to
+`$SHELL`; pass `bash`, `zsh`, `fish`, or `xonsh` explicitly when
 both are wrong.
 
 A child process cannot restart the shell that launched it, so instead of
 pretending to, the bash/zsh install ends by printing exactly what to run
-(``source <rc>`` or ``exec $SHELL``) to activate the completions in the
+(`source <rc>` or `exec $SHELL`) to activate the completions in the
 current session.
 """
 
@@ -130,11 +130,11 @@ completer.add_one_completer("agent6", _agent6_completer, "start")
 def detect_shell() -> str:
     """The interactive shell this command was launched from.
 
-    Walks up the process tree (Linux ``/proc``) to the nearest ancestor that
-    is a known shell: ``$SHELL`` is the login shell, not the running one (a
-    fish started from bash keeps ``$SHELL=bash``), and the direct parent can
-    be a wrapper like ``uv``. Falls back to ``$SHELL``'s basename when the
-    walk finds nothing (macOS, no ``/proc``)."""
+    Walks up the process tree (Linux `/proc`) to the nearest ancestor that
+    is a known shell: `$SHELL` is the login shell, not the running one (a
+    fish started from bash keeps `$SHELL=bash`), and the direct parent can
+    be a wrapper like `uv`. Falls back to `$SHELL`'s basename when the
+    walk finds nothing (macOS, no `/proc`)."""
     pid = os.getppid()
     for _ in range(10):
         try:

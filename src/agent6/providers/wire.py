@@ -4,19 +4,19 @@
 
 agent6 separates three concerns:
 
-- **api_format** (``anthropic`` | ``openai``) selects the wire dialect; that
+- **api_format** (`anthropic` | `openai`) selects the wire dialect; that
   lives in the two provider modules (body shaping, response parsing, SSE).
-- **deployment** (``direct`` | ``vertex`` | ``azure``) is a named profile that
+- **deployment** (`direct` | `vertex` | `azure`) is a named profile that
   decides the request URL shape and whether the model id rides in the URL path
-  vs the JSON body. Adding a deployment (e.g. ``bedrock``) is a new branch here
+  vs the JSON body. Adding a deployment (e.g. `bedrock`) is a new branch here
   plus an auth style, with no config-shape change.
-- **auth** (``style`` + a static key or a refreshable ``token_command``) decides
+- **auth** (`style` + a static key or a refreshable `token_command`) decides
   the auth header.
 
 This module is the small, security-relevant core shared by both providers: it is
-where the auth credential becomes a header and where ``base_url`` becomes the
+where the auth credential becomes a header and where `base_url` becomes the
 exact URL dialled. Keeping it in one place keeps the egress allow-list (which is
-derived from the same ``base_url`` host) and the redaction set honest.
+derived from the same `base_url` host) and the redaction set honest.
 """
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
 
 def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
-    """The ``(lowercased-header-name, value)`` for an auth style, or None.
+    """The `(lowercased-header-name, value)` for an auth style, or None.
 
-    Returns None for ``none`` or an empty token (an unauthenticated local
+    Returns None for `none` or an empty token (an unauthenticated local
     endpoint sends no auth header). httpx2 lowercases header names anyway; we do
     it here so callers and the transcript-redaction set agree on the spelling.
     """
@@ -67,9 +67,9 @@ def request_url(
 ) -> tuple[str, bool]:
     """Build the request URL and say whether the model id goes in the body.
 
-    Returns ``(url, model_in_body)``. ``model_in_body=False`` means the model id
-    is carried in the URL path (Vertex-Anthropic ``:rawPredict``/
-    ``:streamRawPredict``, Azure ``/deployments/{model}``) and MUST be omitted
+    Returns `(url, model_in_body)`. `model_in_body=False` means the model id
+    is carried in the URL path (Vertex-Anthropic `:rawPredict`/
+    `:streamRawPredict`, Azure `/deployments/{model}`) and MUST be omitted
     from the JSON body.
     """
     base = base_url.rstrip("/")

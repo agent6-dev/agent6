@@ -248,7 +248,7 @@ class _Handler(BaseHTTPRequestHandler):
     server: WebServer  # type: ignore[assignment]
 
     def log_message(self, format: str, *args: Any) -> None:  # match the stdlib signature
-        pass  # quiet; we are not a logging server
+        pass  # quiet; this is not a logging server
 
     @property
     def cwd(self) -> Path:
@@ -608,7 +608,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         if self.close_connection:
             # Announce the close (CSRF refusal, unread POST body): without the
-            # header a keep-alive client reuses the socket we are about to shut.
+            # header a keep-alive client reuses the socket this handler is about to shut.
             self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)

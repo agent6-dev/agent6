@@ -3,12 +3,12 @@
 """OpenAI Chat Completions response parsing.
 
 The response-parsing half of the provider: choices[0].message ->
-``ProviderResponse`` in agent6's canonical Anthropic shape (tool_calls ->
-tool_uses, reasoning_content -> a leading thinking block in ``raw``,
+`ProviderResponse` in agent6's canonical Anthropic shape (tool_calls ->
+tool_uses, reasoning_content -> a leading thinking block in `raw`,
 prompt_tokens normalised to fresh-input semantics). Both the non-streaming
-path and the synthesised streaming response in ``providers/openai.py`` call
+path and the synthesised streaming response in `providers/openai.py` call
 it; the text-embedded tool-call fallback lives in
-``providers/_openai_recovery.py``.
+`providers/_openai_recovery.py`.
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ def parse_response(  # noqa: PLR0912, PLR0915
             )
         message = first.get("message") or {}
         text = str(message.get("content") or "")
-        # Kimi (``reasoning_content``), DeepSeek-R1 /
-        # OpenRouter (``reasoning``), and OpenAI o-series surface
+        # Kimi (`reasoning_content`), DeepSeek-R1 /
+        # OpenRouter (`reasoning`), and OpenAI o-series surface
         # reasoning in a sibling field. Capture both spellings.
         raw_reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
         reasoning_text = str(raw_reasoning) if raw_reasoning else ""
@@ -167,9 +167,9 @@ def parse_response(  # noqa: PLR0912, PLR0915
     # same structure regardless of provider.
     raw_content: list[dict[str, Any]] = []
     if reasoning_text:
-        # A leading ``thinking`` block, so every provider yields one shape.
-        # Reasoning is NOT promoted into ``text``: surfaces that echo
-        # ``resp.text`` (CLI logger, transcripts) would double-print it.
+        # A leading `thinking` block, so every provider yields one shape.
+        # Reasoning is NOT promoted into `text`: surfaces that echo
+        # `resp.text` (CLI logger, transcripts) would double-print it.
         raw_content.append({"type": "thinking", "thinking": reasoning_text})
     if text:
         raw_content.append({"type": "text", "text": text})

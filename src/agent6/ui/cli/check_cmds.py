@@ -454,7 +454,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
     """Start configured MCP servers, enumerate tools, then close them.
 
     Returns one check per configured server plus a summary check. When
-    ``[mcp]`` is disabled or empty, returns a single skip-style PASS so
+    `[mcp]` is disabled or empty, returns a single skip-style PASS so
     the doctor doesn't fail an unconfigured-by-design feature.
     """
     if not cfg.mcp.enabled or not cfg.mcp.servers:
@@ -523,7 +523,7 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
 
     Does NOT execute the verify command, that would run an arbitrary
     test suite on every doctor call. Operators can do
-    ``./$(verify_command)`` themselves when they want a live run.
+    `./$(verify_command)` themselves when they want a live run.
     """
     argv = list(cfg.workflow.verify_command)
     if not argv:

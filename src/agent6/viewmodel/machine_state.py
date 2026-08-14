@@ -229,7 +229,7 @@ class MachineWatchCursor:
 
     One implementation of the three dedup rules every front-end (the CLI watch
     loop, the TUI machine screen) must agree on: transitions by count,
-    notifications by identity (``ms.notifications`` is a sliding window, so a
+    notifications by identity (`ms.notifications` is a sliding window, so a
     count index would miss every notify past its cap), and the newest state
     log by (path, byte offset) with only complete lines consumed."""
 
@@ -281,10 +281,10 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     """The JSON-able wire form of a MachineState, stable field names: what
     `agent6 attach --json` and a web client serialize.
 
-    Pass *machine_dir* whenever the caller has one: ``status`` is then THE
+    Pass *machine_dir* whenever the caller has one: `status` is then THE
     dir-aware word (:func:`machine_word_for_dir`), so a client can tell a
     parked "waiting" instance from a running one. Without it a client's only
-    liveness signal is ``ended``, and Steer on a parked machine looked live."""
+    liveness signal is `ended`, and Steer on a parked machine looked live."""
     d = asdict(ms)
     if machine_dir is not None:
         d["status"] = machine_word_for_dir(ms, machine_dir)

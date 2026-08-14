@@ -21,10 +21,10 @@ from agent6.viewmodel.events import event_epoch
 
 
 def session_mtime(session_dir: Path) -> float:
-    """Last-activity time of a session: the mtime of its ``logs.jsonl`` (when the run
+    """Last-activity time of a session: the mtime of its `logs.jsonl` (when the run
     last appended an event), falling back to the dir mtime before the log exists.
 
-    NOT the run-directory mtime: a viewer writes its ``frontends/`` claim / ``approvals/``
+    NOT the run-directory mtime: a viewer writes its `frontends/` claim / `approvals/`
     into the dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
     merely-viewed run to "most recent". Keying off the log keeps "when" stable.
     """
@@ -42,10 +42,10 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
     bucket dirs.
 
     The one run-recency query: callers name the buckets in scope explicitly --
-    a lone ``runs/`` dir for run/plan/resume/fork/ask scope, or every
-    ``SESSION_BUCKETS`` dir for a cross-bucket listing (attach / runs stop). A
+    a lone `runs/` dir for run/plan/resume/fork/ask scope, or every
+    `SESSION_BUCKETS` dir for a cross-bucket listing (attach / runs stop). A
     missing bucket dir is skipped; returns None when no bucket holds a run.
-    Callers that key off the id take ``.name`` of the result.
+    Callers that key off the id take `.name` of the result.
 
     Husks are skipped, like every listing skips them: a crash-orphaned dir with
     no manifest and no log is newer than the real runs, so returning it pointed
@@ -62,7 +62,7 @@ def newest_session_dir(buckets: Iterable[Path]) -> Path | None:
 
 def first_task_line(lines: Iterable[str]) -> str | None:
     """First user-authored line, skipping the ask headers and the multi-line body
-    of a ``<file ...>`` / ``<prior-run ...>`` block (a seeded ask prepends those).
+    of a `<file ...>` / `<prior-run ...>` block (a seeded ask prepends those).
     Returns None when nothing stands out."""
     skip_until: str | None = None
     for line in lines:
@@ -114,7 +114,7 @@ def is_session_husk(session_dir: Path) -> bool:
 
 
 def session_compare(session_dir: Path) -> CompareStamp | None:
-    """The ``compare`` stamp a fan-out's auto-compare recorded on an imported
+    """The `compare` stamp a fan-out's auto-compare recorded on an imported
     lane's manifest (rank/of/winner/ranked_by/rationale), or None for a run that
     was never part of a compared fan-out. The event fold doesn't carry it (it is
     post-import manifest state), so every run view reads it from here. Best effort:
@@ -154,10 +154,10 @@ class SessionSummary:
 
 
 def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[str, str]:
-    """Map an end state to ``(word, reason-detail)``.
+    """Map an end state to `(word, reason-detail)`.
 
     The single place that decides how a run's outcome reads -- shared by
-    ``session_status_label`` (headers) and ``summarize_session_dir`` (listings) so the
+    `session_status_label` (headers) and `summarize_session_dir` (listings) so the
     surfaces can never disagree. "stopped" is the operator's own act (not a
     failure); "planned" and "answered" are the no-verify clean exits (a plan
     pass / an ask, where "passed" would mislead); "passed" means all verify
@@ -205,8 +205,8 @@ PARKED_STATUS = ("parked", "resume to start")
 @dataclass(frozen=True, slots=True)
 class StatusFacts:
     """The event-derived inputs to :func:`status_for_session_dir`, producible from
-    either event reader -- ``LogScan.status_facts()`` (the tolerant scanner
-    behind listings and ``sessions show``) and ``state.status_facts`` (the typed
+    either event reader -- `LogScan.status_facts()` (the tolerant scanner
+    behind listings and `sessions show`) and `state.status_facts` (the typed
     fold behind the live views) -- so every surface feeds the one status
     decision the same answers for the same log."""
 
@@ -218,13 +218,13 @@ class StatusFacts:
 
 
 def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
-    """THE ``(word, reason)`` for a session that has a dir on disk.
+    """THE `(word, reason)` for a session that has a dir on disk.
 
     Every listing and header feeds this the event facts and lets the DIR
     supply what events cannot: a parked submission (manifest) and worker
-    liveness (worker.pid). The pure fold's ``session_status_label``
-    is only for a stream with genuinely no dir (``attach --json``); a surface
-    with a run dir that folds events alone reads every non-``session.end`` state
+    liveness (worker.pid). The pure fold's `session_status_label`
+    is only for a stream with genuinely no dir (`attach --json`); a surface
+    with a run dir that folds events alone reads every non-`session.end` state
     as "running" and disagrees with the hub.
 
     A started session is live iff its worker is: the pid is written before
@@ -272,7 +272,7 @@ _DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
 
 
 def died_without_end(status: str) -> bool:
-    """Whether *status* is a session that never reached its own ``session.end``."""
+    """Whether *status* is a session that never reached its own `session.end`."""
     return status in _DIED_WITHOUT_END
 
 
@@ -301,7 +301,7 @@ LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 def session_is_live(session_dir: Path) -> bool:
     """Whether the operator can still act on this session: THE affordance question,
-    "will anything read what I write", not ``worker_is_alive``'s "is a pid
+    "will anything read what I write", not `worker_is_alive`'s "is a pid
     running" (a parked run resumes; a dead worker's buttons reach nobody).
 
     Derived from the status word, so a surface cannot disagree with the label
@@ -314,14 +314,14 @@ def session_is_live(session_dir: Path) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class LogScan:
-    """One tolerant pass over a session's ``logs.jsonl``: the shared scan behind the
-    hub listing and ``sessions show``. One owner, because the resume rules (bank
+    """One tolerant pass over a session's `logs.jsonl`: the shared scan behind the
+    hub listing and `sessions show`. One owner, because the resume rules (bank
     cost legs, un-finish) and the torn-line tolerances drifted when each
     consumer scanned for itself.
 
-    Token counters are the CURRENT leg's; ``cost_usd`` is cumulative across
+    Token counters are the CURRENT leg's; `cost_usd` is cumulative across
     resume legs (None = no budget.update ever), matching the typed fold's
-    BudgetView so no two surfaces can disagree on what a run cost. ``legs``
+    BudgetView so no two surfaces can disagree on what a run cost. `legs`
     lets a renderer say which scope a figure describes when they differ.
     """
 
@@ -362,7 +362,7 @@ class LogScan:
 
     def status_facts(self) -> StatusFacts:
         """This scan's answers to the status questions, for status_for_session_dir.
-        The typed fold's ``state.status_facts`` must agree on the same log
+        The typed fold's `state.status_facts` must agree on the same log
         (pinned by the status matrix test)."""
         return StatusFacts(
             started=self.saw_start,
@@ -377,7 +377,7 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
     """*raw* as a float when it is a real number or numeric string; else the
     last good figure. A torn/adversarial usd_total degrades like a torn line,
     never aborts the scan (the typed fold makes the same call in parse_event),
-    and falsy junk (``""``, ``False``) must KEEP the figure; an ``or 0.0``
+    and falsy junk (`""`, `False`) must KEEP the figure; an `or 0.0`
     fallback silently reset it."""
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         return float(raw)
@@ -413,10 +413,10 @@ def needs_new_work_refusal(session_id: str) -> str:
 
 
 def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear fold, like build_parser)
-    """Fold ``logs.jsonl`` into a :class:`LogScan`: session.start (mode/task), the
+    """Fold `logs.jsonl` into a :class:`LogScan`: session.start (mode/task), the
     last session.end (un-finished again by a later resume), the running per-leg
     budget banked across resumes into a cumulative total, and the liveness
-    anchors (timestamps, iteration, last event type) ``sessions show`` reads.
+    anchors (timestamps, iteration, last event type) `sessions show` reads.
 
     errors="replace": a live writer can leave a torn multibyte UTF-8 tail; strict
     decoding would take down the whole listing. The mangled line just fails
@@ -537,7 +537,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
 
 
 def summarize_session_dir(session_dir: Path) -> SessionSummary:
-    """One listing row from ``logs.jsonl`` + the manifest. Replaced the
+    """One listing row from `logs.jsonl` + the manifest. Replaced the
     near-duplicate scanners in the TUI hub and the web hub that badged a
     provider_error death as a neutral "done". An "ask" run's task is replaced by
     its transcript, which shows what was asked."""

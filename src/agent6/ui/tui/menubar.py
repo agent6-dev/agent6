@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A slim, universal menu bar for the TUI: classic ``File / Edit / View / Help``
+"""A slim, universal menu bar for the TUI: classic `File / Edit / View / Help`
 titles with a mnemonic letter, each opening a dropdown of actions (with their
 shortcut keys shown). One widget, reused on every screen — each screen just
 passes its own :class:`Menu` list. Selecting an item runs the host screen's
-``action_<id>`` (falling back to app actions), dispatched by the bar itself —
+`action_<id>` (falling back to app actions), dispatched by the bar itself —
 so the menu, the buttons, the key bindings, and the command palette all reach
 the same handlers and never drift.
 
 Every action is therefore reachable by mouse (click a title, click an item), by
-keyboard (``Alt+<letter>`` opens a menu; arrows + Enter pick; Esc closes), and
+keyboard (`Alt+<letter>` opens a menu; arrows + Enter pick; Esc closes), and
 by name in the command palette.
 """
 
@@ -101,11 +101,11 @@ def _key_label(key: str) -> str:
 
 
 def action_keys(source: object) -> dict[str, str]:
-    """Map each bound ``action`` to its shortcut label(s) from the ACTIVE bindings --
+    """Map each bound `action` to its shortcut label(s) from the ACTIVE bindings --
     the single source of truth, so the menu bar, the help page, and the footer all
     show the same keys and can't drift from the actual key bindings. Multiple keys on
     one action (e.g. PageDown + Ctrl+End, or Shift+Enter + Ctrl+J) are joined:
-    'PgDn / ^End'. ``source`` may be an App (its current screen is used) or a Screen."""
+    'PgDn / ^End'. `source` may be an App (its current screen is used) or a Screen."""
     screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
     labels: dict[str, list[str]] = {}
     for key, active in getattr(screen, "active_bindings", {}).items():
@@ -128,7 +128,7 @@ def _title_text(menu: Menu) -> Text:
 def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Option]:
     """Dropdown rows with labels left-aligned and shortcut keys RIGHT-aligned to a
     common edge, so the keys line up in a column. The shortcut comes from the live
-    key bindings (``keys`` = action -> label, possibly several joined), falling back
+    key bindings (`keys` = action -> label, possibly several joined), falling back
     to the item's own key hint for menu-only actions with no binding."""
     labels = [keys.get(it.action) or (_key_label(it.key) if it.key else "") for it in items]
     label_w = max((len(it.label) for it in items), default=0)
@@ -290,7 +290,7 @@ class HelpScreen(Screen[None]):
 class _MenuTitle(Static):
     """One clickable title in the bar. Clicking opens (or toggles/switches) its
     menu; each title carries its own mnemonic because events.Click has no
-    ``.widget`` to say which was hit. Titles are deliberately NOT focusable: a
+    `.widget` to say which was hit. Titles are deliberately NOT focusable: a
     click on one then can't blur the open dropdown, so toggling is a race-free
     state check, and Tab moves to real content (closing any open menu) instead
     of hopping between titles. Keyboard opening is Alt+<letter> (menu_bindings)
@@ -370,7 +370,7 @@ class _Dropdown(OptionList):
 
 class MenuBar(Horizontal):
     """The single top row: the menu titles on the left, and the app title +
-    context (``agent6 — <path>``) filling the rest on the right. Replaces a
+    context (`agent6 — <path>`) filling the rest on the right. Replaces a
     separate Header row entirely -- one row, no clock, no command-palette icon
     (the palette is in the Help menu, the footer, and Ctrl+P)."""
 

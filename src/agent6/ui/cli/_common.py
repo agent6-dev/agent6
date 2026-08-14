@@ -27,13 +27,13 @@ def _sub(
     *,
     help: str,
 ) -> argparse.ArgumentParser:
-    """``add_parser`` with *help* mirrored as the description, so a leaf
-    ``--help`` opens with the same summary the parent's command list shows."""
+    """`add_parser` with *help* mirrored as the description, so a leaf
+    `--help` opens with the same summary the parent's command list shows."""
     return subparsers.add_parser(name, help=help, description=help)
 
 
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
-    """Add per-run budget override flags (override ``[budget]`` config)."""
+    """Add per-run budget override flags (override `[budget]` config)."""
     parser.add_argument(
         "--max-usd",
         type=float,
@@ -58,12 +58,12 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-invocation sandbox/approval override flags (every paid
     command carries both: run/plan/ask/resume and machine run).
 
-    ``--dangerously-disable-sandbox`` runs the agent's commands UNCONFINED on
-    the host (equivalent to a one-off ``sandbox.isolation = "none"``); the env
-    ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` does the same. ``--auto-approve``
-    auto-approves ``run_command`` for this invocation: it upgrades
-    ``sandbox.run_commands`` from ask to yes and never resurrects a withheld
-    no. Approval is skipped; confinement still depends on ``sandbox.isolation``.
+    `--dangerously-disable-sandbox` runs the agent's commands UNCONFINED on
+    the host (equivalent to a one-off `sandbox.isolation = "none"`); the env
+    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` does the same. `--auto-approve`
+    auto-approves `run_command` for this invocation: it upgrades
+    `sandbox.run_commands` from ask to yes and never resurrects a withheld
+    no. Approval is skipped; confinement still depends on `sandbox.isolation`.
     """
     parser.add_argument(
         "--dangerously-disable-sandbox",
@@ -105,21 +105,21 @@ def sgr(text: str, code: str) -> str:
 def _state_dir(repo_root: Path) -> Path:
     """The per-repo agent6 state dir (config + run state), out of the workspace.
 
-    Resolved from the global ``[agent6].state_dir`` base (default
-    ``$XDG_STATE_HOME/agent6``) plus a per-repo id, so this is cheap and works
-    for read-only commands (``sessions``/``history``/...) without a full config
+    Resolved from the global `[agent6].state_dir` base (default
+    `$XDG_STATE_HOME/agent6`) plus a per-repo id, so this is cheap and works
+    for read-only commands (`sessions`/`history`/...) without a full config
     merge.
     """
     return resolved_state_dir(repo_root)
 
 
 def _runs_dir(repo_root: Path) -> Path:
-    """The ``runs/`` directory under the per-repo state dir."""
+    """The `runs/` directory under the per-repo state dir."""
     return bucket_dir(_state_dir(repo_root), "runs")
 
 
 def _plans_dir(repo_root: Path) -> Path:
-    """The ``plans/`` directory under the per-repo state dir."""
+    """The `plans/` directory under the per-repo state dir."""
     return bucket_dir(_state_dir(repo_root), "plans")
 
 
@@ -169,7 +169,7 @@ def all_session_dirs(repo_root: Path) -> list[Path]:
 
 
 def _machines_dir(repo_root: Path) -> Path:
-    """The ``machines/`` directory under the per-repo state dir."""
+    """The `machines/` directory under the per-repo state dir."""
     return _state_dir(repo_root) / "machines"
 
 
@@ -177,20 +177,20 @@ def resolve_session_layout(
     repo_root: Path, query: str, *, allow_husk: bool = False
 ) -> SessionLayout:
     """Resolve a run id (or unique prefix) across every run-style bucket --
-    one per mode under ``sessions/`` -- returning a ``SessionLayout``
+    one per mode under `sessions/` -- returning a `SessionLayout`
     with the matching subdir.
 
-    `agent6 run` lives under ``runs/``, `plan` under ``plans/``, `agent6 ask`
-    under ``asks/``, and `machine create` authoring logs under
-    ``sessions/machines/``; read-only commands (``sessions show``/``attach``/
-    ``history search``) use this so anything
-    a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
+    `agent6 run` lives under `runs/`, `plan` under `plans/`, `agent6 ask`
+    under `asks/`, and `machine create` authoring logs under
+    `sessions/machines/`; read-only commands (`sessions show`/`attach`/
+    `history search`) use this so anything
+    a listing shows is also inspectable by id. Raises `SessionIdError` if no run
     matches in any bucket.
 
     A HUSK (no manifest, no log: it crashed before it ever started) refuses
     with the remedy, so every surface says the same thing instead of showing
-    an empty session and advising a resume that fails. ``allow_husk`` is for
-    ``sessions rm``, whose whole job is deleting one.
+    an empty session and advising a resume that fails. `allow_husk` is for
+    `sessions rm`, whose whole job is deleting one.
     """
     if not query:
         raise SessionIdError("empty run id")
@@ -269,11 +269,11 @@ def resolve_or_newest_layout(
     """Resolve an explicit *session_id* across every run-style bucket, or fall back to
     the newest run across all buckets when *session_id* is empty.
 
-    Returns the resolved ``SessionLayout``. Returns None only for the empty-*session_id*
+    Returns the resolved `SessionLayout`. Returns None only for the empty-*session_id*
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
-    ``SessionIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
+    `SessionIdError` (`.ambiguous` set for a prefix clash) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
-    ``attach`` / ``sessions stop`` / ``sessions show``: a new such command resolves the
+    `attach` / `sessions stop` / `sessions show`: a new such command resolves the
     same way instead of re-deriving the id-or-newest glue.
     """
     if session_id:
@@ -290,7 +290,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     """Gate running as root behind an explicit opt-in.
 
     Returns a non-zero exit code (to refuse) when running as root without
-    ``--allow-root`` / ``AGENT6_ALLOW_ROOT=1``; returns None to proceed. When
+    `--allow-root` / `AGENT6_ALLOW_ROOT=1`; returns None to proceed. When
     proceeding as root it prints a loud banner. We deliberately do NOT drop
     privileges: under sudo the LLM's verify/run commands need to run as root
     inside the jail, so the jail, not the process uid, is the boundary.

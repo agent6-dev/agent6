@@ -101,8 +101,8 @@ def _read_escape(fd: int) -> str:
 
 
 def _read_key(fd: int) -> str:
-    """One logical key from *fd*: a name from the tables above, ``char:<c>``
-    for text (UTF-8 decoded), ``""`` for keys we ignore."""
+    """One logical key from *fd*: a name from the tables above, `char:<c>`
+    for text (UTF-8 decoded), `""` for keys we ignore."""
     data = os.read(fd, 1)
     if not data:
         return "eof"
@@ -338,7 +338,7 @@ class _Reader:
     )
 
     def handle_key(self, key: str, write: Callable[[str], None]) -> bool:
-        """Apply one key. True when Enter accepted the line (in ``self.line``);
+        """Apply one key. True when Enter accepted the line (in `self.line`);
         raises KeyboardInterrupt/EOFError for Ctrl-C / Ctrl-D-on-empty."""
         if key == "interrupt":
             write("\r\n\x1b[J")
@@ -397,9 +397,9 @@ def menu_input(
 ) -> str:
     """Read one line with a fish-style command preview.
 
-    Matches ``input()``'s contract: returns the line without the newline,
+    Matches `input()`'s contract: returns the line without the newline,
     raises EOFError on Ctrl-D at an empty line, KeyboardInterrupt on Ctrl-C
-    (via SIGINT in cbreak mode, or the ``\\x03`` byte where signals are off).
+    (via SIGINT in cbreak mode, or the `\\x03` byte where signals are off).
     Accepted non-empty lines are appended to *history* (deduped against the
     last entry); Ctrl-R searches *history* (Enter/Tab keep the highlighted
     match for editing, Esc cancels). *read_key*/*write* are injectable for

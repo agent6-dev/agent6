@@ -26,7 +26,7 @@ __all__ = [
 # provider listing can omit the window (Anthropic's /models does not report
 # it) and the first run has no cache yet; wins over the live cache when both
 # know a model. Keep ids canonical (no date/`:tag` suffix --
-# ``normalize_model_id`` strips those before matching).
+# `normalize_model_id` strips those before matching).
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     # Anthropic. The 5-family ships 1M as the default AND maximum (no beta
     # header, standard pricing); the 4.x standard window is 200k with the 1M
@@ -51,7 +51,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     "deepseek/deepseek-v3.2-exp": 163_840,
 }
 
-# Adaptive sizing. tokens ~= chars/4 (matches the loop's ``context_chars``
+# Adaptive sizing. tokens ~= chars/4 (matches the loop's `context_chars`
 # approximation). Tier-1 elides old tool_results once they pass ~45% of the
 # window (Claude Code's continuous local tiers); tier-2 summarise-and-restart
 # is a near-edge valve, firing only within a fixed reserve of the window
@@ -68,8 +68,8 @@ _FALLBACK_SUMMARISE_CHARS = 768_000
 
 
 def normalize_model_id(model_id: str) -> str:
-    """Strip a trailing ``-YYYYMMDD`` snapshot date or ``:tag`` so dated/tagged
-    ids (``claude-haiku-4-5-20251001``, ``qwen/qwen3-coder:free``) match the
+    """Strip a trailing `-YYYYMMDD` snapshot date or `:tag` so dated/tagged
+    ids (`claude-haiku-4-5-20251001`, `qwen/qwen3-coder:free`) match the
     canonical bundled key."""
     base = model_id.split(":", 1)[0]
     return re.sub(r"-\d{8}$", "", base)
@@ -85,8 +85,8 @@ def context_window(provider_name: str, model_id: str) -> int | None:
     """Best-effort context window (tokens) for a configured model. Never raises.
 
     Bundled table (curated; tested models + Anthropic) first, then the live
-    model cache (``context_length`` from the provider listing, populated by
-    completion / ``agent6 model``), then None. Reads only -- never triggers a
+    model cache (`context_length` from the provider listing, populated by
+    completion / `agent6 model`), then None. Reads only -- never triggers a
     network fetch -- so it is safe and fast on the run path.
     """
     return _bundled_context_window(model_id) or cached_context_window(
@@ -101,7 +101,7 @@ def compaction_thresholds(
     drop_override: int | None,
     summarise_override: int | None,
 ) -> tuple[int, int]:
-    """Effective ``(compact_drop_at_chars, compact_summarise_at_chars)``.
+    """Effective `(compact_drop_at_chars, compact_summarise_at_chars)`.
 
     Explicit config wins (both set, by construction -- the config validator
     requires both-or-neither). Otherwise size from the model's context window
@@ -124,18 +124,18 @@ def compaction_thresholds(
 # converted premature finishes into full component coverage
 # (mistral-small-3.2-24b: textkit +0.53, rpn +0.13, ledger +0.18). Every other
 # benched model (qwen3-coder-30b, qwen3.6-35b, claude-haiku-4-5) sat at the
-# score ceiling and paid a 2-4x iteration tax, so ``prompt.decompose = "auto"``
+# score ceiling and paid a 2-4x iteration tax, so `prompt.decompose = "auto"`
 # resolves to on ONLY for these families and unknown models stay off. Grow
 # this list with bench evidence, not vibes.
 DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
 
 
 def decompose_default(model_id: str) -> bool:
-    """True when ``prompt.decompose = "auto"`` should enable decompose-first
+    """True when `prompt.decompose = "auto"` should enable decompose-first
     prompting for *model_id*: its family has a measured win in bench/coreagent.
-    Family matching ignores the org prefix and any date/``:tag`` suffix, so
-    ``mistralai/mistral-small-3.2-24b-instruct:free`` matches
-    ``mistral-small-3.2``."""
+    Family matching ignores the org prefix and any date/`:tag` suffix, so
+    `mistralai/mistral-small-3.2-24b-instruct:free` matches
+    `mistral-small-3.2`."""
     family = normalize_model_id(model_id).rsplit("/", 1)[-1].lower()
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 

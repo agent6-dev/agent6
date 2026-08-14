@@ -250,7 +250,7 @@ def _check_value(
     if isinstance(t, JsonT):
         return _check_json(value, label)
     # RecordT: a default/value is a placeholder (the example uses `{}` for a
-    # required-field record), so we do not require presence, but any field
+    # required-field record), so the check does not require presence, but any field
     # that *is* present must be known and well-typed.
     if not isinstance(value, dict):
         return [f"{label}: expected object for record {t.name!r}, got {_py_type(value)}"]
@@ -780,7 +780,7 @@ def _validate_wait(
 def _timing_literal(text: str) -> str | None:
     """The constant value of a timing template, or None if it interpolates a
     variable (validated against the variable's type instead). Returns None on a
-    malformed template, which ``_validate_template`` already reported."""
+    malformed template, which `_validate_template` already reported."""
     try:
         template = parse_template(text)
     except TemplateError:
@@ -793,7 +793,7 @@ def _timing_literal(text: str) -> str | None:
 def _timing_ref(text: str) -> Reference | None:
     """The lone reference in a timing template, else None.
 
-    Malformed templates and composite templates return None. ``_validate_template``
+    Malformed templates and composite templates return None. `_validate_template`
     already reports parse errors, and composite templates are data-dependent: the
     engine validates the rendered value at runtime.
     """
@@ -952,7 +952,7 @@ def _validate_predicate(
 def _ast_reference(node: ast.expr) -> Reference | None:
     """Reconstruct a blackboard :class:`Reference` from an already-allow-listed
     predicate AST node (a `Name` or `Attribute` chain), or None for anything
-    else. The structure was validated by ``parse_predicate``."""
+    else. The structure was validated by `parse_predicate`."""
     parts: list[str] = []
     current: ast.expr = node
     while isinstance(current, ast.Attribute):

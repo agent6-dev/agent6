@@ -61,7 +61,7 @@ def detect_env() -> Environment:
 
 @dataclass(frozen=True, slots=True)
 class BudgetOverrides:
-    """Per-run budget overrides parsed from ``--max-*`` flags."""
+    """Per-run budget overrides parsed from `--max-*` flags."""
 
     max_usd: float | None = None
     max_tokens_fallback: int | None = None
@@ -98,11 +98,11 @@ class BudgetOverrides:
 class SandboxOverrides:
     """Per-invocation sandbox/approval overrides from CLI flags.
 
-    ``--dangerously-disable-sandbox`` runs unconfined; ``--auto-approve``
-    auto-approves every jailed command; ``--no-commands`` withholds them
+    `--dangerously-disable-sandbox` runs unconfined; `--auto-approve`
+    auto-approves every jailed command; `--no-commands` withholds them
     entirely (what `/btw` spawns its side question with). The env setter for the sandbox is read in
-    ``detect.resolve_isolation`` (so it also reaches machine subprocesses), so
-    ``from_args`` reads only the flags. Flags and env are structurally
+    `detect.resolve_isolation` (so it also reaches machine subprocesses), so
+    `from_args` reads only the flags. Flags and env are structurally
     LLM-unreachable."""
 
     disable_sandbox: bool = False
@@ -147,9 +147,9 @@ def apply_git_ops_policy(cfg: Config) -> None:
 def check_provider_keys(cfg: Config) -> str | None:
     """Return an error message if any referenced provider has no resolvable key.
 
-    A key may come from the env var named by ``api_key_env`` or from
-    ``secrets.toml`` (via ``agent6 connect``). Only providers actually
-    referenced by a configured ``[models.<role>]`` are checked.
+    A key may come from the env var named by `api_key_env` or from
+    `secrets.toml` (via `agent6 connect`). Only providers actually
+    referenced by a configured `[models.<role>]` are checked.
     OpenAI-compat providers with no key configured at all are skipped
     (unauthenticated local endpoints like Ollama).
     """
@@ -256,12 +256,12 @@ def start_mcp_manager_if_enabled(
     events: EventSink | None = None,
     session_net: SessionNetwork | None = None,
 ) -> MCPManager | None:
-    """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
+    """Spawn all enabled MCP servers from `cfg.mcp`. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
     teardown entirely). One bad server doesn't poison the run: it is skipped,
     and the run simply does not see its tools.
 
-    A skipped server also becomes an ``mcp.server_unavailable`` journal event
+    A skipped server also becomes an `mcp.server_unavailable` journal event
     when *events* is given. Stderr is only visible from a terminal -- under an
     editor it is a log pane, and the operator sees a run quietly missing the
     tools they configured.

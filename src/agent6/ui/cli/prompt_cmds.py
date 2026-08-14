@@ -18,7 +18,7 @@ def _cmd_prompt_show(
 ) -> int:
     """Print the exact system prompt agent6 would send for THIS repo + the
     effective (layered) config, in the given mode. The static structural blocks
-    are identical every run; the ``<repo-priors>`` block (repo map + AGENTS.md +
+    are identical every run; the `<repo-priors>` block (repo map + AGENTS.md +
     recent commits) is assembled from the current repo. Useful for seeing what
     the worker actually receives, and as the basis for a custom prompt override."""
     cwd = Path.cwd()

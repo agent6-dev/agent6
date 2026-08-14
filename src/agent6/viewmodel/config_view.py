@@ -62,7 +62,7 @@ class ConfigView:
 
 
 def _unwrap_optional(ann: Any) -> Any:
-    """``X | None`` -> ``X``; leave a genuine multi-member union (e.g. the
+    """`X | None` -> `X`; leave a genuine multi-member union (e.g. the
     provider-entry union) untouched."""
     if get_origin(ann) in (Union, types.UnionType):
         non_none = [a for a in get_args(ann) if a is not type(None)]
@@ -86,8 +86,8 @@ def _nested_model(ann: Any) -> type[BaseModel] | None:
 
 
 def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
-    """The model(s) a ``dict`` field maps to: one for a plain model value, or
-    several for a discriminated union (e.g. ``providers`` ->
+    """The model(s) a `dict` field maps to: one for a plain model value, or
+    several for a discriminated union (e.g. `providers` ->
     Anthropic|OpenAI entry). Returns () when the value isn't model-shaped."""
     ann = _unwrap_optional(ann)
     if get_origin(ann) is not dict:
@@ -105,8 +105,8 @@ def _merge_field_schema(
     models: tuple[type[BaseModel], ...], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Resolve a field across discriminated-union members, merging choices: a
-    field shared by every member (e.g. ``auth_style``) keeps its choices; the
-    discriminator itself (``api_format``: Literal['anthropic'] in one member,
+    field shared by every member (e.g. `auth_style`) keeps its choices; the
+    discriminator itself (`api_format`: Literal['anthropic'] in one member,
     Literal['openai'] in the other) becomes the union of both."""
     results = [r for m in models if (r := _field_schema(m, parts)) is not None]
     if not results:
@@ -143,7 +143,7 @@ def _field_schema(
     model_cls: type[BaseModel], parts: list[str]
 ) -> tuple[str, tuple[str, ...] | None, Any, str] | None:
     """Walk *model_cls* down the dotted *parts* to a leaf field and return
-    ``(py_type, choices, default, description)``, or None if the path can't be resolved
+    `(py_type, choices, default, description)`, or None if the path can't be resolved
     (e.g. a dynamic provider key whose value model is a discriminated union)."""
     name = parts[0]
     fi = getattr(model_cls, "model_fields", {}).get(name)
@@ -174,8 +174,8 @@ def build_config_view(
     *resolved* maps a dotted key to its resolved value for settings whose raw
     value is a placeholder for runtime resolution (compaction left unset ->
     adaptive, sized from the model's context window). It never changes
-    provenance or the modified flag -- it only fills ``effective_value`` /
-    ``is_adaptive`` so a UI can show the real number.
+    provenance or the modified flag -- it only fills `effective_value` /
+    `is_adaptive` so a UI can show the real number.
     """
     resolved = resolved or {}
     leaves = flatten_leaves(eff.config.model_dump(mode="python"))
@@ -245,7 +245,7 @@ def _truncate(text: str, width: int) -> str:
 
 def _description_lines(description: str, indent: str) -> list[str]:
     """The description wrapped for a terminal, markdown bold stripped (backticks
-    read fine in a terminal; ``**`` is noise there)."""
+    read fine in a terminal; `**` is noise there)."""
     return textwrap.wrap(
         description.replace("**", ""),
         width=92,
@@ -281,7 +281,7 @@ def render_key_detail(
     as_json: bool = False,
 ) -> str | None:
     """Render one config leaf (or a whole section prefix) UNTRUNCATED, for
-    ``agent6 config show <key>``: the full-width table clips long values (e.g. a
+    `agent6 config show <key>`: the full-width table clips long values (e.g. a
     verify_command), so a single-key view prints the whole value plus its source,
     default, and choices. Returns None when nothing matches *key*."""
     view = build_config_view(eff, resolved=resolved)
@@ -323,18 +323,18 @@ def render_show(
     """Render the effective config + provenance from the shared ConfigView.
 
     Plain mode is a section-grouped, fixed-width 3-column table
-    (key / value / source) with a leading ``*`` on rows that override the
-    default, no box drawing, so it never wraps badly. ``*`` rows are the
+    (key / value / source) with a leading `*` on rows that override the
+    default, no box drawing, so it never wraps badly. `*` rows are the
     ones to eyeball; settings whose value is resolved at runtime (compaction
-    left adaptive) show their resolved value tagged ``(adaptive)``. JSON mode
+    left adaptive) show their resolved value tagged `(adaptive)`. JSON mode
     emits the full per-leaf view (value, effective, default, source, modified,
     adaptive, type, choices) -- the complete machine-readable picture.
 
     *resolved* maps dotted keys to their resolved values (e.g. adaptive
     compaction sized from the worker model); the caller computes it. *color*
-    dims the default rows (tty only; the caller passes ``isatty()``) so the
-    ``*`` operator-set rows stand out. *descriptions* prints each leaf's
-    meaning wrapped and dimmed under its row (``--descriptions``); the default
+    dims the default rows (tty only; the caller passes `isatty()`) so the
+    `*` operator-set rows stand out. *descriptions* prints each leaf's
+    meaning wrapped and dimmed under its row (`--descriptions`); the default
     stays values-only so the values stay scannable.
     """
     view = build_config_view(eff, resolved=resolved)

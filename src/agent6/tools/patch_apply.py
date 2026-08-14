@@ -362,7 +362,7 @@ def is_v4a_patch(text: str) -> bool:
 
 def patch_target_path(text: str) -> str:
     """Extract the single target path from a patch (either format) without
-    applying it. Raises ``PatchError`` if no path header is present."""
+    applying it. Raises `PatchError` if no path header is present."""
     if is_v4a_patch(text):
         for ln in text.splitlines():
             d = _v4a_file_directive(ln)
@@ -390,7 +390,7 @@ def _v4a_file_directive(line: str) -> tuple[str, str] | None:
 def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  # noqa: PLR0912
     """Parse and apply a single-file OpenAI V4A patch.
 
-    Returns ``(target_path, new_content)``. Raises ``PatchError`` on a malformed
+    Returns `(target_path, new_content)`. Raises `PatchError` on a malformed
     envelope, a multi-file patch, a missing/ambiguous context, or a file
     create/update mismatch. All-or-nothing: the caller writes the returned text.
     """
@@ -489,12 +489,12 @@ def _v4a_splice(content: str, idx: int, old_block: str, new_block: str) -> str:
 
 
 def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str]]:
-    """Split a V4A Update body into ``(hints, old_block, new_block)`` tuples.
+    """Split a V4A Update body into `(hints, old_block, new_block)` tuples.
 
-    A ``@@ <text>`` line is a section LOCATOR HINT for the hunk that follows: its
-    text (typically a ``def``/``class`` line) names the enclosing region, used to
+    A `@@ <text>` line is a section LOCATOR HINT for the hunk that follows: its
+    text (typically a `def`/`class` line) names the enclosing region, used to
     disambiguate when the hunk's own context lines repeat elsewhere in the file.
-    One or more ``@@`` lines may precede a hunk; an empty ``@@`` is a bare hunk
+    One or more `@@` lines may precede a hunk; an empty `@@` is a bare hunk
     separator with no hint. Within a hunk, ` `/`-` lines build the old block and
     ` `/`+` lines build the new block.
     """
@@ -536,10 +536,10 @@ def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str
 
 def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str) -> int | None:
     """Index at which to apply *old_block* when it occurs more than once, using
-    the ``@@`` *hints* to disambiguate. Returns None when the hints do not
+    the `@@` *hints* to disambiguate. Returns None when the hints do not
     resolve it to a SINGLE location (the caller then reports the hunk as
     ambiguous -- we never guess which occurrence to edit). Each hint must appear
-    in order; ``old_block`` must then occur exactly once at or after the last
+    in order; `old_block` must then occur exactly once at or after the last
     hint's position."""
     search_from = 0
     last_hint_pos = 0
@@ -559,7 +559,7 @@ def _line_anchored_indices(content: str, block: str) -> list[int]:
     """Start indices where *block* occurs aligned to line boundaries: the match
     must begin at BOF or just after a newline and end at EOF or just before a
     newline. A V4A hunk block is always whole lines, so a substring match that
-    straddles a line boundary (``-x = 1`` inside ``x = 10``) is a false positive
+    straddles a line boundary (`-x = 1` inside `x = 10`) is a false positive
     that would splice mid-line and silently corrupt the file."""
     out: list[int] = []
     start = 0

@@ -63,11 +63,11 @@ def build_repl_hook(
     mcp_manager: MCPManager | None = None,
     console_view: ConsoleView | None = None,
 ) -> Callable[[int, str], Literal["continue", "stop"]]:
-    """Build the after_auto_commit hook for ``agent6 run -i``.
+    """Build the after_auto_commit hook for `agent6 run -i`.
 
-    Captures the budget tracker (for ``/cost``), the repo root (for
-    ``/undo`` and ``/diff``), the current run id (for ``/diff`` and
-    ``/watch``), and the live MCP manager (for ``/mcp``) in a closure
+    Captures the budget tracker (for `/cost`), the repo root (for
+    `/undo` and `/diff`), the current run id (for `/diff` and
+    `/watch`), and the live MCP manager (for `/mcp`) in a closure
     so Workflow stays agnostic of the CLI's extra state.
     """
 
@@ -148,7 +148,7 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
 
     Intentionally NOT a live tail - the REPL is between turns of the
     agent loop; a tail would block the next iteration. Operators who
-    want continuous tail use ``agent6 attach`` in another shell.
+    want continuous tail use `agent6 attach` in another shell.
     """
     if not session_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)

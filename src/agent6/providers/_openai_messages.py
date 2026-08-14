@@ -3,8 +3,8 @@
 """OpenAI Chat Completions request-message translation.
 
 Anthropic content-blocks (agent6's internal lingua franca) -> the OpenAI
-Chat Completions ``messages`` / ``tools`` wire shape. See
-``providers/openai.py``'s module docstring for the translation rationale
+Chat Completions `messages` / `tools` wire shape. See
+`providers/openai.py`'s module docstring for the translation rationale
 (Shape B tool-use translation); this module is the request-building half.
 """
 
@@ -20,17 +20,17 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     system: str, anthropic_msgs: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Translate agent6's canonical Anthropic-shape messages into the
-    OpenAI Chat Completions ``messages`` array.
+    OpenAI Chat Completions `messages` array.
 
     Three block types in Anthropic content are non-trivial:
 
-    - ``text`` -> string content on the message (concatenated for
+    - `text` -> string content on the message (concatenated for
       multi-text-block messages).
-    - ``tool_use`` (assistant) -> moved into ``message.tool_calls`` as
+    - `tool_use` (assistant) -> moved into `message.tool_calls` as
       OpenAI function-call objects; the assistant's text content
-      stays in ``message.content``.
-    - ``tool_result`` (user) -> emitted as a SEPARATE message with
-      ``role="tool"`` and ``tool_call_id`` set; cannot stay in the
+      stays in `message.content`.
+    - `tool_result` (user) -> emitted as a SEPARATE message with
+      `role="tool"` and `tool_call_id` set; cannot stay in the
       user-message position because OpenAI puts tool replies in their
       own role.
     """
@@ -141,7 +141,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
 
 
 def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
-    """Translate ``ToolDefinition`` tuples into OpenAI function-tool entries."""
+    """Translate `ToolDefinition` tuples into OpenAI function-tool entries."""
     return [
         {
             "type": "function",

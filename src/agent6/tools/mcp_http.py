@@ -33,7 +33,7 @@ MAX_BODY_BYTES = 8 << 20
 
 
 def _clean_session_id(value: str) -> str:
-    """A server-assigned session id we can safely ECHO back in a header, or "".
+    """A server-assigned session id the transport can safely ECHO back in a header, or "".
 
     The value comes from an operator-run server but crosses the wire, so it is
     untrusted the same way the token in `_auth` is: a non-ASCII byte makes the
@@ -60,16 +60,16 @@ class MCPHttpError(Exception):
 
 
 class MCPSessionExpired(MCPHttpError):
-    """A stateful server answered a request carrying our session id with 404:
+    """A stateful server answered a request carrying this transport's session id with 404:
     the spec's signal that it expired the session. The caller re-initializes.
-    A subclass of MCPHttpError so a plain ``except MCPHttpError`` still catches
+    A subclass of MCPHttpError so a plain `except MCPHttpError` still catches
     it, but the manager can single it out to re-handshake."""
 
 
 @dataclass(slots=True)
 class HttpTransport:
-    """A connection to one operator-run MCP server. Not frozen: ``session_id``
-    is live connection state the server assigns on ``initialize`` (the rest is
+    """A connection to one operator-run MCP server. Not frozen: `session_id`
+    is live connection state the server assigns on `initialize` (the rest is
     config)."""
 
     name: str
@@ -78,7 +78,7 @@ class HttpTransport:
     # here and never logged, never written to a transcript, and never part of
     # an error message.
     token_env: str = ""
-    # The streamable-HTTP session id: captured from the ``initialize`` response
+    # The streamable-HTTP session id: captured from the `initialize` response
     # (see `send`), echoed on every later request (see `_headers`), and cleared
     # on the 404 that means the server expired it. Stays "" for a stateless
     # server, which never sends one.
@@ -139,7 +139,7 @@ class HttpTransport:
             ):
                 if response.status_code == 404 and self.session_id:
                     # The spec: a 404 to a request bearing a session id means
-                    # the server expired that session. Drop it so we do not
+                    # the server expired that session. Drop it so the transport does not
                     # keep echoing a dead id, and signal a re-initialize.
                     self.session_id = ""
                     raise MCPSessionExpired(f"server {self.name!r} expired its session (HTTP 404)")
@@ -181,7 +181,7 @@ class HttpTransport:
             # HTTPError, so an operator typo in `url` escaped a narrower catch
             # and crashed the run instead of being logged and skipped. The
             # message is the exception's TYPE, never its text, which can quote
-            # a rejected header value back at us.
+            # a rejected header value back into the run's output.
             raise MCPHttpError(f"server {self.name!r} unreachable ({type(exc).__name__})") from None
         if not body.strip():
             return None  # an accepted notification

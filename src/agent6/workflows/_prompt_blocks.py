@@ -71,7 +71,7 @@ SKILL_ALWAYS_MAX_CHARS = 24000
 
 
 def skills_block(resolved: ResolvedSkills) -> str:
-    """Render the skills system-prompt parts: full text for ``always`` skills,
+    """Render the skills system-prompt parts: full text for `always` skills,
     a bounded one-line-per-skill index for the rest. Empty when no skills."""
     if not resolved.enabled and not resolved.always:
         return ""
@@ -186,7 +186,7 @@ def build_system_prompt(
     Anthropic prompt-caching machinery (lineage). Per-turn cost
     after the first call is ~10% of full input rate for the cached prefix.
 
-    ``mode="plan"`` swaps the base block for the planning-mode
+    `mode="plan"` swaps the base block for the planning-mode
     prompt; the verify/repo/co-change/hot-symbols blocks below are
     appended unchanged so the planner sees the same project context an
     executor would. The metric block is run-mode only (the other modes

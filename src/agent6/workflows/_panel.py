@@ -6,11 +6,11 @@ grounded aggregator.
 The aggregator is where the panel earns its keep: a "don't block on
 speculation" rule held as *prose* gets rationalized around, and correct
 green-verify work gets false-blocked. Here the rule is **executable**: a
-reviewer's ``block`` only gates if a
+reviewer's `block` only gates if a
 machine check passes (the cited line is actually in the diff it was shown, and
 the category is one we allow to block). Everything else is mechanically
-downgraded to ``warn`` before any veto/quorum counting. ``warn``/``nit`` never
-gate. This module is network-free and exhaustively unit-tested; ``run_panel``
+downgraded to `warn` before any veto/quorum counting. `warn`/`nit` never
+gate. This module is network-free and exhaustively unit-tested; `run_panel`
 (the orchestration that actually calls models) lives separately.
 """
 
@@ -110,21 +110,21 @@ def _unquote_git_path(p: str) -> str:
 
 
 def _hdr_path(raw: str) -> str:
-    """Path from a ``--- ``/``+++ `` header line ("" for /dev/null)."""
+    """Path from a `--- `/`+++ ` header line ("" for /dev/null)."""
     target = _unquote_git_path(raw[4:].split("\t", 1)[0])
     return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
 
 
 def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
     """Map each touched path to the line ranges its hunks changed, so a finding's
-    ``path:line`` citation can be grounded: a block may only gate if its cited
+    `path:line` citation can be grounded: a block may only gate if its cited
     line is inside a range the diff changed. New-side ranges key the post-image
     path; old-side ranges key the pre-image path (for an in-place modification,
     the same key -- overlapping ranges are harmless), so a citation of deleted
     code at its OLD line number still grounds whether the whole file was deleted
-    (post-image ``/dev/null``) or lines were removed from a kept file. A ``+++ ``
-    line only counts as a header when it follows a ``--- `` (an added line whose
-    content happens to start with ``++ `` is not mistaken for one).
+    (post-image `/dev/null`) or lines were removed from a kept file. A `+++ `
+    line only counts as a header when it follows a `--- ` (an added line whose
+    content happens to start with `++ ` is not mistaken for one).
     """
     ranges: dict[str, list[tuple[int, int]]] = {}
     newpath = oldpath = ""
@@ -162,11 +162,11 @@ def _norm_path(p: str) -> str:
 
 
 def _split_cite(file_line: str) -> tuple[str, tuple[int, int] | None]:
-    """One citation parsed into ``(normalized path, cited line span or None)``.
+    """One citation parsed into `(normalized path, cited line span or None)`.
 
     The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4',
     'foo.py:2:' and 'foo.py:12:5' (the standard compiler/grep -n
-    ``path:line:col``). ONE owner: a per-consumer single-rpartition parse would read a line:col
+    `path:line:col`). ONE owner: a per-consumer single-rpartition parse would read a line:col
     citation's COLUMN as the line and 'foo.py:12' as the path, so grounding
     would miss and a real block silently downgrade to a warning.
     """
@@ -228,9 +228,9 @@ _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 def _ground_severity(
     f: Finding, ctx: ReviewContext, ranges: dict[str, list[tuple[int, int]]]
 ) -> Severity:
-    """A ``block`` survives only if grounded in the diff AND in a gating category
-    (and ``verify-uncovered-correctness`` is coherent only when verify passed);
-    otherwise it is downgraded to ``warn``. ``warn``/``nit`` pass through."""
+    """A `block` survives only if grounded in the diff AND in a gating category
+    (and `verify-uncovered-correctness` is coherent only when verify passed);
+    otherwise it is downgraded to `warn`. `warn`/`nit` pass through."""
     if f.severity != "block":
         return f.severity
     coherent = f.category != "verify-uncovered-correctness" or ctx.verify_ok is True
@@ -251,8 +251,8 @@ def _ground_seat(
 
 def _has_new_block(v: ReviewVerdict, prior_keys: set[tuple[str, str]]) -> bool:
     """True when the seat carries a surviving block that is NOT an already-
-    injected prior finding. ``prior_findings`` is "for dedup (not re-count)":
-    a block whose key dedups away is dropped from ``merged_findings``, so
+    injected prior finding. `prior_findings` is "for dedup (not re-count)":
+    a block whose key dedups away is dropped from `merged_findings`, so
     letting it gate would reject the work while reporting no blocking
     findings."""
     return any(f.severity == "block" and _dedup_key(f) not in prior_keys for f in v.findings)
@@ -297,15 +297,15 @@ def aggregate_verdicts(
 ) -> PanelResult:
     """Fold per-seat verdicts into one panel result with EXECUTABLE grounding.
 
-    1. Ground every ``block`` finding: it survives as a block only if its
-       ``file_line`` is in the diff AND its category is allowed to block (and a
-       ``verify-uncovered-correctness`` claim is only coherent when verify
-       actually passed). Otherwise it is downgraded to ``warn``.
-    2. Dedup across seats and against ``prior_findings`` by (path, category). An
+    1. Ground every `block` finding: it survives as a block only if its
+       `file_line` is in the diff AND its category is allowed to block (and a
+       `verify-uncovered-correctness` claim is only coherent when verify
+       actually passed). Otherwise it is downgraded to `warn`.
+    2. Dedup across seats and against `prior_findings` by (path, category). An
        already-injected block neither re-surfaces nor counts toward the gate
        (otherwise a rejection could ship with zero merged findings).
     3. Decide: advisory never blocks; veto blocks on any surviving block; quorum
-       needs >= ``quorum`` blocks counting **at most one per distinct model**
+       needs >= `quorum` blocks counting **at most one per distinct model**
        (correlated same-model seats cannot fabricate a quorum); all needs every
        non-abstaining seat to block AND a strict majority of all seats to have
        actually responded (abstentions cannot let a lone blocker gate under "all").
@@ -356,7 +356,7 @@ def aggregate_verdicts(
 
 
 def render_findings(findings: tuple[Finding, ...]) -> str:
-    """Render merged findings as a compact ``[review]`` block for the worker /
+    """Render merged findings as a compact `[review]` block for the worker /
     the post-hoc CLI. Empty -> ''."""
     if not findings:
         return ""

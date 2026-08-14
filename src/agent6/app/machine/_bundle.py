@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Machine script-bundle validation (security-critical).
 
-A machine is a ``.asm.toml`` plus a sibling ``scripts/`` directory. Every entry
-under ``scripts/`` must resolve to a path INSIDE the bundle (rejects symlinks
-that escape via ``..``/absolute), and every static tool-command element that
+A machine is a `.asm.toml` plus a sibling `scripts/` directory. Every entry
+under `scripts/` must resolve to a path INSIDE the bundle (rejects symlinks
+that escape via `..`/absolute), and every static tool-command element that
 references a bundled script must exist and stay inside the bundle. ``machine
-check``/``test`` run this offline; ``machine run``/``create`` run it again before
-any execution, so a ``scripts/`` symlink escaping the bundle can never be read
+check`/`test` run this offline; `machine run`/`create`` run it again before
+any execution, so a `scripts/` symlink escaping the bundle can never be read
 by a tool on an isolation level that cannot RO-bind the bundle.
 """
 
@@ -31,8 +31,8 @@ def _bundle_script_ref(element: str) -> str | None:
     """Return the relative script path a static command element names, else None.
 
     A bundle script reference is a relative path whose first component is
-    ``scripts`` (e.g. ``scripts/fetch.sh`` or ``./scripts/fetch.sh``). Absolute
-    paths (``/usr/bin/bash``) are interpreter/binary paths, not bundle refs.
+    `scripts` (e.g. `scripts/fetch.sh` or `./scripts/fetch.sh`). Absolute
+    paths (`/usr/bin/bash`) are interpreter/binary paths, not bundle refs.
     """
     cleaned = element[2:] if element.startswith("./") else element
     if not cleaned or cleaned.startswith("/"):
@@ -44,7 +44,7 @@ def _bundle_script_ref(element: str) -> str | None:
 
 
 def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
-    """Every entry under ``scripts/`` must resolve to a path inside the bundle."""
+    """Every entry under `scripts/` must resolve to a path inside the bundle."""
     if not scripts_dir.is_dir():
         return ["bundle 'scripts' exists but is not a directory"]
     problems: list[str] = []
@@ -88,10 +88,10 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
 
 
 def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
-    """Validate a machine's script bundle (the ``.asm.toml`` + a sibling ``scripts/``).
+    """Validate a machine's script bundle (the `.asm.toml` + a sibling `scripts/`).
 
-    Security-critical: every entry under ``scripts/`` must resolve to a path
-    INSIDE the bundle (rejects symlinks that escape via ``..``/absolute), and
+    Security-critical: every entry under `scripts/` must resolve to a path
+    INSIDE the bundle (rejects symlinks that escape via `..`/absolute), and
     every static tool-command element that references a bundled script must
     exist and stay inside the bundle. Dynamic (templated) command elements are
     skipped, they cannot be resolved without a blackboard.

@@ -10,7 +10,7 @@ from agent6.ui.mcp_server import run_server
 
 
 def _cmd_mcp_serve(config_path: Path | None) -> int:
-    """Spawn an MCP stdio server against ``config_path``'s
+    """Spawn an MCP stdio server against `config_path`'s
     workspace. Thin wrapper so dispatch stays uniform with the other
-    ``_cmd_*`` helpers."""
+    `_cmd_*` helpers."""
     return run_server(config_path)

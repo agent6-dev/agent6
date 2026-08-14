@@ -39,7 +39,7 @@ from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 class SessionRefused(Exception):
     """A preflight refusal already reported through the Reporter; the caller
-    returns ``rc`` as the process exit code."""
+    returns `rc` as the process exit code."""
 
     def __init__(self, rc: int) -> None:
         super().__init__(f"session refused (exit {rc})")
@@ -49,8 +49,8 @@ class SessionRefused(Exception):
 def budget_preflight(cfg: Config) -> str | None:
     """Budget refusals + notices over the RESOLVED role models, before any spend.
 
-    ``max_tokens_fallback = 0`` refuses when a configured role model cannot be
-    metered (zero unmetered tokens allowed); ``max_usd = 0`` refuses when one
+    `max_tokens_fallback = 0` refuses when a configured role model cannot be
+    metered (zero unmetered tokens allowed); `max_usd = 0` refuses when one
     CAN be (a run-nothing-metered rig). Otherwise an unpriced model gets a
     one-line notice naming the fallback bound that covers it. Models chosen
     later (a `/parallel` lane spec) are caught by the tracker's runtime
@@ -83,11 +83,11 @@ def budget_preflight(cfg: Config) -> str | None:
 
 
 def warn_if_prompt_override_incomplete(cfg: Config) -> None:
-    """Warn when a custom ``prompt.system_prompt_file`` omits the core tool
-    contracts the worker needs: ``finish_session`` is the only clean exit, and an
-    edit primitive (``apply_edit``/``apply_patch``) is needed to do work. The
+    """Warn when a custom `prompt.system_prompt_file` omits the core tool
+    contracts the worker needs: `finish_session` is the only clean exit, and an
+    edit primitive (`apply_edit`/`apply_patch`) is needed to do work. The
     override is advanced + operator-owned, so we don't block -- just flag the
-    likely-broken case loudly and point at ``agent6 prompt show``."""
+    likely-broken case loudly and point at `agent6 prompt show`."""
     path = cfg.prompt.system_prompt_file
     if not path:
         return
@@ -254,7 +254,7 @@ def headless_approval_refusal(
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
     """Empty the verify command when this LEG cannot run one.
 
-    Every command tool is withheld when the effective policy is ``no`` -- the
+    Every command tool is withheld when the effective policy is `no` -- the
     operator's configured value, a session deny, or an away-mode of deny -- and
     the gate is a command. Keeping it made the leg unwinnable: nothing could go
     green, so nothing committed, and it finished red over work that may be fine.
@@ -285,15 +285,15 @@ def infer_verify_if_unset(
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
 ) -> Config:
-    """When ``workflow.verify_command`` is unset for a run/plan, infer one and
+    """When `workflow.verify_command` is unset for a run/plan, infer one and
     inject it IN-MEMORY (never persisted -- runs do not mutate config).
 
     Layered cheapest-first (AGENTS.md -> repo signals -> a cheap reviewer-role
-    LLM call); see ``agent6.verify_infer``. Emits ``loop.verify_inferred`` and
+    LLM call); see `agent6.verify_infer`. Emits `loop.verify_inferred` and
     prints what was picked + that it is per-run. If nothing can be inferred the
     run proceeds GATELESS (no verify gate; the loop commits each editing step).
 
-    ``drop_gate_if_unrunnable`` runs AFTER this and has the last word: a leg
+    `drop_gate_if_unrunnable` runs AFTER this and has the last word: a leg
     that cannot run commands ends gateless, whatever was inferred.
     """
     if mode not in ("run", "plan") or cfg.workflow.verify_command:

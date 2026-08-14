@@ -39,10 +39,10 @@ class Provider(Protocol):
     loop and the review seats pass real `tools` every turn; execution itself
     is Python-side via `ToolDispatcher`.
 
-    ``text_delta_callback`` / ``thinking_delta_callback`` are opt-in SSE
+    `text_delta_callback` / `thinking_delta_callback` are opt-in SSE
     streaming hooks. When either is set, providers MAY stream visible
     text / reasoning deltas to the matching callback as they arrive. When
-    both are ``None`` (default), providers use the non-streaming code path.
+    both are `None` (default), providers use the non-streaming code path.
     """
 
     def call(

@@ -712,7 +712,7 @@ def _print_lane_status(
 
 def _stamp(session_dir: Path, **updates: object) -> str | None:
     """Apply typed field *updates* to an imported lane's manifest (read the model,
-    ``model_copy``, atomic rewrite). Returns an error string when the manifest
+    `model_copy`, atomic rewrite). Returns an error string when the manifest
     cannot be read/parsed or written (the import itself stands; the caller reports
     the degradation). The one stamping helper: `_stamp_lineage` (post-import) and
     `_stamp_compare_outcomes` (post-ranking) both go through it, so the read +

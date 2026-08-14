@@ -26,7 +26,7 @@ from agent6.workflows.subrun import LaneResult, LaneTask
 class LaneJoin:
     """Per-lane outcome of a `/parallel` dispatch, for the summary + events.
 
-    ``status`` is one of "joined" (branch merged, ``sha`` set), "conflict"
+    `status` is one of "joined" (branch merged, `sha` set), "conflict"
     (imported but the merge conflicted; the branch exists locally for a manual
     merge), or "failed" (the lane never produced an importable branch).
     """

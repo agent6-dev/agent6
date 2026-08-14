@@ -169,7 +169,7 @@ class BackgroundHandoff:
     command and a running one answer different questions, and a returncode
     invented for the second would be a lie every caller has to remember to
     ignore. The tool result the model sees is still ONE shape (see
-    ``ExecResult``).
+    `ExecResult`).
     """
 
     argv: tuple[str, ...]
@@ -195,17 +195,17 @@ class JailPolicy:
     network: NetworkMode = "none"
     extra_ro_paths: tuple[Path, ...] = ()
     extra_rw_paths: tuple[Path, ...] = ()
-    # Paths inside ``cwd`` that the launcher must make read-only from the
+    # Paths inside `cwd` that the launcher must make read-only from the
     # child's view. Strict re-binds them RO on top of the workspace mount;
     # hardened switches its Landlock rules from "RW on cwd" to "R on cwd
     # + RW on each top-level entry except these". Used to keep an
-    # LLM-driven ``run_command`` from rewriting ``.git`` even though it
+    # LLM-driven `run_command` from rewriting `.git` even though it
     # lives inside the project root.
     extra_protect_paths: tuple[Path, ...] = ()
     # Real-location RO+exec bind mounts for operator-installed tools that live
     # outside the system dirs (uv in ~/.local/bin or the /opt target a
     # /usr/local/bin symlink resolves to), so a verify/run command finds them.
-    # Distinct from ``extra_ro_paths`` (remapped under /ro, which breaks symlinks);
+    # Distinct from `extra_ro_paths` (remapped under /ro, which breaks symlinks);
     # these keep their real paths. Read+execute only, never writable.
     tool_paths: tuple[Path, ...] = ()
     # Operator additions to the hidden set ([sandbox].hide_paths): masked from
@@ -216,7 +216,7 @@ class JailPolicy:
     timeout_s: float = 600.0
     # Per-process memory cap in MiB (RLIMIT_DATA, set by the launcher in the
     # child before exec and inherited by every descendant); 0 disables, which
-    # is the default here and in ``[sandbox].memory_limit_mb``: capping costs
+    # is the default here and in `[sandbox].memory_limit_mb`: capping costs
     # real builds more than it buys, and the kernel already handles a memory
     # bomb.
     memory_limit_mb: int = 0

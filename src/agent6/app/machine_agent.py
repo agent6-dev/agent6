@@ -87,15 +87,15 @@ def _no_console(_events: EventSink) -> None:
 
 
 class MachineAgentRequest(BaseModel):
-    """The ``request.json`` envelope of the machine-agent subprocess IPC.
+    """The `request.json` envelope of the machine-agent subprocess IPC.
 
     The host runner (`build_machine_agent_runner`) serializes it into the temp
     file the fixed argv (``python -m agent6.ui.cli.machine_agent <request.json>
     <result.json>``) names; the subprocess validates it back and hands it to
-    `run_one`. One owner of the file shape per the IPC rule; ``result.json`` is
+    `run_one`. One owner of the file shape per the IPC rule; `result.json` is
     owned the same way by `AgentExecResult`. The files are transient
     per-invocation (both sides are always the same install), and the bytes are
-    pinned by ``tests/unit/test_machine_agent_ipc.py``.
+    pinned by `tests/unit/test_machine_agent_ipc.py`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -435,12 +435,12 @@ def build_machine_agent_runner(
     commands it dispatches. The subprocess is
     spawned with a fixed argv (no LLM-derived content) and handed the request via
     a temp file; the operator-authored prompt travels in that file, never on the
-    command line. ``timeout_secs`` is enforced by killing the subprocess's whole
+    command line. `timeout_secs` is enforced by killing the subprocess's whole
     process group (true mid-call cancellation, and the per-agent session-network
     holder dies with it).
 
-    ``events_log`` is per CALL: the live World passes each agent-state execution
-    its own ``<instance>/states/<seq>-<state>/logs.jsonl`` and `machine create`
+    `events_log` is per CALL: the live World passes each agent-state execution
+    its own `<instance>/states/<seq>-<state>/logs.jsonl` and `machine create`
     passes the draft log, so the subprocess writes a watchable event stream there.
     """
 

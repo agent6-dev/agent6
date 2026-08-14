@@ -12,7 +12,7 @@ the worker's configured model unioned with the worker provider's listing. A
 sibling provider's catalog is unrunnable in a lane).
 
 Matching is cache-first: exact id, or the registry's normalization so a
-dated/tagged variant of a listed id (``...-20251001``, ``...:free``) passes. A
+dated/tagged variant of a listed id (`...-20251001`, `...:free`) passes. A
 MISS against an existing cache fetches the provider's live listing once (TTL
 bypassed, ~1.5s cap) before any hard stop: `refused` always rests on a listing
 fetched by this invocation, so a just-pulled local model or a just-published

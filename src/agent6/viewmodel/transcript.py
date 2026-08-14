@@ -45,7 +45,7 @@ _CONTROL_RE = re.compile(
 
 def scrub_terminal_controls(text: str) -> str:
     """Drop every terminal control sequence and stray control character from
-    model-authored text (see ``_CONTROL_RE``). Idempotent, so accumulating
+    model-authored text (see `_CONTROL_RE`). Idempotent, so accumulating
     stream tails re-scrub for free."""
     return _CONTROL_RE.sub("", text)
 

@@ -18,13 +18,13 @@ from dataclasses import dataclass
 class VerifyVerdict:
     """Mutable verify bookkeeping for one run leg.
 
-    ``last_ok`` is the last verify's result (None = no verify yet).
-    ``baseline_ok`` answers "was the gate already failing before this run
+    `last_ok` is the last verify's result (None = no verify yet).
+    `baseline_ok` answers "was the gate already failing before this run
     touched anything?": recorded when a verify runs against an unmodified
     tree; None means no such verify happened, and "I do not know" is the
-    honest answer then. ``edited_since`` spans iterations: a stale earlier
+    honest answer then. `edited_since` spans iterations: a stale earlier
     pass must not count as currently green for the finish gate.
-    ``fail_streak`` counts consecutive failures sharing one normalized
+    `fail_streak` counts consecutive failures sharing one normalized
     signature (the no-progress spiral guard); a green verify or a new
     signature resets it.
     """

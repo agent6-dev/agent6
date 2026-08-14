@@ -37,7 +37,7 @@ from agent6.viewmodel.config_view import build_config_view
 
 
 def _explicit_config(kw: dict[str, object]) -> Path | None:
-    """The ``--config FILE`` already typed on the line being completed, so
+    """The `--config FILE` already typed on the line being completed, so
     completions describe the config the command will actually run under."""
     parsed = kw.get("parsed_args")
     raw = getattr(parsed, "config", None)
@@ -160,7 +160,7 @@ def _complete_config_keys(prefix: str, *, settable: bool = True, **kw: object) -
     From `preset` onward, also the user's presets.<name>.<leaf> paths (kept
     out of the bare-TAB listing, which is crowded enough already).
 
-    ``settable=False`` for `config get`, which reads EFFECTIVE leaves only:
+    `settable=False` for `config get`, which reads EFFECTIVE leaves only:
     both the enum keys (offered so `config set` can reach a leaf no layer has
     set yet) and `[presets.*]` paths (stripped before validation) are inputs
     `get` rejects, and a completer must offer what its command accepts.
@@ -207,7 +207,7 @@ def _complete_config_values(
 def _complete_model_provider(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
-    """argcomplete for ``agent6 model <role> <provider>``.
+    """argcomplete for `agent6 model <role> <provider>`.
 
     Only offer provider names once a valid role has been typed. argcomplete
     bleeds every nargs='?' positional's completer into the first slot, so
@@ -295,7 +295,7 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: machine ``*.asm.toml`` files under cwd and the machines dir."""
+    """argcomplete: machine `*.asm.toml` files under cwd and the machines dir."""
     out: set[str] = set()
     for base in (Path.cwd(), _machines_dir(Path.cwd())):
         if base.is_dir():

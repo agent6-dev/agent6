@@ -200,16 +200,16 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
-    Mirrors ``run_task`` setup but uses the existing run id, refuses
-    if no ``loop_state.json`` snapshot exists, and calls ``wf.resume()``
-    instead of ``wf.run(task)``. A safety check refuses when the
+    Mirrors `run_task` setup but uses the existing run id, refuses
+    if no `loop_state.json` snapshot exists, and calls `wf.resume()`
+    instead of `wf.run(task)`. A safety check refuses when the
     workspace HEAD DIVERGED from the snapshot (a rebase/reset/commit on
     another line); plain forward movement on the same line resumes
-    cleanly. ``--force`` overrides the refusal.
+    cleanly. `--force` overrides the refusal.
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
-    of the prior run's accounting. Each ``agent6 resume`` invocation
-    starts at 0 against the ``[budget]`` ledgers. This is by design - the budget is a per-
+    of the prior run's accounting. Each `agent6 resume` invocation
+    starts at 0 against the `[budget]` ledgers. This is by design - the budget is a per-
     invocation runaway-cost circuit breaker.
     """
     cwd = Path.cwd()

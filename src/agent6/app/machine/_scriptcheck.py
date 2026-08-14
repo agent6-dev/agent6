@@ -7,17 +7,17 @@ Two layers, matching their risk:
 
 * :func:`lint_and_typecheck`, STATIC analysis only (ruff + ty read the files,
   they never run them), so it shells out directly with a fixed argv on a private
-  temp copy. ``ruff --isolated`` ignores any repo config (the scratch bundle
+  temp copy. `ruff --isolated` ignores any repo config (the scratch bundle
   lives under the user's repo, whose ruleset must not bleed in); ty checks the
-  real scripts only, mock-heavy ``*_test.py`` files trip ty on
-  ``unittest.mock`` internals, so they are gated by *execution* instead.
-* :func:`run_offline_tests`, EXECUTES each ``*_test.py``. Because that runs
+  real scripts only, mock-heavy `*_test.py` files trip ty on
+  `unittest.mock` internals, so they are gated by *execution* instead.
+* :func:`run_offline_tests`, EXECUTES each `*_test.py`. Because that runs
   model-authored code, it goes through :func:`run_in_jail` (no network, the same
   confinement a tool state gets), never a bare subprocess.
 
 A missing ruff/ty is skipped silently (a stripped install still produces a
 bundle). An unavailable jail is different: it surfaces a diagnostic rather than
-silently dropping the offline-test gate, except on isolation ``none``, where
+silently dropping the offline-test gate, except on isolation `none`, where
 there is no jail to run model-authored code in and execution is skipped.
 """
 
@@ -41,11 +41,11 @@ _MAX_DIAG_LINES = 30
 
 
 def _resolve_tool(name: str) -> list[str] | None:
-    """Locate a bundled dev tool (``ruff`` / ``ty``) as an argv prefix.
+    """Locate a bundled dev tool (`ruff` / `ty`) as an argv prefix.
 
     Prefer the console script installed next to the running interpreter (the
-    runtime dependency), then anything on ``PATH``, then a self-contained
-    ``uvx <name>``. ``None`` if the tool can't be found at all (skip it)."""
+    runtime dependency), then anything on `PATH`, then a self-contained
+    `uvx <name>`. `None` if the tool can't be found at all (skip it)."""
     local = Path(sys.executable).parent / name
     if local.is_file():
         return [str(local)]
@@ -106,9 +106,9 @@ def lint_and_typecheck(scripts_dir: Path, *, fix: bool = False) -> list[str]:
 
     Works on a private temp copy of *scripts_dir* so neither tool picks up the
     user's repo config. Returns human-readable problems (empty = clean / tools
-    absent). ``*_test.py`` files are linted but not type-checked.
+    absent). `*_test.py` files are linted but not type-checked.
 
-    ``fix=True`` (machine create only, on its OWN generated bundle) applies
+    `fix=True` (machine create only, on its OWN generated bundle) applies
     ruff's safe fixes to the copy, writes the fixed files back, and reports
     only what remains: a whole authoring attempt burned on fixable lint
     otherwise. Operator-facing verbs (`machine check`/`test`) never fix --
@@ -151,18 +151,18 @@ def lint_and_typecheck(scripts_dir: Path, *, fix: bool = False) -> list[str]:
 def run_offline_tests(
     bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float = 30.0
 ) -> list[str]:
-    """Execute every ``scripts/**/*_test.py`` in a no-network jail (the bundle's
+    """Execute every `scripts/**/*_test.py` in a no-network jail (the bundle's
     offline simulation). Returns failures (empty = all green / nothing to run).
 
     Requires the strict isolation: it is the only one whose network namespace can
     enforce the no-network contract on model-authored code. Skipped, with a loud
-    "NOT run" note and the static checks still applied, on ``none`` (no jail at
-    all) and ``hardened`` (a jail, but no network namespace, so
-    ``network=False`` is silently ignored and the scripts would reach the
-    host network). Each test gets a fresh writable ``$AGENT6_MACHINE_DATA_DIR``
+    "NOT run" note and the static checks still applied, on `none` (no jail at
+    all) and `hardened` (a jail, but no network namespace, so
+    `network=False` is silently ignored and the scripts would reach the
+    host network). Each test gets a fresh writable `$AGENT6_MACHINE_DATA_DIR`
     so record-style scripts can be exercised. Tests run under the default
-    ``JailPolicy`` memory cap (these are offline mocks; the operator's
-    ``[sandbox].memory_limit_mb`` is not consulted)."""
+    `JailPolicy` memory cap (these are offline mocks; the operator's
+    `[sandbox].memory_limit_mb` is not consulted)."""
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
         return []

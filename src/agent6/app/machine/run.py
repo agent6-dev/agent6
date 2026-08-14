@@ -102,9 +102,9 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
 
 
 def uncommitted_scripts_warning(path: Path, cwd: Path) -> str | None:
-    """A warning if the machine's ``scripts/`` bundle has uncommitted changes,
+    """A warning if the machine's `scripts/` bundle has uncommitted changes,
     else None. The bundle is trusted logic a tool/agent may execute, so like the
-    ``.asm.toml`` it should be committed. Unlike the file it only WARNS (not every
+    `.asm.toml` it should be committed. Unlike the file it only WARNS (not every
     machine carries scripts, and iterating on one the operator is actively editing
     is common). Skipped outside a git repo or when the bundle resolves outside the
     repo tree; a broken-git probe warns rather than reading as clean."""

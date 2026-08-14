@@ -4,7 +4,7 @@
 
 `agent6 run`/`resume`/`fork` drive one run's shared state (loop_state.json,
 checkpoints, the curator DAG, the run branch). The run-level flock (the
-analogue of ``machine_lock``) refuses a second concurrent writer.
+analogue of `machine_lock`) refuses a second concurrent writer.
 """
 
 from __future__ import annotations
@@ -17,17 +17,17 @@ from agent6.portable import lock_exclusive, unlock
 
 
 def acquire_single_writer(session_dir: Path) -> int | None:
-    """Take a non-blocking exclusive lock on ``<session-dir>/worker.lock``.
+    """Take a non-blocking exclusive lock on `<session-dir>/worker.lock`.
 
-    One session's shared state (``loop_state.json``, ``checkpoints/``, the curator
+    One session's shared state (`loop_state.json`, `checkpoints/`, the curator
     DAG, the run branch) has exactly one authoritative writer. A second
-    ``agent6 run``/``resume``/``fork`` targeting the SAME run dir would spawn a
+    `agent6 run`/`resume`/`fork` targeting the SAME run dir would spawn a
     second curator whose independent in-memory cache silently clobbers the
     first's parent->child links (a lost update), and would interleave commits on
-    the run branch. This is the run-level analogue of ``machine_lock``.
+    the run branch. This is the run-level analogue of `machine_lock`.
 
     Returns the held fd on success (the caller keeps the process alive to hold
-    it, and passes it to ``release_single_writer`` at teardown), or ``None``
+    it, and passes it to `release_single_writer` at teardown), or `None`
     when another live process holds it (the caller refuses). A crashed writer
     leaves no lock -- flock releases on process death -- so resume-after-crash is
     never blocked by a stale lock.
@@ -43,9 +43,9 @@ def acquire_single_writer(session_dir: Path) -> int | None:
 
 
 def release_single_writer(fd: int | None) -> None:
-    """Release + close a lock fd from ``acquire_single_writer`` (no-op on None).
+    """Release + close a lock fd from `acquire_single_writer` (no-op on None).
 
-    Explicit close matters: the fd is a raw int (``os.open``), so it does not
+    Explicit close matters: the fd is a raw int (`os.open`), so it does not
     self-close on GC. A leaked fd would keep the flock held and wrongly refuse a
     later same-dir run in the same process (tests, embedding)."""
     if fd is None:
@@ -66,20 +66,20 @@ SINGLE_WRITER_BUSY = (
 
 
 def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
-    """Take a non-blocking exclusive lock on ``<state-dir>/repo.lock``: one live
-    ``run``-mode worker per CHECKOUT.
+    """Take a non-blocking exclusive lock on `<state-dir>/repo.lock`: one live
+    `run`-mode worker per CHECKOUT.
 
     Run-mode workers share one working tree: each auto-commit is a plain
-    ``git add -A`` + commit on whatever HEAD points at, so a second concurrent
+    `git add -A` + commit on whatever HEAD points at, so a second concurrent
     run that checks out its own branch makes BOTH workers commit each other's
     in-flight edits onto whichever branch was checked out last -- the same
     interleaving corruption the run-dir lock prevents for one run, at repo
     scope. plan/ask make no commits and never take this lock.
 
     The holder stamps its run id into the file so a refusal can name the live
-    run. Same crash-safety as ``acquire_single_writer``: flock releases on
+    run. Same crash-safety as `acquire_single_writer`: flock releases on
     process death, so a crashed worker never wedges the checkout. Release with
-    ``release_single_writer``.
+    `release_single_writer`.
     """
     state_dir.mkdir(parents=True, exist_ok=True)
     fd = os.open(state_dir / "repo.lock", os.O_CREAT | os.O_RDWR, 0o644)
@@ -94,7 +94,7 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
 
 
 def repo_writer_holder(state_dir: Path) -> str:
-    """The session id the current ``repo.lock`` holder stamped, or "" unknown.
+    """The session id the current `repo.lock` holder stamped, or "" unknown.
     Advisory (for refusal messages); the flock is the boundary."""
     try:
         return (state_dir / "repo.lock").read_text(encoding="utf-8").strip()
@@ -103,12 +103,12 @@ def repo_writer_holder(state_dir: Path) -> str:
 
 
 def repo_writer_held(state_dir: Path) -> bool:
-    """True when a live worker holds the checkout's ``repo.lock``.
+    """True when a live worker holds the checkout's `repo.lock`.
 
     An advisory probe for front-end preflight (the web hub refuses a New Work
     submission up front instead of spawning a doomed run); momentarily
     acquires and releases without stamping. The lock itself remains the hard
-    boundary -- a race past this probe still parks at ``acquire_repo_writer``.
+    boundary -- a race past this probe still parks at `acquire_repo_writer`.
     """
     lock_path = state_dir / "repo.lock"
     if not lock_path.exists():

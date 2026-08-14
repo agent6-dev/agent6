@@ -3,10 +3,10 @@
 """The environment a process agent6 spawns OUTSIDE the jail inherits.
 
 A leaf, because its callers sit on opposite sides of the layering: the
-operator's notify hooks (``app``), the MCP servers (``tools`` and the app
+operator's notify hooks (`app`), the MCP servers (`tools` and the app
 setup). One owner, so their env-scope claims cannot drift apart.
 
-Jailed commands do not come here -- ``sandbox.jail`` builds their env from the
+Jailed commands do not come here -- `sandbox.jail` builds their env from the
 policy, which is narrower still.
 """
 
@@ -51,12 +51,12 @@ def curated_env(
 ) -> dict[str, str]:
     """The base environment, plus *passthrough* names and *extra* values.
 
-    ``passthrough`` is how an operator hands one child a variable it genuinely
+    `passthrough` is how an operator hands one child a variable it genuinely
     needs (an MCP server's API token). Named one at a time in config, because
     naming each one is the point: a provider key is never among them, since
     nobody would write it down.
 
-    ``desktop=False`` also drops the session-bus and display addresses. Pass it
+    `desktop=False` also drops the session-bus and display addresses. Pass it
     for a child that is meant to be CONFINED: those addresses reach processes
     that are not, and delegating to one walks straight out of any sandbox.
     """

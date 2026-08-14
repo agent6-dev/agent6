@@ -36,11 +36,11 @@ from agent6.workflows.review import ReviewSeat, parse_seat_spec
 def resolve_compaction_thresholds(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> tuple[int, int]:
-    """Effective ``(context.drop_at_chars, context.summarise_at_chars)`` for the
+    """Effective `(context.drop_at_chars, context.summarise_at_chars)` for the
     model *rm* drives the loop with: the explicit config values if set, else
     sized from the model's context window (bundled table + live model cache),
     else the historical fixed defaults. Logs the choice when adaptive so the
-    operator can see what was picked. ``rm is None`` (model unresolved) falls
+    operator can see what was picked. `rm is None` (model unresolved) falls
     through to explicit-or-fixed-default."""
     drop_override = cfg.context.drop_at_chars
     summarise_override = cfg.context.summarise_at_chars
@@ -68,10 +68,10 @@ def resolve_compaction_thresholds(
 def resolve_decompose(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> Config:
-    """Pin ``prompt.decompose = "auto"`` to on/off for this run.
+    """Pin `prompt.decompose = "auto"` to on/off for this run.
 
     On only when the worker model *rm* has a measured decompose win in the
-    capability registry; explicit on/off (config or ``--decompose``) passes
+    capability registry; explicit on/off (config or `--decompose`) passes
     through untouched. The engine treats any value other than "on" as off,
     so this resolution is what makes "auto" real."""
     if cfg.prompt.decompose != "auto":
@@ -133,9 +133,9 @@ def _provider_from_entry(
     transcript_sink: TranscriptRecorder,
     budget: BudgetTracker,
 ) -> Provider:
-    """Build a Provider for an explicit ``[providers.<provider_name>]`` entry +
-    model + thinking. Shared by ``build_role_provider`` (role routing) and the
-    review panel's explicit per-seat ``provider/model`` routing."""
+    """Build a Provider for an explicit `[providers.<provider_name>]` entry +
+    model + thinking. Shared by `build_role_provider` (role routing) and the
+    review panel's explicit per-seat `provider/model` routing."""
     key = resolve_api_key(provider_name, entry.api_key_env)
     credential = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
@@ -196,7 +196,7 @@ def role_temperature(cfg: Config, role: RoleName) -> float | None:
 class InstrumentedProvider:
     """Wraps any Provider with role.call / role.result / budget.update emission.
 
-    Pure decoration; the inner provider is unchanged. ``events`` None (a caller
+    Pure decoration; the inner provider is unchanged. `events` None (a caller
     with no log to feed) simply emits nothing.
     """
 
@@ -353,7 +353,7 @@ def build_critic_provider(
     events: EventSink,
 ) -> Provider | None:
     """critic-in-loop. Routes the reviewer role as the critic
-    provider when ``review.trigger != "off"``. Returns None when
+    provider when `review.trigger != "off"`. Returns None when
     disabled so Workflow leaves the critic path inert."""
     if cfg.review.trigger == "off":
         return None
@@ -367,7 +367,7 @@ _DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "ed
 
 def review_panel_configured(cfg: Config) -> bool:
     """True iff the user EXPLICITLY opted into the review panel (vs just enabling
-    the legacy single critic). When ``trigger != "off"`` but no [review] panel key
+    the legacy single critic). When `trigger != "off"` but no [review] panel key
     is set, we keep the legacy gating critic so a pre-panel before_finish/periodic
     config is not silently downgraded to the advisory panel."""
     rv = cfg.review
@@ -386,18 +386,18 @@ def build_review_seats(
 ) -> list[ReviewSeat]:
     """Build the review-panel seats.
 
-    Explicit form (``cfg.review.seats`` set): one seat per
-    ``"persona@provider/model"`` string -> distinct models per seat. A seat with
-    no ``@provider/model`` (bare persona) routes via ``[models.reviewer]``.
+    Explicit form (`cfg.review.seats` set): one seat per
+    `"persona@provider/model"` string -> distinct models per seat. A seat with
+    no `@provider/model` (bare persona) routes via `[models.reviewer]`.
 
-    Simple form (no ``review.seats``): ``n`` seats all on the ``reviewer`` model,
-    differing only by adversarial persona (``personas`` cycled, else a built-in
+    Simple form (no `review.seats`): `n` seats all on the `reviewer` model,
+    differing only by adversarial persona (`personas` cycled, else a built-in
     set).
 
     With *events*, each seat is instrumented like the critic: only
-    InstrumentedProvider emits ``budget.update``, so bare seat providers spent
+    InstrumentedProvider emits `budget.update`, so bare seat providers spent
     real money no surface ever showed (the tracker enforced; the log never
-    heard). ``agent6 review`` passes None -- it has no session log."""
+    heard). `agent6 review` passes None -- it has no session log."""
 
     def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
         if events is None:

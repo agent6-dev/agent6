@@ -15,8 +15,8 @@ resume tooling can recognise the condition.
 Every call is bounded in exactly ONE currency. A call the meter can
 price -- provider-reported cost when available, else price x tokens at
 the model's fetched rates, cache_read/cache_creation included -- counts
-against ``max_usd``. A call with neither counts its input+output tokens
-against ``max_tokens_fallback``. Both caps: -1 unlimited, 0 refuse that
+against `max_usd`. A call with neither counts its input+output tokens
+against `max_tokens_fallback`. Both caps: -1 unlimited, 0 refuse that
 ledger, > 0 the cap (see `[budget]` in config).
 
 This module is import-light (stdlib + agent6.models.pricing, which is itself
@@ -50,7 +50,7 @@ class _ModelTotals:
     cache_creation_tokens: int = 0
     calls: int = 0
     # Sum of provider-reported per-call USD cost, authoritative for the calls
-    # that carried ``usage.cost`` in the response body (today: OpenRouter).
+    # that carried `usage.cost` in the response body (today: OpenRouter).
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
     # Token counts for ONLY the calls that reported no cost, banked per call in
@@ -93,12 +93,12 @@ class _ModelCost:
 
 def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
     """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
-    ``_estimate_usd_locked`` (the enforced USD ceiling) and ``format_summary``
+    `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
     (the printed figure) so a drifted copy can never misreport spend.
 
-    Provider-reported ``usage.cost`` is authoritative for the calls that
+    Provider-reported `usage.cost` is authoritative for the calls that
     carried it; the price table prices ONLY the unreported calls' tokens (the
-    ``unreported_*`` bucket), so the figure is reported + estimated with
+    `unreported_*` bucket), so the figure is reported + estimated with
     nothing dropped and nothing priced twice. With no table price the reported
     subset still counts, flagged partial (a known lower bound). Returns None
     only when the model has no cached price and reported nothing: the caller
@@ -156,14 +156,14 @@ class BudgetTracker:
     """Thread-safe spend accumulator: every call is bounded in ONE currency.
 
     A call the meter can price (provider-reported cost, else a table price for
-    its model) counts against ``max_usd``; a call it cannot price counts its
-    input+output tokens against ``max_tokens_fallback``. Both caps share one
-    rule: ``-1`` = unlimited, ``0`` = refuse calls in that ledger, ``> 0`` = an
+    its model) counts against `max_usd`; a call it cannot price counts its
+    input+output tokens against `max_tokens_fallback`. Both caps share one
+    rule: `-1` = unlimited, `0` = refuse calls in that ledger, `> 0` = an
     exclusive ceiling -- the call that brings a ledger to or over its cap
-    triggers ``BudgetExceeded`` on the *next* ``check()``, so a single call may
+    triggers `BudgetExceeded` on the *next* `check()`, so a single call may
     cross the line but no further call is issued.
 
-    Both caps are REQUIRED constructor arguments: ``[budget]`` is where the
+    Both caps are REQUIRED constructor arguments: `[budget]` is where the
     defaults live, and a tracker carrying its own copy could silently meter
     against a different number than the operator set.
     """
@@ -191,8 +191,8 @@ class BudgetTracker:
     ) -> None:
         """Add the usage from a single provider response to the running totals.
 
-        ``cost_usd`` is the provider-reported USD figure for this single
-        call when available (OpenRouter surfaces it as ``usage.cost``).
+        `cost_usd` is the provider-reported USD figure for this single
+        call when available (OpenRouter surfaces it as `usage.cost`).
         Pass 0.0 (the default) when no authoritative figure is supplied;
         a table price meters the call instead, and a call with neither
         lands in the fallback token ledger.
@@ -256,7 +256,7 @@ class BudgetTracker:
             return bool(self._exceeded_reason)
 
     def fraction_remaining(self) -> float:
-        """Fraction of the budget still available, in ``[0.0, 1.0]``.
+        """Fraction of the budget still available, in `[0.0, 1.0]`.
 
         Computed against whichever ceiling is closest to exhaustion, so a run
         that has burned 90% of one ceiling but only 10% of another reports 0.10,
@@ -268,7 +268,7 @@ class BudgetTracker:
         Each ledger contributes its own used-fraction (spent/cap for the USD
         meter, unmetered-tokens/cap for the fallback); an unlimited (-1) or
         refuse (0) cap contributes nothing -- 0 either never engaged (nothing
-        recorded in that ledger) or already tripped ``_exceeded_reason``.
+        recorded in that ledger) or already tripped `_exceeded_reason`.
         """
         with self._lock:
             if self._exceeded_reason:
@@ -316,23 +316,23 @@ class BudgetTracker:
     def estimate_usd(self) -> tuple[float, bool]:
         """Estimate cumulative USD spend across all recorded calls.
 
-        Returns ``(usd_total, any_unknown)`` where ``any_unknown`` is True
+        Returns `(usd_total, any_unknown)` where `any_unknown` is True
         when any recorded call could not be priced: a model absent from the
         pricing table, or a priced model with unpriced calls. Either way the
         figure is a lower bound.
 
         The live TUI cost meter and the in-record USD ceiling read this;
-        the end-of-run summary iterates ``_model_cost_usd`` itself, the same
+        the end-of-run summary iterates `_model_cost_usd` itself, the same
         arithmetic per model.
         """
         with self._lock:
             return self._estimate_usd_locked()
 
     def _estimate_usd_locked(self) -> tuple[float, bool]:
-        """Cost estimate computed directly from ``self._per_model``.
+        """Cost estimate computed directly from `self._per_model`.
 
-        Assumes ``self._lock`` is already held (called from both ``record`` --
-        under the lock -- and ``estimate_usd``), so it never re-acquires it.
+        Assumes `self._lock` is already held (called from both `record` --
+        under the lock -- and `estimate_usd`), so it never re-acquires it.
         """
         total_usd = 0.0
         any_unknown = False

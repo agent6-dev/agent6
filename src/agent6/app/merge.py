@@ -112,7 +112,7 @@ def dispatch_merge(
     warn: Callable[[str], None] = lambda _m: None,
 ) -> MergeResult:
     """Run the chosen strategy on *target* via plumb_merge. squash builds its
-    message per ``[git.commit.squash].message`` (the trailer is identity's);
+    message per `[git.commit.squash].message` (the trailer is identity's);
     an operator *message* overrides any style."""
     if strategy == "squash" and message is None:
         message = _squash_message(
@@ -145,7 +145,7 @@ def _squash_message(
     events: EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
-    """The squash commit's message per ``[git.commit.squash].message``; None
+    """The squash commit's message per `[git.commit.squash].message`; None
     means let git combine (its own SQUASH_MSG)."""
     style = cfg.git.commit.squash.message
     rows = list_run_commits(cwd, base_sha, run_branch)
@@ -291,7 +291,7 @@ def execute_merge(
                 " squash instead"
             ),
         )
-    # Where the target stood before we touched it. Every strategy that merges
+    # Where the target stood before the merge touched it. Every strategy that merges
     # something moves it (squash commits, merge commits, a fast-forward), so an
     # unmoved target means there was nothing to merge.
     target_tip_before = branch_tip_sha(cwd, target) or ""

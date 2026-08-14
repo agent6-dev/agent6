@@ -252,7 +252,7 @@ _DIRTY_NOTE_CAP = 500
 
 
 def _first_prose_line(text: str, *, fallback: str) -> str:
-    """The agent's first prose line (leading ``<thinking>`` blocks dropped,
+    """The agent's first prose line (leading `<thinking>` blocks dropped,
     heading/bullet markers stripped), or *fallback* on a pure tool-call turn."""
     cleaned = text
     while cleaned.lstrip().startswith("<thinking>"):
@@ -271,14 +271,14 @@ def _first_prose_line(text: str, *, fallback: str) -> str:
 def _summarise_assistant_text_for_commit(
     text: str, iteration: int, *, fallback: str = "verify passed"
 ) -> str:
-    """``agent6 iter N: <first line>``, the first line truncated to 72 chars
-    (git ``--oneline`` width). Free: ``resp.text`` is already in hand."""
+    """`agent6 iter N: <first line>`, the first line truncated to 72 chars
+    (git `--oneline` width). Free: `resp.text` is already in hand."""
     subject_body = _first_prose_line(text, fallback=fallback)[:72]
     return f"agent6 iter {iteration}: {subject_body}"
 
 
 def _plan_is_title_only(plan_md: str) -> bool:
-    """True when plan_markdown has no body: only heading lines (``# ...``) and
+    """True when plan_markdown has no body: only heading lines (`# ...`) and
     blanks, so `--from-plan` would get a stub. Weak models leave it a bare title
     and put the plan in `summary`; the caller salvages that case."""
     return not any(
@@ -294,7 +294,7 @@ class _LoopState:
     (critic rejection, went-quiet / plateau / early-finish nudge, plan/run
     budget nudge) has fired against its cap, the degenerate-repeat-call guard,
     and verify-settled completion tracking. Holding it in one object lets the
-    loop's phases be methods that take ``state`` rather than a long parameter
+    loop's phases be methods that take `state` rather than a long parameter
     list, so adding an intervention is a one-field change, not another local
     threaded by hand.
     """
@@ -425,7 +425,7 @@ def _restore_completion_state(state: _LoopState, snap: SessionSnapshot) -> None:
 
 
 class _NextTurn:
-    """Sentinel returned by ``_turn_provider_call``: the turn was discarded (a
+    """Sentinel returned by `_turn_provider_call`: the turn was discarded (a
     mid-stream steer chose continue, or injected an instruction) and the loop
     should start the next iteration immediately."""
 
@@ -437,11 +437,11 @@ _NEXT_TURN = _NextTurn()
 class _TurnState:
     """Mutable bookkeeping for ONE assistant turn that dispatched tools.
 
-    ``_drive_loop`` creates one per tool-use iteration and threads it through
+    `_drive_loop` creates one per tool-use iteration and threads it through
     the turn phases; a field earns its place by being written in one phase and
-    read in a later one, so each phase is a method taking ``(state, turn)``
+    read in a later one, so each phase is a method taking `(state, turn)`
     rather than a slice of ~15 hand-threaded locals. Cross-iteration state
-    stays on ``_LoopState``.
+    stays on `_LoopState`.
     """
 
     iteration: int
@@ -653,11 +653,11 @@ class Workflow:
     prompt_revision_max_tokens: int = 2048
     prompt_revision_selector: Callable[[str, str, tuple[str, ...]], str | None] | None = None
     # Tier-2 context compaction (summarise-and-restart). When the
-    # cumulative tool_result size crosses ``compact_summarise_at_chars``,
+    # cumulative tool_result size crosses `compact_summarise_at_chars`,
     # the loop asks this provider to summarise the elided history into a
     # compact progress block and restarts the message list from (original
     # task + summary). Wired by the CLI to the reviewer role (cheaper than
-    # the worker). When None the loop falls back to ``provider`` so the
+    # the worker). When None the loop falls back to `provider` so the
     # feature still works without explicit wiring.
     summariser_provider: Provider | None = None
     # Pins seeded before the first turn (a /parallel lane inherits the
@@ -666,7 +666,7 @@ class Workflow:
     # from the snapshot instead.
     initial_pins: Sequence[str] = ()
     context_summary_max_tokens: int = 2048
-    # Tier-1 gist elision (``context.elision_gists``): large read_file results
+    # Tier-1 gist elision (`context.elision_gists`): large read_file results
     # decay to a distilled-gist placeholder (summariser model, one batched call
     # per drop event) before the bare marker. Off = pre-gist behavior.
     compact_elision_gists: bool = True
@@ -677,13 +677,13 @@ class Workflow:
     # accepted (with a `[critic]` warning still injected so the
     # transcript records the disagreement). 0 disables the cap.
     max_consecutive_critic_rejections: int = 2
-    # Adversarial review panel. When ``review_seats`` is non-empty the in-loop
+    # Adversarial review panel. When `review_seats` is non-empty the in-loop
     # critic triggers run the grounded PANEL (run_panel over the run diff +
-    # verify result) instead of the single critic. ``review_decision`` gates only
+    # verify result) instead of the single critic. `review_decision` gates only
     # for veto/quorum; "advisory" just injects findings as a [review] message.
-    # The panel reviews ``git diff base_sha`` (the run's cumulative change). The
+    # The panel reviews `git diff base_sha` (the run's cumulative change). The
     # per-run rejection counter auto-disarms the gate after
-    # ``review_max_total_rejections`` blocks so it can never stall the run.
+    # `review_max_total_rejections` blocks so it can never stall the run.
     review_seats: list[ReviewSeat] = field(default_factory=list)
     review_decision: ReviewDecision = "advisory"
     review_quorum: int = 2
@@ -707,12 +707,12 @@ class Workflow:
     # ending: interactively, going quiet is the most normal thing an agent
     # does, not a failure.
     interactive: bool = False
-    # Plan mode. When ``mode="plan"``, the workflow uses the
+    # Plan mode. When `mode="plan"`, the workflow uses the
     # planning system prompt + plan-mode tool list (no apply_edit /
     # apply_patch; finish_planning replaces finish_session), skips auto-
     # commit-on-verify-pass, and on finish_planning writes the
-    # ``plan_markdown`` argument to ``plan_output_path`` before exiting.
-    # ``plan_output_path`` is required when ``mode="plan"``.
+    # `plan_markdown` argument to `plan_output_path` before exiting.
+    # `plan_output_path` is required when `mode="plan"`.
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run"
     plan_output_path: Path | None = None
     # weak-model resilience. Open-weights models sometimes emit an empty turn
@@ -861,11 +861,11 @@ class Workflow:
     def resume(self) -> SessionResult:
         """Resume a paused/crashed run from its snapshot.
 
-        Reads ``self.resume_state_path`` (the snapshot written by the
+        Reads `self.resume_state_path` (the snapshot written by the
         loop before each LLM call), reattaches the DAG root task id to
         the dispatcher, and re-enters the loop at the saved iteration
         with the saved conversation. The budget tracker is fresh per
-        invocation (by design - see ``agent6.budget`` docstring); the
+        invocation (by design - see `agent6.budget` docstring); the
         DAG state on disk is restored by spawning a curator against the
         same run layout in the CLI.
         """
@@ -964,7 +964,7 @@ class Workflow:
         tree: HEAD is the snapshot's and the worktree is clean. An operator
         commit or edit between legs invalidates it -- fails closed, like the
         baseline probe, so the leg starts unobserved rather than wrongly green
-        or red. ``baseline_ok`` is about the BASE commit, which resume never
+        or red. `baseline_ok` is about the BASE commit, which resume never
         moves: it carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
         state.standing_tools_mark = snap.standing_tools_mark
@@ -991,16 +991,16 @@ class Workflow:
         original_task: str,
         resume_from: SessionSnapshot | None = None,
     ) -> SessionResult:
-        """Shared loop body for both fresh ``run()`` and ``resume()``: one
-        ``_TurnState`` per tool-use iteration, driven through the turn phases
+        """Shared loop body for both fresh `run()` and `resume()`: one
+        `_TurnState` per tool-use iteration, driven through the turn phases
         in order. Any phase returning a SessionResult ends the run.
 
-        ``original_task`` is the exact task string (in-loop critic calls ground
+        `original_task` is the exact task string (in-loop critic calls ground
         on it): run() threads it straight through, resume() reads it verbatim
         from the snapshot -- never re-derived from the message history.
 
         Before each provider call, writes a snapshot of the workflow's
-        in-memory state to ``self.resume_state_path`` (if set) so a
+        in-memory state to `self.resume_state_path` (if set) so a
         crash mid-call can be resumed from the same point.
         """
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
@@ -1189,9 +1189,9 @@ class Workflow:
     ) -> SessionResult | _NextTurn | ProviderResponse:
         """One worker call with terminal-error classification. Returns the
         provider response on success, a SessionResult to end the run, or
-        ``_NEXT_TURN`` when a mid-stream steer discarded the turn (the menu
+        `_NEXT_TURN` when a mid-stream steer discarded the turn (the menu
         chose continue, or injected an instruction, so the turn is re-done).
-        ``wire`` is the pre-call serialization (already snapshotted); the
+        `wire` is the pre-call serialization (already snapshotted); the
         conversation is only touched on the steer path."""
         try:
             return self._call_with_retry(
@@ -1229,7 +1229,7 @@ class Workflow:
             )
         except ProviderInterrupted:
             # A steer was requested mid-stream; the watchdog ended the (thinking)
-            # turn so we handle it now rather than wait it out. The partial turn
+            # turn so the loop handles it now rather than waiting it out. The partial turn
             # is discarded; the menu decides continue / steer / stop / detach.
             self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
             outcome = self._steer_outcome(
@@ -1263,7 +1263,7 @@ class Workflow:
     def _turn_dispatch_tools(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
         """Dispatch each tool_use in the turn, appending one tool_result per
         call and noting effects (verify / metric / edits / DAG / finish) on
-        ``turn``. Returns a SessionResult only for the unexecutable-operator-
+        `turn`. Returns a SessionResult only for the unexecutable-operator-
         command abort; tool errors become error tool_results instead."""
         # This iteration produced tool_uses, so the went_quiet
         # nudge budget refills (failures are per-streak, not per-run).
@@ -1601,7 +1601,7 @@ class Workflow:
         With a verify command, commits are gated on a green verify; with none
         configured (a gateless run), each editing step is committed
         as an un-gated checkpoint so resume + the audit trail still work.
-        ``turn.edited`` (apply_edit/apply_patch) is the cheap fast-path; the
+        `turn.edited` (apply_edit/apply_patch) is the cheap fast-path; the
         worktree-dirty fallback catches run_command-authored edits (else they'd
         never be committed gateless). Plan mode is read-only and never commits.
         Best-effort: commit failures (e.g. nothing to commit) are logged but
@@ -1776,7 +1776,7 @@ class Workflow:
     ) -> None:
         """Gates that can revoke this turn's finish_session, in precedence order:
         critic (before_finish), metric early-finish, open subtasks, verify
-        green, memory backstop. Each clears ``turn.finish_signal`` and appends
+        green, memory backstop. Each clears `turn.finish_signal` and appends
         its nudge; later gates then see the finish as already revoked and stay
         quiet."""
         self._gate_before_finish_critic(state, turn, conversation)
@@ -1793,7 +1793,7 @@ class Workflow:
         """Gate the agent's finish_session on critic approval. If the critic says
         NEEDS_WORK, suppress the finish (the tool_result still goes back so the
         call isn't half-applied) and inject the critique - the loop carries on
-        with the critique visible. After ``max_consecutive_critic_rejections``
+        with the critique visible. After `max_consecutive_critic_rejections`
         back-to-back rejections the finish goes through (critique still
         injected) so the worker can't bounce indefinitely."""
         if not (
@@ -2089,8 +2089,8 @@ class Workflow:
         pivot to a different approach; only stop once we are in the final
         budget slice and have still failed to beat the best after a few pivot
         nudges. With no budget signal (tests / MCP) the fixed
-        ``METRIC_PLATEAU_PATIENCE`` bounds the nudging. Sets
-        ``turn.plateau_should_stop``; the stop itself happens in the stop
+        `METRIC_PLATEAU_PATIENCE` bounds the nudging. Sets
+        `turn.plateau_should_stop`; the stop itself happens in the stop
         checks, after the post-tools snapshot."""
         if turn.metric_plateau_finish is None:
             return
@@ -2137,7 +2137,7 @@ class Workflow:
     def _turn_verify_settled(self, state: _LoopState, turn: _TurnState) -> None:
         """Verify-settled completion bookkeeping (run mode): count no-progress
         iterations after the first green verify; nudge once, then stop (the
-        stop happens in the stop checks, via ``turn.verify_settled_stop``).
+        stop happens in the stop checks, via `turn.verify_settled_stop`).
 
         "Progress" is any forward motion the prompt encourages, so a
         legitimately-working run is never truncated: an apply_edit/apply_patch,
@@ -2238,8 +2238,8 @@ class Workflow:
     ) -> None:
         """Sandbox-reachability tracking. The one true "host-present but
         jail-broken" signal is a run_command the jail failed to EXEC
-        (``exec_failed``; a nonzero exit is the command's own result) for a
-        binary ``shutil.which`` finds on the host. The second consecutive
+        (`exec_failed`; a nonzero exit is the command's own result) for a
+        binary `shutil.which` finds on the host. The second consecutive
         exec failure of the same binary tells the model once and emits the
         event finalize's operator warning reads. Tool errors never feed this:
         a validation error or denial never entered the jail."""
@@ -2375,7 +2375,7 @@ class Workflow:
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> SessionResult | None:
         """Terminal checks, run after the turn's tool_results are in
-        ``messages`` and the post-tools snapshot is written, in precedence
+        `messages` and the post-tools snapshot is written, in precedence
         order: verify-settled stop, metric-plateau stop, loop-guard kill, then
         honouring a finish call that survived the gates."""
         self._absorb_soft_stop(state, turn, conversation)
@@ -2662,13 +2662,13 @@ class Workflow:
         Compute the current task (the cursor if it still points at an open
         subtask, else the first dependency-satisfied open subtask), advance the
         cursor to it, and inject a focus banner when the focus first appears,
-        changes, or was wiped by a tier-2 restart (``surfaced_task_id`` reset to
+        changes, or was wiped by a tier-2 restart (`surfaced_task_id` reset to
         None there). Advancing the cursor each turn means that once the worker
         marks the current task passed, the next turn's frontier recompute moves
         focus to the next ready task -- the cursor walks the frontier on its own.
 
         Also runs the anti-grind counter: when the focus task holds for
-        ``STUCK_ON_TASK_AFTER`` turns with no forward motion, fire one nudge
+        `STUCK_ON_TASK_AFTER` turns with no forward motion, fire one nudge
         offering to split / pass / skip it.
 
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
@@ -3084,8 +3084,8 @@ class Workflow:
         """Create the run's root task in the DAG when the curator
         is wired. Returns the new node id, or None if no curator.
 
-        The root is the user's task itself. Subsequent agent ``add_task``
-        calls with ``parent_id=None`` attach under this root."""
+        The root is the user's task itself. Subsequent agent `add_task`
+        calls with `parent_id=None` attach under this root."""
         if self.curator is None:
             return None
         # TaskNodeDraft.title has min_length=1, so take the first NON-EMPTY
@@ -3128,10 +3128,10 @@ class Workflow:
     def _dirty_tree_note(self) -> str:
         """Summary suffix naming an uncommitted worktree, or "" when clean.
 
-        An operator stop deliberately skips ``_final_checkpoint``: committing
+        An operator stop deliberately skips `_final_checkpoint`: committing
         over someone who is taking over would remove their choice to discard.
         The work is still in the checkout, but nothing reads it there --
-        ``sessions diff`` and ``sessions merge`` both read git history -- so the state
+        `sessions diff` and `sessions merge` both read git history -- so the state
         is stated rather than left silent."""
         if self.mode != "run" or self.chain_ref is None:
             return ""
@@ -3178,10 +3178,10 @@ class Workflow:
     def _pass_pending_root_tasks(self) -> None:
         """On successful completion, mark still-pending root task(s) as passed.
 
-        The loop seeds one root task per ``run()`` (each ask REPL follow-up seeds
-        another), but the worker finishes via ``finish_session`` without ever
-        touching it -- so a completed ask/run otherwise reads ``tasks 0/1``. Pass
-        any root (``parent_id is None``) still pending/in-progress so the DAG --
+        The loop seeds one root task per `run()` (each ask REPL follow-up seeds
+        another), but the worker finishes via `finish_session` without ever
+        touching it -- so a completed ask/run otherwise reads `tasks 0/1`. Pass
+        any root (`parent_id is None`) still pending/in-progress so the DAG --
         and every viewer + resume -- agrees the run completed. Subtasks the
         worker deliberately left unfinished are untouched (kept honest).
         Best-effort: a curator hiccup must never break completion."""
@@ -3222,9 +3222,9 @@ class Workflow:
         return "failed" if state.verify.last_ok is False else "unverified"
 
     def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
-        """Emit a successful ``session.end``, first auto-passing any still-pending
+        """Emit a successful `session.end`, first auto-passing any still-pending
         root task so the DAG (and every viewer + resume) agrees the run
-        completed -- otherwise a finish_session-only ask/run reads ``tasks 0/1``."""
+        completed -- otherwise a finish_session-only ask/run reads `tasks 0/1`."""
         self._pass_pending_root_tasks()
         self._emit("session.end", reason=reason, iterations=iterations, all_passed=True)
 
@@ -3270,7 +3270,7 @@ class Workflow:
 
         The roots pass either way, like the settled path: the DAG tracks work
         items and the run-level word carries the verify truth, so grounding it
-        there too left a red-verify finish reading ``tasks 0/1`` forever."""
+        there too left a red-verify finish reading `tasks 0/1` forever."""
         self._pass_pending_root_tasks()
         green = self._tree_is_verify_green(state) is True
         self._emit("session.end", reason=reason, iterations=iteration, all_passed=green)
@@ -3364,7 +3364,7 @@ class Workflow:
         non-idempotent tool dispatch resumes from AFTER the executed tools
         rather than replaying them. Atomic via tmp-file + replace so a crash
         mid-write leaves the prior snapshot intact. No-op if
-        ``resume_state_path`` is None (e.g. unit tests).
+        `resume_state_path` is None (e.g. unit tests).
         """
         if self.resume_state_path is None:
             return
@@ -3530,8 +3530,8 @@ class Workflow:
 
     def _metric_at_ceiling(self, history: list[MetricSample]) -> bool:
         """True once any verified sample reached the metric's provable
-        ceiling (e.g. ``SCORE: 27/27``). Such a metric cannot be improved, so
-        the loop honours an early ``finish_session`` and stops nudging instead of
+        ceiling (e.g. `SCORE: 27/27`). Such a metric cannot be improved, so
+        the loop honours an early `finish_session` and stops nudging instead of
         spending the rest of the budget chasing an unbeatable number."""
         return any(sample.at_ceiling for sample in history)
 
@@ -3574,18 +3574,18 @@ class Workflow:
         """Per-call output cap for the worker turn.
 
         Metric-optimization runs (mode "run" with a configured continuous
-        metric) lift the ceiling to ``metric_task_max_tokens`` so a single turn
+        metric) lift the ceiling to `metric_task_max_tokens` so a single turn
         can rewrite a hot function wholesale without truncating mid-apply_patch.
-        Every other run keeps ``per_call_max_tokens``.
+        Every other run keeps `per_call_max_tokens`.
 
         Starvation backoff: once the worker has gone quiet (no text + no
         tool_use -- typically a reasoning model that spent its whole output
         budget on reasoning_content) on >= 2 CONSECUTIVE turns, drop back to
-        ``per_call_max_tokens`` even on a metric run. A spiraling over-reasoner
+        `per_call_max_tokens` even on a metric run. A spiraling over-reasoner
         (observed: GLM 5.2) otherwise burns a fresh ~65k-token reasoning binge
-        every nudged turn until it exhausts ``went_quiet_max_nudges`` and the run
+        every nudged turn until it exhausts `went_quiet_max_nudges` and the run
         dies with zero progress. A tight cap plus the forceful "emit a tool_use
-        now" nudge pressures it to ACT; ``went_quiet_nudges_used`` resets to 0 on
+        now" nudge pressures it to ACT; `went_quiet_nudges_used` resets to 0 on
         the first productive turn, so the very next turn gets the full ceiling
         back for the real edit (the recovery edit itself is never truncated).
         The 2-quiet threshold spares the model the high ceiling was raised FOR
@@ -3605,17 +3605,17 @@ class Workflow:
         current-task banner the restart wiped); False otherwise.
 
         Tier 1 (cheap): drop old tool_result blocks once cumulative content
-        exceeds ``compact_drop_at_chars``.
+        exceeds `compact_drop_at_chars`.
 
         Tier 2 (expensive): once the WHOLE post-elision context (text +
-        tool_use inputs + surviving tool_results, via ``context_chars``)
-        crosses ``compact_summarise_at_chars``, summarise the elided history
+        tool_use inputs + surviving tool_results, via `context_chars`)
+        crosses `compact_summarise_at_chars`, summarise the elided history
         into a compact progress block and restart the conversation from
         (original task + summary). Fail-safe: if
         summarisation errors or returns nothing, the conversation is left
         untouched (tier-1 elision already ran) and the run continues.
 
-        An operator compact request (``compact_requested``, the TUI's
+        An operator compact request (`compact_requested`, the TUI's
         "Compact now") forces tier 2 regardless of the size thresholds; the
         marker is consumed here so one request means one compaction.
         """
@@ -3710,8 +3710,8 @@ class Workflow:
     ) -> bool:
         """Replace the history with (original task + a model-written progress
         summary), in place. The loop only calls this at the top of an
-        iteration, where the history is balanced (every ``tool_use`` already
-        has its ``tool_result``), so the restart can drop the middle without
+        iteration, where the history is balanced (every `tool_use` already
+        has its `tool_result`), so the restart can drop the middle without
         orphaning a tool-call pairing. Returns True iff the history was
         actually replaced; False on every fail-safe path (the tier-1-elided
         context is kept and the run continues).
@@ -3883,7 +3883,7 @@ class Workflow:
 
         Only SUBTASKS (parent_id is not None) gate -- the auto-root is pending
         until the run ends, so gating on it would deadlock. Capped by
-        ``TASK_FINISH_PATIENCE``: after that many blocked finishes the finish is
+        `TASK_FINISH_PATIENCE`: after that many blocked finishes the finish is
         honoured (a task the worker can't close, and won't mark obsolete/skipped,
         must not bounce the loop forever). Best-effort: no curator -> no gate."""
         if self.curator is None:
@@ -3995,21 +3995,21 @@ class Workflow:
         tools: list[ToolDefinition],
         max_tokens: int,
     ) -> ProviderResponse:
-        """Bounded-retry wrapper around ``provider.call``: up to
-        ``provider_retry_count + 1`` attempts. Two retry paths share that budget:
+        """Bounded-retry wrapper around `provider.call`: up to
+        `provider_retry_count + 1` attempts. Two retry paths share that budget:
 
-        - Transient ``ProviderError`` (Anthropic 529, OpenRouter 502, brief socket
+        - Transient `ProviderError` (Anthropic 529, OpenRouter 502, brief socket
           timeout): retried with exponential backoff + full jitter so one flap
-          doesn't abort the run. ``BudgetExceeded`` is never retried (hard stop).
-          Permanent client errors (``ProviderError.status_code`` in
-          ``NON_RETRYABLE_HTTP_STATUSES``: 400/401/402/403/404/422) re-raise
+          doesn't abort the run. `BudgetExceeded` is never retried (hard stop).
+          Permanent client errors (`ProviderError.status_code` in
+          `NON_RETRYABLE_HTTP_STATUSES`: 400/401/402/403/404/422) re-raise
           immediately without consuming a retry: a second identical request
           cannot succeed.
         - A self-contradictory empty tool-call response
-          (``is_empty_tool_call_response``: stop_reason promises a tool call but
+          (`is_empty_tool_call_response`: stop_reason promises a tool call but
           none and no text came back -- GLM via OpenRouter, ~50% post-restart):
           retried with a short fixed delay (model flakiness, not rate-limiting),
-          excluding ``stop_reason=length`` starvation. If every attempt is empty
+          excluding `stop_reason=length` starvation. If every attempt is empty
           the last is returned and the loop's went_quiet handler takes over.
         """
         attempts = max(1, self.provider_retry_count + 1)
@@ -4103,8 +4103,8 @@ class Workflow:
         iteration: int,
     ) -> CritiqueResult | None:
         """Dispatch the in-loop second-opinion: the grounded review PANEL when
-        ``review_seats`` is configured, else the legacy single critic. Both
-        return a ``CritiqueResult`` the trigger logic consumes identically."""
+        `review_seats` is configured, else the legacy single critic. Both
+        return a `CritiqueResult` the trigger logic consumes identically."""
         if self.review_seats:
             return self._run_review_panel(state, trigger=trigger, iteration=iteration)
         return self._run_critic(
@@ -4137,7 +4137,7 @@ class Workflow:
         self, state: _LoopState, *, trigger: str, iteration: int
     ) -> CritiqueResult | None:
         """Run the grounded review panel over the run diff. Returns a
-        ``CritiqueResult`` (``satisfied=False`` only when the panel BLOCKS and
+        `CritiqueResult` (`satisfied=False` only when the panel BLOCKS and
         the gate is still armed). Per-seat + panel events are emitted in seat
         order; the per-run rejection counter decays on a pass and disarms the gate
         once it hits the cap so a gating panel can never stall the run."""
@@ -4440,16 +4440,16 @@ class Workflow:
     ) -> str | None:
         """Operator steering between iterations.
 
-        Returns ``"abort"`` if the operator typed "abort" at the prompt;
-        the loop should then return a steer_abort result. Returns ``None``
-        in all other cases (no request, empty steer, ``/parallel`` dispatch,
+        Returns `"abort"` if the operator typed "abort" at the prompt;
+        the loop should then return a steer_abort result. Returns `None`
+        in all other cases (no request, empty steer, `/parallel` dispatch,
         or instruction injected into the conversation).
 
         Polls steer_requested() and, on a positive, calls steer_prompt()
         to capture operator text. Empty / None / KeyboardInterrupt aborts;
         boundary is between completed iters so a tool_use / tool_result pair
-        is never split. A message starting with the exact ``/parallel`` token
-        is a dispatch directive (see ``_dispatch_parallel``), not an injected
+        is never split. A message starting with the exact `/parallel` token
+        is a dispatch directive (see `_dispatch_parallel`), not an injected
         instruction.
         """
         if not self.steer_requested():
@@ -4829,7 +4829,7 @@ class Workflow:
             return ""
 
     def _checkpoint_subject(self, turn: _TurnState, *, fallback: str) -> str:
-        """The per-step commit message, per ``[git.commit.checkpoint].message``."""
+        """The per-step commit message, per `[git.commit.checkpoint].message`."""
         agent6_subject = _summarise_assistant_text_for_commit(
             turn.resp.text or "", turn.iteration, fallback=fallback
         )

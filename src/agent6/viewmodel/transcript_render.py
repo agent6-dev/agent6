@@ -2,14 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """Render a session's per-call provider transcripts into a readable conversation.
 
-agent6 writes one JSON file per LLM round-trip under ``<run>/transcripts/`` --
-the full, lossless ``{request, response}`` (secrets redacted). Each request
+agent6 writes one JSON file per LLM round-trip under `<run>/transcripts/` --
+the full, lossless `{request, response}` (secrets redacted). Each request
 carries the whole conversation up to that call, so the sequence is a complete,
-self-contained record (no join with ``logs.jsonl`` needed). This module folds
+self-contained record (no join with `logs.jsonl` needed). This module folds
 that sequence -- across BOTH the OpenAI and Anthropic wire shapes -- into an
 ordered list of conversation turns and renders them as Markdown.
 
-``agent6 sessions transcript`` is the CLI front end (``--json`` returns the raw
+`agent6 sessions transcript` is the CLI front end (`--json` returns the raw
 transcript array instead). The fold walks transcripts in seq order, emitting
 only newly-introduced messages per call, so the cumulative-snapshot growth is
 not double-printed and a mid-run context-compaction reset shows as a marker.
@@ -215,7 +215,7 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
 
 def _elided_strings(msg: dict[str, Any]) -> list[str]:
     """Every elision-placeholder string one wire message carries (either shape:
-    an OpenAI ``role: tool`` string content, or Anthropic ``tool_result`` items)."""
+    an OpenAI `role: tool` string content, or Anthropic `tool_result` items)."""
     out: list[str] = []
     content = msg.get("content")
     if isinstance(content, str):
@@ -276,14 +276,14 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     """Fold per-call transcripts into one ordered conversation (no double-print).
 
     Reconciles each request against the PRIOR one instead of predicting: a
-    recorded response only reappears as the next request's ``msgs[prev_len]``
+    recorded response only reappears as the next request's `msgs[prev_len]`
     when the history actually grew. Error transcripts (a 5xx body) and
     empty-response retries re-send the identical message list, so blindly
     assuming one committed assistant message per transcript misread every
     provider retry as a compaction restart and re-printed the whole history.
 
     Folds only the conversation seats: a side-call's one-message request reads
-    as a restart here (see ``CONVERSATION_SEATS``).
+    as a restart here (see `CONVERSATION_SEATS`).
     """
     transcripts = conversation_transcripts(transcripts)
     turns: list[Turn] = []

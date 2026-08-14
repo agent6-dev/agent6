@@ -141,13 +141,13 @@ def _from_plan_task(plan_md: str, session_id: str) -> str:
 def cli_main(argv: list[str] | None = None) -> int:
     """Console-script entry point: the boundary that sorts failures by fault.
 
-    An ``OperatorError`` (a bad flag value, an unreadable operator file, an
-    invalid config) prints as an ``ERROR:`` refusal at exit 2, no traceback.
-    Anything else is a bug in agent6: a one-line ``ERROR: unexpected ...`` plus
-    a pointer to a saved traceback, exit 1. Set ``AGENT6_DEBUG=1`` to re-raise
-    the full traceback inline (for bug reports). ``main`` itself is left
-    unguarded so tests and ``python -m`` see real tracebacks. argparse's
-    ``SystemExit`` (bad args / --help) is not an ``Exception`` and passes
+    An `OperatorError` (a bad flag value, an unreadable operator file, an
+    invalid config) prints as an `ERROR:` refusal at exit 2, no traceback.
+    Anything else is a bug in agent6: a one-line `ERROR: unexpected ...` plus
+    a pointer to a saved traceback, exit 1. Set `AGENT6_DEBUG=1` to re-raise
+    the full traceback inline (for bug reports). `main` itself is left
+    unguarded so tests and `python -m` see real tracebacks. argparse's
+    `SystemExit` (bad args / --help) is not an `Exception` and passes
     through untouched.
     """
     try:

@@ -92,7 +92,7 @@ def _parse_event_line(line: bytes) -> dict[str, Any] | None:
 
 
 class LogTail:
-    """Incremental logs.jsonl reader for a UI poll loop. Each ``read`` returns the
+    """Incremental logs.jsonl reader for a UI poll loop. Each `read` returns the
     events appended since the last call (byte-offset based, tolerant of a partial
     line at EOF). One reader follows a run and its same-dir resume; cheaper than
     re-reading the whole file every tick."""

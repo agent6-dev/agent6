@@ -17,13 +17,13 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
 
 def validate_base_url(url: str) -> None:
-    """Reject a ``[providers.*].base_url`` that is not an http(s) URL with a host.
+    """Reject a `[providers.*].base_url` that is not an http(s) URL with a host.
 
     A provider's
-    ``base_url`` is the host+path prefix the HTTP client posts to (the
-    deployment profile appends ``/chat/completions``, ``/messages``, etc.), so
+    `base_url` is the host+path prefix the HTTP client posts to (the
+    deployment profile appends `/chat/completions`, `/messages`, etc.), so
     it must carry an explicit
-    ``http://`` / ``https://`` scheme and a host. The common paste error this
+    `http://` / `https://` scheme and a host. The common paste error this
     catches is dropping an API key (or a bare host) into the field, which would
     otherwise be accepted and only fail much later as an opaque HTTP error.
     """
@@ -45,11 +45,11 @@ _OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 def _default_base_url(api_format: str, deployment: str) -> str | None:
-    """Default ``base_url`` for a (format, deployment), or None if required.
+    """Default `base_url` for a (format, deployment), or None if required.
 
-    Only the ``direct`` deployment has a sensible fixed endpoint; vertex/azure
+    Only the `direct` deployment has a sensible fixed endpoint; vertex/azure
     (and future bedrock) carry project/resource/region in the URL, so the
-    operator must supply ``base_url``.
+    operator must supply `base_url`.
     """
     if deployment != "direct":
         return None
@@ -57,7 +57,7 @@ def _default_base_url(api_format: str, deployment: str) -> str | None:
 
 
 def _default_auth_style(api_format: str, deployment: str) -> str:
-    """Default ``auth_style`` for a (format, deployment)."""
+    """Default `auth_style` for a (format, deployment)."""
     if deployment == "azure":
         return "api_key_header"
     if deployment == "vertex":
@@ -74,16 +74,16 @@ _API_FORMAT_DESCRIPTION = (
 class _ProviderBase(BaseModel):
     """Transport + auth fields shared by every provider, independent of format.
 
-    Three orthogonal concerns: ``api_format`` (the discriminator) selects the
-    wire dialect; ``deployment`` selects the URL /
-    model-placement profile; and the auth fields (``auth_style`` + a static
-    ``api_key_env`` or a refreshable ``token_command``) select the credential.
+    Three orthogonal concerns: `api_format` (the discriminator) selects the
+    wire dialect; `deployment` selects the URL /
+    model-placement profile; and the auth fields (`auth_style` + a static
+    `api_key_env` or a refreshable `token_command`) select the credential.
     They compose freely -- e.g. Claude-on-Vertex and Gemini-on-Vertex differ
-    only in ``api_format`` (both ``deployment = "vertex"``). ``base_url`` and
-    ``auth_style`` default from (api_format, deployment) in ``_fill_defaults`` so
-    a minimal entry (just ``api_format``) is fully usable. Each block is
+    only in `api_format` (both `deployment = "vertex"`). `base_url` and
+    `auth_style` default from (api_format, deployment) in `_fill_defaults` so
+    a minimal entry (just `api_format`) is fully usable. Each block is
     one endpoint; configure as many as you like under any names and reference
-    them from ``[models.*]``.
+    them from `[models.*]`.
     """
 
     model_config = MODEL_CONFIG
@@ -200,11 +200,11 @@ class _ProviderBase(BaseModel):
 
 
 class AnthropicProviderEntry(_ProviderBase):
-    """``api_format = "anthropic"`` -- the Anthropic Messages wire format.
+    """`api_format = "anthropic"` -- the Anthropic Messages wire format.
 
-    ``deployment = "direct"`` (default) hits api.anthropic.com; ``"vertex"``
-    is Claude-on-Vertex (model id in the URL, ``anthropic_version`` in the body,
-    a Google-OAuth bearer via ``token_command``).
+    `deployment = "direct"` (default) hits api.anthropic.com; `"vertex"`
+    is Claude-on-Vertex (model id in the URL, `anthropic_version` in the body,
+    a Google-OAuth bearer via `token_command`).
     """
 
     # The narrowing override is sound: the model is frozen, so the attribute
@@ -222,12 +222,12 @@ class AnthropicProviderEntry(_ProviderBase):
 
 
 class OpenAIProviderEntry(_ProviderBase):
-    """``api_format = "openai"`` -- any OpenAI Chat Completions wire format.
+    """`api_format = "openai"` -- any OpenAI Chat Completions wire format.
 
-    ``deployment = "direct"`` works against OpenAI, OpenRouter, Ollama, vLLM,
+    `deployment = "direct"` works against OpenAI, OpenRouter, Ollama, vLLM,
     LM Studio, llama.cpp, Gemini's OpenAI-compatible endpoint, GitHub Copilot,
-    etc.; ``"vertex"`` is Gemini's Vertex OpenAPI endpoint; ``"azure"`` is Azure
-    OpenAI (deployment-name in the URL, api-version query param, ``api-key``
+    etc.; `"vertex"` is Gemini's Vertex OpenAPI endpoint; `"azure"` is Azure
+    OpenAI (deployment-name in the URL, api-version query param, `api-key`
     header).
     """
 

@@ -29,7 +29,7 @@ def ask_user(
 
 def finish_session(raw: dict[str, Any]) -> FinishSessionResult:
     """Signal the workflow to terminate. Handler echoes the validated summary
-    (and any structured ``result`` payload, used by state-machine agent
+    (and any structured `result` payload, used by state-machine agent
     states)."""
     args = FinishSessionInput.model_validate(raw)
     return FinishSessionResult(
@@ -39,7 +39,7 @@ def finish_session(raw: dict[str, Any]) -> FinishSessionResult:
 
 def finish_planning(raw: dict[str, Any]) -> FinishPlanningResult:
     """Signal the planning pass is done. Plan-mode counterpart of finish_session;
-    the workflow writes ``plan_markdown`` to disk and exits after dispatching
+    the workflow writes `plan_markdown` to disk and exits after dispatching
     it. Handler echoes the validated summary."""
     args = FinishPlanningInput.model_validate(raw)
     return FinishPlanningResult(

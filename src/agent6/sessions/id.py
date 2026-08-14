@@ -2,14 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """Friendly run identifiers and prefix resolution.
 
-Run IDs have the shape ``<adjective>-<noun>-<suffix>`` where ``suffix``
+Run IDs have the shape `<adjective>-<noun>-<suffix>` where `suffix`
 is six Crockford base32 characters: four derived from a fresh ULID's
-timestamp tail followed by two random. Example: ``sunny-otter-K4Q7B2``.
+timestamp tail followed by two random. Example: `sunny-otter-K4Q7B2`.
 
 The leading 4 chars of the suffix encode the low 20 bits of the
 current millisecond timestamp and are lexicographically sortable, so
 directory listings under the per-repo run-state dir are mostly chronological
-within the same ``<adjective>-<noun>`` pair (the timestamp rolls over
+within the same `<adjective>-<noun>` pair (the timestamp rolls over
 roughly every 17 minutes, which is fine for the typical dev session
 listing). The trailing 2 chars supply 10 bits of entropy to keep IDs
 unique even when several are minted in the same millisecond. The
@@ -30,7 +30,7 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 class SessionIdError(Exception):
-    """Raised when a user-supplied run id cannot be resolved. ``ambiguous`` is
+    """Raised when a user-supplied run id cannot be resolved. `ambiguous` is
     True when the query matched more than one run (vs no match), so a caller can
     surface the disambiguation instead of treating it as 'not found'."""
 
@@ -43,7 +43,7 @@ def validate_explicit_session_id(session_id: str) -> str:
     """Return *session_id* if it is a safe single path component, else raise.
 
     A run id becomes a directory name under the state dir (``state_dir/<subdir>/
-    <session_id>``). An operator ``--session-id`` with a separator, ``..``, or an
+    <session_id>`). An operator `--session-id` with a separator, `..``, or an
     absolute path would place run state outside the state dir; reject those so an
     explicit id can only ever name a run, never a traversal. Generated ids are
     slug-safe by construction and skip this."""
@@ -55,7 +55,7 @@ def validate_explicit_session_id(session_id: str) -> str:
 
 
 def friendly_token() -> str:
-    """A fresh ``<adj>-<noun>-<suffix>`` token.
+    """A fresh `<adj>-<noun>-<suffix>` token.
 
     A token, not a session id: naming a session DIRECTORY goes through
     :func:`unused_session_id`, which also checks the bucket. Callers that want
@@ -90,7 +90,7 @@ def unused_session_id(state_dir: Path, bucket: str) -> str:
 
 
 def list_session_ids(runs_dir: Path) -> list[str]:
-    """Return run-id directory names under ``runs_dir`` (unsorted)."""
+    """Return run-id directory names under `runs_dir` (unsorted)."""
 
     if not runs_dir.is_dir():
         return []
@@ -98,10 +98,10 @@ def list_session_ids(runs_dir: Path) -> list[str]:
 
 
 def resolve_session_id(runs_dir: Path, query: str) -> str:
-    """Resolve ``query`` to an exact run-id under ``runs_dir``.
+    """Resolve `query` to an exact run-id under `runs_dir`.
 
     Accepts an exact match or an unambiguous prefix. Raises
-    ``SessionIdError`` if no match or more than one match is found.
+    `SessionIdError` if no match or more than one match is found.
     """
 
     if not query:

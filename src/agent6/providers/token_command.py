@@ -4,15 +4,15 @@
 
 Some OpenAI-compatible endpoints don't take a static API key; they want a
 short-lived bearer that has to be refreshed (cloud OAuth access tokens,
-internal OIDC/STS gateways, ...). ``[providers.<name>].token_command`` names a
+internal OIDC/STS gateways, ...). `[providers.<name>].token_command` names a
 command that prints such a token to stdout; :class:`CommandToken` runs it,
-caches the result for ``token_command_ttl_s`` seconds, and re-runs it on demand
+caches the result for `token_command_ttl_s` seconds, and re-runs it on demand
 so the provider stays authenticated without a human re-pasting a key.
 
 The command runs in agent6's own process, outside any run sandbox, with the
-operator's environment, the same trust level as an ``[mcp.servers.<name>]`` command.
+operator's environment, the same trust level as an `[mcp.servers.<name>]` command.
 It is therefore an operator-controlled config knob, never something a run can
-set, and the token it prints is sent as ``Authorization: Bearer <token>``.
+set, and the token it prints is sent as `Authorization: Bearer <token>`.
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ _DEFAULT_RUN_TIMEOUT_S = 30.0
 class CommandToken:
     """Cached, refreshable bearer minted by running an external command.
 
-    Thread-safe. ``token()`` returns the cached value while it is younger than
-    ``ttl_s`` and otherwise re-runs the command; ``invalidate()`` forces the
-    next ``token()`` to re-run (the provider calls it after a 401/403 so an
-    expired token self-heals regardless of ``ttl_s``).
+    Thread-safe. `token()` returns the cached value while it is younger than
+    `ttl_s` and otherwise re-runs the command; `invalidate()` forces the
+    next `token()` to re-run (the provider calls it after a 401/403 so an
+    expired token self-heals regardless of `ttl_s`).
     """
 
     __slots__ = ("_argv", "_fetched_at", "_lock", "_run_timeout_s", "_token", "_ttl_s")
@@ -68,7 +68,7 @@ class CommandToken:
             return token
 
     def invalidate(self) -> None:
-        """Drop the cached token so the next ``token()`` re-runs the command."""
+        """Drop the cached token so the next `token()` re-runs the command."""
         with self._lock:
             self._token = ""
             self._fetched_at = 0.0

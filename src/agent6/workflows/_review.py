@@ -3,13 +3,13 @@
 """Review-panel seat call + sequential orchestration.
 
 A *seat* is one adversarial reviewer: a single grounded LLM call over the diff
-(+ verify result) that returns a structured ``ReviewVerdict``. ``run_panel`` runs
-the seats and folds them with the pure ``aggregate_verdicts`` (in ``_panel``).
+(+ verify result) that returns a structured `ReviewVerdict`. `run_panel` runs
+the seats and folds them with the pure `aggregate_verdicts` (in `_panel`).
 The grounding that actually prevents false-blocks is enforced in the aggregator,
 not here; this module just asks each model for findings in a parseable shape.
 
-Network calls live here (each seat takes an injected ``Provider``); the pure
-grounding/aggregation stays in ``_panel`` so it is testable without the network.
+Network calls live here (each seat takes an injected `Provider`); the pure
+grounding/aggregation stays in `_panel` so it is testable without the network.
 """
 
 from __future__ import annotations
@@ -50,9 +50,9 @@ ReviewDispatch = Callable[[str, dict[str, Any]], ToolResult]
 class ReviewSeat:
     """One panel seat: a persona stance bound to a provider/model.
 
-    ``tier`` is "diff" (a single grounded call over the diff) or "explore" (a
+    `tier` is "diff" (a single grounded call over the diff) or "explore" (a
     read-only tool-using mini-loop that investigates the broader repo first);
-    typed as the config's ``ReviewTier`` Literal, the vocabulary's one owner."""
+    typed as the config's `ReviewTier` Literal, the vocabulary's one owner."""
 
     persona: str
     model: str
@@ -61,13 +61,13 @@ class ReviewSeat:
 
 
 def parse_seat_spec(spec: str) -> tuple[str, str, str]:
-    """Parse a ``review_seats`` entry into ``(persona, provider, model)``.
+    """Parse a `review_seats` entry into `(persona, provider, model)`.
 
-    ``"security@openrouter/moonshotai/kimi-k2"`` -> ``("security", "openrouter",
-    "moonshotai/kimi-k2")``; ``"security"`` (no ``@``) -> ``("security", "", "")``
-    (route via the reviewer role); ``"@anthropic/claude-opus-4-8"`` ->
-    ``("", "anthropic", "claude-opus-4-8")``. The model may itself contain ``/``
-    (only the first ``/`` after ``@`` splits provider from model)."""
+    `"security@openrouter/moonshotai/kimi-k2"` -> ``("security", "openrouter",
+    "moonshotai/kimi-k2")`; `"security"` (no `@`) -> `("security", "", "")``
+    (route via the reviewer role); `"@anthropic/claude-opus-4-8"` ->
+    `("", "anthropic", "claude-opus-4-8")`. The model may itself contain `/`
+    (only the first `/` after `@` splits provider from model)."""
     persona, sep, route = spec.partition("@")
     if not sep:
         return (spec.strip(), "", "")
@@ -141,7 +141,7 @@ def structured_review(
     provider: Provider, ctx: ReviewContext, *, seat: str, model: str, max_tokens: int = 1500
 ) -> ReviewVerdict:
     """Run one seat. Returns a ReviewVerdict; any failure (provider error, junk
-    output) yields an ABSTAINING verdict (``error`` set) -- never a false pass."""
+    output) yields an ABSTAINING verdict (`error` set) -- never a false pass."""
     system = REVIEW_SYSTEM_PROMPT.format(persona=ctx.persona or "general correctness")
     try:
         resp = provider.call(
@@ -244,7 +244,7 @@ def run_panel(
     dispatch: ReviewDispatch | None = None,
 ) -> PanelResult:
     """Run every seat and aggregate. Each seat sees the same context with its own
-    persona substituted. With ``concurrency > 1`` the seat calls run on a thread
+    persona substituted. With `concurrency > 1` the seat calls run on a thread
     pool (the shared budget tracker + transcript sink are both lock-protected, and
     each seat has its own provider); results stay in seat order, so the merged
     verdict is deterministic regardless of how the calls interleave."""

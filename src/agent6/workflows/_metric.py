@@ -28,13 +28,13 @@ class MetricSample:
     stdout_tail: str = ""
     stderr_tail: str = ""
     # Comparison thresholds parsed from the metric command output (e.g.
-    # ``assert cycles() < 1487`` lines); they point the worker at the next
+    # `assert cycles() < 1487` lines); they point the worker at the next
     # unmet target rather than a vague "go faster". See
-    # ``extract_metric_targets``.
+    # `extract_metric_targets`.
     targets: tuple[float, ...] = ()
     # True when the grader reported the score as a maxed-out fraction
-    # (``SCORE: 27/27``): the metric is at its provable ceiling and cannot
-    # be improved. See ``metric_at_fraction_ceiling``.
+    # (`SCORE: 27/27`): the metric is at its provable ceiling and cannot
+    # be improved. See `metric_at_fraction_ceiling`.
     at_ceiling: bool = False
 
 
@@ -47,7 +47,7 @@ def coerce_metric_score(value: Any) -> float | None:
 
 
 # A comparison operator followed by a numeric literal, e.g. the
-# ``< 1487`` in ``assert cycles() < 1487``. Underscores in the literal
+# `< 1487` in `assert cycles() < 1487`. Underscores in the literal
 # (Python int separators) are tolerated and stripped.
 # (?<![-=<>!]) rejects the '>' inside '->' / '=>' arrows (and the tail of
 # '>>' / '!>'): a grader progress log like 'epoch 2 -> 27.0' would otherwise
@@ -63,10 +63,10 @@ def extract_metric_targets(
 ) -> tuple[float, ...]:
     """Pull threshold numbers out of metric-command output.
 
-    For ``goal="minimize"`` we want upper bounds the score must get
-    *under* (``<`` / ``<=`` thresholds); for ``"maximize"`` we want lower
-    bounds it must get *over* (``>`` / ``>=``). Benchmarks commonly print
-    these as ``assert <expr> < N`` lines (one per unmet speed tier), so
+    For `goal="minimize"` we want upper bounds the score must get
+    *under* (`<` / `<=` thresholds); for `"maximize"` we want lower
+    bounds it must get *over* (`>` / `>=`). Benchmarks commonly print
+    these as `assert <expr> < N` lines (one per unmet speed tier), so
     extracting them turns "go faster" into a concrete next target.
     Order-preserving and de-duplicated.
     """
@@ -93,10 +93,10 @@ def next_metric_target(
 ) -> float | None:
     """The nearest threshold the current score has not yet met. A target is
     met only when the score is STRICTLY beyond it in the improving direction:
-    equality stays unmet, matching a strict ``assert x < N`` (and holding the
-    conservative reading for a ``<=`` bound). Returns the largest
-    not-yet-undercut ``<`` bound (minimize) or the smallest not-yet-exceeded
-    ``>`` bound (maximize); None when all are met or there is nothing to aim
+    equality stays unmet, matching a strict `assert x < N` (and holding the
+    conservative reading for a `<=` bound). Returns the largest
+    not-yet-undercut `<` bound (minimize) or the smallest not-yet-exceeded
+    `>` bound (maximize); None when all are met or there is nothing to aim
     at."""
     if not targets or current is None:
         return None
@@ -107,29 +107,29 @@ def next_metric_target(
     return min(unmet) if unmet else None
 
 
-# A fraction in metric output, e.g. the ``27/27`` in ``SCORE: 27/27``. A
+# A fraction in metric output, e.g. the `27/27` in `SCORE: 27/27`. A
 # maxed-out fraction means the metric is at its provable ceiling. See
-# ``metric_at_fraction_ceiling``.
+# `metric_at_fraction_ceiling`.
 METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
 
 
 def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str | None = None) -> bool:
-    """True if ``text`` reports ``score`` as a maxed-out ``X/Y`` fraction.
+    """True if `text` reports `score` as a maxed-out `X/Y` fraction.
 
-    Many graders print a bounded score as ``X/Y`` (``SCORE: 27/27``,
-    ``passed 27/27``). When the numerator equals both the parsed score and
+    Many graders print a bounded score as `X/Y` (`SCORE: 27/27`,
+    `passed 27/27`). When the numerator equals both the parsed score and
     the denominator, the metric is provably at its ceiling: no further edit
-    can push it higher. Detecting this lets a ``maximize`` run stop cleanly
+    can push it higher. Detecting this lets a `maximize` run stop cleanly
     instead of treating the unbeatable plateau as a local optimum worth
     spending the rest of the budget pivoting away from. Conservative: only
-    fires on an exact ``score/score`` match, so partial scores (``26/27``)
+    fires on an exact `score/score` match, so partial scores (`26/27`)
     and unbounded metrics (raw cycle counts, which never print a
     denominator) are unaffected.
 
-    ``pattern`` is the metric score regex (``[workflow.metric].pattern``,
+    `pattern` is the metric score regex (`[workflow.metric].pattern`,
     the one the score was parsed with). When given, only fractions on the
     line of the score match count, so an incidental fraction elsewhere in
-    the output (a tqdm ``100/100`` in stderr) cannot latch the ceiling for
+    the output (a tqdm `100/100` in stderr) cannot latch the ceiling for
     the run. Without it the whole text is scanned (legacy: for callers that
     do not know the score's source pattern).
     """

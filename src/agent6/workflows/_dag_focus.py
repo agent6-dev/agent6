@@ -41,7 +41,7 @@ STUCK_NUDGE_MAX = 3
 
 
 def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
-    """True if any of ``node``'s children is still open. A subtask with open
+    """True if any of `node`'s children is still open. A subtask with open
     children is a container -- its children are the unit of work, not it -- so the
     frontier surfaces the children's leaves instead."""
     for cid in node.children:
@@ -71,8 +71,8 @@ def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
 
 def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     """First focusable subtask (open, deps satisfied, no open child), in the
-    order the task tree shows: depth-first through each parent's ``children``
-    list. That list is what every renderer and ``list_tasks`` display, so a
+    order the task tree shows: depth-first through each parent's `children`
+    list. That list is what every renderer and `list_tasks` display, so a
     reordered or positionally-inserted child executes where it appears.
 
     Roots (and any node an ancestor does not reach, e.g. a stale parent
@@ -133,7 +133,7 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
 
 
 def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
-    """The anti-grind directive: the model has spent ``turns`` turns on one task
+    """The anti-grind directive: the model has spent `turns` turns on one task
     without concluding it; offer the three ways to record progress."""
     title = node.title.strip() or "(untitled)"
     return (
@@ -150,9 +150,9 @@ def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
 
 def initial_dag_hint(root_id: str | None, mode: str, decompose: bool) -> str:
     """The DAG hint appended to the first user message. The decompose-first
-    directive is RUN-MODE ONLY -- it references the run-only ``<decompose-first>``
+    directive is RUN-MODE ONLY -- it references the run-only `<decompose-first>`
     system block and tells the worker to edit, neither of which fits plan/ask
-    (which also wire a curator, so ``root_id`` is non-None there). Every other
+    (which also wire a curator, so `root_id` is non-None there). Every other
     case gets the optional-DAG hint."""
     if root_id is None:
         return ""

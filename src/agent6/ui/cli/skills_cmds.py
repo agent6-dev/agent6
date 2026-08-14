@@ -149,7 +149,7 @@ def _refuse_or_clear_existing(name: str, *, force: bool) -> Path:
 def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force: bool) -> str:
     """Copy one skill directory (SKILL.md + supplementary files) into place.
 
-    ``symlinks=True``: the skill comes from an untrusted source, and copying a
+    `symlinks=True`: the skill comes from an untrusted source, and copying a
     link's CONTENT turns `reference.md -> secrets.toml` into a real file
     `use_skill` will serve. Preserved, the link stays subject to `use_skill`'s
     containment check."""

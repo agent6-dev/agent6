@@ -30,9 +30,9 @@ from typing import Any
 
 
 def event_epoch(value: object) -> float | None:
-    """Parse an event ``ts`` to epoch seconds, or None if unparseable.
+    """Parse an event `ts` to epoch seconds, or None if unparseable.
 
-    EventSink writes ``ts`` as an ISO-8601 string (``datetime.isoformat``),
+    EventSink writes `ts` as an ISO-8601 string (`datetime.isoformat`),
     so the elapsed-time anchor must parse that, not only bare numbers.
     """
     if isinstance(value, bool):
@@ -320,8 +320,8 @@ def _call_id(raw: dict[str, Any]) -> int | None:
 def parse_event(raw: dict[str, Any]) -> Event:
     """One raw logs.jsonl event dict -> one typed family, or RawEvent for the rest.
 
-    A malformed field inside a KNOWN family (a torn numeric in ``verify.end`` or
-    ``budget.update``) degrades to RawEvent exactly like an unknown type: the
+    A malformed field inside a KNOWN family (a torn numeric in `verify.end` or
+    `budget.update`) degrades to RawEvent exactly like an unknown type: the
     fold runs unwrapped inside live tails (web SSE, TUI reader), so it must
     never raise on a line an interrupted writer left behind."""
     try:

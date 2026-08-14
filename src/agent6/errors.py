@@ -3,10 +3,10 @@
 """The operator-error boundary.
 
 A bad value or unreadable file from the operator raises :class:`OperatorError`;
-``cli_main`` turns that into a one-line ``ERROR:`` refusal at exit 2, and
+`cli_main` turns that into a one-line `ERROR:` refusal at exit 2, and
 any other fault into a crash report (Ctrl-C exits 130 with a plain line;
 argparse exits pass through). Subsystem error types for operator-owned
-input (``ConfigError``) subclass it, so no reader needs its own except arm to
+input (`ConfigError`) subclass it, so no reader needs its own except arm to
 keep an operator mistake out of the crash reporter.
 """
 

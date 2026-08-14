@@ -55,7 +55,7 @@ WAIT_LABELS = frozenset({"tick", "signal"})
 class MachineError(Exception):
     """Raised when a machine file does not load and validate cleanly.
 
-    ``problems`` is the full, ordered list of diagnostics.
+    `problems` is the full, ordered list of diagnostics.
     """
 
     def __init__(self, problems: list[str]) -> None:
@@ -156,8 +156,8 @@ class NotifySpec(BaseModel):
 
     Presentation only (§4.3): entering the state journals a `machine.notify`
     event and fires the operator notify hook; it adds no edge and no control
-    flow. Authors write ``notify = "msg"`` (level defaults to "info") or
-    ``notify = { message = "msg", level = "warn" }``.
+    flow. Authors write `notify = "msg"` (level defaults to "info") or
+    `notify = { message = "msg", level = "warn" }`.
     """
 
     model_config = _MODEL_CONFIG
@@ -204,9 +204,9 @@ _FiniteUsd = Annotated[float, AfterValidator(_finite_usd)]
 class BudgetSpec(BaseModel):
     """Whole-machine spend bounds. `max_transitions` always binds.
 
-    ``max_usd`` (optional) caps the machine's cumulative METERED spend
+    `max_usd` (optional) caps the machine's cumulative METERED spend
     (reported cost, else price x tokens); a state whose model has no price
-    data is bounded per state by ``[budget].max_tokens_fallback`` in the
+    data is bounded per state by `[budget].max_tokens_fallback` in the
     effective config instead (0 there refuses unmetered models outright).
     """
 
@@ -279,9 +279,9 @@ class AgentState(BaseModel):
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
     # Optional per-state overrides for how this agent loop is driven. When
-    # unset each falls back through the effective config (machine ``[config]``
-    # overlay, then repo, then global, then the built-in default). ``provider`` selects which
-    # ``[providers.*]`` entry backs the call; ``thinking`` and ``temperature``
+    # unset each falls back through the effective config (machine `[config]`
+    # overlay, then repo, then global, then the built-in default). `provider` selects which
+    # `[providers.*]` entry backs the call; `thinking` and `temperature`
     # tune reasoning/sampling; the budget caps bound this single agent slice.
     # Secrets/connection keys are never expressed here, only the provider
     # *name*, which must already exist in the effective config.
@@ -307,22 +307,22 @@ class ToolState(BaseModel):
     on: dict[str, str]
     # Which network this tool's jailed subprocess joins, in the vocabulary the
     # sandbox and MCP servers use:
-    #  - ``auto`` (default): one of its own, where the isolation level can give
-    #    one (``strict``); where it cannot (``hardened`` has no namespaces) the
+    #  - `auto` (default): one of its own, where the isolation level can give
+    #    one (`strict`); where it cannot (`hardened` has no namespaces) the
     #    tool shares the host's and a warning says so. Runs anywhere.
-    #  - ``host``: the machine's network. Granted only if the operator permits
-    #    it via ``sandbox.network`` (``only_explicit_states`` or ``host``);
+    #  - `host`: the machine's network. Granted only if the operator permits
+    #    it via `sandbox.network` (`only_explicit_states` or `host`);
     #    otherwise the run is refused naming this state. Enforceable because the
     #    machine engine is a host-netns supervisor: this tool's jail can reach
     #    the network while everything else stays off it.
-    #  - ``none``: one of its own, REQUIRED -- refuse on ``hardened`` rather than
-    #    run connected, unlike ``auto`` which tolerates it.
-    # There is no ``session`` here: a machine state's processes die with the
+    #  - `none`: one of its own, REQUIRED -- refuse on `hardened` rather than
+    #    run connected, unlike `auto` which tolerates it.
+    # There is no `session` here: a machine state's processes die with the
     # state (no background commands, no MCP servers, escapees swept), so a
     # shared network would never have a second member. Add it if machines ever
     # get a run-scoped jail session.
-    # The tool only *declares*; whether ``host`` is granted is the operator's
-    # call (``sandbox.network``, read from global/repo config, never a machine
+    # The tool only *declares*; whether `host` is granted is the operator's
+    # call (`sandbox.network`, read from global/repo config, never a machine
     # overlay).
     network: Literal["auto", "host", "none"] = "auto"
 
@@ -465,7 +465,7 @@ def edges(spec: MachineSpec) -> tuple[Edge, ...]:
 
 
 def reachable_states(spec: MachineSpec) -> frozenset[str]:
-    """States reachable from ``initial`` following declared edges."""
+    """States reachable from `initial` following declared edges."""
     adjacency: dict[str, list[str]] = {name: [] for name in spec.states}
     for edge in edges(spec):
         if edge.dst in adjacency:

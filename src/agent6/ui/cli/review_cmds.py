@@ -45,16 +45,16 @@ def _collect_review_diff(
 ) -> subprocess.CompletedProcess[str]:
     """Collect the diff `agent6 review` reviews, leaving the index untouched.
 
-    With ``base``: a plain ``git diff base..head`` (read-only). Without it:
+    With `base`: a plain `git diff base..head` (read-only). Without it:
     working tree vs HEAD *including untracked files*. To make untracked files
-    show up, git needs intent-to-add (``git add -N``) entries, but review is
+    show up, git needs intent-to-add (`git add -N`) entries, but review is
     documented read-only, so we register ONLY the currently-untracked paths and
-    ``git reset`` them afterward (in a ``finally``), restoring the index exactly
+    `git reset` them afterward (in a `finally`), restoring the index exactly
     as we found it. Staged/tracked changes are never touched.
 
     Every invocation carries git_ops' hardening flags plus ``--no-ext-diff
-    --no-textconv``: without them, a checkout with a poisoned ``.git/config``
-    (``diff.external``/``diff.*.textconv``/``core.fsmonitor``) would run its
+    --no-textconv`: without them, a checkout with a poisoned `.git/config``
+    (`diff.external`/`diff.*.textconv`/`core.fsmonitor`) would run its
     payload on the host the moment the operator reviews it.
     """
     hardening = git_hardening_flags()
@@ -190,7 +190,7 @@ def _cmd_review(  # noqa: PLR0911
     personas: str = "",
 ) -> int:
     """Print a code review of a diff to stdout. Read-only; no jail. With
-    ``reviewers >= 1``, runs the grounded adversarial review PANEL instead of the
+    `reviewers >= 1`, runs the grounded adversarial review PANEL instead of the
     single freeform review."""
     cfg = load_effective(Path.cwd(), config_path).config
     cfg.require_runnable("reviewer")

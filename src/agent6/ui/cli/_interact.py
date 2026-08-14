@@ -121,10 +121,10 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
 def _wait_for_reply[T](session_dir: Path, read_once: Callable[[], T | None]) -> T | None:
     """Detach 'wait' mode: block until an answer arrives or a Stop ends the run.
 
-    ``read_once`` is called even with NO front-end claim registered: a
+    `read_once` is called even with NO front-end claim registered: a
     claim-less front-end (the web UI answering over HTTP) writes the same
     answer files, and the answer's existence, not a claim, is the proof
-    someone answered. ``read_once`` paces itself (its liveness dead-grace
+    someone answered. `read_once` paces itself (its liveness dead-grace
     caps a claim-less round); the extra sleep paces the no-claim loop. A
     front-end's Stop lands as a steer abort, which breaks the wait so the
     run can end. Returns the reply, or None on stop."""

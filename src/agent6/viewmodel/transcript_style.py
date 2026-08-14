@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One renderer for a folded ``TranscriptItem``, shared by the CLI stream and the
+"""One renderer for a folded `TranscriptItem`, shared by the CLI stream and the
 TUI conversation view.
 
-``item_lines`` produces medium-agnostic styled lines: each line is a list of
-``(text, style)`` spans, where *style* is a SEMANTIC name (not an ANSI code or a
+`item_lines` produces medium-agnostic styled lines: each line is a list of
+`(text, style)` spans, where *style* is a SEMANTIC name (not an ANSI code or a
 Rich style). Each front-end maps those names to its own output -- the CLI to ANSI,
-the TUI to a Rich ``Text`` -- so the structure and the styling decisions live in
+the TUI to a Rich `Text` -- so the structure and the styling decisions live in
 ONE place and the two skins cannot drift.
 
 Relative indent is baked into the line text (a tool's result/tail sit under its
@@ -123,7 +123,7 @@ def _thinking_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
 
 def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     """The styled lines for one folded conversation item (both skins render these).
-    ``detail`` is the one detail level cycled in the TUI (see DetailLevel)."""
+    `detail` is the one detail level cycled in the TUI (see DetailLevel)."""
     if detail == "hidden" and item.kind in ("thinking", "tool"):
         # The least-noise level reads as pure dialogue; the items survive in
         # the fold, so cycling back restores them.

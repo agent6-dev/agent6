@@ -46,13 +46,13 @@ def build_symbol_outline_block(
           struct Bar:5
 
     Hard caps keep the block bounded:
-      - At most ``SYMBOL_OUTLINE_MAX_PER_FILE`` rows per file (truncated
-        with a ``... (+N more)`` line).
-      - At most ``SYMBOL_OUTLINE_MAX_FILES`` files (overflow summarised).
-      - At most ``SYMBOL_OUTLINE_MAX_CHARS`` characters total; we stop
+      - At most `SYMBOL_OUTLINE_MAX_PER_FILE` rows per file (truncated
+        with a `... (+N more)` line).
+      - At most `SYMBOL_OUTLINE_MAX_FILES` files (overflow summarised).
+      - At most `SYMBOL_OUTLINE_MAX_CHARS` characters total; we stop
         emitting files as soon as the budget would be exceeded.
 
-    Returns an empty string when ``outlines`` is empty.
+    Returns an empty string when `outlines` is empty.
     """
     if not outlines:
         return ""

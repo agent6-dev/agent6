@@ -123,7 +123,7 @@ def _cmd_config_path() -> int:
 def _cmd_config_presets(config_path: Path | None = None) -> int:
     """List every known preset with the overrides it applies; mark the selection.
 
-    Honours the global ``--config`` like every other config subcommand, so a
+    Honours the global `--config` like every other config subcommand, so a
     `[presets.*]` table in an explicit file is listed by the command that
     exists to show which presets are available."""
     cat = preset_catalog(Path.cwd(), config_path)
@@ -187,9 +187,9 @@ def _cmd_config_fill(*, force: bool) -> int:
 def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str]:
     """Resolve the file + dotted-key prefix a config write should target.
 
-    Global by default; ``--repo`` writes the in-repo config; ``--machine-file FILE``
-    edits that machine's ``[config]`` overlay (so keys are prefixed ``config.``
-    and land in ``[config.<section>]``). ``--repo`` and ``--machine-file``
+    Global by default; `--repo` writes the in-repo config; `--machine-file FILE`
+    edits that machine's `[config]` overlay (so keys are prefixed `config.`
+    and land in `[config.<section>]`). `--repo` and `--machine-file`
     together are ambiguous and rejected.
     """
     if machine is not None:
@@ -243,15 +243,15 @@ def _machine_is_valid(text: str | None) -> bool:
 
 
 def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = True) -> str | None:
-    """Re-validate a machine file after a ``[config]``-overlay write; restore
+    """Re-validate a machine file after a `[config]`-overlay write; restore
     *prior_text* on failure (kept, saying so, when the lock failed open).
 
     Validates the overlay against the config stack, and the WHOLE machine spec
-    when the file has ``[states]`` -- `config set --machine-file` must not BREAK
+    when the file has `[states]` -- `config set --machine-file` must not BREAK
     a runnable machine. Blocks only when the edit made a previously-VALID
     machine invalid; one already invalid (or a brand-new stub) is left for the
     author to finish. The layered (global/repo) writers revalidate through
-    ``config.write`` instead.
+    `config.write` instead.
     """
     err: str | None = None
     try:

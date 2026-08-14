@@ -130,14 +130,14 @@ def _coerce_stringified_args(
     """Recover a tool call whose structured argument arrived as a JSON string.
 
     Weak models occasionally serialize an array/object argument to a string
-    (e.g. apply_edit ``edits`` arriving as ``'[{...}]'``), wasting a
+    (e.g. apply_edit `edits` arriving as `'[{...}]'`), wasting a
     round-trip on a validation error the model must repair. For each top-level field named in the
     validation error whose provided value is a str, parse the string's head
-    as JSON (``raw_decode`` tolerates trailing junk like a leaked closing
+    as JSON (`raw_decode` tolerates trailing junk like a leaked closing
     tag) and substitute the parsed value when it is a container. Fields the
     schema really declares as strings are unaffected: a wrong substitution
     fails re-validation and the caller re-raises the original error. Returns
-    the coerced copy of ``raw_input``, or None when nothing was coercible.
+    the coerced copy of `raw_input`, or None when nothing was coercible.
     """
     decoder = json.JSONDecoder()
     coerced: dict[str, Any] | None = None
@@ -335,9 +335,9 @@ class ToolDispatcher:
         self._curator = curator
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
-        # set, ``dispatch`` routes any tool name starting with the MCP
+        # set, `dispatch` routes any tool name starting with the MCP
         # prefix to the manager. Discovered tool names are also added
-        # to ``available_tool_names()`` so the workflow exposes them.
+        # to `available_tool_names()` so the workflow exposes them.
         self._mcp_manager = mcp_manager
         # Per-repo state dir: sessions roster reads plus the memory grant
         # above. None (tests, review/one-off dispatchers) leaves both off.
@@ -414,7 +414,7 @@ class ToolDispatcher:
 
     def set_run_root_node_id(self, node_id: str | None) -> None:
         """Workflow sets this after seeding the run's root task.
-        ``add_task`` with parent_id=None falls back to this as the parent."""
+        `add_task` with parent_id=None falls back to this as the parent."""
         self._run_root_node_id = node_id
 
     def command_policy(self) -> str:
@@ -644,7 +644,7 @@ class ToolDispatcher:
         max_symbols: int = 20,
         min_files_referenced: int = 2,
     ) -> list[tuple[str, str, str, int, int]]:
-        """Public passthrough to ``SymbolIndex.hot_symbols``, sharing the
+        """Public passthrough to `SymbolIndex.hot_symbols`, sharing the
         dispatcher's index so an already-paid scan is not repeated."""
         idx = self._ensure_index()
         return idx.hot_symbols(
@@ -653,9 +653,9 @@ class ToolDispatcher:
         )
 
     def file_outlines(self) -> dict[Path, list[Symbol]]:
-        """Public passthrough to ``SymbolIndex.file_outlines``.
+        """Public passthrough to `SymbolIndex.file_outlines`.
 
-        Used by ``Workflow._load_repo_summary`` to build the
+        Used by `Workflow._load_repo_summary` to build the
         per-file symbol outline injected into the system prompt.
         """
         idx = self._ensure_index()
@@ -683,7 +683,7 @@ class ToolDispatcher:
         """Release subprocess resources.
 
         Idempotent. Safe to call from CLI teardown alongside
-        ``mcp_manager.close()``.
+        `mcp_manager.close()`.
         """
         if self._shells is not None:
             self._shells.stop_all()
@@ -982,7 +982,7 @@ class ToolDispatcher:
         """Discover + state-resolve operator skills, once per dispatcher.
 
         Same source of truth as the loop's system-prompt index:
-        ``[skills].extra_dirs`` first, then the installed dir under the user
+        `[skills].extra_dirs` first, then the installed dir under the user
         data dir. An off switch resolves to nothing.
         """
         if self._skills_cache is None:
@@ -1001,7 +1001,7 @@ class ToolDispatcher:
 
     def skills_available(self) -> bool:
         """True when at least one enabled/always skill exists; gates whether
-        ``use_skill`` is exposed in the loop's tool list."""
+        `use_skill` is exposed in the loop's tool list."""
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
 
@@ -1009,10 +1009,10 @@ class ToolDispatcher:
         return use_skill(self.resolved_skills, raw)
 
     def _run_metric(self, _raw: dict[str, Any]) -> MetricResult:
-        """Run ``cfg.workflow.metric.command`` in the jail.
+        """Run `cfg.workflow.metric.command` in the jail.
 
         Return shape mirrors `_run_argv_in_jail` (returncode / stdout /
-        stderr / duration_s) plus ``score``: the ``pattern`` regex's first
+        stderr / duration_s) plus `score`: the `pattern` regex's first
         capture group as a float, or null when it does not match or parse (the
         agent can then grep stdout itself). Raises ToolError when no metric is
         configured.

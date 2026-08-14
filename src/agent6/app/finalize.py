@@ -187,7 +187,7 @@ def _stamp_covers_branch(run_branch: str, merged_tip: str) -> bool:
     committing on its branch under a PRIOR leg's stamp (and this leg's
     auto-merge may have conflicted): "changes merged" holds only while the
     branch still points at the merged tip -- the comparison `sessions prune`
-    trusts. A gone branch (auto_prune), unreadable git, or a pre-``tip`` stamp
+    trusts. A gone branch (auto_prune), unreadable git, or a pre-`tip` stamp
     keeps the claim."""
     if not merged_tip or not run_branch:
         return True
@@ -290,10 +290,10 @@ def print_interrupt_end(
     *, layout: SessionLayout, budget: BudgetTracker, reporter: Reporter
 ) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
-    branch-return hint. The interrupt cuts the run before ``print_session_end``, so
+    branch-return hint. The interrupt cuts the run before `print_session_end`, so
     without this the user saw only "run interrupted" -- no spend, no way to pick
     the (auto-committed, resumable) work back up, and no note they were left on
-    the run branch. Mirrors the not-completed footer of ``print_session_end``."""
+    the run branch. Mirrors the not-completed footer of `print_session_end`."""
     reporter.out("")
     reporter.out(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
@@ -408,7 +408,7 @@ def finalize_auto_merge(
 def _stash_apply_cmd(sha: str, base_branch: str, *, needs_checkout: bool) -> str:
     """The manual-recovery command for a stash, worded once for every caller.
 
-    Always apply-by-SHA: a positional ``pop 'stash@{N}'`` printed now but run
+    Always apply-by-SHA: a positional `pop 'stash@{N}'` printed now but run
     later restores whatever sits at that position by then, which is how a
     bystander's stash got applied and the pre-run work stayed hidden."""
     apply = f"git stash apply {sha}"
@@ -444,8 +444,8 @@ def finalize_auto_stash(
     restored by its immutable sha, never by position: a stash pushed DURING
     the run sat at stash@{0}, so a positional pop restored the wrong work and
     left the pre-run work hidden. The printed manual-recovery hint applies by
-    sha too (``git stash apply <sha>``), which stays correct however the
-    stash stack shifts later -- a positional ``pop 'stash@{N}'`` printed now
+    sha too (`git stash apply <sha>`), which stays correct however the
+    stash stack shifts later -- a positional `pop 'stash@{N}'` printed now
     but run after another stash push would restore the wrong one."""
     message = auto_stash_message(session_id)
     entry = find_stash(cwd, message)
@@ -502,7 +502,7 @@ def finalize_auto_stash(
 
 def hook_env(**agent6_vars: str) -> dict[str, str]:
     """The environment for an operator notify hook: the shared curated base
-    plus the given ``AGENT6_*`` facts. The one owner for both hooks
+    plus the given `AGENT6_*` facts. The one owner for both hooks
     (`[notify].on_complete` here, `[machine.notify].on_event` in
     `app/machine/_preflight.py`), so their env-scope claims cannot drift."""
     return curated_env(extra=agent6_vars)

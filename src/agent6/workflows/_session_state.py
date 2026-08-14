@@ -51,12 +51,12 @@ SessionEndReason = Literal[
 
 # Whether the verify gate was green when the run ended, on its own axis: a
 # deliberate finish and a verified one are different facts, and collapsing them
-# into ``completed`` made a finish_session over a red verify exit 0 and auto-merge.
-# ``failed`` means a red gate was OBSERVED (the last verify ran and failed);
-# ``unverified`` means a gate exists but no observation covers the final tree
+# into `completed` made a finish_session over a red verify exit 0 and auto-merge.
+# `failed` means a red gate was OBSERVED (the last verify ran and failed);
+# `unverified` means a gate exists but no observation covers the final tree
 # (no verify ran this leg, or edits landed after the last green) -- folding that
-# into ``failed`` printed "the gate is red" over a gate that never ran.
-# ``not_applicable`` covers both a gateless session (no verify_command) and one
+# into `failed` printed "the gate is red" over a gate that never ran.
+# `not_applicable` covers both a gateless session (no verify_command) and one
 # that stopped before any verdict existed.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
@@ -65,7 +65,7 @@ Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 class SessionResult:
     """Final state of a session.
 
-    ``reason`` values (constructed in loop.py unless noted):
+    `reason` values (constructed in loop.py unless noted):
       finish_session        - agent called the finish_session tool explicitly.
       finish_planning   - plan-mode agent called the finish_planning tool.
       silent_finish     - agent emitted text but no tool_use (talking).
@@ -136,16 +136,16 @@ SNAPSHOT_VERSION = 2
 
 
 class SessionSnapshot(BaseModel):
-    """The persisted state of an in-flight session: what ``resume`` re-enters and what
-    ``fork`` clones. The loop writes it before each LLM call and again after each
-    iteration's tools land, to ``loop_state.json`` and an append-only
-    ``checkpoints/<NNNN>.json`` (identical bytes), so a crash resumes from the last
-    safe point. Provider-agnostic (anthropic-shaped ``messages``): the OpenAI
+    """The persisted state of an in-flight session: what `resume` re-enters and what
+    `fork` clones. The loop writes it before each LLM call and again after each
+    iteration's tools land, to `loop_state.json` and an append-only
+    `checkpoints/<NNNN>.json` (identical bytes), so a crash resumes from the last
+    safe point. Provider-agnostic (anthropic-shaped `messages`): the OpenAI
     provider translates per call, so its transcript can't seed a cross-provider
     resume.
 
     On-disk JSON crossing a process + trust boundary, so pydantic owns the shape.
-    ``extra="forbid"`` plus a bumped ``version`` mean a snapshot from before a
+    `extra="forbid"` plus a bumped `version` mean a snapshot from before a
     state-format change is refused loudly, never coerced into a partial run.
     """
 
@@ -164,7 +164,7 @@ class SessionSnapshot(BaseModel):
     original_task: str
     # The verify command the original run resolved (possibly inferred): resume
     # reuses it rather than re-inferring (which could flip and diverge from the
-    # frozen system prompt's verify/no-verify block). ``()`` = the run was gateless.
+    # frozen system prompt's verify/no-verify block). `()` = the run was gateless.
     verify_command: tuple[str, ...]
     # Completion-relevant bookkeeping, so the metric / verify-settled stop logic
     # doesn't regress across a resume. A compact metric *summary* (best score +
@@ -197,7 +197,7 @@ class SessionSnapshot(BaseModel):
     # a snapshot written before pins existed loads with none).
     pins: tuple[str, ...] = ()
     # Fork extras: the workspace HEAD and curator graph_version at this turn.
-    # ``fork --at-turn N`` cuts the branch at head_sha; graph_version names
+    # `fork --at-turn N` cuts the branch at head_sha; graph_version names
     # the exact past graph the fork REBUILDS via replay (see app/fork.py).
     # Best-effort at write time: "" / 0 when git/curator was unreadable. Plain
     # resume reads head_sha (its divergence guard) only.
@@ -209,9 +209,9 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     """Read a state JSON file and require the top-level shape to be an object.
 
     Valid JSON that is null, a list, or a scalar (a truncated/tampered state
-    file) otherwise reached ``raw.get(...)`` / ``raw[...]`` and surfaced as an
-    ``AttributeError``/``TypeError`` traceback the callers do not catch. Failing
-    with a clean ``ValueError`` routes it to the same loud message as a version
+    file) otherwise reached `raw.get(...)` / `raw[...]` and surfaced as an
+    `AttributeError`/`TypeError` traceback the callers do not catch. Failing
+    with a clean `ValueError` routes it to the same loud message as a version
     mismatch or a JSON decode error."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -222,12 +222,12 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
 
 
 def load_session_snapshot(path: Path) -> SessionSnapshot:
-    """Load a persisted run-state snapshot (``loop_state.json`` or a checkpoint).
+    """Load a persisted run-state snapshot (`loop_state.json` or a checkpoint).
 
-    Refuses a snapshot from before the current ``SNAPSHOT_VERSION`` loudly: an
+    Refuses a snapshot from before the current `SNAPSHOT_VERSION` loudly: an
     in-flight run started before a state-format change predates this format and
-    cannot be resumed or forked. Raises ``ValueError`` on any bad shape (fail
-    loudly); ``resume``/``fork`` map it to a friendly refusal."""
+    cannot be resumed or forked. Raises `ValueError` on any bad shape (fail
+    loudly); `resume`/`fork` map it to a friendly refusal."""
     raw = _load_state_object(path, "run-state snapshot")
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:

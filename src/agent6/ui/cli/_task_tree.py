@@ -13,7 +13,7 @@ from agent6.viewmodel.format import TASK_STATUS_GLYPH
 
 
 def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = None) -> list[str]:
-    """Same tree, from a ``graph.update`` event's raw node dicts (title / status /
+    """Same tree, from a `graph.update` event's raw node dicts (title / status /
     parent_id / children) rather than TaskNode models. Used by the live CLI
     stream, which folds events, not the persisted graph. The focus task is
     marked with the in-progress glyph regardless of its stored status."""
@@ -44,7 +44,7 @@ def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = N
 
 
 def task_tree_lines(nodes: dict[str, TaskNode], *, show_commit: bool = False) -> list[str]:
-    """DFS, left-to-right, one line per node: ``<indent><glyph> <title>``.
+    """DFS, left-to-right, one line per node: `<indent><glyph> <title>`.
 
     Roots are ordered by creation; children keep insertion order (the curator
     preserves it). Returns [] for an empty graph."""

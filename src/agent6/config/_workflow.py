@@ -22,10 +22,10 @@ class MetricConfig(BaseModel):
     """Optional continuous-score metric for tasks that have a measurable goal
     (cycles, wall time, kB, bench score) distinct from binary verify pass/fail.
 
-    When configured, ``run_metric_command`` (the metric tool) runs ``command``
-    in the jail (same env as ``verify_command``) and parses ``pattern``'s
-    first capture group as a number. ``goal = "minimize"`` for things like
-    cycles/time; ``"maximize"`` for bench scores. ``pattern`` is a Python
+    When configured, `run_metric_command` (the metric tool) runs `command`
+    in the jail (same env as `verify_command`) and parses `pattern`'s
+    first capture group as a number. `goal = "minimize"` for things like
+    cycles/time; `"maximize"` for bench scores. `pattern` is a Python
     regex; the FIRST capture group must be a base-10 integer or float. If
     the pattern does not match in the command's combined stdout+stderr the
     metric is treated as missing.
@@ -132,26 +132,26 @@ class WorkflowConfig(BaseModel):
 
 
 class ContextConfig(BaseModel):
-    """``[context]`` section: tiered context-compaction thresholds."""
+    """`[context]` section: tiered context-compaction thresholds."""
 
     model_config = MODEL_CONFIG
 
     # Tiered context-compaction thresholds (approximate chars; tokens ~=
     # chars/4). When cumulative *tool_result* content grows past
-    # ``drop_at_chars`` the oldest tool_results are replaced by a
+    # `drop_at_chars` the oldest tool_results are replaced by a
     # short placeholder (the worker can re-call the tool to refetch). When the
     # *whole* context (text + tool_use inputs + surviving tool_results) grows
-    # past ``summarise_at_chars`` -- which must be > drop, so tier-2
+    # past `summarise_at_chars` -- which must be > drop, so tier-2
     # escalates above tier-1 -- the conversation is summarized and restarted
     # (the durable task DAG survives; the restart notice points the worker at
-    # ``list_tasks`` to recover task-level state).
-    # ``summary_max_tokens`` caps the summarizer's output.
+    # `list_tasks` to recover task-level state).
+    # `summary_max_tokens` caps the summarizer's output.
     #
-    # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker
+    # Default `None` == ADAPTIVE: agent6 sizes both thresholds from the worker
     # model's context window (tier-1 at ~45% of it, tier-2 at the window
     # minus a 16k-token reserve), resolving
     # the window from a bundled table of tested models + the live model cache
-    # (see ``models.registry.compaction_thresholds``). Pin them by setting BOTH
+    # (see `models.registry.compaction_thresholds`). Pin them by setting BOTH
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
     # to stay adaptive. When the window is unknown, fixed 256k/768k
     # defaults apply.
@@ -229,7 +229,7 @@ class ContextConfig(BaseModel):
 
 
 class PromptConfig(BaseModel):
-    """``[prompt]`` section: system-prompt override, structural priors, and
+    """`[prompt]` section: system-prompt override, structural priors, and
     one-shot task-prompt revision."""
 
     model_config = MODEL_CONFIG
@@ -279,7 +279,7 @@ class PromptConfig(BaseModel):
     # only pays the 2-4x turn overhead. "auto" (default) enables it ONLY for
     # worker models with a measured win in the capability registry
     # (models.registry.decompose_default); the CLI pins auto to on/off at run
-    # start via ``with_decompose``, and the engine treats any value other than
+    # start via `with_decompose`, and the engine treats any value other than
     # "on" as off. No effect on plan/ask/machine/agent modes. See
     # docs/config.md for the measured per-model effect.
     decompose: Literal["auto", "on", "off"] = Field(
@@ -304,20 +304,20 @@ class PromptConfig(BaseModel):
 
 
 class ReviewConfig(BaseModel):
-    """``[review]`` section: critic-in-loop trigger + the adversarial review panel."""
+    """`[review]` section: critic-in-loop trigger + the adversarial review panel."""
 
     model_config = MODEL_CONFIG
 
     # critic-in-loop. When != "off", Workflow runs the
-    # ``reviewer`` model as a critic at the chosen trigger and injects
+    # `reviewer` model as a critic at the chosen trigger and injects
     # its critique as a user message the worker sees next turn.
     #   off              - never (default; behaviour unchanged).
     #   on_verify_fail   - after every verify failure.
-    #   before_finish    - intercept ``finish_session``; reject if critic
+    #   before_finish    - intercept `finish_session`; reject if critic
     #                      is not satisfied and inject critique.
-    #   periodic         - every ``period`` iterations.
+    #   periodic         - every `period` iterations.
     # The reviewer provider must already be configured in
-    # ``[models.reviewer]`` (same one ``agent6 review`` uses).
+    # `[models.reviewer]` (same one `agent6 review` uses).
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
         default="off",
         description=(
@@ -329,11 +329,11 @@ class ReviewConfig(BaseModel):
         default=10,
         description="Iterations between reviews for `periodic`.",
     )
-    # Adversarial review panel (opt-in). ``seats`` is THE roster: flat
+    # Adversarial review panel (opt-in). `seats` is THE roster: flat
     # "persona[@provider/model]" strings (e.g. "security" routes via
     # [models.reviewer]; "security@openrouter/moonshotai/kimi-k2" pins a
     # model). The `agent6 review --reviewers N`/`--personas` flags synthesize
-    # an in-memory equivalent. ``decision`` is only a GATE in-loop; "advisory"
+    # an in-memory equivalent. `decision` is only a GATE in-loop; "advisory"
     # (default) just injects findings as guidance and never blocks.
     decision: Literal["advisory", "veto", "quorum", "all"] = Field(
         default="advisory",
@@ -420,16 +420,16 @@ class ReviewConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    """``[budget]``: every provider call is bounded in exactly ONE currency.
+    """`[budget]`: every provider call is bounded in exactly ONE currency.
 
     A call the runtime can meter (provider-reported cost, else price x tokens
-    at the model's fetched rates, cache-aware) counts against ``max_usd``; a
+    at the model's fetched rates, cache-aware) counts against `max_usd`; a
     call it cannot price counts its input+output tokens against
-    ``max_tokens_fallback``. Both fields share one rule: ``-1`` = unlimited,
-    ``0`` = refuse calls in that ledger up front (``max_tokens_fallback = 0``
-    means never run an unmeterable model), ``> 0`` = the cap. Hitting a cap
-    ends the run resumably (``budget_exhausted``); each resumed leg gets a
-    fresh budget. The ``--max-usd`` / ``--max-tokens-fallback`` flags override
+    `max_tokens_fallback`. Both fields share one rule: `-1` = unlimited,
+    `0` = refuse calls in that ledger up front (`max_tokens_fallback = 0`
+    means never run an unmeterable model), `> 0` = the cap. Hitting a cap
+    ends the run resumably (`budget_exhausted`); each resumed leg gets a
+    fresh budget. The `--max-usd` / `--max-tokens-fallback` flags override
     per run."""
 
     model_config = MODEL_CONFIG

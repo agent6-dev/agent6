@@ -46,9 +46,9 @@ from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_ur
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MAX_TOKENS = 8192
 
-# Reasoning models stream a separate ``reasoning_content`` whose tokens count
-# against ``max_tokens`` SERVER-SIDE, so at the ordinary per-call cap reasoning
-# consumes the budget and the assistant ``content``/``tool_calls`` truncate
+# Reasoning models stream a separate `reasoning_content` whose tokens count
+# against `max_tokens` SERVER-SIDE, so at the ordinary per-call cap reasoning
+# consumes the budget and the assistant `content`/`tool_calls` truncate
 # mid-message: the loop sees stop_reason="length", empty text, no tool calls,
 # and stalls. A floor gives reasoning room; the budget tracker is unaffected
 # (it counts every emitted token via usage.completion_tokens).
@@ -76,8 +76,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     """Fail closed when a budgeted OpenAI-compatible call cannot be metered.
 
     Presence alone is not enough: a gateway with usage tracking disabled returns
-    ``prompt_tokens: 0`` and every turn records zero, so the budget never trips.
-    ``prompt_tokens`` is total input (cached + fresh) and is never legitimately 0
+    `prompt_tokens: 0` and every turn records zero, so the budget never trips.
+    `prompt_tokens` is total input (cached + fresh) and is never legitimately 0
     for a real call, so require it strictly positive; a run must not proceed on a
     call it cannot meter."""
     if isinstance(usage, Mapping):
@@ -104,8 +104,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 
 
 def _is_reasoning_model(model: str) -> bool:
-    """True if ``model`` looks like a reasoning model that emits
-    ``reasoning_content`` separately from ``content``. Gates the effort DEFAULT
+    """True if `model` looks like a reasoning model that emits
+    `reasoning_content` separately from `content`. Gates the effort DEFAULT
     (reasoning_effort="low"), a measured behaviour change -- so it stays the
     measured family set, NOT the broader floor set below."""
     lowered = model.lower()
@@ -123,7 +123,7 @@ _REASONING_FLOOR_ONLY_HINTS: tuple[str, ...] = ("kimi-latest",)
 
 
 def _needs_reasoning_headroom(model: str) -> bool:
-    """True if ``model`` needs the max_tokens floor: any reasoning model, OpenAI's
+    """True if `model` needs the max_tokens floor: any reasoning model, OpenAI's
     own o-series / gpt-5 (which reason and starve just as hard, but are matched
     narrowly only for the direct-host param rename), plus reasoning aliases
     (kimi-latest) not in the effort set. Safe to match broadly -- the floor raises
@@ -137,16 +137,16 @@ def _needs_reasoning_headroom(model: str) -> bool:
 
 
 # OpenAI's OWN reasoning families (o-series + gpt-5). On the api.openai.com
-# direct host these reject the legacy ``max_tokens`` param (400, "Use
-# max_completion_tokens") and reject ``temperature != 1``. Kept narrower than
-# ``_is_reasoning_model`` on purpose: third-party reasoning models (kimi,
+# direct host these reject the legacy `max_tokens` param (400, "Use
+# max_completion_tokens") and reject `temperature != 1`. Kept narrower than
+# `_is_reasoning_model` on purpose: third-party reasoning models (kimi,
 # deepseek, qwq) are never served by api.openai.com, so they must NOT trigger
 # the rename even if someone points them at the default base_url.
 _OPENAI_DIRECT_REASONING_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5")
 
 
 def _is_openai_direct_reasoning_model(model: str) -> bool:
-    """True if ``model`` is one of OpenAI's own o-series/gpt-5 reasoning
+    """True if `model` is one of OpenAI's own o-series/gpt-5 reasoning
     models (only meaningful when the request targets api.openai.com)."""
     lowered = model.lower()
     return any(
@@ -191,10 +191,10 @@ class OpenAIProvider:
     # triggers one refresh + retry. The object is internally mutable (cache),
     # which is why the otherwise-frozen provider holds only a reference to it.
     credential: CommandToken | None = None
-    # Some OpenAI-compatible backends we cannot fingerprint up front (an Azure
+    # Some OpenAI-compatible backends agent6 cannot fingerprint up front (an Azure
     # o-series/gpt-5 deployment has an arbitrary deployment name) reject the
-    # legacy ``max_tokens`` with a 400 saying to use ``max_completion_tokens``,
-    # and/or reject any explicit ``temperature``. On that 400 the call adapts
+    # legacy `max_tokens` with a 400 saying to use `max_completion_tokens`,
+    # and/or reject any explicit `temperature`. On that 400 the call adapts
     # the body and retries once, latching here so the rest of the run builds
     # the right body first time. 1-element lists because the dataclass is
     # frozen but the lists are mutable (same pattern as AnthropicProvider).
@@ -206,7 +206,7 @@ class OpenAIProvider:
         return self.base_url.rstrip("/") + "/chat/completions"
 
     def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
-        """Mutate ``body`` to satisfy a parameter-rejection 400 and latch the
+        """Mutate `body` to satisfy a parameter-rejection 400 and latch the
         provider so later calls build the right body first time. Covers the
         two rejections a reasoning deployment we cannot fingerprint up front
         (an Azure o-series/gpt-5 deployment has an arbitrary name) sends:
@@ -250,7 +250,7 @@ class OpenAIProvider:
         budget: BudgetTracker | None = None,
     ) -> OpenAIProvider:
         # env_var is optional: Ollama and similar local endpoints take no
-        # API key. If it's set, we still allow empty (treated as "no key").
+        # API key. If it's set, an empty value is still allowed (treated as "no key").
         key = "" if env_var is None else os.environ.get(env_var, "").strip()
         return cls(
             api_key=key,
@@ -307,13 +307,13 @@ class OpenAIProvider:
             extra_query=self.extra_query,
         )
         # OpenAI-direct o-series/reasoning models (o1/o3/o4/gpt-5-style)
-        # REJECT the legacy ``max_tokens`` parameter with a hard 400
-        # ("Use max_completion_tokens"), and reject ``temperature != 1``.
+        # REJECT the legacy `max_tokens` parameter with a hard 400
+        # ("Use max_completion_tokens"), and reject `temperature != 1`.
         # They are reached only on the OpenAI-direct host; other
         # openai-compatible hosts (OpenRouter, Azure, vLLM, llama.cpp) still
-        # require ``max_tokens`` and accept arbitrary temperature, so gate the
+        # require `max_tokens` and accept arbitrary temperature, so gate the
         # rename on host + model. OpenRouter masked this by normalising
-        # ``max_tokens`` -> ``max_completion_tokens`` itself.
+        # `max_tokens` -> `max_completion_tokens` itself.
         is_openai_direct = (
             self.deployment == "direct" and urlsplit(self.base_url).hostname == "api.openai.com"
         )
@@ -331,12 +331,12 @@ class OpenAIProvider:
             body["model"] = self.model
         # The reasoning knob differs per host, and the wrong one is silently
         # ignored rather than rejected:
-        #   OpenRouter-style: nested ``reasoning.effort``; top-level
-        #     ``reasoning_effort`` and ``reasoning.max_tokens`` are no-ops, and
-        #     ``off`` must SEND ``{"enabled": False}`` (omitting leaves it on).
-        #   api.openai.com o-series/gpt-5: top-level ``reasoning_effort``; the
+        #   OpenRouter-style: nested `reasoning.effort`; top-level
+        #     `reasoning_effort` and `reasoning.max_tokens` are no-ops, and
+        #     `off` must SEND `{"enabled": False}` (omitting leaves it on).
+        #   api.openai.com o-series/gpt-5: top-level `reasoning_effort`; the
         #     nested object 400s as an unknown parameter.
-        # ``is_openai_direct_reasoning`` does not imply ``_is_reasoning_model``,
+        # `is_openai_direct_reasoning` does not imply `_is_reasoning_model`,
         # so gate on both, else the configured effort is dropped for exactly the
         # models whose only control is the top-level one. Suppression is never
         # automatic (measured: bench/perf/README.md).
@@ -354,8 +354,8 @@ class OpenAIProvider:
             effort = effective_reasoning.strip().lower()
             if is_openai_direct_reasoning:
                 # api.openai.com Chat Completions o-series/gpt-5 take a TOP-LEVEL
-                # ``reasoning_effort`` (low/medium/high), NOT the nested
-                # ``reasoning`` object OpenRouter invented -- sending the nested
+                # `reasoning_effort` (low/medium/high), NOT the nested
+                # `reasoning` object OpenRouter invented -- sending the nested
                 # object there is an unknown parameter and 400s. Reasoning cannot
                 # be disabled on o-series, so "off" omits the param (server
                 # default) rather than sending {"enabled": False}.
@@ -366,7 +366,7 @@ class OpenAIProvider:
             else:
                 body["reasoning"] = {"effort": effort}
         # OpenAI-direct o-series/reasoning models reject any explicit
-        # ``temperature`` (only the server default is accepted), so omit it
+        # `temperature` (only the server default is accepted), so omit it
         # there. Other hosts forward it as-is (until a 400 latches the omit).
         if (
             temperature is not None
@@ -457,23 +457,23 @@ class OpenAIProvider:
         """SSE streaming variant of the OpenAI Chat Completions call.
 
         The stream lifecycle (idle watchdog, operator stop/steer, teardown
-        classification) is ``providers._stream.SseCall``; this method owns
+        classification) is `providers._stream.SseCall`; this method owns
         the Chat Completions event shape:
 
-        * Single ``data:`` line per frame (no ``event:`` typing); frames
-          are JSON objects with a ``choices`` array carrying ``delta``.
-        * Tool calls stream as ``choices[0].delta.tool_calls[]`` with an
-          ``index`` field; id + name arrive once, ``function.arguments``
+        * Single `data:` line per frame (no `event:` typing); frames
+          are JSON objects with a `choices` array carrying `delta`.
+        * Tool calls stream as `choices[0].delta.tool_calls[]` with an
+          `index` field; id + name arrive once, `function.arguments`
           arrives across many chunks and must be concatenated per
           index.
-        * Reasoning models surface a separate ``delta.reasoning_content``
-          (Kimi, DeepSeek) or ``delta.reasoning`` (OpenRouter).
-        * Usage only arrives if ``stream_options.include_usage`` is set
-          and lands in a terminal chunk whose ``choices`` is ``[]``.
-        * ``data: [DONE]`` marks end of stream.
+        * Reasoning models surface a separate `delta.reasoning_content`
+          (Kimi, DeepSeek) or `delta.reasoning` (OpenRouter).
+        * Usage only arrives if `stream_options.include_usage` is set
+          and lands in a terminal chunk whose `choices` is `[]`.
+        * `data: [DONE]` marks end of stream.
         * Gateways like OpenRouter emit SSE comment heartbeats
-          (``:OPENROUTER PROCESSING``) for long requests. ``iter_lines``
-          surfaces them as lines starting with ``:``; we skip those.
+          (`:OPENROUTER PROCESSING`) for long requests. `iter_lines`
+          surfaces them as lines starting with `:`; we skip those.
         """
         body = dict(body)
         body["stream"] = True
@@ -483,7 +483,7 @@ class OpenAIProvider:
 
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
-        # tool_calls keyed by chunk-level ``index`` (not the call's
+        # tool_calls keyed by chunk-level `index` (not the call's
         # external id, which sometimes arrives late).
         tool_calls: dict[int, dict[str, Any]] = {}
         tool_arg_buf: dict[int, list[str]] = {}
@@ -522,8 +522,8 @@ class OpenAIProvider:
                 if not line.startswith("data:"):
                     continue
                 # Real SSE data line. Reset the idle clock; the watchdog is
-                # satisfied as long as we keep seeing these at all (even
-                # ``[DONE]`` counts as progress). NOTE: mark_output (the switch
+                # satisfied as long as these keep arriving at all (even
+                # `[DONE]` counts as progress). NOTE: mark_output (the switch
                 # to the short mid-stream idle timeout) happens later, only on
                 # the first real CONTENT token -- an empty role/keepalive delta
                 # arrives immediately and must not end the generous prefill

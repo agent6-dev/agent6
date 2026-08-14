@@ -5,7 +5,7 @@
 Model catalogs change constantly (new OpenRouter routes, new Claude/GPT
 snapshots), so agent6 never ships a curated static list that would go stale.
 Instead it queries each provider's list endpoint on demand and caches the
-result under ``$XDG_CACHE_HOME/agent6/models/<provider>.json`` for a short
+result under `$XDG_CACHE_HOME/agent6/models/<provider>.json` for a short
 TTL, long enough that tab-completion does not hammer the network on every
 keystroke, short enough that a freshly-released model shows up within minutes
 without the operator hunting for a cache to clear.
@@ -43,7 +43,7 @@ _FETCH_TIMEOUT_S = 1.5  # keep tab-completion snappy
 def _cache_path(provider_name: str) -> Path | None:
     """Cache file for *provider_name*, or None when the name is not a safe
     single path component. Provider names are config table keys; guard against
-    ``/`` or ``..`` so a crafted name can't write the cache outside cache_dir().
+    `/` or `..` so a crafted name can't write the cache outside cache_dir().
     """
     if provider_name in ("", ".", "..") or provider_name != Path(provider_name).name:
         return None
@@ -81,9 +81,9 @@ def _write_cache(
             # key; there is deliberately no static fallback anywhere.
             body["pricing"] = {m: [p[0], p[1]] for m, p in pricing.items()}
         if context:
-            # Per-model context window in tokens, consumed by ``context_window``
+            # Per-model context window in tokens, consumed by `context_window`
             # to size adaptive compaction. Same story as pricing: only providers
-            # that publish ``context_length`` (OpenRouter does) populate it.
+            # that publish `context_length` (OpenRouter does) populate it.
             body["context"] = dict(context)
         path.write_text(json.dumps(body), encoding="utf-8")
     except OSError:
@@ -91,7 +91,7 @@ def _write_cache(
 
 
 def _parse_models(payload: object) -> list[str]:
-    """Extract model ids from an OpenAI-/Anthropic-style ``{"data": [...]}`` body."""
+    """Extract model ids from an OpenAI-/Anthropic-style `{"data": [...]}` body."""
     data = payload.get("data") if isinstance(payload, dict) else None
     out: list[str] = []
     if isinstance(data, list):
@@ -104,9 +104,9 @@ def _parse_models(payload: object) -> list[str]:
 
 
 def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
-    """Extract per-model pricing from an OpenRouter-style ``{"data": [...]}`` body.
+    """Extract per-model pricing from an OpenRouter-style `{"data": [...]}` body.
 
-    OpenRouter reports ``pricing.prompt``/``pricing.completion`` as USD per
+    OpenRouter reports `pricing.prompt`/`pricing.completion` as USD per
     TOKEN strings; normalize to USD per 1M tokens. Models without a usable
     pair are simply absent (unknown beats wrong)."""
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -133,9 +133,9 @@ def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
 
 
 def _parse_context(payload: object) -> dict[str, int]:
-    """Extract per-model context window (tokens) from a ``{"data": [...]}`` body.
+    """Extract per-model context window (tokens) from a `{"data": [...]}` body.
 
-    OpenRouter reports ``context_length`` per model; Anthropic's listing does
+    OpenRouter reports `context_length` per model; Anthropic's listing does
     not, so those models simply fall back to the bundled table. Models without
     a usable positive integer are absent (unknown beats wrong)."""
     data = payload.get("data") if isinstance(payload, dict) else None
@@ -161,9 +161,9 @@ def _parse_context(payload: object) -> dict[str, int]:
 
 
 def _models_endpoint(entry: ProviderEntry, api_key: str | None) -> tuple[str, dict[str, str]]:
-    """The (url, headers) for *entry*'s ``/models`` listing, auth included.
+    """The (url, headers) for *entry*'s `/models` listing, auth included.
 
-    Shared by the cache fetch and the ``connect`` key probe so both hit the
+    Shared by the cache fetch and the `connect` key probe so both hit the
     endpoint the same way the call path authenticates.
     """
     url = entry.base_url.rstrip("/") + "/models"
@@ -201,20 +201,20 @@ class KeyProbeResult:
 def probe_provider_key(
     entry: ProviderEntry, api_key: str, *, timeout_s: float = 10.0
 ) -> KeyProbeResult:
-    """Check whether *api_key* authenticates against *entry*'s ``/models``.
+    """Check whether *api_key* authenticates against *entry*'s `/models`.
 
-    A read-only GET (no remote content is executed), used by ``agent6 connect``
+    A read-only GET (no remote content is executed), used by `agent6 connect`
     to catch a bad key at setup instead of mid-run. Distinguishes a working key
     (2xx) from a rejected one (401/403) from an unreachable endpoint, unlike
     `list_models` which swallows every failure into an empty list. Vertex/Azure
-    have no uniform ``/models`` listing, so they report ``unsupported`` rather
+    have no uniform `/models` listing, so they report `unsupported` rather
     than a misleading failure.
 
     Caveat: a 401/403 is a reliable "bad key" everywhere, but a 2xx only proves
-    validity when ``/models`` is auth-gated (Anthropic, OpenAI). OpenRouter's
-    ``/models`` is PUBLIC (returns 200 for any key), so for it we probe the
-    auth-gated ``/key`` endpoint instead. A different OpenAI-compatible provider
-    with a public ``/models`` would report a false ``ok`` -- the negative
+    validity when `/models` is auth-gated (Anthropic, OpenAI). OpenRouter's
+    `/models` is PUBLIC (returns 200 for any key), so for it we probe the
+    auth-gated `/key` endpoint instead. A different OpenAI-compatible provider
+    with a public `/models` would report a false `ok` -- the negative
     (auth_failed) is the trustworthy signal.
     """
     if getattr(entry, "deployment", "direct") != "direct":
@@ -293,7 +293,7 @@ def fetch_models_live(
     return models
 
 
-# The price source for bare ``claude-*`` ids (pricing's OpenRouter alias
+# The price source for bare `claude-*` ids (pricing's OpenRouter alias
 # path). Public listing, fetched keyless, only when no openrouter provider is
 # configured to refresh it with a key.
 # Security review note: a fixed, provider-shaped host (the canonical
@@ -314,7 +314,7 @@ def refresh_pricing_catalog(*, ttl_s: int = _CACHE_TTL_S) -> None:
 
 
 def cached_models(provider_name: str) -> list[str]:
-    """Model ids from the on-disk cache only (no network). ``[]`` if nothing has
+    """Model ids from the on-disk cache only (no network). `[]` if nothing has
     been cached for *provider_name* yet. For instant typeahead suggestions; pair
     with :func:`list_models` (in a worker) to refresh from the live listing."""
     return _read_cache(_cache_path(provider_name)) or []
@@ -324,7 +324,7 @@ def cached_models(provider_name: str) -> list[str]:
 
 
 def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | None:
-    """Read ``context_length`` from the provider's model cache for the first
+    """Read `context_length` from the provider's model cache for the first
     of *keys* that has one, if a listing has been fetched. Best-effort:
     returns None on any miss. The capability layer (`models.registry`) passes
     the raw and normalized model ids; this module only owns the file format.

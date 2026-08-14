@@ -40,15 +40,15 @@ JudgingStatus = Callable[[], AbstractContextManager[None]]
 class RankOutcome:
     """`rank()`'s result: candidates best-first, plus which path produced them.
 
-    ``ranked_by`` is ``"judge"`` only when the reviewer model actually produced
-    the order, else ``"mechanical"`` -- the honest signal the compare stamp
-    records (``CompareStamp.ranked_by``, which stays a lenient ``str`` for
-    reads of history). ``rationale`` is empty on the mechanical path.
-    ``judge_cost_usd`` is the judge call's estimated spend, real money even
+    `ranked_by` is `"judge"` only when the reviewer model actually produced
+    the order, else `"mechanical"` -- the honest signal the compare stamp
+    records (`CompareStamp.ranked_by`, which stays a lenient `str` for
+    reads of history). `rationale` is empty on the mechanical path.
+    `judge_cost_usd` is the judge call's estimated spend, real money even
     when a failed judge fell back to the mechanical ranking; it is 0.0 only
-    when no judge call was made. ``judge_cost_partial`` marks it a lower bound (the
+    when no judge call was made. `judge_cost_partial` marks it a lower bound (the
     reviewer model is unpriced and reported no cost), the same flag
-    ``format_cost`` renders as ``~``.
+    `format_cost` renders as `~`.
     """
 
     ranking: tuple[str, ...]
@@ -79,7 +79,7 @@ def rank(
     """Rank candidates best-first. Use the configured reviewer model as the
     compare judge when one resolves; fall back to the deterministic mechanical
     ranking when it is unset, there is only one candidate, or the judge call
-    fails (see ``RankOutcome.ranked_by``)."""
+    fails (see `RankOutcome.ranked_by`)."""
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)

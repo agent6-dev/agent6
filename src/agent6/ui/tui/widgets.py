@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared TUI form widgets: the ``[x]``/``[ ]`` chooser (:class:`ChoiceField`)
+"""Shared TUI form widgets: the `[x]`/`[ ]` chooser (:class:`ChoiceField`)
 and the flat action label (:class:`ActionItem`). Kept in their own module so
 every dialog (config editor, provider form, theme picker) uses the exact same
 accent-driven, arrow-navigable controls with no per-screen drift."""
@@ -57,14 +57,14 @@ def _selection_bar(primary: str) -> str:
 
 
 class ChoiceField(Widget, can_focus=True):
-    """A natural terminal chooser: a vertical ``[x]``/``[ ]`` list. ↑↓ move a
+    """A natural terminal chooser: a vertical `[x]`/`[ ]` list. ↑↓ move a
     HIGHLIGHT (the selection does NOT follow, so arrowing through to the next
     field never corrupts the value); Space (or Enter) selects the highlighted
     row; ↑↓ hand off focus at the top/bottom edge so a dialog reads as one
     continuous ↑↓ chain. A single focusable widget -- Tab-ing onto it never
     changes the value.
 
-    With ``allow_custom`` the last row is an inline text field: highlight it and
+    With `allow_custom` the last row is an inline text field: highlight it and
     type (typing selects it). Click selects. Posts :class:`Changed` when the
     SELECTION changes (live-preview dialogs, e.g. the theme picker). Space
     consumes the key; Enter also bubbles, so a dialog can confirm on Enter."""
@@ -124,9 +124,9 @@ class ChoiceField(Widget, can_focus=True):
         return ""
 
     def select_value(self, value: str) -> None:
-        """Programmatically select ``value`` if it is one of the fixed options
+        """Programmatically select `value` if it is one of the fixed options
         (a no-op otherwise, including the custom row). Silent -- posts no
-        ``Changed`` -- so a dialog can prefill this field from a chosen preset
+        `Changed` -- so a dialog can prefill this field from a chosen preset
         without retriggering its own change handlers."""
         if value in self._options:
             self._sel = self._cursor = self._options.index(value)

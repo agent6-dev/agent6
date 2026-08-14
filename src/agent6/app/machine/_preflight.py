@@ -79,7 +79,7 @@ def machine_network_refusal(
 
 
 def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
-    """The machine's own ``.asm.toml`` + ``scripts/`` bundle, to mark read-only
+    """The machine's own `.asm.toml` + `scripts/` bundle, to mark read-only
     in run jails. Only paths under the jail-mounted cwd are enforceable (a path
     outside cwd isn't in the child's view, so it can't edit it anyway)."""
     cwd_r = cwd.resolve()

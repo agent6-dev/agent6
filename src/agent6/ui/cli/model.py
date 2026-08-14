@@ -23,7 +23,7 @@ from agent6.secrets import resolve_api_key
 
 
 def _safe_input(prompt: str) -> str | None:
-    """``input`` that returns None instead of raising on EOF / non-interactive stdin."""
+    """`input` that returns None instead of raising on EOF / non-interactive stdin."""
     try:
         return input(prompt).strip()
     except (EOFError, OSError):

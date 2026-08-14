@@ -3,12 +3,12 @@
 """Content access & write handlers: agent6_docs, read_file, list_dir,
 apply_edit, apply_patch.
 
-All of these run in-process (never through ``agent6.sandbox.jail``), so the
+All of these run in-process (never through `agent6.sandbox.jail`), so the
 write handlers (apply_edit/apply_patch) carry their own protected-path guard:
-``.git`` (when ``protect_git``), an in-repo virtualenv / installed-package
-tree, and any operator/machine ``extra_protect_paths`` -- none of which the
+`.git` (when `protect_git`), an in-repo virtualenv / installed-package
+tree, and any operator/machine `extra_protect_paths` -- none of which the
 jail's mount-based protections cover for an in-process write. See
-``refuse_protected_writes``.
+`refuse_protected_writes`.
 """
 
 from __future__ import annotations
@@ -155,22 +155,22 @@ def _under_project_dir(path: Path, dir_name: str) -> bool:
 def _refuse_protected_write(
     candidate: str, dir_name: str, *, why: str, resolved: SafePath | None = None
 ) -> None:
-    """Refuse an in-process ``apply_edit`` / ``apply_patch`` into the
-    workspace's own top-level ``dir_name``.
+    """Refuse an in-process `apply_edit` / `apply_patch` into the
+    workspace's own top-level `dir_name`.
 
-    ``.git`` (when ``protect_git``): the edit tools write **in-process, outside
-    the jail**, so without this an LLM could create or rewrite ``.git/hooks/*``
-    or ``.git/config`` (e.g. ``core.fsmonitor``) and get code executed outside
-    the sandbox on the next ``git`` invocation, or corrupt git history --
-    defeating ``protect_git`` entirely (the strict jail's RO bind of ``.git``
+    `.git` (when `protect_git`): the edit tools write **in-process, outside
+    the jail**, so without this an LLM could create or rewrite `.git/hooks/*`
+    or `.git/config` (e.g. `core.fsmonitor`) and get code executed outside
+    the sandbox on the next `git` invocation, or corrupt git history --
+    defeating `protect_git` entirely (the strict jail's RO bind of `.git`
     never covers these in-process writes). The scope is the project's own
-    repository, the one agent6 commits to each turn; a nested ``.git``
+    repository, the one agent6 commits to each turn; a nested `.git`
     (vendored repo, submodule gitlink) is content, like any other file. Reads
     stay allowed. (Run state lives out of the workspace, so it is unreachable
     by edits and needs no guard.)
 
     Checks both the raw candidate string AND the post-symlink-resolution
-    relative path, so a symlink ``./decoy -> .git`` can't launder a write past
+    relative path, so a symlink `./decoy -> .git` can't launder a write past
     the raw check.
     """
     if _under_project_dir(Path(candidate), dir_name):
@@ -185,12 +185,12 @@ def _refuse_protected_write(
 def _refuse_env_write(candidate: str, resolved: SafePath) -> None:
     """Refuse an in-process edit into an in-repo virtualenv or installed-package
     tree. These are the operator's ENVIRONMENT, not source: a run editing them
-    (e.g. rewriting an editable-install ``.pth`` to make an in-jail verify pass)
+    (e.g. rewriting an editable-install `.pth` to make an in-jail verify pass)
     silently corrupts the operator's venv, and since venvs are gitignored the
-    damage never shows in ``sessions diff`` / merge.
+    damage never shows in `sessions diff` / merge.
 
-    A directory holding ``pyvenv.cfg`` is a virtualenv root (the canonical
-    marker, name-agnostic: ``.venv`` / ``venv`` / ``env``); a ``site-packages``
+    A directory holding `pyvenv.cfg` is a virtualenv root (the canonical
+    marker, name-agnostic: `.venv` / `venv` / `env`); a `site-packages`
     ancestor is an installed tree. Reads stay allowed; only writes are refused.
     The check walks the post-symlink-resolution path so a decoy symlink can't
     launder the write."""
@@ -223,11 +223,11 @@ def refuse_protected_writes(
     resolved: SafePath | None = None,
 ) -> None:
     """Refuse an in-process edit into a protected location (it bypasses the
-    jail entirely). ``.git`` under ``protect_git``, a virtualenv / installed
-    package tree (see ``_refuse_env_write``), plus any operator/machine
-    protect paths (a machine bundle's ``.asm.toml`` + ``scripts/``), which the
-    jail marks read-only for ``run_command`` but the in-process edit tools
-    would otherwise let a ``mode="run"`` state rewrite -- persisting a payload
+    jail entirely). `.git` under `protect_git`, a virtualenv / installed
+    package tree (see `_refuse_env_write`), plus any operator/machine
+    protect paths (a machine bundle's `.asm.toml` + `scripts/`), which the
+    jail marks read-only for `run_command` but the in-process edit tools
+    would otherwise let a `mode="run"` state rewrite -- persisting a payload
     for the next run. Applies at both isolation levels."""
     if config.sandbox.protect_git:
         _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)

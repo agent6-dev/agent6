@@ -26,7 +26,7 @@ def _write(path: Path, text: str) -> None:
 
 
 def _header_name(line: str) -> str | None:
-    """The table name of a ``[table]`` header line, or None if it is not one.
+    """The table name of a `[table]` header line, or None if it is not one.
 
     THE single owner of header matching; tolerates a trailing comment and
     interior whitespace (`[sandbox]  # the jail`, `[ sandbox ]`), both ordinary
@@ -45,7 +45,7 @@ def _header_name(line: str) -> str | None:
 
 
 def _section_name(line: str) -> str | None:
-    """The dotted name of a ``[table]`` OR ``[[array.of.tables]]`` header line,
+    """The dotted name of a `[table]` OR `[[array.of.tables]]` header line,
     or None if *line* is not one.
 
     For DROPPING a whole section: both forms are subtables that must go with
@@ -72,14 +72,14 @@ def _toml_value(value: str | bool) -> str:
 
 
 def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]) -> None:
-    """Insert or replace a single ``[table]`` block in *path*, preserving the
+    """Insert or replace a single `[table]` block in *path*, preserving the
     rest of the file (other tables and their comments).
 
     Append-only-ish: we never round-trip the whole document through a TOML
     serializer (which would drop comments); we only rewrite the target
-    table's span. ``None`` field values are omitted.
+    table's span. `None` field values are omitted.
 
-    The read-surgery-publish cycle runs under ``locked_file`` (as do the
+    The read-surgery-publish cycle runs under `locked_file` (as do the
     other writers below): two concurrent writers -- a CLI `config set` racing
     the web/TUI config editor -- otherwise both read the same base text and
     the second publish silently drops the first's update.
@@ -149,11 +149,11 @@ def _toml_key(key: object) -> str:
 def parse_cli_value(value: str) -> object:
     """Interpret a CLI-supplied value the way TOML would.
 
-    ``true``/``false`` become bools, numbers become int/float, quoted or
+    `true`/`false` become bools, numbers become int/float, quoted or
     bracketed text parses as a TOML string/array, and anything else (e.g. a
-    bare enum like ``provider_only`` or a model id) is taken verbatim as a
-    string. This keeps ``config set sandbox.network auto`` ergonomic
-    while still allowing ``config set sandbox.protect_git false``.
+    bare enum like `provider_only` or a model id) is taken verbatim as a
+    string. This keeps `config set sandbox.network auto` ergonomic
+    while still allowing `config set sandbox.protect_git false`.
     """
     try:
         return tomllib.loads(f"_v = {value}")["_v"]
@@ -162,11 +162,11 @@ def parse_cli_value(value: str) -> object:
 
 
 def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
-    """Split ``sandbox.network`` into ``("sandbox", "network")``.
+    """Split `sandbox.network` into `("sandbox", "network")`.
 
-    A single-segment key (the top-level ``profile``) splits to table ``""``:
+    A single-segment key (the top-level `profile`) splits to table `""`:
     the surgery below targets the file's bare top region, before any
-    ``[table]`` header.
+    `[table]` header.
     """
     parts = dotted_key.split(".")
     if any(not p for p in parts):
@@ -177,14 +177,14 @@ def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
 
 
 def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
-    """Set a single ``table.leaf`` key in *path*, preserving the rest verbatim.
+    """Set a single `table.leaf` key in *path*, preserving the rest verbatim.
 
     Like :func:`upsert_toml_table` this is deliberate line surgery rather than
     a full serializer round-trip, so comments and sibling keys/tables survive.
-    Creates the ``[table]`` block if it is absent.
+    Creates the `[table]` block if it is absent.
 
-    TOML forbids a bare top-level key and a same-named ``[table]`` coexisting
-    (``profile`` vs ``[profile]``), so a write REPLACES the conflicting other
+    TOML forbids a bare top-level key and a same-named `[table]` coexisting
+    (`profile` vs `[profile]`), so a write REPLACES the conflicting other
     shape. Revalidation still arbitrates whether the new value is semantically
     valid.
     """
@@ -244,7 +244,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
 
 
 def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
-    """*lines* without the ``[table]`` section (header, body, and ``[table.sub]``
+    """*lines* without the `[table]` section (header, body, and `[table.sub]`
     subtables), plus whether anything was dropped."""
     kept: list[str] = []
     dropping = False
@@ -270,19 +270,19 @@ def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
     return kept, removed
 
 
-# A line that OPENS a ``leaf = value`` assignment (not a comment, blank, or
+# A line that OPENS a `leaf = value` assignment (not a comment, blank, or
 # header). The value may then span more lines (a multi-line array / triple
 # string), which _value_line_span measures.
 _ASSIGN_RE = re.compile(r"^\s*[^#\s=\[][^=]*=")
 
 
 def _region_end(lines: list[str], region: int) -> int:
-    """Index of the first real ``[header]`` line at or after *region*, skipping
+    """Index of the first real `[header]` line at or after *region*, skipping
     the INTERIOR of every multi-line value on the way.
 
     THE single owner of "where does this table's body end", and the reason it
-    cannot be a per-line ``startswith("[")`` scan: a triple-quoted value whose
-    line begins with ``[`` (a regex character class) would end the region early
+    cannot be a per-line `startswith("[")` scan: a triple-quoted value whose
+    line begins with `[` (a regex character class) would end the region early
     and land the insert inside the operator's string.
     """
     j = region
@@ -296,7 +296,7 @@ def _region_end(lines: list[str], region: int) -> int:
 
 
 def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int | None:
-    """Index of the line assigning *leaf* within ``[region, end)``, or None.
+    """Index of the line assigning *leaf* within `[region, end)`, or None.
 
     Skips multi-line value interiors (see `_region_end`)."""
     leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
@@ -310,8 +310,8 @@ def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int |
 
 
 def _iter_headers(lines: list[str]) -> list[tuple[int, str]]:
-    """``(index, name)`` for each real ``[table]`` header, skipping multi-line
-    value interiors so a ``[header]``-looking line inside a string is never taken
+    """`(index, name)` for each real `[table]` header, skipping multi-line
+    value interiors so a `[header]`-looking line inside a string is never taken
     for one. THE owner every header lookup uses (see `_region_end`).
     """
     out: list[tuple[int, str]] = []
@@ -325,14 +325,14 @@ def _iter_headers(lines: list[str]) -> list[tuple[int, str]]:
 
 
 def _header_line(lines: list[str], table: str) -> int | None:
-    """Index of the ``[table]`` header line, value-span-aware (see _iter_headers)."""
+    """Index of the `[table]` header line, value-span-aware (see _iter_headers)."""
     return next((i for i, name in _iter_headers(lines) if name == table), None)
 
 
 def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
-    """*lines* without a bare top-level ``key = ...`` (multi-line value included).
+    """*lines* without a bare top-level `key = ...` (multi-line value included).
 
-    The top region ends at the first ``[table]`` header; a same-named key
+    The top region ends at the first `[table]` header; a same-named key
     inside a table is someone else's and stays.
     """
     end = _region_end(lines, 0)
@@ -349,8 +349,8 @@ def _drop_top_region_key(lines: list[str], key: str) -> list[str]:
 
 def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str | None]:
     """Advance the (bracket-depth, open-triple-quote) state across one line, so
-    ``_value_line_span`` can tell where a multi-line value ends. Brackets and
-    quotes inside a string, and everything after a ``#`` comment, do not count."""
+    `_value_line_span` can tell where a multi-line value ends. Brackets and
+    quotes inside a string, and everything after a `#` comment, do not count."""
     i, n = 0, len(text)
     while i < n:
         if triple is not None:
@@ -374,8 +374,8 @@ def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str
 
 
 def _line_comment(line: str) -> str:
-    """The trailing ``# comment`` (text only) on a single TOML line, or "" -- a
-    ``#`` inside a string is not a comment."""
+    """The trailing `# comment` (text only) on a single TOML line, or "" -- a
+    `#` inside a string is not a comment."""
     i, n, triple = 0, len(line), None
     while i < n:
         if triple is not None:
@@ -398,9 +398,9 @@ def _line_comment(line: str) -> str:
 
 
 def _value_line_span(lines: list[str], start: int) -> int:
-    """How many lines the TOML value assigned on ``lines[start]`` spans (>=1).
+    """How many lines the TOML value assigned on `lines[start]` spans (>=1).
 
-    A multi-line array (``leaf = [``...``]``) or triple-quoted string occupies
+    A multi-line array (`leaf = [`...`]`) or triple-quoted string occupies
     several lines; deleting only the opening line orphans the rest and leaves an
     unparseable file."""
     eq = lines[start].find("=")
@@ -418,8 +418,8 @@ def _value_line_span(lines: list[str], start: int) -> int:
 
 
 def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
-    """Delete a single ``table.leaf`` line from *path*. Returns True if removed.
-    Removing the section's last leaf drops the now-empty ``[table]`` header too
+    """Delete a single `table.leaf` line from *path*. Returns True if removed.
+    Removing the section's last leaf drops the now-empty `[table]` header too
     (a dangling header otherwise accretes across unsets); a section that still
     holds comments is kept, they are the operator's."""
     table, leaf = _split_dotted_key(dotted_key)
@@ -463,10 +463,10 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
 
 
 def remove_toml_table(path: Path, table: str) -> bool:
-    """Delete a whole ``[table]`` section (its header, body, and any ``[table.sub]``
+    """Delete a whole `[table]` section (its header, body, and any `[table.sub]`
     subtables) from *path*. Returns True if the table was present. Used by
-    ``config fix`` to drop an unknown/extra top-level table (e.g. a leftover
-    ``[cli]`` from a removed feature), where deleting a single leaf would leave an
+    `config fix` to drop an unknown/extra top-level table (e.g. a leftover
+    `[cli]` from a removed feature), where deleting a single leaf would leave an
     empty-but-still-invalid table behind."""
     with locked_file(path):
         if not path.is_file():
@@ -483,10 +483,10 @@ def remove_toml_table(path: Path, table: str) -> bool:
 def read_toml_file(path: Path) -> dict[str, Any]:
     """Parse *path* as TOML, or return an empty dict if it does not exist.
 
-    Wrap a parse error in ``ConfigError`` (matching ``config.layer._read_toml``)
-    so the ``config ... --machine-file FILE`` commands surface a clean message
-    instead of letting a raw ``TOMLDecodeError`` traceback escape -- and, for
-    ``set``/``add``, so the malformed file is reported before it is rewritten.
+    Wrap a parse error in `ConfigError` (matching `config.layer._read_toml`)
+    so the `config ... --machine-file FILE` commands surface a clean message
+    instead of letting a raw `TOMLDecodeError` traceback escape -- and, for
+    `set`/`add`, so the malformed file is reported before it is rewritten.
     """
     if not path.is_file():
         return {}
@@ -500,8 +500,8 @@ def read_toml_file(path: Path) -> dict[str, Any]:
 
 def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     """The outermost ancestor of *dotted_key* the leaf surgery can't write under
-    -- an inline table, a dotted key, or an array-of-tables (``[[x]]``) -- else
-    None. The surgery only knows ``[table]`` headers, so writing under one emits
+    -- an inline table, a dotted key, or an array-of-tables (`[[x]]`) -- else
+    None. The surgery only knows `[table]` headers, so writing under one emits
     a header that collides with it ("Cannot declare ... twice"); the caller names
     the owning value instead of leaking the parser's complaint.
     """

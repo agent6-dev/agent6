@@ -4,19 +4,19 @@
 
 The engine executes one state at a time. Every impure step is a
 :class:`World` method (tools, agent runs, waits, the clock, poke files,
-notify); an observed result is passed through ``reduce`` for validation, then
+notify); an observed result is passed through `reduce` for validation, then
 journaled before the returned blackboard replaces the current one.
-``reduce`` and ``next_state`` are pure, so:
+`reduce` and `next_state` are pure, so:
 
 * **Crash recovery**, on restart, recorded facts are replayed through the
   same pure reducer to rebuild the blackboard and position, then execution
   continues live from the last completed step.
-* **Replay**, the identical reconstruction runs with ``live=False`` and no
-  ``World`` at all, reproducing the recorded path offline for backtesting.
+* **Replay**, the identical reconstruction runs with `live=False` and no
+  `World` at all, reproducing the recorded path offline for backtesting.
 
-The ``agent`` kind runs a normal agent6 loop through an injected
-:class:`World.run_agent` and captures the schema-validated ``finish_session``
-payload into the blackboard; ``tool``/``branch``/``wait``/``terminal`` are
+The `agent` kind runs a normal agent6 loop through an injected
+:class:`World.run_agent` and captures the schema-validated `finish_session`
+payload into the blackboard; `tool`/`branch`/`wait`/`terminal` are
 fully deterministic.
 """
 
@@ -126,16 +126,16 @@ class AgentRequest(BaseModel):
     """What the engine asks the world to run for one `agent` state.
 
     Crosses the machine-agent subprocess boundary verbatim: it is the
-    ``request`` block of ``request.json`` (envelope: ``MachineAgentRequest`` in
-    ``app/machine_agent.py``), so it is pydantic per the IPC rule and owns that
-    wire shape. Bytes pinned by ``tests/unit/test_machine_agent_ipc.py``.
+    `request` block of `request.json` (envelope: `MachineAgentRequest` in
+    `app/machine_agent.py`), so it is pydantic per the IPC rule and owns that
+    wire shape. Bytes pinned by `tests/unit/test_machine_agent_ipc.py`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt: str
     timeout_s: float
-    # Optional per-state overrides mirrored from ``AgentState``. ``None``
+    # Optional per-state overrides mirrored from `AgentState`. `None`
     # means "fall back to the effective config" in the world implementation.
     # `model` is optional too: a `machine run` agent state always sets it
     # (AgentState.model is min_length=1), but `machine create`'s authoring
@@ -155,7 +155,7 @@ class AgentRequest(BaseModel):
     mode: str = "agent"
     # Which state, at which transition, this agent invocation is. The live World
     # uses them to give each agent-state execution its own watchable logs.jsonl
-    # (``<instance>/states/<seq>-<name>/``), so a running machine is followable
+    # (`<instance>/states/<seq>-<name>/`), so a running machine is followable
     # like a run. Empty/0 for the `machine create` authoring agent (no state).
     state_name: str = ""
     step_seq: int = 0
@@ -164,17 +164,17 @@ class AgentRequest(BaseModel):
 class AgentExecResult(BaseModel):
     """The observable result of one agent loop.
 
-    ``reason`` is the agent loop's stop reason (e.g. ``"finish_session"``,
-    ``"budget_exhausted"``, ``"timeout"``, ``"max_iterations"``); ``payload`` is
-    the structured object the agent passed to ``finish_session`` (``None`` if it
-    never called it or passed no structured result). ``usd`` and the token
+    `reason` is the agent loop's stop reason (e.g. `"finish_session"`,
+    `"budget_exhausted"`, `"timeout"`, `"max_iterations"`); `payload` is
+    the structured object the agent passed to `finish_session` (`None` if it
+    never called it or passed no structured result). `usd` and the token
     counts report the slice this agent loop spent, summed into machine-level
-    spend for ``machine status`` (§6).
+    spend for `machine status` (§6).
 
-    Crosses the machine-agent subprocess boundary verbatim as ``result.json``
-    (written by ``run_one``, validated back by the host runner in
-    ``app/machine_agent.py``), so it is pydantic per the IPC rule and owns that
-    file shape. Bytes pinned by ``tests/unit/test_machine_agent_ipc.py``.
+    Crosses the machine-agent subprocess boundary verbatim as `result.json`
+    (written by `run_one`, validated back by the host runner in
+    `app/machine_agent.py`), so it is pydantic per the IPC rule and owns that
+    file shape. Bytes pinned by `tests/unit/test_machine_agent_ipc.py`.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -204,9 +204,9 @@ class AgentExecResult(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class WaitWake:
-    """How a `wait` woke: a clock ``tick`` or an operator ``signal`` poke.
+    """How a `wait` woke: a clock `tick` or an operator `signal` poke.
 
-    ``payload`` is the JSON a poke carried (``None`` for a bare poke or a tick);
+    `payload` is the JSON a poke carried (`None` for a bare poke or a tick);
     the engine journals it in the :class:`WaitFact` so a replay re-reads it.
     """
 
@@ -225,16 +225,16 @@ class World(Protocol):
 
     def now(self) -> float: ...
 
-    # ``wake_epoch`` is None for a wait with no timer: block until a signal poke.
+    # `wake_epoch` is None for a wait with no timer: block until a signal poke.
     def sleep_until(self, wake_epoch: float | None) -> WaitWake: ...
 
     # Materialize a poke payload where the next tool can read it (a no-op when
     # the world has no persistent data dir; see LiveWorld.materialize_poke).
     def materialize_poke(self, payload: Any) -> None: ...
 
-    # Fire the out-of-band operator notify hook on a state's ``notify`` message
-    # (``kind="notify"``, ``level`` in info/warn/error) or a terminal
-    # ``machine.end`` (``kind="end"``, ``message`` the reason, ``level`` the
+    # Fire the out-of-band operator notify hook on a state's `notify` message
+    # (`kind="notify"`, `level` in info/warn/error) or a terminal
+    # `machine.end` (`kind="end"`, `message` the reason, `level` the
     # status). Presentation only; a no-op when no hook is configured.
     def notify(self, kind: str, state: str, message: str, level: str) -> None: ...
 
@@ -243,7 +243,7 @@ _SAFE_ENV_KEYS = ("LANG", "LC_ALL", "TERM")
 
 
 def _state_log_seq(p: Path) -> int:
-    """The numeric transition seq from a ``<seq>-<state>`` per-state log dir name
+    """The numeric transition seq from a `<seq>-<state>` per-state log dir name
     (so the sort is by seq, not lexical -- correct past 9999)."""
     prefix = p.name.split("-", 1)[0]
     return int(prefix) if prefix.isdigit() else -1
@@ -266,28 +266,28 @@ def _prune_state_logs(root: Path, *, keep: int) -> None:
 class LiveWorld:
     """Production :class:`World`: tools go through the jail, waits really sleep.
 
-    A ``wait`` blocks in-process until its absolute instant (§4.3) or until an
-    operator drops a ``signal`` file in the machine directory, whichever comes
+    A `wait` blocks in-process until its absolute instant (§4.3) or until an
+    operator drops a `signal` file in the machine directory, whichever comes
     first. Because the wake instant is journaled, the persisted-wake driver
-    (``drive(exit_on_wait=True)``) replays the identical file with no format
+    (`drive(exit_on_wait=True)`) replays the identical file with no format
     change.
 
-    ``agent`` states are delegated to an injected ``agent_runner`` so the engine
+    `agent` states are delegated to an injected `agent_runner` so the engine
     module need not import the provider / workflow stack; the CLI wires the real
     runner (loading the effective config, building a provider and the loop). When no
-    runner is configured, reaching an ``agent`` state fails loudly.
+    runner is configured, reaching an `agent` state fails loudly.
     """
 
     cwd: Path
     journal: MachineJournal
-    # Per-call ``events_log``: each agent-state execution gets its own logs.jsonl
+    # Per-call `events_log`: each agent-state execution gets its own logs.jsonl
     # (None for the rare runner that wants no log). The World derives the path.
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     isolation: IsolationLevel = "strict"
     # When set, each agent-state execution writes a watchable event stream to
-    # ``<state_log_root>/<seq>-<state>/logs.jsonl`` (the CLI points it at
-    # ``<instance>/states``), pruned to the most recent ``state_log_keep`` so a
+    # `<state_log_root>/<seq>-<state>/logs.jsonl` (the CLI points it at
+    # `<instance>/states`), pruned to the most recent `state_log_keep` so a
     # long-running machine's logs stay bounded. None disables per-state logs.
     state_log_root: Path | None = None
     state_log_keep: int = 50
@@ -383,7 +383,7 @@ class LiveWorld:
 
     def _state_log(self, request: AgentRequest) -> Path | None:
         """The per-execution event-log path for this agent state, or None when
-        per-state logs are disabled. Prunes to the most recent ``state_log_keep``
+        per-state logs are disabled. Prunes to the most recent `state_log_keep`
         first so a long-running machine never accumulates them without bound."""
         if self.state_log_root is None or not request.state_name:
             return None
@@ -395,7 +395,7 @@ class LiveWorld:
 
     def sleep_until(self, wake_epoch: float | None) -> WaitWake:
         """Block until the wake instant or an operator signal poke, whichever
-        first. ``wake_epoch=None`` is a wait with no timer: park until a poke."""
+        first. `wake_epoch=None` is a wait with no timer: park until a poke."""
         while True:
             signaled, payload = self.journal.take_signal()
             if signaled:
@@ -409,7 +409,7 @@ class LiveWorld:
             time.sleep(min(remaining, self.poll_interval_s))
 
     def materialize_poke(self, payload: Any) -> None:
-        """Write a signal poke's payload to ``$AGENT6_MACHINE_DATA_DIR/poke.json``
+        """Write a signal poke's payload to `$AGENT6_MACHINE_DATA_DIR/poke.json`
         so the next `tool` can read it. A no-op without a data dir.
 
         Atomic and fsync'd (temp + fsync + rename, like the journal's snapshot /
@@ -587,12 +587,12 @@ def _fire_persisted_wait(
     world: World,
     state_name: str,
 ) -> tuple[str, str, Fact] | None:
-    """Arm-or-fire a `wait` without blocking (``--exit-on-wait``, §6).
+    """Arm-or-fire a `wait` without blocking (`--exit-on-wait`, §6).
 
     On first reaching the wait, the absolute wake instant is computed once and
     persisted so re-invocations compare against the same instant. Returns the
-    ``(label, goto, fact)`` triple when the wait fires (a signal arrived or the
-    instant has passed), clearing the persisted record; returns ``None`` when
+    `(label, goto, fact)` triple when the wait fires (a signal arrived or the
+    instant has passed), clearing the persisted record; returns `None` when
     the wait is not yet ready, leaving the record persisted for the caller to
     yield on.
     """
@@ -801,11 +801,11 @@ def _end_failed(
 class _EngineState:
     """Mutable bookkeeping threaded through the engine's two phases.
 
-    ``drive`` builds one, ``_rebuild_from_journal`` folds the recorded facts
+    `drive` builds one, `_rebuild_from_journal` folds the recorded facts
     into it (crash recovery when live, offline backtest when not), then -- live
-    only -- ``_run_live_loop`` continues from where the journal ends. Carrying
+    only -- `_run_live_loop` continues from where the journal ends. Carrying
     the four cross-phase values in one object (rather than a six-arg call
-    returning a four-tuple) lets each phase be a function taking ``state``, per
+    returning a four-tuple) lets each phase be a function taking `state`, per
     the AGENTS.md decompose rule.
     """
 
@@ -862,7 +862,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
 def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR0915
     """Continue live from where the journal ends: execute one state per
     iteration, journal its fact, and advance, until a terminal state (or a
-    budget cap, a runtime state error, or an ``--exit-on-wait`` park) ends it."""
+    budget cap, a runtime state error, or an `--exit-on-wait` park) ends it."""
     spec = eng.spec
     journal = eng.journal
     exit_on_wait = eng.exit_on_wait
@@ -998,15 +998,15 @@ def drive(
 ) -> MachineResult:
     """Run or replay *spec* against its *journal*.
 
-    With ``live=True`` (``machine run``) the engine recovers from any existing
+    With `live=True` (`machine run`) the engine recovers from any existing
     journal, then continues to a terminal state, appending new facts. With
-    ``live=False`` (``machine replay``) it only reconstructs the recorded path
+    `live=False` (`machine replay`) it only reconstructs the recorded path
     and reports where the journal ends; *world* is ignored.
 
-    With ``exit_on_wait=True`` (``machine run --exit-on-wait``) the engine makes
-    all the progress it can, but the first time it reaches a ``wait`` that is
+    With `exit_on_wait=True` (`machine run --exit-on-wait`) the engine makes
+    all the progress it can, but the first time it reaches a `wait` that is
     not yet ready it persists the absolute wake instant and returns a
-    ``"waiting"`` result instead of blocking, for an external scheduler
+    `"waiting"` result instead of blocking, for an external scheduler
     (systemd timer / cron) to re-invoke and resume (§6).
     """
     events = journal.read()

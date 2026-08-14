@@ -34,7 +34,7 @@ def system_prompt_for(
 ) -> str:
     """Assemble the exact system prompt agent6 would send for *root* + *config*
     in *mode*. Public entry point for `agent6 prompt show` and tooling. Builds a
-    ToolDispatcher so the ``<repo-priors>`` block is FULLY enriched (repo map +
+    ToolDispatcher so the `<repo-priors>` block is FULLY enriched (repo map +
     AGENTS.md + recent commits + hot symbols + co-change + symbol outline) -- the
     same view the run loop sees, so prompt show matches reality.
 
@@ -75,7 +75,7 @@ def _shown_isolation(config: Config) -> IsolationLevel:
 def _installed_skills(
     root: Path, config: Config, mode: Literal["run", "plan", "ask", "machine", "agent"]
 ) -> ResolvedSkills | None:
-    """The loop's ``_load_skills`` rules: run mode only, and nothing installed
+    """The loop's `_load_skills` rules: run mode only, and nothing installed
     renders no block."""
     if mode != "run":
         return None

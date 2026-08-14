@@ -106,7 +106,7 @@ def _parse_interp(body: str, whole: str) -> Interp:
 # Runtime rendering (engine side). The author-time validator in
 # `agent6.machine.model` has already proven every reference resolves and
 # every filter applies, so the failures here only fire on genuinely
-# malformed blackboard data, which we surface loudly via TemplateError.
+# malformed blackboard data, which the renderer surfaces loudly via TemplateError.
 # ---------------------------------------------------------------------------
 
 
@@ -117,7 +117,7 @@ class TemplateRuntimeError(TemplateError):
 def resolve_reference(ref: Reference, scope: Mapping[str, object]) -> object:
     """Resolve *ref* against *scope* as ordered dict navigation.
 
-    Never uses ``getattr``: a record value is a ``Mapping`` and each path
+    Never uses `getattr`: a record value is a `Mapping` and each path
     segment is a key lookup, exactly like the predicate evaluator.
     """
     if ref.root not in scope:
@@ -182,7 +182,7 @@ def render_value(template: Template, scope: Mapping[str, object], *, where: str)
 def render_command(
     command: tuple[str, ...], scope: Mapping[str, object], *, where: str
 ) -> list[str]:
-    """Render a `tool` state's argv, splicing a lone ``"{{ listvar }}"``
+    """Render a `tool` state's argv, splicing a lone `"{{ listvar }}"`
     element into one argument per list item (§4.4)."""
     argv: list[str] = []
     for index, element in enumerate(command):

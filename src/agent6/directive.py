@@ -1,30 +1,30 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The steer-directive grammars (`/parallel`, `/pin`, `/compact`, `/btw`), shared by
-the coordinator steer parser (``workflows/loop.py``) and the web + TUI composers.
+the coordinator steer parser (`workflows/loop.py`) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
     /pin <instruction that must survive context compaction>
     /compact [focus text for the summary]
 
-- ``spec`` is a positive int (lane count) or a comma-separated model list, and
+- `spec` is a positive int (lane count) or a comma-separated model list, and
   is OPTIONAL: omitted means one lane on the configured worker model. A
   segment's first token counts as a spec when it contains a comma OR a slash
-  (model ids are provider/model shaped, e.g. ``moonshotai/kimi-k2.6``); a bare
-  comma-less slash-less model name (``opus``) intentionally stays task text --
+  (model ids are provider/model shaped, e.g. `moonshotai/kimi-k2.6`); a bare
+  comma-less slash-less model name (`opus`) intentionally stays task text --
   it is indistinguishable from a task word. The flip side: a task whose FIRST
-  word is a path (``src/foo.py``) parses as a bogus model spec, refused
-  pre-spawn with a did-you-mean (``models.validate``) when a model cache exists
+  word is a path (`src/foo.py`) parses as a bogus model spec, refused
+  pre-spawn with a did-you-mean (`models.validate`) when a model cache exists
   to check against, else it runs and fails at the provider call; start with a verb.
-- The exact token ``/parallel``, whitespace-delimited, separates tasks. A
-  message is a directive only when it STARTS with the exact ``/parallel`` token;
-  ``/parallelfoo ...`` stays ordinary text, byte-for-byte. A mid-task
-  ``/parallel`` inside a word or path (not whitespace-delimited) is ordinary text
+- The exact token `/parallel`, whitespace-delimited, separates tasks. A
+  message is a directive only when it STARTS with the exact `/parallel` token;
+  `/parallelfoo ...` stays ordinary text, byte-for-byte. A mid-task
+  `/parallel` inside a word or path (not whitespace-delimited) is ordinary text
   too.
 - Newlines are ordinary task characters, so a task can span multiple lines.
 
-One parser per directive, imported by ``workflows`` (the coordinator) and
-``ui`` (the composers, and the CLI ``--parallel`` value via
+One parser per directive, imported by `workflows` (the coordinator) and
+`ui` (the composers, and the CLI `--parallel` value via
 :func:`parse_spec`). Pure stdlib string parsing, no agent6 imports -- a leaf
 both layers sit above."""
 
@@ -49,24 +49,24 @@ class DirectiveError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Segment:
-    """One parsed `/parallel` task: its optional ``spec`` (``""`` = one default
-    lane) and the ``task`` text (internal whitespace and newlines preserved)."""
+    """One parsed `/parallel` task: its optional `spec` (`""` = one default
+    lane) and the `task` text (internal whitespace and newlines preserved)."""
 
     spec: str
     task: str
 
 
 def parse_spec(spec: str, *, limit: int) -> list[str | None]:
-    """A spec string -> one entry per lane: ``None`` = the configured worker
-    model, else a per-lane model override. ``""`` (omitted) is one default lane.
+    """A spec string -> one entry per lane: `None` = the configured worker
+    model, else a per-lane model override. `""` (omitted) is one default lane.
 
-    A positive integer ``N`` is N default lanes; a comma-separated list is one
-    lane per named model (a single model id, e.g. ``provider/model``, is a
-    one-lane list). *limit* is the caller's ``[parallel].max_lanes``; an
+    A positive integer `N` is N default lanes; a comma-separated list is one
+    lane per named model (a single model id, e.g. `provider/model`, is a
+    one-lane list). *limit* is the caller's `[parallel].max_lanes`; an
     over-limit count refuses BEFORE the lane list is built, so a mistyped huge
     count cannot allocate it. Raises DirectiveError on a non-positive or
     over-limit count or a list that names no models. Single source for the
-    directive spec AND the CLI ``run --parallel <spec>`` value grammar."""
+    directive spec AND the CLI `run --parallel <spec>` value grammar."""
     s = spec.strip()
     if not s:
         return [None]
@@ -105,9 +105,9 @@ _PIN_TOKEN = re.compile(r"\A\s*/pin(?=\s|\Z)")
 
 
 def parse_pin(text: str) -> str | None:
-    """The instruction a `/pin` steer carries, or ``None`` when *text* is not a
-    pin directive (does not start with the exact ``/pin`` token). Internal
-    newlines are instruction text. Raises DirectiveError on a bare ``/pin``."""
+    """The instruction a `/pin` steer carries, or `None` when *text* is not a
+    pin directive (does not start with the exact `/pin` token). Internal
+    newlines are instruction text. Raises DirectiveError on a bare `/pin`."""
     m = _PIN_TOKEN.match(text)
     if m is None:
         return None
@@ -125,7 +125,7 @@ _COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)")
 
 def parse_compact(text: str) -> str | None:
     """The summary focus a `/compact` composer message carries ("" for a bare
-    /compact), or ``None`` when *text* is not a compact directive."""
+    /compact), or `None` when *text* is not a compact directive."""
     m = _COMPACT_TOKEN.match(text)
     if m is None:
         return None
@@ -138,7 +138,7 @@ _BTW_TOKEN = re.compile(r"\A\s*/btw(?=\s|\Z)")
 
 
 def parse_btw(text: str) -> str | None:
-    """The question a `/btw` composer message carries, or ``None`` when *text*
+    """The question a `/btw` composer message carries, or `None` when *text*
     is not a btw directive. A bare `/btw` carries "" -- there is nothing to
     ask, and the caller says so rather than opening an empty session."""
     m = _BTW_TOKEN.match(text)
@@ -148,14 +148,14 @@ def parse_btw(text: str) -> str | None:
 
 
 def parse_directive(text: str) -> list[Segment] | None:
-    """Split a `/parallel` message into its task segments, or ``None`` when *text*
-    is not a directive (does not start with the exact ``/parallel`` token).
+    """Split a `/parallel` message into its task segments, or `None` when *text*
+    is not a directive (does not start with the exact `/parallel` token).
 
-    Each whitespace-delimited ``/parallel`` token starts a new segment. Within a
+    Each whitespace-delimited `/parallel` token starts a new segment. Within a
     segment, the first whitespace-delimited token is the spec when it is a
     positive int or contains a comma or slash (a model list / model id), else
     the whole segment is the task. Raises DirectiveError on a segment with no
-    task (a bare ``/parallel``, or a spec with nothing after it) --
+    task (a bare `/parallel`, or a spec with nothing after it) --
     all-or-nothing, so a later empty segment fails the whole parse."""
     body = text.lstrip()
     matches = list(_SEPARATOR.finditer(body))
@@ -172,7 +172,7 @@ def _is_spec_token(token: str) -> bool:
     """A leading token is a spec iff it is a positive integer, a comma list, or
     contains a slash (a provider/model id; no natural task starts with a
     slash-containing word -- see the module docstring for the path caveat). A
-    bare word (``fix``, a single model name with no comma or slash) is task
+    bare word (`fix`, a single model name with no comma or slash) is task
     text."""
     return token.isdecimal() or "," in token or "/" in token
 

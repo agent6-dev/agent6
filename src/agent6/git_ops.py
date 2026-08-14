@@ -390,9 +390,9 @@ def toplevel(path: Path) -> Path | None:
 
 
 def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
-    """True iff any of ``rel_paths`` has uncommitted changes (untracked,
+    """True iff any of `rel_paths` has uncommitted changes (untracked,
     modified, or staged) versus HEAD, i.e. a path-limited commit of just those
-    paths would record something. Unlike whole-tree ``status().is_clean``, this
+    paths would record something. Unlike whole-tree `status().is_clean`, this
     ignores unrelated dirt elsewhere in the worktree."""
     if not rel_paths:
         return False
@@ -402,7 +402,7 @@ def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
 
 def dirty_paths(path: Path, *, limit: int = 10) -> list[str]:
     """Up to *limit* working-tree paths with uncommitted changes, each tagged
-    ``M`` (modified/staged) or ``?`` (untracked), for a dirty-tree refusal that
+    `M` (modified/staged) or `?` (untracked), for a dirty-tree refusal that
     names what to deal with instead of just saying 'not clean'."""
     res = _run(path, "status", "--porcelain=v1", "--untracked-files=all", check=False)
     out: list[str] = []
@@ -460,9 +460,9 @@ def auto_stash_message(session_id: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class StashEntry:
-    """One ``git stash list`` entry: its position at lookup time (``ref``,
-    e.g. ``stash@{1}``, for operator-facing hints only) and its immutable
-    commit (``sha``). Anything that mutates restores by sha: the position
+    """One `git stash list` entry: its position at lookup time (`ref`,
+    e.g. `stash@{1}`, for operator-facing hints only) and its immutable
+    commit (`sha`). Anything that mutates restores by sha: the position
     shifts the moment anyone pushes or drops a stash."""
 
     ref: str
@@ -471,9 +471,9 @@ class StashEntry:
 
 def find_stash(path: Path, message: str) -> StashEntry | None:
     """The newest stash pushed with exactly *message*, or None.
-    ``git stash push -m MSG`` records ``On <branch>: MSG`` and ':' cannot
-    appear in a ref name, so anchoring ``": MSG"`` at the end matches the
-    whole message -- lane run ids are ordinal (``…-l1``, ``…-l10``), so one
+    `git stash push -m MSG` records `On <branch>: MSG` and ':' cannot
+    appear in a ref name, so anchoring `": MSG"` at the end matches the
+    whole message -- lane run ids are ordinal (`…-l1`, `…-l10`), so one
     message can be a prefix of another."""
     res = _run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
     for line in res.stdout.splitlines():
@@ -508,7 +508,7 @@ def _drop_by_sha(path: Path, sha: str) -> None:
     """Drop the stash entry whose commit is *sha*, putting back a bystander we
     take by mistake.
 
-    ``git stash drop`` addresses an entry by POSITION and refuses a sha outright
+    `git stash drop` addresses an entry by POSITION and refuses a sha outright
     ("is not a stash reference"), so the position has to be re-resolved from the
     list -- and a stash pushed in between shifts every position, aiming the drop
     at someone else's entry. git names the commit it dropped, so check it: one
@@ -531,7 +531,7 @@ def _drop_by_sha(path: Path, sha: str) -> None:
         return  # no drop happened, or git stopped naming what it dropped
     taken = dropped.group(1)
     # Prefix either way: git prints the full oid today, but an abbreviated one
-    # must not read as a stranger's stash and get stored back on top of us.
+    # must not read as a stranger's stash and get stored back on top of agent6's own.
     if sha.startswith(taken) or taken.startswith(sha):
         return
     # A stash commit's own subject is the "On <branch>: <message>" the reflog
@@ -573,7 +573,7 @@ def delete_branch_if_merged(path: Path, branch: str) -> bool:
     branch is reachable-merged into the current HEAD (or its upstream). Returns True
     if deleted, False if git refused -- a squash-merged or genuinely unmerged branch,
     since neither is reachable. Never `branch -D` here; see
-    ``force_delete_squash_merged_branch`` for the one operator-gated exception."""
+    `force_delete_squash_merged_branch` for the one operator-gated exception."""
     return _run(path, "branch", "-d", branch, check=False).ok
 
 
@@ -622,14 +622,14 @@ _CHAIN_KIND = "head"
 
 
 def chain_ref_for(session_id: str) -> str:
-    """The ref holding a session's commit chain: ``refs/agent6/<id>/head``.
+    """The ref holding a session's commit chain: `refs/agent6/<id>/head`.
 
     The session id is a NAMESPACE, not the ref itself, which is what keeps the
-    short name ``agent6/<id>`` the visible branch's alone: git resolves
-    ``refs/<name>`` before ``refs/heads/<name>``, so a ref sitting AT
-    ``refs/agent6/<id>`` shadows the branch the operator means, and every
+    short name `agent6/<id>` the visible branch's alone: git resolves
+    `refs/<name>` before `refs/heads/<name>`, so a ref sitting AT
+    `refs/agent6/<id>` shadows the branch the operator means, and every
     `git log|diff|checkout agent6/<id>` reports the name as ambiguous. The kind
-    under the id follows ``refs/pull/<n>/head``; it also leaves room for a
+    under the id follows `refs/pull/<n>/head`; it also leaves room for a
     second per-session ref, which a ref at the id itself could not (git refuses
     a ref inside a ref).
     """
@@ -669,10 +669,10 @@ def checkout_detached(path: Path, rev: str) -> None:
 def create_branch_at(path: Path, name: str, sha: str) -> None:
     """Create branch *name* pointing at *sha* WITHOUT checking it out.
 
-    Additive only (``git branch <name> <sha>``): it never touches HEAD or the
+    Additive only (`git branch <name> <sha>`): it never touches HEAD or the
     working tree, so `agent6 fork` can cut the new run's branch at a historical
     sha while the operator's checkout stays put. No-op if *name* already points
-    at *sha*; raises ``GitError`` if it exists pointing elsewhere (we never move
+    at *sha*; raises `GitError` if it exists pointing elsewhere (we never move
     a branch -- that would be a force/rewrite, which is refused)."""
     existing = _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False)
     if existing.ok and existing.stdout.strip():
@@ -712,7 +712,7 @@ def unignored(path: Path, candidates: tuple[str, ...]) -> tuple[str, ...]:
     if not candidates:
         return ()
     # check-ignore prints the ignored inputs (one per line) and exits 1 when
-    # none match, both are fine, we only read stdout. The "--" stops a path
+    # none match, both are fine, only stdout is read. The "--" stops a path
     # that begins with "-" from being parsed as a git flag.
     res = _run(path, "check-ignore", "--", *candidates, check=False)
     ignored = {line.strip() for line in res.stdout.splitlines() if line.strip()}
@@ -748,7 +748,7 @@ def commit_paths(
     """Stage only `paths` (repo-relative) and commit JUST those paths. Returns
     the new HEAD sha.
 
-    The commit is path-limited (``git commit -- <paths>``), so unrelated
+    The commit is path-limited (`git commit -- <paths>`), so unrelated
     changes the user already STAGED stay staged and uncommitted, and unrelated
     WIP in the worktree is never swept in. Used by `agent6 init`'s scaffold
     commit and the startup `.gitignore` auto-update, which must not fold the
@@ -1202,7 +1202,7 @@ def _is_docish(p: str) -> bool:
 
 def _conventional_scope(paths: Sequence[str]) -> str:
     """The one common area the change touches, or "" when there is none: the
-    package dir under ``src/<pkg>/`` (the module stem for a file directly under
+    package dir under `src/<pkg>/` (the module stem for a file directly under
     the package), else a second-level dir every path shares."""
     parts = [PurePosixPath(p).parts for p in paths if p]
     if not parts:
@@ -1219,9 +1219,9 @@ def _conventional_scope(paths: Sequence[str]) -> str:
 
 
 def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: str) -> str:
-    """A Conventional Commits subject from ``(status, path)`` pairs, without a
-    model call: all-tests -> ``test``, all-docs -> ``docs``, any added file ->
-    ``feat``, else ``fix`` (``chore`` when nothing changed). Scope is the one
+    """A Conventional Commits subject from `(status, path)` pairs, without a
+    model call: all-tests -> `test`, all-docs -> `docs`, any added file ->
+    `feat`, else `fix` (`chore` when nothing changed). Scope is the one
     common area (:func:`_conventional_scope`); the subject is *summary* with
     its head lowercased and any trailing period stripped, capped at 72."""
     paths = [p for _, p in changes]
@@ -1243,8 +1243,8 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
 
 
 def worktree_name_status(path: Path) -> tuple[tuple[str, str], ...]:
-    """``(status, path)`` pairs for every pending change (``status
-    --porcelain``), untracked reported as ``A``: the conventional-subject
+    """`(status, path)` pairs for every pending change (``status
+    --porcelain`), untracked reported as `A``: the conventional-subject
     deriver's input at checkpoint time."""
     res = _run(path, "status", "--porcelain", check=False)
     pairs: list[tuple[str, str]] = []
@@ -1257,7 +1257,7 @@ def worktree_name_status(path: Path) -> tuple[tuple[str, str], ...]:
 
 
 def range_name_status(path: Path, base: str, head: str) -> tuple[tuple[str, str], ...]:
-    """``(status, path)`` pairs for ``base..head``: the conventional-subject
+    """`(status, path)` pairs for `base..head`: the conventional-subject
     deriver's input at squash time."""
     res = _run(path, "diff", "--name-status", f"{base}..{head}", check=False)
     pairs: list[tuple[str, str]] = []
@@ -1289,12 +1289,12 @@ def recent_log(path: Path, n: int = 20) -> str:
 
 
 def revert_head(path: Path) -> str:
-    """Forward-revert HEAD via ``git revert HEAD --no-edit``.
+    """Forward-revert HEAD via `git revert HEAD --no-edit`.
 
-    Backs the interactive REPL's ``/undo`` so the operator
+    Backs the interactive REPL's `/undo` so the operator
     can roll back the last auto-commit without rewriting history. Returns
-    the SHA of the new revert commit. AGENTS.md forbids ``reset --hard``
-    and force operations; ``revert`` is the policy-compliant undo.
+    the SHA of the new revert commit. AGENTS.md forbids `reset --hard`
+    and force operations; `revert` is the policy-compliant undo.
     """
     _run(path, "revert", "HEAD", "--no-edit")
     sha_res = _run(path, "rev-parse", "HEAD")
@@ -1302,9 +1302,9 @@ def revert_head(path: Path) -> str:
 
 
 def tracked_files(path: Path) -> tuple[str, ...]:
-    """Return the list of repo-tracked files via ``git ls-files``.
+    """Return the list of repo-tracked files via `git ls-files`.
 
-    POSIX-style separators, sorted by ``git``'s own order. Empty tuple
+    POSIX-style separators, sorted by `git`'s own order. Empty tuple
     outside a git repo or when ls-files fails - callers must treat this
     as "no map available" rather than "empty repo".
     """
@@ -1378,20 +1378,20 @@ def diff_since(path: Path, base_sha: str) -> str:
 
 
 def diff_range(path: Path, base_sha: str, ref: str) -> str:
-    """The committed diff ``base_sha..ref`` introduces, captured. "" when the
+    """The committed diff `base_sha..ref` introduces, captured. "" when the
     range is unresolvable (a pruned branch, a bad sha) -- read-only, never blocks
-    a caller comparing several candidates. Goes through ``_run`` so it carries the
+    a caller comparing several candidates. Goes through `_run` so it carries the
     same host-RCE hardening + builtin-renderer flags every git diff here does."""
     res = _run(path, "diff", f"{base_sha}..{ref}", check=False)
     return res.stdout if res.ok else ""
 
 
 def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
-    """The patch a single commit introduced (``git show <sha>``), or "" on error.
+    """The patch a single commit introduced (`git show <sha>`), or "" on error.
 
     Read-only, used to surface "what the worker just changed" to a live viewer.
-    ``--format=`` keeps it to just the diff (no commit message). Truncated to
-    ``max_bytes`` here so callers don't materialize an unbounded diff in memory."""
+    `--format=` keeps it to just the diff (no commit message). Truncated to
+    `max_bytes` here so callers don't materialize an unbounded diff in memory."""
     res = _run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
     if not res.ok:
         return ""

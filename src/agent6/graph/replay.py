@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Rebuild a task graph as it stood at an older ``graph_version``.
+"""Rebuild a task graph as it stood at an older `graph_version`.
 
 `graph.jsonl` records every curator mutation, stamped with the version it
 produced, so a checkpoint's `graph_version` names an exact past state of the
@@ -14,7 +14,7 @@ operations never touch (title, rationale, acceptance, relevant_paths,
 created_at, created_by) is immutable after creation. So the rebuild starts from
 the current nodes and undoes every mutation stamped after the target version.
 Two fields cannot be unwound and stay at their current value, both display-only:
-``notes`` (appended prose with no per-append record) and ``updated_at``.
+`notes` (appended prose with no per-append record) and `updated_at`.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from agent6.graph.models import TaskNode
 
 @dataclass(frozen=True, slots=True)
 class ReplayedGraph:
-    """A DAG as of one ``graph_version``: the surviving nodes and the cursor."""
+    """A DAG as of one `graph_version`: the surviving nodes and the cursor."""
 
     nodes: dict[str, TaskNode]
     cursor: str | None
@@ -72,7 +72,7 @@ def graph_at_version(
 ) -> ReplayedGraph:
     """The graph as of *version*, from the CURRENT *nodes* plus the *journal*.
 
-    A node whose ``add_subtask`` is stamped after *version* did not exist yet
+    A node whose `add_subtask` is stamped after *version* did not exist yet
     and is dropped. A node the journal never mentions (a truncated or
     pre-journal graph) is kept as-is: unknown creation time is not evidence of
     a later one, and dropping it would silently empty the fork's DAG.

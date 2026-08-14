@@ -14,12 +14,12 @@ from agent6.config._base import MODEL_CONFIG
 
 
 class SkillsConfig(BaseModel):
-    """``[skills]`` section: operator-installed SKILL.md packs (agentskills.io).
+    """`[skills]` section: operator-installed SKILL.md packs (agentskills.io).
 
-    Skills live under ``<data-dir>/skills/<name>/`` (``agent6 skills install``)
-    plus any ``extra_dirs``. Installed means enabled: the run-mode system
+    Skills live under `<data-dir>/skills/<name>/` (`agent6 skills install`)
+    plus any `extra_dirs`. Installed means enabled: the run-mode system
     prompt lists each enabled skill's name + description and the worker loads
-    content on demand; the ``state`` map holds only the exceptions. Skills are
+    content on demand; the `state` map holds only the exceptions. Skills are
     trusted like config (operator-chosen prompt content); nothing in a skill
     is ever executed by the loader.
     """
@@ -57,19 +57,19 @@ class SkillsConfig(BaseModel):
 class MachineNotifyConfig(BaseModel):
     """Optional out-of-band notify hook for a running machine.
 
-    When ``on_event`` is set, `agent6 machine run` runs the argv tuple on each
-    `machine.notify` (a state's ``notify`` message) and on the terminal
+    When `on_event` is set, `agent6 machine run` runs the argv tuple on each
+    `machine.notify` (a state's `notify` message) and on the terminal
     `machine.end`, on the host OUTSIDE the jail (mirror of
-    ``[notify].on_complete``). The argv is operator-controlled and never
+    `[notify].on_complete`). The argv is operator-controlled and never
     includes LLM output. Env vars passed:
 
-    - ``AGENT6_MACHINE_ID``      , the machine id
-    - ``AGENT6_MACHINE_DIR``     , absolute path to the instance dir
-    - ``AGENT6_MACHINE_EVENT``   , ``notify`` or ``end``
-    - ``AGENT6_MACHINE_STATE``   , the state that emitted it
-    - ``AGENT6_MACHINE_MESSAGE`` , the notify message (or the end reason)
-    - ``AGENT6_MACHINE_LEVEL``   , ``info``/``warn``/``error`` for notify, or the
-                                   ``ok``/``failed`` status for end
+    - `AGENT6_MACHINE_ID`      , the machine id
+    - `AGENT6_MACHINE_DIR`     , absolute path to the instance dir
+    - `AGENT6_MACHINE_EVENT`   , `notify` or `end`
+    - `AGENT6_MACHINE_STATE`   , the state that emitted it
+    - `AGENT6_MACHINE_MESSAGE` , the notify message (or the end reason)
+    - `AGENT6_MACHINE_LEVEL`   , `info`/`warn`/`error` for notify, or the
+                                   `ok`/`failed` status for end
 
     Use it to fan out to a phone (ntfy/Pushover/Telegram/email); agent6 owns no
     push infra. A failed hook is logged and does not change the exit code.
@@ -169,22 +169,22 @@ class WebConfig(BaseModel):
 class NotifyConfig(BaseModel):
     """Optional post-run notification hook.
 
-    When ``on_complete`` is set, agent6 runs the argv tuple after the
-    workflow returns (``agent6 run`` or ``agent6 resume``). The argv is
+    When `on_complete` is set, agent6 runs the argv tuple after the
+    workflow returns (`agent6 run` or `agent6 resume`). The argv is
     operator-controlled, it never includes LLM output, and runs OUTSIDE the
     jail under a curated env (PATH/HOME/locale + desktop vars, never provider
     keys; see `child_env.curated_env`) with these vars added:
 
-    - ``AGENT6_SESSION_ID``      , session id under the per-repo state dir
-    - ``AGENT6_SESSION_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
-    - ``AGENT6_SESSION_REASON``  , workflow termination reason (e.g. ``finish_session``,
-                                 ``budget_exhausted``, ``provider_error``)
-    - ``AGENT6_SESSION_VERIFIED``, ``passed`` / ``failed`` / ``unverified`` (the
+    - `AGENT6_SESSION_ID`      , session id under the per-repo state dir
+    - `AGENT6_SESSION_OK`      , `1` if the workflow finished cleanly, `0` otherwise
+    - `AGENT6_SESSION_REASON`  , workflow termination reason (e.g. `finish_session`,
+                                 `budget_exhausted`, `provider_error`)
+    - `AGENT6_SESSION_VERIFIED`, `passed` / `failed` / `unverified` (the
                                  verify gate's verdict; a hook wanting "green"
-                                 reads this, not ``OK``)
-    - ``AGENT6_SESSION_DIR``     , absolute path to the session dir
+                                 reads this, not `OK`)
+    - `AGENT6_SESSION_DIR`     , absolute path to the session dir
 
-    Use cases: desktop notification (``notify-send``), shell-bell, ssh
+    Use cases: desktop notification (`notify-send`), shell-bell, ssh
     push notification, mailx, etc. A failure of the notify command is
     logged but does not change the agent6 exit code.
     """
@@ -203,9 +203,9 @@ class NotifyConfig(BaseModel):
 
 
 class ParallelConfig(BaseModel):
-    """``[parallel]`` section: fan-out defaults for `agent6 run --parallel`.
+    """`[parallel]` section: fan-out defaults for `agent6 run --parallel`.
 
-    ``--parallel N`` (or a comma-separated model list) runs N isolated lanes,
+    `--parallel N` (or a comma-separated model list) runs N isolated lanes,
     each a disposable clone of the repo, and auto-compares the results. These
     knobs bound and place that fan-out; nothing here mutates the origin repo.
     """

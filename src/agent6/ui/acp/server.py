@@ -262,7 +262,7 @@ class ACPServer:
     def _session_cancel(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         # A notification in ACP: no reply, and it must land while the turn it
         # cancels is still running -- which is why the turn is not on this
-        # thread. A cancel for a session we do not have would otherwise vanish
+        # thread. A cancel for a session this server does not have would otherwise vanish
         # with zero bytes written, so the stop button does nothing and says
         # nothing; tell the editor instead.
         sessions = self._sessions()
@@ -329,5 +329,5 @@ class ACPServer:
                 self._gone = True
                 gone = True
         if gone:
-            # Nothing we asked can be answered now either.
+            # Nothing this server asked can be answered now either.
             self.abandon_pending()

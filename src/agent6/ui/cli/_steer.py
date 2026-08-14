@@ -79,7 +79,7 @@ def select_revised_prompt(
 ) -> str | None:
     """Interactive accept/edit/skip prompt for prompt.revise_prompt.
 
-    ``console_view``, when given, has its heartbeat suspended for the whole
+    `console_view`, when given, has its heartbeat suspended for the whole
     exchange (the spinner's per-tick line-erase otherwise wipes the choice
     prompt and the typed echo while the operator reads the proposal)."""
     pause = console_view.pause if console_view is not None else contextlib.nullcontext
@@ -170,9 +170,9 @@ def tty_message(text: str) -> None:
 
 
 def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
-    """Prompt on the controlling terminal directly (see ``tty_message``).
+    """Prompt on the controlling terminal directly (see `tty_message`).
     Falls back to stdin when there is no controlling terminal, unless the
-    caller must never consume piped stdin (``fall_back_to_stdin=False``:
+    caller must never consume piped stdin (`fall_back_to_stdin=False`:
     return None)."""
     try:
         # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
@@ -267,14 +267,14 @@ def install_steer_sigint(
     """Install a SIGINT handler with escalating stages.
 
     * 1st Ctrl-C: pause at the next safe boundary (between steps; the
-      in-flight model call finishes first). Emits ``session.steer_requested``;
+      in-flight model call finishes first). Emits `session.steer_requested`;
       the prompt is a TUI modal when the TUI is live, otherwise the
       interactive pause menu; with redirected std streams the menu cannot
       own the line, so a plain prompt goes to the controlling terminal
-      (``/dev/tty``) instead.
+      (`/dev/tty`) instead.
     * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
     * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
-      stopping the run (resumable with ``agent6 resume``).
+      stopping the run (resumable with `agent6 resume`).
     * Ctrl-Z prints the same one-line status WITHOUT arming anything, and
       cancels an armed pause -- so checking on a run costs it nothing. It also
       replaces SIGTSTP's default: a suspended agent freezes its live provider
@@ -282,11 +282,11 @@ def install_steer_sigint(
       would corrupt the run rather than pause it. The hint it prints names
       /detach as the way to step away.
 
-    ``console_view``, when given, has its heartbeat spinner suspended for the
+    `console_view`, when given, has its heartbeat spinner suspended for the
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
     pause-menu line and its Tab preview.
 
-    Returns callables for the workflow plus a ``restore`` hook to put the
+    Returns callables for the workflow plus a `restore` hook to put the
     previous handler back when the run is done.
     """
     state: dict[str, Any] = {"stage": 0, "prompting": False}
@@ -392,7 +392,7 @@ def file_bridge_steer(session_dir: Path) -> SteerState:
     """Steer for a run with no controlling terminal (detached spawn from the
     TUI hub or the web UI): no SIGINT handler, requests and answers travel
     only over the front-end file bridge. Without this, a hub-spawned run
-    would never poll the ``steer.request`` marker and every web/TUI steer
+    would never poll the `steer.request` marker and every web/TUI steer
     would be silently lost."""
 
     def prompt() -> str | None:

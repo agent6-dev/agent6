@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Build + write the canonical manifest.json a run starts with (run/fork). The
-reader and the on-disk shape (:class:`SessionManifest`) live in ``sessions.manifest``."""
+reader and the on-disk shape (:class:`SessionManifest`) live in `sessions.manifest`."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from agent6.types import session_kind
 
 
 def _model_brief(rm: Any) -> ModelBrief | None:
-    """A ``ModelBrief`` for a resolved role, or None when unset."""
+    """A `ModelBrief` for a resolved role, or None when unset."""
     if rm is None:
         return None
     return ModelBrief(provider=rm.provider, model=rm.model)
@@ -44,8 +44,8 @@ def write_manifest(path: Path, m: SessionManifest) -> None:
     format lives in one spot. Durable temp+replace: the TUI hub and `sessions show`
     poll this file on live runs, and resume/fork need it after a crash.
 
-    Refuses to rewrite a NEWER manifest (``ManifestError``): reading one is
-    lenient so every run dir keeps rendering, but ``extra="ignore"`` drops the
+    Refuses to rewrite a NEWER manifest (`ManifestError`): reading one is
+    lenient so every run dir keeps rendering, but `extra="ignore"` drops the
     keys this binary doesn't know, so a stamp would silently downgrade the
     record it was only meant to annotate. An OLDER manifest carries nothing to
     lose, so it is upgraded to the shape actually written.
@@ -83,11 +83,11 @@ def write_session_manifest(
 
     Format is JSON for the same reason logs.jsonl is JSON: trivially grep-able
     from a shell and easy to consume from any language. The on-disk shape is
-    *liquid* until 1.0 - bump ``SessionManifest.version`` only when the new shape
+    *liquid* until 1.0 - bump `SessionManifest.version` only when the new shape
     genuinely improves a downstream consumer.
 
-    ``parent_session_id`` / ``forked_from_turn`` / ``forked_from_sha`` / ``gate`` are
-    set only for a run created by ``agent6 fork``; they record the lineage
+    `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `gate` are
+    set only for a run created by `agent6 fork`; they record the lineage
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
     """
@@ -164,7 +164,7 @@ def pin_gate(
     """Pin this leg's gate and KEEP it pinned when the loop adopts one mid-run.
 
     Every lifecycle that starts a leg calls this. Stamping and re-stamping were
-    two separate concerns wired only in ``run``, so a resumed leg that adopted a
+    two separate concerns wired only in `run`, so a resumed leg that adopted a
     gate kept a manifest reading gateless. A failure is reported rather than
     raised (a leg is still worth running) and never swallowed: the manifest is
     what every viewer, the baseline and the next leg read the gate from.

@@ -3,9 +3,9 @@
 """Tree-sitter navigation handlers: outline, find_definition,
 find_references.
 
-The lazy-built ``SymbolIndex`` singleton stays on ``ToolDispatcher`` (shared
-with the non-tool passthroughs ``hot_symbols`` / ``file_outlines`` and with
-``apply_edit``/``apply_patch``'s change notification); these functions take
+The lazy-built `SymbolIndex` singleton stays on `ToolDispatcher` (shared
+with the non-tool passthroughs `hot_symbols` / `file_outlines` and with
+`apply_edit`/`apply_patch`'s change notification); these functions take
 the dispatcher's ensure callable and invoke it only after argument/path
 validation (an index scan never happens for a rejected call)."""
 

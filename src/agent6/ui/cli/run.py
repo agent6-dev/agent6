@@ -77,7 +77,7 @@ from agent6.viewmodel import session_policy
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
-    """Resolve ``--skill`` names to a task-prompt prefix. Returns (prefix, error)."""
+    """Resolve `--skill` names to a task-prompt prefix. Returns (prefix, error)."""
     found, _warns = discover_skills(skill_search_dirs(cfg.skills.extra_dirs, data_dir() / "skills"))
     resolved = resolve_states(found, cfg.skills.state)
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
@@ -107,7 +107,7 @@ def _asks_dir(session_dir: Path) -> Path:
 def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view cell is run-scoped). The console
-    view is created lazily on ``attach_console_view``; the builders that need it
+    view is created lazily on `attach_console_view`; the builders that need it
     close over its cell, so the lifecycle never holds a UI type. The lifecycle
     owns egress (`app.egress`) itself; only the two exe-spawn primitives it
     can't reach (`ui.spawn`) are injected."""
@@ -267,7 +267,7 @@ def _cmd_run(  # noqa: PLR0911
     pins: tuple[str, ...] = (),
 ) -> int:
     """Adapt `agent6 run`/`plan`/`ask` argv: build the effective config, apply
-    the flag overrides, resolve skills and @file refs, route ``--parallel``,
+    the flag overrides, resolve skills and @file refs, route `--parallel`,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
     effective = load_effective(Path.cwd(), config_path, preset=preset)
     cfg, explicit_leaves = effective.config, frozenset(effective.sources)

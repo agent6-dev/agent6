@@ -29,8 +29,8 @@ def _cmd_fork(
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
 
     Default: fork from the latest checkpoint and immediately continue the new run
-    from that turn (resume-like); ``--steer`` seeds the fresh direction at its
-    first safe boundary. ``--no-run`` just creates the fork dir.
+    from that turn (resume-like); `--steer` seeds the fresh direction at its
+    first safe boundary. `--no-run` just creates the fork dir.
     """
     if no_run and steer.strip():
         print(

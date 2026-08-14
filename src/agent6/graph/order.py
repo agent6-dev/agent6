@@ -8,7 +8,7 @@ from agent6.graph.models import TaskNode
 
 
 def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
-    """Every node id, depth-first through ``children``, roots in id order.
+    """Every node id, depth-first through `children`, roots in id order.
 
     The children list is the order the frontier executes, so this is the order
     every surface shows -- the renderers, and the `list_tasks` the model reads

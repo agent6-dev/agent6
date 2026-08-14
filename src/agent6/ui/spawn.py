@@ -34,17 +34,17 @@ def agent6_exe() -> str:
 def spawn_detached_resume(
     cwd: Path, session_id: str, *, steer: str = "", config_path: Path | None = None
 ) -> str:
-    """Fire-and-forget a detached ``agent6 resume <session_id>`` (new session, no
+    """Fire-and-forget a detached `agent6 resume <session_id>` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
 
-    A non-empty *steer* rides along as ``--steer=TEXT`` (the ``=`` form, so a
-    follow-up starting with ``-`` cannot read as an option): the resume injects
+    A non-empty *steer* rides along as `--steer=TEXT` (the `=` form, so a
+    follow-up starting with `-` cannot read as an option): the resume injects
     it as the first steering instruction. Operator-typed text, never LLM output.
 
     The caller must have released the run's worker lock first, so the child
-    acquires it cleanly. ``AGENT6_STREAM_TO_LOG=1`` keeps the headless child
-    emitting delta events, so a later ``agent6 attach`` shows its full reasoning,
-    not just tool calls. ``AGENT6_DETACHED_AWAY=wait`` makes the terminal-less
+    acquires it cleanly. `AGENT6_STREAM_TO_LOG=1` keeps the headless child
+    emitting delta events, so a later `agent6 attach` shows its full reasoning,
+    not just tool calls. `AGENT6_DETACHED_AWAY=wait` makes the terminal-less
     child WAIT for a front-end at an ask/approval instead of fabricating an empty
     answer (every caller here is a front-end or a detach the operator re-attaches
     to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
@@ -100,7 +100,7 @@ def _capture_message(stdout: str, stderr: str) -> str:
 
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
     """Run a quick agent6 subcommand synchronously, capturing its output, and
-    return ``(ok, message)``. For the fast, foreground CLI ops a front-end drives
+    return `(ok, message)`. For the fast, foreground CLI ops a front-end drives
     the same way a user would: `sessions merge`, `sessions prune`, `config set`. argv is
     fixed (the agent6 exe + operator-chosen args), never LLM output."""
     try:
@@ -200,10 +200,10 @@ def spawn_and_locate(
     timeout_s: float = 25.0,
 ) -> tuple[Path | None, str]:
     """Spawn *argv* detached, then poll *list_dirs* for a NEW dir (not in *before*)
-    whose ``logs.jsonl`` exists, and return ``(dir, "")`` so the caller can hand it
+    whose `logs.jsonl` exists, and return `(dir, "")` so the caller can hand it
     to the dashboard. If the child exits before producing one (no git repo, bad
     config, ...), surface its stderr tail instead of waiting out the timeout;
-    return ``(None, message)`` on any failure.
+    return `(None, message)` on any failure.
 
     The shared launch+watch path behind both "start a run" (hub) and "create a
     machine" (machines page): spawn the same CLI a user would, then watch the new

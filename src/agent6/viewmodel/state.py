@@ -739,11 +739,11 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
 
 def session_status_label(state: SessionState) -> str:
     """The status label for a stream with genuinely NO run dir (the
-    ``attach --json`` wire form). It distinguishes a stop from a finish from an
+    `attach --json` wire form). It distinguishes a stop from a finish from an
     error (all three set finished=True; the reason tells them apart) via the
-    shared ``listing.status_word``, but it folds events alone, so it reads
+    shared `listing.status_word`, but it folds events alone, so it reads
     every unfinished state as "running". A surface that HAS a run dir must call
-    ``listing.status_for_session_dir`` with ``status_facts`` instead -- the dir
+    `listing.status_for_session_dir` with `status_facts` instead -- the dir
     knows parked/starting/created/stale/waiting, this cannot."""
     word, reason = status_word(
         finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
@@ -753,7 +753,7 @@ def session_status_label(state: SessionState) -> str:
 
 def status_facts(state: SessionState) -> StatusFacts:
     """The fold's answers to the status questions -- the typed twin of
-    ``LogScan.status_facts()``, for surfaces that hold a ``SessionState``. The two
+    `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
     producers must agree on the same log (pinned by the status matrix test)."""
     return StatusFacts(
         started=state.started,
@@ -773,10 +773,10 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
 
     Pass *session_dir* whenever the caller has one: the label is then THE dir-aware
     status (parked/starting/stale/waiting, not the fold's blanket "running"),
-    ``live`` says whether steer/stop/compact would reach anything, and the
+    `live` says whether steer/stop/compact would reach anything, and the
     dir-backed identity (session_id, the manifest's user_task) fills what the fold
     left empty. Without it the payload keeps the fold-only label and
-    ``live: None`` -- correct only for a genuinely dir-less stream (the machine
+    `live: None` -- correct only for a genuinely dir-less stream (the machine
     reasoning snapshot)."""
     d = asdict(state)
     if session_dir is not None:

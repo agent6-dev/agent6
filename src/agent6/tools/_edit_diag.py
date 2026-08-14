@@ -18,8 +18,8 @@ def preview_result(
     *,
     applied: list[str] | None = None,
 ) -> PreviewResult:
-    """Build the dry-run response for ``apply_edit``/``apply_patch`` with
-    ``preview=true``. Returns the unified diff (old vs new) and a hunk
+    """Build the dry-run response for `apply_edit`/`apply_patch` with
+    `preview=true`. Returns the unified diff (old vs new) and a hunk
     count, but does NOT write anything to disk.
 
     Lets the agent sanity-check a complex multi-edit call
@@ -59,9 +59,9 @@ def _leading_ws(s: str) -> str:
 
 
 def _reindent(lines: list[str], old_base: str, new_base: str) -> list[str] | None:
-    """Replace each non-blank line's leading ``old_base`` with ``new_base``,
+    """Replace each non-blank line's leading `old_base` with `new_base`,
     preserving any indentation beyond the base. Blank lines pass through. Returns
-    None if any non-blank line does not start with ``old_base`` (the shift does
+    None if any non-blank line does not start with `old_base` (the shift does
     not apply cleanly, so it is not safe to guess)."""
     out: list[str] = []
     for ln in lines:
@@ -75,7 +75,7 @@ def _reindent(lines: list[str], old_base: str, new_base: str) -> list[str] | Non
 
 
 def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str) -> str | None:
-    """Apply an edit whose ``old_string`` doesn't match verbatim but matches
+    """Apply an edit whose `old_string` doesn't match verbatim but matches
     EXACTLY ONE on-disk region up to a uniform leading-indent shift -- the
     dominant weak-model mistake: correct lines, wrong indent depth. Returns the
     edited file text, or None whenever it is not provably safe (no match,
@@ -83,8 +83,8 @@ def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str
     error.
 
     Safety gate: the shift derived from the first content line is applied to
-    ``old_string`` and must reproduce the matched region byte-for-byte before it
-    is applied to ``new_string``. So the region is only ever edited when the
+    `old_string` and must reproduce the matched region byte-for-byte before it
+    is applied to `new_string`. So the region is only ever edited when the
     transform is proven correct for old -> disk; a wrong region cannot be hit.
     Trailing-whitespace or non-uniform mismatches fail the gate and fall back."""
     old_lines = old_string.split("\n")
@@ -115,12 +115,12 @@ def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str
 
 
 def closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, float] | None:
-    """Find the file region most similar to a not-found ``old_string``.
+    """Find the file region most similar to a not-found `old_string`.
 
-    Returns ``(1-based start line, region text, similarity ratio)`` for the best
-    contiguous window with the same line count as ``old_string``, or None when
+    Returns `(1-based start line, region text, similarity ratio)` for the best
+    contiguous window with the same line count as `old_string`, or None when
     the scan is skipped (empty or oversized file). This lets a failed
-    ``apply_edit`` hand the model the EXACT on-disk text to retry with, instead
+    `apply_edit` hand the model the EXACT on-disk text to retry with, instead
     of telling it to re-read the whole file (the dominant small-model time sink).
     """
     file_lines = file_text.splitlines()
@@ -147,7 +147,7 @@ def closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, f
 
 
 def edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: str) -> str:
-    """Build the not-found error for ``apply_edit``. Prefers a copy-paste-able
+    """Build the not-found error for `apply_edit`. Prefers a copy-paste-able
     closest on-disk region so the model retries directly; falls back to file
     shape only when no region is similar enough to be useful."""
     region_info = closest_on_disk_region(file_text, old_string)

@@ -3,7 +3,7 @@
 """Shared request transport for the provider call paths.
 
 Both providers execute one API call the same way: an attempt loop with
-per-attempt auth headers (a ``token_command`` credential mints a short-lived
+per-attempt auth headers (a `token_command` credential mints a short-lived
 bearer, and a 401/403 refreshes it once and retries), one-shot 4xx body
 adaptation (each provider decides which parameter-rejection 400s it can fix
 by rewriting the body and latching), transcript recording, a retryable error
@@ -39,22 +39,22 @@ CONNECT_TIMEOUT_S = 20.0
 
 
 def granular_timeout(timeout: float) -> httpx2.Timeout:
-    """*timeout* for read/write/pool, ``CONNECT_TIMEOUT_S`` for connect."""
+    """*timeout* for read/write/pool, `CONNECT_TIMEOUT_S` for connect."""
     return httpx2.Timeout(timeout, connect=min(CONNECT_TIMEOUT_S, timeout))
 
 
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
-    """POST seam: tests stub this name, never ``httpx2`` globally."""
+    """POST seam: tests stub this name, never `httpx2` globally."""
     return httpx2.post(url, headers=headers, content=content, timeout=granular_timeout(timeout))
 
 
 def _has_assistant_output(data: dict[str, Any]) -> bool:
     """Whether a 2xx body carries a REAL assistant response, so a top-level
-    ``error`` key beside it is incidental rather than an error envelope. Covers
-    both wire shapes: OpenAI ``choices[].message`` (content or tool_calls),
-    Anthropic top-level ``content``. A placeholder choice with null content is
+    `error` key beside it is incidental rather than an error envelope. Covers
+    both wire shapes: OpenAI `choices[].message` (content or tool_calls),
+    Anthropic top-level `content`. A placeholder choice with null content is
     not output."""
     choices = data.get("choices")
     if isinstance(choices, list):
@@ -70,7 +70,7 @@ def _has_assistant_output(data: dict[str, Any]) -> bool:
 # terminal HTTP status NON_RETRYABLE_HTTP_STATUSES already treats as permanent.
 # Transient strings (rate_limit_exceeded/_error, server_error, api_error,
 # overloaded_error) are deliberately absent -> None -> retryable, the safe
-# default. Covers both wire families: OpenAI's ``code`` and Anthropic's ``type``.
+# default. Covers both wire families: OpenAI's `code` and Anthropic's `type`.
 _PERMANENT_ERROR_CODE_STATUS: dict[str, int] = {
     # OpenAI-family `code`
     "insufficient_quota": 402,
@@ -86,15 +86,15 @@ _PERMANENT_ERROR_CODE_STATUS: dict[str, int] = {
 
 def envelope_status(err: object) -> int | None:
     """The upstream HTTP status carried in an error envelope, if it is a real
-    4xx/5xx; else None (retryable). Threading it into ``ProviderError.status_code``
-    lets ``NON_RETRYABLE_HTTP_STATUSES`` classify a 402 as permanent while a
+    4xx/5xx; else None (retryable). Threading it into `ProviderError.status_code`
+    lets `NON_RETRYABLE_HTTP_STATUSES` classify a 402 as permanent while a
     429/5xx stays retryable.
 
-    Reads a numeric ``code`` (int or all-digit string) directly, and maps a
-    known-permanent STRING ``code``/``type`` (``insufficient_quota``, ...) to its
+    Reads a numeric `code` (int or all-digit string) directly, and maps a
+    known-permanent STRING `code`/`type` (`insufficient_quota`, ...) to its
     terminal status -- a gateway that reports a quota/auth failure as a 200 body
     with a string code would otherwise be retried every turn; this path must
-    classify the same failure set ``require_metered`` treats as permanent on
+    classify the same failure set `require_metered` treats as permanent on
     real HTTP statuses."""
     if not isinstance(err, dict):
         return None
@@ -112,7 +112,7 @@ def envelope_status(err: object) -> int | None:
 
 
 def _envelope_detail(err: object) -> str:
-    """A readable ``code: message`` for an error envelope, tolerating a bare
+    """A readable `code: message` for an error envelope, tolerating a bare
     string error and an empty object."""
     if isinstance(err, dict):
         label = err.get("code") or err.get("type") or "error"
@@ -124,10 +124,10 @@ def _envelope_detail(err: object) -> str:
 class ProviderCall:
     """One provider API call: the attempt loop around a built request body.
 
-    ``adapt_400`` receives ``(status, error_text, body)`` and returns True
-    after mutating ``body`` (and latching provider state) so the next attempt
-    sends the adapted request; ``adapt_attempts`` reserves one extra attempt
-    per adaptation the provider considers possible for this body. ``stream``,
+    `adapt_400` receives `(status, error_text, body)` and returns True
+    after mutating `body` (and latching provider state) so the next attempt
+    sends the adapted request; `adapt_attempts` reserves one extra attempt
+    per adaptation the provider considers possible for this body. `stream`,
     when set, replaces the non-streaming POST and receives the per-attempt
     headers; errors it raises flow through the same adapt/refresh logic.
     """

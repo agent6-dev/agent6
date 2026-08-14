@@ -5,15 +5,15 @@
 Exposes the workspace's verify command, jail, patch tool, and DAG
 storage to an external MCP client (e.g. VS Code Copilot's hand-off
 menu, Claude Desktop). Speaks line-delimited JSON-RPC 2.0 over stdio,
-the same framing the embedded client in ``tools/mcp_client.py``
+the same framing the embedded client in `tools/mcp_client.py`
 consumes.
 
 Trust posture: identical to the agent's own tools. Every command-
-spawning handler routes through ``agent6.sandbox.jail.run_in_jail``
-via a ``ToolDispatcher`` constructed against the loaded config, so
+spawning handler routes through `agent6.sandbox.jail.run_in_jail`
+via a `ToolDispatcher` constructed against the loaded config, so
 the same Landlock + seccomp + namespace policy applies to anything
-the MCP client asks us to run. ``run_in_sandbox`` honours the
-existing ``[sandbox].run_commands`` gate; ``"ask"`` mode is treated
+the MCP client asks us to run. `run_in_sandbox` honours the
+existing `[sandbox].run_commands` gate; `"ask"` mode is treated
 as a hard deny because the MCP boundary is non-interactive.
 
 Tool surface:
@@ -61,7 +61,7 @@ _MAX_LINE_BYTES = 1 << 22  # 4 MiB; mirrors the client-side cap.
 
 class _RpcError(Exception):
     """A JSON-RPC level failure (bad method, bad params). Distinct from
-    ``ToolError``, which is surfaced as a tool-level isError result."""
+    `ToolError`, which is surfaced as a tool-level isError result."""
 
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
@@ -129,7 +129,7 @@ def _newest_first(dirs: list[Path]) -> list[Path]:
     """Session dirs sorted newest-first by session activity.
 
     Session ids are NOT chronologically sortable -- they start with a random
-    ``<adjective>-<noun>`` and the embedded ms timestamp rolls over -- so a
+    `<adjective>-<noun>` and the embedded ms timestamp rolls over -- so a
     name sort picks the alphabetically-last one, not the latest. Sort by
     logs.jsonl activity instead of directory mtime so a front-end writing
     front-end claims into an older session does not make it look newest.
@@ -152,7 +152,7 @@ def _most_recent_session_id(agent6_dir: Path) -> str | None:
 
 
 class MCPServer:
-    """One serve() session. Owns a ``ToolDispatcher`` and reads/writes
+    """One serve() session. Owns a `ToolDispatcher` and reads/writes
     line-delimited JSON-RPC over the supplied stdio handles."""
 
     def __init__(
@@ -183,7 +183,7 @@ class MCPServer:
 
     def serve(self) -> None:
         """Read JSON-RPC messages from stdin until EOF. Each request is
-        answered on stdout. Notifications (no ``id``) are ignored."""
+        answered on stdout. Notifications (no `id`) are ignored."""
         try:
             while True:
                 # Bounded read (mirrors tools/mcp_client._read_loop): an
@@ -444,8 +444,8 @@ class MCPServer:
 
 
 def run_server(config_path: Path | None) -> int:
-    """``agent6 mcp serve`` body. Loads the layered effective config
-    (global + repo, plus an optional explicit ``config_path``), spawns an
+    """`agent6 mcp serve` body. Loads the layered effective config
+    (global + repo, plus an optional explicit `config_path`), spawns an
     :class:`MCPServer` against cwd, and serves until stdin EOF. Returns 0
     on clean exit."""
     root = Path.cwd()

@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """A full-screen, scrollable view of a run's LLM conversation (current or past).
 
-The companion to ``LogScreen``: it folds the same ``logs.jsonl`` stream through
-the shared ``TranscriptFold`` into the conversation -- assistant reasoning and
+The companion to `LogScreen`: it folds the same `logs.jsonl` stream through
+the shared `TranscriptFold` into the conversation -- assistant reasoning and
 text, every tool call with its result, commits, and the verdict -- with the same
 glyphs the CLI stream uses.
 
@@ -11,10 +11,10 @@ Completed turns scroll in the main pane; a docked live pane at the bottom stream
 the turn IN PROGRESS -- a reasoning model can think for 30-60s before producing a
 tool call, so without it the view looks frozen.
 
-The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
-``RichLog`` renders as line Strips, which the framework's text selection cannot
-extract, so its text is not copyable; a ``Static`` renders as ``Content`` and is
-selectable -- matching the live pane, which is already a ``Static``.
+The scrollback is a `Static` in a `VerticalScroll` (not a `RichLog`): a
+`RichLog` renders as line Strips, which the framework's text selection cannot
+extract, so its text is not copyable; a `Static` renders as `Content` and is
+selectable -- matching the live pane, which is already a `Static`.
 """
 
 from __future__ import annotations

@@ -117,7 +117,7 @@ of holding the whole job in your head.
 
 def dag_rules_block(decompose: bool) -> str:
     """The DAG-rules block for the run-mode system prompt: the decompose-first
-    directive when ``[prompt].decompose`` is on, else the optional-DAG default."""
+    directive when `[prompt].decompose` is on, else the optional-DAG default."""
     return DAG_RULES_DECOMPOSE if decompose else DAG_RULES_OPTIONAL
 
 

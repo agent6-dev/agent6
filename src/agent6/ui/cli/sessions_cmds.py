@@ -163,15 +163,15 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     """Print the git diff a run produced (manifest.base_sha -> branch HEAD).
 
     Resolves the run id (or unique prefix; empty string means most-recent),
-    reads ``manifest.json`` for ``base_sha`` and ``run_branch``, then shells
-    out to ``git diff`` with operator-controlled argv (no LLM input). The call
+    reads `manifest.json` for `base_sha` and `run_branch`, then shells
+    out to `git diff` with operator-controlled argv (no LLM input). The call
     streams to the terminal, so it cannot go through git_ops._run; it carries
-    the same host-RCE hardening (``git_hardening_flags``: a poisoned
-    ``.git/config`` ``diff.external`` / ``diff.*.textconv`` / ``core.fsmonitor``
-    / repo hook must not execute on the host) plus ``DIFF_SHOW_SAFETY_FLAGS``,
+    the same host-RCE hardening (`git_hardening_flags`: a poisoned
+    `.git/config` `diff.external` / `diff.*.textconv` / `core.fsmonitor`
+    / repo hook must not execute on the host) plus `DIFF_SHOW_SAFETY_FLAGS`,
     which force the builtin diff renderer (git >= 2.53 executes even an EMPTY
-    ``diff.external`` override, so the ``-c`` flags alone would kill the printed
-    patch) and disable the per-file textconv driver the ``-c`` flags do not reach.
+    `diff.external` override, so the `-c` flags alone would kill the printed
+    patch) and disable the per-file textconv driver the `-c` flags do not reach.
     """
     cwd = Path.cwd()
     res = _resolve_session_manifest(
@@ -275,11 +275,11 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class _CommitsRef:
-    """Where a session's commits end (``base_sha..head_ref``): the run branch,
+    """Where a session's commits end (`base_sha..head_ref`): the run branch,
     the hidden chain ref for a run with branch_per_run off, or "" when the
-    session made none. ``reason`` says why there is no ref, and is "" exactly
-    when ``head_ref`` is one -- so the branch verbs (commits/merge) refuse on
-    ``reason`` while diff reads ``head_ref``."""
+    session made none. `reason` says why there is no ref, and is "" exactly
+    when `head_ref` is one -- so the branch verbs (commits/merge) refuse on
+    `reason` while diff reads `head_ref`."""
 
     head_ref: str
     reason: str
@@ -619,7 +619,7 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
 
 def _merged_tip(state_dir: Path, branch: str) -> str:
     """The run-branch tip recorded when the merge happened, or "" when none was
-    recorded (a pre-``tip`` manifest, or no readable manifest)."""
+    recorded (a pre-`tip` manifest, or no readable manifest)."""
     manifest = manifest_for_branch(state_dir, branch)
     if manifest is None:
         return ""
@@ -676,7 +676,7 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
     (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
     ones and unmerged ones (review first).
 
-    With ``--delete-squashed`` also force-delete branches the manifest confirms
+    With `--delete-squashed` also force-delete branches the manifest confirms
     were squash-merged into an existing base -- their content is safe in that
     base commit, and each deletion prints the exact command to undelete it (the
     commit survives in the reflog until GC). Unmerged branches are never

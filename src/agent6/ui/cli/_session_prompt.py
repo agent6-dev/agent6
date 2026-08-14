@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent6.ui.cli.resume import _cmd_resume
 
-# Free text is the next leg's operator instruction (what ``--steer`` carries);
+# Free text is the next leg's operator instruction (what `--steer` carries);
 # `/exit` finishes. No other verbs until a second one earns its place.
 _NEXT_PROMPT = "next (/exit to finish): "
 EXIT_COMMAND = "/exit"
@@ -46,11 +46,11 @@ def end_of_session_prompt(
     ask: Callable[[str], str],
     config_path: Path | None = None,
 ) -> int:
-    """Keep the session going from the terminal until ``/exit``.
+    """Keep the session going from the terminal until `/exit`.
 
     Each answer runs one resume leg carrying that text as the operator's
-    instruction, so continuing needs no ``agent6 resume <id>`` retyping.
-    ``/exit`` (or EOF) stops asking and prints the line that picks the session
+    instruction, so continuing needs no `agent6 resume <id>` retyping.
+    `/exit` (or EOF) stops asking and prints the line that picks the session
     back up: nothing is sealed, and a finished session stays resumable like any
     other. A leg that refuses returns its own code rather than re-prompting
     over the failure.

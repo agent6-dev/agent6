@@ -107,7 +107,7 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
     point-in-time read; a crashed source driver's fcntl lock releases on
     process death, so no stale-lock hang.
 
-    ``graph_version <= 0`` means the checkpoint predates the stamp or the
+    `graph_version <= 0` means the checkpoint predates the stamp or the
     curator was unreadable when it was written: with no version to rebuild at,
     copy the DAG verbatim (what every fork did before replay existed).
     """
@@ -162,8 +162,8 @@ def _select_checkpoint_path(
 ) -> Path | None:
     """Resolve which checkpoint of *src* to fork from, or None on error (printed).
 
-    Returns the latest checkpoint by default, the ``--at-turn N`` one when given,
-    or degrades to ``loop_state.json`` for a pre-checkpoint (old) run.
+    Returns the latest checkpoint by default, the `--at-turn N` one when given,
+    or degrades to `loop_state.json` for a pre-checkpoint (old) run.
     """
     legacy = src.session_dir / "loop_state.json"
     source_id = src.session_id
@@ -367,7 +367,7 @@ def undo_fork(
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, str] | None:
     """`/undo`: fork *session_id* at its undo target, unstarted. Returns
-    ``(child_id, undone_text)`` -- the text goes back in the composer to edit
+    `(child_id, undone_text)` -- the text goes back in the composer to edit
     and resend -- or None with the reason already printed."""
     state_dir = resolved_state_dir(cwd)
     target = undo_target(state_dir, session_id, reporter=reporter)
@@ -397,9 +397,9 @@ def create_fork(  # noqa: PLR0911
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
 
     Materializes the fork on disk (clone the checkpoint + DAG, write the
-    manifest, cut ``agent6/<child>`` at the checkpoint's committed HEAD, record
-    lineage) WITHOUT starting it. Returns ``(child_id, 0)`` on success, else
-    ``("", rc)`` after printing the reason. The caller (`ui/cli/fork.py`) then
+    manifest, cut `agent6/<child>` at the checkpoint's committed HEAD, record
+    lineage) WITHOUT starting it. Returns `(child_id, 0)` on success, else
+    `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`) then
     either reports the created id (`--no-run`) or continues it over resume.
     """
     state_dir = resolved_state_dir(cwd)

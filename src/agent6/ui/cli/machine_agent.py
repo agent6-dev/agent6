@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Subprocess entry: run ONE machine `agent` state.
 
-Invoked as ``python -m agent6.ui.cli.machine_agent <request.json> <result.json>``.
+Invoked as `python -m agent6.ui.cli.machine_agent <request.json> <result.json>`.
 Validates the request (`MachineAgentRequest`, the file-shape owner), runs the
 agent loop (`agent6.app.machine_agent.run_one`) injecting the live-view console,
 and writes the `AgentExecResult` result. The engine enforces the timeout by

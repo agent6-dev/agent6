@@ -2,14 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """Typed tool-handler results: every handler returns one of these frozen values
 instead of a bare dict, each owning its two representations -- the exact
-model-facing ``to_wire()`` dict and the one-line human ``summary()``.
+model-facing `to_wire()` dict and the one-line human `summary()`.
 
-- ``to_wire()`` -- the exact dict the loop JSON-dumps into the model's
+- `to_wire()` -- the exact dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
   insertion order, so field/emit order here is load-bearing), and value
   formats are the model-facing contract. Pinned by
-  ``tests/unit/test_tool_result_wire.py``.
-- ``summary()`` -- the one-line human string for the log tail / TUI; each
+  `tests/unit/test_tool_result_wire.py`.
+- `summary()` -- the one-line human string for the log tail / TUI; each
   result states its own (never inferred from the dict's keys).
 
 Internal values, so frozen dataclasses (not pydantic): the wire dict is
@@ -25,8 +25,8 @@ from typing import Any
 
 
 class ToolResult(abc.ABC):
-    """One tool handler's typed result: it owns the model-facing ``to_wire()``
-    dict and its one-line ``summary()``."""
+    """One tool handler's typed result: it owns the model-facing `to_wire()`
+    dict and its one-line `summary()`."""
 
     __slots__ = ()
 

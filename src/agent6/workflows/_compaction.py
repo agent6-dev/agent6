@@ -66,7 +66,7 @@ _IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url")
 def call_label(tool_name: str, tool_input: Any) -> str:
     """Short identity for a tool call ("read_file src/foo.py").
 
-    The placeholder hint, shared with the ``loop.compact.*`` event payloads so
+    The placeholder hint, shared with the `loop.compact.*` event payloads so
     every surface can say WHAT left the model's context, not just how much.
     """
     if not tool_name or not isinstance(tool_input, dict):
@@ -148,7 +148,7 @@ Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 class CompactionStats:
     """One tier-1 pass: identical results deduplicated, fresh tool_results
     elided (of which gisted), plus gist placeholders demoted to the bare
-    marker — with the identities of each (``call_label`` strings / read
+    marker — with the identities of each (`call_label` strings / read
     paths) for the event stream."""
 
     elided: int = 0
@@ -164,7 +164,7 @@ class CompactionStats:
 def elision_gist_placeholder(described: str, gist: str) -> str:
     """Tier-1 placeholder that keeps a distilled gist of the elided read.
 
-    Takes the caller's ``call_label`` rather than rebuilding one, so the gist
+    Takes the caller's `call_label` rather than rebuilding one, so the gist
     and bare markers carry the SAME identity (the conversation differ dedupes a
     gist->bare demotion on it). Rebuilt from the path alone it would drop a
     ranged read's start_line/limit, and every demotion would re-report as a
@@ -235,7 +235,7 @@ SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
 
 
 def cap_tool_result(content: str, *, tool_name: str) -> str:
-    """Cap a serialized tool_result payload at ``TOOL_RESULT_CHAR_CAP``
+    """Cap a serialized tool_result payload at `TOOL_RESULT_CHAR_CAP`
     chars without producing malformed JSON. If the payload is over the
     cap, wrap it in a new JSON envelope that tells the model:
     (a) the result was truncated, (b) how many chars were shown vs
@@ -299,11 +299,11 @@ def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
     """Extract a tier-2 compaction check-off from the summariser's output.
 
     The summariser is asked to append a fenced ```checkoff block holding
-    ``{"completed_ids": [...], "new_tasks": [...]}`` so agent6 can mark finished
+    `{"completed_ids": [...], "new_tasks": [...]}` so agent6 can mark finished
     tasks done and queue newly-discovered ones in the curator-owned DAG (the
     model rarely calls update_task itself). Returns
-    ``(completed_ids, new_task_titles)``. Best-effort and total: a missing or
-    malformed block yields ``([], [])`` so a bad summary never breaks the run.
+    `(completed_ids, new_task_titles)`. Best-effort and total: a missing or
+    malformed block yields `([], [])` so a bad summary never breaks the run.
     """
     m = _CHECKOFF_FENCE_RE.search(text)
     if m is None:
@@ -319,7 +319,7 @@ def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
 
 def _nonempty_strs(value: object) -> list[str]:
     """The stripped, non-empty strings in a JSON *value*, or [] if it is not a
-    list. Keeps parse_checkoff total: a present-but-non-list field (``null``
+    list. Keeps parse_checkoff total: a present-but-non-list field (`null`
     when nothing completed, a number, a bool -- all natural summariser output)
     yields [] rather than raising when iterated."""
     if not isinstance(value, list):
@@ -337,14 +337,14 @@ def context_chars(conversation: Conversation) -> int:
     """Approximate the full character size of the conversation context.
 
     Sums notice text, tool_result content, and -- for assistant turns -- every
-    value of every raw block, because ``Conversation.to_wire`` sends those
+    value of every raw block, because `Conversation.to_wire` sends those
     blocks VERBATIM: whatever is in them is in each later request. Used as the
     tier-2 (summarise-and-restart) trigger, which must measure something tier-1
     elision does not already cap, against ~80% of the model's real context
     window.
 
     Whole blocks rather than a list of known keys: counting only text/content/
-    tool_use-input scored a reasoning model's ``{"type": "thinking", ...}`` as
+    tool_use-input scored a reasoning model's `{"type": "thinking", ...}` as
     ZERO, so tier-2 waited on a number that omitted the largest thing in the
     context. A block type nobody has met yet must not be free either.
     """
@@ -381,7 +381,7 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
     """Drop thinking blocks from assistant turns older than the newest
     *keep_turns* assistant turns (Claude Code clears old thinking the same
     way). The newest stay: Anthropic requires the signed thinking block of a
-    tool_use still being answered, so callers pass ``keep_turns >= 1``.
+    tool_use still being answered, so callers pass `keep_turns >= 1`.
     Returns (turns stripped, chars removed)."""
     assistant_idxs = [
         i for i, turn in enumerate(conversation.turns) if isinstance(turn, AssistantTurn)
@@ -398,7 +398,7 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
 def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
     """The index where a tier-2 restart's verbatim tail begins: the largest
     tail of whole turns within *cap_chars* that starts on a wire-safe
-    boundary. Returns ``len(turns)`` when nothing is kept (cap 0, or no safe
+    boundary. Returns `len(turns)` when nothing is kept (cap 0, or no safe
     boundary fits).
 
     A safe start is any turn except a user turn carrying tool_results: that
@@ -448,9 +448,9 @@ def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) ->
     """Paths targeted by apply_edit / apply_patch in the last *last_turns*
     assistant turns: the files the worker is actively editing. Tier-1
     elision deprioritises their read_file results (see
-    ``compact_old_tool_results``), because a placeholder there triggers a paid
+    `compact_old_tool_results`), because a placeholder there triggers a paid
     re-read before the very next edit. Best-effort: an apply_patch without a
-    ``path`` argument falls back to the patch headers; an unparseable patch
+    `path` argument falls back to the patch headers; an unparseable patch
     just goes unprotected.
     """
     out: set[str] = set()
@@ -517,8 +517,8 @@ def compact_old_tool_results(
 ) -> CompactionStats:
     """Elide old tool_result blocks once cumulative content exceeds the
     threshold. Walks the conversation oldest-first, replaces each tool_result's
-    ``content`` with a short identity-bearing placeholder, stops once total
-    size is back under ``max_total_bytes``. The most recent ``keep_recent``
+    `content` with a short identity-bearing placeholder, stops once total
+    size is back under `max_total_bytes`. The most recent `keep_recent`
     are always preserved, as is every tool_result in the last
     tool_result-bearing turn: the loop compacts at top-of-iteration, before
     the provider call that would deliver that batch, so the model has never
@@ -527,12 +527,12 @@ def compact_old_tool_results(
     trailing steer or nudge user turn pushes the fresh, still undelivered
     results off the final index, and one turn can carry several such blocks.)
 
-    ``protect_paths`` (the actively-edited set from ``recently_edited_paths``)
+    `protect_paths` (the actively-edited set from `recently_edited_paths`)
     deprioritises rather than exempts: read_file results for those paths are
     elided only after every other candidate, so the hot file's content
     survives as long as the budget allows but the hard bound still holds.
 
-    With a ``gister``, each large unprotected read_file victim decays to a
+    With a `gister`, each large unprotected read_file victim decays to a
     placeholder carrying a distilled gist of the file (one batched distiller
     call per pass, newest read per path, caps above); everything else gets the
     bare marker. Gists make the pass land slightly OVER the bare-accounting
@@ -631,8 +631,8 @@ def _dedupe_identical_results(
     cache-invalidation points. Claude Code dedupes the same way; pi, which
     only ever compacts at the context edge, has no tier this could live in.
 
-    The undelivered final batch, the ``keep_recent`` newest results,
-    already-elided placeholders, and sub-``_DEDUP_MIN_CHARS`` results are
+    The undelivered final batch, the `keep_recent` newest results,
+    already-elided placeholders, and sub-`_DEDUP_MIN_CHARS` results are
     never rewritten.
     """
     if len(pointers) <= keep_recent:
@@ -671,7 +671,7 @@ def _dedupe_identical_results(
 
 @dataclass(slots=True)
 class _Tier1Pass:
-    """State shared by the phases of one tier-1 pass (the loop's ``_TurnState``
+    """State shared by the phases of one tier-1 pass (the loop's `_TurnState`
     pattern: one mutable object instead of six hand-threaded locals)."""
 
     conversation: Conversation
@@ -748,7 +748,7 @@ class _Tier1Pass:
                 self.gists[keys[path]] = flat[:GIST_MAX_CHARS]
 
     def apply(self) -> None:
-        """Apply the whole plan (``plan`` already chose the minimal set; gist
+        """Apply the whole plan (`plan` already chose the minimal set; gist
         placeholders only add back a bounded extra on top of it)."""
         for turn_idx, item_idx, size in self.victims:
             call = self._item(turn_idx, item_idx).for_call

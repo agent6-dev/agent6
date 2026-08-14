@@ -26,12 +26,12 @@ from agent6.portable import atomic_write
 class ProviderError(Exception):
     """A provider call failed.
 
-    ``status_code`` is the upstream HTTP status when the failure originated
+    `status_code` is the upstream HTTP status when the failure originated
     from an API error response (None for network/parse failures). The loop's
     retry wrapper uses it to skip retrying permanent client errors such as
     401/402/403 that will never succeed on a second attempt.
 
-    ``retry_after_s`` carries the upstream ``Retry-After`` hint (seconds) on a
+    `retry_after_s` carries the upstream `Retry-After` hint (seconds) on a
     rate-limit/unavailable response (429/503) when present, so the retry wrapper
     waits at least as long as the server asked instead of its own shorter
     backoff. None when absent.
@@ -61,10 +61,10 @@ class ProviderInterrupted(ProviderError):
 
 
 def parse_retry_after(headers: Mapping[str, str]) -> float | None:
-    """Parse an HTTP ``Retry-After`` header to a non-negative seconds value.
+    """Parse an HTTP `Retry-After` header to a non-negative seconds value.
 
-    Accepts the two RFC 7231 forms: a delta in seconds (``"120"``) or an
-    HTTP-date (``"Wed, 21 Oct 2026 07:28:00 GMT"``, converted to a delay from
+    Accepts the two RFC 7231 forms: a delta in seconds (`"120"`) or an
+    HTTP-date (`"Wed, 21 Oct 2026 07:28:00 GMT"`, converted to a delay from
     now). Returns None when the header is absent or unparseable. Case-insensitive
     lookup works with httpx2's header mapping.
     """
@@ -251,10 +251,10 @@ class ProviderResponse:
     cache_creation_tokens: int
     # provider-reported USD cost for this single call. Currently
     # populated only by the OpenAI-compatible provider when the upstream
-    # gateway returns ``usage.cost`` (OpenRouter does; OpenAI direct does
+    # gateway returns `usage.cost` (OpenRouter does; OpenAI direct does
     # not; Anthropic does not). Zero means "no authoritative figure was
     # supplied", callers fall back to the price-table estimate in
-    # ``BudgetTracker.estimate_usd``.
+    # `BudgetTracker.estimate_usd`.
     cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
 

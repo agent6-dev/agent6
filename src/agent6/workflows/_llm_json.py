@@ -15,7 +15,7 @@ from typing import Any
 
 
 def balanced_objects(text: str) -> list[str]:
-    """Every top-level balanced ``{...}`` span in *text* (brace depth,
+    """Every top-level balanced `{...}` span in *text* (brace depth,
     honoring string literals + escapes)."""
     spans: list[str] = []
     depth = 0

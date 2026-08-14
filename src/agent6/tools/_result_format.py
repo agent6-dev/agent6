@@ -18,10 +18,10 @@ def passthrough_env() -> dict[str, str]:
 
 
 def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | None:
-    """Apply the metric ``pattern`` regex to combined stdout+stderr.
+    """Apply the metric `pattern` regex to combined stdout+stderr.
 
     Shared metric parser; centralised so the workflow and tool handler
-    scores from the same command output. Returns ``None`` on regex compile
+    scores from the same command output. Returns `None` on regex compile
     failure, no-match, or non-numeric capture group - the caller treats
     that as "no score this turn" and falls back to raw stdout inspection.
     """

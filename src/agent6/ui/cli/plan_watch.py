@@ -53,8 +53,8 @@ from agent6.viewmodel.state import SESSION_START_EVENTS
 def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a (possibly prefix) plan id under the per-repo state dir.
 
-    Prints an error and returns None on failure. Used by ``run --from-plan``,
-    ``plan show``, and ``plan edit``. An empty *session_id* resolves the most recent
+    Prints an error and returns None on failure. Used by `run --from-plan`,
+    `plan show`, and `plan edit`. An empty *session_id* resolves the most recent
     plan, matching the omit-for-latest convention of the sessions commands.
     """
     plans_dir = _plans_dir(Path.cwd())
@@ -110,7 +110,7 @@ def _cmd_plan_edit(session_id: str) -> int:
 
 
 def _most_recent_plan_session_id(plans_dir: Path) -> str | None:
-    """Most recently active plan dir that holds a ``plan.md``.
+    """Most recently active plan dir that holds a `plan.md`.
 
     Used by bare `agent6 run` (no task) to offer the latest plan for execution.
     """
@@ -134,8 +134,8 @@ def _cmd_watch(
 ) -> int:
     """Read-only live view of a run directory.
 
-    Default follows the run's conversation (the same render as ``agent6 run``).
-    ``--raw`` is the no-deps event-line tail; ``--tui`` the full-screen dashboard.
+    Default follows the run's conversation (the same render as `agent6 run`).
+    `--raw` is the no-deps event-line tail; `--tui` the full-screen dashboard.
     """
     cwd = Path.cwd()
     # An explicit id resolves across every run-style bucket (runs/asks/machine-
@@ -222,7 +222,7 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
     """The one-line state `sessions show` prints (and emits as --json "state").
 
-    Leads with the LISTING's word -- ``status_for_session_dir``, the one decision
+    Leads with the LISTING's word -- `status_for_session_dir`, the one decision
     every surface feeds -- then appends this surface's diagnostic detail (what
     to do, or why the word applies). The pre-unification words lied twice: a
     crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
@@ -431,7 +431,7 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
     """Pretty-print one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
     Falls back to the raw line on parse error so a corrupt event doesn't
-    abort the tail. ``session_start_ts`` is the wall-clock timestamp of the
+    abort the tail. `session_start_ts` is the wall-clock timestamp of the
     earliest event seen so far; used to render relative elapsed seconds.
     """
     raw = line.rstrip("\n")
@@ -466,16 +466,16 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
 
 
 class _CliFrontEnd:
-    """Makes an interactive ``agent6 attach`` a real run FRONT-END, not just a
-    reader. When the streamed log surfaces an unanswered ``run_command`` approval
-    or ``ask_user`` question, it prompts on the controlling terminal with the SAME
+    """Makes an interactive `agent6 attach` a real run FRONT-END, not just a
+    reader. When the streamed log surfaces an unanswered `run_command` approval
+    or `ask_user` question, it prompts on the controlling terminal with the SAME
     CLI prompts a foreground run uses and writes the answer back over the file
     bridge -- so watching a detached run is "as if you never detached". The
-    caller registers a ``frontends/`` claim so the worker's approver bridges to it (a
+    caller registers a `frontends/` claim so the worker's approver bridges to it (a
     live front-end always wins over the detach away-mode).
 
     Prompt ids are deterministic counters, and the log replays from the start on
-    attach, so ``_answered`` (ids with an answer seen) and ``_handled`` (ids WE
+    attach, so `_answered` (ids with an answer seen) and `_handled` (ids WE
     prompted for) gate re-prompting a historical or already-answered prompt."""
 
     def __init__(self, session_dir: Path, view: ConsoleView) -> None:
@@ -492,7 +492,7 @@ class _CliFrontEnd:
         self._replayed: int = 0
 
     def open_prompts_at_attach(self, events_path: Path) -> list[tuple[str, str, object]]:
-        """Pre-scan the existing log: seed ``_answered`` and return the prompts
+        """Pre-scan the existing log: seed `_answered` and return the prompts
         that are open right now (emitted, not answered) so a run already waiting
         at an approval when you attach is handled at once."""
         open_prompts: dict[str, tuple[str, str, object]] = {}
@@ -548,7 +548,7 @@ class _CliFrontEnd:
 
     def react(self, event: dict[str, object]) -> None:
         """Live follow: answer a NEW unanswered prompt; a historical/answered one
-        (id in ``_answered``/``_handled``) is skipped on the replay."""
+        (id in `_answered`/`_handled`) is skipped on the replay."""
         etype = str(event.get("type", ""))
         pid = str(event.get("id", ""))
         if self._replayed > 0:
@@ -623,10 +623,10 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
 
 def _watch_transcript(target: Path) -> int:
     """Follow a run's conversation live and, on an interactive terminal, ATTACH
-    to it as a front-end: fold ``logs.jsonl`` through the same ``ConsoleView`` as
-    ``agent6 run`` and, when the run asks for a ``run_command`` approval or an
-    ``ask_user`` answer, prompt on the terminal exactly as the foreground run
-    would (see ``_CliFrontEnd``). Piped/redirected (no tty) stays a pure reader.
+    to it as a front-end: fold `logs.jsonl` through the same `ConsoleView` as
+    `agent6 run` and, when the run asks for a `run_command` approval or an
+    `ask_user` answer, prompt on the terminal exactly as the foreground run
+    would (see `_CliFrontEnd`). Piped/redirected (no tty) stays a pure reader.
     Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
     A detach emits no session.end, so watching a detached run follows it to its end."""
     events_path = target / LOGS_NAME
@@ -686,7 +686,7 @@ def _watch_transcript(target: Path) -> int:
 
 
 def _line_is_session_end(raw: bytes | str) -> bool:
-    """True if a logs.jsonl line is a ``session.end`` event."""
+    """True if a logs.jsonl line is a `session.end` event."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)
@@ -696,7 +696,7 @@ def _line_is_session_end(raw: bytes | str) -> bool:
 
 
 def _session_has_ended(events_path: Path) -> bool:
-    """True if the run's last logged event is ``session.end`` (finished, nothing to
+    """True if the run's last logged event is `session.end` (finished, nothing to
     follow). A resume appends events after a session.end, so only the LAST line
     counts."""
     try:
@@ -710,7 +710,7 @@ def _session_has_ended(events_path: Path) -> bool:
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0912, PLR0915
-    """Tail ``logs.jsonl`` line-by-line with no extra deps.
+    """Tail `logs.jsonl` line-by-line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
     Pretty-prints each event with the type and key fields. Returns 0 on

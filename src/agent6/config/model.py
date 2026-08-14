@@ -7,19 +7,19 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.network = "auto"``,
-``sandbox.run_commands = "ask"``, ``sandbox.protect_git = true``; git push,
-``--force``, and history rewrites are refused unconditionally by ``git_ops``,
-with no config override at all). Configs layer: global ``$XDG_CONFIG_HOME``
+(`sandbox.network = "auto"`,
+`sandbox.run_commands = "ask"`, `sandbox.protect_git = true`; git push,
+`--force`, and history rewrites are refused unconditionally by `git_ops`,
+with no config override at all). Configs layer: global `$XDG_CONFIG_HOME`
 defaults, then the per-repo config (out of the workspace, under the state
 dir), so a repo is zero-config when the global config supplies providers +
 models. Use
-``agent6 config show`` to audit the *effective* value of every field and
+`agent6 config show` to audit the *effective* value of every field and
 exactly where it came from (default / global / repo / flag). The one thing a
 run genuinely cannot guess, a provider+key, is checked by
-:meth:`Config.require_runnable` with a pointer to ``agent6 connect`` rather
-than a load-time failure, so ``config show`` always works. The repo's
-``verify_command`` is optional: `agent6 run`/`plan` infer one per run when it
+:meth:`Config.require_runnable` with a pointer to `agent6 connect` rather
+than a load-time failure, so `config show` always works. The repo's
+`verify_command` is optional: `agent6 run`/`plan` infer one per run when it
 is unset (see :mod:`agent6.verify_infer`), else run gateless.
 """
 
@@ -63,7 +63,7 @@ from agent6.types import RoleName
 class ConfigError(OperatorError):
     """Raised when the config file is missing, malformed, or fails validation.
 
-    An OperatorError: the config is the operator's file, so ``cli_main``
+    An OperatorError: the config is the operator's file, so `cli_main`
     presents it as a refusal, never a crash report.
     """
 
@@ -77,18 +77,18 @@ class RoleModel(BaseModel):
     `provider` is the name (TOML table key) of an entry in `[providers.*]`.
 
     `temperature` is the sampling temperature agent6 will pin on every
-    call for this role. Defaults to ``0.0``, agent6's tool-use loop is a
+    call for this role. Defaults to `0.0`, agent6's tool-use loop is a
     search-and-act feedback loop and high-temperature sampling causes
     observable degeneration on some open-weights models (caught
-    Kimi K2.6 emitting 15997 literal ``\\n`` escapes in a single
-    ``old_string`` argument before hitting the completion-tokens cap).
+    Kimi K2.6 emitting 15997 literal `\\n` escapes in a single
+    `old_string` argument before hitting the completion-tokens cap).
     Anthropic and OpenAI models are tuned to behave well at any
     temperature; OpenRouter routes to provider defaults that vary by
     model, so pinning is the only way to make benches reproducible.
-    Set to ``null`` only if you specifically want the provider's default
-    behaviour. TOML has no null literal and ``temperature = nan`` fails the
+    Set to `null` only if you specifically want the provider's default
+    behaviour. TOML has no null literal and `temperature = nan` fails the
     0.0-2.0 bounds, so null is reachable only via the Python API; omitting the
-    key leaves the ``0.0`` default, not the provider's default.
+    key leaves the `0.0` default, not the provider's default.
     """
 
     model_config = MODEL_CONFIG
@@ -107,11 +107,11 @@ class RoleModel(BaseModel):
         le=2.0,
         description="Pinned per call (`0.0` to `2.0`). `0.0` keeps tool use stable.",
     )
-    # Reasoning/thinking effort for this role. ``None`` leaves the
-    # provider default; ``off`` disables it explicitly. Mapped per
+    # Reasoning/thinking effort for this role. `None` leaves the
+    # provider default; `off` disables it explicitly. Mapped per
     # provider: OpenAI-compatible reasoning models receive a
-    # ``reasoning.effort`` knob, Anthropic models receive an
-    # ``extended_thinking`` budget. Non-reasoning models ignore it.
+    # `reasoning.effort` knob, Anthropic models receive an
+    # `extended_thinking` budget. Non-reasoning models ignore it.
     thinking: ThinkingLevel | None = Field(
         default=None,
         description=(
@@ -126,14 +126,14 @@ class ModelsConfig(BaseModel):
 
     Three roles, all optional:
 
-    - ``worker`` drives the single-loop agent (``agent6 run`` / ``agent6
+    - `worker` drives the single-loop agent (`agent6 run` / ``agent6
       resume``); its pricing also drives the USD -> token budget
       conversion.
-    - ``planner`` drives ``agent6 plan`` (the read-only planning pass).
-      Unset -> falls back to ``worker`` (set it to a frontier model + high
+    - `planner` drives `agent6 plan` (the read-only planning pass).
+      Unset -> falls back to `worker` (set it to a frontier model + high
       thinking for careful up-front planning).
-    - ``reviewer`` drives the one-shot ``agent6 review`` subcommand and the
-      optional in-loop critic. Unset -> falls back to ``worker``.
+    - `reviewer` drives the one-shot `agent6 review` subcommand and the
+      optional in-loop critic. Unset -> falls back to `worker`.
 
     Any configured provider may serve any role. Leaving every role unset is
     valid (e.g. a global config that only declares providers); a role is
@@ -181,9 +181,9 @@ class ModelsConfig(BaseModel):
         return None
 
     def source_role(self, role: RoleName) -> RoleName:
-        """The configured entry ``resolve(role)`` reads: *role* itself when
+        """The configured entry `resolve(role)` reads: *role* itself when
         explicitly set, else the worker fallback. Lets an error message name
-        the config key the user actually wrote (mirrors ``resolve`` above)."""
+        the config key the user actually wrote (mirrors `resolve` above)."""
         return role if role in self.configured() else "worker"
 
 
@@ -197,8 +197,8 @@ class Agent6Section(BaseModel):
         description="Config schema version (must be `1`).",
     )
     # Absolute base directory for per-repo agent6 state (this per-repo config +
-    # all run state), which lives OUT of the workspace under ``<base>/<repo-id>/``
-    # (default ``$XDG_STATE_HOME/agent6``; see ``agent6.paths.state_base``). Can
+    # all run state), which lives OUT of the workspace under `<base>/<repo-id>/`
+    # (default `$XDG_STATE_HOME/agent6`; see `agent6.paths.state_base`). Can
     # ONLY be set in the GLOBAL config: it locates the per-repo config, so a
     # per-repo/flag value would be chicken-and-egg. Must be absolute. Point it
     # at a persisted, out-of-cwd path (e.g. a mounted volume) to keep run state
@@ -280,7 +280,7 @@ class Config(BaseModel):
         max_tokens_fallback: int | None = None,
     ) -> Config:
         """Return a copy with budget fields overridden (the per-run CLI flags,
-        each writing the config field of the same name). ``None`` keeps the
+        each writing the config field of the same name). `None` keeps the
         existing value."""
         if max_usd is None and max_tokens_fallback is None:
             return self
@@ -301,12 +301,12 @@ class Config(BaseModel):
     ) -> Config:
         """Return a copy with per-invocation sandbox overrides from CLI flags.
 
-        ``disable_sandbox`` forces ``sandbox.isolation = "none"`` (unconfined).
-        ``auto_approve`` upgrades ``run_commands`` ``"ask" -> "yes"`` but never
-        resurrects a withheld ``"no"`` (a per-invocation flag must not grant a
+        `disable_sandbox` forces `sandbox.isolation = "none"` (unconfined).
+        `auto_approve` upgrades `run_commands` `"ask" -> "yes"` but never
+        resurrects a withheld `"no"` (a per-invocation flag must not grant a
         capability the standing policy denied); it covers every MCP server's
-        ``approve`` too, because "do not prompt me this run" that still prompted
-        would not be that. ``no_commands`` pins ``run_commands`` to ``"no"`` and
+        `approve` too, because "do not prompt me this run" that still prompted
+        would not be that. `no_commands` pins `run_commands` to `"no"` and
         always may: tightening needs no permission. All are operator-supplied
         (flag/env); the LLM can reach none of them.
         """
@@ -335,10 +335,10 @@ class Config(BaseModel):
         max_usd: float | None = None,
         max_tokens_fallback: int | None = None,
     ) -> Config:
-        """Return a copy with a machine ``agent`` state's per-state knobs applied.
+        """Return a copy with a machine `agent` state's per-state knobs applied.
 
-        Overrides the ``worker`` role (the role machine agent loops run as)
-        and the budget ledgers. ``None`` means "inherit the effective config".
+        Overrides the `worker` role (the role machine agent loops run as)
+        and the budget ledgers. `None` means "inherit the effective config".
         Re-validates so the provider-name checks run against the merged result."""
         data = self.model_dump(mode="python")
         worker = data.setdefault("models", {}).get("worker")
@@ -361,7 +361,7 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose ``workflow.verify_command`` is *argv*, `()` for
+        """Return a copy whose `workflow.verify_command` is *argv*, `()` for
         a gateless run.
 
         How `agent6 run`/`plan` inject a verify command inferred at run start,
@@ -374,13 +374,13 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def clamped_for_ask(self) -> Config:
-        """Return a copy with ``sandbox.run_commands`` clamped for `agent6 ask`.
+        """Return a copy with `sandbox.run_commands` clamped for `agent6 ask`.
 
         An ask is a question with the operator sitting there, often in a
         directory that is not even a repo, so it must never execute anything
-        unwatched: ``"yes"`` becomes ``"ask"``. Only ever tightens -- ``"no"``
+        unwatched: `"yes"` becomes `"ask"`. Only ever tightens -- `"no"`
         stays refused, because a run can never loosen a boundary the operator
-        set. IN-MEMORY only, like ``with_verify_command``: `config show` keeps
+        set. IN-MEMORY only, like `with_verify_command`: `config show` keeps
         reporting what the operator actually configured.
         """
         if self.sandbox.run_commands != "yes":
@@ -390,11 +390,11 @@ class Config(BaseModel):
         return Config.model_validate(data)
 
     def with_decompose(self, value: Literal["on", "off"]) -> Config:
-        """Return a copy with ``prompt.decompose`` pinned to *value*.
+        """Return a copy with `prompt.decompose` pinned to *value*.
 
-        Used by the CLI to resolve ``"auto"`` (from the model-capability
+        Used by the CLI to resolve `"auto"` (from the model-capability
         registry) before the workflow starts, so the engine only ever sees
-        on/off. IN-MEMORY only, like ``with_verify_command``.
+        on/off. IN-MEMORY only, like `with_verify_command`.
         """
         data = self.model_dump(mode="python")
         data.setdefault("prompt", {})["decompose"] = value
@@ -405,9 +405,9 @@ class Config(BaseModel):
 
         Checks (in order) that a provider is configured and the role resolves
         to a model whose provider exists. Messages point at the command that
-        fixes the gap so a fresh user is never stuck. ``verify_command`` is NOT
+        fixes the gap so a fresh user is never stuck. `verify_command` is NOT
         required: `agent6 run`/`plan` infer one when unset (and fall back to a
-        gateless run if even that fails) -- see ``agent6.verify_infer``.
+        gateless run if even that fails) -- see `agent6.verify_infer`.
         """
         if not self.providers:
             raise ConfigError(
@@ -450,8 +450,8 @@ def validate_config(
     """Validate an already-parsed (and possibly layer-merged) config dict.
 
     Shared by :func:`load_config` and the layered loader
-    (``agent6.config.layer``) so both surface identical field-pointing errors.
-    ``locate`` maps a dotted leaf to a "which file, how to fix" hint appended to
+    (`agent6.config.layer`) so both surface identical field-pointing errors.
+    `locate` maps a dotted leaf to a "which file, how to fix" hint appended to
     its error line, so a stale value in a layered config names its own source.
     """
     try:

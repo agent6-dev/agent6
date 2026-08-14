@@ -2,26 +2,26 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-owned conversation: typed turns over the provider wire.
 
-``Conversation`` owns the loop's history as typed turns -- one shape for
+`Conversation` owns the loop's history as typed turns -- one shape for
 every consumer (compaction, cache roll, critic tail) -- and produces the
-Anthropic-wire ``list[dict]`` only at the boundary:
+Anthropic-wire `list[dict]` only at the boundary:
 
-- ``to_wire()`` builds the exact dict list providers and resume snapshots
-  take: same keys, same order, ``cache_control`` stamped from the mark
+- `to_wire()` builds the exact dict list providers and resume snapshots
+  take: same keys, same order, `cache_control` stamped from the mark
   positions. Assistant blocks are the verbatim tuple the provider returned,
   so thinking blocks / signatures / unknown block types round-trip untouched.
-- ``from_wire()`` is the one guarded parser (snapshot load): it accepts
+- `from_wire()` is the one guarded parser (snapshot load): it accepts
   exactly the shapes the loop writes and reproduces them byte-for-byte, and
   it fails loudly on anything else.
 
-Pair safety is structural, not disciplined: a ``tool_use`` turn can only be
-followed by ``results()`` covering exactly its ids, ``pop_quiet_assistant``
-removes only a turn with no tool calls, ``restart`` keeps whole turns, and
-compaction rewrites result *content* in place via ``set_result_content``. No
-operation can strand a ``tool_use`` without its ``tool_result``.
+Pair safety is structural, not disciplined: a `tool_use` turn can only be
+followed by `results()` covering exactly its ids, `pop_quiet_assistant`
+removes only a turn with no tool calls, `restart` keeps whole turns, and
+compaction rewrites result *content* in place via `set_result_content`. No
+operation can strand a `tool_use` without its `tool_result`.
 
-Rolling cache breakpoints (``roll_cache_marks``): Anthropic prompt caching
-bills a request's prefix up to a ``cache_control`` breakpoint at 0.1x once
+Rolling cache breakpoints (`roll_cache_marks`): Anthropic prompt caching
+bills a request's prefix up to a `cache_control` breakpoint at 0.1x once
 cached (1.25x to write). The provider marks the system prompt and the tool
 list, but the conversation dominates input tokens in a long run and grows
 every turn: without a breakpoint near the tail, each turn re-bills the whole
@@ -29,7 +29,7 @@ history at full price (quadratic in run length). The roll keeps exactly two
 marks: the previous call's position (the guaranteed cache HIT) and the final
 block of the last user turn (the WRITE the next call's hit lands on) --
 4 breakpoints total with the provider's two static ones, Anthropic's
-per-request maximum. Marks persist through ``to_wire()`` into resume
+per-request maximum. Marks persist through `to_wire()` into resume
 snapshots, so continuity survives crash-resume; tier-1 elision rewrites old
 blocks and costs one 1.25x re-write on the next call, and the rolling pair
 keeps caching from there. OpenAI-format providers rebuild content
@@ -49,7 +49,7 @@ _EPHEMERAL = {"type": "ephemeral"}
 class ToolUse:
     """One tool call from an assistant turn, parsed once from the raw blocks.
 
-    ``input`` is whatever the provider parsed (both providers guarantee a
+    `input` is whatever the provider parsed (both providers guarantee a
     dict in practice); the dispatcher's schema validation owns its shape.
     """
 
@@ -60,9 +60,9 @@ class ToolUse:
 
 @dataclass(frozen=True, slots=True)
 class ToolResultItem:
-    """One tool_result block. ``for_call`` is the ToolUse it answers, paired
+    """One tool_result block. `for_call` is the ToolUse it answers, paired
     at construction, so compaction never rebuilds an id index. In-memory
-    only: the wire carries ``tool_use_id``."""
+    only: the wire carries `tool_use_id`."""
 
     tool_use_id: str
     content: str
@@ -79,9 +79,9 @@ class Notice:
 
 @dataclass(frozen=True, slots=True)
 class AssistantTurn:
-    """One assistant message. ``raw_content`` is the verbatim block tuple the
+    """One assistant message. `raw_content` is the verbatim block tuple the
     provider returned (exact round-trip; tool_use IDs, thinking blocks and
-    unknown block types survive untouched); ``tool_uses`` is its parsed
+    unknown block types survive untouched); `tool_uses` is its parsed
     tool_use view."""
 
     raw_content: tuple[Any, ...]
@@ -134,8 +134,8 @@ def _results_first[T](items: Sequence[T], *, key: Callable[[T], object] = lambda
 class Conversation:
     """Mutable container of frozen turns plus the rolling cache-mark pair.
 
-    Marks are (turn index, item index) positions into user turns; ``to_wire``
-    stamps ``cache_control`` there. They live here (not on the frozen items)
+    Marks are (turn index, item index) positions into user turns; `to_wire`
+    stamps `cache_control` there. They live here (not on the frozen items)
     because breakpoint placement is a wire concern that moves as the tail
     grows, while the turns themselves are history.
     """
@@ -273,7 +273,7 @@ class Conversation:
         hit) and mark the final item of the newest user turn (the new write).
         Idempotent, so a crash-resume re-issuing the same call keeps its
         positions; safe after compaction (positions survive content rewrites,
-        and ``restart`` already dropped any that lost their block)."""
+        and `restart` already dropped any that lost their block)."""
         target: tuple[int, int] | None = None
         for t_idx in range(len(self._turns) - 1, -1, -1):
             turn = self._turns[t_idx]
@@ -298,7 +298,7 @@ class Conversation:
 
     def to_wire(self) -> list[dict[str, Any]]:
         """The provider/snapshot message list: fresh dicts for user turns
-        (with ``cache_control`` stamped at the mark positions), the verbatim
+        (with `cache_control` stamped at the mark positions), the verbatim
         raw blocks for assistant turns."""
         marks = set(self._marks)
         out: list[dict[str, Any]] = []
@@ -327,7 +327,7 @@ class Conversation:
         """Parse a persisted message list (resume/fork snapshot load). Accepts
         exactly the shapes the loop writes and raises ValueError loudly on
         every other shape (a snapshot this loop cannot have written). A turn
-        in canonical order round-trips byte-for-byte through ``to_wire``; a
+        in canonical order round-trips byte-for-byte through `to_wire`; a
         snapshot from before the results-first canonicalization is HEALED on
         load (its notice moves after the results, marks following their
         blocks), which is what makes such a snapshot resumable at all."""
@@ -377,7 +377,7 @@ def _block_mark(block: dict[str, Any], *, where: str) -> bool:
 
 
 def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> ToolResultItem | Notice:
-    """One user-turn wire block -> its typed item. ``pending`` is the
+    """One user-turn wire block -> its typed item. `pending` is the
     preceding assistant turn's unanswered tool_uses; results consume it in
     order (Conversation.results re-validates the full pairing)."""
     if not isinstance(block, dict):

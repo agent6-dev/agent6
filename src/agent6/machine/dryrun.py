@@ -6,15 +6,15 @@ Pure validation of a loaded :class:`MachineSpec` with **no** real-world I/O,
 no jail, no network, no provider calls, no clock. Two passes:
 
 - **Per-state**: synthesize the success fact each non-branch state would emit
-  (a tool's ``output_schema``-shaped JSON / an agent's ``finish_session`` payload),
+  (a tool's `output_schema`-shaped JSON / an agent's `finish_session` payload),
   push it through the real :func:`agent6.machine.engine.reduce`, and confirm the
   capture binds cleanly and the produced label routes to a declared state.
-- **Per-branch**: evaluate every ``when`` clause against an operator-supplied
+- **Per-branch**: evaluate every `when` clause against an operator-supplied
   blackboard fixture (overlaid on the declared defaults) and report the
-  winning ``goto``.
+  winning `goto`.
 
 Everything reuses the engine/predicate/model code paths the live runner uses,
-so a green ``machine test`` means the plumbing, schemas, captures, and routing
+so a green `machine test` means the plumbing, schemas, captures, and routing
 are sound, only the actual tool output / agent judgement / wall-clock differ
 at run time.
 """
@@ -86,9 +86,9 @@ def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...
     """A minimal, schema-valid example object for *schema_name*.
 
     Produces exactly the declared fields (so it passes the strict
-    ``extra="forbid"``-style payload check): scalars get a zero value, lists an
+    `extra="forbid"`-style payload check): scalars get a zero value, lists an
     empty list, enums their first member, nested records recurse. Schema cycles
-    (already rejected by ``validate_semantics``) are guarded with ``_seen``.
+    (already rejected by `validate_semantics`) are guarded with `_seen`.
     """
     fields = spec.schemas.get(schema_name)
     if fields is None:  # pragma: no cover - validate_semantics guarantees it exists
@@ -212,7 +212,7 @@ def _check_branch(
 def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None) -> DryRunReport:
     """Run the per-state and per-branch dry-run passes over *spec*.
 
-    *blackboard_fixture* (e.g. from ``--blackboard``) is overlaid on the
+    *blackboard_fixture* (e.g. from `--blackboard`) is overlaid on the
     declared variable defaults before each pass, letting an operator steer
     branch predicates and capture templates without any real execution.
     """

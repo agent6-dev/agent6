@@ -6,9 +6,9 @@ Two interlocking streaks guard a worker that stops making progress: the
 REPEAT streak (the same (tool, args) signature back to back, which powers the
 identical-result stub and the repeat warning) and the ERROR streak (the same
 tool failing the same way, which climbs the nudge/escalate/stop ladder). They
-share ``last_served_content`` — the bytes most recently served to the model,
+share `last_served_content` — the bytes most recently served to the model,
 success or error — and a successful dispatch must clear the whole error
-spiral: that reset-covers-every-field invariant lives in ``note_success`` so
+spiral: that reset-covers-every-field invariant lives in `note_success` so
 adding a field cannot silently miss the reset site.
 """
 

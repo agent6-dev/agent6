@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Provider-response classification for the loop's call wrapper.
 
-Pure predicates + policy constants the retry wrapper (``_call_with_retry``) and
-the per-turn error handler (``_turn_provider_call``) consume: which HTTP statuses
+Pure predicates + policy constants the retry wrapper (`_call_with_retry`) and
+the per-turn error handler (`_turn_provider_call`) consume: which HTTP statuses
 are permanent, how long an upstream Retry-After is honored, an actionable hint
 for a fatal error, and the self-contradictory empty-tool-call detection that
 drives the blind retry. No loop state here -- each classifies one response or

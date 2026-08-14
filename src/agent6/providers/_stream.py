@@ -5,22 +5,22 @@
 Both providers speak Server-Sent Events over a single POST and need the same
 machinery around their event loops: an idle watchdog that heartbeats cannot
 satisfy, operator stop/steer that ends an in-flight turn promptly, and
-classification of the teardown into ``ProviderAborted`` /
-``ProviderInterrupted`` / a retryable ``ProviderError``. Event parsing stays
+classification of the teardown into `ProviderAborted` /
+`ProviderInterrupted` / a retryable `ProviderError`. Event parsing stays
 per-provider (the two wire formats share nothing); this module owns
 everything around it.
 
-Why a watchdog at all: httpx2's ``timeout`` (float or ``httpx2.Timeout`` with
-``read=``) resets on EVERY received byte, and gateways emit heartbeat bytes
-while a request is in flight (OpenRouter/Cloudflare send ``:`` SSE comment
-lines every ~15s; Anthropic sends ``ping`` events). If the upstream model
+Why a watchdog at all: httpx2's `timeout` (float or `httpx2.Timeout` with
+`read=`) resets on EVERY received byte, and gateways emit heartbeat bytes
+while a request is in flight (OpenRouter/Cloudflare send `:` SSE comment
+lines every ~15s; Anthropic sends `ping` events). If the upstream model
 truly hangs (observed: Kimi K2.6 sessions held in ESTABLISHED state with 0
 bytes of payload for 800+ seconds while heartbeats continued), the read
 timeout never fires and the orchestrator parks forever with no spend cap to
 save it. The fix: the per-provider consume loop marks each MEANINGFUL event
 on a :class:`StreamClock` (heartbeats deliberately do not count), and a
 watchdog thread closes the response once the gap exceeds the threshold. The
-blocking ``iter_lines`` then raises an ``httpx2.HTTPError`` that
+blocking `iter_lines` then raises an `httpx2.HTTPError` that
 :meth:`SseCall.run` re-raises as a descriptive error so the loop can
 retry-or-quit at its own layer.
 
@@ -29,15 +29,15 @@ different things:
 
 - Before the first real output token the gap is prefill / time-to-first-token,
   which legitimately runs long on a big context or a slow model, so be patient
-  (``STREAM_FIRST_DATA_TIMEOUT_S``).
+  (`STREAM_FIRST_DATA_TIMEOUT_S`).
 - Once real output has started, models emit a data event every few seconds; a
   45s gap then means the stream wedged. Recovering a mid-stream wedge in 45s
-  instead of 180s is 4x faster (``STREAM_IDLE_TIMEOUT_S``).
+  instead of 180s is 4x faster (`STREAM_IDLE_TIMEOUT_S`).
 - Inside a display:omitted extended-thinking block (Anthropic adaptive thinking
   on Sonnet 5 / Opus 4.7+ / Fable 5) the stream is ping-only by design while the
   model reasons, so neither budget above applies; wait out a generous thinking
-  budget instead (``STREAM_THINKING_IDLE_TIMEOUT_S``). The consume loop brackets
-  the block with ``enter_thinking()`` / ``exit_thinking()``.
+  budget instead (`STREAM_THINKING_IDLE_TIMEOUT_S`). The consume loop brackets
+  the block with `enter_thinking()` / `exit_thinking()`.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ from agent6.providers.types import (
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
 STREAM_IDLE_TIMEOUT_S = 45.0
-# A display:omitted extended-thinking block streams only ``ping`` heartbeats
+# A display:omitted extended-thinking block streams only `ping` heartbeats
 # while the model reasons (no content deltas), so the tight mid-stream budget
 # above would false-kill a long think. While inside a thinking block the
 # watchdog waits this much instead; a genuine wedge is still bounded, just less
@@ -80,9 +80,9 @@ STREAM_WATCHDOG_TICK_S = 0.25
 def http_stream(
     method: str, url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> Generator[httpx2.Response]:
-    """Streaming POST seam: tests stub this name, never ``httpx2`` globally.
+    """Streaming POST seam: tests stub this name, never `httpx2` globally.
 
-    ``granular_timeout`` bounds the connect phase: the idle watchdog has no
+    `granular_timeout` bounds the connect phase: the idle watchdog has no
     response to close until the connect returns, so a blackholed connect is
     httpx2's to cut, and it must not wait the full read budget to do it."""
     with httpx2.stream(
@@ -94,12 +94,12 @@ def http_stream(
 class StreamClock:
     """Idle bookkeeping the per-provider consume loop feeds.
 
-    ``mark_data()`` on every meaningful wire event; heartbeats must not be
+    `mark_data()` on every meaningful wire event; heartbeats must not be
     marked, they are exactly the bytes that mask a wedged upstream.
-    ``mark_output()`` when the model has produced real content (text /
+    `mark_output()` when the model has produced real content (text /
     reasoning / tool tokens), which ends the generous prefill budget and
-    starts the short mid-stream idle budget. ``enter_thinking()`` /
-    ``exit_thinking()`` bracket a display:omitted thinking block, whose
+    starts the short mid-stream idle budget. `enter_thinking()` /
+    `exit_thinking()` bracket a display:omitted thinking block, whose
     ping-only stream needs the patient thinking budget rather than either.
     """
 
@@ -150,7 +150,7 @@ def record_billed_usage(
 
     A stream that dies after the provider reported usage has been billed: the
     input was accepted, and whatever was generated was produced. Counting only
-    completed calls left that spend invisible to ``max_usd``, so a retry-heavy
+    completed calls left that spend invisible to `max_usd`, so a retry-heavy
     run had no ceiling at all -- every retry re-sends the whole input and is
     billed again. The operator set a number for the task; going past it without
     being told is the failure, and a run can always be resumed.
@@ -201,11 +201,11 @@ class SseCall:
     def run(  # noqa: PLR0915
         self, consume: Callable[[httpx2.Response, StreamClock], None]
     ) -> None:
-        """Open the stream, run ``consume`` under the watchdog, classify teardown.
+        """Open the stream, run `consume` under the watchdog, classify teardown.
 
-        ``consume`` iterates ``resp.iter_lines()`` and parses the provider's
+        `consume` iterates `resp.iter_lines()` and parses the provider's
         events, marking the clock as it goes; accumulation happens in the
-        caller's closure. A ``ProviderError`` it raises (mid-stream error
+        caller's closure. A `ProviderError` it raises (mid-stream error
         frame) propagates unchanged.
         """
         clock = StreamClock()
@@ -214,7 +214,7 @@ class SseCall:
         idle_killed = threading.Event()
         watchdog_stop = threading.Event()
         # Mutable holder so the watchdog can reach the response without racing
-        # on assignment (the ``with`` body runs in a different frame from the
+        # on assignment (the `with` body runs in a different frame from the
         # watchdog closure).
         resp_holder: dict[str, httpx2.Response] = {}
 

@@ -74,7 +74,7 @@ def _build_user_message(candidates: list[CandidateBrief]) -> str:
 
 
 def _parse_verdict(obj: dict[str, Any], session_ids: set[str]) -> CompareVerdict | None:
-    """None if ``ranking`` isn't a list of strings naming exactly `session_ids`."""
+    """None if `ranking` isn't a list of strings naming exactly `session_ids`."""
     ranking_raw = obj.get("ranking")
     if not isinstance(ranking_raw, list) or not all(isinstance(r, str) for r in ranking_raw):
         return None

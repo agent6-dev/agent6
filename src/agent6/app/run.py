@@ -144,32 +144,32 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the fixed tool surface, deterministic harness (jail +
     budget + verify timeout + DAG curator for persistence/resume).
-    Sole ``agent6 run`` path; returns the process exit code.
+    Sole `agent6 run` path; returns the process exit code.
 
-    ``initial_steer`` queues an operator follow-up for the loop's first
+    `initial_steer` queues an operator follow-up for the loop's first
     boundary, seeded AFTER this function's own stale-state clear -- the
     parked-resume delegation passes `resume --steer` through it (a pre-seeded
     bridge file would be wiped by that clear and silently lost).
 
     The caller (`ui/cli/run.py`) has already built *cfg* (config + overrides),
     resolved the task text, checked the git-repo wall / runnable roles /
-    provider keys, and routed ``--parallel`` away. *budget_overrides* /
+    provider keys, and routed `--parallel` away. *budget_overrides* /
     *sandbox_overrides* are passed through for the flags the lifecycle re-reads
     (`--max-usd` enforcement, lane dispatch).
 
-    *preset_stamp* ``(name, from_flag)`` overrides the manifest's stamped
+    *preset_stamp* `(name, from_flag)` overrides the manifest's stamped
     preset instead of deriving it from *preset*. A parked resume has no
-    ``--preset`` flag but must record the ORIGINAL submission's stamp so a
+    `--preset` flag but must record the ORIGINAL submission's stamp so a
     later resume/fork replays the same precedence (fork carries it likewise);
     deriving it from the empty *preset* would drop the stamp, and the flag's
     veto with it, on the next leg.
 
-    When ``mode="plan"`` the same harness drives a planning
+    When `mode="plan"` the same harness drives a planning
     pass instead of an execution pass: planning system prompt,
-    edit-tools filtered out, ``finish_planning`` instead of
-    ``finish_session``, no auto-commit. The plan markdown lands at
-    ``<run-dir>/plan.md`` and is consumed by ``agent6 run --from-plan``.
-    The ``planner`` model role drives plan mode (falls back to ``worker``).
+    edit-tools filtered out, `finish_planning` instead of
+    `finish_session`, no auto-commit. The plan markdown lands at
+    `<run-dir>/plan.md` and is consumed by `agent6 run --from-plan`.
+    The `planner` model role drives plan mode (falls back to `worker`).
     """
     role = session_kind(mode).role
 
@@ -466,7 +466,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
-            # owns its subprocesses; we close it in the finally block.
+            # owns its subprocesses; the finally block below closes it.
             # The run's session network, before its first member: the
             # commands and any server that joins it share this one.
             if wants_session_network(cfg, isolation):

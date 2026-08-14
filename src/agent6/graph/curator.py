@@ -21,14 +21,14 @@ not merge their in-memory state: each instance caches the graph at
 construction, so a second live instance would still lose updates. One curator
 per run is the invariant; the lock only bounds the damage if it is broken. The
 CLI upholds the invariant with a run-level single-writer flock
-(``sessions.lock.acquire_single_writer`` on ``<session-dir>/worker.lock``, the analogue
-of ``machine_lock``): a second ``agent6 run``/``resume`` on the same run dir
+(`sessions.lock.acquire_single_writer` on `<session-dir>/worker.lock`, the analogue
+of `machine_lock`): a second `agent6 run`/`resume` on the same run dir
 refuses rather than constructing a second curator (`fork` copies under the
 graph flock and never constructs one).
 
-Fail-safe: a mutation updates ``self._nodes`` in memory BEFORE writing to disk,
+Fail-safe: a mutation updates `self._nodes` in memory BEFORE writing to disk,
 so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
-``write_node``) can leave in-memory state ahead of disk. ``_mutating`` reloads
+`write_node`) can leave in-memory state ahead of disk. `_mutating` reloads
 from disk (the source of truth) before surfacing such a fault, so a later read
 never observes a node that was never persisted.
 """
@@ -75,10 +75,10 @@ class CuratorError(Exception):
 class _JournalBase(BaseModel):
     """Base of the typed graph.jsonl entries: what each mutation appends to the
     append-only audit log. The node `.md` files are the source of truth; the
-    fields read back are ``graph_version`` (``_compute_graph_version``) and,
-    by ``graph.replay`` for `fork --at-turn`, each entry's mutation fields,
-    stamped by ``_post_mutation`` after the bump (0 only pre-stamp). The
-    ``ts`` timestamp is added by ``storage.write_journal``, which also sorts
+    fields read back are `graph_version` (`_compute_graph_version`) and,
+    by `graph.replay` for `fork --at-turn`, each entry's mutation fields,
+    stamped by `_post_mutation` after the bump (0 only pre-stamp). The
+    `ts` timestamp is added by `storage.write_journal`, which also sorts
     keys, so field order here is presentational only.
     """
 
@@ -191,7 +191,7 @@ class GraphCurator:
     def _mutating(self) -> Generator[None]:
         """Flock the run dir for one mutation, with the disk-fault fail-safe.
 
-        A ``CuratorError`` is a pre-mutation validation reject (nothing was
+        A `CuratorError` is a pre-mutation validation reject (nothing was
         applied), so it propagates untouched. Any other fault escapes AFTER the
         in-memory graph was already updated, so reload from disk (the source of
         truth) before re-raising: a later read then never sees a node the write
@@ -372,7 +372,7 @@ class GraphCurator:
 
     def _would_introduce_cycle(self, src: str, new_dep: str) -> bool:
         """True iff adding src→new_dep would create a cycle in the dep DAG."""
-        # Walk dep transitively from new_dep; if we reach src, it's a cycle.
+        # Walk dep transitively from new_dep; if the walk reaches src, it's a cycle.
         stack = [new_dep]
         seen: set[str] = set()
         while stack:

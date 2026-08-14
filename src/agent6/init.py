@@ -7,14 +7,14 @@ init is OPTIONAL: agent6 runs with a global config + secure defaults, and
 per-repo niceties easy and explicit. It is safe to run on a FRESH repo or one
 already using agent6: each step says what it will do, warns before overriding
 anything you already set, and you can skip any of them. It NEVER writes a
-blanket ``.suggested`` file or clobbers an existing AGENTS.md / config.
+blanket `.suggested` file or clobbers an existing AGENTS.md / config.
 
 Steps, in order:
   1. create the per-repo config file if it's missing (else leave it);
-  2. set ``workflow.verify_command`` if unset -- inferred from the repo
+  2. set `workflow.verify_command` if unset -- inferred from the repo
      (AGENTS.md / package.json / Makefile / pyproject / Cargo / go.mod);
-  3. add secret + build-artifact entries to ``.gitignore`` (idempotent);
-  4. create AGENTS.md, or append a ``## Verify command`` section if missing.
+  3. add secret + build-artifact entries to `.gitignore` (idempotent);
+  4. create AGENTS.md, or append a `## Verify command` section if missing.
 """
 
 from __future__ import annotations
@@ -246,8 +246,8 @@ def init_workspace(
 ) -> int:
     """Run the granular setup wizard. Returns a CLI exit code.
 
-    ``interactive`` prompts each step; otherwise every step takes its default.
-    Either way nothing existing is overwritten. ``ecosystem`` overrides ecosystem
+    `interactive` prompts each step; otherwise every step takes its default.
+    Either way nothing existing is overwritten. `ecosystem` overrides ecosystem
     auto-detection.
     """
     root = root.resolve()

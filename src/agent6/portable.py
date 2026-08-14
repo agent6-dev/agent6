@@ -3,9 +3,9 @@
 """Cross-platform primitives for the few places agent6 touches POSIX-only APIs.
 
 Pure stdlib, no agent6 imports. Keeps the platform split contained in one
-spot instead of scattering ``sys.platform`` checks through the graph and
+spot instead of scattering `sys.platform` checks through the graph and
 machine journals. The sandbox itself remains Linux-only (see
-``agent6.sandbox.detect.sandbox_available``), and native Windows is unsupported
+`agent6.sandbox.detect.sandbox_available`), and native Windows is unsupported
 (use WSL); this module keeps the platform-neutral plumbing (file locks,
 durable renames) working so the agent can run unsandboxed on macOS.
 """
@@ -29,10 +29,10 @@ else:
 def lock_exclusive(fd: int, *, blocking: bool) -> None:
     """Take an exclusive lock on an open file descriptor.
 
-    When ``blocking`` is False and another process already holds the lock this
-    raises ``OSError`` immediately. On POSIX this is an advisory whole-file lock
-    via ``flock(2)``; on Windows it is a mandatory one-byte range lock via
-    ``msvcrt.locking`` (offset 0, which the OS happily locks past EOF).
+    When `blocking` is False and another process already holds the lock this
+    raises `OSError` immediately. On POSIX this is an advisory whole-file lock
+    via `flock(2)`; on Windows it is a mandatory one-byte range lock via
+    `msvcrt.locking` (offset 0, which the OS happily locks past EOF).
     """
     if sys.platform == "win32":
         os.lseek(fd, 0, os.SEEK_SET)
@@ -69,7 +69,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
     """Open + flock *lock_path*, returning the held fd, or None when the lock
     cannot be taken (see :func:`locked_file`'s fail-open contract).
 
-    ``O_NOFOLLOW`` refuses a planted symlink at the predictable lock path
+    `O_NOFOLLOW` refuses a planted symlink at the predictable lock path
     outright -- never open, chown, or write the thing it points at. Any other
     open/lock failure (a stale root-owned lock a non-root process can't
     reopen) also returns None: the lock is an optimization, never a
@@ -87,7 +87,7 @@ def _acquire_lock(lock_path: Path) -> int | None:
             lock_exclusive(fd, blocking=True)
             if sys.platform == "win32" or _same_file(fd, lock_path):
                 return fd
-            # The previous holder unlinked this inode after we opened it; a
+            # The previous holder unlinked this inode after this open; a
             # fresh lock file may already be held by someone else -- retry.
             unlock(fd)
         except OSError:
@@ -107,9 +107,9 @@ def locked_file(target: Path) -> Generator[bool]:
     must NOT act on a fiction of serialization -- a transaction that would restore a
     whole-file snapshot on failure can erase a concurrent writer's
     just-validated update when the cycle never was serialized, so it degrades
-    to keep-and-warn instead (see ``config.write.keep_or_rollback``).
+    to keep-and-warn instead (see `config.write.keep_or_rollback`).
 
-    Blocks on a sibling ``<name>.lock`` file, NOT the target: atomic_write
+    Blocks on a sibling `<name>.lock` file, NOT the target: atomic_write
     replaces the target's inode on publish, so a lock taken on the target
     itself would let a waiter queued on the orphaned old inode run
     concurrently with a fresh locker -- exactly the lost update this guards
@@ -118,7 +118,7 @@ def locked_file(target: Path) -> Generator[bool]:
     The lock is a concurrency optimization, never a correctness barrier
     (atomic_write already makes each publish all-or-nothing), so it FAILS
     OPEN. If the lock cannot be opened or locked -- a planted symlink
-    (refused by ``O_NOFOLLOW``), or a stale root-owned lock a killed ``sudo``
+    (refused by `O_NOFOLLOW`), or a stale root-owned lock a killed `sudo`
     writer left that a later non-root process can't reopen -- the body runs
     unserialized rather than wedging or following the symlink. Worst case is
     an unserialized write, which atomic_write already keeps all-or-nothing; a
@@ -170,7 +170,7 @@ def fsync_dir(path: Path) -> None:
     """fsync a directory so a rename into it is durable.
 
     No-op on Windows, which has no directory file descriptors to fsync; the
-    ``MoveFileEx``/``ReplaceFile`` semantics behind ``Path.replace`` already
+    `MoveFileEx`/`ReplaceFile` semantics behind `Path.replace` already
     make the rename durable there.
     """
     if sys.platform == "win32":
@@ -239,12 +239,12 @@ _TOML_BASIC_ESCAPES = {
 def toml_basic_string(value: str) -> str:
     """*value* as a TOML basic (double-quoted) string literal, quotes included.
 
-    Escapes backslash, quote, the named control escapes, and ``\\uXXXX`` for any
+    Escapes backslash, quote, the named control escapes, and `\\uXXXX` for any
     other control char. TOML basic strings forbid literal control chars, so an
     unescaped one (a newline in a pasted key, say) writes a file that fails to
     parse on read while the write reported success. The single owner of this
-    escaping: config serialization, ``config fill``, and secrets all share it so
-    none can drift back to escaping only ``\\`` and ``"``.
+    escaping: config serialization, `config fill`, and secrets all share it so
+    none can drift back to escaping only `\\` and `"`.
     """
     out: list[str] = []
     for ch in value:

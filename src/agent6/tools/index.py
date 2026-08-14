@@ -449,7 +449,7 @@ class SymbolIndex:
         Returns a fresh dict mapping absolute file path -> in-source-order
         list of Symbol records. Used by the system-prompt repo map to
         give the agent a one-line-per-symbol outline of the codebase
-        without round-tripping ``outline`` for every file.
+        without round-tripping `outline` for every file.
         """
         with self._lock:
             self._ensure_fresh()

@@ -64,12 +64,12 @@ def approvals_dir(session_dir: Path) -> Path:
 
 
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
-    """``<directory>/<filename>``, refusing a name that is not one plain file.
+    """`<directory>/<filename>`, refusing a name that is not one plain file.
 
     Both bridge files name themselves after a string from outside: a prompt id
     the web server takes from the request, and an approval scope holding a
     server name parsed out of a tool name the LLM chose. A separator makes a
-    directory of one of those, and ``..`` walks out of the run, so containment
+    directory of one of those, and `..` walks out of the run, so containment
     is a hard check on the write primitive rather than a caller's manners.
     """
     if not untrusted or "/" in untrusted or os.sep in untrusted or "\x00" in untrusted:
@@ -108,7 +108,7 @@ def clear_pending_answers(session_dir: Path) -> None:
 
 def register_frontend(session_dir: Path, pid: int) -> None:
     """Register *pid* as a live answering front-end: one claim file per
-    front-end (``frontends/<pid>``), so any number can watch concurrently
+    front-end (`frontends/<pid>`), so any number can watch concurrently
     (web + TUI + attach, or several of one kind) and none can deregister
     another. The name is the claim; the body is the process start time, which
     is what tells a live front-end from a recycled pid (see
@@ -144,7 +144,7 @@ _HAS_PROC = Path("/proc").is_dir()
 
 
 def _ps_start_time(pid: int) -> str:
-    """Start-time identity via ``ps -o lstart=`` ("" for a dead pid or a host
+    """Start-time identity via `ps -o lstart=` ("" for a dead pid or a host
     without ps). Fixed argv over a pid agent6 itself recorded, never LLM
     output; see the subprocess allowlist in docs/security.md."""
     try:
@@ -163,7 +163,7 @@ def _ps_start_time(pid: int) -> str:
 
 def _proc_start_time(pid: int) -> str:
     """Start-time identity for *pid*, or "" when it cannot be read (the
-    process just exited): field 22 of /proc/<pid>/stat on Linux, ``ps`` where
+    process just exited): field 22 of /proc/<pid>/stat on Linux, `ps` where
     /proc is absent (macOS -- whose small pid_max recycles pids fast, so the
     plain kill-0 probe misread reuse as liveness there too). The comm field
     may contain spaces/parens, so split after the LAST ')'."""
@@ -225,7 +225,7 @@ def write_worker_pid(session_dir: Path, pid: int) -> None:
 def emit_session_start(
     events: EventSink, session_dir: Path, event_type: str, /, **fields: Any
 ) -> None:
-    """Emit a start-family event (``session.start`` / ``loop.resume.start``)
+    """Emit a start-family event (`session.start` / `loop.resume.start`)
     with the worker pid already on disk: the status fold reads a started
     session with no pid file as one whose worker exited."""
     write_worker_pid(session_dir, os.getpid())
@@ -245,7 +245,7 @@ def pid_record(pid: int) -> str:
 
 
 def _parse_pid_record(path: Path) -> tuple[int, str] | None:
-    """The recorded ``(pid, start_time)``; start_time is "" when none was
+    """The recorded `(pid, start_time)`; start_time is "" when none was
     recorded. Split once only: the `ps` lstart identity contains spaces."""
     try:
         tokens = path.read_text(encoding="utf-8").split(maxsplit=1)
@@ -302,7 +302,7 @@ def _claim_is_live(claim: Path, pid: int) -> bool:
 
 
 def frontend_is_live(session_dir: Path) -> bool:
-    """True when ANY registered front-end is a live process we own. Prunes
+    """True when ANY registered front-end is a live process agent6 registered. Prunes
     dead claims (hard-killed front-ends, and pids since reused by something
     else) in passing so a stale claim can never block the answer poll and the
     dir stays tidy."""
@@ -539,10 +539,10 @@ def read_answer(
 ) -> str | None:
     """Called by the workflow. Returns the operator's literal choice ("yes",
     "no", "session", "session-deny"), or None on timeout or once the front-end
-    has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
+    has stayed dead past `dead_grace_s` (a shorter drop keeps waiting).
 
-    ``live_dir`` overrides which dir the liveness gate probes for front-end claims
-    (defaults to ``session_dir``). A machine agent state reads answers from its
+    `live_dir` overrides which dir the liveness gate probes for front-end claims
+    (defaults to `session_dir`). A machine agent state reads answers from its
     per-state dir but the front-end registers on the instance dir, so it passes
     the instance dir here."""
     target = _answer_path(approvals_dir(session_dir), prompt_id)
@@ -588,7 +588,7 @@ def read_question_answers(
 ) -> tuple[str, ...] | None:
     """Called by the workflow. Returns the answers tuple (aligned to the prompt's
     questions), or None on timeout or once the front-end has stayed dead past
-    ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir (see
+    `dead_grace_s`. `live_dir` overrides the liveness-gate dir (see
     :func:`read_answer`)."""
     target = _answer_path(questions_dir(session_dir), question_id)
     raw = _await_answer(
@@ -730,7 +730,7 @@ def read_steer_answer(
 ) -> str | None:
     """Called by the workflow when the TUI is live. Returns the answer string
     (consuming the file), or None on timeout or once the front-end has stayed
-    dead past ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir
+    dead past `dead_grace_s`. `live_dir` overrides the liveness-gate dir
     (see :func:`read_answer`)."""
     return _await_answer(
         session_dir / STEER_ANSWER_FILE,

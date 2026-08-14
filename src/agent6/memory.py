@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Per-repo agent memory under ``<state_dir>/memory/``.
+"""Per-repo agent memory under `<state_dir>/memory/`.
 
-One fact per markdown file plus a ``MEMORY.md`` index (one line per entry).
+One fact per markdown file plus a `MEMORY.md` index (one line per entry).
 The index is injected into every run's system prompt; the files are read and
 edited with the ordinary in-process tools through a narrow path grant, so
 recording or correcting a memory is a normal file edit. Model-authored
@@ -56,7 +56,7 @@ def _check_name(name: str) -> str:
 
 
 def add(state_dir: Path, name: str, body: str) -> Path:
-    """Operator CLI helper: write ``<name>.md`` and append its index line."""
+    """Operator CLI helper: write `<name>.md` and append its index line."""
     body = body.strip()
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
@@ -75,7 +75,7 @@ def add(state_dir: Path, name: str, body: str) -> Path:
 
 
 def remove(state_dir: Path, name: str) -> None:
-    """Operator CLI helper: delete ``<name>.md`` and its index line."""
+    """Operator CLI helper: delete `<name>.md` and its index line."""
     _check_name(name)
     path = memory_dir(state_dir) / f"{name}.md"
     if not path.is_file():

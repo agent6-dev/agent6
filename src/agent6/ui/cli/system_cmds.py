@@ -3,17 +3,17 @@
 """`agent6 system`: host / OS-level setup that needs privileges.
 
 Operator-driven admin actions, not LLM-driven: every command here shells out
-with FIXED argv (run directly when already root, else prefixed with ``sudo``),
-never with model-supplied input. Distinct from ``agent6 init`` (per-repo setup).
-The first member is ``apparmor`` (install the bundled AppArmor profile that
+with FIXED argv (run directly when already root, else prefixed with `sudo`),
+never with model-supplied input. Distinct from `agent6 init` (per-repo setup).
+The first member is `apparmor` (install the bundled AppArmor profile that
 lets the strict sandbox use unprivileged user namespaces on Ubuntu 24.04+); the
-namespace is shaped to grow (e.g. a future ``system service`` for a systemd unit).
+namespace is shaped to grow (e.g. a future `system service` for a systemd unit).
 
-Security review note: this writes ``/etc/apparmor.d/agent6-jail`` and runs
-``apparmor_parser`` via sudo. The profile content is a fixed in-repo constant
+Security review note: this writes `/etc/apparmor.d/agent6-jail` and runs
+`apparmor_parser` via sudo. The profile content is a fixed in-repo constant
 (below) and the argv is fixed; nothing here is influenced by LLM output. The
-profile grants ``userns`` to the agent6-jail launcher binary ONLY (it is
-``flags=(unconfined)`` because the launcher does its own sandboxing) and adds no
+profile grants `userns` to the agent6-jail launcher binary ONLY (it is
+`flags=(unconfined)` because the launcher does its own sandboxing) and adds no
 other capability.
 """
 

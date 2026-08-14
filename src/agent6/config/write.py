@@ -4,9 +4,9 @@
 
 Each writer holds the config lock, refuses line surgery on a file that does
 not parse, validates a written value standalone, upserts or removes it through
-the comment-preserving TOML surgery in ``io``, then revalidates the merged
-config and rolls back if this edit broke it. The ``set_config_*`` API the
-``config`` CLI and the TUI/web/init/connect editors all write through, so a
+the comment-preserving TOML surgery in `io`, then revalidates the merged
+config and rolls back if this edit broke it. The `set_config_*` API the
+`config` CLI and the TUI/web/init/connect editors all write through, so a
 value set from any surface is validated and rolled back identically.
 
 The contract: a writer raises :class:`~agent6.errors.OperatorError` when the
@@ -56,10 +56,10 @@ from agent6.portable import atomic_write, locked_file
 def resolved_write_path(target: Path) -> Path:
     """*target* with a symlink resolved: the file a config write must open.
 
-    ``atomic_write`` publishes by rename, which replaces the NAME, so a
-    dotfiles-managed ``config.toml`` symlinked into place would stop being what
+    `atomic_write` publishes by rename, which replaces the NAME, so a
+    dotfiles-managed `config.toml` symlinked into place would stop being what
     agent6 reads after one write. The link is followed only to a target the
-    REAL operator owns, so ``sudo agent6 config set`` cannot be redirected
+    REAL operator owns, so `sudo agent6 config set` cannot be redirected
     through it into a root-owned file.
 
     THE one owner: every writer resolves here, or the ones that do not each
@@ -97,7 +97,7 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
 
 def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
     """The config file to write, its directory created and handed back to the
-    real operator. Under ``sudo`` the dir is created as root; the handover is at
+    real operator. Under `sudo` the dir is created as root; the handover is at
     creation, so a failed or killed write never strands a root-owned dir a later
     non-root write cannot create its atomic-write temp file in."""
     target = _write_target(repo_root, to_repo=to_repo)
@@ -110,7 +110,7 @@ def writing_config(target: Path) -> Generator[bool]:
     """Hold the config write lock, handing *target* back to the real operator on
     every exit path. Yields whether the lock is actually held (see
     :func:`agent6.portable.locked_file`), for :func:`keep_or_rollback`.
-    Under ``sudo`` every publish -- including the rollback's ``atomic_write`` onto
+    Under `sudo` every publish -- including the rollback's `atomic_write` onto
     a new inode -- creates the file as root, so the handover is unconditional."""
     with locked_file(target) as held:
         try:
@@ -168,7 +168,7 @@ PROVIDER_MEMBERS: tuple[type[BaseModel], ...] = get_args(get_args(ProviderEntry)
 
 
 def provider_field_error(key: str, leaf: str, value: object) -> str | None:
-    """Validate a ``providers.<name>.<leaf>`` write against the union members
+    """Validate a `providers.<name>.<leaf>` write against the union members
     directly, since a minimal standalone dict lacks the entry's discriminator.
     A leaf on no member is an unknown key (the members' own field pool is the
     did-you-mean universe); a value every owning member rejects is invalid.
@@ -223,7 +223,7 @@ def unknown_key_error(key: str) -> str:
 
 
 def written_value_error(key: str, value: object) -> str | None:
-    """Validate the just-written ``key = value`` against the Config model on its
+    """Validate the just-written `key = value` against the Config model on its
     own (a minimal dict, defaults for the rest), independent of the layer merge.
     A write of an invalid value into a layer that a HIGHER layer masks (e.g. a
     global set the repo overlay shadows) would otherwise validate the merged
@@ -234,7 +234,7 @@ def written_value_error(key: str, value: object) -> str | None:
     identically. Rejects an error at *key*, under it, or at a PARENT of it: the
     standalone dict holds only this key, so a complaint about the section it
     sits in is about this write -- a rule spanning two keys is a
-    ``model_validator`` and pydantic reports those at the section. A missing
+    `model_validator` and pydantic reports those at the section. A missing
     child is the exception: it only means the written container is partial (a
     provider filled in over several sets), and the merged re-validation still
     catches one that is genuinely absent."""
@@ -315,7 +315,7 @@ def revalidate_write(
     pre-existing error still surfaces on the next run, and `agent6 config fix`
     removes it.
 
-    *written* is the ``(key, value)`` pairs this edit wrote, each validated
+    *written* is the `(key, value)` pairs this edit wrote, each validated
     STANDALONE via :func:`written_value_error` so a value a higher layer masks in
     the merge is caught here, not left to explode once the mask is gone."""
     for wkey, wvalue in written:
@@ -338,8 +338,8 @@ def set_config_value(
 ) -> str | None:
     """Set one leaf in the global (or, with *to_repo*, the repo) config.
 
-    *raw_value* is interpreted exactly as ``config set`` interprets a CLI value
-    (``true``/numbers/arrays parse; a bare word stays a string). Returns an
+    *raw_value* is interpreted exactly as `config set` interprets a CLI value
+    (`true`/numbers/arrays parse; a bare word stays a string). Returns an
     error string when the edit produced an invalid config (the file is rolled
     back and left as it was), else None.
     """
@@ -362,10 +362,10 @@ def set_config_table(
     *,
     to_repo: bool = False,
 ) -> str | None:
-    """Insert/replace a whole ``[table]`` block in one shot (e.g. a new
-    ``[providers.<name>]`` entry from the TUI's add-provider form). Revalidates
+    """Insert/replace a whole `[table]` block in one shot (e.g. a new
+    `[providers.<name>]` entry from the TUI's add-provider form). Revalidates
     the merged config and rolls the file back on failure. Returns an error string
-    on invalid config, else None. ``None`` field values are omitted."""
+    on invalid config, else None. `None` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
         prior = read_operator_file(target) if target.is_file() else None
@@ -419,10 +419,10 @@ def set_config_leaves(
     *,
     to_repo: bool = False,
 ) -> str | None:
-    """Upsert individual ``[table]`` leaves, preserving sibling keys and comments
+    """Upsert individual `[table]` leaves, preserving sibling keys and comments
     verbatim -- the UPDATE counterpart to :func:`set_config_table`'s whole-block
     replace. One revalidate+rollback wraps all the leaf writes, so a bad merged
-    config restores the prior file whole. ``None`` field values are omitted."""
+    config restores the prior file whole. `None` field values are omitted."""
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target) as held:
         prior = read_operator_file(target) if target.is_file() else None
@@ -459,7 +459,7 @@ class UnsetResult:
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> UnsetResult:
     """Remove one leaf so it reverts to the next layer / built-in default.
 
-    Re-validates and rolls back on failure. ``removed`` is False for the no-op
+    Re-validates and rolls back on failure. `removed` is False for the no-op
     case where the key was not set in the target file.
     """
     target = _write_target(repo_root, to_repo=to_repo)

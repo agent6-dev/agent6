@@ -231,7 +231,7 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
 
 
 def _safe_input(prompt: str) -> str | None:
-    """``input`` that returns None on EOF / non-interactive stdin instead of raising."""
+    """`input` that returns None on EOF / non-interactive stdin instead of raising."""
     try:
         return input(prompt)
     except (EOFError, KeyboardInterrupt):
@@ -282,7 +282,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     (interactively) offer to apply the minimal config fix and continue, simulate
     the machine offline, or stop. Headless prints the exact fix + simulate
     command and exits non-zero, it never relaxes a sandbox setting unattended.
-    Returns the new ``(cfg, isolation)`` when the fix applied and re-validates
+    Returns the new `(cfg, isolation)` when the fix applied and re-validates
     clear, else an exit code."""
     print(f"REFUSING: {refusal}", file=sys.stderr)
     fix = _suggested_network_fix(cfg, isolation, tool_states)
@@ -408,8 +408,8 @@ def _plural(n: int, singular: str, plural: str | None = None) -> str:
 
 
 def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | None, str]:
-    """(pending wait, note): a corrupt wait.json yields ``(None, reason)`` so the
-    caller keeps its readout going -- mirroring ``machine_is_parked`` tolerating
+    """(pending wait, note): a corrupt wait.json yields `(None, reason)` so the
+    caller keeps its readout going -- mirroring `machine_is_parked` tolerating
     it -- instead of the JournalError aborting the whole command."""
     try:
         return journal.read_pending_wait(), ""

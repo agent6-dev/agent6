@@ -4,22 +4,22 @@
 
 Config is assembled from layered sources, lowest precedence first:
 
-1. ``default``, the secure defaults baked into the pydantic model,
-2. ``global`` , ``$XDG_CONFIG_HOME/agent6/config.toml`` (user-wide),
-3. ``repo``   , the per-repo config under the state dir (out of the workspace,
-   ``<state-base>/<repo-id>/config.toml``; see ``agent6.paths.state_dir``),
-4. ``flag``   , an explicit ``--config FILE`` (power users / CI),
-5. ``machine``, the machine agent's per-state overlay,
+1. `default`, the secure defaults baked into the pydantic model,
+2. `global` , `$XDG_CONFIG_HOME/agent6/config.toml` (user-wide),
+3. `repo`   , the per-repo config under the state dir (out of the workspace,
+   `<state-base>/<repo-id>/config.toml`; see `agent6.paths.state_dir`),
+4. `flag`   , an explicit `--config FILE` (power users / CI),
+5. `machine`, the machine agent's per-state overlay,
 
 plus a selected preset, injected as below. Raw TOML dicts are deep-merged in
 that order and validated **once**, so a repo can override a single field
 without restating the rest. Every leaf remembers which layer last set it,
-which powers ``agent6 config show``.
+which powers `agent6 config show`.
 
 A selected preset is injected just ABOVE the config layer that
-SELECTED it (``--preset`` flag / repo / global top-level ``preset``), so the
+SELECTED it (`--preset` flag / repo / global top-level `preset`), so the
 preset OVERRIDES that config while a more-specific config layer (or an explicit
-``--config FILE`` / machine overlay) still overrides the preset. Only the
+`--config FILE` / machine overlay) still overrides the preset. Only the
 most-specific source's preset is injected -- global and repo presets never
 stack. See :func:`_apply_preset`.
 """
@@ -89,11 +89,11 @@ def _read_toml(path: Path) -> dict[str, Any]:
 
 
 def _global_state_dir() -> str | None:
-    """Read ``[agent6].state_dir`` (the state BASE) from the GLOBAL config only.
+    """Read `[agent6].state_dir` (the state BASE) from the GLOBAL config only.
 
     Resolved *before* the layered merge because it locates the directory the
     per-repo config lives in. Honored only from the global config;
-    ``_forbid_repo_state_dir`` rejects it in any other layer.
+    `_forbid_repo_state_dir` rejects it in any other layer.
     """
     gpath = global_config_path()
     if not gpath.is_file():
@@ -115,7 +115,7 @@ def _global_state_dir() -> str | None:
 
 
 def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
-    """Reject a top-level ``preset`` key in a layer that cannot SELECT one.
+    """Reject a top-level `preset` key in a layer that cannot SELECT one.
 
     Only the global/repo configs and the --preset flag select one
     (_select_preset), so the key deep-merging in from a --config FILE or a
@@ -132,7 +132,7 @@ def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
 
 
 def _forbid_repo_state_dir(layer_name: str, data: dict[str, Any]) -> None:
-    """Refuse ``state_dir`` in a repo/flag/overlay layer (global-only setting)."""
+    """Refuse `state_dir` in a repo/flag/overlay layer (global-only setting)."""
     section = data.get("agent6")
     if isinstance(section, dict) and "state_dir" in section:
         raise ConfigError(
@@ -156,7 +156,7 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
     """The config layers that exist, in precedence order (low -> high).
 
     The repo config lives out of the workspace under the state dir, whose base
-    comes from the global config's ``[agent6].state_dir`` (or the XDG default).
+    comes from the global config's `[agent6].state_dir` (or the XDG default).
     """
     layers: list[Layer] = []
     gpath = global_config_path()
@@ -245,8 +245,8 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
 
 def available_preset_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
     """Preset names a chooser can offer: the built-ins plus the user's custom
-    ``[presets.<name>]`` tables (read from the config layers, the same source
-    ``--preset`` resolves against), sorted + de-duplicated. A config-read failure
+    `[presets.<name>]` tables (read from the config layers, the same source
+    `--preset` resolves against), sorted + de-duplicated. A config-read failure
     degrades to the built-ins alone, so a caller (e.g. the TUI's new-work chooser)
     never blocks on a bad config."""
     names: set[str] = set(BUILTIN_PRESETS)
@@ -276,7 +276,7 @@ class PresetCatalog:
 
 
 def preset_catalog(repo_root: Path, explicit_path: Path | None = None) -> PresetCatalog:
-    """Everything ``config presets`` lists: each known preset with the
+    """Everything `config presets` lists: each known preset with the
     overrides it would apply (a user table REPLACES a same-named built-in, so
     only the effective body is reported), plus the selected name and its
     source. Unlike :func:`available_preset_names` this fails loudly on a
@@ -310,7 +310,7 @@ def preset_catalog(repo_root: Path, explicit_path: Path | None = None) -> Preset
 
 def _format_changed(val: object, existing: object) -> bool:
     """The one wholesale-REPLACE rule the merge and the provenance walk share:
-    a discriminated dict (e.g. a [providers.<name>] entry) whose ``api_format``
+    a discriminated dict (e.g. a [providers.<name>] entry) whose `api_format`
     changes between layers must REPLACE, not deep-merge -- the lower layer's
     format-specific keys (an anthropic prompt_caching, say) are invalid under
     the new format and would otherwise survive the merge and surface as a
@@ -424,11 +424,11 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
 
 
 def _own_preset(layer: Layer) -> str:
-    """A layer's OWN raw top-level ``preset`` (not the merged value), or "".
+    """A layer's OWN raw top-level `preset` (not the merged value), or "".
 
-    A non-string (a ``[preset]`` table from a typo'd ``config set
+    A non-string (a `[preset]` table from a typo'd ``config set
     preset.<name>``) fails here with its own message; str()-coercing it
-    produced ``unknown preset "{'porifle': 'ultra'}"``.
+    produced `unknown preset "{'porifle': 'ultra'}"`.
     """
     raw = layer.data.get("preset")
     if raw is None:
@@ -445,8 +445,8 @@ def _own_preset(layer: Layer) -> str:
 
 def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str]:
     """Pick the (preset name, source) most-specific first from each layer's OWN
-    raw top-level ``preset`` (never stacking global+repo): the ``--preset``
-    flag, else the ``repo`` layer's field, else the ``global`` layer's field,
+    raw top-level `preset` (never stacking global+repo): the `--preset`
+    flag, else the `repo` layer's field, else the `global` layer's field,
     else ("", "none")."""
     if preset_override:
         return preset_override, "flag"
@@ -461,9 +461,9 @@ def _select_preset(cleaned: list[Layer], preset_override: str) -> tuple[str, str
 def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
     """Splice *preset* into *cleaned* at the position for its *source*.
 
-    ``global``/``repo`` -> right AFTER that config layer (so the preset
-    overrides it but the more-specific config layer / flag still wins). ``flag``
-    (``--preset``) -> just BELOW an explicit ``--config FILE`` / machine overlay
+    `global`/`repo` -> right AFTER that config layer (so the preset
+    overrides it but the more-specific config layer / flag still wins). `flag`
+    (`--preset`) -> just BELOW an explicit `--config FILE` / machine overlay
     if present (those still win), else appended last (overrides all config).
     """
     out: list[Layer] = []
@@ -482,7 +482,7 @@ def _insert_preset(cleaned: list[Layer], preset: Layer, source: str) -> list[Lay
 
 
 def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
-    """The layers without their ``[presets.*]`` tables, plus those tables merged.
+    """The layers without their `[presets.*]` tables, plus those tables merged.
 
     Presets are meta-config the Config schema forbids, so every path that
     validates a layer strips them first, whether or not one is applied.
@@ -499,18 +499,18 @@ def _strip_presets(layers: list[Layer]) -> tuple[list[Layer], dict[str, Any]]:
 
 
 def _apply_preset(layers: list[Layer], preset_override: str) -> list[Layer]:
-    """Strip ``[presets]`` tables out of the user layers (they are meta-config,
+    """Strip `[presets]` tables out of the user layers (they are meta-config,
     not part of the validated Config) and inject the selected preset
     just ABOVE the config layer that SELECTED it, so the preset OVERRIDES that
-    config while a more-specific config layer (or an explicit ``--config FILE`` /
+    config while a more-specific config layer (or an explicit `--config FILE` /
     machine overlay) still overrides the preset. Only the most-specific source's
     preset is injected -- global and repo presets never stack.
 
-    Source is chosen by :func:`_select_preset` (``--preset`` flag > repo's own
-    top-level ``preset`` > global's own), and the preset is spliced in by
+    Source is chosen by :func:`_select_preset` (`--preset` flag > repo's own
+    top-level `preset` > global's own), and the preset is spliced in by
     :func:`_insert_preset`. Resulting precedence (low->high): default <
     global-config < [preset if global-selected] < repo-config <
-    [preset if repo-selected] < [preset if --flag] < flag(``--config FILE``) <
+    [preset if repo-selected] < [preset if --flag] < flag(`--config FILE`) <
     machine-overlay.
     """
     cleaned, user_presets = _strip_presets(layers)
@@ -525,7 +525,7 @@ def load_effective(
     repo_root: Path, explicit_path: Path | None = None, *, preset: str = ""
 ) -> EffectiveConfig:
     """Merge + validate all layers and record per-leaf provenance; a named
-    ``preset`` is injected per :func:`_apply_preset`."""
+    `preset` is injected per :func:`_apply_preset`."""
     layers = discover_layers(repo_root, explicit_path)
     layers = _apply_preset(layers, preset)
     return _effective_from_layers(layers, source="(merged config layers)")
@@ -533,7 +533,7 @@ def load_effective(
 
 def load_global_only() -> EffectiveConfig:
     """Defaults plus the global config, with no repo layer and no preset
-    applied: what ``agent6 config fill`` materializes.
+    applied: what `agent6 config fill` materializes.
 
     A fill writes the GLOBAL file, so baking the repo layer into it would
     follow the operator to every other repo, and baking a selected preset's
@@ -551,12 +551,12 @@ def load_effective_with_overlay(
 ) -> EffectiveConfig:
     """Like :func:`load_effective` but with *overlay* as the highest layer.
 
-    Used by `agent6 machine run` to apply a machine file's ``[config]``
+    Used by `agent6 machine run` to apply a machine file's `[config]`
     table on top of the repo/global/default layers. The overlay is merged
     and validated exactly like a config file; its leaves are labelled
-    ``machine`` in the provenance map (``config show`` style).
+    `machine` in the provenance map (`config show` style).
 
-    ``explicit_path`` is the global ``--config FILE`` layer, which sits under
+    `explicit_path` is the global `--config FILE` layer, which sits under
     the overlay like any other config file.
     """
     layers = discover_layers(repo_root, explicit_path)
@@ -587,7 +587,7 @@ class InvalidEntry:
 class ConfigDiagnosis:
     """The result of diagnosing the on-disk config for `config fix`.
 
-    Empty ``removable`` + ``None`` ``blocked`` means the config is valid.
+    Empty `removable` + `None` `blocked` means the config is valid.
     """
 
     removable: tuple[InvalidEntry, ...]  # invalid leaves that map to a file (droppable)
@@ -618,12 +618,12 @@ def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, L
 
 
 def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool] | None:
-    """The ``(file_key, layer, is_table)`` to drop for a validation error at *loc*,
+    """The `(file_key, layer, is_table)` to drop for a validation error at *loc*,
     or None when no config file is at fault (a built-in default). Handles three
     shapes: *loc* IS a file leaf; *loc* is UNDER a file leaf (walk down to the
     longest present prefix); and *loc* is an ANCESTOR table of file leaves -- an
-    unknown/extra whole table reported at the table (e.g. a leftover ``[cli]`` is
-    reported as ``extra_forbidden`` at ``cli`` while the file holds ``cli.input``),
+    unknown/extra whole table reported at the table (e.g. a leftover `[cli]` is
+    reported as `extra_forbidden` at `cli` while the file holds `cli.input`),
     which must be dropped whole."""
     parts = loc.split(".") if loc else []
     for i in range(len(parts), 0, -1):
@@ -679,11 +679,11 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
     """Diagnose the on-disk config for `agent6 config fix`.
 
     Returns the invalid leaves that can be dropped from a config FILE (each with its
-    provenance), plus a ``blocked`` message when the config is invalid in a way fix
-    cannot repair by dropping a leaf (a non-absolute ``state_dir``, a value only a
+    provenance), plus a `blocked` message when the config is invalid in a way fix
+    cannot repair by dropping a leaf (a non-absolute `state_dir`, a value only a
     built-in default/preset carries, unreadable TOML). Empty + None == valid.
 
-    With *machine* set, only the machine file's ``[config]`` overlay entries are
+    With *machine* set, only the machine file's `[config]` overlay entries are
     droppable; a global/repo problem surfaced by the merge is reported, not touched.
     """
     only = "machine" if machine is not None else None
@@ -707,10 +707,10 @@ def leaf_keys(eff: EffectiveConfig) -> list[str]:
 
 
 def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
-    """The ``(value, source-layer)`` for *dotted_key*, or None if it is not a leaf.
+    """The `(value, source-layer)` for *dotted_key*, or None if it is not a leaf.
 
     Mirrors `config show`: the value comes from the merged+validated config and
-    the source is the layer that set it (``default`` when no layer did).
+    the source is the layer that set it (`default` when no layer did).
     """
     leaves = flatten_leaves(eff.config.model_dump(mode="python"))
     if dotted_key not in leaves:
@@ -746,7 +746,7 @@ def _toml_scalar(value: Any) -> str:
 def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     """Emit one TOML table (and recurse into sub-tables / arrays of tables).
 
-    ``None`` values are skipped, an unset optional field materializes as
+    `None` values are skipped, an unset optional field materializes as
     absent, i.e. "use the default".
     """
     scalars = {
@@ -758,7 +758,7 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     arraytables = {k: v for k, v in data.items() if _is_table_array(v)}
     # Emit a header for this path only when it carries scalar keys, or when
     # it is a genuine leaf table (no children at all). A pure parent table
-    # like [providers] / [models] is left implicit so we don't print an
+    # like [providers] / [models] is left implicit so the emitter never prints an
     # empty header above its [providers.<name>] children.
     is_leaf = not subtables and not arraytables
     if scalars or is_leaf:
@@ -794,13 +794,13 @@ def materialize(
 ) -> str:
     """Render the fully-resolved config as a complete TOML document.
 
-    Used by ``agent6 config fill`` to snapshot every effective value into
+    Used by `agent6 config fill` to snapshot every effective value into
     one explicit file (handy before tightening defaults or for an audit).
-    When ``for_repo`` is set, the global-only ``[agent6].state_dir``
+    When `for_repo` is set, the global-only `[agent6].state_dir`
     is dropped (it is invalid in a per-repo config).
 
-    ``keep_presets_from`` carries that file's own ``[presets.*]`` tables into the
-    document. They are meta-config -- stripped before validation, so no ``Config``
+    `keep_presets_from` carries that file's own `[presets.*]` tables into the
+    document. They are meta-config -- stripped before validation, so no `Config`
     holds them -- and a fill that rewrites the operator's config file would
     otherwise delete the definitions it cannot see.
     """
@@ -847,7 +847,7 @@ def materialize(
 
 
 def _file_presets(path: Path | None) -> dict[str, Any]:
-    """The ``[presets.*]`` tables *path* defines itself, if any."""
+    """The `[presets.*]` tables *path* defines itself, if any."""
     if path is None or not path.is_file():
         return {}
     presets = _read_toml(path).get("presets")

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""TUI theming: the branded themes (``agent6-dark`` / ``agent6-light``) plus
-four extra built-ins (``alice``, ``snow``, ``rose``, ``grimm``), a
+"""TUI theming: the branded themes (`agent6-dark` / `agent6-light`) plus
+four extra built-ins (`alice`, `snow`, `rose`, `grimm`), a
 live-previewing picker (every registered theme, sorted alphabetically) reachable
 from the View menu, and the wiring that loads the saved theme on startup and
 persists any change.
@@ -10,7 +10,7 @@ Design: keep one quiet accent for focus and a calm, low-contrast resting state
 (the lazygit/openapi-tui feel). All widget CSS across the TUI already uses
 Textual theme variables ($primary, $accent, $surface, $panel, $text…), so
 switching the theme re-skins everything for free — this module only chooses the
-palettes and remembers the choice (in ``ui.toml``, never the agent config).
+palettes and remembers the choice (in `ui.toml`, never the agent config).
 """
 
 from __future__ import annotations
@@ -257,7 +257,7 @@ class ThinScrollBarRender(ScrollBarRender):
 
 class MuxPointerShapes:
     """Mix into an App (before App in the bases): re-emits the kitty
-    pointer-shape OSC (``ESC ] 22 ; <shape> BEL``) wrapped for tmux/screen
+    pointer-shape OSC (`ESC ] 22 ; <shape> BEL`) wrapped for tmux/screen
     passthrough. textual writes it bare, which a multiplexer swallows -- the
     same lesson as bare OSC 52 copy -- so the I-beam over text never reached
     the outer terminal under byobu."""
@@ -271,7 +271,7 @@ class MuxPointerShapes:
 def setup_theme(app: App[Any]) -> None:
     """Register the built-in themes, apply the saved one, and persist changes.
 
-    Call from ``App.on_mount``. Subscribing to ``theme_changed_signal`` means
+    Call from `App.on_mount`. Subscribing to `theme_changed_signal` means
     EVERY path that changes the theme — the View>Theme picker, the built-in
     Ctrl+P "change theme" palette — is remembered, with no extra wiring.
     Also installs the half-height horizontal scrollbar renderer (a class-level
@@ -291,10 +291,10 @@ def open_theme_picker(app: App[Any]) -> None:
 
 
 class ThemePicker(ModalScreen[None]):
-    """A small, live-previewing theme chooser: the same ``[x]``/``[ ]`` chooser
+    """A small, live-previewing theme chooser: the same `[x]`/`[ ]` chooser
     the config dialogs use. Arrow through to preview; the previewed theme is kept
     on close (Enter or Esc both just dismiss). The choice is persisted by
-    ``setup_theme``'s signal hook, so nothing here writes to disk directly."""
+    `setup_theme`'s signal hook, so nothing here writes to disk directly."""
 
     BINDINGS: ClassVar = [
         Binding("escape", "cancel", "Cancel"),

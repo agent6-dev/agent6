@@ -1,26 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Infer a ``verify_command`` for a run when none is configured.
+"""Infer a `verify_command` for a run when none is configured.
 
 agent6's verify command is the success gate, but a brand-new user has not set
-one. Rather than block the run, ``agent6 run``/``plan``
+one. Rather than block the run, `agent6 run`/`plan`
 infers one, cheapest source first:
 
-  1. the ``## Verify command`` (or ``## Test``) section of AGENTS.md, or an
-     inline ``Verify:``/``Test:`` line -- explicit, human-authored intent;
-  2. deterministic repo signals (package.json ``scripts.test``, a Makefile
-     ``test``/``check`` target, pyproject/pytest, Cargo, go.mod);
+  1. the `## Verify command` (or `## Test`) section of AGENTS.md, or an
+     inline `Verify:`/`Test:` line -- explicit, human-authored intent;
+  2. deterministic repo signals (package.json `scripts.test`, a Makefile
+     `test`/`check` target, pyproject/pytest, Cargo, go.mod);
   3. an LLM call (injected, so this module stays provider-agnostic) given the
      repo's manifest files + AGENTS.md.
 
 The result is used IN-MEMORY for one run and never written to config (runs do
 not mutate config). The operator is shown what was picked + how to pin it.
 
-``verify_command`` is an argv tuple run with NO shell, so a simple command
-tokenises directly; a shell pipeline (``a && b``, ``a | b``) is wrapped as
-``("sh", "-c", "<pipeline>")`` -- ``sh`` resolves on the jail PATH
-(``/usr/bin:/bin`` plus the standard bin dirs that exist). Operator tools like
-``uv`` resolve now, so ``uv run pytest`` is a fine inferred command (it uses the
+`verify_command` is an argv tuple run with NO shell, so a simple command
+tokenises directly; a shell pipeline (`a && b`, `a | b`) is wrapped as
+`("sh", "-c", "<pipeline>")` -- `sh` resolves on the jail PATH
+(`/usr/bin:/bin` plus the standard bin dirs that exist). Operator tools like
+`uv` resolve now, so `uv run pytest` is a fine inferred command (it uses the
 already-synced venv; the sandbox cannot sync).
 """
 
@@ -98,8 +98,8 @@ def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
 def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
     """Parse a verify command out of AGENTS.md.
 
-    Honours a ``## Verify command``/``## Test`` heading followed by a fenced
-    block, or an inline ``Verify:``/``Test:`` line. Returns argv or None.
+    Honours a `## Verify command`/`## Test` heading followed by a fenced
+    block, or an inline `Verify:`/`Test:` line. Returns argv or None.
     """
     if not agents_md:
         return None
@@ -235,7 +235,7 @@ def infer_verify_command(
 ) -> InferredVerify | None:
     """Infer a verify command (AGENTS.md -> repo signals -> LLM). None if unknown.
 
-    ``llm_call`` takes the gathered repo context and returns the model's raw
+    `llm_call` takes the gathered repo context and returns the model's raw
     text; pass None to skip the LLM tier (deterministic-only).
     """
     argv = verify_from_agents_md(agents_md)

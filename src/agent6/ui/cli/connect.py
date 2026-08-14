@@ -27,8 +27,8 @@ from agent6.secrets import SecretsError, save_secret
 def _prompt_api_key(name: str) -> str:
     """Prompt for an API key without leaking it.
 
-    On Python 3.14+ ``getpass`` accepts ``echo_char`` so we mask each
-    keystroke with ``*``, live feedback that the paste landed, without ever
+    On Python 3.14+ `getpass` accepts `echo_char` so we mask each
+    keystroke with `*`, live feedback that the paste landed, without ever
     revealing the key. On 3.12/3.13 input stays fully hidden and we print a
     post-entry summary (length + last four chars) so the operator can still
     tell a partial/garbled paste from a clean one. The key itself is never
@@ -64,8 +64,8 @@ def _prompt_base_url(default_url: str) -> str:
 
     Validates before any secret/config write so a scheme-less value (e.g. an
     API key pasted into the wrong prompt) is rejected up front rather than
-    persisted and surfaced later as an opaque HTTP error. Raises ``ValueError``
-    on an invalid URL (same check as the ``OpenAIProviderEntry.base_url``
+    persisted and surfaced later as an opaque HTTP error. Raises `ValueError`
+    on an invalid URL (same check as the `OpenAIProviderEntry.base_url`
     validator).
     """
     try:
@@ -79,9 +79,9 @@ def _prompt_base_url(default_url: str) -> str:
 def _resolve_provider_name(provider: str) -> str | None:
     """Resolve + validate the provider name; print an error and return None if bad.
 
-    The name becomes a TOML table key ``[providers.<name>]``; a non-bare-key
+    The name becomes a TOML table key `[providers.<name>]`; a non-bare-key
     name (space, dot, bracket, …) would be written verbatim and corrupt the
-    whole config file, which ``connect`` -- unlike ``model``/``config set`` --
+    whole config file, which `connect` -- unlike `model`/`config set` --
     does not re-validate after writing. So reject it before any write.
     """
     name = provider.strip()
@@ -145,10 +145,10 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
-    only prompts locally (key via getpass, hidden, or masked with ``*`` on
+    only prompts locally (key via getpass, hidden, or masked with `*` on
     Python 3.14+), stores the key in the 0600 secrets file, writes a minimal
-    ``[providers.<name>]`` block, and (unless ``verify`` is False) makes one
-    read-only GET to the provider's ``/models`` endpoint to confirm the key
+    `[providers.<name>]` block, and (unless `verify` is False) makes one
+    read-only GET to the provider's `/models` endpoint to confirm the key
     authenticates.
     """
     print("agent6 connect: add a provider and API key.\n")

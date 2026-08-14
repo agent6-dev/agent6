@@ -44,10 +44,10 @@ DEFAULT_MAX_TOKENS = 8192
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
-    """Return ``(placement, value)`` for the Anthropic protocol version.
+    """Return `(placement, value)` for the Anthropic protocol version.
 
-    Direct sends it as the ``anthropic-version`` HEADER; Vertex (and future
-    Bedrock) send it as an ``anthropic_version`` BODY field with a
+    Direct sends it as the `anthropic-version` HEADER; Vertex (and future
+    Bedrock) send it as an `anthropic_version` BODY field with a
     deployment-specific value.
     """
     if deployment == "vertex":
@@ -55,11 +55,11 @@ def _anthropic_version(deployment: str) -> tuple[str, str]:
     return ("header", ANTHROPIC_VERSION)
 
 
-# Legacy extended-thinking ``budget_tokens`` per cross-provider ``thinking``
+# Legacy extended-thinking `budget_tokens` per cross-provider `thinking`
 # level (off/low/medium/high). Anthropic REMOVED budget_tokens (a 400) on the
 # models in _ADAPTIVE_THINKING_MARKERS below in favour of adaptive thinking plus
 # output_config.effort, so this map is only for older models. Anthropic requires
-# ``budget_tokens < max_tokens``; the call site lifts ``max_tokens`` so the
+# `budget_tokens < max_tokens`; the call site lifts `max_tokens` so the
 # model keeps room to answer after thinking.
 _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "low": 4096,
@@ -68,9 +68,9 @@ _THINKING_BUDGET_TOKENS: dict[str, int] = {
 }
 
 # Models whose extended thinking must be adaptive: Anthropic removed
-# ``budget_tokens`` (a 400) on Opus 4.7+, Sonnet 5, and Fable 5, and deprecated
-# it on the 4.6 generation. All of these accept ``thinking: {type: adaptive}``
-# and ``output_config.effort``.
+# `budget_tokens` (a 400) on Opus 4.7+, Sonnet 5, and Fable 5, and deprecated
+# it on the 4.6 generation. All of these accept `thinking: {type: adaptive}`
+# and `output_config.effort`.
 _ADAPTIVE_THINKING_MARKERS = (
     "fable-5",
     "mythos-5",
@@ -110,8 +110,8 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     Presence alone is not enough: a gateway with usage tracking disabled returns
     all-zero counts and every turn records zero, so the budget never trips.
     Require a positive input side, but sum in the cache counters: a fully-cached
-    turn legitimately reports ``input_tokens: 0`` with ``cache_read_input_tokens``
-    > 0, so a plain ``input_tokens > 0`` check would false-reject it."""
+    turn legitimately reports `input_tokens: 0` with `cache_read_input_tokens`
+    > 0, so a plain `input_tokens > 0` check would false-reject it."""
     if isinstance(usage, Mapping):
         # Coerce numerically (the streaming path already does): a proxy typing
         # counts as floats/strings is meterable. Absent/zero/non-numeric still
@@ -140,11 +140,11 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
 
 
 def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return ``messages`` with every ``cache_control`` marker removed.
+    """Return `messages` with every `cache_control` marker removed.
 
     The workflow places rolling breakpoints in the message list (see
-    ``agent6.workflows._conversation``); when the operator sets
-    ``prompt_caching = false`` this strips them before the request is built.
+    `agent6.workflows._conversation`); when the operator sets
+    `prompt_caching = false` this strips them before the request is built.
     Copy-on-write: unmarked messages pass through untouched, marked blocks are
     shallow-copied so the caller's list (shared with resume snapshots) is
     never mutated.
@@ -170,7 +170,7 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
 
 
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
-    """True when a 400 says the model rejects ``temperature`` (e.g. claude-opus-4-8:
+    """True when a 400 says the model rejects `temperature` (e.g. claude-opus-4-8:
     "temperature is deprecated for this model") AND temperature is still in the
     request body -- the signal to drop it and retry once."""
     return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
@@ -193,7 +193,7 @@ class AnthropicProvider:
     budget: BudgetTracker | None = None
     # Extended-thinking level (off/low/medium/high). When not "off" the
     # call enables Anthropic extended thinking with a budget drawn from
-    # ``_THINKING_BUDGET_TOKENS`` and drops ``temperature`` (Anthropic
+    # `_THINKING_BUDGET_TOKENS` and drops `temperature` (Anthropic
     # rejects temperature overrides while thinking is enabled).
     thinking: str | None = None
     extra_headers: tuple[tuple[str, str], ...] = ()
@@ -203,15 +203,15 @@ class AnthropicProvider:
     # the auth token per call instead of api_key, and a 401/403 triggers one
     # refresh + retry. Internally mutable (cache), hence held by reference.
     credential: CommandToken | None = None
-    # Some newer models (e.g. claude-opus-4-8) reject ANY ``temperature`` with a
+    # Some newer models (e.g. claude-opus-4-8) reject ANY `temperature` with a
     # 400 "temperature is deprecated for this model". agent6 pins temperature for
-    # determinism, so on that 400 we drop it and retry, latching this flag so the
+    # determinism, so on that 400 the call drops it and retries, latching this flag so the
     # rest of the run omits it (avoids re-sending the full context every call).
     # A 1-element list because the dataclass is frozen but the list is mutable.
     _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
     def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
-        """Drop ``temperature`` and latch ``_omit_temperature`` on a
+        """Drop `temperature` and latch `_omit_temperature` on a
         "temperature is deprecated" 400 (e.g. claude-opus-4-8); the transport
         retries once with the adapted body."""
         if not _is_temperature_400(status, text, body):
@@ -276,12 +276,12 @@ class AnthropicProvider:
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
-        # ``reasoning_effort`` is the OpenAI-reasoning-model knob; Anthropic
+        # `reasoning_effort` is the OpenAI-reasoning-model knob; Anthropic
         # extended thinking uses a different shape and is configured on the
-        # provider itself (``self.thinking``), so the cross-provider call
+        # provider itself (`self.thinking`), so the cross-provider call
         # argument is ignored here.
         del reasoning_effort
-        # Hard-stop: refuse the call up front if we're already over budget.
+        # Hard-stop: refuse the call up front if the run is already over budget.
         if self.budget is not None:
             self.budget.check()
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
@@ -413,7 +413,7 @@ class AnthropicProvider:
         """SSE streaming variant.
 
         The stream lifecycle (idle watchdog, operator stop/steer, teardown
-        classification) is ``providers._stream.SseCall``; this method owns the
+        classification) is `providers._stream.SseCall`; this method owns the
         Anthropic Messages event shape. It fans text_delta and thinking_delta
         deltas to their callbacks as they arrive, and at message_stop returns
         a ProviderResponse whose .raw is shaped identically to a non-streaming
@@ -436,8 +436,8 @@ class AnthropicProvider:
         text_acc: dict[int, list[str]] = {}
         tool_acc: dict[int, dict[str, Any]] = {}
         json_partial: dict[int, list[str]] = {}
-        # Extended-thinking builders. ``thinking_acc`` collects the visible
-        # reasoning text and ``signature_acc`` the cryptographic signature
+        # Extended-thinking builders. `thinking_acc` collects the visible
+        # reasoning text and `signature_acc` the cryptographic signature
         # Anthropic requires to be echoed back on the next turn when a tool
         # call follows a thinking block. Dropping either breaks multi-turn
         # tool use under extended thinking, so both must round-trip.
@@ -488,7 +488,7 @@ class AnthropicProvider:
                 except json.JSONDecodeError:
                     continue
                 et = event_type or str(evt.get("type", ""))
-                # Reset the idle clock on every MEANINGFUL event. ``ping``
+                # Reset the idle clock on every MEANINGFUL event. `ping`
                 # heartbeats are deliberately excluded: they are exactly the
                 # bytes that would otherwise mask a wedged upstream. mark_output
                 # (the switch to the short mid-stream idle timeout) fires only
@@ -589,7 +589,7 @@ class AnthropicProvider:
                                 tu["input"] = json.loads(partial)
                             except json.JSONDecodeError:
                                 # Stream truncated mid-JSON; surface
-                                # what we have rather than dropping
+                                # what arrived rather than dropping
                                 # the tool_use entirely.
                                 tu["input"] = {"_partial_json": partial}
                         content_blocks.append(tu)

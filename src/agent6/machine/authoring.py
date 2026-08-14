@@ -125,8 +125,8 @@ def build_authoring_prompt(
 def extract_toml(payload: dict[str, Any] | None) -> str | None:
     """Pull the drafted `.asm.toml` source out of a `finish_session` payload.
 
-    Returns the source string, or ``None`` if the agent did not return a
-    non-empty ``toml`` string (the caller turns that into a diagnostic and
+    Returns the source string, or `None` if the agent did not return a
+    non-empty `toml` string (the caller turns that into a diagnostic and
     retries).
     """
     if not payload:

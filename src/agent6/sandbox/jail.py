@@ -62,17 +62,17 @@ def _never_mounted(p: Path) -> bool:
     """Dirs that never belong in a jail mount, however a tool symlink
     resolves.
 
-    ``operator_tool_paths`` mounts ``real.parent`` for every symlink in a bin
-    dir, so one resolving into the config dir mounted ``secrets.toml`` -- the
+    `operator_tool_paths` mounts `real.parent` for every symlink in a bin
+    dir, so one resolving into the config dir mounted `secrets.toml` -- the
     provider API keys -- read-only into the jail, and one into the state dir
     mounted memory and transcripts. Containment cuts both ways: a
     mount CONTAINING a private dir grants the same reads from above, and a
-    plain ``~/.local/bin/x -> ~/x.sh`` makes ``real.parent`` the whole home
+    plain `~/.local/bin/x -> ~/x.sh` makes `real.parent` the whole home
     dir. So agent6's private dirs (:func:`agent6.paths.private_dirs`) are
     refused in either direction, and $HOME and its ancestors outright:
-    mounting home or a dir above it would hand the jail ``~/.ssh`` and every
+    mounting home or a dir above it would hand the jail `~/.ssh` and every
     credential the operator owns. A mount BELOW home (a tool target's own
-    subdir) stays allowed; that is what keeps ``~/.local/bin`` tools working.
+    subdir) stays allowed; that is what keeps `~/.local/bin` tools working.
     Denied by identity rather than by inspecting contents.
     """
     if Path.home().is_relative_to(p):
@@ -224,9 +224,9 @@ def locate_jail_binary() -> Path | None:
     bundled into the installed package, else one on PATH.
 
     No source-tree fallback. The build hook compiles the crate into
-    ``sandbox/_bin/`` on every install, editable ones included, so a checkout
+    `sandbox/_bin/` on every install, editable ones included, so a checkout
     with cargo already has it there: rebuild and reinstall to pick a change up,
-    or point ``AGENT6_JAIL_BIN`` at a ``cargo build`` output while iterating on
+    or point `AGENT6_JAIL_BIN` at a `cargo build` output while iterating on
     the crate itself.
     """
     override = os.environ.get(_ENV_VAR)
@@ -275,15 +275,15 @@ class SessionNetwork:
 
     One per run, created before anything that might join it. A holder process
     makes the namespaces and reports readiness; we open
-    ``/proc/<holder>/ns/{user,net}`` and let it exit, because an open
+    `/proc/<holder>/ns/{user,net}` and let it exit, because an open
     descriptor is what keeps a namespace alive, not a live process. Every
-    jailed child whose policy says ``network = "session"`` is handed these and
+    jailed child whose policy says `network = "session"` is handed these and
     joins them, so the run's commands and its private MCP servers share one
     loopback with no route off the box.
 
     The user namespace travels with the network one because entering a netns
     needs CAP_SYS_ADMIN in the namespace that owns it (see the launcher's
-    ``join_network``).
+    `join_network`).
     """
 
     userns_fd: int
@@ -313,7 +313,7 @@ class SessionNetwork:
             # before it has done anything a timeout could explain.
             ready, _, _ = select.select([proc.stdout], [], [], _HOLDER_READY_TIMEOUT_S)
             if not ready or proc.stdout.readline().strip() != b"ready":
-                proc.kill()  # it is either wedged or not the launcher we think
+                proc.kill()  # it is either wedged or not the launcher this code expects
                 err = _read_available(proc.stderr)
                 raise JailUnavailableError(
                     "the session network could not be created: "
@@ -378,7 +378,7 @@ def _join_args(
 ) -> tuple[list[str], tuple[int, ...]]:
     """The launcher flags and inherited fds for this policy's network.
 
-    A ``session`` policy with no network to join is a bug in the caller, not a
+    A `session` policy with no network to join is a bug in the caller, not a
     reason to run isolated: the child would look confined and be alone, which
     is a different sandbox than the operator asked for.
     """
@@ -467,10 +467,10 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
 def strict_namespaces_work() -> bool:
     """Return True iff the jail binary can actually set up a `strict` namespace.
 
-    The cheap ``unshare -U -r true`` probe in ``detect.probe_userns_supported``
+    The cheap `unshare -U -r true` probe in `detect.probe_userns_supported`
     under-reports on an AppArmor-restricted host (Ubuntu 24.04+ with
-    ``kernel.apparmor_restrict_unprivileged_userns=1``) where an AppArmor profile grants
-    the *agent6-jail* binary userns but not ``/usr/bin/unshare``. This runs the
+    `kernel.apparmor_restrict_unprivileged_userns=1`) where an AppArmor profile grants
+    the *agent6-jail* binary userns but not `/usr/bin/unshare`. This runs the
     real jail binary with a trivial `strict` policy to get the authoritative
     answer. Cached for the process lifetime; the kernel/isolation state does not
     change mid-run. Returns False if the jail binary is missing.
@@ -526,7 +526,7 @@ _SWEEP_DEADLINE_S = 5.0
 _sweep_lock = threading.Lock()
 _live_launchers: set[int] = set()
 # Children agent6 started ON PURPOSE in their own session: a `/btw` ask, a
-# `/parallel` lane. They look exactly like an escapee -- our child, different
+# `/parallel` lane. They look exactly like an escapee -- a child of this process, different
 # session -- so without this the first background command's teardown SIGKILLs
 # them, destroying model work the operator has already paid for. Every detached
 # spawn from this process must register here; `agent6.ui.spawn` is the one
@@ -557,7 +557,7 @@ def keep_out_of_the_sweep(pid: int) -> None:
 
 
 def _own_children() -> dict[int, int]:
-    """``{pid: session id}`` for this process's children, right now.
+    """`{pid: session id}` for this process's children, right now.
 
     Read as bytes: comm is whatever a process named itself, so the line need
     not be valid UTF-8 and one hostile name must not break the scan.
@@ -636,7 +636,7 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
                     os.waitpid(pid, os.WNOHANG)
             if time.monotonic() >= deadline:
                 return frozenset(escapees)
-            time.sleep(0.01)  # killing one layer orphans the next onto us
+            time.sleep(0.01)  # killing one layer orphans the next onto this process
 
 
 def spawn_in_jail(
@@ -679,7 +679,7 @@ def spawn_in_jail(
     spec["mode"] = "exec"
     _become_subreaper()
     # pass_fds keeps the descriptor's NUMBER in the child, so the launcher is
-    # told the number we actually got rather than a hardcoded 3.
+    # told the fd number os.pipe actually returned rather than a hardcoded 3.
     join_args, join_fds = _join_args(policy, session_net)
     policy_r, policy_w = os.pipe()
     try:
@@ -730,7 +730,7 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
     spec = _policy_to_json(policy)
     start = time.monotonic()
     _become_subreaper()
-    # Snapshot first: anything that is our child afterwards but was not before
+    # Snapshot first: anything that is a child of this process afterwards but was not before
     # escaped the command. A concurrent caller's launcher is excluded by pid.
     before = frozenset(_own_children())
     with _sweep_lock:
@@ -738,7 +738,7 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
         # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
         # timeout — we can kill its whole process group and reap any orphaned
         # pidns-init/grandchild, not just the launcher itself. Use Popen (not
-        # subprocess.run) so we keep the pid to target os.killpg.
+        # subprocess.run) so the pid stays available to target os.killpg.
         launcher = subprocess.Popen(
             [str(binary), *join_args],
             stdin=subprocess.PIPE,
@@ -864,7 +864,7 @@ def _result_from_json(
 ) -> CommandResult:
     """The launcher's result object as a CommandResult.
 
-    ``exec_failed`` is the serving launcher saying the command could not be
+    `exec_failed` is the serving launcher saying the command could not be
     executed; it words that the same way the one-shot path does, so the model
     reads one message however its run is jailed.
     """
@@ -896,8 +896,8 @@ _LAUNCHER_ERR_NAME = "launcher.err"
 class BackgroundStatus:
     """What a detached command is doing, right now.
 
-    ``running`` is the live process, never an inference from output or age. A
-    launcher that exited without a result reports ``error``: a command whose
+    `running` is the live process, never an inference from output or age. A
+    launcher that exited without a result reports `error`: a command whose
     fate is unknown is never reported as still running.
     """
 
@@ -1274,9 +1274,9 @@ class JailSession:
 
         *interrupted* is polled while waiting for the answer. Once it says yes,
         the launcher is asked to hand the command back NOW rather than at
-        ``checkin_s``: the operator pressed Stop, and a 15-minute wait for a
+        `checkin_s`: the operator pressed Stop, and a 15-minute wait for a
         command that is already going to be abandoned reads as a hung agent.
-        The command is not killed -- it becomes ``bg<N>`` exactly as the
+        The command is not killed -- it becomes `bg<N>` exactly as the
         check-in would have made it, and teardown stops it.
         """
         start = time.monotonic()
@@ -1409,12 +1409,12 @@ class JailSession:
         """Shut the request channel; the launcher exits on the EOF, and under
         strict its PID namespace takes any survivors with it.
 
-        ``communicate()`` closes stdin itself (signalling the serve loop's EOF)
+        `communicate()` closes stdin itself (signalling the serve loop's EOF)
         and drains stdout/stderr. It is NOT preceded by a manual
-        ``stdin.close()``: on Python 3.12/3.13 ``communicate()`` then flushes
-        the already-closed pipe and raises ``ValueError: flush of closed file``
+        `stdin.close()`: on Python 3.12/3.13 `communicate()` then flushes
+        the already-closed pipe and raises `ValueError: flush of closed file`
         (3.14 tolerates it), which would be an unhandled crash in
-        ``ToolDispatcher.close()`` teardown on the project's minimum Python."""
+        `ToolDispatcher.close()` teardown on the project's minimum Python."""
         with contextlib.suppress(OSError):
             os.close(self._interrupt_w)
         with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):

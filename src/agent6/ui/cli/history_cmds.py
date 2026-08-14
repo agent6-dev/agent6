@@ -129,7 +129,7 @@ def _field_snippet(raw: str, start: int, end: int) -> str | None:
     """When the matched line is a JSON object (a logs.jsonl event, a per-call
     transcript line), window inside the STRING FIELD holding the match: the
     snippet then reads as prose instead of a raw
-    ``"type": "role.thinking_delta", "text": " ...`` fragment. None when the
+    `"type": "role.thinking_delta", "text": " ...` fragment. None when the
     line is not a JSON object or the match sits on syntax/keys (the caller
     falls back to the raw-line window)."""
     try:
@@ -242,13 +242,13 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
 
 def _collapse_escapes(s: str) -> str:
     """Render a JSON-encoded fragment readably, scanning left-to-right so a real
-    escaped backslash (``\\\\``) is never mistaken for the start of a ``\\n``.
+    escaped backslash (`\\\\`) is never mistaken for the start of a `\\n`.
 
-    The old naive ``str.replace("\\n", " ")`` matched the ``n`` of a
-    double-encoded newline (``\\\\n`` in a transcript that embeds a JSON body),
-    splitting the ``\\\\`` and leaving the ugly ``\\ `` the operator saw. Here
-    the whitespace escapes (``\\n`` ``\\t`` ``\\r``) become spaces,
-    ``\\\\`` / ``\\"`` / ``\\/`` decode to their literal char, and ``\\uXXXX``
+    The old naive `str.replace("\\n", " ")` matched the `n` of a
+    double-encoded newline (`\\\\n` in a transcript that embeds a JSON body),
+    splitting the `\\\\` and leaving the ugly `\\ ` the operator saw. Here
+    the whitespace escapes (`\\n` `\\t` `\\r`) become spaces,
+    `\\\\` / `\\"` / `\\/` decode to their literal char, and `\\uXXXX`
     decodes to its character (surrogate pairs combined): transcripts are
     written ascii-escaped while logs.jsonl is raw UTF-8, and the identity key
     must see one form or the same content never collapses. An unknown,
@@ -281,7 +281,7 @@ def _collapse_escapes(s: str) -> str:
 
 
 def _hex4(s: str, i: int) -> int | None:
-    """``int(s[i:i+4], 16)``, or None when truncated or not hex."""
+    """`int(s[i:i+4], 16)`, or None when truncated or not hex."""
     if i + 4 > len(s):
         return None
     try:
@@ -291,7 +291,7 @@ def _hex4(s: str, i: int) -> int | None:
 
 
 def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
-    """Decode the ``\\uXXXX`` escape at ``s[i]``, combining a surrogate PAIR
+    """Decode the `\\uXXXX` escape at `s[i]`, combining a surrogate PAIR
     into its real character; None keeps the literal text (malformed hex,
     truncated, or a lone surrogate)."""
     cp = _hex4(s, i + 2)
@@ -319,7 +319,7 @@ def _window(text: str, start: int) -> str:
 def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     """Group hits by run, print a faded run header once, then one line per hit.
     Identical snippets within a run (the same system-prompt boilerplate matched
-    in every transcript) collapse to one line with an ``(xN)`` count."""
+    in every transcript) collapse to one line with an `(xN)` count."""
     if not hits:
         print(f"[agent6] no matches under {target}.")
         return
@@ -422,7 +422,7 @@ def _cmd_history_transcript(
 ) -> int:
     """Render a run's full LLM conversation from its lossless per-call transcripts.
 
-    The transcripts (``<run>/transcripts/*.json``) are the complete, self-
+    The transcripts (`<run>/transcripts/*.json`) are the complete, self-
     contained record -- no join with logs.jsonl is needed. This is the CONVERSATION
     view (assistant text/thinking + every tool call with full I/O); for the terse
     EVENT timeline use `agent6 attach` / `agent6 history search`.

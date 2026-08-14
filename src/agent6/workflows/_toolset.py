@@ -39,7 +39,7 @@ def tool_definitions(
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> list[ToolDefinition]:
     """Build the tool list exposed to the loop: the mode's surface
-    (``schema.mode_tools``, which the dispatcher also enforces as its
+    (`schema.mode_tools`, which the dispatcher also enforces as its
     backstop) filtered by what the dispatcher actually allows (e.g.
     run_command may be disabled)."""
     available = set(dispatcher.available_tool_names())
@@ -89,10 +89,10 @@ def build_readonly_review_tools(
     dispatcher: ToolDispatcher,
 ) -> tuple[list[ToolDefinition], ReviewDispatch]:
     """Read-only tool surface for explore-tier review seats: the navigation tools
-    *dispatcher* exposes filtered to ``READONLY_REVIEW_TOOLS``, plus a dispatch
+    *dispatcher* exposes filtered to `READONLY_REVIEW_TOOLS`, plus a dispatch
     wrapper that REFUSES anything outside the allowlist (so a reviewer can never
     edit, commit, run a command, or mutate the task graph). Shared by the in-loop
-    panel and the post-hoc ``agent6 review`` path."""
+    panel and the post-hoc `agent6 review` path."""
     tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
 
     def dispatch(name: str, tool_input: dict[str, Any]) -> ToolResult:

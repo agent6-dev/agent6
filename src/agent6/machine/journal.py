@@ -15,7 +15,7 @@ re-validated by pydantic (`extra="forbid", frozen=True`), exactly like the
 machine spec itself. Snapshots are an optimisation for human inspection and
 fast status; correctness depends only on the journal.
 
-Layout under the per-repo state dir (``machines/<id>/``) (§5.3)::
+Layout under the per-repo state dir (`machines/<id>/`) (§5.3)::
 
     machine.asm.toml     # the exact source the run was started from (for replay)
     journal.jsonl        # append-only, fsync'd, one event per line
@@ -105,11 +105,11 @@ class WaitFact(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"] = "wait"
-    # ``None`` for a wait with no timer (parks until a `signal` poke, §4.3).
+    # `None` for a wait with no timer (parks until a `signal` poke, §4.3).
     wake_epoch: float | None = None
     woke_by: Literal["tick", "signal"]
     # The poke payload delivered by a `signal` wake, journaled so a replay
-    # re-reads the identical input. ``None`` for a bare poke or a `tick`.
+    # re-reads the identical input. `None` for a bare poke or a `tick`.
     payload: Any = None
 
 
@@ -222,19 +222,19 @@ class Snapshot(BaseModel):
 
 
 class PendingWait(BaseModel):
-    """A `wait` armed by ``--exit-on-wait`` but not yet fired (§6).
+    """A `wait` armed by `--exit-on-wait` but not yet fired (§6).
 
-    The absolute ``wake_epoch`` is computed once, when the wait is first
+    The absolute `wake_epoch` is computed once, when the wait is first
     reached, and persisted so that re-invocations by an external scheduler
-    compare against the *same* instant rather than re-arming ``every_secs``
-    from a fresh ``now`` each tick. Deleted once the wait fires.
+    compare against the *same* instant rather than re-arming `every_secs`
+    from a fresh `now` each tick. Deleted once the wait fires.
     """
 
     model_config = _MODEL_CONFIG
 
     state: str
-    # ``None`` for a wait with no timer: it fires only on a `signal` poke, never
-    # on a wake instant, so ``--exit-on-wait`` parks it until the operator pokes.
+    # `None` for a wait with no timer: it fires only on a `signal` poke, never
+    # on a wake instant, so `--exit-on-wait` parks it until the operator pokes.
     wake_epoch: float | None = None
 
 
@@ -247,11 +247,11 @@ def scrub_lone_surrogates(value: Any) -> Any:
     """A parsed-JSON value with any lone surrogate replaced.
 
     Applied at the two trust boundaries that produce them -- a tool's captured
-    stdout and a ``machine poke`` payload -- so the blackboard never holds one.
+    stdout and a `machine poke` payload -- so the blackboard never holds one.
     Sanitizing only the journal writers moved the crash one step downstream
     instead of removing it: the next agent state serializes the blackboard into
-    its request payload, and ``model_dump_json`` raises a
-    ``PydanticSerializationError`` that no handler on that path catches.
+    its request payload, and `model_dump_json` raises a
+    `PydanticSerializationError` that no handler on that path catches.
     """
     try:
         json.dumps(value, ensure_ascii=False).encode("utf-8")
@@ -264,9 +264,9 @@ def scrub_lone_surrogates(value: Any) -> Any:
 def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
     """One journal/snapshot record as JSON, lone-surrogate safe.
 
-    ``json.loads`` legally yields lone surrogates from ``\\udXXX`` escapes, and
-    they reach these writers from a tool's captured stdout and a ``machine poke``
-    payload. ``model_dump_json`` raises on them, which crashed the run before it
+    `json.loads` legally yields lone surrogates from `\\udXXX` escapes, and
+    they reach these writers from a tool's captured stdout and a `machine poke`
+    payload. `model_dump_json` raises on them, which crashed the run before it
     could journal a MachineEnd and re-crashed on every restart. Replace them
     (the same call EventSink makes for logs.jsonl) so the audit trail is written
     and stays valid UTF-8 for every reader."""
@@ -311,7 +311,7 @@ class MachineJournal:
         """Append one event as a JSON line, fsync'd.
 
         Heals a torn previous append first: a committed line always ends in
-        ``\\n``, so a file that does not is a crash mid-write. Truncating the
+        `\\n`, so a file that does not is a crash mid-write. Truncating the
         partial line off keeps this event on its own line instead of
         concatenating onto the fragment (which `read` would then reject).
         """
@@ -366,7 +366,7 @@ class MachineJournal:
     def write_snapshot(self, snapshot: Snapshot) -> None:
         """Write a snapshot atomically (temp file + rename), pruning old ones.
 
-        Recovery only ever reads ``latest_snapshot`` and replay rebuilds from
+        Recovery only ever reads `latest_snapshot` and replay rebuilds from
         the journal, so old snapshots are dead weight: a 10-minute-loop machine
         would otherwise accumulate ~150k files a year. Keep a short fixed tail
         (paranoia against a corrupt latest) and delete the rest.
@@ -416,8 +416,8 @@ class MachineJournal:
     def take_signal(self) -> tuple[bool, Any]:
         """Consume a pending operator poke, if any.
 
-        Returns ``(present, payload)``: ``present`` is True when a signal file was
-        consumed; ``payload`` is the JSON the poke carried (``None`` for a bare
+        Returns `(present, payload)`: `present` is True when a signal file was
+        consumed; `payload` is the JSON the poke carried (`None` for a bare
         poke, an empty file, or an unparseable one -- a hand-touched signal is a
         valid bare wake).
 
@@ -457,7 +457,7 @@ class MachineJournal:
         payload (journaled, replay-safe) for the next tool to read.
 
         Atomic (temp + fsync + rename) like every other journal write: the
-        engine's ``take_signal`` polls from another process, and a plain write
+        engine's `take_signal` polls from another process, and a plain write
         exposes an empty/partial file it would consume as a bare poke,
         dropping the payload.
         """

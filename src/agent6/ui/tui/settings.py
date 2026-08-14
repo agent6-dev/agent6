@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """UI-only preferences for the TUI (theme, copy method).
 
-Stored in ``<global-config-dir>/ui.toml`` — a sibling of ``config.toml`` and
-``secrets.toml``, NOT part of the agent config. A theme or a copy method is a
+Stored in `<global-config-dir>/ui.toml` — a sibling of `config.toml` and
+`secrets.toml`, NOT part of the agent config. A theme or a copy method is a
 viewer preference, not agent behavior, so it must never go through the config
 schema or the (shareable, per-repo) config layers. This module is the whole
 contract:
@@ -11,11 +11,11 @@ contract:
     get_theme() / save_theme(name)
     get_copy_method() / save_copy_method(name)
 
-Everything is best-effort: a missing, unreadable, or corrupt ``ui.toml`` simply
+Everything is best-effort: a missing, unreadable, or corrupt `ui.toml` simply
 degrades to the default — a UI preference must never break the TUI. Writes are
-atomic and ``chown``-ed back to the real user under sudo (same idiom as
-``secrets.py``); there's deliberately no ``tomli_w`` dependency, the writer is a
-tiny hand-rolled serializer for the one flat ``[ui]`` table.
+atomic and `chown`-ed back to the real user under sudo (same idiom as
+`secrets.py`); there's deliberately no `tomli_w` dependency, the writer is a
+tiny hand-rolled serializer for the one flat `[ui]` table.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ DEFAULT_COPY_METHOD = "auto"
 
 
 def load_ui_settings(user: RealUser | None = None) -> dict[str, Any]:
-    """Read ``ui.toml``; ``{}`` if absent, unreadable, or corrupt (never raises)."""
+    """Read `ui.toml`; `{}` if absent, unreadable, or corrupt (never raises)."""
     path = ui_settings_path(user)
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
@@ -53,7 +53,7 @@ def get_theme(default: str = DEFAULT_THEME) -> str:
 
 
 def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
-    """Persist ``[ui].<key> = value`` atomically. Best-effort: a failed save is
+    """Persist `[ui].<key> = value` atomically. Best-effort: a failed save is
     swallowed so a viewer preference can never break the UI."""
     user = user or effective_user()
     path = ui_settings_path(user)
@@ -78,7 +78,7 @@ def _save_ui_key(key: str, value: str, user: RealUser | None = None) -> None:
 
 
 def save_theme(name: str, user: RealUser | None = None) -> None:
-    """Persist ``[ui].theme = name`` (best-effort)."""
+    """Persist `[ui].theme = name` (best-effort)."""
     _save_ui_key("theme", name, user)
 
 
@@ -90,7 +90,7 @@ def get_copy_method(default: str = DEFAULT_COPY_METHOD) -> str:
 
 
 def save_copy_method(name: str, user: RealUser | None = None) -> None:
-    """Persist ``[ui].copy_method = name`` (best-effort)."""
+    """Persist `[ui].copy_method = name` (best-effort)."""
     _save_ui_key("copy_method", name, user)
 
 
@@ -99,7 +99,7 @@ def _toml_escape(value: str) -> str:
 
 
 def _render_ui_toml(data: dict[str, Any]) -> str:
-    """Render the flat ``[ui]`` table back to TOML (no ``tomli_w`` dependency)."""
+    """Render the flat `[ui]` table back to TOML (no `tomli_w` dependency)."""
     lines = ["# agent6 UI preferences (theme, etc.). Written by the TUI.", ""]
     ui = data.get("ui")
     if isinstance(ui, dict) and ui:

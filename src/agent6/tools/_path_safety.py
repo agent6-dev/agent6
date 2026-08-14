@@ -3,11 +3,11 @@
 """Containment for in-process filesystem access.
 
 Every tool that reads/writes a path in-process (outside
-``agent6.sandbox.jail.run_in_jail``) resolves it through here first: reject an
-absolute path or a ``..`` component, then require the resolved path to still
+`agent6.sandbox.jail.run_in_jail`) resolves it through here first: reject an
+absolute path or a `..` component, then require the resolved path to still
 be under *root*. Shared by the fs handlers (read_file / list_dir /
 apply_edit / apply_patch), the navigation handlers (outline / find_*) -- which
-all take an untrusted ``path`` argument -- and the symbol index they query.
+all take an untrusted `path` argument -- and the symbol index they query.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class NotRegularFile(ToolError):
 @dataclass(frozen=True, slots=True)
 class SafePath:
     """A path that passed containment, carrying the base it was contained
-    against: every read and write walks from ``base``, so a ``rel_path`` can
+    against: every read and write walks from `base`, so a `rel_path` can
     never be paired with the wrong tree."""
 
     base: Path
@@ -42,8 +42,8 @@ class SafePath:
 
 @dataclass(frozen=True, slots=True)
 class ContainedEntry:
-    """One entry of a contained listing. ``is_dir`` follows a symlink, like
-    ``Path.is_dir``; a caller that recurses checks ``is_symlink`` too, because
+    """One entry of a contained listing. `is_dir` follows a symlink, like
+    `Path.is_dir`; a caller that recurses checks `is_symlink` too, because
     the walk refuses to traverse one."""
 
     name: str
@@ -78,13 +78,13 @@ class Workspace:
     Not the sandbox: the sandbox confines child PROCESSES. This is the same
     policy enforced at the other place an untrusted model reaches files -- the
     tools, which run in this process and ask nobody's approval. It therefore
-    holds at EVERY isolation level, ``none`` included: the boundary follows the
+    holds at EVERY isolation level, `none` included: the boundary follows the
     operator's config values, never the isolation level, because a degradation
     that widened what the tools may read would invert the whole degrade rule.
 
-    ``denied`` (``[sandbox].hide_paths`` plus agent6's own private dirs) is
+    `denied` (`[sandbox].hide_paths` plus agent6's own private dirs) is
     refused for reads and writes alike, and beats every grant. The grants are
-    the operator's ``extra_read_paths`` / ``extra_write_paths``: the same values
+    the operator's `extra_read_paths` / `extra_write_paths`: the same values
     the jail mounts for commands, so a tool and a command reach the same trees.
     A relative path is always the workspace's; an absolute one is allowed only
     inside a grant, which is the only way to name a granted tree at all.
@@ -99,7 +99,7 @@ class Workspace:
     # extra_read_paths + extra_write_paths (write implies read).
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
-    # agent6's own carve-outs from ``denied``, not operator surface: today
+    # agent6's own carve-outs from `denied`, not operator surface: today
     # exactly the per-repo memory dir, a state subtree that is model-writable
     # BY DESIGN (memory is model-authored context). An exempt path still needs
     # a grant to be reachable; exemption only lifts the denial.
@@ -108,7 +108,7 @@ class Workspace:
     def _denying(self, abs_path: Path) -> Path | None:
         """The denied root covering *abs_path*, or None. ONE owner for the
         denial verdict: exemption is checked here, so no caller can consult
-        ``denied`` without it."""
+        `denied` without it."""
         if any(path_within(abs_path, e) for e in self.exempt):
             return None
         for d in self.denied:
@@ -201,7 +201,7 @@ def _open_dir(dir_fd: int, name: str, *, create: bool) -> int:
 
 
 def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) -> int:
-    """Open ``sp`` one component at a time from a descriptor on its base, each
+    """Open `sp` one component at a time from a descriptor on its base, each
     hop relative to the one before it. Returns an fd the caller owns.
 
     A :class:`SafePath` resolves and contains a path; opening it again by its
@@ -209,21 +209,21 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
     swap a component for a symlink out of the workspace in between (the
     workspace is writable, a symlink needs no access to its target, and these
     tools run IN-PROCESS, outside the jail, as the operator). For a write
-    (``O_CREAT|O_TRUNC``) the host file is already truncated by the time any
+    (`O_CREAT|O_TRUNC`) the host file is already truncated by the time any
     after-the-fact check can reject it.
 
-    ``O_NOFOLLOW`` on every component, including the parents this creates,
-    contains the walk by construction: no hop can traverse a symlink. ``..``
+    `O_NOFOLLOW` on every component, including the parents this creates,
+    contains the walk by construction: no hop can traverse a symlink. `..`
     and an absolute path are refused here as well as at the SafePath, so
     containment holds even for a hand-built one. Honest callers are unaffected,
     including one working through an in-repo symlink, whose resolved path names
     the real target.
 
-    Unless ``O_DIRECTORY`` is asked for, the leaf must be a REGULAR file, and
-    the check is ``fstat`` on the descriptor just opened -- never a stat by
-    name, which is a second lookup. ``O_NONBLOCK`` makes the open itself
+    Unless `O_DIRECTORY` is asked for, the leaf must be a REGULAR file, and
+    the check is `fstat` on the descriptor just opened -- never a stat by
+    name, which is a second lookup. `O_NONBLOCK` makes the open itself
     unable to block: a jailed background command can swap the leaf for a FIFO
-    between any check and the open, and ``O_NOFOLLOW`` stops a symlink but not
+    between any check and the open, and `O_NOFOLLOW` stops a symlink but not
     that. The flag is cleared before the caller reads or writes.
     """
     rel_path = sp.rel_path
@@ -276,11 +276,11 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
 
 def read_contained(sp: SafePath, *, errors: str = "strict", limit_chars: int | None = None) -> str:
     """The file's text, read through a descriptor walked from its base.
-    ``UnicodeDecodeError`` still reaches the caller, which reports it.
+    `UnicodeDecodeError` still reaches the caller, which reports it.
 
-    ``limit_chars`` bounds the read: at most that many characters are pulled
+    `limit_chars` bounds the read: at most that many characters are pulled
     into memory, so a multi-gigabyte file cannot OOM the (unsandboxed) agent.
-    The caller detects truncation by reading ``limit_chars + 1`` and checking
+    The caller detects truncation by reading `limit_chars + 1` and checking
     the length. None reads the whole file (for callers that must, like the
     symbol index parsing a source file)."""
     fd = open_contained(sp, os.O_RDONLY)

@@ -6,36 +6,36 @@ agent6 spawns each configured MCP server as a long-lived subprocess and
 talks JSON-RPC 2.0 over stdin/stdout. Only the subset the loop needs is
 implemented:
 
-* ``initialize`` (handshake).
-* ``notifications/initialized`` (we send it; we ignore incoming
+* `initialize` (handshake).
+* `notifications/initialized` (we send it; we ignore incoming
   notifications).
-* ``tools/list`` (discover tools at startup).
-* ``tools/call`` (dispatch one tool call).
+* `tools/list` (discover tools at startup).
+* `tools/call` (dispatch one tool call).
 
-Anything else the server might send (``logging/*``, ``prompts/*``,
-``resources/*``, server-side ``ping``) is silently dropped on the
+Anything else the server might send (`logging/*`, `prompts/*`,
+`resources/*`, server-side `ping`) is silently dropped on the
 client side, we do not advertise the corresponding capabilities.
 
 Threat model
 ============
 
 Each MCP server runs as the *operator's* user, OUTSIDE the agent6 jail,
-inheriting the agent6 process's FULL ``os.environ`` -- provider API keys
-included (the spawn passes no ``env``). The argv comes exclusively from
-your config (``[mcp.servers.<name>] command = [...]``); the LLM cannot
+inheriting the agent6 process's FULL `os.environ` -- provider API keys
+included (the spawn passes no `env`). The argv comes exclusively from
+your config (`[mcp.servers.<name>] command = [...]`); the LLM cannot
 influence it: operator-controlled argv, full user authority, no
-sandboxing. (The ``[notify]`` hook is NARROWER -- it runs under a curated
-``hook_env`` -- so an MCP server sees keys a notify hook does not.)
+sandboxing. (The `[notify]` hook is NARROWER -- it runs under a curated
+`hook_env` -- so an MCP server sees keys a notify hook does not.)
 
-What the LLM *can* influence is the *arguments* to ``tools/call`` once
+What the LLM *can* influence is the *arguments* to `tools/call` once
 a server is connected. The MCP server is responsible for validating
 those, agent6 forwards them verbatim. Operators should treat each MCP
 server as a tool surface as serious as any agent6 built-in tool.
 
 A misbehaving server (crash, hang, malformed JSON, oversized reply)
-must not take the agent down. Each ``call_tool`` is wrapped in a
-timeout and a try/except; the manager surfaces a clean ``MCPError`` to
-the dispatcher, which converts it to a ``tool.result ok=false`` event.
+must not take the agent down. Each `call_tool` is wrapped in a
+timeout and a try/except; the manager surfaces a clean `MCPError` to
+the dispatcher, which converts it to a `tool.result ok=false` event.
 """
 
 from __future__ import annotations
@@ -103,14 +103,14 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
 
 # Prefix every MCP tool name with this + the server name so collisions
 # with built-in tools (and across servers) are structurally impossible.
-# Sonnet / GPT-4o / Kimi all accept ``[A-Za-z0-9_]+`` tool names of
+# Sonnet / GPT-4o / Kimi all accept `[A-Za-z0-9_]+` tool names of
 # 64-128 chars; double-underscore segmentation keeps the prefix human-
 # parseable in transcripts.
 MCP_TOOL_PREFIX = "mcp__"
 
 
 def split_tool_name(qualified_name: str) -> tuple[str, str]:
-    """``mcp__<server>__<tool>`` -> (server, tool).
+    """`mcp__<server>__<tool>` -> (server, tool).
 
     Splits on the FIRST double-underscore after the prefix, so a tool name that
     contains "__" itself survives intact (server names cannot: see
@@ -128,8 +128,8 @@ def split_tool_name(qualified_name: str) -> tuple[str, str]:
 
 
 # A server-advertised tool name is spliced into the LLM-visible
-# ``mcp__<server>__<tool>``; the provider tool-name grammar is
-# ``[A-Za-z0-9_-]{1,64}``. A name with whitespace/dots/other chars would make
+# `mcp__<server>__<tool>`; the provider tool-name grammar is
+# `[A-Za-z0-9_-]{1,64}`. A name with whitespace/dots/other chars would make
 # the qualified name an invalid tool definition (rejected by the API) or shadow
 # a built-in, so tools whose names don't match are skipped at registration.
 _VALID_MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -146,7 +146,7 @@ class MCPError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class MCPToolDescriptor:
-    """One tool advertised by one MCP server. ``qualified_name`` is what
+    """One tool advertised by one MCP server. `qualified_name` is what
     the LLM sees and what the dispatcher routes on."""
 
     server_name: str
@@ -276,7 +276,7 @@ class MCPServerSpec:
 @dataclass
 class _MCPServer:
     """One running MCP server. Owns its subprocess + an id counter +
-    a stdout-reader thread that publishes responses into ``_pending``
+    a stdout-reader thread that publishes responses into `_pending`
     keyed by request id."""
 
     name: str
@@ -315,8 +315,8 @@ class _MCPServer:
     _tools: tuple[MCPToolDescriptor, ...] = ()
 
     def start(self) -> None:
-        """Spawn the subprocess and pump it through ``initialize`` +
-        ``tools/list``. Raises ``MCPError`` if anything in the handshake
+        """Spawn the subprocess and pump it through `initialize` +
+        `tools/list`. Raises `MCPError` if anything in the handshake
         fails, leaving the subprocess terminated."""
         if self._proc is not None:
             raise MCPError(f"server {self.name!r} already started")
@@ -464,7 +464,7 @@ class _MCPServer:
                     proc.wait(timeout=1.0)
         finally:
             # Wake any thread blocked on _pending_cv so it can exit
-            # cleanly instead of hanging on a server we just killed.
+            # cleanly instead of hanging on a server this teardown just killed.
             with self._pending_cv:
                 self._pending_cv.notify_all()
 
@@ -477,7 +477,7 @@ class _MCPServer:
             return req_id
 
     def _reinitialize(self) -> None:
-        """Re-run just the ``initialize`` handshake after a session expiry: the
+        """Re-run just the `initialize` handshake after a session expiry: the
         transport captures the fresh session id, and the tool list does not
         change, so there is nothing to re-list. HTTP only (a stdio server has
         no session to expire)."""
@@ -514,7 +514,7 @@ class _MCPServer:
             try:
                 response = self.http.send(payload, timeout_s=timeout_s)
             except MCPSessionExpired:
-                # The server dropped our session (the transport already cleared
+                # The server dropped this client's session (the transport already cleared
                 # the id). Re-initialize per the spec and retry this request
                 # once. The re-initialize carries no session id, so its own
                 # 404 (if any) is a plain error and cannot loop back here.
@@ -556,7 +556,7 @@ class _MCPServer:
                             f"server {self.name!r} timed out after {timeout_s:.1f}s on {method}"
                         )
                     # If the reader thread died (server crashed mid-call)
-                    # we'd otherwise wait the full timeout for nothing.
+                    # the call would otherwise wait the full timeout for nothing.
                     if self._reader is not None and not self._reader.is_alive():
                         # Its own words if it left any: a command that does not
                         # exist, a refused grant, the launcher's setup failure
@@ -605,7 +605,7 @@ class _MCPServer:
                 # Bound the read: an unbounded readline() would buffer an entire
                 # multi-GiB line from a runaway/malicious server into memory
                 # BEFORE any size check, OOM'ing the agent. Cap at the limit + 1
-                # so we can detect (and drain) an oversized line.
+                # so the reader can detect (and drain) an oversized line.
                 raw = stream.readline(_MAX_LINE_BYTES + 1)
             except (OSError, ValueError):
                 break
@@ -625,7 +625,7 @@ class _MCPServer:
             if not isinstance(msg, dict):
                 continue
             req_id = msg.get("id")
-            # We only consume responses: messages that carry an id we sent
+            # We only consume responses: messages that carry an id this client sent
             # and have no "method" key. A message with both an int id and a
             # "method" is a server-INITIATED request (e.g. sampling/createMessage,
             # roots/list, elicitation/create); its id is the server's own counter
@@ -643,9 +643,9 @@ class MCPManager:
     """Owns N MCP server subprocesses for one agent6 run; closed by the
     lifecycle that built it.
 
-    The ``configs`` arg is an iterable of (name, command, startup_timeout_s,
+    The `configs` arg is an iterable of (name, command, startup_timeout_s,
     call_timeout_s) tuples; we keep this constructor decoupled from the
-    ``Config`` types so tests can pass plain tuples without booting
+    `Config` types so tests can pass plain tuples without booting
     the whole config validator.
     """
 

@@ -2,17 +2,17 @@
 # Copyright 2026 Eric Lesiuta
 """Restricted, non-Turing-complete predicate language for `branch` states.
 
-A predicate is parsed with :func:`ast.parse` in ``mode="eval"`` and then
+A predicate is parsed with :func:`ast.parse` in `mode="eval"` and then
 walked against a strict allow-list of node types. Anything outside the
 allow-list, function calls beyond a tiny fixed set, Python attribute
 access, comprehensions, lambdas, arithmetic, is rejected at
-``machine check`` time. The evaluator never ``eval``/``exec``s, never
-calls ``getattr``, and never resolves arbitrary Python names: an
-``Attribute`` chain is reinterpreted as *data* navigation into a record
-value (an ordered dict lookup), and a bare ``Name`` must be a declared
+`machine check` time. The evaluator never `eval`/`exec`s, never
+calls `getattr`, and never resolves arbitrary Python names: an
+`Attribute` chain is reinterpreted as *data* navigation into a record
+value (an ordered dict lookup), and a bare `Name` must be a declared
 blackboard variable.
 
-This module is intentionally dependency-free (stdlib ``ast`` only) so the
+This module is intentionally dependency-free (stdlib `ast` only) so the
 security-critical allow-list can be audited in isolation.
 """
 
@@ -32,7 +32,7 @@ __all__ = [
 ]
 
 # The only callable names a predicate may invoke. Each is a fixed-arity,
-# pure builtin re-implemented by the evaluator; we never call the Python
+# pure builtin re-implemented by the evaluator; it never calls the Python
 # builtin via the name.
 ALLOWED_FUNCTIONS = frozenset({"len"})
 
@@ -55,7 +55,7 @@ class PredicateError(Exception):
 @dataclass(frozen=True, slots=True)
 class Reference:
     """A blackboard reference: a root variable plus zero or more record
-    field navigations. ``verdict.confidence`` is ``Reference("verdict",
+    field navigations. `verdict.confidence` is ``Reference("verdict",
     ("confidence",))``."""
 
     root: str
@@ -70,7 +70,7 @@ class Reference:
 class Predicate:
     """A parsed, allow-list-validated predicate.
 
-    ``references`` is every blackboard reference the predicate reads, in
+    `references` is every blackboard reference the predicate reads, in
     source order, so a caller can type-check each against the declared
     variables and record schemas.
     """

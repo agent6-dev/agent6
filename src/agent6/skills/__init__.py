@@ -2,14 +2,14 @@
 # Copyright 2026 Eric Lesiuta
 """Skill discovery: the SKILL.md format (agentskills.io) read from operator dirs.
 
-A skill is a directory holding a ``SKILL.md`` whose YAML frontmatter carries
-``name`` and ``description``. This package is a pure leaf: it scans
+A skill is a directory holding a `SKILL.md` whose YAML frontmatter carries
+`name` and `description`. This package is a pure leaf: it scans
 operator-chosen directories, parses the two required fields, and applies the
 operator's per-skill state map. Where the content goes (system-prompt index,
-``use_skill`` tool, ``--skill`` flag) is the consumers' business.
+`use_skill` tool, `--skill` flag) is the consumers' business.
 
 The frontmatter parser is deliberately minimal, not a YAML implementation: it
-covers the scalar, quoted, folded (``>``) and literal (``|``) forms the two
+covers the scalar, quoted, folded (`>`) and literal (`|`) forms the two
 required fields use in the wild. Unknown keys are surfaced and ignored so
 ecosystem skills with extra fields load fine; anything unparseable is a
 warning, never a crash.
@@ -49,8 +49,8 @@ class Skill:
 class ResolvedSkills:
     """Discovery output after the operator's state map is applied.
 
-    ``enabled`` feeds the system-prompt index (on-demand loading);
-    ``always`` skills get their full text injected instead. A skill is in
+    `enabled` feeds the system-prompt index (on-demand loading);
+    `always` skills get their full text injected instead. A skill is in
     at most one of the two.
     """
 
@@ -60,7 +60,7 @@ class ResolvedSkills:
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
-    """Parse a SKILL.md's leading ``---`` frontmatter block.
+    """Parse a SKILL.md's leading `---` frontmatter block.
 
     Returns (fields, warnings). Missing or unclosed frontmatter yields no
     fields and a warning; the caller decides whether that disqualifies the
@@ -129,8 +129,8 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
 def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str, ...]]:
     """Scan directories for skills, in precedence order (first dir wins dupes).
 
-    Each directory may hold skill subdirectories (``<dir>/<name>/SKILL.md``)
-    or be a single skill itself (``<dir>/SKILL.md``). Dotted entries are
+    Each directory may hold skill subdirectories (`<dir>/<name>/SKILL.md`)
+    or be a single skill itself (`<dir>/SKILL.md`). Dotted entries are
     ignored. Missing directories are fine (nothing installed yet).
     """
     found: dict[str, Skill] = {}
@@ -162,13 +162,13 @@ def discover_skills(dirs: Sequence[Path]) -> tuple[tuple[Skill, ...], tuple[str,
 
 
 def skill_search_dirs(extra_dirs: Sequence[str], installed_dir: Path) -> tuple[Path, ...]:
-    """Search order: ``extra_dirs`` first, so a local checkout under active
+    """Search order: `extra_dirs` first, so a local checkout under active
     development wins over an installed copy of the same skill."""
     return (*(Path(d).expanduser() for d in extra_dirs), installed_dir)
 
 
 def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> ResolvedSkills:
-    """Apply the operator's ``[skills.state]`` map (absent name = enabled)."""
+    """Apply the operator's `[skills.state]` map (absent name = enabled)."""
     warnings = [
         f"[skills.state] names an unknown skill: {name!r}"
         for name in state

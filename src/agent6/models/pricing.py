@@ -3,23 +3,23 @@
 """Cache-only model price lookups (USD per 1M tokens, (input, output)).
 
 There is NO static price table and no fallback rate: a price either came from
-a provider's own models endpoint (fetched + cached by ``agent6.models.cache``,
+a provider's own models endpoint (fetched + cached by `agent6.models.cache`,
 which stores it alongside the model list under
-``$XDG_CACHE_HOME/agent6/models/<provider>.json``) or it is unknown. An
+`$XDG_CACHE_HOME/agent6/models/<provider>.json`) or it is unknown. An
 outdated hardcoded price is worse than no price: reports render unknown models
 as "$?" and the USD budget conversion does not apply.
 
 Today OpenRouter publishes per-model pricing on its /models endpoint.
 Anthropic's models API does not include pricing (verified live 2026-07), so a
 direct-Anthropic model id falls back to its OpenRouter listing when one is
-cached: ``claude-haiku-4-5-20251001`` -> ``anthropic/claude-haiku-4.5`` (strip
+cached: `claude-haiku-4-5-20251001` -> `anthropic/claude-haiku-4.5` (strip
 the date suffix, dot the trailing version). The price itself is still
 live-fetched from a provider endpoint; only the id spelling is derived, and
 OpenRouter mirrors Anthropic's list prices. A model the derivation cannot map
 stays honestly unpriced, and runs rely on token ceilings (and
-OpenRouter-style ``usage.cost`` reporting where available).
+OpenRouter-style `usage.cost` reporting where available).
 
-This module is import-light (stdlib + ``agent6.paths``) so ``agent6.budget``
+This module is import-light (stdlib + `agent6.paths`) so `agent6.budget`
 can use it without dragging in config/httpx2. Reads are cache-file only, never
 network. Lookups are memoized for the process lifetime: one CLI invocation is
 one run, and mid-run price changes are noise.
@@ -44,10 +44,10 @@ _CLAUDE_TRAILING_VERSION_RE = re.compile(r"-(\d+)-(\d+)$")
 def _openrouter_alias(model: str) -> str | None:
     """OpenRouter listing id for a direct-Anthropic model id, or None.
 
-    Only derives for bare ``claude-*`` ids (never rewrites an already
-    namespaced id): drop a ``-YYYYMMDD`` snapshot suffix, then dot a trailing
-    ``-N-M`` version (``claude-opus-4-8`` -> ``anthropic/claude-opus-4.8``).
-    Ids the rules don't cover (e.g. legacy version-first ``claude-3-5-sonnet``)
+    Only derives for bare `claude-*` ids (never rewrites an already
+    namespaced id): drop a `-YYYYMMDD` snapshot suffix, then dot a trailing
+    `-N-M` version (`claude-opus-4-8` -> `anthropic/claude-opus-4.8`).
+    Ids the rules don't cover (e.g. legacy version-first `claude-3-5-sonnet`)
     return a candidate that simply misses the price map, keeping them
     honestly unpriced rather than mispriced.
     """

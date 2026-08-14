@@ -117,9 +117,9 @@ def fmt_run_event(e: dict[str, Any]) -> str:
 
 
 def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
-    """Hardened ``git diff <range>``, bytes-captured and lossy-decoded: the old
-    ``text=True`` strict decode raised UnicodeDecodeError out of communicate()
-    on a valid non-UTF-8 diff (a latin-1 file), crashing ``ask --run``."""
+    """Hardened `git diff <range>`, bytes-captured and lossy-decoded: the old
+    `text=True` strict decode raised UnicodeDecodeError out of communicate()
+    on a valid non-UTF-8 diff (a latin-1 file), crashing `ask --run`."""
     # operator-controlled argv, no LLM input (same as `agent6 sessions diff`).
     # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
     # would otherwise run on the host when the operator asks about a prior run.

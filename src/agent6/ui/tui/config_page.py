@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The TUI config viewer/editor — a thin renderer over the shared config
-view-model (``config_layer.build_config_view``) and the shared edit path
-(``config_layer.set_config_value`` / ``unset_config_value``). All config logic
+view-model (`config_layer.build_config_view`) and the shared edit path
+(`config_layer.set_config_value` / `unset_config_value`). All config logic
 lives in those layers, so this page and the web editor never drift.
 
 Discoverability is driven by ONE action registry (:data:`CONFIG_ACTIONS`): the
@@ -180,10 +180,10 @@ class _NavTable(DataTable[str]):
 
 
 def _provider_preset_base_url(key: str) -> str:
-    """The preset base_url for a ``providers.<name>.base_url`` setting whose
-    ``<name>`` is a known provider (else ""). Lets the single-setting editor
+    """The preset base_url for a `providers.<name>.base_url` setting whose
+    `<name>` is a known provider (else ""). Lets the single-setting editor
     offer e.g. openrouter.ai instead of the generic api.openai.com that
-    ``config._default_base_url`` fills in for any unset openai-format provider."""
+    `config._default_base_url` fills in for any unset openai-format provider."""
     parts = key.split(".")
     if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
         return PROVIDER_DEFAULTS.get(parts[1], {}).get("base_url", "")
@@ -194,7 +194,7 @@ class _FormModal[ResultT](ModalScreen[ResultT]):
     """Shared form-modal keys. One vertical ↑↓ chain: ChoiceField hands off at
     its own edges; Inputs and action items release ↑↓ here so it flows through
     them too. ←/→ stay text-editing keys inside an Input and move between the
-    flat action items; an activated ActionItem dispatches to ``action_<id>``."""
+    flat action items; an activated ActionItem dispatches to `action_<id>`."""
 
     def on_key(self, event: events.Key) -> None:
         focused = self.focused
@@ -220,7 +220,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     as they move) for enum choices and bools -- with an inline "custom" row for
     values the choices don't cover -- a text box otherwise. The action row (Save
     · Unset → default · Cancel) is flat text, ←/→ navigable + clickable. Returns
-    ``(action, value, to_repo)`` (action "save"/"unset") or None on cancel."""
+    `(action, value, to_repo)` (action "save"/"unset") or None on cancel."""
 
     # No enter->save: Space/Enter on a chooser SELECTS the highlighted option, so
     # Enter must not also save (you'd save while just picking). Save via the Save
@@ -368,7 +368,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
 
 
 class ProviderModal(_FormModal[None]):
-    """Add a ``[providers.<name>]`` entry via a form instead of hand-editing a
+    """Add a `[providers.<name>]` entry via a form instead of hand-editing a
     TOML dict: dropdowns for the fixed-choice fields (api_format, deployment,
     from the schema) and inputs for the free ones (name, base_url, api_key_env).
     base_url/auth default from the format+deployment when blank, so a minimal

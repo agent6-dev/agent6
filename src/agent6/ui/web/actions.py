@@ -306,7 +306,7 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
     None when the machine name is unknown or no agent state is active.
 
     When *state* is given (the dir name the client rendered the prompt from,
-    e.g. ``0001-work``) route to exactly that state, so an answer lands in the
+    e.g. `0001-work`) route to exactly that state, so an answer lands in the
     state it was shown for even if the machine has since advanced to another
     state that reuses the same prompt id. Falls back to the newest state when
     *state* is absent (a bare CLI/older client). *state* is validated as a
@@ -379,7 +379,7 @@ def machine_approve(
     cwd: Path, name: str, prompt_id: str, answer: str, *, state: str = ""
 ) -> tuple[bool, str]:
     """Answer a pending approval in the agent state the prompt was rendered from
-    (``state``; newest when absent)."""
+    (`state`; newest when absent)."""
     refusal = _machine_unavailable(
         cwd,
         name,
@@ -399,7 +399,7 @@ def machine_answer(
     cwd: Path, name: str, question_id: str, answers: list[str], *, state: str = ""
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
-    from (``state``; newest when absent). One answer per question, by index."""
+    from (`state`; newest when absent). One answer per question, by index."""
     refusal = _machine_unavailable(
         cwd,
         name,
@@ -416,7 +416,7 @@ def machine_answer(
 
 
 def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
-    """Steer the agent state the operator is viewing (``state``; newest when
+    """Steer the agent state the operator is viewing (`state`; newest when
     absent). Same contract as a run steer."""
     refusal = _machine_unavailable(
         cwd,

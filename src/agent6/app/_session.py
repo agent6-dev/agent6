@@ -192,7 +192,7 @@ def build_session_providers(
 @dataclass(frozen=True, slots=True)
 class SessionTools:
     """The curator + dispatcher pair and the model-derived loop knobs.
-    ``cfg`` is the decompose-resolved config the Workflow must be built with."""
+    `cfg` is the decompose-resolved config the Workflow must be built with."""
 
     curator: GraphCurator
     dispatcher: ToolDispatcher
@@ -276,10 +276,10 @@ def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = 
 
     *overrides* are the operator's per-invocation flags, and they land LAST:
     the most specific layer, and the one the LLM cannot reach. The ask clamp
-    exists to catch a STANDING ``run_commands = "yes"`` that nobody is watching,
-    not an explicit ``--auto-approve`` on this invocation -- clamping that made
+    exists to catch a STANDING `run_commands = "yes"` that nobody is watching,
+    not an explicit `--auto-approve` on this invocation -- clamping that made
     the flag inert and every headless `ask --auto-approve` refused. Tightening
-    still wins outright: ``--no-commands`` pins "no", and ``--auto-approve``
+    still wins outright: `--no-commands` pins "no", and `--auto-approve`
     never resurrects a withheld one.
     """
     clamped = cfg.clamped_for_ask() if session_kind(mode).clamps_commands else cfg

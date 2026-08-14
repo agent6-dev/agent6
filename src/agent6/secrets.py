@@ -2,21 +2,21 @@
 # Copyright 2026 Eric Lesiuta
 """Secret storage for agent6 (provider API keys, OAuth tokens).
 
-Secrets live in ``<global-config-dir>/secrets.toml``, separate from the
+Secrets live in `<global-config-dir>/secrets.toml`, separate from the
 config so the config can be shared/committed while keys never are. The
 file is treated like an SSH private key:
 
 - it MUST be a regular file owned by the operator,
-- it MUST be ``0600`` (no group/other bits) or agent6 refuses to read it,
-- it is written atomically with ``0600`` and ``chown``-ed back to the real
+- it MUST be `0600` (no group/other bits) or agent6 refuses to read it,
+- it is written atomically with `0600` and `chown`-ed back to the real
   user when agent6 is running through sudo.
 
 Key resolution order for a provider (most explicit first):
 
-1. the environment variable named by ``[providers.<name>].api_key_env``
+1. the environment variable named by `[providers.<name>].api_key_env`
    (when set and non-empty), keeps CI/secret-manager workflows working,
-2. ``[providers.<name>].api_key`` in ``secrets.toml``,
-3. nothing (the caller raises a "run ``agent6 connect``" error).
+2. `[providers.<name>].api_key` in `secrets.toml`,
+3. nothing (the caller raises a "run `agent6 connect`" error).
 
 Secrets are never written to transcripts, never printed by ``config
 show`` (always redacted), and never mounted into the jail, provider
@@ -56,7 +56,7 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
             f" (group/other accessible). Run: chmod 600 {path}"
         )
     # When running as the operator (not sudo), the file must be ours. Under
-    # sudo we read the real user's file as root, which is expected.
+    # sudo the read takes the real user's file as root, which is expected.
     if os.geteuid() != 0 and st.st_uid != user.uid:
         raise SecretsError(
             f"{path} is owned by uid {st.st_uid}, not you (uid {user.uid});"
@@ -65,7 +65,7 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
 
 
 def load_secrets(user: RealUser | None = None) -> dict[str, Any]:
-    """Load and validate ``secrets.toml``. Returns ``{}`` when absent."""
+    """Load and validate `secrets.toml`. Returns `{}` when absent."""
     user = user or effective_user()
     path = secrets_path(user)
     if not path.exists():
@@ -107,12 +107,12 @@ def save_secret(
     extra: dict[str, str] | None = None,
     user: RealUser | None = None,
 ) -> Path:
-    """Persist ``[providers.<name>].api_key`` (and any *extra* string fields).
+    """Persist `[providers.<name>].api_key` (and any *extra* string fields).
 
     Rewrites the whole file atomically, preserving other providers'
-    entries, then forces ``0600`` and chowns back to the real user. The
-    read-merge-publish cycle runs under ``locked_file``: two concurrent
-    ``agent6 connect`` invocations would otherwise read the same base file
+    entries, then forces `0600` and chowns back to the real user. The
+    read-merge-publish cycle runs under `locked_file`: two concurrent
+    `agent6 connect` invocations would otherwise read the same base file
     and the later publish would drop the earlier provider's credential.
     """
     user = user or effective_user()
@@ -154,7 +154,7 @@ def _render_secrets_toml(data: dict[str, Any]) -> str:
     """Render the secrets dict back to TOML.
 
     Hand-rolled (no tomli-w dependency) and intentionally narrow: secrets
-    are a flat ``[providers.<name>]`` table of string fields.
+    are a flat `[providers.<name>]` table of string fields.
     """
     lines = [
         "# agent6 secrets. Written by `agent6 connect`.",

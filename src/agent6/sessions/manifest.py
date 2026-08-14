@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Read a session's manifest.json into the typed :class:`SessionManifest`. The single
-reader + the on-disk shape; the writer is ``app.manifest``.
+reader + the on-disk shape; the writer is `app.manifest`.
 
-A leaf beside ``layout.py``: pydantic + path arithmetic, no agent6 imports, so
+A leaf beside `layout.py`: pydantic + path arithmetic, no agent6 imports, so
 app, the viewmodel, and the CLI parse a run's manifest through one owner and one
-shape instead of each re-deriving the read + error-catch + stringly ``.get``.
+shape instead of each re-deriving the read + error-catch + stringly `.get`.
 
 manifest.json is persistent history: every run dir ever written must keep
 rendering, so the model defaults every field and folds legacy shapes (``version:
-1`` dirs, the pre-nesting flat ``merged_*`` keys). Reading is lenient
-(``read_manifest`` degrades a corrupt file through ``ManifestError``, which the
+1` dirs, the pre-nesting flat `merged_*`` keys). Reading is lenient
+(`read_manifest` degrades a corrupt file through `ManifestError`, which the
 render consumers already catch and degrade on); the ONE strict contract is
-``session_mode`` -- the fork/resume privilege gate, which refuses an unknown mode
+`session_mode` -- the fork/resume privilege gate, which refuses an unknown mode
 rather than falling open to the write ("run") tools.
 """
 
@@ -32,13 +32,13 @@ _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
 
 class ManifestError(Exception):
     """A session's manifest.json is missing, unreadable, corrupt, not a JSON object,
-    does not validate, or (via ``session_mode``) records an unknown privilege
+    does not validate, or (via `session_mode`) records an unknown privilege
     mode. Carries the underlying cause as its message, so a caller that wants to
     surface a detail can render it."""
 
 
 class ModelBrief(BaseModel):
-    """``{provider, model}`` for a resolved role."""
+    """`{provider, model}` for a resolved role."""
 
     model_config = _MODEL_CONFIG
 
@@ -68,7 +68,7 @@ class PolicyStamp(BaseModel):
 
 
 class WorkflowStamp(BaseModel):
-    """The in-loop strategy the run started with, so ``resume`` re-applies it."""
+    """The in-loop strategy the run started with, so `resume` re-applies it."""
 
     model_config = _MODEL_CONFIG
 
@@ -90,7 +90,7 @@ class WorkflowStamp(BaseModel):
 
     @property
     def replay_preset(self) -> str:
-        """The ``--preset`` override a resumed or forked leg must re-apply.
+        """The `--preset` override a resumed or forked leg must re-apply.
 
         Only a FLAG-selected preset: a config-selected one re-resolves
         identically from the same config files, whereas handing its name back as
@@ -111,7 +111,7 @@ class MergeStamp(BaseModel):
     into: str = ""
     sha: str = ""
     ts: str = ""
-    # The RUN BRANCH tip that was merged (``sha`` is the commit in the base).
+    # The RUN BRANCH tip that was merged (`sha` is the commit in the base).
     # `sessions prune --delete-squashed` force-deletes only when the branch still
     # points here: a resumed run keeps committing on the same branch under this
     # stamp, and those commits exist in no other ref.
@@ -120,7 +120,7 @@ class MergeStamp(BaseModel):
 
 class CompareStamp(BaseModel):
     """A fan-out lane's auto-compare placement. The fan-out id itself lives in
-    the top-level ``parallel_id``, not here."""
+    the top-level `parallel_id`, not here."""
 
     model_config = _MODEL_CONFIG
 
@@ -146,11 +146,11 @@ class SessionManifest(BaseModel):
     """The typed manifest.json a session starts with (and later stamps).
 
     Every field defaults so ANY historical run dir on disk still parses (old
-    ``version: 1`` dirs, dirs missing later-added fields). ``extra="ignore"`` on
-    read drops keys this version dropped (the legacy ``compare.group``); the
+    `version: 1` dirs, dirs missing later-added fields). `extra="ignore"` on
+    read drops keys this version dropped (the legacy `compare.group`); the
     writer always emits the full shape. Known limitation: a stamp-rewrite by
     this version drops keys only a NEWER version knows (load -> model_copy ->
-    dump cannot carry them), so the write path re-stamps ``version`` to keep
+    dump cannot carry them), so the write path re-stamps `version` to keep
     the on-disk claim truthful.
     """
 
@@ -191,7 +191,7 @@ class SessionManifest(BaseModel):
     @classmethod
     def _fold_legacy_keys(cls, data: Any) -> Any:
         """Fold the pre-v2 flat merge keys (merged_into/merged_sha/merged_ts) into
-        the nested ``merged`` stamp, so a run merged before this reshape still
+        the nested `merged` stamp, so a run merged before this reshape still
         reads its merge record."""
         if not isinstance(data, dict) or data.get("merged"):
             return data
@@ -207,9 +207,9 @@ class SessionManifest(BaseModel):
     def session_mode(self) -> ResumableMode:
         """The session's mode, refusing anything this agent6 does not know.
 
-        Fork and resume act on this rather than the raw ``mode`` string, so a
+        Fork and resume act on this rather than the raw `mode` string, so a
         damaged manifest never silently escalates a read-only session to the
-        privileged write ("run") tools. Pure-render consumers read ``mode``
+        privileged write ("run") tools. Pure-render consumers read `mode`
         directly: showing an unknown value is fine, acting on one is not.
 
         The vocabulary is `types.SESSION_KINDS`. Keeping a second list here let
@@ -227,13 +227,13 @@ class SessionManifest(BaseModel):
 
 
 def read_manifest(session_dir: Path) -> SessionManifest:
-    """Parse ``<session_dir>/manifest.json`` into a :class:`SessionManifest`, or raise
-    ``ManifestError``.
+    """Parse `<session_dir>/manifest.json` into a :class:`SessionManifest`, or raise
+    `ManifestError`.
 
     Lenient by design: every field defaults, so any parseable historical manifest
-    validates and renders. A file that cannot be read (``OSError``), is not JSON
-    (any ``ValueError``: a truncated JSON is a ``JSONDecodeError`` and a
-    torn-UTF-8 tail a ``UnicodeDecodeError``, both subclasses), is not a JSON
+    validates and renders. A file that cannot be read (`OSError`), is not JSON
+    (any `ValueError`: a truncated JSON is a `JSONDecodeError` and a
+    torn-UTF-8 tail a `UnicodeDecodeError`, both subclasses), is not a JSON
     object, or fails validation degrades through the one typed error the render
     consumers already catch; the fork/resume gate turns it into a loud refusal.
     """

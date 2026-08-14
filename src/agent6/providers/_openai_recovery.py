@@ -3,10 +3,10 @@
 """Text-embedded tool-call recovery for the OpenAI-compatible provider.
 
 Fallback parsing for models whose server does not populate the native
-``tool_calls`` array and instead leaks the call into the assistant
-``content`` text (Qwen/Hermes tags, Qwen-Coder XML, Gemma ``tool_code``
+`tool_calls` array and instead leaks the call into the assistant
+`content` text (Qwen/Hermes tags, Qwen-Coder XML, Gemma `tool_code`
 fences, bare or fenced JSON). The rationale and the guards live on the
-comment block below; ``providers/_openai_parse.py``'s ``parse_response`` is the
+comment block below; `providers/_openai_parse.py`'s `parse_response` is the
 only production caller.
 """
 
@@ -20,11 +20,11 @@ from typing import Any
 # Some OpenAI-compatible servers (notably certain Ollama / llama.cpp
 # chat templates for Qwen, Hermes, and other small local models, and some
 # OpenRouter upstream backends) do NOT parse the model's tool call into the
-# native ``tool_calls`` array. Instead the call leaks into the assistant
-# ``content`` as plain text, in one of several shapes:
-#   - a bare JSON object ``{"name": ..., "arguments": {...}}``,
+# native `tool_calls` array. Instead the call leaks into the assistant
+# `content` as plain text, in one of several shapes:
+#   - a bare JSON object `{"name": ..., "arguments": {...}}`,
 #   - the same wrapped in a ```json fence,
-#   - Hermes/Qwen ``<tool_call>{json}</tool_call>`` tags, or
+#   - Hermes/Qwen `<tool_call>{json}</tool_call>` tags, or
 #   - the Qwen-Coder XML form ``<function=NAME><parameter=KEY>VALUE
 #     </parameter>...</function>`` (string-valued params, NOT JSON).
 # Without recovery the run loop sees text + no tool_use and stalls
@@ -37,9 +37,9 @@ from typing import Any
 # answers with JSON, never hit this path.
 _TOOL_CALL_TAG_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-# Qwen-Coder XML tool form. The closing ``</function>`` is sometimes
-# missing (truncation) or mis-spelled ``</tool_call>``; capture the name
-# and a lenient body, then mine ``<parameter=...>`` pairs out of it.
+# Qwen-Coder XML tool form. The closing `</function>` is sometimes
+# missing (truncation) or mis-spelled `</tool_call>`; capture the name
+# and a lenient body, then mine `<parameter=...>` pairs out of it.
 # The next-tag terminators are LOOKAHEADS (not consuming): when a closing tag
 # is missing, the body must end *before* the next block's opening tag without
 # swallowing it -- otherwise finditer consumes that opener and silently drops
@@ -58,7 +58,7 @@ _PARAMETER_RE = re.compile(
 # stray </tool_call> most commonly); swallowed into the recovered call's span.
 _TRAILING_SCAFFOLD_RE = re.compile(r"(?:\s*(?:</tool_call>|</function>|</parameter>))+")
 
-# Gemini / Gemma ``tool_code`` form: a fenced block of Python-call syntax, e.g.
+# Gemini / Gemma `tool_code` form: a fenced block of Python-call syntax, e.g.
 #   ```tool_code
 #   [read_file(path='spec.md'), apply_edit(path='x', ...)]
 #   ```
@@ -68,18 +68,18 @@ _TOOL_CODE_FENCE_RE = re.compile(r"```tool_code\s*\n?(.*?)```", re.DOTALL)
 
 
 def lenient_json_object(raw: object) -> dict[str, Any] | None:
-    """Recover a tool-call ``arguments`` string that strict ``json.loads``
+    """Recover a tool-call `arguments` string that strict `json.loads`
     rejected, when the fix is safe and unambiguous. Returns the object, or None.
 
     Two common weak/open-model malformations:
     - a raw control char (an unescaped newline/tab) inside a string value, which
-      ``strict=False`` accepts;
-    - trailing junk after a valid object (a leaked ``</invoke>`` tag or prose),
-      which ``raw_decode`` ignores by parsing only the leading value.
+      `strict=False` accepts;
+    - trailing junk after a valid object (a leaked `</invoke>` tag or prose),
+      which `raw_decode` ignores by parsing only the leading value.
 
     Only a dict result is returned; a scalar/array (or a still-invalid string,
-    e.g. a bad ``\\d`` regex escape) yields None so the caller keeps the
-    ``_raw_arguments`` sentinel rather than guessing."""
+    e.g. a bad `\\d` regex escape) yields None so the caller keeps the
+    `_raw_arguments` sentinel rather than guessing."""
     if not isinstance(raw, str) or not raw.strip():
         return None
     try:
@@ -90,12 +90,12 @@ def lenient_json_object(raw: object) -> dict[str, Any] | None:
 
 
 def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[str, Any] | None:
-    """Turn one ``ast.Call`` into ``{"name", "input"}`` if it (or, unwrapping a
-    non-tool wrapper such as ``print(tool(...))``, an inner call) targets an
-    offered tool. Keyword args are read with ``ast.literal_eval`` (already typed),
+    """Turn one `ast.Call` into `{"name", "input"}` if it (or, unwrapping a
+    non-tool wrapper such as `print(tool(...))`, an inner call) targets an
+    offered tool. Keyword args are read with `ast.literal_eval` (already typed),
     so no coercion; non-literal or positional args are skipped. Returns None for a
     non-tool call -- we do NOT recurse into kwarg VALUES, so a tool nested as an
-    argument (``apply_edit(path=read_file(...))``) is not separately mined."""
+    argument (`apply_edit(path=read_file(...))`) is not separately mined."""
     if not isinstance(node.func, ast.Name):
         return None
     if node.func.id not in tool_names:
@@ -123,10 +123,10 @@ def _extract_tool_code_calls(
 ) -> list[dict[str, Any]]:
     """Mine Gemini/Gemma ```tool_code Python-call blocks from leaked content.
 
-    Parses each fenced block with ``ast`` (never executes it) and returns
-    ``[{"name", "input"}, ...]`` for every offered-tool call, in SOURCE ORDER. It
+    Parses each fenced block with `ast` (never executes it) and returns
+    `[{"name", "input"}, ...]` for every offered-tool call, in SOURCE ORDER. It
     walks only the TOP-LEVEL expressions (a bare call, or the elements of a list /
-    tuple), unwrapping one ``print(...)``-style wrapper -- not ``ast.walk`` (whose
+    tuple), unwrapping one `print(...)`-style wrapper -- not `ast.walk` (whose
     breadth-first order would reorder a tool call nested at a different depth)."""
     out: list[dict[str, Any]] = []
     for block in _TOOL_CODE_FENCE_RE.finditer(text):
@@ -151,13 +151,13 @@ def _extract_tool_code_calls(
 
 
 def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911
-    """Coerce a Qwen-XML ``<parameter>`` string to its schema-declared type.
+    """Coerce a Qwen-XML `<parameter>` string to its schema-declared type.
 
     The Qwen-Coder template emits each parameter value as raw text framed by
-    newlines, e.g. ``<parameter=path>\\ninterp.py\\n</parameter>``. Strip the
+    newlines, e.g. `<parameter=path>\\ninterp.py\\n</parameter>`. Strip the
     framing newlines, then coerce by the tool's declared JSON-Schema type so
-    structured params (``array``/``object``) and scalars rebuild correctly
-    while string params (code in ``new_string``/``old_string``) are left byte-
+    structured params (`array`/`object`) and scalars rebuild correctly
+    while string params (code in `new_string`/`old_string`) are left byte-
     exact. Unknown type: parse only if it looks like JSON array/object, else
     keep the string.
     """
@@ -203,7 +203,7 @@ def _extract_function_xml_calls(
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
 ) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
-    """Mine Qwen-Coder ``<function=NAME><parameter=KEY>VALUE</parameter>``
+    """Mine Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter>`
     calls from leaked content text. Returns ``([{"name", "input"}, ...],
     spans)`` for every block whose name matches an offered tool (spans cover
     each recovered block plus its trailing orphan scaffold closers); empty
@@ -238,7 +238,7 @@ def _extract_function_xml_calls(
 def _extract_tool_call_obj(  # noqa: PLR0911
     candidate: str, tool_names: frozenset[str]
 ) -> dict[str, Any] | None:
-    """Parse a single ``{"name", "arguments"}`` tool call from a text
+    """Parse a single `{"name", "arguments"}` tool call from a text
     candidate, or return None if it isn't a tool call for an offered tool."""
     candidate = candidate.strip()
     if not candidate:
@@ -272,7 +272,7 @@ def _extract_tool_call_obj(  # noqa: PLR0911
 
 
 def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
-    """``text`` with the given non-overlapping ``(start, end)`` spans cut out."""
+    """`text` with the given non-overlapping `(start, end)` spans cut out."""
     parts: list[str] = []
     prev = 0
     for start, end in spans:
@@ -289,16 +289,16 @@ def coerce_text_tool_calls(  # noqa: PLR0911
 ) -> tuple[list[dict[str, Any]], str]:
     """Best-effort recovery of tool calls a local model emitted as text.
 
-    Returns ``(tool_uses, remaining_text)``. ``tool_uses`` is empty when
-    nothing tool-call-shaped is found, in which case ``remaining_text``
-    equals the original ``text``. The parsing is deliberately strict
-    (exact JSON, a single fenced JSON object, ``<tool_call>`` tags, the
-    ``<function=...>`` XML form, or a ``tool_code`` fence) so prose that
+    Returns `(tool_uses, remaining_text)`. `tool_uses` is empty when
+    nothing tool-call-shaped is found, in which case `remaining_text`
+    equals the original `text`. The parsing is deliberately strict
+    (exact JSON, a single fenced JSON object, `<tool_call>` tags, the
+    `<function=...>` XML form, or a `tool_code` fence) so prose that
     merely mentions a tool name is never misread as a call.
     """
     if not text or not tool_names:
         return [], text
-    # 0) Qwen-Coder ``<function=NAME><parameter=KEY>VALUE</parameter></function>``
+    # 0) Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter></function>`
     # XML. Checked first: it is self-delimiting and unambiguous, and the
     # inner body is NOT JSON so the JSON-shaped branches below cannot parse it.
     if "<function=" in text:
@@ -317,7 +317,7 @@ def coerce_text_tool_calls(  # noqa: PLR0911
         if code_calls:
             remaining = _TOOL_CODE_FENCE_RE.sub("", text).strip()
             return code_calls, remaining
-    # 1) Hermes / Qwen ``<tool_call>...</tool_call>`` wrappers (≥1).
+    # 1) Hermes / Qwen `<tool_call>...</tool_call>` wrappers (≥1).
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
         recovered: list[dict[str, Any]] = []

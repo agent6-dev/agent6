@@ -109,7 +109,7 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 def _session_summary(session_dir: Path) -> dict[str, Any]:
     """The hub's one-line run summary, from the shared scanner: id, mode, task,
     status (+ reason detail), when, usd. The status words come from
-    ``viewmodel.status_word``, so a provider_error death reads "failed" here
+    `viewmodel.status_word`, so a provider_error death reads "failed" here
     exactly as in the TUI hub and `agent6 sessions list`."""
     s = summarize_session_dir(session_dir)
     return {
@@ -259,9 +259,9 @@ def session_snapshot(session_dir: Path) -> dict[str, Any]:
 
 def conversation_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The events folded into rendered conversation items, one entry per
-    ``TranscriptItem``: its ``kind``, the collapsed ``lines`` (lists of
-    ``[text, style]`` spans from the shared ``item_lines`` renderer, the same
-    fold the CLI stream and the TUI conversation view draw), and ``full`` (the
+    `TranscriptItem`: its `kind`, the collapsed `lines` (lists of
+    `[text, style]` spans from the shared `item_lines` renderer, the same
+    fold the CLI stream and the TUI conversation view draw), and `full` (the
     expanded rendering) only when it differs, so the page can offer per-item
     expansion without re-implementing any clipping client-side."""
     out: list[dict[str, Any]] = []
@@ -320,12 +320,12 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     reasoning + tool calls inside the state the machine is running. Empty when no
     agent state has produced a log yet.
 
-    Carries ``state_dir`` (the per-state dir name, e.g. ``0001-work``) so a
+    Carries `state_dir` (the per-state dir name, e.g. `0001-work`) so a
     client echoes it back when answering a prompt: prompt ids reset per state
-    (``approval-1`` in every state), so routing an answer to whichever state is
+    (`approval-1` in every state), so routing an answer to whichever state is
     newest AT POST TIME would misdeliver it if the machine advanced meanwhile.
 
-    Also carries ``last_event_ep``, the epoch of the newest folded event, which
+    Also carries `last_event_ep`, the epoch of the newest folded event, which
     is what the stream turns into the age the client's "working… Ns" timer
     anchors to. The EPOCH rides in the payload rather than the age because the
     machine stream only sends a frame when the payload changes: an age would
@@ -356,14 +356,14 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
 
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
     """Value suggestions for one open-text config leaf, from the same sources
-    the TUI config page and CLI TAB completion use: ``models.<role>.provider``
-    offers the configured provider names, ``models.<role>.model`` the role's
+    the TUI config page and CLI TAB completion use: `models.<role>.provider`
+    offers the configured provider names, `models.<role>.model` the role's
     provider's model ids (cache-first, refreshed from the live listing; the
     fetch dials only that operator-configured provider's base_url). Enum leaves
     already carry their choices in the config payload; everything else (and any
     error) suggests nothing -- suggestions are best-effort, never a failure.
 
-    The pseudo-key ``parallel.models`` (the new-work composer's ``/parallel``
+    The pseudo-key `parallel.models` (the new-work composer's `/parallel`
     spec autocomplete) returns the worker's model plus the worker provider's
     cached listing (lanes inherit the worker provider) -- exactly the set
     `run --parallel` validation accepts -- cache-only so a keystroke never

@@ -10,9 +10,9 @@ Design notes:
 - Write-only and append-only. No reads, no rotation, no schema validation,
   consumers should be defensive.
 - Each call opens, writes one line, flushes, closes. Durable events fsync too;
-  the high-frequency streaming deltas (see ``_EPHEMERAL_EVENTS``) only flush, so
+  the high-frequency streaming deltas (see `_EPHEMERAL_EVENTS`) only flush, so
   a reasoning model's tens of thousands of deltas don't fsync-throttle the run.
-- Durable events fail LOUD (``EventWriteError``): the journal is the read model
+- Durable events fail LOUD (`EventWriteError`): the journal is the read model
   every surface trusts, so a run stops rather than continue unrecordable.
   Streaming deltas stay best-effort; the lossless transcripts keep their copy.
 """
@@ -43,7 +43,7 @@ class EventWriteError(Exception):
     whose terminal events cannot land would render live forever, so the
     lifecycle stops loudly instead (the CLI reports it once, at dispatch).
     A cleanup emit that must not mask an in-flight exit wraps itself in
-    ``contextlib.suppress(EventWriteError)``."""
+    `contextlib.suppress(EventWriteError)`."""
 
 
 @dataclass(slots=True)
@@ -51,8 +51,8 @@ class EventSink:
     """Append structured JSON events to a JSONL file. Thread-safe.
 
     Uses a *reentrant* lock so emitting from a SIGINT handler (the Ctrl-C steer
-    path emits ``session.steer_requested``) cannot deadlock against the main thread
-    being mid-``emit``, the handler runs in the same thread and re-acquires.
+    path emits `session.steer_requested`) cannot deadlock against the main thread
+    being mid-`emit`, the handler runs in the same thread and re-acquires.
     """
 
     path: Path
@@ -72,7 +72,7 @@ class EventSink:
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
         """Append one event. Durable events (everything outside
-        ``_EPHEMERAL_EVENTS``) raise :class:`EventWriteError` when the append
+        `_EPHEMERAL_EVENTS`) raise :class:`EventWriteError` when the append
         fails, and notify in-process listeners only after the write lands, so
         the live view can never show an event the durable record lost."""
         ephemeral = event_type in _EPHEMERAL_EVENTS

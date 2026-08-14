@@ -348,14 +348,14 @@ class MCPServerEntry(BaseModel):
     """One MCP (Model Context Protocol) server to spawn at run start.
 
     The server runs as a long-lived subprocess speaking JSON-RPC 2.0
-    over stdio. Its ``command`` (argv) is operator-controlled and never
+    over stdio. Its `command` (argv) is operator-controlled and never
     contains LLM output. The server runs OUTSIDE the agent6 jail, with the
-    same curated environment a ``[notify]`` hook gets -- never the agent6
-    process's full ``os.environ``, which carries the provider API keys -- plus
-    whatever ``pass_env`` names.
+    same curated environment a `[notify]` hook gets -- never the agent6
+    process's full `os.environ`, which carries the provider API keys -- plus
+    whatever `pass_env` names.
 
     The LLM sees each MCP-server tool as
-    ``mcp__<name>__<server-side-tool-name>`` and can call it through
+    `mcp__<name>__<server-side-tool-name>` and can call it through
     the normal tool surface. The MCP server itself is responsible for
     validating the arguments the LLM passes; agent6 forwards them
     verbatim.
@@ -424,13 +424,13 @@ class MCPServerEntry(BaseModel):
         ),
     )
     # Time budget for the initialize + tools/list handshake. If the
-    # server doesn't respond in this window we log and skip it.
+    # server doesn't respond in this window the manager logs and skips it.
     startup_timeout_s: float = Field(
         gt=0.0,
         default=10.0,
         description="`initialize` + `tools/list` budget.",
     )
-    # Per-call timeout for ``tools/call`` requests. Surfaces as a tool
+    # Per-call timeout for `tools/call` requests. Surfaces as a tool
     # failure (ToolError) if exceeded.
     call_timeout_s: float = Field(
         gt=0.0,
@@ -483,9 +483,9 @@ def _is_loopback(url: str) -> bool:
 def mcp_server_name_refusal(name: str) -> str:
     """Why *name* cannot be an MCP server key, or "".
 
-    The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing recovers
-    the server by splitting on the FIRST ``__`` after the prefix, so the key
-    must be identifier-shaped and ``__``-free.
+    The LLM-visible tool name is `mcp__<name>__<tool>` and routing recovers
+    the server by splitting on the FIRST `__` after the prefix, so the key
+    must be identifier-shaped and `__`-free.
 
     Shared with `agent6 mcp connect`, which must refuse BEFORE it writes: the
     name becomes a TOML table header, and validating only at load meant a
@@ -503,12 +503,12 @@ def mcp_server_name_refusal(name: str) -> str:
 
 
 class MCPConfig(BaseModel):
-    """``[mcp]`` section. Empty / absent / ``enabled = false`` means no
-    MCP servers are spawned and the LLM sees zero ``mcp__*`` tools.
+    """`[mcp]` section. Empty / absent / `enabled = false` means no
+    MCP servers are spawned and the LLM sees zero `mcp__*` tools.
 
-    ``servers`` is a name-keyed map (``[mcp.servers.<name>]``), like
-    ``[providers.<name>]``: duplicates are unrepresentable, a repo overlay can
-    flip one server without restating the rest, and ``config set`` reaches the
+    `servers` is a name-keyed map (`[mcp.servers.<name>]`), like
+    `[providers.<name>]`: duplicates are unrepresentable, a repo overlay can
+    flip one server without restating the rest, and `config set` reaches the
     leaves."""
 
     model_config = MODEL_CONFIG

@@ -69,9 +69,9 @@ _DEFAULT_PRESET_LABEL = "(config default)"
 
 def _available_presets(repo_cwd: Path) -> list[str]:
     """Preset names the new-work chooser offers (the built-ins plus the user's
-    custom ``[presets.<name>]`` tables). Delegates to ``config_layer`` -- the
+    custom `[presets.<name>]` tables). Delegates to `config_layer` -- the
     TUI's config entry point (see config_page.py) -- so the dropdown and the
-    ``--preset`` CLI flag resolve against the same source."""
+    `--preset` CLI flag resolve against the same source."""
     from agent6.config.layer import available_preset_names  # noqa: PLC0415
 
     return available_preset_names(repo_cwd, None)
@@ -153,7 +153,7 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
     """Type a task, pick an optional config preset, then start it as a run /
     plan / ask. The mode IS the button you pick (flat actions, like the config
     dialogs); Enter in the box runs. The preset dropdown maps to the
-    ``--preset`` CLI flag; "(config default)" => no flag (so the config's `preset`
+    `--preset` CLI flag; "(config default)" => no flag (so the config's `preset`
     applies). Result: (mode, task, preset) or None, where preset="" means the
     config default (no --preset)."""
 

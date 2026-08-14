@@ -2,18 +2,18 @@
 # Copyright 2026 Eric Lesiuta
 """The interactive pause menu for a foreground CLI run (Ctrl-C, then decide).
 
-Line input comes from ``_menu_input`` on Unix: editing, history recall (Up
+Line input comes from `_menu_input` on Unix: editing, history recall (Up
 recalls, Ctrl-R searches; seeded from the session journal, so it spans resumes
 and steers typed on other surfaces), and a fish-style Tab preview of the slash
 commands (Tab cycles the matches, descriptions shown). Windows has no termios,
-so it keeps the plain one-line prompt (``_steer`` gates on
+so it keeps the plain one-line prompt (`_steer` gates on
 :func:`agent6.ui.cli._menu_input.menu_capable`). Info commands answer from the
 run's event log and re-prompt, so the operator can inspect the run before
 steering it.
 
-Parsing rule: a command fires only when it is the WHOLE line (one ``/token``;
-a unique prefix like ``/sta`` works, an ambiguous one re-asks). Any line with
-a space -- or not starting with ``/`` -- is sent to the run verbatim as the
+Parsing rule: a command fires only when it is the WHOLE line (one `/token`;
+a unique prefix like `/sta` works, an ambiguous one re-asks). Any line with
+a space -- or not starting with `/` -- is sent to the run verbatim as the
 steering instruction, so no quoting is ever needed:
 
     /status   run status: tasks, tools, cost, ctx, preset
@@ -82,9 +82,9 @@ def _without_btw(config_path: Path | None = None) -> dict[str, str]:
 
 
 def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, str]]:
-    """``/name`` -> (description, full SKILL.md text) for enabled skills.
+    """`/name` -> (description, full SKILL.md text) for enabled skills.
 
-    Built-in commands always win a name collision, so ``/status`` can never
+    Built-in commands always win a name collision, so `/status` can never
     be shadowed by a skill. A broken config or store degrades to no skill
     commands, loudly, without breaking the pause prompt.
     """
@@ -107,7 +107,7 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
 
 
 def skill_steer_payload(name: str, text: str, args: str) -> str:
-    """The steer message a ``/skill-name [args]`` menu line injects."""
+    """The steer message a `/skill-name [args]` menu line injects."""
     args_line = f"\nSkill arguments: {args}" if args else ""
     return (
         f"Apply the operator-installed skill {name!r} for the rest of this run."
@@ -264,7 +264,7 @@ def _run_info_command(
     btw_runner: BtwRunner | None = None,
     config_path: Path | None = None,
 ) -> None:
-    """Run a print-and-re-prompt command (everything not in ``_ACTIONS``)."""
+    """Run a print-and-re-prompt command (everything not in `_ACTIONS`)."""
     if cmd == "/help":
         _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw(config_path))
     elif cmd == "/status":

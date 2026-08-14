@@ -112,13 +112,13 @@ def detect_container_signals() -> tuple[str, ...]:
 
 
 def sandbox_disabled_by_env() -> bool:
-    """True when ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` is set.
+    """True when `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` is set.
 
-    The env form of ``--dangerously-disable-sandbox``: a per-invocation SETTER
+    The env form of `--dangerously-disable-sandbox`: a per-invocation SETTER
     that forces the unsandboxed isolation regardless of config, read in
-    :func:`resolve_isolation`. For a ``machine run`` the supervisor calls
-    ``resolve_isolation`` and passes the resolved ``none`` to each agent
-    subprocess in its request (the subprocess trusts ``req["isolation"]`` and
+    :func:`resolve_isolation`. For a `machine run` the supervisor calls
+    `resolve_isolation` and passes the resolved `none` to each agent
+    subprocess in its request (the subprocess trusts `req["isolation"]` and
     does not re-resolve). Never reachable by the LLM (it cannot set the
     launcher's environment)."""
     return os.environ.get("AGENT6_DANGEROUSLY_DISABLE_SANDBOX") == "1"
@@ -168,11 +168,11 @@ def probe_landlock_abi() -> int:
 def apparmor_userns_restricted() -> bool:
     """True iff the kernel restricts unprivileged user namespaces via AppArmor.
 
-    Ubuntu 23.10+/24.04+ ship ``kernel.apparmor_restrict_unprivileged_userns=1``:
+    Ubuntu 23.10+/24.04+ ship `kernel.apparmor_restrict_unprivileged_userns=1`:
     an unprivileged process can then create a user namespace only with an
-    AppArmor isolation granting ``userns``. This is why ``strict`` can be
-    unavailable even when ``kernel.unprivileged_userns_clone = 1`` -- the fix is
-    ``agent6 system apparmor install`` (or set the sysctl to 0). Reads the proc
+    AppArmor isolation granting `userns`. This is why `strict` can be
+    unavailable even when `kernel.unprivileged_userns_clone = 1` -- the fix is
+    `agent6 system apparmor install` (or set the sysctl to 0). Reads the proc
     file directly; absent on non-AppArmor kernels.
     """
     try:

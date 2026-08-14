@@ -20,12 +20,12 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     """The workflow's text logger.
 
     When the live ConsoleView is rendering the product stream (foreground run),
-    notices go THROUGH it (``console_view.notice``) so each clears the spinner
+    notices go THROUGH it (`console_view.notice`) so each clears the spinner
     line first and writes to the same stream under the same lock -- otherwise a
     notice printed to stdout while the stderr spinner is up garbles the line. The
-    loop's internal state narration (``LOOP: LOAD_CONTEXT``, ``compaction: …``)
+    loop's internal state narration (`LOOP: LOAD_CONTEXT`, `compaction: …`)
     is pure noise on the glyph stream, so it is suppressed unless
-    ``AGENT6_DEBUG=1``; genuine notices (auto-commit, tool errors, critic
+    `AGENT6_DEBUG=1`; genuine notices (auto-commit, tool errors, critic
     decisions) pass. Headless/`ask` keep the full trace on their own stream (the
     log, not a live stream)."""
     if console_view is None:
@@ -92,19 +92,19 @@ def should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
 
 
 def stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
-    """Return ``(stream_text, console_stream)`` for the worker provider.
+    """Return `(stream_text, console_stream)` for the worker provider.
 
-    ``stream_text`` makes the provider stream and emit ``role.text_delta`` /
-    ``role.thinking_delta`` events, which every live view renders as the model's
-    reasoning + answer. ``console_stream`` additionally subscribes a
-    ``ConsoleView`` to the EventSink, rendering the live conversation -- reasoning,
+    `stream_text` makes the provider stream and emit `role.text_delta` /
+    `role.thinking_delta` events, which every live view renders as the model's
+    reasoning + answer. `console_stream` additionally subscribes a
+    `ConsoleView` to the EventSink, rendering the live conversation -- reasoning,
     text, and every tool call with its result -- to stderr.
 
     Streaming is on for an interactive stderr TTY (so a plain `agent6 ask`/`plan`
     shows live output) or when forced:
-    - ``AGENT6_FORCE_STREAM=1``: bench/CI -- emit AND echo (the Kimi/OpenRouter
+    - `AGENT6_FORCE_STREAM=1`: bench/CI -- emit AND echo (the Kimi/OpenRouter
       gateway corrupts the non-streaming body with SSE heartbeats).
-    - ``AGENT6_STREAM_TO_LOG=1``: set by the `agent6 tui` hub when it spawns a run
+    - `AGENT6_STREAM_TO_LOG=1`: set by the `agent6 tui` hub when it spawns a run
       detached and then watches it on the dashboard. Emit the delta EVENTS only,
       with NO console echo -- otherwise a long headless run pours its whole
       reasoning into the hub's discarded stderr temp file.

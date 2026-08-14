@@ -68,17 +68,17 @@ def _append_line(path: Path, line: str) -> None:
 
 
 def append_jsonl(path: Path, entry: dict[str, object]) -> None:
-    """Append one JSON object as a line to ``path`` (durable single write).
+    """Append one JSON object as a line to `path` (durable single write).
 
     Public wrapper over the atomic append used for the per-repo fork
-    ``lineage.jsonl``; the caller supplies a fully-formed entry (including any
+    `lineage.jsonl`; the caller supplies a fully-formed entry (including any
     timestamp) so this stays a pure I/O helper with no clock dependency."""
     _append_line(path, json.dumps(entry, sort_keys=True))
 
 
 @contextmanager
 def flock(path: Path) -> Generator[None]:
-    """fcntl exclusive lock on ``path``. Creates the file if missing."""
+    """fcntl exclusive lock on `path`. Creates the file if missing."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
     try:
@@ -303,13 +303,14 @@ def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode
     # <parent>/<id>.md to a root <id>.md. The new file is written above; the old
     # nested one would otherwise linger and make load_graph's rglob find TWO .md
     # for one id (nondeterministic which wins). Crash-safety ordering: the new
-    # canonical file is durable BEFORE we unlink the stale one, so a crash here
+    # canonical file is durable BEFORE _prune_stale_node_files unlinks the stale
+    # one, so a crash here
     # leaves at worst the recoverable pre-fix duplicate, never a missing node.
     _prune_stale_node_files(layout, node.id, keep=path)
 
 
 def _prune_stale_node_files(layout: SessionLayout, node_id: str, *, keep: Path) -> None:
-    """Delete any other ``<node_id>.md`` under graph/ except ``keep``."""
+    """Delete any other `<node_id>.md` under graph/ except `keep`."""
     if not layout.graph_dir.is_dir():
         return
     keep_resolved = keep.resolve()
@@ -322,7 +323,7 @@ def _prune_stale_node_files(layout: SessionLayout, node_id: str, *, keep: Path) 
 
 
 def load_graph(layout: SessionLayout) -> dict[str, TaskNode]:
-    """Read every .md file under ``graph/`` and return a {id: TaskNode} map."""
+    """Read every .md file under `graph/` and return a {id: TaskNode} map."""
     nodes: dict[str, TaskNode] = {}
     if not layout.graph_dir.is_dir():
         return nodes
@@ -374,9 +375,9 @@ def read_cursor(layout: SessionLayout) -> str | None:
 def list_checkpoint_turns(layout: SessionLayout) -> list[int]:
     """Return the recorded checkpoint turn indices, ascending.
 
-    Empty when the run predates the checkpoint store (no ``checkpoints/`` dir),
-    which is how ``agent6 fork`` detects an old run and falls back to forking
-    from ``loop_state.json`` only.
+    Empty when the run predates the checkpoint store (no `checkpoints/` dir),
+    which is how `agent6 fork` detects an old run and falls back to forking
+    from `loop_state.json` only.
     """
     cp_dir = layout.checkpoints_dir
     if not cp_dir.is_dir():

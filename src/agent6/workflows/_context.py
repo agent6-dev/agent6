@@ -73,9 +73,9 @@ def agents_md_notices(root: Path) -> tuple[str, ...]:
 def _build_repo_map(tracked: tuple[str, ...]) -> str:
     """Compact `path/  (N files: a, b, ...)` directory map from git ls-files.
 
-    Takes the already-resolved tracked-file list (shared with ``file_count`` so
+    Takes the already-resolved tracked-file list (shared with `file_count` so
     git ls-files runs once). Returns an empty string for an empty list. Output is
-    capped at ``_REPO_MAP_MAX_LINES`` rows (plus one ``... (K more
+    capped at `_REPO_MAP_MAX_LINES` rows (plus one ``... (K more
     directories)`` summary line past the cap) so it never dominates the
     system prompt.
     """
@@ -106,17 +106,17 @@ def _build_repo_map(tracked: tuple[str, ...]) -> str:
 
 
 def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -> RepoSummary:
-    """Build a `RepoSummary` for the workspace rooted at ``root``.
+    """Build a `RepoSummary` for the workspace rooted at `root`.
 
     Base view (layout, AGENTS.md, recent commits, repo map) is shared by the
     implement and plan-mode workflows. When *dispatcher* is given (the run loop,
-    and ``agent6 prompt show``), ALSO enrich with structural priors: hot symbols
+    and `agent6 prompt show`), ALSO enrich with structural priors: hot symbols
     (cross-file reference hot spots), git co-change pairs, and the tree-sitter
     symbol outline. Enrichment is best-effort -- a parser or git-history hiccup
     must not block the run -- but BudgetExceeded / KeyboardInterrupt propagate so
     the loop's budget guarantee and abort path stay intact.
 
-    Outside a git repository (``agent6 ask`` runs anywhere; run/plan refuse up
+    Outside a git repository (`agent6 ask` runs anywhere; run/plan refuse up
     front) the git-derived fields stay empty: the top-level listing is the
     model's starting point and it lists/reads deeper on demand. No recursive
     walk substitute: an unbounded crawl of an arbitrary directory (say $HOME)
