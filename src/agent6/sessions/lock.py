@@ -13,6 +13,7 @@ import contextlib
 import os
 from pathlib import Path
 
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import lock_exclusive, unlock
 
 
@@ -32,7 +33,7 @@ def acquire_single_writer(session_dir: Path) -> int | None:
     leaves no lock -- flock releases on process death -- so resume-after-crash is
     never blocked by a stale lock.
     """
-    session_dir.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(session_dir)
     fd = os.open(session_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
     try:
         lock_exclusive(fd, blocking=False)
@@ -81,7 +82,7 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
     process death, so a crashed worker never wedges the checkout. Release with
     `release_single_writer`.
     """
-    state_dir.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(state_dir)
     fd = os.open(state_dir / "repo.lock", os.O_CREAT | os.O_RDWR, 0o644)
     try:
         lock_exclusive(fd, blocking=False)

@@ -48,6 +48,20 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert paths.state_dir(repo, base_override="/custom") == Path("/custom") / rid
 
 
+def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
+    """agent6's state tree is single-user (transcripts, memory, run history,
+    secrets), so it is created 0700 and other local users cannot traverse in --
+    the files inside then need no per-file mode. Only what agent6 creates: a
+    pre-existing ancestor keeps its own mode."""
+    outer = tmp_path / "pre"
+    outer.mkdir(mode=0o755)
+    leaf = outer / "state" / "agent6" / "repo-x" / "sessions" / "runs" / "s1"
+    paths.mkdir_for_real_user(leaf)
+    for d in (outer / "state" / "agent6", outer / "state" / "agent6" / "repo-x", leaf):
+        assert (d.stat().st_mode & 0o777) == 0o700, d
+    assert (outer.stat().st_mode & 0o777) == 0o755  # pre-existing, untouched
+
+
 def test_state_base_honors_the_global_state_dir_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

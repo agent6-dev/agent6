@@ -502,7 +502,7 @@ depends_on = ["agent6.types", "agent6.sessions.layout"]
 # One authoritative writer per run dir: the worker.lock flock run/resume/fork
 # take before touching a run's shared state.
 path = "agent6.sessions.lock"
-depends_on = ["agent6.portable"]
+depends_on = ["agent6.portable", "agent6.paths"]
 
 [[modules]]
 # The run-dir answer-file contract the workflow process polls and every

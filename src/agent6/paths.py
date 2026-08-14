@@ -359,6 +359,11 @@ def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
         if cur.parent == cur:
             break
         cur = cur.parent
+    # The missing ancestry is created 0700: these are agent6's own single-user
+    # dirs (state, config, data), and a non-traversable base shields the files
+    # inside whatever the umask. A pre-existing dir is never re-chmodded.
+    for d in reversed(missing):
+        d.mkdir(mode=0o700, exist_ok=True)
     path.mkdir(parents=True, exist_ok=True)
     chown_to_real_user(missing[-1] if missing else path, user)
 
