@@ -150,9 +150,26 @@ def run_offline_tests(
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
         return []
-    tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
-    if not tests:
+    if not sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}")):
         return []
+    # Run against a private temp COPY, like lint_and_typecheck: the real
+    # bundle lives under the per-repo state dir, which the jail masks as a
+    # private path, so tests run in place saw an empty tree (python3: can't
+    # open file) or the launcher failed rootfs setup outright.
+    workdir = Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
+    try:
+        bundle_copy = workdir / "bundle"
+        shutil.copytree(bundle_dir, bundle_copy, symlinks=True)
+        return _run_offline_tests_in(bundle_copy, isolation, timeout_s=timeout_s)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _run_offline_tests_in(
+    bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float
+) -> list[str]:
+    scripts_dir = bundle_dir / "scripts"
+    tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if isolation != "strict":
         # none: no jail to confine model-authored code in. hardened: a jail, but
         # no network namespace, so network=False is silently ignored and

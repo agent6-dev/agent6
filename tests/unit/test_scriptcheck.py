@@ -101,12 +101,16 @@ def test_missing_scripts_dir_is_clean(tmp_path: Path) -> None:
 
 
 def _fake_jail(returncode: int, stderr: str = "") -> object:
-    def run(_policy: object) -> CommandResult:
+    def run(policy: object) -> CommandResult:
+        # Real jailed stderr names the TEMP COPY the runner executes in (the
+        # real bundle is under the masked state dir); the fake mirrors that by
+        # substituting the policy's cwd for a {cwd} placeholder.
+        cwd = str(getattr(policy, "cwd", ""))
         return CommandResult(
             argv=("python3", "scripts/thing_test.py"),
             returncode=returncode,
             stdout="",
-            stderr=stderr,
+            stderr=stderr.replace("{cwd}", cwd),
             duration_s=0.0,
         )
 
@@ -159,10 +163,10 @@ def test_offline_tests_relativize_bundle_paths(
     # diagnostic is fed back into the authoring prompt, so host paths get
     # stripped down to bundle-relative ones.
     _write(tmp_path / "scripts", "thing_test.py", "raise SystemExit(1)\n")
-    stderr = f'File "{tmp_path}/scripts/thing_test.py", line 1\nNameError: x'
+    stderr = 'File "{cwd}/scripts/thing_test.py", line 1\nNameError: x'
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(1, stderr))
     problems = scriptcheck.run_offline_tests(tmp_path, "strict")
-    assert str(tmp_path) not in problems[0]
+    assert "agent6-scripttest" not in problems[0]  # the temp copy's path is stripped
     assert 'File "scripts/thing_test.py"' in problems[0]
 
 
@@ -254,3 +258,31 @@ def test_offline_tests_get_a_fresh_data_dir_per_test(
     monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
     assert scriptcheck.run_offline_tests(tmp_path, "strict") == []
     assert not (tmp_path / ".scriptcheck_data").exists()  # still cleaned up after
+
+
+def test_offline_tests_run_from_a_copy_outside_the_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real bundle lives under the per-repo state dir, which the jail
+    MASKS: tests run in place saw an empty tree ('python3: can't open file')
+    or the launcher failed rootfs setup. The runner must hand the jail a
+    private temp copy instead (caught by a live machine-create run; the old
+    tmp_path fixtures covered the in-place path vacuously)."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    bundle = tmp_path / "statehome" / "repo-id" / "sessions" / "machines" / "draft"
+    _write(bundle / "scripts", "thing_test.py", "print('ok')\n")
+    seen_cwds: list[str] = []
+
+    def run(policy: object) -> CommandResult:
+        seen_cwds.append(str(getattr(policy, "cwd", "")))
+        return CommandResult(
+            argv=("python3", "scripts/thing_test.py"),
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration_s=0.0,
+        )
+
+    monkeypatch.setattr(scriptcheck, "run_in_jail", run)
+    assert scriptcheck.run_offline_tests(bundle, "strict") == []
+    assert seen_cwds and all("statehome" not in c for c in seen_cwds)
