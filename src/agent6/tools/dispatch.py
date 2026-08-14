@@ -302,11 +302,13 @@ class ToolDispatcher:
         # The per-repo memory dir rides along when state is wired: memory files
         # are read and edited with the ordinary tools (in-process only; the
         # jail never mounts it).
-        self._ws = workspace_for(
-            config,
-            self._root,
-            memory_dir=memory_dir(state_dir) if state_dir is not None else None,
-        )
+        mem = memory_dir(state_dir) if state_dir is not None else None
+        if mem is not None:
+            # The grant's target must exist: the model cannot mkdir outside
+            # the jail, so a fresh repo's FIRST organic memory write failed
+            # with ENOENT before this (caught live).
+            mem.mkdir(parents=True, exist_ok=True)
+        self._ws = workspace_for(config, self._root, memory_dir=mem)
         # Public: the prompt builder reads it so the system prompt describes
         # THIS dispatcher's command behaviour (hardened-only caveats).
         self.isolation: IsolationLevel = isolation

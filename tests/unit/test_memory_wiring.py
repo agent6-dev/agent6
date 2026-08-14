@@ -125,3 +125,21 @@ def test_memory_grant_absent_without_state_dir(tmp_path: Path) -> None:
     d = ToolDispatcher(root=repo, config=cfg)
     with pytest.raises(ToolError):
         d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "MEMORY.md")})
+
+
+def test_the_memory_dir_exists_the_moment_the_grant_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model cannot mkdir outside the jail, so a fresh repo's first
+    organic memory write (apply_edit into <state>/memory/) failed ENOENT
+    until the dispatcher created the dir it grants (caught live). Fresh
+    means NO prior CLI write: the store must not exist beforehand."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    state = tmp_path / "statehome" / "repo-id"
+    state.mkdir(parents=True)
+    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    assert not memory_dir(state).exists()
+    ToolDispatcher(root=repo, config=cfg, state_dir=state)
+    assert memory_dir(state).is_dir()
