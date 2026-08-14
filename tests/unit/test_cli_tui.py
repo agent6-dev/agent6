@@ -431,3 +431,37 @@ def test_spawned_away_default_does_not_overwrite_the_operators_choice(tmp_path: 
             del os.environ["AGENT6_DETACHED_AWAY"]
         else:
             os.environ["AGENT6_DETACHED_AWAY"] = old
+
+
+def test_approver_wait_consumes_a_claimless_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The web UI writes answer files without ever registering a front-end
+    claim. The wait loop gated READING on a live claim, so a web-answered
+    approval sat unconsumed while the run waited out its whole window
+    (caught live: a web-spawned run wedged on an "answered" approval)."""
+    import threading
+    import time
+
+    from agent6.sessions.ipc import write_answer, write_steer_answer
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: False)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+
+    def answer_never_claiming() -> None:
+        time.sleep(0.3)
+        write_answer(tmp_path, "approval-1", "yes")  # no register_frontend
+
+    def abort_if_wedged() -> None:
+        # Pre-fix the wait loop never reads a claim-less answer; break it so
+        # the test fails fast instead of hanging the suite.
+        time.sleep(15)
+        write_steer_answer(tmp_path, "abort")
+
+    threading.Thread(target=answer_never_claiming, daemon=True).start()
+    threading.Thread(target=abort_if_wedged, daemon=True).start()
+    approve = interactmod.build_approver(tmp_path, events)
+    assert approve("run_verify_command", scope=COMMAND_SCOPE) is True
+    assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
