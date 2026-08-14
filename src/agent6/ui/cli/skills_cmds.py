@@ -78,8 +78,8 @@ def _installed_dir() -> Path:
     return data_dir() / "skills"
 
 
-def _search_dirs(repo_root: Path) -> tuple[Path, ...]:
-    cfg = load_effective(repo_root).config
+def _search_dirs(repo_root: Path, config_path: Path | None = None) -> tuple[Path, ...]:
+    cfg = load_effective(repo_root, config_path).config
     return skill_search_dirs(cfg.skills.extra_dirs, _installed_dir())
 
 
@@ -380,10 +380,10 @@ def _cmd_skills_update(name: str) -> int:
     return 0
 
 
-def _cmd_skills_list() -> int:
+def _cmd_skills_list(config_path: Path | None = None) -> int:
     repo_root = Path.cwd()
     try:
-        cfg = load_effective(repo_root).config
+        cfg = load_effective(repo_root, config_path).config
     except Exception as exc:
         print(f"(config unreadable, showing installed dir only: {exc})", file=sys.stderr)
         cfg = None
@@ -431,7 +431,7 @@ def _cmd_skills_list() -> int:
     return 0
 
 
-def _known_skill_names(repo_root: Path) -> tuple[str, ...]:
+def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tuple[str, ...]:
     """Installed skill names. REFUSES when discovery itself fails.
 
     Swallowing that to an empty tuple made `skills enable/disable` answer
@@ -439,7 +439,7 @@ def _known_skill_names(repo_root: Path) -> tuple[str, ...]:
     skill that is missing when one is unreadable.
     """
     try:
-        skills, _ = discover_skills(_search_dirs(repo_root))
+        skills, _ = discover_skills(_search_dirs(repo_root, config_path))
     except OSError as exc:
         raise OperatorError(f"could not read the installed skills: {exc}") from exc
     return tuple(s.name for s in skills)
@@ -449,14 +449,16 @@ def _state_target(repo: bool) -> Path:
     return repo_config_path(Path.cwd()) if repo else global_config_path()
 
 
-def _require_known(name: str, repo_root: Path) -> None:
-    known = _known_skill_names(repo_root)
+def _require_known(name: str, repo_root: Path, config_path: Path | None = None) -> None:
+    known = _known_skill_names(repo_root, config_path)
     if name not in known:
         raise OperatorError(f"unknown skill {name!r}; installed: {', '.join(known) or '(none)'}")
 
 
-def _cmd_skills_enable(name: str, *, always: bool, repo: bool) -> int:
-    _require_known(name, Path.cwd())
+def _cmd_skills_enable(
+    name: str, *, always: bool, repo: bool, config_path: Path | None = None
+) -> int:
+    _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -474,8 +476,8 @@ def _cmd_skills_enable(name: str, *, always: bool, repo: bool) -> int:
     return 0
 
 
-def _cmd_skills_disable(name: str, *, repo: bool) -> int:
-    _require_known(name, Path.cwd())
+def _cmd_skills_disable(name: str, *, repo: bool, config_path: Path | None = None) -> int:
+    _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -486,11 +488,11 @@ def _cmd_skills_disable(name: str, *, repo: bool) -> int:
     return 0
 
 
-def _cmd_skills_remove(name: str) -> int:
+def _cmd_skills_remove(name: str, config_path: Path | None = None) -> int:
     target = _installed_dir() / name
     if not target.is_dir():
         # Distinguish "managed elsewhere" from "unknown" for a useful error.
-        skills, _ = discover_skills(_search_dirs(Path.cwd()))
+        skills, _ = discover_skills(_search_dirs(Path.cwd(), config_path))
         match = next((s for s in skills if s.name == name), None)
         if match is not None:
             raise OperatorError(

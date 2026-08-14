@@ -565,13 +565,15 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
     if args.skills_command == "update":
         return _cmd_skills_update(args.name)
     if args.skills_command == "list":
-        return _cmd_skills_list()
+        return _cmd_skills_list(args.config)
     if args.skills_command == "enable":
-        return _cmd_skills_enable(args.name, always=args.always, repo=args.repo)
+        return _cmd_skills_enable(
+            args.name, always=args.always, repo=args.repo, config_path=args.config
+        )
     if args.skills_command == "disable":
-        return _cmd_skills_disable(args.name, repo=args.repo)
+        return _cmd_skills_disable(args.name, repo=args.repo, config_path=args.config)
     if args.skills_command == "remove":
-        return _cmd_skills_remove(args.name)
+        return _cmd_skills_remove(args.name, args.config)
     raise AssertionError("unreachable")  # pragma: no cover -- skills subparser is required
 
 
@@ -608,8 +610,9 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
             token_env=args.token_env,
             pass_env=args.pass_env,
             to_repo=args.to_repo,
+            config_path=args.config,
         )
-    return cmd_mcp_list()
+    return cmd_mcp_list(args.config)
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
@@ -673,7 +676,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "review": _dispatch_review,
     "machine": _dispatch_machine,
     "mcp": _dispatch_mcp,
-    "acp": lambda _args: serve_acp(),
+    "acp": lambda args: serve_acp(config_path=args.config),
     "system": _dispatch_system,
 }
 

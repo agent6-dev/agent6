@@ -60,3 +60,37 @@ def test_merge_planner_passes_the_explicit_config_path(
     )
     assert rc == 2  # the stubbed ConfigError surfaced as the exit path
     assert seen == [explicit]
+
+
+def test_acp_run_bridge_passes_the_explicit_config_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`agent6 --config F acp` ran every prompt on the standard layers: the
+    dispatch lambda dropped args.config and the bridge loaded (cwd) alone, so
+    F's model, budget, and run_commands never applied (caught live)."""
+    from agent6.config import ConfigError as _ConfigError
+    from agent6.ui.acp import runner as acp_runner
+    from agent6.ui.acp.session import Session
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    seen: list[Path | None] = []
+
+    def fake_load(cwd: Path, explicit: Path | None = None, **_kw: Any) -> Any:
+        seen.append(explicit)
+        raise _ConfigError("stop here")
+
+    monkeypatch.setattr(acp_runner, "load_effective", fake_load)
+
+    class _Server:
+        def __init__(self) -> None:
+            self.notes: list[dict[str, Any]] = []
+
+        def notify_raw(self, obj: dict[str, Any]) -> None:
+            self.notes.append(obj)
+
+    server = _Server()
+    cfg_path = tmp_path / "overlay.toml"
+    bridge = acp_runner.RunBridge(server=server, config_path=cfg_path)  # type: ignore[arg-type]
+    session = Session(acp_id="t", cwd=tmp_path)
+    assert bridge.run(session, "task") == "refusal"
+    assert seen == [cfg_path]

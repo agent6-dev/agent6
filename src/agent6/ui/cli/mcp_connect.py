@@ -96,9 +96,10 @@ def cmd_mcp_connect(
     token_env: str,
     pass_env: list[str],
     to_repo: bool,
+    config_path: Path | None = None,
 ) -> int:
     """Prove the server answers, then write it into config. Returns an exit code."""
-    cfg = load_effective(Path.cwd()).config
+    cfg = load_effective(Path.cwd(), config_path).config
     refusal = _refuse_bad_flags(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
     )
@@ -155,11 +156,11 @@ def cmd_mcp_connect(
     return 0
 
 
-def cmd_mcp_list() -> int:
+def cmd_mcp_list(config_path: Path | None = None) -> int:
     """The configured servers and how each is reached. Reads config only: it
     never starts anything, so it answers instantly and says nothing about
     whether a server currently works (`agent6 check mcp` does that)."""
-    cfg = load_effective(Path.cwd()).config
+    cfg = load_effective(Path.cwd(), config_path).config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
         return 0

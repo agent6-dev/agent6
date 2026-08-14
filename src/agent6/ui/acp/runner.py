@@ -136,6 +136,8 @@ class RunBridge:
     """Runs prompts for one ACP connection."""
 
     server: ACPServer
+    # The top-level `--config FILE` overlay; every session load threads it.
+    config_path: Path | None = None
     # One at a time: the chdir in `_run` is process-global, and a run in the
     # wrong directory commits to the wrong repository.
     _runs: threading.Lock = field(default_factory=threading.Lock)
@@ -250,7 +252,7 @@ class RunBridge:
                 return "refusal"
 
     def _run(self, session: Session, text: str) -> StopReason:
-        effective = load_effective(session.cwd)
+        effective = load_effective(session.cwd, self.config_path)
         layout = session.layout(resolved_state_dir(session.cwd))
         os.chdir(session.cwd)
 
@@ -320,12 +322,17 @@ class RunBridge:
                     self.server.notify_raw(body)
 
 
-def serve_acp(stdin: BinaryIO | None = None, stdout: BinaryIO | None = None) -> int:
+def serve_acp(
+    stdin: BinaryIO | None = None,
+    stdout: BinaryIO | None = None,
+    *,
+    config_path: Path | None = None,
+) -> int:
     """Speak ACP on this process's stdio until the editor closes it."""
     server = ACPServer(
         stdin=stdin if stdin is not None else sys.stdin.buffer,
         stdout=stdout if stdout is not None else sys.stdout.buffer,
     )
-    server.sessions = RunBridge(server=server).sessions()
+    server.sessions = RunBridge(server=server, config_path=config_path).sessions()
     server.serve()
     return 0
