@@ -542,7 +542,7 @@ class Workflow:
     # count-based heuristics when it is unset.
     budget: BudgetTracker | None = None
     # Per-repo state dir holding the cross-run memory store
-    # (<state_dir>/memories/). When set, active memories are injected into
+    # (<state_dir>/memory/). When set, the memory index is injected into
     # the system prompt at run start; the CLI wires the same path into the
     # dispatcher so memory-dir edits persist across runs.
     # None (bench / tests / one-off embedders) runs memory-less.

@@ -351,11 +351,6 @@ class DagListTasksInput(_ToolInput):
     status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
 
 
-# Cross-run memory surface. Lets the agent persist repo-scoped notes
-# (agent6.memory store under <state_dir>/memories/) that future runs see in
-# the <memories> system-prompt block. Run mode only (LOOP_EXTRA_TOOLS).
-
-
 class UseSkillInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -452,10 +447,9 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
     StopBackgroundInput,
 )
 
-# Extra tools exposed only to the single-loop workflow (run_metric,
-# finish_session, dag_*, memory). Kept separate from ALL_TOOLS so the read-only
-# ToolDispatcher surface used by tests and external callers does not
-# advertise loop-only control tools.
+# Extra tools exposed only to the single-loop workflow. Kept separate from
+# ALL_TOOLS so the read-only ToolDispatcher surface used by tests and external
+# callers does not advertise loop-only control tools.
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishSessionInput,

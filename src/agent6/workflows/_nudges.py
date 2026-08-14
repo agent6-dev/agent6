@@ -244,9 +244,9 @@ QUESTION_NUDGE = (
 
 # Cross-run memory write nudges. Measured (bench/longhorizon FINDINGS #2):
 # 46 legs across 2 models produced ZERO unprompted memory writes, so the
-# <memories> header alone never causes writes. Surface the tool at the two
-# moments a durable discovery is actually in hand: the first red-to-green
-# verify flip (advisory, free) and the first finish_session after such a recovery
+# <memory> block alone never causes writes. Prompt at the two moments a
+# durable discovery is actually in hand: the first red-to-green verify flip
+# (advisory, free) and the first finish_session after such a recovery
 # (deferred once, the backstop). Each fires at most once per run, only in run
 # mode with a memory store wired, and only while the worker has recorded
 # nothing; a run whose verify never failed is never nudged.

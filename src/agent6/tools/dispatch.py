@@ -558,9 +558,9 @@ class ToolDispatcher:
             # omitting tools from the LLM's list: a tool-list regression or a
             # hallucinated name must not mutate the repo or run commands
             # (including the approval-gate-free metric command) from a
-            # read-only mode, pause a non-run loop (ask_user), or write
-            # cross-run memories. Enforcing membership in the same surface
-            # `tool_definitions` exposes means the two cannot drift.
+            # read-only mode, or pause a non-run loop (ask_user). Enforcing
+            # membership in the same surface `tool_definitions` exposes means
+            # the two cannot drift.
             raise ToolError(f"{name} is not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 

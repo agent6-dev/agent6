@@ -65,7 +65,7 @@ def _never_mounted(p: Path) -> bool:
     ``operator_tool_paths`` mounts ``real.parent`` for every symlink in a bin
     dir, so one resolving into the config dir mounted ``secrets.toml`` -- the
     provider API keys -- read-only into the jail, and one into the state dir
-    mounted notes, memories and transcripts. Containment cuts both ways: a
+    mounted memory and transcripts. Containment cuts both ways: a
     mount CONTAINING a private dir grants the same reads from above, and a
     plain ``~/.local/bin/x -> ~/x.sh`` makes ``real.parent`` the whole home
     dir. So agent6's private dirs (:func:`agent6.paths.private_dirs`) are

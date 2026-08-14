@@ -155,7 +155,7 @@ no run) each command gets its own launcher. Under `strict` it:
   mask per path, because every mount is at its real location -- there is no
   alias to close a second door on.
     - Always hidden: the config dir (provider keys) and the state base
-      (transcripts, notes, memories, run history), so they stay out of the
+      (transcripts, memory, run history), so they stay out of the
       jail even under an `extra_read_paths` grant of `$HOME`.
       `[sandbox].hide_paths` adds operator entries. NOT the data dir or the
       cache: installed skills are content the model is meant to use (a
@@ -226,8 +226,8 @@ can't expand it.
 - **`sudo` can't escalate, even passwordless.** `NO_NEW_PRIVS` voids setuid, so
   jailed `sudo` fails regardless of any `NOPASSWD` rule.
 - **Package installs are impossible.** `apt`/`dnf`/`apk` need all three of root
-  (blocked), mirror network (provider-only egress), and `/usr`/`/var` writes
-  (denied).
+  (blocked), a route to a mirror (the default `network` has none off the box),
+  and `/usr`/`/var` writes (denied).
 - **Compiling and running host-installed toolchains works.**
     - Every command tool -- `run_command`, `run_verify_command`,
       `stop_background` -- answers to `run_commands` and runs
@@ -244,7 +244,8 @@ can't expand it.
   the boundary.**
     - `strict` maps inside-root to real root, so jailed children run as real root
       under only Landlock + seccomp + `NO_NEW_PRIVS`.
-    - Still no writes outside the workspace and no egress beyond providers, but
+    - Still no writes outside the workspace and no route off the box under the
+      default `network`, but
       the allowed *reads* now include root-only files (`/etc/shadow` under
       `hardened`; `strict`'s rootfs hides them). Run as your normal user.
 

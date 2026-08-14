@@ -206,9 +206,9 @@ def state_base(user: RealUser | None = None) -> Path:
 
 def private_dirs() -> tuple[Path, ...]:
     """agent6 directories a jailed command must never see: the config dir
-    (provider keys) and the state base (transcripts, notes, memories, run
-    history). ONE owner, because the jail masks them, the tool-mount scan
-    refuses them, and the config validator rejects grants inside them.
+    (provider keys) and the state base (transcripts, memory, run history).
+    ONE owner, because the jail masks them, the tool-mount scan refuses
+    them, and the config validator rejects grants inside them.
 
     Not the data dir or the cache: data holds operator-INSTALLED skills, which
     the model is meant to use (a skill's bundled script has to be runnable),

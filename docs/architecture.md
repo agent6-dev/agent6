@@ -41,7 +41,7 @@ almost always a sign of the wrong design.
   `$XDG_STATE_HOME/agent6/<repo-id>/`; the base is settable via the
   global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var. The
   id is keyed on the PROJECT (the nearest enclosing `.git`), so running from
-  a subdirectory reaches the same runs, memories and config. Every config
+  a subdirectory reaches the same runs, memory and config. Every config
   edit, from any surface, goes through
   [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py):
   one lock-held cycle that validates the written value standalone,

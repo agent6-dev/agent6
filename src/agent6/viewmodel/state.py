@@ -680,10 +680,6 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"{event.get('elided')} elided, {event.get('gists')} gists in context"
         case "loop.compact.refused":
             salient = str(event.get("reason", ""))[:160]
-        case "loop.memories.unavailable":
-            salient = f"memories unavailable: {str(event.get('error', ''))[:140]}"
-        case "loop.notes.unavailable":
-            salient = f"notes unavailable: {str(event.get('error', ''))[:140]}"
         case "mcp.server_unavailable":
             salient = f"{event.get('server')} unavailable: {str(event.get('error', ''))[:120]}"
         case "loop.skills.warning":

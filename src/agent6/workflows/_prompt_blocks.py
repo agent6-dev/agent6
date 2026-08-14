@@ -3,10 +3,10 @@
 """Typed assembly of the agent-loop system prompt.
 
 The helpers that fill the pure `agent6.prompts.loop` block templates with a
-run's config + repo summary + memories + skills. These stay in the workflow
+run's config + repo summary + memory + skills. These stay in the workflow
 layer because their signatures need agent6 types (`Config`, `RepoSummary`,
-`MemoryEntry`, `ResolvedSkills`); the leaf `agent6.prompts` package holds only
-the dependency-free text they render.
+`ResolvedSkills`); the leaf `agent6.prompts` package holds only the
+dependency-free text they render.
 """
 
 from __future__ import annotations
