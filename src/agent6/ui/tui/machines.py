@@ -655,10 +655,10 @@ class MachinesScreen(Screen[None]):
     ]
     COMMANDS: ClassVar = Screen.COMMANDS | {_MachineCommands}
 
-    def __init__(self, repo_cwd: Path, agent6_dir: Path) -> None:
+    def __init__(self, agent6_dir: Path, repo_cwd: Path) -> None:
         super().__init__()
-        self.repo_cwd = repo_cwd
         self.agent6_dir = agent6_dir  # per-repo state dir; machine-create drafts live under it
+        self.repo_cwd = repo_cwd
         self._machines: list[Path] = []
 
     def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:

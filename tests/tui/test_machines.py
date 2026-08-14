@@ -115,7 +115,7 @@ class _Host(App[None]):
         self._repo = repo_cwd
 
     def on_mount(self) -> None:
-        self.push_screen(MachinesScreen(self._repo, self._repo / ".agent6"))
+        self.push_screen(MachinesScreen(self._repo / ".agent6", self._repo))
 
 
 def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
