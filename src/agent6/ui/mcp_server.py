@@ -87,6 +87,10 @@ class _ToolSpec:
 # ---------------------------------------------------------------------------
 
 
+# The command-spawning tool names, withdrawn together when commands are off.
+_COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
+
+
 def _no_one_to_ask(config: Config) -> Config:
     """Withdraw the command tools when the config would prompt for them.
 
@@ -165,7 +169,15 @@ class MCPServer:
         self._stdin = stdin
         self._stdout = stdout
         self._dispatcher = ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
-        self._tools: dict[str, _ToolSpec] = {t.name: t for t in self._build_tools()}
+        # `ask` clamps to no-commands (no one to answer here) and `no` is the
+        # operator's own refusal; either way the command tools are GONE from
+        # tools/list, not offered-and-failing. _call_tool still names the real
+        # reason for a client that calls one by name anyway.
+        self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
+        specs = self._build_tools()
+        if self._commands_withdrawn:
+            specs = [t for t in specs if t.name not in _COMMAND_TOOLS]
+        self._tools: dict[str, _ToolSpec] = {t.name: t for t in specs}
 
     # ---- public entry point -----
 
@@ -329,6 +341,17 @@ class MCPServer:
         raw_args = params.get("arguments")
         args = raw_args if isinstance(raw_args, dict) else {}
         if not isinstance(name, str) or name not in self._tools:
+            if isinstance(name, str) and name in _COMMAND_TOOLS and self._commands_withdrawn:
+                mode = self._config.sandbox.run_commands
+                detail = (
+                    "no operator answers the MCP boundary"
+                    if mode == "ask"
+                    else "the operator disabled commands"
+                )
+                raise _RpcError(
+                    -32601,
+                    f"{name} is withdrawn: [sandbox].run_commands = {mode!r} ({detail})",
+                )
             raise _RpcError(-32601, f"unknown tool: {name!r}")
         if raw_args is not None and not isinstance(raw_args, dict):
             raise _RpcError(-32602, "arguments must be an object")

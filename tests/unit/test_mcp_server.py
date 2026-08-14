@@ -103,7 +103,7 @@ def test_initialize_returns_server_info(tmp_path: Path) -> None:
 
 
 def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
-    server = _server(tmp_path)
+    server = _server(tmp_path, run_commands="yes")
     resps = _roundtrip(
         server,
         [{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}],
@@ -120,6 +120,30 @@ def test_tools_list_advertises_five_tools(tmp_path: Path) -> None:
     # Every tool advertises a JSON-schema object.
     for t in tools:
         assert t["inputSchema"]["type"] == "object"
+
+
+def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
+    """Under run_commands = "no" (or the non-interactive "ask" clamp) the
+    command tools are GONE from tools/list -- offered-and-failing lied about
+    the surface -- and a client calling one by name is told the real reason,
+    not "unknown tool"."""
+    server = _server(tmp_path)  # the fixture's default is "no"
+    resps = _roundtrip(
+        server,
+        [
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "run_verify", "arguments": {}},
+            },
+        ],
+    )
+    names = {t["name"] for t in resps[0]["result"]["tools"]}
+    assert names == {"query_dag", "list_sessions"}
+    err = resps[1]["error"]["message"]
+    assert "withdrawn" in err and "run_commands" in err and "'no'" in err
 
 
 def test_unknown_method_returns_rpc_error(tmp_path: Path) -> None:
@@ -319,7 +343,7 @@ def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
 def test_run_verify_delegates_to_dispatcher(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    server = _server(tmp_path)
+    server = _server(tmp_path, run_commands="yes")
     captured: list[tuple[str, dict[str, Any]]] = []
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
@@ -377,7 +401,7 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    server = _server(tmp_path)
+    server = _server(tmp_path, run_commands="yes")
     calls: list[str] = []
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
@@ -410,7 +434,7 @@ def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    server = _server(tmp_path)
+    server = _server(tmp_path, run_commands="yes")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
         raise ToolError("patch did not apply")
@@ -441,7 +465,7 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
     aborts a run on it), but the MCP server's contract is isError results:
     letting it escape killed the whole `agent6 mcp serve` process, and every
     later client call died on a broken pipe."""
-    server = _server(tmp_path)
+    server = _server(tmp_path, run_commands="yes")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
         raise OperatorCommandUnexecutable("verify command not found on the jail PATH")
