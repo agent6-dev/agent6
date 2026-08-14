@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import subprocess
 import threading
@@ -314,6 +315,17 @@ class _MCPServer:
     _reader_stop: threading.Event = field(default_factory=threading.Event)
     _tools: tuple[MCPToolDescriptor, ...] = ()
 
+    def _redact_secrets(self, text: str) -> str:
+        """Strip `pass_env` credential VALUES from a diagnostic string. A
+        third-party server may echo a passed secret to its stderr, and that
+        tail rides into `MCPError` and the durable `mcp.server_unavailable`
+        event, so it is redacted before it leaves here."""
+        for name in self.pass_env:
+            value = os.environ.get(name, "")
+            if value:
+                text = text.replace(value, "***")
+        return text
+
     def start(self) -> None:
         """Spawn the subprocess and pump it through `initialize` +
         `tools/list`. Raises `MCPError` if anything in the handshake
@@ -561,7 +573,7 @@ class _MCPServer:
                         # Its own words if it left any: a command that does not
                         # exist, a refused grant, the launcher's setup failure
                         # all read the same from out here otherwise.
-                        said = _stderr_tail(self._errors)
+                        said = self._redact_secrets(_stderr_tail(self._errors))
                         detail = f": {said}" if said else ""
                         raise MCPError(
                             f"server {self.name!r} died before responding to {method}{detail}"

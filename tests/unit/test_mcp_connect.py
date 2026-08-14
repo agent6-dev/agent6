@@ -203,6 +203,60 @@ def test_the_probe_leaves_no_server_running(
     assert left.returncode != 0, f"probe server leaked: pids {left.stdout.decode()!r}"
 
 
+def test_a_passed_secret_is_redacted_from_a_server_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A third-party server may echo a pass_env credential to stderr; that tail
+    rides into MCPError and the durable mcp.server_unavailable event, so the
+    passed value must be redacted before it leaves the transport."""
+    from agent6.tools.mcp_client import MCPError, _MCPServer  # pyright: ignore[reportPrivateUsage]
+
+    srv_py = tmp_path / "srv.py"
+    srv_py.write_text(
+        "import os, sys\n"
+        "sys.stderr.write('boom: ' + os.environ.get('MY_MCP_SECRET', '') + '\\n')\n"
+        "sys.stderr.flush()\n"
+        # readline: accept the initialize write before dying, so death is
+        # detected on the response wait (the path that carries the stderr
+        # tail), never as a write-time EPIPE (which carries no server words).
+        "sys.stdin.readline()\n"
+        "sys.exit(1)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MY_MCP_SECRET", "sk-supersecret-123")
+    srv = _MCPServer(
+        name="leaky",
+        command=("/usr/bin/python3", str(srv_py)),
+        startup_timeout_s=3.0,
+        call_timeout_s=3.0,
+        pass_env=("MY_MCP_SECRET",),
+        policy=None,
+    )
+    try:
+        with pytest.raises(MCPError) as exc:
+            srv.start()
+    finally:
+        srv.close()
+    msg = str(exc.value)
+    assert "sk-supersecret-123" not in msg
+    assert "***" in msg
+
+
+def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
+    """The invariant lives in Config, not only `mcp connect`: a direct TOML edit
+    naming a provider's api_key_env in a server's pass_env is rejected at load,
+    so it cannot hand a third-party server a provider API key."""
+    from agent6.config import Config
+
+    with pytest.raises(Exception, match="never passes a provider key"):
+        Config.model_validate(
+            {
+                "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "ANTH_KEY"}},
+                "mcp": {"servers": {"s": {"command": ["srv"], "pass_env": ["ANTH_KEY"]}}},
+            }
+        )
+
+
 def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
     """The `connect` positional shared its dest with the root subparser's
     command verb, so `mcp connect files -- npx srv` dispatched on a LIST and
