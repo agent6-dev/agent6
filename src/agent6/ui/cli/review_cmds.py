@@ -113,8 +113,9 @@ def _run_review_panel(
 
     The exit code carries the verdict for scripting: 0 = PASS (clean or with
     non-blocking findings), 1 = INCONCLUSIVE (every seat abstained; nothing was
-    reviewed), 2 = BLOCK (a grounded gating finding). Half a contract -- BLOCK 0
-    but INCONCLUSIVE 1 -- was worse than none."""
+    reviewed), 2 = BLOCK (a grounded gating finding). All three are distinct on
+    purpose: a script must be able to tell "reviewed clean" from "nothing
+    reviewed"."""
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     seats = build_review_seats(
         cfg,

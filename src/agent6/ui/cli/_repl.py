@@ -69,7 +69,6 @@ def build_repl_hook(
     ``/undo`` and ``/diff``), the current run id (for ``/diff`` and
     ``/watch``), and the live MCP manager (for ``/mcp``) in a closure
     so Workflow stays agnostic of the CLI's extra state.
-    extends with /diff, /watch, /mcp, /init.
     """
 
     def hook(iteration: int, sha: str) -> Literal["continue", "stop"]:

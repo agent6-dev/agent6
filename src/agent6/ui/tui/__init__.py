@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """UI subtree for agent6, read-only viewers over the JSONL event stream.
 
-Everything in this package is **optional, side-effect-free, and consumes
-`<run-dir>/logs.jsonl` from disk**. Nothing in here is part of the
-core agent loop; reviewers can skip this directory and still understand
-how agent6 actually plans and edits code.
+Everything in this package is **optional and out of the core loop**: it
+consumes `<run-dir>/logs.jsonl` from disk, and its only writes are the
+answer files and its own ui.toml preferences. Reviewers can skip this
+directory and still understand how agent6 actually plans and edits code.
 
 The render-ready state and the JSONL tailer live in `agent6.viewmodel` (shared
 with the CLI and the web client); this package is the textual painting of that

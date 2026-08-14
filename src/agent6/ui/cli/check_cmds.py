@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 check`, sandbox + config + MCP + verify pre-flight."""
+"""`agent6 check`, sandbox + config + MCP + boundaries + verify pre-flight."""
 
 from __future__ import annotations
 

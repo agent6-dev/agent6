@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 machine` subcommands: argv adaptation + console rendering.
 
-The read-only commands (check/test/graph/status/replay/poke/watch) load + render
+The read-only commands (check/test/graph/status/replay/poke) load + render
 directly; run/create adapt argv and hand the lifecycle to `app.machine` behind
 the `MachineFrontend` seam. The interactive network-refusal resolver stays here
 (it needs a TTY)."""
@@ -262,8 +262,9 @@ def _suggested_network_fix(
         # into the network needs the explicit-per-tool egress mode.
         return {"sandbox.network": "only_explicit_states"} if has_allow else None
     if isolation == "hardened":
-        # hardened can't isolate one tool's netns, so EVERY tool (networked or
-        # not) shares the host network; the combo validator then requires
+        # hardened can't isolate one tool's netns, so EVERY tool (networked
+        # or not) shares the host network; only an explicit "host" states that
+        # honestly.
         return {"sandbox.network": "host"}
     return None
 
@@ -344,7 +345,8 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
             if name in existing:
                 return (
                     f" Did you mean the instance id {name!r}?"
-                    " (`machine run` takes the FILE; status/replay/poke/watch take the ID.)"
+                    " (`machine run` takes the FILE; status/replay/poke and"
+                    " `agent6 attach` take the ID.)"
                 )
             return f" That is a machine file; run it first with `agent6 machine run {machine_id}`."
     close = difflib.get_close_matches(candidate.name, existing, n=1)

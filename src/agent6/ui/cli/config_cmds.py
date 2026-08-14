@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 config` subcommands (show/fill/path/get/set/unset/add/remove)."""
+"""`agent6 config` subcommands (show/fill/fix/path/presets/get/set/unset/add/remove)."""
 
 from __future__ import annotations
 

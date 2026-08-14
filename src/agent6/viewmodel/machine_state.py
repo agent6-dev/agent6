@@ -5,7 +5,7 @@
 The machine analogue of state.py: where SessionState folds a run's logs.jsonl, this
 folds a machine instance's journal (the StepEvent / MachineEnd stream) plus its
 spec into a MachineState that the CLI `agent6 attach`, the TUI
-MachineWatchScreen, and a future web client all render. The agent reasoning
+MachineWatchScreen, and the web client all render. The agent reasoning
 inside an `agent` state is itself a run log, so it folds through SessionState
 (state.py); this module models only the machine level: which states exist, where
 we are, the path taken, and how it ended.

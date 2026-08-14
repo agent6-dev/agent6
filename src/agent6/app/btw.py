@@ -29,9 +29,9 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.viewmodel import summarize_session_dir
 from agent6.viewmodel.format import status_label
 
-# How a btw is started: (cwd, agent6 argv without the exe, env extras) -> "" or
-# an error. Exactly `app.egress.HostLaneLaunch`, which the coordinator already
-# injects for `/parallel`; a btw needs the same host-namespace spawn.
+# How a btw is started: (cwd, agent6 argv without the exe, env extras) -> ""
+# or an error. The front-end injects it (ui/cli passes direct_launch), so a
+# btw spawns exactly as a `/parallel` lane would.
 BtwLaunch = Callable[[Path, list[str], dict[str, str]], str]
 
 # How long to wait for the spawned ask's session dir to appear. Generous: the

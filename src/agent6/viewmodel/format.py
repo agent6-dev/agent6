@@ -3,9 +3,9 @@
 """Cross-surface presentation constants shared by the CLI, TUI, and web.
 
 The single source of truth for how run/task state reads to a human, so the same
-state never renders differently across surfaces (the per-front-end glyph maps had
-already drifted). The web SPA can't import Python, so it mirrors these exact
-characters in page.py; keep them in sync.
+state never renders differently across surfaces (per-front-end glyph maps
+drift). The web SPA can't import Python, so it mirrors these exact
+characters in ui/web/client.js; keep them in sync.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def format_cost(usd: float, *, partial: bool = False) -> str:
     """Render a USD cost identically on every surface: cents at >= $1, four
     decimals below (so small runs aren't all '$0.00'), with a leading '~' when
     the figure is a known under-estimate (a model without price data). The web
-    SPA mirrors this in page.py's fmtUsd."""
+    SPA mirrors this in client.js's fmtUsd."""
     prefix = "~" if partial else ""
     return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
 

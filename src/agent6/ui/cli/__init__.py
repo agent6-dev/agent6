@@ -453,7 +453,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
         )
     if args.sessions_command == "graph":
         return _cmd_history_graph(args.session_id)
-    raise AssertionError("unreachable")  # pragma: no cover -- runs subparser is required
+    raise AssertionError("unreachable")  # pragma: no cover -- earlier branches cover every verb
 
 
 def _dispatch_tui(args: argparse.Namespace) -> int:

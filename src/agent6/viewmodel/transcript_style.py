@@ -63,9 +63,9 @@ DETAIL_CLIP = 120  # chars of a tool result's first line shown inline (the rest 
 
 
 def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
-    """A tool call's lines: the call head, then the result. The RESULT glyph carries
-    the pass/fail colour; the detail is its OWN neutral span (the #1 fix -- it no
-    longer inherits the fail colour). Collapsed, a long multi-line detail (a failed
+    """A tool call's lines: the call head, then the result. The RESULT glyph
+    carries the pass/fail colour; the detail is its OWN neutral span, never
+    tinted by the fail colour. Collapsed, a long multi-line detail (a failed
     tool's error dump) is clipped to its first line + a "+N more lines" note so it
     can't dominate; expanded, the full detail is shown, indented and still neutral."""
     head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"

@@ -69,8 +69,8 @@ def listening_ports(session_dir: Path) -> list[int]:
 
     Read from `/proc/<holder>/net/`, which is that process's OWN view: a
     namespace's sockets are readable without entering it, so this needs no
-    fork and no setns. (It began as both, until the fork warned about doing
-    that from a threaded process -- the web server would have been next.)
+    fork and no setns (a forking version would warn under any threaded caller,
+    the web server included).
     """
     pid = read_session_netns_pid(session_dir)
     if pid is None:

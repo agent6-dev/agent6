@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Subprocess entry: run ONE machine `agent` state, self-confined.
+"""Subprocess entry: run ONE machine `agent` state.
 
 Invoked as ``python -m agent6.ui.cli.machine_agent <request.json> <result.json>``.
 Validates the request (`MachineAgentRequest`, the file-shape owner), runs the

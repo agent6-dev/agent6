@@ -79,8 +79,7 @@ def build_coordinator_spawner(
     dispatch is unavailable (non-write mode, or a run already inside a lane).
     Injects the CLI's `LaneRuntime` into the headless pipeline. run.py / resume.py
     call this to build the loop's `lane_spawner`, passing the coordinator run's
-    own effective `--auto-approve` (same as `max_usd`) and *host_lane_launch* (the
-    egress guard's host-spawner escape, so lanes survive a strict egress netns)."""
+    own effective `--auto-approve` (same as `max_usd`)."""
     return app_build_coordinator_spawner(
         cfg,
         origin,

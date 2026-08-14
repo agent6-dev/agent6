@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 mcp-serve` command (spawn an MCP stdio server)."""
+"""`agent6 mcp serve` command (speak MCP over stdio)."""
 
 from __future__ import annotations
 

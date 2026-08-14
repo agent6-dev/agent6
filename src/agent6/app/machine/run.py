@@ -145,7 +145,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if disable_sandbox:
         # Set the env setter so this supervisor's resolve_isolation resolves to
         # none; it then passes that isolation to each agent subprocess in its
-        # request (the subprocess trusts req["isolation"], it does not re-resolve).
+        # request (the subprocess takes req.isolation as given, re-checking
+        # only that this host supports it).
         # Using the env (vs mutating cfg) is the simplest single knob; the env
         # is operator-controlled and the LLM cannot reach it.
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"

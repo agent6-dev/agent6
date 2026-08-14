@@ -270,7 +270,7 @@ def execute_merge(
     validates first; this mutates."""
     apply_git_ops_policy(cfg)
     if not branch_exists(cwd, target):
-        # The merge target must already exist; never fabricate it. runs merge
+        # The merge target must already exist; never fabricate it. sessions merge
         # pre-checks this for a nicer message; auto_merge relies on this guard
         # if the base was deleted mid-run.
         return MergeOutcome("error", error=f"target branch {target!r} does not exist")

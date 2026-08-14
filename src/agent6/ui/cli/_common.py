@@ -98,8 +98,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
 
 def sgr(text: str, code: str) -> str:
     """Wrap *text* in an ANSI style, tty only, so piped output stays plain.
-    The one place the CLI's faded/bold hints are styled (was duplicated in
-    skills_cmds / memory_cmds)."""
+    The one place the CLI's faded/bold hints are styled."""
     return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
@@ -133,9 +132,9 @@ NOTHING_YET = 'no sessions yet. Start one with `agent6 run "<task>"`.'
 def print_nothing_yet() -> None:
     """Say there is nothing yet, and how to change that.
 
-    An empty state dir is not a fault, so it does not read as one: "ERROR: no
-    runs directory at <state>/sessions/runs" told a new operator their install
-    was broken, in vocabulary from before the rename.
+    An empty state dir is not a fault, so it must not read as one: an ERROR
+    about a missing directory would tell a new operator their install is
+    broken.
     """
     print(NOTHING_YET, file=sys.stderr)
 
@@ -181,9 +180,10 @@ def resolve_session_layout(
     one per mode under ``sessions/`` -- returning a ``SessionLayout``
     with the matching subdir.
 
-    `agent6 run`/`plan` live under ``runs/``, `agent6 ask` under ``asks/``, and
-    `machine create` authoring logs under ``sessions/machines/``; read-only
-    commands (``sessions show``/``watch``/``history search``) use this so anything
+    `agent6 run` lives under ``runs/``, `plan` under ``plans/``, `agent6 ask`
+    under ``asks/``, and `machine create` authoring logs under
+    ``sessions/machines/``; read-only commands (``sessions show``/``attach``/
+    ``history search``) use this so anything
     a listing shows is also inspectable by id. Raises ``SessionIdError`` if no run
     matches in any bucket.
 
@@ -273,7 +273,7 @@ def resolve_or_newest_layout(
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
     ``SessionIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
-    ``attach`` / ``sessions stop`` / ``sessions status``: a new such command resolves the
+    ``attach`` / ``sessions stop`` / ``sessions show``: a new such command resolves the
     same way instead of re-deriving the id-or-newest glue.
     """
     if session_id:

@@ -32,7 +32,8 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
 
 
 def focus_neighbor(widget: Widget, direction: int) -> None:
-    """Move focus to the next/previous *control* (ChoiceField / Input / ActionItem)
+    """Move focus to the next/previous *control* (ChoiceField / TypeaheadField /
+    Input / ActionItem)
     in the dialog, skipping scroll containers and NOT wrapping — so the top and
     bottom of a dialog are hard stops, never a jump to a focusable scroll box (or
     to the far end) that strands the arrows."""

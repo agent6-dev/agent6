@@ -31,7 +31,7 @@ def machine_network_refusal(
     """A refusal message if this machine's tool-network needs can't be honored.
 
     Layers machine-specific rules on top of `check_network_support` (which
-    handles network=only_explicit_states / block on `hardened`). On
+    handles network=only_explicit_states / session on `hardened`). On
     `hardened` per-tool isolation is impossible, so we refuse, rather than
     silently mis-confine, whenever isolation is *required*: by the operator
     (`network = "session"`) or by a state (`network = "none"`). A

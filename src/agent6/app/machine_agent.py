@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The two sides of a machine `agent` state: the host-side launcher that spawns
-the confined subprocess, and the confined runner itself.
+"""The two sides of a machine `agent` state: the host-side launcher that
+spawns the subprocess, and the runner inside it.
 
 A machine run's engine is a thin supervisor that stays in the host network
 namespace and makes no network calls itself. Each `agent` state runs in its own
@@ -12,8 +12,9 @@ unconfined, and the jail bounds the commands it dispatches.
 `build_machine_agent_runner` (host side) builds the callable an `agent` state
 fires: it spawns the subprocess with a fixed argv, hands it the request via a
 temp file, and enforces the timeout by killing the process group. `run_one`
-(subprocess side) reads that request, sets up the sandbox while still
-single-threaded, runs the agent loop to completion, and writes the result.
+(subprocess side) reads that request, validates its isolation and hide-path
+needs while still single-threaded, runs the agent loop to completion, and
+writes the result.
 `MachineAgentRequest` (here) owns the `request.json` file shape and
 `AgentExecResult` (machine/engine.py) owns `result.json`: both sides
 serialize/validate through the models, per the IPC rule

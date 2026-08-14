@@ -111,7 +111,7 @@ def test_check_sandbox_degraded_names_why(
     """A degraded level never appears without its cause. Reproduced on a
     userns-blocked host (user.max_user_namespaces = 0): the line read
     `effective isolation (auto): hardened` and nothing said why, while
-    `check config` did (Eric hit exactly this)."""
+    `check config` did."""
     from agent6.sandbox.jail import ToolMountNotes
 
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"

@@ -73,7 +73,7 @@ def spawn_detached_resume(
 
 
 # Subcommand groups whose verb is the SECOND argv word ("machine run",
-# "runs prune", "config set"); everything else is a one-word subcommand whose
+# "sessions prune", "config set"); everything else is a one-word subcommand whose
 # next arg is already a value.
 _COMMAND_GROUPS = frozenset({"machine", "sessions", "config"})
 
