@@ -159,9 +159,9 @@ class RunBridge:
         editor renders buttons either way, which is what the seam needs.
 
         A question with no options has no buttons, so there is nothing for the
-        operator to press: it stalled the whole permission timeout and then
-        answered "said nothing" regardless. Not asking is the same answer,
-        immediately, and it does not hold the run for five minutes.
+        operator to press: asking would stall the whole permission timeout and
+        then answer "said nothing" regardless. Not asking is the same answer
+        immediately, without holding the run for five minutes.
         """
         if not options:
             return None
@@ -196,8 +196,8 @@ class RunBridge:
         )
         chosen = _selected(answer, options)
         # `toolCall` is required on a permission request, so the ask announces
-        # one -- and an entity ACP models as having a lifecycle needs its end.
-        # Without this an editor kept one pending tool call per approval, for
+        # one -- and an entity ACP models as having a lifecycle needs its end:
+        # without it an editor keeps one pending tool call per approval, for
         # the life of the session.
         self.server.notify_raw(
             {
@@ -223,13 +223,14 @@ class RunBridge:
 
     def run(self, session: Session, text: str) -> StopReason:
         # BEFORE the queue, not after. `_runs` is held for a whole run, so a
-        # second session's turn can wait here for many minutes -- and minting
-        # the id inside left that whole window with no run to address: the
-        # cancel wrote no marker, the turn ran to completion spending budget
-        # and making commits, and the editor was told "cancelled".
-        # Through the owner: this id reaches run_task as an EXPLICIT one, which
-        # skips the lifecycle's own minting, so a collision refused the turn
-        # with "use agent6 resume <id>" over an id the editor never chose.
+        # second session's turn can wait here for many minutes, and minting
+        # the id inside would leave that whole window with no run to address:
+        # a cancel writes no marker, the turn runs to completion spending
+        # budget and making commits, and the editor is told "cancelled".
+        # Through the owner: this id reaches run_task as an EXPLICIT one,
+        # which skips the lifecycle's own minting -- a collision would refuse
+        # the turn with "use agent6 resume <id>" over an id the editor never
+        # chose.
         session.session_id = unused_session_id(
             resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
         )
