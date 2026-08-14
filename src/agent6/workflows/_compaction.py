@@ -146,16 +146,19 @@ Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 
 @dataclass(frozen=True, slots=True)
 class CompactionStats:
-    """One tier-1 pass: fresh tool_results elided (of which gisted), plus
-    gist placeholders demoted to the bare marker — with the identities of
-    each (``call_label`` strings / read paths) for the event stream."""
+    """One tier-1 pass: identical results deduplicated, fresh tool_results
+    elided (of which gisted), plus gist placeholders demoted to the bare
+    marker — with the identities of each (``call_label`` strings / read
+    paths) for the event stream."""
 
     elided: int = 0
     gisted: int = 0
     demoted: int = 0
+    deduped: int = 0
     elided_calls: tuple[str, ...] = ()
     gist_paths: tuple[str, ...] = ()
     demoted_paths: tuple[str, ...] = ()
+    deduped_calls: tuple[str, ...] = ()
 
 
 def elision_gist_placeholder(described: str, gist: str) -> str:
@@ -533,6 +536,16 @@ def compact_old_tool_results(
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return CompactionStats()
 
+    # Dedup first: freeing duplicate bytes is lossless, and may spare real
+    # content from elision below (or make it unnecessary).
+    deduped, deduped_calls = _dedupe_identical_results(
+        conversation, pointers, keep_recent=keep_recent
+    )
+    if deduped:
+        pointers, total = _tool_result_pointers(conversation)
+        if total <= max_total_bytes:
+            return CompactionStats(deduped=deduped, deduped_calls=deduped_calls)
+
     def _is_protected(turn_idx: int, item_idx: int) -> bool:
         call = _result_at(conversation, turn_idx, item_idx).for_call
         if call.name != "read_file" or not isinstance(call.input, dict):
@@ -570,9 +583,11 @@ def compact_old_tool_results(
         elided=walk.elided,
         gisted=walk.gisted,
         demoted=walk.demoted,
+        deduped=deduped,
         elided_calls=tuple(walk.elided_calls),
         gist_paths=tuple(walk.gist_paths),
         demoted_paths=tuple(walk.demoted_paths),
+        deduped_calls=deduped_calls,
     )
 
 
@@ -582,6 +597,64 @@ def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> Tool
     item = turn.items[item_idx]
     assert isinstance(item, ToolResultItem)  # pointers only ever index tool_results
     return item
+
+
+# Below this a duplicate's pointer placeholder is barely smaller than the
+# content it replaces.
+_DEDUP_MIN_CHARS = 200
+
+
+def _dedupe_identical_results(
+    conversation: Conversation,
+    pointers: list[tuple[int, int, int]],
+    *,
+    keep_recent: int,
+) -> tuple[int, tuple[str, ...]]:
+    """History-wide identical-result dedup, the tier-1 pass's first step.
+
+    When the same call (name + input) produced byte-identical content more
+    than once, every copy but the newest becomes a short pointer placeholder:
+    lossless (the content survives in the newest copy), local, and running
+    only here — where history is being rewritten anyway — so it adds no new
+    cache-invalidation points. Claude Code dedupes the same way; pi, which
+    only ever compacts at the context edge, has no tier this could live in.
+
+    The undelivered final batch, the ``keep_recent`` newest results,
+    already-elided placeholders, and sub-``_DEDUP_MIN_CHARS`` results are
+    never rewritten.
+    """
+    if len(pointers) <= keep_recent:
+        return 0, ()
+    last_turn = max(turn_idx for turn_idx, _, _ in pointers)
+    exempt = {(t, i) for t, i, _ in pointers[-keep_recent:]}
+    by_key: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
+    for turn_idx, item_idx, _size in pointers:
+        item = _result_at(conversation, turn_idx, item_idx)
+        if item.content.startswith(ELISION_PREFIX) or len(item.content) < _DEDUP_MIN_CHARS:
+            continue
+        call = item.for_call
+        try:
+            input_key = json.dumps(call.input, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            continue
+        by_key.setdefault((call.name, input_key, item.content), []).append((turn_idx, item_idx))
+    n = 0
+    labels: list[str] = []
+    for locs in by_key.values():
+        for turn_idx, item_idx in locs[:-1]:  # every copy but the newest
+            if turn_idx == last_turn or (turn_idx, item_idx) in exempt:
+                continue
+            item = _result_at(conversation, turn_idx, item_idx)
+            label = call_label(item.for_call.name, item.for_call.input)
+            conversation.set_result_content(
+                turn_idx,
+                item_idx,
+                f"{ELISION_PREFIX} (duplicate): {label} returned byte-identical"
+                " content again later in this conversation; see the newer result.>",
+            )
+            n += 1
+            labels.append(label)
+    return n, tuple(labels)
 
 
 @dataclass(slots=True)

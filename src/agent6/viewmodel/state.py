@@ -658,6 +658,12 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"elided {event.get('n')} old tool results"
             if named:
                 salient += f": {named[:160]}"
+        case "loop.compact.deduped":
+            calls = _as_list(event.get("calls"))
+            named = ", ".join(str(c) for c in calls)
+            salient = f"deduplicated {event.get('n')} identical tool results"
+            if named:
+                salient += f": {named[:160]}"
         case "loop.compact.gists":
             parts = []
             if event.get("gisted"):

@@ -3655,6 +3655,9 @@ class Workflow:
             protect_paths=recently_edited_paths(conversation),
             gister=self._distill_gists if self.compact_elision_gists else None,
         )
+        if stats.deduped:
+            self._log(f"LOOP: compaction deduplicated {stats.deduped} identical tool results")
+            self._emit("loop.compact.deduped", n=stats.deduped, calls=list(stats.deduped_calls))
         if stats.elided:
             detail = f", {stats.gisted} kept as distilled gists" if stats.gisted else ""
             self._log(f"LOOP: compaction elided {stats.elided} old tool_result blocks{detail}")

@@ -145,38 +145,39 @@ def test_compact_noop_when_under_threshold() -> None:
 
 
 def test_compact_elides_oldest_when_over_threshold() -> None:
-    big = "x" * 1000
+    # Distinct payloads: identical ones would be deduplicated before elision.
+    a, b, c = "a" * 1000, "b" * 1000, "c" * 1000
     conv = Conversation()
-    _reads(conv, big, big, big)  # oldest first
+    _reads(conv, a, b, c)  # oldest first
     stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
     assert stats.elided == 1
     contents = _result_contents(conv)
     # Oldest replaced with marker; the newer two kept.
     assert "elided" in contents[0]
-    assert contents[1] == big
-    assert contents[2] == big
+    assert contents[1] == b
+    assert contents[2] == c
 
 
 def test_compact_preserves_keep_recent_floor() -> None:
     """Even when over threshold, the newest `keep_recent` entries
     are never elided."""
-    big = "x" * 10_000
+    bodies = [ch * 10_000 for ch in "abcde"]  # distinct: dedup must not fire
     conv = Conversation()
-    _reads(conv, *[big] * 5)
+    _reads(conv, *bodies)
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
     # 3 oldest elided, 2 most recent preserved.
     assert stats.elided == 3
     contents = _result_contents(conv)
     assert all("elided" in c for c in contents[:3])
-    assert contents[3] == big
-    assert contents[4] == big
+    assert contents[3] == bodies[3]
+    assert contents[4] == bodies[4]
 
 
 def test_compact_idempotent_on_already_elided() -> None:
     """Running compaction twice doesn't double-elide or churn."""
-    big = "x" * 1000
+    bodies = [ch * 1000 for ch in "abcd"]  # distinct: dedup must not fire
     conv = Conversation()
-    _reads(conv, *[big] * 4)
+    _reads(conv, *bodies)
     e1 = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
     e2 = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
     assert e1.elided == 2  # oldest 2 elided
@@ -201,16 +202,17 @@ def test_compact_never_elides_unseen_results_in_final_turn() -> None:
 def test_compact_elides_seen_results_but_protects_final_turn() -> None:
     # Results the model has already consumed (a later assistant turn exists)
     # stay eligible; only the undelivered final results turn is exempt.
-    big = "x" * 10_000
+    seen = [(f"s{i}" * 5_000) for i in range(3)]  # distinct: dedup must not fire
+    fresh = [(f"f{i}" * 5_000) for i in range(3)]
     conv = Conversation()
     conv.notice("task")
-    _add_exchange(conv, *[("read_file", {}, big)] * 3)  # seen: answered below
-    _add_exchange(conv, *[("read_file", {}, big)] * 3)  # unseen: awaiting delivery
+    _add_exchange(conv, *[("read_file", {}, c) for c in seen])  # seen: answered below
+    _add_exchange(conv, *[("read_file", {}, c) for c in fresh])  # unseen: awaiting delivery
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
     assert stats.elided == 3
     contents = _result_contents(conv)
     assert all("elided" in c for c in contents[:3])
-    assert contents[3:] == [big, big, big]
+    assert contents[3:] == fresh
 
 
 def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> None:
@@ -448,3 +450,71 @@ def test_recent_tail_start_respects_cap_and_boundaries() -> None:
     # results may be undelivered; paraphrasing them away is the one loss the
     # tail exists to prevent).
     assert recent_tail_start(turns, 50) == 3
+
+
+def _conv_with_repeated_reads(payload: str) -> Conversation:
+    from agent6.workflows._conversation import Conversation, ToolResultItem
+
+    conv = Conversation()
+    conv.notice("task")
+    for tid in ("t1", "t2", "t3"):
+        conv.assistant(
+            [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "a.py"}}]
+        )
+        last = conv.turns[-1]
+        conv.results(
+            [ToolResultItem(tool_use_id=tid, content=payload, for_call=last.tool_uses[0])]  # type: ignore[union-attr]
+        )
+    return conv
+
+
+def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
+    """The same read re-run with identical bytes: older copies become pointer
+    placeholders, the newest survives whole. Lossless, so no knob (Claude
+    Code dedupes the same way)."""
+    from agent6.workflows._compaction import ELISION_PREFIX, compact_old_tool_results
+    from agent6.workflows._conversation import ToolResultItem, UserTurn
+
+    payload = "x" * 1_000
+    conv = _conv_with_repeated_reads(payload)
+    stats = compact_old_tool_results(conv, max_total_bytes=1_500, keep_recent=1)
+    # Both older copies dedupe; only the newest (t3) keeps the bytes.
+    assert stats.deduped == 2
+    result_turns = [t for t in conv.turns if isinstance(t, UserTurn) and t.items]
+    contents = [
+        item.content for t in result_turns for item in t.items if isinstance(item, ToolResultItem)
+    ]
+    assert sum(c == payload for c in contents) == 1  # only the newest copy keeps the bytes
+    assert any(c.startswith(f"{ELISION_PREFIX} (duplicate)") for c in contents)
+    assert stats.deduped_calls == ("read_file a.py", "read_file a.py")
+
+
+def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
+    """When freeing duplicates gets the total under the threshold, nothing
+    real is elided."""
+    from agent6.workflows._compaction import compact_old_tool_results
+
+    payload = "y" * 1_000
+    conv = _conv_with_repeated_reads(payload)
+    stats = compact_old_tool_results(conv, max_total_bytes=2_500, keep_recent=1)
+    assert stats.deduped >= 1
+    assert stats.elided == 0
+
+
+def test_tier1_dedup_skips_small_and_different_results() -> None:
+    from agent6.workflows._compaction import compact_old_tool_results
+    from agent6.workflows._conversation import Conversation, ToolResultItem
+
+    conv = Conversation()
+    conv.notice("task")
+    for tid, body in (("t1", "tiny"), ("t2", "tiny"), ("t3", "z" * 900), ("t4", "w" * 900)):
+        conv.assistant(
+            [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "b.py"}}]
+        )
+        last = conv.turns[-1]
+        conv.results(
+            [ToolResultItem(tool_use_id=tid, content=body, for_call=last.tool_uses[0])]  # type: ignore[union-attr]
+        )
+    stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
+    # "tiny" is under the dedup floor; the 900-char bodies differ: no dedup.
+    assert stats.deduped == 0
