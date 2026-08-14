@@ -117,7 +117,12 @@ def _attempt_reason(problems: list[str]) -> str:
 
 
 def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
-    task: str, frontend: MachineFrontend, *, output: Path | None, max_attempts: int
+    task: str,
+    frontend: MachineFrontend,
+    *,
+    output: Path | None,
+    max_attempts: int,
+    config_path: Path | None = None,
 ) -> int:
     reporter = frontend.reporter
     if max_attempts < 1:
@@ -125,7 +130,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     cwd = Path.cwd()
     try:
-        cfg = load_effective(cwd, None).config
+        cfg = load_effective(cwd, config_path).config
         cfg.require_runnable("worker")
     except ConfigError as exc:
         reporter.err(f"ERROR: {exc}")

@@ -450,7 +450,12 @@ class _MergePlan:
 
 
 def _plan_merge(  # noqa: PLR0911
-    cwd: Path, session_id: str, into: str | None, strategy: str | None
+    cwd: Path,
+    session_id: str,
+    into: str | None,
+    strategy: str | None,
+    *,
+    config_path: Path | None,
 ) -> _MergePlan | int:
     """Resolve and validate everything a merge needs, or return an exit code. Pure:
     every guard fails before `_cmd_merge` mutates the repo."""
@@ -494,7 +499,7 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     try:
-        cfg = load_effective(cwd, None).config
+        cfg = load_effective(cwd, config_path).config
     except ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -536,14 +541,19 @@ def _plan_merge(  # noqa: PLR0911
 
 
 def _cmd_merge(
-    *, session_id: str, strategy: str | None, into: str | None, message: str | None
+    *,
+    session_id: str,
+    strategy: str | None,
+    into: str | None,
+    message: str | None,
+    config_path: Path | None,
 ) -> int:
     """Land a run's work on a target branch (default: the branch the run was
     cut from) with the chosen strategy (default: git.merge_strategy). Ref
     plumbing only: your checkout, index, and worktree are never the medium, so
     a worktree still carrying the run's work is no obstacle."""
     cwd = Path.cwd()
-    plan = _plan_merge(cwd, session_id, into, strategy)
+    plan = _plan_merge(cwd, session_id, into, strategy, config_path=config_path)
     if isinstance(plan, int):
         return plan
     if plan.base_sha and not list_run_commits(cwd, plan.base_sha, plan.run_branch):
@@ -819,7 +829,7 @@ def _screen_candidates(
     return candidates, notes
 
 
-def _cmd_compare(*, session_ids: tuple[str, ...]) -> int:
+def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
     model when configured, else the mechanical verify+cost ranking) -- for
@@ -845,7 +855,7 @@ def _cmd_compare(*, session_ids: tuple[str, ...]) -> int:
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
-    cfg = load_effective(cwd, None).config
+    cfg = load_effective(cwd, config_path).config
 
     candidates, notes = _screen_candidates(cwd, resolved)
     for note in notes:

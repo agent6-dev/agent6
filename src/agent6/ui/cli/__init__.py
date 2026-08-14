@@ -385,7 +385,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
         print(f"agent6 exec: no session {args.target!r}", file=sys.stderr)
         return 2
     try:
-        cfg = load_effective(Path.cwd(), None).config
+        cfg = load_effective(Path.cwd(), args.config).config
     except ConfigError as exc:
         print(f"agent6 exec: {exc}", file=sys.stderr)
         return 2
@@ -424,9 +424,10 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
             strategy=args.strategy,
             into=args.into,
             message=args.message,
+            config_path=args.config,
         )
     if args.sessions_command == "compare":
-        return _cmd_compare(session_ids=tuple(args.session_ids))
+        return _cmd_compare(session_ids=tuple(args.session_ids), config_path=args.config)
     if args.sessions_command == "commits":
         return _cmd_commits(session_id=args.session_id)
     if args.sessions_command == "stop":
@@ -633,7 +634,9 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "replay":
         return _cmd_machine_replay(args.machine_id)
     if args.machine_command == "create":
-        return _cmd_machine_create(args.task, output=args.output, max_attempts=args.max_attempts)
+        return _cmd_machine_create(
+            args.task, output=args.output, max_attempts=args.max_attempts, config_path=args.config
+        )
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
 
 

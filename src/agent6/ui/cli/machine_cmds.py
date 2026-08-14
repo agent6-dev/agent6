@@ -657,5 +657,9 @@ def _machine_frontend() -> MachineFrontend:
     return MachineFrontend(reporter=STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal)
 
 
-def _cmd_machine_create(task: str, *, output: Path | None, max_attempts: int) -> int:
-    return create_machine(task, _machine_frontend(), output=output, max_attempts=max_attempts)
+def _cmd_machine_create(
+    task: str, *, output: Path | None, max_attempts: int, config_path: Path | None
+) -> int:
+    return create_machine(
+        task, _machine_frontend(), output=output, max_attempts=max_attempts, config_path=config_path
+    )
