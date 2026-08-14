@@ -68,7 +68,10 @@ def test_the_server_cannot_read_the_launchers_environment(tmp_path: Path) -> Non
         "    print('REFUSED', type(exc).__name__)\n"
     )
     out = _attack(script, tmp_path)
-    assert "REFUSED" in out or "READ 0 " in out, out
+    # Denied beats readable-and-empty: the launcher starts with no env, so a
+    # zero-byte read would mask a regression of the non-dumpable + cap-drop
+    # protection. Only the refusal is a pass.
+    assert "REFUSED" in out, out
 
 
 def test_the_server_cannot_reach_the_operators_secrets(

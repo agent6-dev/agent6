@@ -47,7 +47,11 @@ class SessionPolicy:
         return " · ".join(parts)
 
     def line(self) -> str:
-        """The one-line form every surface shows."""
+        """The one-line form every surface shows; "" for a run whose manifest
+        could not be read -- an all-empty policy must not claim "no verify
+        gate" about a run it knows nothing of."""
+        if not (self.model or self.isolation or self.run_commands or self.verify_command):
+            return ""
         parts = [p for p in (self.model, self.isolation) if p]
         if self.run_commands:
             parts.append(f"commands {self.run_commands}")

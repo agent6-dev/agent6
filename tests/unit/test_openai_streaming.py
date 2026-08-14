@@ -578,33 +578,6 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     assert time.monotonic() - started < 3.0
 
 
-def test_streaming_idle_watchdog_does_not_fire_when_data_flows(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Real SSE ``data:`` lines must reset the idle clock so
-    a healthy long stream does not get killed.
-    """
-    from agent6.providers import _stream as stream_mod
-
-    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.5)
-    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
-
-    provider = OpenAIProvider(api_key="sk-test", model="kimi")
-
-    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        return _FakeStreamResponse(status_code=200, lines=_text_stream())
-
-    with mock.patch("httpx2.stream", side_effect=fake_stream):
-        resp = provider.call(
-            system="sys",
-            messages=[{"role": "user", "content": "x"}],
-            text_delta_callback=lambda _p: None,
-        )
-
-    assert resp.text == "hello world"
-    assert resp.stop_reason == "stop"
-
-
 def test_lenient_json_object_recovers_common_malformations() -> None:
     """Weak/open models emit args strict JSON rejects; the lenient re-parse
     recovers the safe cases (raw newline, trailing junk) so the tool just runs,

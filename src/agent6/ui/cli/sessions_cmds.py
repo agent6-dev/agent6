@@ -666,7 +666,7 @@ def _prune_squash_merged(
         return False
     print(
         f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
-        f"remove with: runs prune --delete-squashed, or: git branch -D {br})"
+        f"remove with: sessions prune --delete-squashed, or: git branch -D {br})"
     )
     return False
 

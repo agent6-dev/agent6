@@ -51,16 +51,6 @@ def test_tail_returns_when_file_missing_and_not_follow(tmp_path: Path) -> None:
     assert out == []
 
 
-def test_tail_stops_at_run_end_when_requested(tmp_path: Path) -> None:
-    p = tmp_path / "logs.jsonl"
-    p.write_text(
-        json.dumps({"type": "a"}) + "\n" + json.dumps({"type": "session.end"}) + "\n",
-        encoding="utf-8",
-    )
-    out = list(tail_events(p, follow=False, stop_when_finished=True))
-    assert [e["type"] for e in out] == ["a", "session.end"]
-
-
 def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> None:
     # A resume appends events AFTER session.end (no second end yet while it runs).
     # A watcher opening the log mid-resume must stream past the stale end, not

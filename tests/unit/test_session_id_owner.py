@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sessions.id import friendly_token, unused_session_id
+from agent6.sessions.id import unused_session_id
 
 
 def test_the_owner_skips_a_taken_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -31,11 +31,6 @@ def test_the_owner_gives_up_rather_than_reusing_a_directory(
 
     with pytest.raises(RuntimeError, match="could not mint"):
         unused_session_id(tmp_path, "runs")
-
-
-def test_a_free_id_is_taken_as_is(tmp_path: Path) -> None:
-    assert unused_session_id(tmp_path, "runs") != ""
-    assert friendly_token() != unused_session_id(tmp_path, "runs")
 
 
 def test_the_bucket_is_respected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

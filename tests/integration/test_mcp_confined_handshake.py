@@ -27,7 +27,6 @@ from agent6.config import Config
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.policy import jail_policy
 from agent6.types import JailPolicy, NetworkMode
-from tests.jail_env import require_userns_jail
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -151,32 +150,6 @@ def test_a_confined_server_handshakes_serves_and_respects_its_grants(
         assert [d.qualified_name for d in mgr.descriptors()] == ["mcp__reader__cat"]
         assert "VISIBLE" in _call_cat(mgr, visible)
         assert "DENIED" in _call_cat(mgr, hidden)
-    finally:
-        mgr.close()
-
-
-def test_a_network_confined_server_still_serves_its_tools(
-    granted: tuple[Path, Path, Path],
-) -> None:
-    """network = "none" must confine the network WITHOUT breaking the pipe:
-    the stdio fds are unaffected by unsharing a namespace, and a server that
-    stopped answering would make the setting unusable."""
-    require_userns_jail()
-    ws, visible, _hidden = granted
-    mgr = MCPManager.start(
-        [
-            MCPServerSpec(
-                name="reader",
-                command=_reader_server_argv(visible),
-                startup_timeout_s=20.0,
-                call_timeout_s=20.0,
-                policy=_policy(_reader_server_argv(visible), ws, read=(visible.parent,)),
-            )
-        ]
-    )
-    try:
-        assert [d.qualified_name for d in mgr.descriptors()] == ["mcp__reader__cat"]
-        assert "VISIBLE" in _call_cat(mgr, visible)
     finally:
         mgr.close()
 

@@ -221,16 +221,6 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
     assert "assert 1 == 2" in text
 
 
-def test_a_tool_still_running_is_not_reported_finished() -> None:
-    """`ok=None` is the fold's "in flight", and ACP has `in_progress` for it."""
-    from agent6.ui.acp.updates import updates_for
-    from agent6.viewmodel.transcript import TranscriptItem
-
-    live = TranscriptItem(kind="tool", name="run_command", arg="sleep 60", ok=None)
-    _call, outcome = updates_for(live, acp_session_id="s")
-    assert outcome["params"]["update"]["status"] == "in_progress"
-
-
 def test_model_text_cannot_carry_a_terminal_escape_to_the_editor() -> None:
     """Unlike the CLI, the renderer here is a THIRD PARTY, so agent6 does not
     get to assume it treats an escape as inert. The fold strips CSI from

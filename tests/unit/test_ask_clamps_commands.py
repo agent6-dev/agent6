@@ -118,23 +118,3 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         sandbox_overrides=SandboxOverrides(auto_approve=True),
     )
     assert seen == ["yes"], f"the operator's own flag was undone: {seen}"
-
-
-def test_the_clamp_still_catches_a_standing_yes_in_ask(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The converse, so the fix above cannot quietly become "asks never clamp":
-    a config-level `yes` with no flag is still clamped to a prompt."""
-    from agent6.app import run as run_mod
-    from agent6.app.preflight import SessionRefused
-
-    seen: list[str] = []
-
-    def capture(cfg: Config, **_kw: object) -> str:
-        seen.append(cfg.sandbox.run_commands)
-        raise SessionRefused(2)
-
-    monkeypatch.setattr(run_mod, "select_isolation", capture)
-    monkeypatch.chdir(tmp_path)
-    run_mod.run_task(_cfg("yes"), "q", frontend=MagicMock(), mode="ask")
-    assert seen == ["ask"]

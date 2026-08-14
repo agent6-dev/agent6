@@ -8,6 +8,17 @@ import os
 
 import pytest
 
+from tests.jail_env import require_userns_jail
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Make the `needs_namespaces` marker real: skip (with the host's actual
+    reason) where the userns jail cannot run, instead of hard-failing with
+    JailUnavailableError. The marker alone registered a policy nothing
+    enforced."""
+    if item.get_closest_marker("needs_namespaces") is not None:
+        require_userns_jail()
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_git(  # pyright: ignore[reportUnusedFunction]

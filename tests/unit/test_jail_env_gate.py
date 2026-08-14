@@ -31,7 +31,10 @@ def _env(
 
 def test_healthy_env_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(jail_env, "detect", _env)
-    jail_env.require_userns_jail()
+    try:
+        jail_env.require_userns_jail()
+    except (pytest.skip.Exception, pytest.fail.Exception) as exc:  # pragma: no cover
+        pytest.fail(f"a healthy env must neither skip nor fail: {exc}")
 
 
 def test_no_kernel_sandbox_skips(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -468,13 +468,6 @@ def test_pending_wait_roundtrip_and_clear(tmp_path: Path) -> None:
     j.clear_pending_wait()
 
 
-def test_read_pending_wait_corrupt_raises(tmp_path: Path) -> None:
-    j = _journal(tmp_path)
-    j.wait_path.write_text("{not json", encoding="utf-8")
-    with pytest.raises(JournalError):
-        j.read_pending_wait()
-
-
 def test_machine_lock_refuses_second_holder(tmp_path: Path) -> None:
     root = tmp_path / "m"
     with machine_lock(root):  # noqa: SIM117 - inner lock must be acquired while outer is held

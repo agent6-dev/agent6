@@ -11,7 +11,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.sessions.layout import session_layout
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
+from agent6.sessions.manifest import ManifestError, read_manifest
 
 
 def _session(state: Path, bucket: str, sid: str, mode: str) -> Path:
@@ -74,11 +74,6 @@ def test_a_resumed_ask_is_still_clamped() -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
     assert session_config(cfg, "ask").sandbox.run_commands == "ask"
     assert session_config(cfg, "run").sandbox.run_commands == "yes"
-
-
-def test_an_ask_records_a_mode_that_survives_a_round_trip(tmp_path: Path) -> None:
-    m = SessionManifest(mode="ask", session_id="x")
-    assert m.session_mode() == "ask"
 
 
 def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

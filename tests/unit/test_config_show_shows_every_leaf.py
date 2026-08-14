@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from agent6.config import Config
 from agent6.config.layer import EffectiveConfig
-from agent6.viewmodel.config_view import render_show
+from agent6.viewmodel.config_view import build_config_view, render_show
 
 # Sections keyed by an operator-chosen NAME. A leaf under them only exists once
 # an entry does, so the walk needs one to have something to look for.
@@ -55,19 +55,25 @@ def _leaf_paths(model: BaseModel, prefix: str = "") -> set[str]:
     return leaves
 
 
+def _rendered_keys(config: Config) -> set[str]:
+    """The leaf paths the view-model actually walks to, keyed exactly -- not a
+    substring scan, under which a dropped `sandbox.network` row hides behind
+    `mcp.servers.notes.sandbox.network`."""
+    view = build_config_view(EffectiveConfig(config=config, sources={}, layers=()))
+    return {s.key for s in view.settings}
+
+
 def test_every_leaf_of_a_populated_config_is_rendered() -> None:
     config = Config.model_validate(_POPULATED)
-    shown = render_show(EffectiveConfig(config=config, sources={}, layers=()))
-
-    missing = sorted(path for path in _leaf_paths(config) if path not in shown)
+    missing = sorted(_leaf_paths(config) - _rendered_keys(config))
     assert not missing, f"`config show` does not render these leaves: {missing}"
 
 
 def test_the_new_mcp_network_knob_is_among_them() -> None:
-    """The field this test was written for: a nested leaf under a name-keyed
-    section, two levels down, which is where a renderer stops walking."""
+    """A nested leaf under a name-keyed section, two levels down, where a
+    renderer might stop walking: the RENDERER reaches it, not just the schema."""
     config = Config.model_validate(_POPULATED)
-    assert "mcp.servers.notes.sandbox.network" in _leaf_paths(config)
+    assert "mcp.servers.notes.sandbox.network" in _rendered_keys(config)
 
 
 @pytest.mark.parametrize(

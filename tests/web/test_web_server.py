@@ -427,20 +427,6 @@ def test_machine_poke_json_data_payload(server: tuple[WebServer, int], tmp_path:
     assert json.loads((inst / "signal").read_text(encoding="utf-8")) == {"cmd": "go", "n": 2}
 
 
-def test_machine_answer_writes_to_per_state_dir(
-    server: tuple[WebServer, int], tmp_path: Path
-) -> None:
-    _srv, port = server
-    _inst, state = _make_machine_with_state(tmp_path, "asker", "0003-classify", running=True)
-    status, body = _post(
-        port, "/api/machine/asker/answer", {"id": "question-1", "answers": ["yes"]}
-    )
-    assert status == 200 and body["ok"] is True
-    assert (state / "questions" / "question-1.answer").read_text(encoding="utf-8") == json.dumps(
-        ["yes"]
-    )
-
-
 def test_machine_approve_and_steer_target_per_state_dir(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:

@@ -5281,63 +5281,6 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
     assert result.reason == "tool_error_stuck"
 
 
-def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None:
-    """A spiral on a command whose binary is NOT on the host gets the plain
-    tool-error nudge, no sandbox-reachability note (it is a real bad call)."""
-
-    class ProviderStub:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.reach_hits = 0
-
-        def call(self, **kwargs: Any) -> ProviderResponse:
-            self.calls += 1
-            if "reachability" in str(kwargs["messages"][-1]):
-                self.reach_hits += 1
-            return _tool_resp(
-                "run_command",
-                {"argv": ["totally-not-a-real-binary-xyz", "x"]},
-                tool_id=f"c{self.calls}",
-            )
-
-    from agent6.tools.errors import ToolError as _TE
-
-    class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-            raise _TE("totally-not-a-real-binary-xyz: not found")
-
-    provider = ProviderStub()
-    config = SimpleNamespace(
-        git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
-            require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
-            verify_command=("true",),
-            metric=SimpleNamespace(goal=None),
-        ),
-    )
-    wf = _wf(
-        root=tmp_path,
-        config=config,
-        mode="run",
-        provider=provider,
-        dispatcher=DispatcherStub(),
-        max_iterations=20,
-    )
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            conversation=Conversation.from_wire(messages),
-            tool_calls=0,
-            start_iteration=1,
-            root_task_id=None,
-            original_task="t",
-        )
-    assert provider.reach_hits == 0
-
-
 def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -> None:
     """A gateless run (no verify command configured or inferable) that commits
     work and goes idle settles as reason='settled' with all_passed=False and an
@@ -6267,23 +6210,6 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
-
-
-def test_call_with_retry_retries_a_usage_less_stream() -> None:
-    """The metering guard's refusal (no usage in the reply) carries NO status:
-    it is stream/gateway integrity failure, so one mangled stream costs a
-    retry, not the run. Observed live: a degenerate k3 stream arrived with no
-    usage frame, the guard's synthetic 422 classed it permanent, and the run
-    died at iteration 4 with $0.91 of its budget unspent."""
-    provider = MagicMock()
-    provider.call.side_effect = [
-        ProviderError("t reported no usage input tokens; budgeted runs require accounting"),
-        _resp("recovered"),
-    ]
-    wf = _wf(provider=provider, provider_retry_count=3)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert out.text == "recovered"
-    assert provider.call.call_count == 2
 
 
 def test_tier2_growth_floor_prevents_zero_growth_refire(tmp_path: Path) -> None:

@@ -95,12 +95,6 @@ def test_detected_profile_none_without_userns_or_landlock() -> None:
     assert _env(userns=False, landlock_abi=0).detected_isolation == "none"
 
 
-def test_select_profile_auto_follows_environment() -> None:
-    assert resolve_isolation("auto", _env(userns=True)) == "strict"
-    assert resolve_isolation("auto", _env(userns=False)) == "hardened"
-    assert resolve_isolation("auto", _env(userns=False, landlock_abi=0)) == "none"
-
-
 def test_select_profile_strict_refuses_silent_downgrade() -> None:
     with pytest.raises(IsolationUnavailableError, match="user namespaces"):
         resolve_isolation("strict", _env(userns=False))

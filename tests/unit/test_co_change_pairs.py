@@ -7,6 +7,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from agent6.git_ops import co_change_pairs
 
 
@@ -105,6 +107,27 @@ def test_co_change_pairs_skips_merge_commits(tmp_path: Path) -> None:
     # But a<->c should NOT be present (only the merge commit "linked"
     # them, and merges are excluded).
     assert ("a.py", "c.py") not in pair_set
+
+
+def test_co_change_pairs_passes_no_merges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exclusion rides `--no-merges`, not the accident that a default merge
+    diff lists no paths: pin the flag in the argv."""
+    from agent6 import git_ops
+    from agent6.git_ops import CommandResult
+
+    seen: list[tuple[str, ...]] = []
+    real = git_ops._run  # pyright: ignore[reportPrivateUsage]
+
+    def spy(path: Path, *args: str, **kw: object) -> CommandResult:
+        seen.append(args)
+        return real(path, *args, **kw)  # pyright: ignore[reportArgumentType]
+
+    _setup_repo(tmp_path)
+    _commit(tmp_path, {"a.py": "v1", "b.py": "v1"}, "v1")
+    monkeypatch.setattr(git_ops, "_run", spy)
+    co_change_pairs(tmp_path)
+    log_argv = next(a for a in seen if a and a[0] == "log")
+    assert "--no-merges" in log_argv
 
 
 def test_co_change_pairs_counts_extensionless_files(tmp_path: Path) -> None:

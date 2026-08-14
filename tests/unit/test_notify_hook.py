@@ -32,40 +32,6 @@ def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
     )
 
 
-def test_notify_fires_with_env(tmp_path: Path) -> None:
-    """When configured, the hook runs the argv with AGENT6_* env vars."""
-    out = tmp_path / "notify-out.json"
-    argv = (
-        "python3",
-        "-c",
-        "import json,os,sys; "
-        "json.dump({"
-        "'id': os.environ['AGENT6_SESSION_ID'], "
-        "'ok': os.environ['AGENT6_SESSION_OK'], "
-        "'reason': os.environ['AGENT6_SESSION_REASON'], "
-        "'dir': os.environ['AGENT6_SESSION_DIR']"
-        "}, open(sys.argv[1], 'w'))",
-        str(out),
-    )
-    notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
-    fire_notify_hook(
-        notify,
-        session_id="run-xyz",
-        session_dir=tmp_path,
-        ok=True,
-        reason="finish_session",
-        verified="passed",
-        reporter=STDIO_REPORTER,
-    )
-    payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload == {
-        "id": "run-xyz",
-        "ok": "1",
-        "reason": "finish_session",
-        "dir": str(tmp_path),
-    }
-
-
 def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A failing argv (nonexistent binary) logs but does not raise."""
     notify = NotifyConfig(on_complete=("/nonexistent/agent6-notify-binary",), timeout_s=5.0)

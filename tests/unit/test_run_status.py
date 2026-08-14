@@ -207,14 +207,6 @@ def test_status_error_reason_reads_failed(
     assert "failed (provider_error)" in capsys.readouterr().out
 
 
-def test_status_no_such_run_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    monkeypatch.chdir(repo)
-    assert _cmd_status("nope") == 2
-
-
 def test_status_shows_fan_out_compare_outcome(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

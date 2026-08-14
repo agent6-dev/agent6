@@ -45,4 +45,4 @@ def test_a_gateless_run_says_so(tmp_path: Path) -> None:
 
 
 def test_an_unreadable_dir_reports_nothing_rather_than_guessing(tmp_path: Path) -> None:
-    assert session_policy(tmp_path).line() == "no verify gate"
+    assert session_policy(tmp_path).line() == ""

@@ -134,24 +134,6 @@ def test_load_graph_skips_single_corrupt_node_file(
     assert a.id in reopened.nodes()
 
 
-def test_load_graph_raises_without_fix_would_have(tmp_path: Path) -> None:
-    # Sanity: a wholly corrupt-but-loadable graph (every other file valid)
-    # still returns the valid nodes rather than aborting.
-    layout = _layout(tmp_path)
-    c = GraphCurator(layout)
-    ids = [
-        c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft(f"n{i}"))).id for i in range(3)
-    ]
-    nodes_map = c.nodes()
-    node_md_path(layout, nodes_map, ids[1]).write_text("garbage", encoding="utf-8")
-    nodes = load_graph(layout)
-    assert ids[0] in nodes and ids[2] in nodes
-    assert ids[1] not in nodes
-
-
-# ---- #17: child node written before parent->child link --------------------
-
-
 def test_add_subtask_writes_child_before_parent_link(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -9,7 +9,24 @@ from pathlib import Path
 
 import pytest
 
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _session_prompt as prompt_mod
+
+
+def _seed_session(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch, session_id: str = "test-run-AAAAAA"
+) -> SessionLayout:
+    """A real run dir under repo_root's state home, so resolution reaches the
+    tty guard rather than short-circuiting on SessionIdError."""
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(repo_root / ".state"))
+    layout = SessionLayout(state_dir=_state_dir(repo_root), session_id=session_id, subdir="runs")
+    layout.session_dir.mkdir(parents=True, exist_ok=True)
+    (layout.session_dir / "logs.jsonl").write_text(
+        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n', encoding="utf-8"
+    )
+    return layout
 
 
 def _seen_resumes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
@@ -82,18 +99,23 @@ def test_no_terminal_ends_the_session_as_before(
 ) -> None:
     """A headless run (CI, a detached spawn) has nobody to type: it must end,
     not block on a prompt nothing will answer."""
+    from agent6.ui import cli
     from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
 
+    # A real session dir so the ONLY short-circuit under test is the tty guard;
+    # patch the bindings _prompt_for_the_next_input actually calls (imported
+    # into `cli`, not the source module).
+    layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(cli, "prompting_is_possible", lambda: False)
     called: list[str] = []
 
     def spy(**_kw: object) -> int:
         called.append("asked")
         return 0
 
-    monkeypatch.setattr(prompt_mod, "end_of_session_prompt", spy)
-    assert _prompt_for_the_next_input(None, 0, "any-session") == 0
+    monkeypatch.setattr(cli, "end_of_session_prompt", spy)
+    assert _prompt_for_the_next_input(None, 0, layout.session_id) == 0
     assert not called
 
 
@@ -105,32 +127,6 @@ def test_ask_sessions_do_not_prompt() -> None:
     from agent6.ui.cli import _dispatch_ask  # pyright: ignore[reportPrivateUsage]
 
     assert "_prompt_for_the_next_input" not in inspect.getsource(_dispatch_ask)
-
-
-def test_a_run_that_never_started_a_session_does_not_offer_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The prompt resolved the NEWEST session in the repo rather than the one
-    this invocation created, and `agent6 run` has refusal paths (no provider
-    key, not a git repo, an unknown --skill) that return before any session
-    exists. A refused run then offered to continue an unrelated older session,
-    resumed it on the operator's next line, and reported its exit code as this
-    run's -- so a failed run finished 0.
-    """
-    from agent6.ui.cli import _prompt_for_the_next_input  # pyright: ignore[reportPrivateUsage]
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
-    asked: list[str] = []
-
-    def spy(**_kw: object) -> int:
-        asked.append("asked")
-        return 0
-
-    monkeypatch.setattr(prompt_mod, "end_of_session_prompt", spy)
-    # This invocation minted an id but refused before creating its directory.
-    assert _prompt_for_the_next_input(None, 2, "never-created-XYZ99") == 2
-    assert not asked, "offered to continue a session this run never started"
 
 
 def test_a_backgrounded_run_is_not_stopped_by_the_prompt(

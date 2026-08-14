@@ -274,7 +274,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     assert "no recorded merge tip" in text
     assert "git branch -D agent6/pretip1" in text
     # It must NOT tell the operator to re-run the command that just skipped it.
-    assert "remove with: runs prune --delete-squashed" not in text
+    assert "--delete-squashed, or:" not in text
 
 
 def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
@@ -319,7 +319,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     plain = "".join(capsys.readouterr())
     assert "no recorded merge tip" in plain
     assert "git branch -D agent6/pretip2" in plain
-    assert "remove with: runs prune --delete-squashed" not in plain
+    assert "--delete-squashed, or:" not in plain
 
     # A recorded tip is not enough on its own: --delete-squashed also needs the
     # base branch to confirm against, so a deleted base must not be advertised.
@@ -329,7 +329,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     no_base = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip2")
-    assert "remove with: runs prune --delete-squashed" not in no_base
+    assert "--delete-squashed, or:" not in no_base
 
 
 def test_runs_dir_prints_the_state_dir(
