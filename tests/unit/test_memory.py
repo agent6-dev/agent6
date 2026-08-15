@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.memory import MemoryStoreError, add, index_text, memory_dir, remove, show
+from agent6.memory import MemoryStoreError, add, index_path, index_text, memory_dir, remove, show
 
 
 def test_add_writes_file_and_index_line(tmp_path: Path) -> None:
@@ -37,6 +37,38 @@ def test_remove_deletes_file_and_index_line(tmp_path: Path) -> None:
     assert index_text(tmp_path) == "- keep: kept fact"
     with pytest.raises(MemoryStoreError, match="no memory named"):
         remove(tmp_path, "drop")
+
+
+def test_add_reindexes_a_file_the_index_lost(tmp_path: Path) -> None:
+    """A fault between add's two writes leaves the file present and the index
+    line missing: the fact is invisible to runs, and a retry refused with
+    "exists" while nothing could ever see it. The retry now re-indexes from
+    the file's own first line and says the new body was not saved."""
+    d = memory_dir(tmp_path)
+    d.mkdir(parents=True)
+    (d / "orphan.md").write_text("The original fact.\n", encoding="utf-8")
+    with pytest.raises(MemoryStoreError, match="re-indexed"):
+        add(tmp_path, "orphan", "a different body")
+    assert index_text(tmp_path) == "- orphan: The original fact."
+    assert (d / "orphan.md").read_text() == "The original fact.\n"
+
+
+def test_remove_heals_either_remnant(tmp_path: Path) -> None:
+    """A fault between remove's two writes leaves one remnant: a dangling
+    index line (a prompt naming a memory that will not open) or an unindexed
+    file. Either alone is removable; only a name with neither refuses."""
+    add(tmp_path, "dangling", "fact one")
+    (memory_dir(tmp_path) / "dangling.md").unlink()
+    remove(tmp_path, "dangling")
+    assert index_text(tmp_path) == ""
+
+    add(tmp_path, "fileonly", "fact two")
+    index_path(tmp_path).write_text("", encoding="utf-8")
+    remove(tmp_path, "fileonly")
+    assert not (memory_dir(tmp_path) / "fileonly.md").exists()
+
+    with pytest.raises(MemoryStoreError, match="no memory named"):
+        remove(tmp_path, "gone")
 
 
 def test_show_reads_one_entry(tmp_path: Path) -> None:

@@ -55,8 +55,26 @@ def _check_name(name: str) -> str:
     return name
 
 
+def _index_has(state_dir: Path, name: str) -> bool:
+    pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
+    return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
+
+
+def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
+    idx = index_path(state_dir)
+    existing = index_text(state_dir)
+    line = f"- {name}: {hook}"
+    idx.write_text((existing + "\n" if existing else "") + line + "\n", encoding="utf-8")
+
+
 def add(state_dir: Path, name: str, body: str) -> Path:
-    """Operator CLI helper: write `<name>.md` and append its index line."""
+    """Operator CLI helper: write `<name>.md` and append its index line.
+
+    The file is written first: an unindexed file is invisible to runs and
+    harmless, while an index line without its file is a prompt that lies. A
+    fault between the two writes heals on retry: an existing file with no
+    index line is re-indexed from its own first line, named loudly.
+    """
     body = body.strip()
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
@@ -64,30 +82,42 @@ def add(state_dir: Path, name: str, body: str) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{_check_name(name)}.md"
     if path.exists():
-        raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
+        if _index_has(state_dir, name):
+            raise MemoryStoreError(f"memory {name!r} exists; edit {path} or pick another name")
+        first = (path.read_text(encoding="utf-8").strip().splitlines() or [""])[0]
+        _append_index_line(state_dir, name, first[:120])
+        raise MemoryStoreError(
+            f"memory {name!r} existed but was missing from the index; re-indexed it."
+            f" The body given now was NOT saved -- edit {path} to change it."
+        )
     path.write_text(body + "\n", encoding="utf-8")
-    hook = body.splitlines()[0][:120]
-    idx = index_path(state_dir)
-    existing = index_text(state_dir)
-    line = f"- {name}: {hook}"
-    idx.write_text((existing + "\n" if existing else "") + line + "\n", encoding="utf-8")
+    _append_index_line(state_dir, name, body.splitlines()[0][:120])
     return path
 
 
 def remove(state_dir: Path, name: str) -> None:
-    """Operator CLI helper: delete `<name>.md` and its index line."""
+    """Operator CLI helper: delete `<name>.md` and its index line.
+
+    The index line goes first: a file with no line is invisible and a retry
+    can still delete it, while a line with no file is a prompt naming a
+    memory that will not open. Either remnant alone is removable, so a fault
+    between the two writes heals on retry; only a name with neither refuses.
+    """
     _check_name(name)
     path = memory_dir(state_dir) / f"{name}.md"
-    if not path.is_file():
+    had_line = _index_has(state_dir, name)
+    if not path.is_file() and not had_line:
         raise MemoryStoreError(f"no memory named {name!r}")
-    path.unlink()
-    idx = index_path(state_dir)
-    kept = [
-        ln
-        for ln in index_text(state_dir).splitlines()
-        if not re.match(rf"^\s*[-*]\s*{re.escape(name)}\s*:", ln)
-    ]
-    idx.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    if had_line:
+        idx = index_path(state_dir)
+        kept = [
+            ln
+            for ln in index_text(state_dir).splitlines()
+            if not re.match(rf"^\s*[-*]\s*{re.escape(name)}\s*:", ln)
+        ]
+        idx.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    if path.is_file():
+        path.unlink()
 
 
 def show(state_dir: Path, name: str) -> str:
