@@ -143,6 +143,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     def _load(_root: object, _explicit: object = None) -> object:
         cfg = SimpleNamespace(
             sandbox=SimpleNamespace(isolation="none"),
+            budget=SimpleNamespace(max_usd=10.0),
             require_runnable=_require_runnable,
             models=SimpleNamespace(resolve=_resolve),
             cleartext_credential_endpoints=lambda: (),
@@ -671,6 +672,33 @@ def test_extract_scripts_keeps_safe_entries_only() -> None:
 @pytest.mark.parametrize("payload", [None, {}, {SCRIPTS_PAYLOAD_KEY: "not-a-map"}])
 def test_extract_scripts_empty(payload: dict[str, object] | None) -> None:
     assert extract_scripts(payload) == {}  # type: ignore[arg-type]
+
+
+def test_create_attempts_share_one_budget_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each attempt's subprocess is otherwise a fresh budget tracker, so N
+    retries could bill N full budgets. Attempts share one ledger: every
+    request carries the REMAINING cap, and a spent-out create stops instead
+    of paying for another attempt."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    caps: list[float | None] = []
+
+    def fake_build(
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            caps.append(request.max_usd)
+            return AgentExecResult(reason="finish_session", payload=None, usd=6.0)
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    code = main(["machine", "create", "Run a script"])
+    assert code == 1  # no valid draft, and no third full-budget attempt
+    assert caps == [10.0, 4.0]
+    assert "exhausted" in capsys.readouterr().err
 
 
 def test_create_writes_script_bundle(

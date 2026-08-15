@@ -195,8 +195,18 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     total_usd = 0.0
     total_in = 0
     total_out = 0
+    # One ledger across attempts against the operator's budget: each attempt's
+    # subprocess is otherwise a fresh tracker, so N retries could bill N full
+    # budgets. -1 = unlimited (the config's own convention).
+    create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
     attempt = 0  # bound for the session.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
+        if create_cap is not None and total_usd >= create_cap:
+            reporter.err(
+                f"machine create: budget max_usd (${create_cap}) exhausted after"
+                f" {attempt - 1} attempt(s) (spent ~${total_usd:.4f}); stopping."
+            )
+            break
         prompt = build_authoring_prompt(
             task,
             attempt=attempt,
@@ -213,9 +223,14 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # help: kimi-k2.6 spiralled into 30-minute length-capped thinks and
         # timed out on every attempt (0/3 drafts across two spec sizes). With
         # the reasoning channel off it drafted in ~2.5 minutes for $0.02.
+        remaining = None if create_cap is None else max(create_cap - total_usd, 0.0)
         result = runner(
             AgentRequest(
-                prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine", thinking="off"
+                prompt=prompt,
+                timeout_s=_CREATE_TIMEOUT_S,
+                mode="machine",
+                thinking="off",
+                max_usd=remaining,
             ),
             events_log,
         )
