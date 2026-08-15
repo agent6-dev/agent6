@@ -29,6 +29,7 @@ from agent6.machine.journal import (
     MachineBegin,
     MachineEnd,
     MachineJournal,
+    PendingWait,
     StepEvent,
     ToolFact,
 )
@@ -664,6 +665,58 @@ def test_wait_signal_path(tmp_path: Path) -> None:
     world = FakeWorld({}, wakes=[WaitWake("signal")])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "signalled", "woken", 1)
+
+
+def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: Path) -> None:
+    """Only --exit-on-wait persisted the wake instant; a supervisor death
+    mid-foreground-sleep lost it, so restart recomputed from a fresh now() and
+    the full interval ran again. The foreground path writes the same durable
+    PendingWait before blocking, hands the sleep that instant, and resumes a
+    pre-existing pending for the state instead of recomputing."""
+
+    class _ClockedWorld:
+        def __init__(self, journal: MachineJournal) -> None:
+            self._journal = journal
+            self.slept: list[float | None] = []
+            self.persisted: list[float | None] = []
+
+        def run_tool(self, argv: Any, timeout_s: Any, *, network: Any = "none") -> Any:
+            raise AssertionError("no tool states")
+
+        def run_agent(self, request: Any, events_log: Any = None) -> Any:
+            raise AssertionError("no agent states")
+
+        def now(self) -> float:
+            return 1000.0
+
+        def sleep_until(self, wake_epoch: float | None) -> WaitWake:
+            pending = self._journal.read_pending_wait()
+            self.persisted.append(None if pending is None else pending.wake_epoch)
+            self.slept.append(wake_epoch)
+            return WaitWake("tick")
+
+        def materialize_poke(self, payload: Any) -> None:
+            pass
+
+        def notify(self, kind: str, state: str, message: str, level: str) -> None:
+            pass
+
+    journal, f = _load(tmp_path, WAITER_DELAYED)
+    spec = load_machine(f)
+    world = _ClockedWorld(journal)
+    assert drive(spec, journal, world, live=True).status == "ok"
+    # The deadline was durable before the sleep, and the sleep received it.
+    assert world.persisted == [1060.0]
+    assert world.slept == [1060.0]
+    assert journal.read_pending_wait() is None  # consumed wake leaves no stale park
+
+    # Restart mid-sleep: the persisted instant is resumed, never recomputed.
+    other = tmp_path / "other"
+    journal2 = MachineJournal(other / "inst")
+    journal2.write_pending_wait(PendingWait(state="poll", wake_epoch=1013.5))
+    world2 = _ClockedWorld(journal2)
+    assert drive(spec, journal2, world2, live=True).status == "ok"
+    assert world2.slept == [1013.5]
 
 
 def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: Path) -> None:

@@ -540,6 +540,36 @@ def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float
     )
 
 
+def _block_on_wait(
+    state: WaitState,
+    blackboard: Mapping[str, object],
+    journal: MachineJournal,
+    world: World,
+    state_name: str,
+) -> tuple[str, str, Fact]:
+    """Foreground wait: block until the durable wake instant or a poke.
+
+    The deadline persists BEFORE the sleep -- the same `PendingWait` the
+    `--exit-on-wait` path keeps -- so a supervisor death mid-sleep resumes the
+    original instant instead of re-running the full interval from a fresh
+    `now()`. Cleared once the wake is consumed: a stale wait.json would
+    suppress this state's notify on re-entry, reuse a stale wake_epoch under a
+    later `--exit-on-wait`, and pin machine_is_parked in the web UI.
+    """
+    pending = journal.read_pending_wait()
+    if pending is None or pending.state != state_name:
+        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
+        pending = PendingWait(state=state_name, wake_epoch=wake)
+        journal.write_pending_wait(pending)
+    woke = world.sleep_until(pending.wake_epoch)
+    journal.clear_pending_wait()
+    return (
+        woke.woke_by,
+        state.on[woke.woke_by],
+        WaitFact(wake_epoch=pending.wake_epoch, woke_by=woke.woke_by, payload=woke.payload),
+    )
+
+
 def _fire_persisted_wait(
     state: WaitState,
     blackboard: Mapping[str, object],
@@ -631,14 +661,6 @@ def _execute(
             stderr=result.stderr,
         )
         return label, state.on[label], fact
-    if isinstance(state, WaitState):
-        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
-        woke = world.sleep_until(wake)
-        return (
-            woke.woke_by,
-            state.on[woke.woke_by],
-            WaitFact(wake_epoch=wake, woke_by=woke.woke_by, payload=woke.payload),
-        )
     if isinstance(state, BranchState):
         index, label, goto = _route_branch(state, blackboard)
         return label, goto, BranchFact(clause_index=index)
@@ -891,17 +913,12 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
                         "waiting", f"waiting in {state!r} {detail}", state, transitions
                     )
                 label, goto, fact = fired
+            elif isinstance(current, WaitState):
+                label, goto, fact = _block_on_wait(current, blackboard, journal, world, state)
             else:
                 label, goto, fact = _execute(
                     spec, current, blackboard, world, seq=transitions, state_name=state
                 )
-                # A blocking wait consumed a wake that an earlier --exit-on-wait
-                # invocation may have persisted. A stale wait.json would suppress
-                # this state's notify on re-entry (the already_parked guard),
-                # reuse a stale wake_epoch under a later --exit-on-wait, and pin
-                # machine_is_parked in the web UI.
-                if isinstance(current, WaitState):
-                    journal.clear_pending_wait()
         except _STATE_RUNTIME_ERRORS as exc:
             # A data-driven state failure (e.g. an absent optional field, a tool
             # command rendering a non-scalar, a dynamic wait interval of zero):
