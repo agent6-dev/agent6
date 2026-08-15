@@ -232,13 +232,15 @@ class ParallelConfig(BaseModel):
         default=4,
         description="Hard cap per fan-out (1-1024); more refuses up front.",
     )
-    # Base directory for lane workspaces (each fan-out gets `<workdir>/<fanout-id>/
-    # lane-<i>`). "" resolves to `<cache_dir>/parallel`, a regenerable cache the
-    # orchestrator cleans up after importing each lane. Point it at a fast disk
-    # for large repos.
+    # Base directory for subordinate clones (a fan-out gets
+    # `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a machine's run states use a
+    # `machine-<id>` group the same way). "" resolves to `<cache_dir>/parallel`,
+    # a regenerable cache the orchestrator cleans up after importing each lane.
+    # Point it at a fast disk for large repos.
     workdir: str = Field(
         default="",
         description=(
-            'Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import.'
+            "Base dir for subordinate clones (lanes, machine run states), in a per-repo"
+            ' subdir. `""` = `<cache_dir>/parallel`; cleaned up after import.'
         ),
     )

@@ -13,6 +13,7 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
+from agent6.paths import repo_id
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
@@ -738,14 +739,15 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
 
-    # The lane clone, as the spawner leaves it: workdir cache / fanout / lane-1.
+    # The lane clone, as the spawner leaves it: workdir cache / repo-id /
+    # fanout / lane-1.
     workdir = tmp_path / "cache" / "parallel"
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
     (tmp_path / "cfg").mkdir()
     (tmp_path / "cfg" / "config.toml").write_text(
         f'[parallel]\nworkdir = "{workdir}"\n', encoding="utf-8"
     )
-    clone = workdir / "fan" / "lane-1"
+    clone = workdir / repo_id(tmp_path) / "fan" / "lane-1"
     clone.parent.mkdir(parents=True)
     _git(tmp_path, "clone", "-q", str(tmp_path), str(clone))
     _git(clone, "config", "user.email", "t@t")

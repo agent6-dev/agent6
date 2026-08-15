@@ -303,7 +303,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # where lanes are parallel.
                 machine_id=spec.machine if has_run_agent else None,
                 clone_root=(
-                    subordinate_workdir_root(cfg, f"machine-{spec.machine}")
+                    subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
                     if has_run_agent
                     else None
                 ),

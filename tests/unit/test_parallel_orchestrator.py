@@ -177,7 +177,11 @@ def runtime() -> LaneRuntime:
 
 def _specs(tmp_path: Path, cfg: Config, fanout_id: str, spec: str) -> list[LaneSpec]:
     return build_lane_specs(
-        spec, cfg=cfg, fanout_id=fanout_id, workdir_root=tmp_path / "work" / fanout_id
+        spec,
+        cfg=cfg,
+        origin=tmp_path,
+        fanout_id=fanout_id,
+        workdir_root=tmp_path / "work" / fanout_id,
     )
 
 
@@ -1751,25 +1755,36 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 ) -> None:
     """The sweep is content-safe by commit proof: a fan-out dir whose lane
     clone holds any commit the origin lacks is kept whole (the clone may be
-    the only copy); one whose every lane tip the origin holds is deleted."""
+    the only copy); one whose every lane tip the origin holds is deleted.
+    The scan is scoped to this repo's `<repo-id>` subdir: another repo's
+    clones can neither be swept by a commit proof made against the wrong
+    origin nor kept forever with advice that cannot apply here."""
     from agent6.app.parallel import sweep_fanout_clones
+    from agent6.paths import repo_id
 
     workdir = tmp_path / "cache"
     cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    scoped = workdir / repo_id(origin)
 
-    unmerged = workdir / "fan-a" / "lane-1"
+    unmerged = scoped / "fan-a" / "lane-1"
     unmerged.parent.mkdir(parents=True)
     clone_workspace(origin, unmerged)
     create_branch(unmerged, "agent6/fan-a-l1")
     (unmerged / "x.txt").write_text("x\n", encoding="utf-8")
     commit_all(unmerged, "lane work")
 
-    merged = workdir / "fan-b" / "lane-1"
+    merged = scoped / "fan-b" / "lane-1"
     merged.parent.mkdir(parents=True)
     clone_workspace(origin, merged)
     create_branch(merged, "agent6/fan-b-l1")  # tip == origin HEAD: nothing unique
 
+    foreign = workdir / "other-repo-0" / "fan-c" / "lane-1"
+    foreign.mkdir(parents=True)
+    clone_workspace(origin, foreign)
+    create_branch(foreign, "agent6/fan-c-l1")
+
     swept, kept = sweep_fanout_clones(origin, cfg)
-    assert (swept, kept) == (1, 1)
-    assert (workdir / "fan-a").is_dir()  # unique commits: kept whole
-    assert not (workdir / "fan-b").exists()
+    assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
+    assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
+    assert not (scoped / "fan-b").exists()
+    assert (foreign / ".git").exists()  # out of scope: untouched

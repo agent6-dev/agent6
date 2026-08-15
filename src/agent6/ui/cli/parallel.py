@@ -150,7 +150,7 @@ def dispatch_parallel(
 
     fanout_id = friendly_token()
     try:
-        lanes = build_lane_specs(spec, cfg=cfg, fanout_id=fanout_id)
+        lanes = build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
     except (DirectiveError, ParallelError) as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2

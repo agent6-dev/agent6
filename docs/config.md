@@ -398,7 +398,7 @@ available").
 | Field | Default | Meaning |
 |---|---|---|
 | `max_lanes` | `4` | Hard cap per fan-out (1-1024); more refuses up front. |
-| `workdir` | `""` | Base dir for lane clones. `""` = `<cache_dir>/parallel`, cleaned up after import. |
+| `workdir` | `""` | Base dir for subordinate clones (lanes, machine run states), in a per-repo subdir. `""` = `<cache_dir>/parallel`; cleaned up after import. |
 
 ## `[mcp]` + `[mcp.servers.<name>]` (optional)
 

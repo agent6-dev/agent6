@@ -58,7 +58,7 @@ from agent6.git_ops import (
 )
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.paths import cache_dir, state_dir
+from agent6.paths import cache_dir, repo_id, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
@@ -131,13 +131,15 @@ class LaneRuntime:
 # ---------------------------------------------------------------------------
 
 
-def subordinate_workdir_root(cfg: Config, group: str) -> Path:
+def subordinate_workdir_root(cfg: Config, origin: Path, group: str) -> Path:
     """Base dir for a group of subordinate-work clones: `[parallel].workdir`
-    (or `<cache_dir>/parallel`) / `<group>`. Groups are fan-out ids (lane
-    clones) and `machine-<id>` (a run-state's per-state clone); one location,
-    so one prune sweep covers both."""
+    (or `<cache_dir>/parallel`) / `<repo-id>` / `<group>`. Groups are fan-out
+    ids (lane clones) and `machine-<id>` (a run-state's per-state clone); one
+    location, so one prune sweep covers both. Scoped by `repo_id(origin)` like
+    the state dir: the sweep proves commit reachability against *origin*, so
+    another repo's clones must never enter its scan."""
     base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
-    return base / group
+    return base / repo_id(origin) / group
 
 
 def adopt_orphan_lane(
@@ -161,7 +163,7 @@ def adopt_orphan_lane(
         or not layout.session_dir.is_symlink()
     ):
         return None
-    clone = subordinate_workdir_root(cfg, manifest.parallel_id) / f"lane-{manifest.lane}"
+    clone = subordinate_workdir_root(cfg, origin, manifest.parallel_id) / f"lane-{manifest.lane}"
     if not (clone / ".git").exists() or not branch_exists(clone, manifest.run_branch):
         return None
     real = layout.session_dir.resolve()
@@ -180,6 +182,7 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     philosophy). Returns (swept, kept). A lane clone holding any commit the
     origin lacks keeps its whole fan-out dir: the clone may be the only copy."""
     base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
+    base = base / repo_id(origin)
     if not base.is_dir():
         return 0, 0
     swept = kept = 0
@@ -209,13 +212,13 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
 
 
 def build_lane_specs(
-    spec: str, *, cfg: Config, fanout_id: str, workdir_root: Path | None = None
+    spec: str, *, cfg: Config, origin: Path, fanout_id: str, workdir_root: Path | None = None
 ) -> list[LaneSpec]:
     """Plan the lanes for a `--parallel` fan-out, refusing over-cap up front.
     *workdir_root* defaults to this fan-out's `subordinate_workdir_root` (the CLI adapter
     relies on that so it needn't reach the private helper)."""
     if workdir_root is None:
-        workdir_root = subordinate_workdir_root(cfg, fanout_id)
+        workdir_root = subordinate_workdir_root(cfg, origin, fanout_id)
     models = parse_spec(spec, limit=cfg.parallel.max_lanes)
     return [
         LaneSpec(
@@ -525,7 +528,7 @@ def build_lane_spawner(
     seats), imports each into *origin* (serialized by a shared lock), and returns
     per-lane LaneResults in dispatch order. Lane run ids are
     `<coordinator_session_id>-<group>-l<i>`; lane workspaces live under the same
-    `[parallel].workdir` cache the fan-out uses, in a `<group>` subdir. The bridge
+    per-repo `[parallel].workdir` cache the fan-out uses, in a `<group>` subdir. The bridge
     spawner tags each lane `AGENT6_SUBRUN=1`, so a lane can never itself dispatch
     (depth 1 by construction). `auto_approve` forwards the coordinator's own
     `--auto-approve` to every lane, same as `max_usd`."""
@@ -550,7 +553,7 @@ def build_lane_spawner(
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
             reporter.err(f"[agent6] WARNING: {warning_message(verdict)}")
-        workdir_root = subordinate_workdir_root(cfg, coordinator_session_id) / group
+        workdir_root = subordinate_workdir_root(cfg, origin, coordinator_session_id) / group
         specs = [
             LaneSpec(
                 lane=i,
