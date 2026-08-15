@@ -608,9 +608,8 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     Frozen semantics: `sessions prune --delete-squashed` force-deletes a branch ONLY
     when this returns a base name (a manifest-confirmed merge with a recorded sha).
     An unreadable/corrupt/unmerged manifest returns "" -> the branch is KEPT, never
-    force-deleted (fail-safe). The model's leniency preserves that: the legacy flat
-    merged_into/merged_sha keys fold into `merged`, and any parse failure raises
-    ManifestError -> ""."""
+    force-deleted (fail-safe). Only the nested `merged` stamp counts (superseded
+    keys are dropped on read), and any parse failure raises ManifestError -> ""."""
     manifest = manifest_for_branch(state_dir, branch)
     if manifest is None:
         return ""

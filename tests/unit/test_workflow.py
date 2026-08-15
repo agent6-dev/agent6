@@ -2183,17 +2183,17 @@ def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
     )
 
     # Maxed-out fraction: numerator == score == denominator.
-    assert _metric_at_fraction_ceiling("SCORE: 27/27\n", 27.0) is True
-    assert _metric_at_fraction_ceiling("passed 5 / 5 checks", 5.0) is True
+    assert _metric_at_fraction_ceiling("SCORE: 27/27\n", 27.0, pattern=r"SCORE: (\d+)") is True
+    assert _metric_at_fraction_ceiling("passed 5 / 5 checks", 5.0, pattern=r"passed (\d+)") is True
     # Partial score is not the ceiling.
-    assert _metric_at_fraction_ceiling("SCORE: 26/27\n", 26.0) is False
+    assert _metric_at_fraction_ceiling("SCORE: 26/27\n", 26.0, pattern=r"SCORE: (\d+)") is False
     # Score that does not match the numerator is ignored.
-    assert _metric_at_fraction_ceiling("SCORE: 27/27\n", 26.0) is False
+    assert _metric_at_fraction_ceiling("SCORE: 27/27\n", 26.0, pattern=r"SCORE: (\d+)") is False
     # Unbounded metric (raw count, no denominator) never trips the ceiling.
-    assert _metric_at_fraction_ceiling("CYCLES: 1487\n", 1487.0) is False
+    assert _metric_at_fraction_ceiling("CYCLES: 1487\n", 1487.0, pattern=r"CYCLES: (\d+)") is False
 
 
-def test_metric_at_fraction_ceiling_requires_the_score_line_when_pattern_given() -> None:
+def test_metric_at_fraction_ceiling_scans_only_the_score_line() -> None:
     from agent6.workflows._metric import (
         metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
     )
@@ -2202,9 +2202,6 @@ def test_metric_at_fraction_ceiling_requires_the_score_line_when_pattern_given()
     # the real score line has no denominator, so the ceiling must NOT latch.
     text = "SCORE: 100\n100%|##########| 100/100 [00:03<00:00, 33.1it/s]\n"
     assert _metric_at_fraction_ceiling(text, 100.0, pattern=r"SCORE: (\d+)") is False
-    # Without the pattern the whole text is scanned (legacy) and it latches;
-    # this contrast is why the score pattern must be threaded through.
-    assert _metric_at_fraction_ceiling(text, 100.0) is True
     # A genuine maxed fraction ON the score-pattern line still trips it.
     assert _metric_at_fraction_ceiling("junk 3/3\nSCORE: 27/27\n", 27.0, pattern=r"SCORE: (\d+)")
     # No score-pattern match at all -> conservative False.

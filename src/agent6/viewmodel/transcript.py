@@ -85,8 +85,7 @@ ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "oper
 
 
 # Events that render BETWEEN turns rather than as part of one: {type: (kind,
-# the field holding the text)}. An empty field renders nothing (an older log
-# carries only a char count).
+# the field holding the text)}. An empty field renders nothing.
 _BETWEEN_TURNS: dict[str, tuple[ItemKind, str]] = {
     # The operator's typed instruction: a steer, or the follow-up a resume
     # started with.

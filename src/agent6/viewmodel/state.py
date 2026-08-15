@@ -99,9 +99,9 @@ class BudgetView:
     usd_total: float = 0.0
     usd_prior_legs: float = 0.0  # banked spend of completed resume legs
     usd_partial: bool = False  # True if some models had no price (under-estimate)
-    usd_cap: float = 0.0  # [budget].max_usd for this leg (-1 unlimited, 0 unknown/old log)
+    usd_cap: float = 0.0  # [budget].max_usd for this leg (-1 unlimited, 0 unknown)
     tokens_unmetered: int = 0  # input+output tokens of calls the meter could not price
-    tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown/old log)
+    tokens_fallback_cap: int = 0  # [budget].max_tokens_fallback (-1 unlimited, 0 unknown)
 
 
 @dataclass(frozen=True, slots=True)
