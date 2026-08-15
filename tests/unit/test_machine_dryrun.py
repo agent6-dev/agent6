@@ -279,3 +279,53 @@ def test_cli_machine_test_unreadable_fixture_refuses(tmp_path: Path) -> None:
             main(["machine", "test", str(f), "--blackboard", str(bb)])
     finally:
         bb.chmod(0o600)
+
+
+def test_synthesized_records_omit_optional_fields(tmp_path: Path) -> None:
+    """Dry-run models the weakest state the capture gate permits: an optional
+    field stays absent, so a branch reading it unguarded fails `machine test`
+    exactly as it halts live, instead of routing on invented data; the
+    has()-guarded twin routes cleanly."""
+    from agent6.ui.cli import main
+
+    unguarded = tmp_path / "unguarded.asm.toml"
+    unguarded.write_text(PRESENCE.format(pred="out.score > 0"), encoding="utf-8")
+    assert main(["machine", "test", str(unguarded)]) == 1
+
+    guarded = tmp_path / "guarded.asm.toml"
+    guarded.write_text(PRESENCE.format(pred="has(out.score) and out.score > 0"), encoding="utf-8")
+    assert main(["machine", "test", str(guarded)]) == 0
+
+
+PRESENCE = """\
+machine = "presence"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[schemas.report]
+summary = {{ type = "str" }}
+score = {{ type = "int", optional = true }}
+
+[vars.code]
+out = {{ type = "report", default = {{}} }}
+
+[states.route]
+kind = "branch"
+when = [
+  {{ if = "{pred}", goto = "good" }},
+  {{ else = true, goto = "bad" }},
+]
+
+[states.good]
+kind = "terminal"
+status = "ok"
+reason = "scored"
+
+[states.bad]
+kind = "terminal"
+status = "failed"
+reason = "unscored"
+"""

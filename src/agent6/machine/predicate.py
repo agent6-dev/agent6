@@ -33,8 +33,9 @@ __all__ = [
 
 # The only callable names a predicate may invoke. Each is a fixed-arity,
 # pure builtin re-implemented by the evaluator; it never calls the Python
-# builtin via the name.
-ALLOWED_FUNCTIONS = frozenset({"len"})
+# builtin via the name. `has(ref)` is the presence guard for optional record
+# fields: True iff every segment of the reference resolves.
+ALLOWED_FUNCTIONS = frozenset({"len", "has"})
 
 _ALLOWED_COMPARISONS = (
     ast.Eq,
@@ -147,6 +148,8 @@ def _check_call(node: ast.Call, references: list[Reference]) -> None:
     arg = node.args[0]
     if isinstance(arg, ast.Starred):
         raise PredicateError(f"{func.id}() does not accept starred arguments")
+    if func.id == "has" and not isinstance(arg, (ast.Name, ast.Attribute)):
+        raise PredicateError("has() takes a reference (a variable or record field)")
     _check(arg, references)
 
 
@@ -202,7 +205,10 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
     if isinstance(node, ast.Compare):
         return _eval_compare(node, blackboard)
     if isinstance(node, ast.Call):
-        # Allow-list guarantees this is len() with exactly one argument.
+        # Allow-list guarantees one of the fixed builtins with one argument.
+        assert isinstance(node.func, ast.Name)
+        if node.func.id == "has":
+            return _has(_as_reference(node.args[0]), blackboard)
         value = _eval(node.args[0], blackboard)
         if not isinstance(value, (str, list, tuple, dict, bytes)):
             raise PredicateError(f"len() argument has no length: {value!r}")
@@ -270,6 +276,23 @@ def _contains(container: object, item: object) -> bool:
         # list/record-typed var) raised a bare TypeError -- which is not what the
         # engine catches, so it escaped as a traceback with no journaled end.
         raise PredicateError(f"cannot use `in` with {item!r} and {container!r}") from exc
+
+
+def _has(reference: Reference, blackboard: Mapping[str, object]) -> bool:
+    """Presence of *reference*: False when any segment is absent (the guard an
+    optional field needs before a read), True when the full path resolves.
+    Navigating INTO a non-record value stays an error, exactly as `_resolve`
+    treats it: that is a type mismatch, not absence."""
+    if reference.root not in blackboard:
+        return False
+    value = blackboard[reference.root]
+    for key in reference.path:
+        if not isinstance(value, Mapping):
+            raise PredicateError(f"cannot navigate into non-record value at {reference.dotted!r}")
+        if key not in value:
+            return False
+        value = value[key]
+    return True
 
 
 def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:

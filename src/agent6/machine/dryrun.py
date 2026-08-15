@@ -85,16 +85,21 @@ class DryRunReport:
 def synthesize_record(spec: MachineSpec, schema_name: str, _seen: tuple[str, ...] = ()) -> Any:
     """A minimal, schema-valid example object for *schema_name*.
 
-    Produces exactly the declared fields (so it passes the strict
-    `extra="forbid"`-style payload check): scalars get a zero value, lists an
-    empty list, enums their first member, nested records recurse. Schema cycles
-    (already rejected by `validate_semantics`) are guarded with `_seen`.
+    Produces exactly the REQUIRED fields (so it passes the strict payload
+    check): scalars get a zero value, lists an empty list, enums their first
+    member, nested records recurse. Optional fields are OMITTED -- the weakest
+    state the capture gate permits -- so a dry-run reading one unguarded fails
+    offline exactly as the live run would, instead of routing on invented
+    data. Schema cycles (already rejected by `validate_semantics`) are guarded
+    with `_seen`.
     """
     fields = spec.schemas.get(schema_name)
     if fields is None:  # pragma: no cover - validate_semantics guarantees it exists
         return {}
     out: dict[str, Any] = {}
     for fname, field in fields.items():
+        if field.optional:
+            continue
         out[fname] = _synthesize_field(spec, field, (*_seen, schema_name))
     return out
 
@@ -217,11 +222,12 @@ def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None)
     branch predicates and capture templates without any real execution.
     """
     base = initial_blackboard(spec)
-    # Record vars are REQUIRED to default to {} (4.2), but a branch that reads
+    # Record vars default to {} (4.2), but a branch that reads
     # `verdict.field` cannot evaluate against an empty record, so the realistic
     # agent-verdict -> branch machine would always fail here without a fixture.
-    # Synthesize the schema-zero record (bool=False, str="", ...) instead; the
-    # fixture below still overrides it.
+    # Synthesize the schema-zero record of its REQUIRED fields instead (the
+    # weakest state the capture gate permits; an optional field stays absent,
+    # `has()` is its guard); the fixture below still overrides it.
     for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):
         if var.type in spec.schemas and base.get(name) == {}:
             base[name] = synthesize_record(spec, var.type)

@@ -418,7 +418,9 @@ when = [
 `else = true` is required (total function, no "stuck" state). The
 predicate grammar is a restricted, non-Turing-complete expression
 language (see [Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership,
-`len()`, numeric/string literals, and blackboard references (see
+`len()`, `has()` (presence of a reference: the guard an `optional` record
+field needs before a read, e.g. `has(out.score) and out.score > 0` --
+`and` short-circuits), numeric/string literals, and blackboard references (see
 [Names, references, and namespaces](#45-names-references-and-namespaces-normative)). No
 function calls beyond a tiny fixed allow-list, no Python attribute
 access, no `eval`. Dotted references like `verdict.confidence` are
@@ -629,7 +631,7 @@ Rules (all enforced at `machine check`):
 | Rule | Behavior |
 |---|---|
 | **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch; itself not dottable, [The blackboard](#42-the-blackboard-three-owners)) |
-| **Required by default** | every field must be present in a validated payload unless `optional = true` (mirrors `Config`'s `extra="forbid"`); unknown fields are rejected |
+| **Required by default** | every field must be present in a validated payload unless `optional = true` (mirrors `Config`'s `extra="forbid"`); unknown fields are rejected. An absent optional field is ABSENT, not null: reading it unguarded is a runtime halt, `has()` is its predicate guard, and `machine test` exercises absence (dry-run synthesizes required fields only) |
 | **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_session`/capture boundary (earlier than a `branch` would re-check it) |
 | **Dotting** | a `.field` in a predicate/template is type-checked against the schema (field must exist); a `list`/`json`/non-record field may not be dotted further |
 

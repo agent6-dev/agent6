@@ -121,3 +121,31 @@ def test_in_with_an_unhashable_left_operand_is_a_predicate_error() -> None:
     pred = parse_predicate("item in blob")
     with pytest.raises(PredicateError, match="`in`"):
         evaluate(pred, {"item": [1, 2], "blob": {"a": 1}})
+
+
+def test_has_guards_an_absent_reference() -> None:
+    """`has(ref)` is the presence guard an optional record field needs:
+    False when any path segment is absent, True when the full path resolves,
+    and `and` short-circuits so the guarded read never fires on absence."""
+    board = {"out": {"summary": "hi"}}
+    assert evaluate(parse_predicate("has(out.summary)"), board) is True
+    assert evaluate(parse_predicate("has(out.score)"), board) is False
+    assert evaluate(parse_predicate("has(out)"), board) is True
+    assert evaluate(parse_predicate("has(missing)"), board) is False
+    # The guard composes: the read after `and` never evaluates on absence.
+    assert evaluate(parse_predicate("has(out.score) and out.score > 0"), board) is False
+    assert (
+        evaluate(parse_predicate("has(out.score) and out.score > 0"), {"out": {"score": 3}}) is True
+    )
+    # Navigating INTO a non-record is a type mismatch, not absence.
+    with pytest.raises(PredicateError, match="non-record"):
+        evaluate(parse_predicate("has(out.summary.deeper)"), board)
+
+
+def test_has_takes_only_a_reference() -> None:
+    """`has(1)` or `has(len(x))` is meaningless; the parse refuses so the
+    check surfaces it, never a runtime surprise."""
+    with pytest.raises(PredicateError, match="reference"):
+        parse_predicate("has(1)")
+    with pytest.raises(PredicateError, match="reference"):
+        parse_predicate("has(len(x))")
