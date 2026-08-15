@@ -224,6 +224,13 @@ class Agent6Section(BaseModel):
 
 
 class Config(BaseModel):
+    """The validated effective config: one immutable object per load.
+
+    Frozen at the attribute level; container VALUES (dicts, the tuples'
+    contents) are not deep-frozen. The contract is read-only after
+    validation: every derived config goes through the `with_*` copiers,
+    never in-place mutation."""
+
     model_config = MODEL_CONFIG
 
     agent6: Agent6Section = Field(default_factory=Agent6Section)
