@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Turns: new, prompt, cancel.
 
-The load-bearing property: a prompt runs on a worker, so the read loop is free
-to receive the cancel that ACP requires to work DURING a turn.
+A prompt runs on a worker, so the read loop is free to receive the cancel
+that ACP requires to work DURING a turn.
 """
 
 from __future__ import annotations

@@ -117,7 +117,7 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
 # task's score (0.921 -> 0.425) and every redundant read is post-drop, while
 # code files are cheaply re-readable. So a large read_file result about to be
 # elided decays in two stages: first to a placeholder carrying a model-written
-# gist of the file's load-bearing facts, then (under continued pressure) to
+# gist of the file, then (under continued pressure) to
 # the bare identity marker, so the hard byte bound always holds. The caps
 # bound the distiller call per drop event; hot files (protect_paths) are never
 # gisted because their content is changing under edits and a stale gist would

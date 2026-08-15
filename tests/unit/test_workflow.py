@@ -3350,7 +3350,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
     ]
     assert "loop.compact.summarise.done" in types  # tier-2 restart happened
     assert "loop.task.surfaced" in types
-    # The focus banner re-surfaces AFTER the restart wiped it (the load-bearing edge).
+    # The focus banner re-surfaces AFTER the restart wiped it.
     restart_at = types.index("loop.compact.summarise.done")
     assert "loop.task.surfaced" in types[restart_at + 1 :]
 

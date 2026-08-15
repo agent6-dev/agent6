@@ -153,7 +153,7 @@ Notes:
   (a placeholder there would force a paid re-read before the next
   edit; it is a priority, not an exemption, so the bound holds). A
   large `read_file` result decays in two stages: first to a placeholder
-  carrying a distilled gist of the file's load-bearing facts (one
+  carrying a distilled gist of the file (one
   batched reviewer-model call per drop event; measured on the
   longhorizon bench, bare elision of reference docs halves a retention
   task's score under a small window), then under continued pressure to

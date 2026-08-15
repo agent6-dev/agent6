@@ -637,8 +637,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "role.result":
             role = event.get("role", "")
             if event.get("error"):
-                # The error is the load-bearing field on a failed turn: this
-                # line is how a dead run gets diagnosed from the log view.
+                # The error is how a dead run gets diagnosed from the log view.
                 salient = f"{role} error: {str(event.get('error'))[:160]}"
             else:
                 tin = event.get("tokens_in")
@@ -680,8 +679,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.compact.summarise.done":
             salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
         case "loop.compact.summarise.failed" | "loop.compact.gist.failed":
-            # The reason is the load-bearing field, as on a failed role.result:
-            # without it a 429'd summariser reads as nothing having happened.
+            # Without the reason a 429'd summariser reads as nothing having
+            # happened.
             salient = str(event.get("error", ""))[:160]
         case "loop.compact.requested":
             focus = str(event.get("focus", ""))

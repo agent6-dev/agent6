@@ -6,8 +6,7 @@ model-facing `to_wire()` dict and the one-line human `summary()`.
 
 - `to_wire()` -- the exact dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
-  insertion order, so field/emit order here is load-bearing), and value
-  formats are the model-facing contract. Pinned by
+  insertion order), and value formats are the model-facing contract. Pinned by
   `tests/unit/test_tool_result_wire.py`.
 - `summary()` -- the one-line human string for the log tail / TUI; each
   result states its own (never inferred from the dict's keys).

@@ -2,8 +2,6 @@
 # Copyright 2026 Eric Lesiuta
 """One ACP prompt becomes one agent6 run.
 
-Three things here are load-bearing.
-
 The protocol OWNS stdout, so the run's reporter writes to stderr. One status
 line on stdout desynchronises the stream irrecoverably, and no editor recovers
 from it.

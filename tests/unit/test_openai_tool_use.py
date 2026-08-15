@@ -1052,7 +1052,7 @@ def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
 
 
 def test_qwen_function_xml_keeps_unmatched_call_visible() -> None:
-    """Same load-bearing rule as the <tool_call> branch (which pins it in
+    """Same rule as the <tool_call> branch (which pins it in
     test_tool_call_tag_recovery_keeps_malformed_tag_visible): remove ONLY the
     calls that were recovered. Branch 0's blanket scrub deleted EVERY
     <function=...> block, so a hallucinated/misspelled second call vanished

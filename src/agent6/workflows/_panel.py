@@ -26,7 +26,7 @@ ReviewDecision = Literal["advisory", "veto", "quorum", "all"]
 
 # Categories a finding may carry. Only the first set is allowed to GATE; the
 # rest advise but never block (taste/test-gap/over-engineering findings are
-# noisy, not load-bearing, so they are structurally barred from blocking).
+# too noisy to gate).
 ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
     {"security", "sandbox-bypass", "off-topic-edit", "data-loss", "verify-uncovered-correctness"}
 )

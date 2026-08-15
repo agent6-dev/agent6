@@ -379,7 +379,7 @@ class OpenAIProvider:
             body["tools"] = tools_to_openai(tools)
         # Operator-supplied body extras (e.g. OpenRouter `provider` routing to
         # pin a caching/fast backend). Merged last so it can override computed
-        # tuning keys, but NEVER the load-bearing request shape: replacing
+        # tuning keys, never the structural keys: replacing
         # `messages`/`model` would silently send a different request, and
         # flipping `stream` would make the non-streaming path get an SSE body
         # that `resp.json()` can't parse. Those are filtered out.
