@@ -101,3 +101,32 @@ def test_the_generator_never_spawns_uv() -> None:
     `uv`."""
     src = (_ROOT / "docs" / "gen_diagrams.py").read_text(encoding="utf-8")
     assert '"uv"' not in src and "'uv'" not in src
+
+
+def test_the_generated_tool_list_names_tools_a_model_can_call() -> None:
+    """The page read the handler table's METHOD names, so it advertised
+    `run_verify` and `dag_add_task`, which no model can call: the tools are
+    `run_verify_command` and `add_task`. Every listed name resolves through
+    the schema's TOOL_NAME constants."""
+    from agent6.tools import schema
+
+    gen = _load_generator()
+    listed = re.findall(r"`([a-z0-9_]+)`", gen._tool_names())
+    real = {
+        obj.TOOL_NAME
+        for obj in vars(schema).values()
+        if isinstance(obj, type) and getattr(obj, "TOOL_NAME", "")
+    }
+    assert listed, "no tools listed"
+    assert not set(listed) - real, sorted(set(listed) - real)
+    assert "run_verify_command" in listed
+
+
+def test_every_asset_the_site_config_references_exists() -> None:
+    """Deleting a docs asset must not leave a dangling `extra_css` /
+    `extra_javascript` entry behind: mkdocs copies what exists, and the
+    browser 404s whatever the config still names."""
+    config = (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8")
+    refs = re.findall(r"^\s*-\s+(assets/\S+)$", config, re.M)
+    assert refs, "no asset references found in the site config"
+    assert not [r for r in refs if not (_ROOT / "docs" / r).is_file()]

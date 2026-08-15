@@ -74,9 +74,6 @@ theme:
 extra_css:
   - assets/extra.css
 
-extra_javascript:
-  - assets/zoom.js
-
 plugins:
   - search
   - glightbox:

@@ -143,27 +143,3 @@
   border: 1px solid var(--a6-panel);
 }
 
-/* Generated internals diagrams: click to inspect (assets/zoom.js). */
-.md-typeset .mermaid svg {
-  cursor: zoom-in;
-}
-.a6-zoom-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.78);
-  cursor: grab;
-}
-.a6-zoom-stage {
-  transform-origin: center center;
-}
-.a6-zoom-stage svg {
-  display: block;
-  background: var(--md-default-bg-color, #fff);
-  border-radius: 0.4rem;
-  padding: 0.8rem;
-}

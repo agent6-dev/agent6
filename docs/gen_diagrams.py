@@ -2,15 +2,17 @@
 # Copyright 2026 Eric Lesiuta
 """Generate docs/internals.md from docs/internals_template.md.
 
-Each ``<!-- diagram: NAME -->`` marker becomes a mermaid block built from the
-current source, so the diagrams cannot drift from the code:
+Two marker kinds expand from the current source, so the page cannot drift
+from the code:
 
-- ``layering``: the top-level package graph, collapsed from ``tach show``'s
-  module graph (the core layers drawn edge-by-edge, the shared substrate
-  grouped as one cluster).
-- ``turn-pipeline``: the agent loop's drive tier, AST-extracted from
-  ``workflows/loop.py`` (direct ``self.X()`` calls between the named phase
-  methods).
+- ``<!-- diagram: NAME -->`` becomes a mermaid block.
+- ``<!-- generated: NAME -->`` becomes a line of text (the package and tool
+  name lists, which read better as prose than as boxes).
+
+A diagram carries the SHAPE: the layer chain, the stage order, the gate
+chain. Names that only need listing are listed. Drawing every module and
+every tool as a node produced a page-wide hairball at a tenth the legible
+type size.
 
 Run by the pages workflow before ``mkdocs build``; ``docs/internals.md`` is
 generated output and never committed. Regenerate locally with
@@ -20,6 +22,8 @@ generated output and never committed. Regenerate locally with
 from __future__ import annotations
 
 import ast
+import functools
+import itertools
 import re
 import subprocess
 import sys
@@ -28,32 +32,14 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "internals_template.md"
 _OUT = _ROOT / "docs" / "internals.md"
-_MARKER = re.compile(r"^<!-- diagram: ([a-z-]+) -->$")
+# A diagram owns its line and expands to a fenced block; a generated name
+# list substitutes in place, so it can sit inside a sentence.
+_DIAGRAM = re.compile(r"^<!-- diagram: ([a-z-]+) -->$")
+_GENERATED = re.compile(r"<!-- generated: ([a-z-]+) -->")
 
-# The documented layering, drawn edge-by-edge; everything else collapses into
-# the shared-substrate cluster.
+# The documented layering, top to bottom. Every other top-level package is
+# shared substrate.
 _CORE_LAYERS = ("ui", "app", "workflows", "tools", "sandbox")
-
-# The drive tier of workflows/loop.py: the per-turn phases run/resume fan
-# into. Deeper tiers regenerate from source (the extractor takes any name
-# list); keeping this curated is what keeps the diagram readable.
-_PIPELINE_TIER = (
-    "run",
-    "resume",
-    "_drive_loop",
-    "_turn_pre_call",
-    "_turn_provider_call",
-    "_turn_dispatch_tools",
-    "_turn_auto_commit_and_metric",
-    "_turn_review_triggers",
-    "_turn_finish_gates",
-    "_turn_notices",
-    "_turn_stop_checks",
-    "_maybe_compact",
-    "_summarise_and_restart",
-    "_maybe_handle_steer",
-    "_save_resume_snapshot",
-)
 
 
 def _nid(name: str) -> str:
@@ -64,7 +50,8 @@ def _nid(name: str) -> str:
     return "n_" + re.sub(r"\W", "_", name)
 
 
-def _layering_mermaid() -> str:
+@functools.cache
+def _tach_graph() -> str:
     # tach runs from the current interpreter's environment, never via
     # `uv run`: a uv spawn re-syncs the project, which would uninstall a
     # wheel-installed agent6 from the venv under a suite testing that wheel.
@@ -75,10 +62,11 @@ def _layering_mermaid() -> str:
         check=True,
         cwd=_ROOT,
     )
-    return _layering_from_tach(proc.stdout)
+    return proc.stdout
 
 
-def _layering_from_tach(mermaid_graph: str) -> str:
+def _package_edges(mermaid_graph: str) -> tuple[set[tuple[str, str]], set[str]]:
+    """`tach show`'s module graph as (top-level edges, substrate packages)."""
     edges: set[tuple[str, str]] = set()
     substrate: set[str] = set()
     for line in mermaid_graph.splitlines():
@@ -88,20 +76,37 @@ def _layering_from_tach(mermaid_graph: str) -> str:
         a, b = (part.split(".")[1] if "." in part else part for part in m.groups())
         if a == b or "agent6" in (a, b):
             continue
-        if a in _CORE_LAYERS and b in _CORE_LAYERS:
-            edges.add((a, b))
-        else:
-            substrate.update(x for x in (a, b) if x not in _CORE_LAYERS)
+        edges.add((a, b))
+        substrate.update(x for x in (a, b) if x not in _CORE_LAYERS)
+    return edges, substrate
+
+
+def _layering_mermaid() -> str:
+    """The layer chain, plus any import that climbs it.
+
+    Every layer may import every layer below it, so drawing all the real
+    edges draws a fully-connected five-node mesh that says nothing the chain
+    does not. What the chain cannot show is a violation, so an edge running
+    upward is drawn dashed and labelled: tach checks the same rule, and
+    seeing one here means the map is stale.
+    """
+    edges, _ = _package_edges(_tach_graph())
+    rank = {name: i for i, name in enumerate(_CORE_LAYERS)}
     lines = ["graph TD"]
-    lines += [f'    {_nid(n)}["{n}"]' for n in _CORE_LAYERS if any(n in e for e in edges)]
-    lines += [f"    {_nid(a)} --> {_nid(b)}" for a, b in sorted(edges)]
-    lines.append('    subgraph substrate["shared substrate (every layer may use)"]')
-    row = sorted(substrate)
-    # Rows of six: one long invisible-link chain renders wider than a phone.
-    for i in range(0, len(row), 6):
-        lines.append("        " + " ~~~ ".join(f'{_nid(x)}["{x}"]' for x in row[i : i + 6]))
-    lines.append("    end")
+    lines += [f'    {_nid(n)}["{n}"]' for n in _CORE_LAYERS]
+    lines += [f"    {_nid(a)} --> {_nid(b)}" for a, b in itertools.pairwise(_CORE_LAYERS)]
+    lines += [
+        f'    {_nid(a)} -. "climbs the stack" .-> {_nid(b)}'
+        for a, b in sorted(edges)
+        if a in rank and b in rank and rank[a] > rank[b]
+    ]
     return "\n".join(lines)
+
+
+def _substrate_names() -> str:
+    """The substrate packages, as a sorted inline list."""
+    _, substrate = _package_edges(_tach_graph())
+    return ", ".join(f"`{name}`" for name in sorted(substrate))
 
 
 def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
@@ -148,10 +153,38 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
     return "\n".join(lines)
 
 
-# The run lifecycle's stage functions (app/run.py composes them) and the
-# dispatcher's gate chain; curated like the pipeline tier.
+def _calls_in_order(rel_path: str, func: str, tier: tuple[str, ...]) -> list[str]:
+    """The *tier* functions *func* calls, in source order, first call only.
+
+    A composition function's information is its ORDER; a star of edges from
+    the caller carries none of it.
+    """
+    tree = ast.parse((_ROOT / rel_path).read_text(encoding="utf-8"))
+    target = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == func
+    )
+    members = set(tier)
+    seen: list[str] = []
+
+    class V(ast.NodeVisitor):
+        def visit_Call(self, node: ast.Call) -> None:
+            name = node.func.attr if isinstance(node.func, ast.Attribute) else None
+            if isinstance(node.func, ast.Name):
+                name = node.func.id
+            if name in members and name not in seen:
+                seen.append(name)
+            self.generic_visit(node)
+
+    V().visit(target)
+    return seen
+
+
+# The run lifecycle's stage functions, in the order run_task composes them
+# (the extractor reads the order out of the source; this list decides which
+# calls are stages worth drawing).
 _RUN_LIFECYCLE_TIER = (
-    "run_task",
     "session_config",
     "headless_approval_refusal",
     "select_isolation",
@@ -176,36 +209,94 @@ _DISPATCH_TIER = (
 )
 
 
-def _dispatch_mermaid() -> str:
-    """The dispatch gate chain plus the handler TABLE: handlers are reached
-    through ``self._handlers[name]``, not direct calls, so those edges are
-    read out of the table literal and drawn dashed (via table)."""
-    graph = _tier_callgraph("src/agent6/tools/dispatch.py", _DISPATCH_TIER)
+def _run_lifecycle_mermaid() -> str:
+    """`run_task`'s stages as one chain, in the order it calls them."""
+    stages = _calls_in_order("src/agent6/app/run.py", "run_task", _RUN_LIFECYCLE_TIER)
+    lines = ["graph TD", '    n_run_task["run_task"]']
+    lines += [f'    {_nid(name)}["{name}"]' for name in stages]
+    chain = ["run_task", *stages]
+    lines += [f"    {_nid(a)} --> {_nid(b)}" for a, b in itertools.pairwise(chain)]
+    return "\n".join(lines)
+
+
+def _tool_name_constants() -> dict[str, str]:
+    """`{input class: TOOL_NAME}` from tools/schema.py."""
+    tree = ast.parse((_ROOT / "src/agent6/tools/schema.py").read_text(encoding="utf-8"))
+    out: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.AnnAssign)
+                and isinstance(stmt.target, ast.Name)
+                and stmt.target.id == "TOOL_NAME"
+                and isinstance(stmt.value, ast.Constant)
+                and isinstance(stmt.value.value, str)
+                and stmt.value.value
+            ):
+                out[node.name] = stmt.value.value
+    return out
+
+
+def _handler_names() -> list[str]:
+    """The tool names the dispatcher's handler table routes, in table order.
+
+    Resolved through the schema's `TOOL_NAME` constants, never the handler
+    METHOD names: `RunVerifyInput` routes `run_verify_command` while its
+    method is `_run_verify`, so the method name advertises a tool the model
+    cannot call. An unresolvable key is a loud failure, not a guess.
+    """
+    constants = _tool_name_constants()
     tree = ast.parse((_ROOT / "src/agent6/tools/dispatch.py").read_text(encoding="utf-8"))
-    handlers: list[str] = []
+    names: list[str] = []
     for node in ast.walk(tree):
-        if (
+        if not (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Attribute)
             and node.target.attr == "_handlers"
             and isinstance(node.value, ast.Dict)
         ):
-            for v in node.value.values:
-                if isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name):
-                    handlers.append(v.attr)
-    lines = [graph]
-    for h in handlers:
-        label = h.lstrip("_")
-        lines.append(f'    {_nid(label)}["{label}"]')
-        lines.append(f"    {_nid('run_handler')} -.->|table| {_nid(label)}")
-    return "\n".join(lines)
+            continue
+        for key in node.value.keys:
+            if (
+                isinstance(key, ast.Attribute)
+                and key.attr == "TOOL_NAME"
+                and isinstance(key.value, ast.Name)
+                and key.value.id in constants
+            ):
+                names.append(constants[key.value.id])
+            else:
+                raise SystemExit(
+                    f"handler table key is not a known <Input>.TOOL_NAME: {ast.dump(key)}"
+                )
+    return names
 
 
-_DIAGRAMS = {
+def _dispatch_mermaid() -> str:
+    """The gate chain every tool call passes, ending at the handler table.
+
+    The table's entries are a SET reached by name, not a call sequence:
+    drawing one node per tool fanned twenty-odd dead-end boxes across the
+    page. The count rides on the node and the names are listed below it.
+    """
+    graph = _tier_callgraph("src/agent6/tools/dispatch.py", _DISPATCH_TIER)
+    table = f'    n_table["handler table: {len(_handler_names())} tools"]'
+    edge = f"    {_nid('run_handler')} -.->|by name| n_table"
+    return "\n".join([graph, table, edge])
+
+
+def _tool_names() -> str:
+    """The dispatch table's tools, as an inline list in table order."""
+    return ", ".join(f"`{name}`" for name in _handler_names())
+
+
+_BLOCKS = {
     "layering": _layering_mermaid,
-    "turn-pipeline": lambda: _tier_callgraph("src/agent6/workflows/loop.py", _PIPELINE_TIER),
-    "run-lifecycle": lambda: _tier_callgraph("src/agent6/app/run.py", _RUN_LIFECYCLE_TIER),
+    "run-lifecycle": _run_lifecycle_mermaid,
     "tool-dispatch": _dispatch_mermaid,
+    "substrate-names": _substrate_names,
+    "tool-names": _tool_names,
 }
 
 
@@ -215,12 +306,11 @@ def render(template: str) -> str:
         " edit those, then regenerate. -->",
     ]
     for line in template.splitlines():
-        marker = _MARKER.match(line)
-        if marker is None:
-            out.append(line)
+        diagram = _DIAGRAM.match(line)
+        if diagram is not None:
+            out.extend(["```mermaid", _BLOCKS[diagram.group(1)](), "```"])
             continue
-        body = _DIAGRAMS[marker.group(1)]()
-        out.extend(["```mermaid", body, "```"])
+        out.append(_GENERATED.sub(lambda m: _BLOCKS[m.group(1)](), line))
     return "\n".join(out) + "\n"
 
 
