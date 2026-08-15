@@ -26,6 +26,7 @@ def _env(userns: bool, *, sandbox: bool = True) -> Environment:
         kernel=KernelInfo(raw="7.0.0", major=7, minor=0),
         userns_supported=userns,
         landlock_abi=4 if sandbox else 0,
+        seccomp_arch_supported=True,
         sandbox_available=sandbox,
     )
 
@@ -116,3 +117,21 @@ def test_degrade_reason_covers_the_landlock_less_floor(monkeypatch: pytest.Monke
     reason = detect.degrade_reason(no_landlock) or ""
     assert "no Landlock" in reason
     assert detect.degrade_reason(_env(False, sandbox=False)) is not None
+
+
+def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
+    """strict and hardened promise the jail's seccomp filter, which exists for
+    x86_64/aarch64 only (mirrored from main.rs, where apply_seccomp fails
+    closed). Off that set `auto` resolves to the loudly-warned `none`, an
+    explicit strict/hardened refuses by name, and degrade_reason says why."""
+    from dataclasses import replace
+
+    e = replace(_env(True), seccomp_arch_supported=False)
+    assert e.detected_isolation == "none"
+    assert "seccomp filter" in (detect.degrade_reason(e) or "")
+    for requested in ("strict", "hardened"):
+        with pytest.raises(detect.IsolationUnavailableError, match="seccomp filter"):
+            detect.resolve_isolation(requested, e)
+    # auto and the explicit opt-out still resolve.
+    assert detect.resolve_isolation("auto", e) == "none"
+    assert detect.resolve_isolation("none", e) == "none"

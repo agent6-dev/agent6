@@ -27,6 +27,7 @@ def _env(landlock_abi: int) -> Environment:
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=True,
         landlock_abi=landlock_abi,
+        seccomp_arch_supported=True,
         sandbox_available=True,
     )
 

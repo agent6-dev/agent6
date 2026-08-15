@@ -75,6 +75,7 @@ def _env(*, userns: bool, landlock_abi: int = 4) -> Environment:
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=userns,
         landlock_abi=landlock_abi,
+        seccomp_arch_supported=True,
         sandbox_available=True,
     )
 
@@ -148,6 +149,7 @@ def _env_c(*, userns: bool, in_container: bool) -> Environment:
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=userns,
         landlock_abi=4,
+        seccomp_arch_supported=True,
         sandbox_available=True,
     )
 
@@ -195,6 +197,7 @@ def test_env_setter_forces_none_on_non_linux(monkeypatch: pytest.MonkeyPatch) ->
         kernel=KernelInfo(raw="", major=0, minor=0),
         userns_supported=False,
         landlock_abi=0,
+        seccomp_arch_supported=True,
         sandbox_available=False,
     )
     assert resolve_isolation("strict", env) == "none"
@@ -248,6 +251,7 @@ def _no_sandbox_env() -> Environment:
         kernel=KernelInfo(raw="unknown", major=0, minor=0),
         userns_supported=False,
         landlock_abi=0,
+        seccomp_arch_supported=True,
         sandbox_available=False,
     )
 

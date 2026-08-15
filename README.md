@@ -84,7 +84,7 @@ From [PyPI](https://pypi.org/project/agent6/) with
 uv tool install agent6        # or: pipx install agent6
 ```
 
-agent6 needs **Linux** for the sandbox, **Python 3.12+**, and
+agent6 needs **Linux** (x86_64/aarch64) for the sandbox, **Python 3.12+**, and
 an API key for at least one provider. macOS runs unsandboxed behind a warning; on Windows
 use WSL. See [installation](https://agent6.dev/installation/) for the full requirements and
 building from source.

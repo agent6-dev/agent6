@@ -211,14 +211,23 @@ Notes:
   `[sandbox].memory_limit_mb` to bound a specific task: a per-process
   `RLIMIT_DATA` (not `RLIMIT_AS`, so V8/JVM/ASAN keep working) that stops one
   runaway allocation, nothing more.
+- **The seccomp filter exists for x86_64 and aarch64.** On any other
+  architecture it fails closed: detection resolves `auto` to the loudly-warned
+  `none`, an explicit `strict`/`hardened` refuses by name, and the launcher
+  itself errors rather than reporting isolation it never installed.
 - **The seccomp layer is a deny-list (defense-in-depth), not a boundary.**
   Known-dangerous syscalls only; nested-namespace creation via `clone`/`clone3`
   stays allowed (accepted: the whole mount-syscall family is denied and
   Landlock is inherited and irrevocable, so a nested namespace grants nothing
   against the host; denying `clone3` would break glibc/Go spawning). The real
   boundaries are the namespaces, Landlock, and the mount denials.
-- **No `capset`.** `strict` maps namespaced-root to your uid; `hardened` keeps the
-  caller's caps (none for a normal user).
+- **Every child's capabilities are dropped between fork and exec.** The
+  bounding set where `CAP_SETPCAP` allows (strict's namespaced root has it);
+  effective/permitted/inheritable are cleared unconditionally via `capset`,
+  which needs no privilege -- a launcher granted ambient caps without
+  `CAP_SETPCAP` still hands the command an empty set. The one shape kernel
+  rules leave open: a uid-0 launcher without `CAP_SETPCAP` re-grants from the
+  intact bounding set at exec.
 - **`hardened` drops the namespaces + rootfs;** Landlock, seccomp,
   `NO_NEW_PRIVS`, and the timeout remain.
 - The policy arrives as JSON on stdin from `run_in_jail`; the Rust side validates

@@ -2,8 +2,9 @@
 
 ## Requirements
 
-- **Linux** for the sandbox. The jail uses Landlock, seccomp, and user namespaces, which
-  are Linux-only. macOS runs unsandboxed: the default `isolation = "auto"` resolves to
+- **Linux on x86_64 or aarch64** for the sandbox. The jail uses Landlock, seccomp, and
+  user namespaces, which are Linux-only; its seccomp filter exists for those two
+  architectures, and elsewhere `auto` resolves to unsandboxed `none` behind a warning. macOS runs unsandboxed: the default `isolation = "auto"` resolves to
   `none`, commands run as ordinary subprocesses behind a startup warning, and an explicit
   `strict` or `hardened` isolation is refused. On Windows use WSL; the CLI does not run
   natively there.

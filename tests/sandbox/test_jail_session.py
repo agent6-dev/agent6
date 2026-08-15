@@ -209,6 +209,36 @@ def test_a_session_command_gets_the_configured_memory_cap(tmp_path: Path) -> Non
         session.close()
 
 
+def test_a_backgrounded_command_gets_the_same_memory_cap(tmp_path: Path) -> None:
+    """The cap must not depend on the transport: the detached spawn shares the
+    capture transport's child setup, so a backgrounded command cannot allocate
+    past the `[sandbox] memory_limit_mb` every foreground command honours."""
+    session = JailSession.open(
+        JailPolicy(
+            cwd=tmp_path, argv=("true",), isolation="strict", timeout_s=30.0, memory_limit_mb=256
+        )
+    )
+    try:
+        pid = session.start_background(
+            (
+                "python3",
+                "-c",
+                "import pathlib; bytearray(600 * 1024 * 1024);"
+                " pathlib.Path('allocated').write_text('x')",
+            )
+        )
+        deadline = time.monotonic() + 10.0
+        status = session.status_background(pid)
+        while status.running and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = session.status_background(pid)
+        assert status.running is False, "allocator still alive past the cap"
+        assert status.returncode != 0, status
+        assert not (tmp_path / "allocated").exists()
+    finally:
+        session.close()
+
+
 def test_a_backgrounded_command_stops_through_the_session(tmp_path: Path) -> None:
     """Its pid is namespace-local, so only the launcher can signal it: stop
     forwards the pid there. The kill is followed by a reap, or the pid stays

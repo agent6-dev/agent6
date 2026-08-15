@@ -378,9 +378,11 @@ fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     // rather than one per level plus a Python copy. It costs the invariant that
     // "the launcher ran" implied "confinement was applied", so the warning
     // below is loud and the Python side surfaces it as `jail.degraded`.
+    // The memory rlimit is not confinement and is not disabled here: a
+    // configured memory_limit_mb still applies per request on every transport.
     eprintln!(
         "[agent6-jail] WARNING: running UNCONFINED (isolation = \"none\"): no namespaces, \
-         no Landlock, no seccomp, no memory cap. Commands run with this process's own access."
+         no Landlock, no seccomp. Commands run with this process's own access."
     );
     let _ = io::stderr().flush();
     // Still worth doing without a sandbox: in serve mode the launcher answers
@@ -1656,8 +1658,14 @@ fn apply_seccomp() -> io::Result<()> {
     } else if cfg!(target_arch = "aarch64") {
         TargetArch::aarch64
     } else {
-        // Skip seccomp on unknown arches.
-        return Ok(());
+        // Fail closed: strict and hardened promise a seccomp filter, and a
+        // silent no-op would report isolation that was never installed. The
+        // supported set is mirrored by sandbox/detect.py (auto degrades,
+        // explicit refuses, both before this point on agent6's own path).
+        return Err(io::Error::other(
+            "no seccomp filter for this architecture (filters exist for \
+             x86_64 and aarch64); set isolation = \"none\" to run without one",
+        ));
     };
     // Default-allow with explicit deny of the worst offenders. We are inside
     // user-ns + landlock already; seccomp here is a third layer to block obvious
@@ -2201,15 +2209,15 @@ fn hide_from_children() -> io::Result<()> {
 unsafe fn drop_capabilities() -> io::Result<()> {
     // The bounding set first: what leaves it cannot be regained, file
     // capabilities included. EINVAL means we walked past this kernel's last.
-    // EPERM means no CAP_SETPCAP, which on a profile with no user namespace
-    // means an ordinary uid with nothing to drop -- there the launcher's own
-    // /proc entry is already out of reach, since ptrace_may_access on a
-    // non-dumpable process wants CAP_SYS_PTRACE in the INITIAL namespace.
+    // EPERM means no CAP_SETPCAP; the bounding set stays, but the capset
+    // below still clears effective/permitted/inheritable -- dropping one's
+    // own sets needs no capability, so a profile that RETAINS caps without
+    // CAP_SETPCAP (an elevated uid, a caps-granting container) still hands
+    // the command an empty set rather than keeping CAP_SYS_PTRACE live.
     for cap in 0..=63 {
         if unsafe { libc::prctl(libc::PR_CAPBSET_DROP, cap as libc::c_ulong, 0, 0, 0) } != 0 {
             match io::Error::last_os_error().raw_os_error() {
-                Some(libc::EINVAL) => break,
-                Some(libc::EPERM) => return Ok(()),
+                Some(libc::EINVAL) | Some(libc::EPERM) => break,
                 _ => return Err(io::Error::last_os_error()),
             }
         }
@@ -2298,30 +2306,17 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
-    let mut cmd = Command::new(&spec.argv[0]);
-    cmd.args(&spec.argv[1..]);
-    cmd.env_clear();
-    for (k, v) in spec.env {
-        cmd.env(k, v);
-    }
-    if !spec.env.iter().any(|(k, _)| k == "PATH") {
-        cmd.env("PATH", "/usr/bin:/bin");
-    }
-    if !spec.env.iter().any(|(k, _)| k == "HOME") {
-        cmd.env("HOME", "/home");
-    }
+    // The same child setup as the capture and exec transports (env, cwd,
+    // process group, capability drop, memory limit): a backgrounded command
+    // outlives the request, so it is the one with time to go looking for the
+    // launcher's fds, and its rlimits must not depend on the transport.
+    let mut cmd = build_command(spec, cwd);
+    apply_child_limits(&mut cmd, spec.memory_limit_mb);
     // The caller redirects its own output (as the background tool does), so
     // nothing here holds a pipe open across requests.
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
-    cmd.current_dir(cwd);
-    cmd.process_group(0);
-    // A backgrounded command outlives the request, so it is the one with time
-    // to go looking for the launcher's fds.
-    unsafe {
-        cmd.pre_exec(|| drop_capabilities());
-    }
     let child = cmd.spawn()?;
     let pid = child.id() as i32;
     let result = serde_json::json!({

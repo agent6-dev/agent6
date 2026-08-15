@@ -56,6 +56,7 @@ def _linux_env() -> Environment:
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=True,
         landlock_abi=4,
+        seccomp_arch_supported=True,
         sandbox_available=True,
     )
 

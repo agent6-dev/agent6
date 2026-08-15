@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import functools
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -42,6 +43,10 @@ class Environment:
     # not a kernel-version guess: a >=5.13 kernel can still ship with the
     # Landlock LSM compiled out or disabled via `lsm=`.
     landlock_abi: int
+    # The jail's seccomp filter exists for this CPU architecture. Mirrors the
+    # arch set in jail/src/main.rs `apply_seccomp` (which fails closed); both
+    # strict and hardened promise that filter, so neither can run without it.
+    seccomp_arch_supported: bool
     sandbox_available: bool
 
     @property
@@ -63,7 +68,7 @@ class Environment:
         resolves to `none` -- truthfully unsandboxed and loudly warned, never
         a hardened label that would silently confine nothing.
         """
-        if not self.sandbox_available:
+        if not self.sandbox_available or not self.seccomp_arch_supported:
             return "none"
         if self.userns_supported:
             return "strict"
@@ -232,6 +237,11 @@ def degrade_reason(env: Environment) -> str | None:
     """
     if not env.sandbox_available:
         return f"there is no Linux kernel sandbox on {sys.platform!r}"
+    if not env.seccomp_arch_supported:
+        return (
+            f"the jail's seccomp filter does not exist for {platform.machine()!r} "
+            "(filters exist for x86_64 and aarch64)"
+        )
     if env.userns_supported:
         return None
     cause = _userns_block_cause(env)
@@ -252,6 +262,7 @@ def detect() -> Environment:
         kernel=read_kernel(),
         userns_supported=probe_userns_supported(),
         landlock_abi=probe_landlock_abi(),
+        seccomp_arch_supported=platform.machine() in ("x86_64", "aarch64"),
         sandbox_available=sandbox_available(),
     )
 
@@ -302,6 +313,13 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
         # consent. The loud run-startup warning fires either way; when it also
         # coincides with auto-approved run_command an extra confirm gate does.
         return "none"
+    if requested in ("strict", "hardened") and not env.seccomp_arch_supported:
+        raise IsolationUnavailableError(
+            f"sandbox.isolation = {requested!r} requires the jail's seccomp filter, "
+            f"which does not exist for {platform.machine()!r} (filters exist for "
+            "x86_64 and aarch64). Set isolation = 'auto' to run unsandboxed on "
+            "this machine, or 'none' to opt out explicitly."
+        )
     if requested == "strict":
         if not env.userns_supported:
             raise IsolationUnavailableError(

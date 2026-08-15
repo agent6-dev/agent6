@@ -36,6 +36,7 @@ def test_a_default_degrades_with_a_warning() -> None:
         kernel=KernelInfo(raw="7.0.0", major=7, minor=0),
         userns_supported=False,
         landlock_abi=4,
+        seccomp_arch_supported=True,
         sandbox_available=True,
     )
     warn_sandbox_gaps("hardened", env, Config(), reporter=reporter)
