@@ -56,6 +56,14 @@ _PIPELINE_TIER = (
 )
 
 
+def _nid(name: str) -> str:
+    """Mermaid-safe node id for *name*. Ids are DATA (package, method, and
+    tool names), and mermaid claims bare words like ``graph``, ``call`` and
+    ``end`` anywhere in a flowchart body; the prefix keeps every id off that
+    list, and the raw name rides only inside a quoted label."""
+    return "n_" + re.sub(r"\W", "_", name)
+
+
 def _layering_mermaid() -> str:
     proc = subprocess.run(
         ["uv", "run", "tach", "show", "--mermaid", "-o", "/dev/stdout"],
@@ -64,9 +72,13 @@ def _layering_mermaid() -> str:
         check=True,
         cwd=_ROOT,
     )
+    return _layering_from_tach(proc.stdout)
+
+
+def _layering_from_tach(mermaid_graph: str) -> str:
     edges: set[tuple[str, str]] = set()
     substrate: set[str] = set()
-    for line in proc.stdout.splitlines():
+    for line in mermaid_graph.splitlines():
         m = re.match(r"\s*(\S+) --> (\S+)", line)
         if m is None:
             continue
@@ -78,12 +90,13 @@ def _layering_mermaid() -> str:
         else:
             substrate.update(x for x in (a, b) if x not in _CORE_LAYERS)
     lines = ["graph TD"]
-    lines += [f"    {a} --> {b}" for a, b in sorted(edges)]
+    lines += [f'    {_nid(n)}["{n}"]' for n in _CORE_LAYERS if any(n in e for e in edges)]
+    lines += [f"    {_nid(a)} --> {_nid(b)}" for a, b in sorted(edges)]
     lines.append('    subgraph substrate["shared substrate (every layer may use)"]')
     row = sorted(substrate)
     # Rows of six: one long invisible-link chain renders wider than a phone.
     for i in range(0, len(row), 6):
-        lines.append("        " + " ~~~ ".join(row[i : i + 6]))
+        lines.append("        " + " ~~~ ".join(f'{_nid(x)}["{x}"]' for x in row[i : i + 6]))
     lines.append("    end")
     return "\n".join(lines)
 
@@ -125,9 +138,10 @@ def _tier_callgraph(rel_path: str, tier: tuple[str, ...]) -> str:
     lines = ["graph TD"]
     for name in tier:
         if name in connected:
-            lines.append(f'    {name.lstrip("_")}["{name.lstrip("_")}"]')
+            label = name.lstrip("_")
+            lines.append(f'    {_nid(label)}["{label}"]')
     for a, b in sorted(edges):
-        lines.append(f"    {a.lstrip('_')} --> {b.lstrip('_')}")
+        lines.append(f"    {_nid(a.lstrip('_'))} --> {_nid(b.lstrip('_'))}")
     return "\n".join(lines)
 
 
@@ -178,8 +192,9 @@ def _dispatch_mermaid() -> str:
                     handlers.append(v.attr)
     lines = [graph]
     for h in handlers:
-        lines.append(f'    {h.lstrip("_")}["{h.lstrip("_")}"]')
-        lines.append(f"    run_handler -.->|table| {h.lstrip('_')}")
+        label = h.lstrip("_")
+        lines.append(f'    {_nid(label)}["{label}"]')
+        lines.append(f"    {_nid('run_handler')} -.->|table| {_nid(label)}")
     return "\n".join(lines)
 
 
