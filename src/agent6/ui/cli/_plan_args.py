@@ -24,6 +24,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "plan",
         help=(
             "Planning pass: same loop, no edit tools, writes plan.md."
+            ' A configured `run_commands = "yes"` clamps to `"ask"`.'
             " Pair with `agent6 run --from-plan <run-id>` to execute."
             " Inspect with `plan show <id>` / `plan edit <id>`."
         ),
@@ -88,9 +89,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         sub,
         "ask",
         help=(
-            "Q&A: investigate the repo and answer a question in prose"
-            " (no edit tools, no commits). Brainstorm, rubber-duck, or ask how to do"
-            " something. `ask list` enumerates saved asks."
+            "Q&A in prose: no edit tools, no commits, no repo required."
+            ' A configured `run_commands = "yes"` clamps to `"ask"`.'
+            " `ask list` shows saved asks."
         ),
     )
     # `ask <question>` runs a Q&A; `ask list` enumerates saved asks. `query` is
