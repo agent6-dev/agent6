@@ -189,7 +189,7 @@ from agent6.workflows._parallel_dispatch import (
     segment_stamp,
     summary_text,
 )
-from agent6.workflows._prompt_blocks import build_system_prompt
+from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
 from agent6.workflows._prompt_revision import (
     PromptRevision,
     PromptRevisionError,
@@ -826,30 +826,7 @@ class Workflow:
         # Cache breakpoints are rolled by the conversation each iteration,
         # so the growing history stays cached across turns.
         dag_hint = initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
-        if self.mode == "plan":
-            instructions = (
-                "Begin planning. Use the investigation tools to gather what you"
-                " need, then call `finish_planning` exactly once with the"
-                " plan markdown."
-            )
-        elif self.mode == "machine":
-            instructions = (
-                "Author the machine now and return it via a single"
-                " `finish_session` call (the complete `.asm.toml` in `result.toml`)."
-                " Do not edit files or run anything."
-            )
-        elif self.mode == "agent":
-            instructions = (
-                "Do the task above, then call `finish_session` exactly once with a"
-                " `result` object matching the schema named in the task. This is"
-                " ONE step of a state machine, not a coding session — read only"
-                " what the task needs and do NOT edit the repo or run verify."
-            )
-        else:
-            instructions = (
-                "Begin. Use the tools to read what you need, make edits,"
-                " run verify, and call `finish_session` when done."
-            )
+        instructions = initial_instructions(self.mode, self.config.sandbox.run_commands)
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = Conversation()
         conversation.notice(initial_user)

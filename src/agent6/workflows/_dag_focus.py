@@ -149,12 +149,13 @@ def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
 
 
 def initial_dag_hint(root_id: str | None, mode: str, decompose: bool) -> str:
-    """The DAG hint appended to the first user message. The decompose-first
-    directive is RUN-MODE ONLY -- it references the run-only `<decompose-first>`
-    system block and tells the worker to edit, neither of which fits plan/ask
-    (which also wire a curator, so `root_id` is non-None there). Every other
-    case gets the optional-DAG hint."""
-    if root_id is None:
+    """The DAG hint appended to the first user message, only for modes whose
+    tool surface HAS the DAG tools (run, plan; see tools/schema.py): ask wires
+    a curator too, but exposes no `add_task`, so a hint there names a tool the
+    model cannot call. The decompose-first directive is RUN-MODE ONLY -- it
+    references the run-only `<decompose-first>` system block and tells the
+    worker to edit."""
+    if root_id is None or mode not in ("run", "plan"):
         return ""
     if mode == "run" and decompose:
         return (

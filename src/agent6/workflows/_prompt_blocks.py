@@ -70,6 +70,48 @@ SKILLS_INDEX_MAX_CHARS = 8000
 SKILL_ALWAYS_MAX_CHARS = 24000
 
 
+def initial_instructions(mode: str, run_commands: str) -> str:
+    """The operational header on the first user message, derived from the
+    mode's REAL tool surface (tools/schema.py): ask has no edit or finish
+    tools and answers by prose; a `run_commands = "no"` run has no verify
+    gate to run."""
+    if mode == "plan":
+        return (
+            "Begin planning. Use the investigation tools to gather what you"
+            " need, then call `finish_planning` exactly once with the"
+            " plan markdown."
+        )
+    if mode == "machine":
+        return (
+            "Author the machine now and return it via a single"
+            " `finish_session` call (the complete `.asm.toml` in `result.toml`)."
+            " Do not edit files or run anything."
+        )
+    if mode == "agent":
+        return (
+            "Do the task above, then call `finish_session` exactly once with a"
+            " `result` object matching the schema named in the task. This is"
+            " ONE step of a state machine, not a coding session — read only"
+            " what the task needs and do NOT edit the repo or run verify."
+        )
+    if mode == "ask":
+        return (
+            "Answer the question above. Use the read tools (and `agent6_docs`"
+            " for agent6's own behaviour) to gather what you need; when you"
+            " know the answer, your final prose message IS the answer -- there"
+            " is no finish call and nothing to edit."
+        )
+    if run_commands == "no":
+        return (
+            "Begin. Use the tools to read what you need, make edits, and"
+            " call `finish_session` when done."
+        )
+    return (
+        "Begin. Use the tools to read what you need, make edits,"
+        " run verify, and call `finish_session` when done."
+    )
+
+
 def skills_block(resolved: ResolvedSkills) -> str:
     """Render the skills system-prompt parts: full text for `always` skills,
     a bounded one-line-per-skill index for the rest. Empty when no skills."""

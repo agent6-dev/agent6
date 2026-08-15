@@ -218,18 +218,20 @@ def test_decompose_defaults_auto(tmp_path: Path) -> None:
     assert Config().prompt.decompose == "auto"
 
 
-def test_decompose_hint_is_run_mode_only() -> None:
-    """The decompose-first user-message hint must NOT leak into plan/ask, which
-    also wire a curator (root_id non-None): it references the run-only
-    <decompose-first> block and tells the worker to edit."""
+def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
+    """The decompose-first directive is run-only (it references the run-only
+    <decompose-first> block and tells the worker to edit), and ANY hint renders
+    only for modes whose tool surface has `add_task` (run, plan): ask wires a
+    curator too but exposes no DAG tools, so its hint named a tool the model
+    could not call."""
     hint = loopmod.initial_dag_hint  # pyright: ignore[reportPrivateUsage]
     rid = "01" + "A" * 24
     run_dec = hint(rid, "run", True)
     assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
-    for mode in ("plan", "ask", "machine", "agent"):
-        h = hint(rid, mode, True)
-        assert "<decompose-first>" not in h and "Do not edit before the plan" not in h
-        assert "optional" in h  # falls back to the plain optional-DAG hint
+    plan_hint = hint(rid, "plan", True)
+    assert "<decompose-first>" not in plan_hint and "optional" in plan_hint
+    for mode in ("ask", "machine", "agent"):
+        assert hint(rid, mode, True) == ""
     # decompose off, or no curator, never emits the directive
     assert "<decompose-first>" not in hint(rid, "run", False)
     assert hint(None, "run", True) == ""
