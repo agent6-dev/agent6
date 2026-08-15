@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for Phase 5 `agent6 machine create`: authoring prompts and CLI flow."""
+"""`agent6 machine create`: authoring prompts and the CLI flow."""
 
 from __future__ import annotations
 
