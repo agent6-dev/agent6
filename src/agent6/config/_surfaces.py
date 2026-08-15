@@ -106,6 +106,14 @@ class MachineConfig(BaseModel):
             "replay` rebuilds from the journal). `0` keeps all."
         ),
     )
+    state_log_keep: int = Field(
+        ge=0,
+        default=50,
+        description=(
+            "Per-state watchable log dirs kept per instance (`<instance>/states/`); the journal "
+            "keeps the full transition history regardless. `0` keeps all."
+        ),
+    )
     notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
 
 

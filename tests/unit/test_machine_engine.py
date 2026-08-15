@@ -1292,6 +1292,33 @@ def test_per_state_agent_log_path_and_prune(tmp_path: Path) -> None:
     assert sorted(p.name for p in states_root.iterdir()) == ["0002-s", "0003-s", "0004-s"]
 
 
+def test_state_log_keep_zero_disables_pruning(tmp_path: Path) -> None:
+    """`[machine].state_log_keep = 0` keeps every per-state log dir, like
+    `snapshot_keep`; retention is an audited config value, not a hidden
+    hardcoded deletion."""
+    from agent6.machine.engine import LiveWorld
+
+    journal = MachineJournal(tmp_path / "inst")
+    states_root = tmp_path / "inst" / "states"
+
+    def fake_runner(req: AgentRequest, events_log: Path | None) -> AgentExecResult:
+        if events_log is not None:
+            events_log.parent.mkdir(parents=True, exist_ok=True)
+            events_log.write_text("{}\n", encoding="utf-8")
+        return AgentExecResult(reason="finish_session", payload=None)
+
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=journal,
+        agent_runner=fake_runner,
+        state_log_root=states_root,
+        state_log_keep=0,
+    )
+    for seq in range(5):
+        world.run_agent(AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq))
+    assert len(list(states_root.iterdir())) == 5
+
+
 def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
     """No state_log_root -> no per-state log (the create authoring agent and any
     runner that doesn't want logs get None)."""

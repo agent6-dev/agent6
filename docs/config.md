@@ -348,6 +348,7 @@ OpenRouter listing.
 | Field | Default | Meaning |
 |---|---|---|
 | `snapshot_keep` | `5` | Blackboard snapshots kept per instance (recovery reads only the latest; `machine replay` rebuilds from the journal). `0` keeps all. |
+| `state_log_keep` | `50` | Per-state watchable log dirs kept per instance (`<instance>/states/`); the journal keeps the full transition history regardless. `0` keeps all. |
 
 ### `[machine.notify]` (optional)
 

@@ -253,8 +253,11 @@ def _state_log_seq(p: Path) -> int:
 def _prune_state_logs(root: Path, *, keep: int) -> None:
     """Keep only the most recent *keep-1* per-state log dirs under *root* (leaving
     room for the one about to be written), so a long-running machine's reasoning
-    logs stay bounded. The journal (the durable audit) keeps the full transition
-    history regardless. Best effort: never let cleanup break a run."""
+    logs stay bounded. `keep=0` prunes nothing, like `snapshot_keep`. The journal
+    (the durable audit) keeps the full transition history regardless. Best
+    effort: never let cleanup break a run."""
+    if keep == 0:
+        return
     try:
         dirs = sorted((p for p in root.iterdir() if p.is_dir()), key=_state_log_seq)
     except OSError:
@@ -297,6 +300,7 @@ class LiveWorld:
     # `<instance>/states`), pruned to the most recent `state_log_keep` so a
     # long-running machine's logs stay bounded. None disables per-state logs.
     state_log_root: Path | None = None
+    # From [machine].state_log_keep (the CLI wires it); 0 keeps all.
     state_log_keep: int = 50
     # Out-of-band operator notify hook, fired on a `notify` message and on the
     # terminal `machine.end`. The CLI wires it to the operator's configured argv

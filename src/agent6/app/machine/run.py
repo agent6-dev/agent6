@@ -371,6 +371,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # Each agent state writes its own watchable logs.jsonl here, so a
                 # running machine is followable like a run (pruned to keep recent).
                 state_log_root=root / "states",
+                state_log_keep=cfg.machine.state_log_keep,
                 notify_hook=surface_notify,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
