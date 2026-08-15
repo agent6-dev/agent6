@@ -428,10 +428,11 @@ every surface addresses a session by bare id:
 - `loop_state.json`: the latest resume snapshot that drives `agent6 resume`,
   written by the main process before each LLM call and at iteration end.
 - `checkpoints/<NNNN>.json`: append-only per-turn snapshots (NNNN =
-  zero-padded `next_iteration`), each a byte-identical copy of
-  `loop_state.json` at that turn (the snapshot payload already carries the
-  workspace `head_sha` and curator `graph_version`). `loop_state.json` is the
-  latest-pointer for resume; `checkpoints/` is the per-turn history.
+  zero-padded turn), written once each at the turn's pre-call boundary: the
+  state turn NNNN's provider call consumes (the payload carries the workspace
+  `head_sha` and curator `graph_version`). `loop_state.json` is the
+  latest-pointer for resume; `checkpoints/` is the per-turn history
+  `fork --at-turn` addresses.
   `agent6 fork --at-turn N` rolls a run back to turn N by cloning the matching
   checkpoint into a new run. Kept in full (a run is dozens of turns); written
   by the main process alongside `loop_state.json`.

@@ -1174,6 +1174,9 @@ class Workflow:
             next_iteration=iteration,
             root_task_id=root_task_id,
             state=state,
+            # The one numbered-checkpoint writer: this state is what turn
+            # `iteration`'s provider call consumes.
+            write_checkpoint=True,
         )
         return wire
 
@@ -3356,14 +3359,19 @@ class Workflow:
         next_iteration: int,
         root_task_id: str | None,
         state: _LoopState,
+        write_checkpoint: bool = False,
     ) -> None:
         """Write loop state to disk for resume.
 
         Called before each LLM call and again at the end of each iteration
         (after the executed tool_results are appended) so a crash after a
         non-idempotent tool dispatch resumes from AFTER the executed tools
-        rather than replaying them. Atomic via tmp-file + replace so a crash
-        mid-write leaves the prior snapshot intact. No-op if
+        rather than replaying them. Every call advances `loop_state.json`
+        (the latest pointer resume follows); only the pre-call save passes
+        `write_checkpoint` and owns `checkpoints/<next_iteration>.json` -- the
+        state that turn's provider call consumes, written once, so
+        `fork --at-turn N` has one meaning. Atomic via tmp-file + replace so a
+        crash mid-write leaves the prior snapshot intact. No-op if
         `resume_state_path` is None (e.g. unit tests).
         """
         if self.resume_state_path is None:
@@ -3402,8 +3410,9 @@ class Workflow:
             # as the latest pointer. If the second write fails, default fork still
             # follows loop_state.json, while explicit --at-turn can use the durable
             # checkpoint.
-            cp_dir = self.resume_state_path.parent / "checkpoints"
-            atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
+            if write_checkpoint:
+                cp_dir = self.resume_state_path.parent / "checkpoints"
+                atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
             atomic_write(self.resume_state_path, blob)
         except OSError as exc:
             if not self._snapshot_write_failed:

@@ -137,10 +137,12 @@ SNAPSHOT_VERSION = 2
 
 class SessionSnapshot(BaseModel):
     """The persisted state of an in-flight session: what `resume` re-enters and what
-    `fork` clones. The loop writes it before each LLM call and again after each
-    iteration's tools land, to `loop_state.json` and an append-only
-    `checkpoints/<NNNN>.json` (identical bytes), so a crash resumes from the last
-    safe point. Provider-agnostic (anthropic-shaped `messages`): the OpenAI
+    `fork` clones. The loop advances `loop_state.json` (the latest pointer) at
+    every safe boundary -- before each LLM call and after each iteration's tools
+    land -- and writes `checkpoints/<NNNN>.json` once per turn at the pre-call
+    boundary: the state turn NNNN's provider call consumes, so a crash resumes
+    from the last safe point and `fork --at-turn` has one meaning.
+    Provider-agnostic (anthropic-shaped `messages`): the OpenAI
     provider translates per call, so its transcript can't seed a cross-provider
     resume.
 

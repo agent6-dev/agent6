@@ -3656,7 +3656,13 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=1,
+        root_task_id=None,
+        state=_state(),
+        write_checkpoint=True,
     )
     assert snap_path.is_file()
     # The per-turn checkpoint lands under checkpoints/; nothing else (no .tmp).
@@ -3686,7 +3692,13 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
     wf = _wf(resume_state_path=snap_path)
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=9, root_task_id=None, state=_state()
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=9,
+        root_task_id=None,
+        state=_state(),
+        write_checkpoint=True,
     )
 
     assert writes == [tmp_path / "checkpoints" / "0009.json", snap_path]

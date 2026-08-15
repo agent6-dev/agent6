@@ -3,8 +3,8 @@
 """Per-turn checkpoint store + `agent6 fork` (clone-to-new-session recovery).
 
 Covers:
-- the loop's `_save_resume_snapshot` ALSO writes append-only `checkpoints/<NNNN>.json`
-  carrying head_sha + graph_version,
+- the loop's pre-call save writes the append-only `checkpoints/<NNNN>.json`
+  carrying head_sha + graph_version (every save advances loop_state.json),
 - `agent6 fork` clones state, writes lineage manifest fields, cuts the branch,
   and appends `lineage.jsonl`,
 - forking a pre-checkpoint (old) run degrades gracefully.
@@ -92,7 +92,13 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     state = _LoopState(original_task="t", tool_calls=0)
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=3, root_task_id=None, state=state
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=3,
+        root_task_id=None,
+        state=state,
+        write_checkpoint=True,
     )
 
     # checkpoints live next to loop_state.json (the run dir).
@@ -130,11 +136,57 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
             next_iteration=turn,
             root_task_id=None,
             state=state,
+            write_checkpoint=True,
         )
     cp_dir = session_dir / "checkpoints"
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
     # Turn 1's payload was not clobbered by later turns.
     assert load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
+
+
+def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -> None:
+    """A turn's number used to be written by up to three saves (pre-call,
+    post-tools, the parallel-group bump), each with a different state, so
+    `fork --at-turn N` meant whichever write came last. Only the pre-call save
+    (write_checkpoint=True) names a checkpoint; every save still advances
+    loop_state.json, the pointer resume and default fork follow."""
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    snap = session_dir / "loop_state.json"
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+        )
+    )
+    wf = _wf(root=repo, config=config, resume_state_path=snap)
+    state = _LoopState(original_task="t", tool_calls=0)
+
+    def save(content: str, turn: int, *, checkpoint: bool) -> None:
+        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=[{"role": "user", "content": content}],
+            tool_calls=0,
+            next_iteration=turn,
+            root_task_id=None,
+            state=state,
+            write_checkpoint=checkpoint,
+        )
+
+    save("pre-call of turn 2", 2, checkpoint=True)
+    save("after turn 2's tools", 3, checkpoint=False)
+    save("pre-call of turn 3", 3, checkpoint=True)
+    save("after turn 3's tools", 4, checkpoint=False)
+
+    cp_dir = session_dir / "checkpoints"
+    assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0002.json", "0003.json"]
+    # The checkpoint holds what turn 3's call consumed, not a later overwrite.
+    assert (
+        load_session_snapshot(cp_dir / "0003.json").messages[0]["content"] == "pre-call of turn 3"
+    )
+    # Every save advanced the pointer.
+    assert load_session_snapshot(snap).messages[0]["content"] == "after turn 3's tools"
 
 
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
