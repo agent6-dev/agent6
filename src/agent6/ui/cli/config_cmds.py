@@ -305,7 +305,24 @@ def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None)
     return 0
 
 
-def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
+def _flag_shadow_note(key: str, config_path: Path | None) -> str | None:
+    """A note when an active `--config FILE` sets *key*: the write above landed
+    in a lower layer, so invocations carrying the flag keep seeing the file's
+    value and the edit reads as ineffective without this line."""
+    if config_path is None:
+        return None
+    try:
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError:
+        return None
+    if eff.sources.get(key) != "flag":
+        return None
+    return f"note: --config {config_path} overrides {key} while that flag is used."
+
+
+def _cmd_config_set(
+    key: str, value: str, *, repo: bool, machine: Path | None, config_path: Path | None = None
+) -> int:
     """Set a scalar leaf in the target file (global / repo / machine overlay)."""
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
@@ -327,10 +344,14 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     if machine is None:
         _warn_if_still_broken()
     print(f"Set {key} = {format_value(parsed)} in {target}")
+    if machine is None and (note := _flag_shadow_note(key, config_path)):
+        print(note)
     return 0
 
 
-def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:
+def _cmd_config_unset(
+    key: str, *, repo: bool, machine: Path | None, config_path: Path | None = None
+) -> int:
     """Remove a leaf so it reverts to the next-lower layer / built-in default."""
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
@@ -357,6 +378,8 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:
     if machine is None:
         _warn_if_still_broken()
     print(f"Unset {key} in {target}")
+    if machine is None and (note := _flag_shadow_note(key, config_path)):
+        print(note)
     return 0
 
 

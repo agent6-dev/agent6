@@ -783,3 +783,45 @@ def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
 
     assert err is not None and "kept as written" in err
     assert target.read_text(encoding="utf-8") == _BAD  # NOT rolled back
+
+
+def test_config_set_names_the_flag_file_that_shadows_the_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 --config F config set` writes the global config while F keeps
+    overriding the key for every invocation that carries the flag; without the
+    note the successful edit reads as ineffective."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    flag = tmp_path / "f.toml"
+    flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    rc = main(["--config", str(flag), "config", "set", "sandbox.run_commands", "no"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert f"--config {flag} overrides sandbox.run_commands" in out
+    # A key the flag file does not set carries no note.
+    rc = main(["--config", str(flag), "config", "set", "sandbox.protect_git", "true"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "overrides sandbox.protect_git" not in out
+
+
+def test_config_show_legend_names_the_flag_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The source column says "flag"; the legend must read back to the one
+    path the operator typed."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    flag = tmp_path / "f.toml"
+    flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
+    rc = main(["--config", str(flag), "config", "show"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert f"flag = {flag}" in out

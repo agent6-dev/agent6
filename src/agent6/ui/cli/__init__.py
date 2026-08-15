@@ -544,9 +544,13 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.config_command == "get":
         return _cmd_config_get(args.config, args.key, machine=args.machine_file)
     if args.config_command == "set":
-        return _cmd_config_set(args.key, args.value, repo=args.repo, machine=args.machine_file)
+        return _cmd_config_set(
+            args.key, args.value, repo=args.repo, machine=args.machine_file, config_path=args.config
+        )
     if args.config_command == "unset":
-        return _cmd_config_unset(args.key, repo=args.repo, machine=args.machine_file)
+        return _cmd_config_unset(
+            args.key, repo=args.repo, machine=args.machine_file, config_path=args.config
+        )
     if args.config_command == "add":
         return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine_file)
     if args.config_command == "remove":

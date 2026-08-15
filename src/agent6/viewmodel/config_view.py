@@ -386,4 +386,9 @@ def render_show(
     )
     lines.append("source: default | " + (legend_layers or "(no config files; all defaults)"))
     lines.append("* = set by a config layer (see the source column)")
+    for layer in eff.layers:
+        # "flag" alone loses the one path the operator typed; name the file so
+        # the source column reads back to something on disk.
+        if layer.name == "flag" and layer.path is not None:
+            lines.append(f"flag = {layer.path}")
     return "\n".join(lines).rstrip("\n") + "\n"
