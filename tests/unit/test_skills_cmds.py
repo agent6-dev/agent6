@@ -396,3 +396,53 @@ def test_repo_skill_state_honors_the_custom_state_base(
     (gdir / "config.toml").write_text(f'[agent6]\nstate_dir = "{custom}"\n', encoding="utf-8")
     target = _state_target(repo=True)
     assert target.is_relative_to(custom), f"wrote {target}, outside the custom base"
+
+
+def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A skillmd origin whose frontmatter now declares a new name is a rename:
+    the skill reinstalls under the new name, the old directory goes (never two
+    live copies), and the row says what happened."""
+    src = _write_skill_file(env / "src" / "SKILL.md", "old-name")
+    assert _cmd_skills_install(str(src), force=False) == 0
+    _write_skill_file(src, "new-name")
+    capsys.readouterr()
+    assert _cmd_skills_update("old-name") == 0
+    out = capsys.readouterr().out
+    assert "renamed to new-name" in out
+    assert _installed(env, "new-name").is_dir()
+    assert not _installed(env, "old-name").exists()
+
+
+def test_install_names_a_surviving_disabled_state(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`skills.state.<name> = "disabled"` outlives remove; a reinstall under
+    that name must not claim "Enabled and active now"."""
+    src = _write_skill_file(env / "src" / "SKILL.md", "sleeper")
+    assert _cmd_skills_install(str(src), force=False) == 0
+    _cmd_skills_disable("sleeper", repo=False)
+    assert _cmd_skills_remove("sleeper") == 0
+    out = capsys.readouterr().out
+    assert 'skills.state.sleeper = "disabled" remains' in out
+    assert _cmd_skills_install(str(src), force=False) == 0
+    out = capsys.readouterr().out
+    assert "Enabled and active now" not in out
+    assert 'skills.state.sleeper = "disabled"' in out
+
+
+def test_enable_clears_a_state_leaf_whose_skill_is_gone(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """remove deletes the install, never the operator's config -- so the CLI
+    that wrote the leaf must still be able to clear it afterwards."""
+    src = _write_skill_file(env / "src" / "SKILL.md", "ghost")
+    assert _cmd_skills_install(str(src), force=False) == 0
+    _cmd_skills_disable("ghost", repo=False)
+    assert _cmd_skills_remove("ghost") == 0
+    capsys.readouterr()
+    assert _cmd_skills_enable("ghost", always=False, repo=False) == 0
+    out = capsys.readouterr().out
+    assert "Unset skills.state.ghost" in out
+    # A name with no leaf and no skill is still a typo, not cleanup.
+    with pytest.raises(OperatorError, match="unknown skill"):
+        _cmd_skills_enable("nonexistent", always=False, repo=False)

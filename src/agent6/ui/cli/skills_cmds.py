@@ -288,7 +288,7 @@ def _install_from_git(url: str, *, force: bool) -> list[str]:
         ]
 
 
-def _cmd_skills_install(url: str, *, force: bool) -> int:
+def _cmd_skills_install(url: str, *, force: bool, config_path: Path | None = None) -> int:
     local = Path(url).expanduser()
     if local.exists():
         installed = _install_from_local(local, force=force)
@@ -319,17 +319,47 @@ def _cmd_skills_install(url: str, *, force: bool) -> int:
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"
             )
-    print(sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
+    if _print_disabled_notes(installed, config_path):
+        print(sgr("Installed; `agent6 skills list` shows the effective state.", "2"))
+    else:
+        print(sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
     return 0
 
 
-def _refetch_skill(name: str, origin: dict[str, str]) -> str:
-    """Re-install one skill in place from its recorded origin. Return "" on
-    success or a short skip note when the source no longer exists.
+def _print_disabled_notes(installed: list[str], config_path: Path | None) -> bool:
+    """Name every installed skill a surviving `skills.state = "disabled"` leaf
+    covers; True when any did (the closing line must not read "active")."""
+    disabled = sorted(n for n in installed if _state_map(config_path).get(n) == "disabled")
+    for name in disabled:
+        print(
+            f'note: skills.state.{name} = "disabled" applies to this name;'
+            f" `agent6 skills enable {name}` clears it"
+        )
+    return bool(disabled)
+
+
+def _state_map(config_path: Path | None) -> dict[str, str]:
+    """The effective `[skills.state]` map, {} when config is unreadable: the
+    notes built on it then just do not print, and the command's own work is
+    already done."""
+    try:
+        return dict(load_effective(Path.cwd(), config_path).config.skills.state)
+    except Exception:
+        return {}
+
+
+def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
+    """Re-install one skill in place from its recorded origin. Return the
+    installed name and "" on success, or *name* and a short skip note when the
+    source no longer exists.
 
     Dispatch on the recorded `kind`, not on whether a path happens to exist: a
     local file or dir that was moved or deleted is a clean skip, not a failed
     HTTP fetch of the path.
+
+    A skillmd origin whose frontmatter now declares a different name is a
+    RENAME: the skill installs under the new name and the old directory goes,
+    or the update would leave two live copies while reporting one.
     """
     url, kind = origin["url"], origin.get("kind", "skillmd")
     if kind == "git":
@@ -338,9 +368,9 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> str:
             sha = _git_clone(url, clone)
             src = next((d for d in _repo_skill_dirs(clone) if d.name == name), None)
             if src is None:
-                return "(gone from origin)"
+                return name, "(gone from origin)"
             _install_skill_dir(src, url=url, kind="git", source_sha=sha, force=True)
-        return ""
+        return name, ""
     if kind == "dir":
         root = Path(url)
         candidates = _repo_skill_dirs(root)
@@ -351,18 +381,20 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> str:
         else:
             src = next((d for d in candidates if d.name == name), None)
         if src is None:
-            return "(gone from origin)"
+            return name, "(gone from origin)"
         _install_skill_dir(src, url=url, kind="dir", source_sha="", force=True)
-        return ""
+        return name, ""
     # skillmd: a single SKILL.md, either a remote URL or a local file.
     if url.startswith(("http://", "https://")):
         text = _fetch_url(url)
     elif Path(url).is_file():
         text = read_operator_file(Path(url))
     else:
-        return "(gone from origin)"
-    _install_skill_text(text, url=url, force=True)
-    return ""
+        return name, "(gone from origin)"
+    installed = _install_skill_text(text, url=url, force=True)
+    if installed != name:
+        shutil.rmtree(_installed_dir() / name, ignore_errors=True)
+    return installed, ""
 
 
 def _cmd_skills_update(name: str) -> int:
@@ -388,7 +420,7 @@ def _cmd_skills_update(name: str) -> int:
             continue
         before = origin.get("sha256", "")
         try:
-            note = _refetch_skill(skill_dir.name, origin)
+            installed, note = _refetch_skill(skill_dir.name, origin)
         except OperatorError as exc:
             # Re-raise with the skill's name: an all-skills sweep otherwise
             # names only the failing origin, not which install it belongs to.
@@ -396,6 +428,10 @@ def _cmd_skills_update(name: str) -> int:
         if note:
             _row(skill_dir.name, "skipped", dim=True, note=note)
             counts["skipped"] += 1
+            continue
+        if installed != skill_dir.name:
+            _row(skill_dir.name, "updated", dim=False, note=f"(renamed to {installed})")
+            counts["updated"] += 1
             continue
         after = _read_origin(base / skill_dir.name) or {}
         if after.get("sha256", "") != before:
@@ -491,7 +527,11 @@ def _require_known(name: str, repo_root: Path, config_path: Path | None = None) 
 def _cmd_skills_enable(
     name: str, *, always: bool, repo: bool, config_path: Path | None = None
 ) -> int:
-    _require_known(name, Path.cwd(), config_path)
+    # A state leaf can outlive its skill (remove deletes the install, never
+    # the operator's config): clearing that leaf must not need the skill to
+    # still exist, or the entry is unreachable by the CLI that wrote it.
+    if not (not always and _state_map(config_path).get(name)):
+        _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -545,6 +585,11 @@ def _cmd_skills_remove(name: str, config_path: Path | None = None) -> int:
         raise OperatorError(f"{name!r} is not installed")
     shutil.rmtree(target)
     print(f"removed {name}")
+    if state := _state_map(config_path).get(name, ""):
+        print(
+            f'note: skills.state.{name} = "{state}" remains in config and applies if'
+            f" {name!r} is installed again; `agent6 skills enable {name}` clears it"
+        )
     return 0
 
 

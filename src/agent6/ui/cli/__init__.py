@@ -593,7 +593,7 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
 
 def _dispatch_skills(args: argparse.Namespace) -> int:
     if args.skills_command == "install":
-        return _cmd_skills_install(args.url, force=args.force)
+        return _cmd_skills_install(args.url, force=args.force, config_path=args.config)
     if args.skills_command == "update":
         return _cmd_skills_update(args.name)
     if args.skills_command == "list":
