@@ -43,6 +43,21 @@ jobs:
           test "$(ls dist/agent6-*.whl 2>/dev/null | wc -l)" -ge 2
           test -n "$(ls dist/agent6-*.tar.gz 2>/dev/null)"
 
+      - name: Every artifact's version matches the release tag
+        # Any published release starts this upload; without this, a tag
+        # created off a commit whose __version__ says otherwise would ship
+        # mismatched artifacts. The tag (vX.Y.Z) is the release's claim;
+        # every wheel and the sdist must carry exactly X.Y.Z.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          echo "release tag version: $tag"
+          for f in dist/agent6-*.whl dist/agent6-*.tar.gz; do
+            base=$(basename "$f")
+            ver=$(echo "$base" | sed -E 's/^agent6-([0-9][^-]*)[-.].*$/\1/; s/\.tar$//')
+            echo "$base -> $ver"
+            test "$ver" = "$tag" || { echo "::error::$base version $ver != tag $tag"; exit 1; }
+          done
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
