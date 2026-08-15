@@ -670,61 +670,56 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert not (state_dir / "sessions" / "runs" / "kid-DDDD44").exists()
 
 
-def test_fork_pre_checkpoint_run_degrades_gracefully(
+def test_fork_at_turn_refuses_without_checkpoint_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An old run with only loop_state.json (no checkpoints/) still forks, from
-    that latest snapshot."""
+    """`--at-turn` selects only from `checkpoints/`: a run with an empty store
+    refuses (rc 2, no fork dir) rather than silently substituting the rolling
+    snapshot; the default fork (no `--at-turn`) still follows loop_state.json."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state_dir = _state_dir(repo)
-    layout = SessionLayout(state_dir=state_dir, session_id="old-run-EEEE55")
+    layout = SessionLayout(state_dir=state_dir, session_id="bare-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
             {
-                "version": 1,
-                "session_id": "old-run-EEEE55",
-                "mode": "run",  # v1 manifests carried it; absent = refused, not "run"
+                "session_id": "bare-run-EEEE55",
+                "mode": "run",
                 "base_sha": "x",
                 "base_branch": "m",
             }
         ),
         encoding="utf-8",
     )
-    # Old run: loop_state.json exists but no checkpoints dir content. We DO carry
-    # head_sha now (older snapshots without it cannot cut a branch).
     layout.session_dir.joinpath("loop_state.json").write_text(
         json.dumps(
             {
                 "version": 2,
                 "system": "s",
-                "messages": [{"role": "user", "content": "legacy"}],
+                "messages": [{"role": "user", "content": "rolling"}],
                 "tool_calls": 0,
                 "next_iteration": 4,
                 "root_task_id": None,
-                "original_task": "legacy task",
+                "original_task": "task",
                 "verify_command": [],
                 "head_sha": head,
             }
         ),
         encoding="utf-8",
     )
-    # Remove the (empty) checkpoints dir created by .ensure() so it's truly "old".
-    for p in layout.checkpoints_dir.glob("*"):
-        p.unlink()
-    layout.checkpoints_dir.rmdir()
 
-    rc = _cmd_fork(None, "old-run", new_session_id="fresh-FFFF66", no_run=True)
+    rc = _cmd_fork(None, "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
+    assert rc == 2
+    assert not (state_dir / "sessions" / "runs" / "kid-EEEE55").exists()
+
+    rc = _cmd_fork(None, "bare-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
     dst = SessionLayout(state_dir=state_dir, session_id="fresh-FFFF66")
     seed = load_session_snapshot(dst.checkpoint_path(0))
-    assert seed.messages[0]["content"] == "legacy"
+    assert seed.messages[0]["content"] == "rolling"
     assert seed.next_iteration == 4
-    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["parent_session_id"] == "old-run-EEEE55"
-    assert manifest["forked_from_turn"] == 4
 
 
 # --- resume gets onto the run branch ---------------------------------------

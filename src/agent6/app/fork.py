@@ -161,78 +161,30 @@ def _read_journal(src: SessionLayout) -> list[dict[str, Any]]:
 def _select_checkpoint_path(
     src: SessionLayout, at_turn: int | None, *, reporter: Reporter = STDIO_REPORTER
 ) -> Path | None:
-    """Resolve which checkpoint of *src* to fork from, or None on error (printed).
+    """Resolve which snapshot of *src* to fork from, or None on error (printed).
 
-    Returns the latest checkpoint by default, the `--at-turn N` one when given,
-    or degrades to `loop_state.json` for a pre-checkpoint (old) run.
+    Default is the rolling `loop_state.json` (the newest state, ahead of the
+    last per-turn checkpoint mid-turn); `--at-turn N` selects checkpoint N from
+    the per-turn store, refusing turns the store does not hold.
     """
-    legacy = src.session_dir / "loop_state.json"
-    source_id = src.session_id
     turns = list_checkpoint_turns(src)
     if at_turn is None:
-        return _select_latest_checkpoint_path(src, turns, legacy, reporter=reporter)
-    return _select_explicit_checkpoint_path(
-        src, turns, legacy, at_turn, source_id, reporter=reporter
-    )
-
-
-def _select_latest_checkpoint_path(
-    src: SessionLayout, turns: list[int], legacy: Path, *, reporter: Reporter = STDIO_REPORTER
-) -> Path | None:
-    if legacy.is_file():
-        return legacy
-    if turns:
-        return src.checkpoint_path(turns[-1])
-    reporter.err(
-        f"ERROR: {src.session_id} has no checkpoints and no loop_state.json; nothing to fork."
-    )
-    return None
-
-
-def _select_explicit_checkpoint_path(
-    src: SessionLayout,
-    turns: list[int],
-    legacy: Path,
-    at_turn: int,
-    source_id: str,
-    *,
-    reporter: Reporter = STDIO_REPORTER,
-) -> Path | None:
+        rolling = src.session_dir / "loop_state.json"
+        if rolling.is_file():
+            return rolling
+        if turns:
+            return src.checkpoint_path(turns[-1])
+        reporter.err(
+            f"ERROR: {src.session_id} has no checkpoints and no loop_state.json; nothing to fork."
+        )
+        return None
     if at_turn in turns:
         return src.checkpoint_path(at_turn)
-    if legacy.is_file():
-        legacy_turn = _snapshot_turn(legacy)
-        if legacy_turn == at_turn:
-            return legacy
-        if not turns:
-            reporter.err(
-                f"NOTE: {source_id} predates the checkpoint store; --at-turn is unavailable. "
-                "Forking from its latest snapshot (loop_state.json)."
-            )
-            return legacy
-    avail = ", ".join(str(t) for t in turns)
+    avail = ", ".join(str(t) for t in turns) or "none"
     reporter.err(
-        f"ERROR: no checkpoint at turn {at_turn} for {source_id}. Available turns: {avail}"
+        f"ERROR: no checkpoint at turn {at_turn} for {src.session_id}. Available turns: {avail}"
     )
     return None
-
-
-def _snapshot_turn(path: Path) -> int | None:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(raw, dict):
-        return None
-    # Raw single-key peek (must not raise); "next_iteration" is
-    # SessionSnapshot.next_iteration -- keep in sync on a field rename.
-    value = raw.get("next_iteration")
-    if not isinstance(value, str | int):
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
 
 
 _STEER_NOTICE = "OPERATOR STEERING"
