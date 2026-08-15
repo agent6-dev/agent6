@@ -50,10 +50,11 @@ from agent6.machine import (
     MachineJournal,
     ToolPolicyFactory,
     ToolState,
+    bundle_drift,
     drive,
     load_machine,
     machine_lock,
-    write_source,
+    write_bundle,
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import write_worker_pid
@@ -76,66 +77,41 @@ def _transitions(n: int) -> str:
 
 
 def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
-    """A refusal message if the machine file has uncommitted changes, else None.
+    """A refusal message if the machine's bundle (`.asm.toml` + `scripts/`)
+    has uncommitted changes, else None.
 
-    `machine run` only accepts a committed machine (docs state-machines.md
-    §7.1/§9; the `machine create` hint promises it): a tool/agent reads the file
-    as trusted logic, so an untracked or dirty `.asm.toml` is unreviewed. Skipped
-    outside a git repo (nothing to commit against) and for a file that resolves
+    `machine run` only accepts a committed bundle (docs state-machines.md
+    §7.1/§9; the `machine create` hint promises it): a tool/agent executes it
+    as trusted logic, so an untracked or dirty piece is unreviewed. One rule
+    for both pieces; `machine test` is the ungated iteration loop. Skipped
+    outside a git repo (nothing to commit against) and for pieces that resolve
     outside the repo tree."""
     if not is_git_repo(cwd):
         return None
-    try:
-        rel = path.resolve().relative_to(cwd.resolve()).as_posix()
-    except ValueError:
-        return None
-    try:
-        if not paths_dirty(cwd, (rel,)):
-            return None
-    except GitError as exc:
-        # Fail-open (this is a review-discipline gate, not a security boundary),
-        # but never SILENTLY: a broken-git environment that can't be probed must
-        # be visible, not read as "clean".
-        print(
-            f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
-            file=sys.stderr,
-        )
-        return None
-    return (
-        f"{path} has uncommitted changes; `machine run` only accepts a committed"
-        " machine. Review and commit the .asm.toml first."
-    )
-
-
-def uncommitted_scripts_warning(path: Path, cwd: Path) -> str | None:
-    """A warning if the machine's `scripts/` bundle has uncommitted changes,
-    else None. The bundle is trusted logic a tool/agent may execute, so like the
-    `.asm.toml` it should be committed. Unlike the file it only WARNS (not every
-    machine carries scripts, and iterating on one the operator is actively editing
-    is common). Skipped outside a git repo or when the bundle resolves outside the
-    repo tree; a broken-git probe warns rather than reading as clean."""
-    if not is_git_repo(cwd):
-        return None
     scripts = path.parent / "scripts"
-    if not scripts.exists():
-        return None
-    try:
-        rel = scripts.resolve().relative_to(cwd.resolve()).as_posix()
-    except ValueError:
-        return None
-    try:
-        if not paths_dirty(cwd, (rel,)):
-            return None
-    except GitError as exc:
-        print(
-            f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
-            file=sys.stderr,
-        )
-        return None
-    return (
-        f"{scripts} has uncommitted changes; `machine run` executes its scripts as "
-        "trusted logic. Review and commit the bundle for a reproducible run."
-    )
+    pieces = [(path, "machine")] + ([(scripts, "scripts bundle")] if scripts.exists() else [])
+    for piece, label in pieces:
+        try:
+            rel = piece.resolve().relative_to(cwd.resolve()).as_posix()
+        except ValueError:
+            continue
+        try:
+            dirty = paths_dirty(cwd, (rel,))
+        except GitError as exc:
+            # Fail-open (this is a review-discipline gate, not a security
+            # boundary), but never SILENTLY: a broken-git environment that
+            # can't be probed must be visible, not read as "clean".
+            print(
+                f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        if dirty:
+            return (
+                f"{piece} has uncommitted changes; `machine run` only accepts a"
+                f" committed {label}. Review and commit the bundle first."
+            )
+    return None
 
 
 def machine_tool_policy_factory(
@@ -218,9 +194,6 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if uncommitted is not None:
         reporter.err(f"REFUSING: {uncommitted}")
         return 1
-    scripts_warning = uncommitted_scripts_warning(path, cwd)
-    if scripts_warning is not None:
-        reporter.err(f"WARNING: {scripts_warning}")
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
     # mode="run" agent states edit + commit; they need a resolved git identity.
@@ -344,12 +317,24 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     " instance directory to start fresh."
                 )
                 return 1
+            if journal.exists():
+                # A live instance runs the bundle it recorded: continuation
+                # holds the working bundle to those bytes, so an edit can
+                # never execute under the old instance's identity.
+                drift = bundle_drift(root, path)
+                if drift is not None:
+                    reporter.err(
+                        f"REFUSING: {drift}. A live instance runs the bundle it"
+                        " recorded; archive the instance directory to start"
+                        " fresh with the edited machine."
+                    )
+                    return 1
             data_dir.mkdir(parents=True, exist_ok=True)
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.
             write_worker_pid(root, os.getpid())
             if not journal.exists():
-                write_source(root, path.read_text(encoding="utf-8"))
+                write_bundle(root, path)
             # Operator argv fired on machine.notify/machine.end, on the host
             # outside the jail (None when [machine.notify].on_event is unset).
             operator_hook = build_machine_notify_hook(cfg, spec.machine, root)

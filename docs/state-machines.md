@@ -841,8 +841,9 @@ capability.
   prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow
   live; the create runs detached.
 - [Security considerations](#9-security-considerations-must-not-weaken-anything-in-agentsmd)'s invariant holds: `create` only drafts into the working tree; the
-  operator reviews and commits; `machine run` refuses uncommitted files.
-  Drafting is assistance; authorization stays human.
+  operator reviews and commits; `machine run` refuses an uncommitted bundle
+  (the `.asm.toml` and its `scripts/`). Drafting is assistance;
+  authorization stays human.
 
 ---
 
@@ -921,8 +922,13 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   code. An LLM proposing a machine is fine, and `agent6 machine create`
   ([CLI surface](#7-cli-surface)) explicitly *drafts* one, but running one requires the
   operator to review and commit it. `machine create` writes only into
-  the working tree and never auto-runs; `machine run` operates on
-  committed files. Drafting is assistance; authorization stays human.
+  the working tree and never auto-runs; `machine run` operates on a
+  committed bundle (`.asm.toml` + `scripts/`), records that bundle under
+  the instance directory at first run, and refuses a continuation whose
+  working bundle drifted from the recorded bytes -- a live instance runs
+  the logic it recorded, and an edit takes effect on a new instance
+  (archive the old one). Drafting is assistance; authorization stays
+  human.
 - **External-world tools remain out of scope.** Adding any tool that
   reaches the network or an external service is a separate change
   requiring the `tools/schema.py` security-review trailer and a

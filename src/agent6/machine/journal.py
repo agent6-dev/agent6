@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
@@ -527,3 +528,49 @@ def read_source(root: Path) -> str:
     if not path.is_file():
         raise JournalError(f"no persisted machine source at {path}")
     return path.read_text(encoding="utf-8")
+
+
+def write_bundle(root: Path, machine_path: Path) -> None:
+    """Persist the exact executable bundle the instance starts from: the
+    `.asm.toml` source plus its `scripts/` tree. Replay evidence, and the
+    baseline `bundle_drift` holds every continuation to."""
+    write_source(root, machine_path.read_text(encoding="utf-8"))
+    dst = root / "scripts"
+    shutil.rmtree(dst, ignore_errors=True)
+    scripts = machine_path.parent / "scripts"
+    if scripts.is_dir():
+        shutil.copytree(scripts, dst)
+
+
+def bundle_drift(root: Path, machine_path: Path) -> str | None:
+    """The first difference between the working bundle and the instance's
+    recorded one, or None when they match byte for byte.
+
+    A live instance runs the logic it recorded; an edit takes effect on a new
+    instance. Byte comparison against the recorded copy keeps that copy the
+    single source of truth -- no digest to go stale, no mtime heuristics."""
+    recorded_asm = root / "machine.asm.toml"
+    if not recorded_asm.is_file():
+        return f"no recorded machine source at {recorded_asm}"
+    if recorded_asm.read_bytes() != machine_path.read_bytes():
+        return f"{machine_path.name} differs from the recorded {recorded_asm}"
+    working = _tree_files(machine_path.parent / "scripts")
+    recorded = _tree_files(root / "scripts")
+    for rel in sorted(recorded.keys() - working.keys()):
+        return f"scripts/{rel} was removed after the instance began"
+    for rel in sorted(working.keys() - recorded.keys()):
+        return f"scripts/{rel} was added after the instance began"
+    for rel in sorted(working):
+        if working[rel] != recorded[rel]:
+            return f"scripts/{rel} differs from the instance's recorded copy"
+    return None
+
+
+def _tree_files(base: Path) -> dict[str, bytes]:
+    if not base.is_dir():
+        return {}
+    return {
+        p.relative_to(base).as_posix(): p.read_bytes()
+        for p in sorted(base.rglob("*"))
+        if p.is_file()
+    }

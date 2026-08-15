@@ -443,26 +443,82 @@ def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
     assert uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
-def test_uncommitted_scripts_warning_tracks_bundle_state(tmp_path: Path) -> None:
-    """The committed-machine gate checked only the .asm.toml, so an uncommitted
-    `scripts/` bundle (trusted logic a tool executes) ran unreviewed. The bundle
-    warns (not refuses) when dirty."""
-    from agent6.app.machine.run import uncommitted_scripts_warning
+def test_uncommitted_refusal_covers_the_scripts_bundle(tmp_path: Path) -> None:
+    """One committed-bundle rule: a tool executes `scripts/` as trusted logic
+    exactly like the .asm.toml, so a dirty bundle REFUSES (not a warning a
+    scrolling launch buries); `machine test` stays the ungated iteration
+    loop."""
+    from agent6.app.machine.run import uncommitted_refusal
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
-    # No git repo, or no bundle: no warning.
-    assert uncommitted_scripts_warning(f, tmp_path) is None
+    # No git repo: no gate (nothing to commit against).
+    assert uncommitted_refusal(f, tmp_path) is None
     _git_init(tmp_path)
-    assert uncommitted_scripts_warning(f, tmp_path) is not None  # untracked bundle
+    assert uncommitted_refusal(f, tmp_path) is not None  # untracked bundle
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
-    assert uncommitted_scripts_warning(f, tmp_path) is None  # committed clean
+    assert uncommitted_refusal(f, tmp_path) is None  # committed clean
     (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
-    assert uncommitted_scripts_warning(f, tmp_path) is not None  # modified script
+    refusal = uncommitted_refusal(f, tmp_path)
+    assert refusal is not None and "scripts" in refusal  # modified script refuses
+
+
+def test_first_run_records_the_bundle_and_drift_refuses_continuation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live instance runs the bundle it recorded: the first run persists the
+    .asm.toml + scripts tree under the instance root, an edited script refuses
+    continuation by name (never executes under the old instance identity), and
+    a restored bundle continues cleanly."""
+    monkeypatch.chdir(tmp_path)
+    _git_init(tmp_path)
+    f = _write_machine(tmp_path)  # waiter: parks WAITING under --exit-on-wait
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
+
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert "WAITING" in capsys.readouterr().out
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    recorded = root / "scripts" / "do.py"
+    assert recorded.read_text(encoding="utf-8") == "print('hi')\n"
+
+    (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 1
+    err = capsys.readouterr().err
+    assert "scripts/do.py" in err and "archive the instance" in err
+
+    (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "restore"], check=True)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    assert "WAITING" in capsys.readouterr().out
+
+
+def test_continuation_refuses_an_edited_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An edited .asm.toml with the same name/version drifts from the recorded
+    source and refuses continuation -- identity strings alone let an
+    incompatible edit land on the old journal."""
+    monkeypatch.chdir(tmp_path)
+    _git_init(tmp_path)
+    f = _write_machine(tmp_path)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    f.write_text(WAITER_DELAYED.replace('reason = "ticked"', 'reason = "changed"'), "utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "edit"], check=True)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 1
+    err = capsys.readouterr().err
+    assert "differs from the recorded" in err and "archive the instance" in err
 
 
 def test_run_refuses_rerun_of_ended_instance(

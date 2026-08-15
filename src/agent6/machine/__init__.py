@@ -47,8 +47,10 @@ from agent6.machine.journal import (
     Snapshot,
     StepEvent,
     WaitFact,
+    bundle_drift,
     machine_lock,
     read_source,
+    write_bundle,
     write_source,
 )
 from agent6.machine.model import (
@@ -94,6 +96,7 @@ __all__ = [
     "WaitWake",
     "World",
     "build_authoring_prompt",
+    "bundle_drift",
     "drive",
     "dry_run",
     "extract_scripts",
@@ -106,5 +109,6 @@ __all__ = [
     "render_dot",
     "render_mermaid",
     "validate_semantics",
+    "write_bundle",
     "write_source",
 ]
