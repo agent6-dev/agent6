@@ -83,12 +83,20 @@ def _search_dirs(repo_root: Path, config_path: Path | None = None) -> tuple[Path
     return skill_search_dirs(cfg.skills.extra_dirs, _installed_dir())
 
 
+def _toml_str(value: str) -> str:
+    """A TOML basic string with backslashes and quotes escaped: a quote in a
+    source path made the hand-built origin unparseable, so update lost its
+    origin."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def _write_origin(skill_dir: Path, *, url: str, kind: str, source_sha: str) -> None:
     digest = hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest()
     fetched = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     body = (
-        f'url = "{url}"\nkind = "{kind}"\nsource_sha = "{source_sha}"\n'
-        f'fetched_at = "{fetched}"\nsha256 = "{digest}"\n'
+        f"url = {_toml_str(url)}\nkind = {_toml_str(kind)}\n"
+        f"source_sha = {_toml_str(source_sha)}\n"
+        f"fetched_at = {_toml_str(fetched)}\nsha256 = {_toml_str(digest)}\n"
     )
     (skill_dir / _ORIGIN_FILE).write_text(body, encoding="utf-8")
 
@@ -134,16 +142,27 @@ def _skill_name_from_text(text: str, source: str) -> str:
     return name
 
 
-def _refuse_or_clear_existing(name: str, *, force: bool) -> Path:
-    """Return the target dir for *name*, clearing it under --force."""
+def _refuse_existing(name: str, *, force: bool) -> Path:
+    """The target dir for *name*; refuses when it exists without --force.
+
+    Never clears: the old install survives until the staged replacement is
+    fully built (`_publish_staged`), so a copy or write fault cannot destroy
+    a good skill."""
     target = _installed_dir() / name
-    if target.exists():
-        if not force:
-            origin = _read_origin(target)
-            src = f" (installed from {origin['url']})" if origin and origin.get("url") else ""
-            raise OperatorError(f"skill {name!r} is already installed{src}; use --force to replace")
-        shutil.rmtree(target)
+    if target.exists() and not force:
+        origin = _read_origin(target)
+        src = f" (installed from {origin['url']})" if origin and origin.get("url") else ""
+        raise OperatorError(f"skill {name!r} is already installed{src}; use --force to replace")
     return target
+
+
+def _publish_staged(staging: Path, target: Path) -> None:
+    """Swap the fully-built staging dir into place; the old install goes only
+    now. The dot-prefixed staging name fails the skill-name gate, so a
+    crash's leftover is invisible to discovery."""
+    if target.exists():
+        shutil.rmtree(target)
+    staging.rename(target)
 
 
 def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force: bool) -> str:
@@ -154,27 +173,38 @@ def _install_skill_dir(src: Path, *, url: str, kind: str, source_sha: str, force
     `use_skill` will serve. Preserved, the link stays subject to `use_skill`'s
     containment check."""
     name = _skill_name_from_text(read_operator_file(src / "SKILL.md"), str(src))
-    target = _refuse_or_clear_existing(name, force=force)
+    target = _refuse_existing(name, force=force)
     mkdir_for_real_user(target.parent)
+    staging = target.parent / f".staging-{name}"
+    shutil.rmtree(staging, ignore_errors=True)
     try:
-        shutil.copytree(src, target, symlinks=True)
+        shutil.copytree(src, staging, symlinks=True)
+        (staging / _ORIGIN_FILE).unlink(missing_ok=True)  # never inherit a copied origin
+        _write_origin(staging, url=url, kind=kind, source_sha=source_sha)
+        chown_to_real_user(staging)
+        _publish_staged(staging, target)
     except OSError as exc:
-        raise OperatorError(f"could not copy the skill from {src}: {exc}") from exc
-    (target / _ORIGIN_FILE).unlink(missing_ok=True)  # never inherit a copied origin
-    _write_origin(target, url=url, kind=kind, source_sha=source_sha)
-    chown_to_real_user(target)
+        shutil.rmtree(staging, ignore_errors=True)
+        raise OperatorError(f"could not install the skill from {src}: {exc}") from exc
     return name
 
 
 def _install_skill_text(text: str, *, url: str, force: bool) -> str:
     """Install a single-file skill from raw SKILL.md text."""
     name = _skill_name_from_text(text, url)
-    target = _refuse_or_clear_existing(name, force=force)
+    target = _refuse_existing(name, force=force)
     mkdir_for_real_user(target.parent)
-    target.mkdir()  # the skill dir itself must not pre-exist
-    (target / "SKILL.md").write_text(text, encoding="utf-8")
-    _write_origin(target, url=url, kind="skillmd", source_sha="")
-    chown_to_real_user(target)
+    staging = target.parent / f".staging-{name}"
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        staging.mkdir()
+        (staging / "SKILL.md").write_text(text, encoding="utf-8")
+        _write_origin(staging, url=url, kind="skillmd", source_sha="")
+        chown_to_real_user(staging)
+        _publish_staged(staging, target)
+    except OSError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise OperatorError(f"could not install the skill from {url}: {exc}") from exc
     return name
 
 

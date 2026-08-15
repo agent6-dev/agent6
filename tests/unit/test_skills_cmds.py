@@ -331,3 +331,49 @@ class TestAtomicMultiInstall:
         # --force replaces and installs both
         assert _cmd_skills_install(str(repo), force=True) == 0
         assert _installed(env, "aa").exists() and _installed(env, "zz").exists()
+
+
+def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """--force removed the old install BEFORE copying, so a copy fault
+    destroyed the good skill and left nothing (or a partial dir) behind. The
+    replacement is staged beside the target and swapped in only when fully
+    built; a fault leaves the old install untouched and no staging litter."""
+    import shutil as _shutil
+
+    from agent6.ui.cli import skills_cmds
+
+    src = env / "src-skill"
+    src.mkdir()
+    (src / "SKILL.md").write_text(
+        "---\nname: keeper\ndescription: good\n---\nold body\n", encoding="utf-8"
+    )
+    assert _cmd_skills_install(str(src), force=False) == 0
+    installed = env / "data" / "skills" / "keeper" / "SKILL.md"
+    assert "old body" in installed.read_text(encoding="utf-8")
+
+    def boom(*a: object, **k: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(skills_cmds.shutil, "copytree", boom)
+    with pytest.raises(OperatorError, match="could not install"):
+        _cmd_skills_install(str(src), force=True)
+    monkeypatch.setattr(skills_cmds.shutil, "copytree", _shutil.copytree)
+    assert "old body" in installed.read_text(encoding="utf-8")  # the good install survived
+    assert not list((env / "data" / "skills").glob(".staging-*"))
+
+
+def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
+    """The origin was hand-built without escaping, so a quote in a source
+    path produced unparseable TOML and update lost its origin."""
+    from agent6.ui.cli.skills_cmds import (
+        _read_origin,  # pyright: ignore[reportPrivateUsage]
+        _write_origin,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    skill = env / "data" / "skills" / "quoty"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: quoty\ndescription: d\n---\n", encoding="utf-8")
+    url = 'file:///tmp/we"ird\\path/skill'
+    _write_origin(skill, url=url, kind="dir", source_sha="")
+    origin = _read_origin(skill)
+    assert origin is not None and origin["url"] == url
