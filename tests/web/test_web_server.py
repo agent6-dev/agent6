@@ -125,6 +125,19 @@ def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: Path, host: str) -> None:
         srv.server_close()
 
 
+def test_explicit_config_reaches_the_server(tmp_path: Path) -> None:
+    """`agent6 --config F web` threads F to the server object every route
+    reads (`self.config_path`); the constructor used to drop it, so the whole
+    browser surface ran on the default layers while binding the configured
+    port."""
+    cfg = tmp_path / "f.toml"
+    srv = _create_web_server("127.0.0.1", 0, tmp_path, "", cfg)  # pyright: ignore[reportPrivateUsage]
+    try:
+        assert srv.config_path == cfg
+    finally:
+        srv.server_close()
+
+
 def test_run_snapshot_matches_watch_json(
     server: tuple[WebServer, int],
     tmp_path: Path,

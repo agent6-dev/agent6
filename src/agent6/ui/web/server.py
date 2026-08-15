@@ -240,7 +240,7 @@ def _create_web_server(
 ) -> WebServer:
     bind_host = _bind_host(host)
     server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
-    return server_cls((bind_host, port), cwd, target)
+    return server_cls((bind_host, port), cwd, target, config_path)
 
 
 class _Handler(BaseHTTPRequestHandler):
