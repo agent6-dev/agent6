@@ -188,3 +188,79 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: Pa
     assert spend.input_tokens == 40_000
     assert spend.output_tokens == 8_000
     assert spend.partial is True, "the '~' lower-bound marker was dropped"
+
+
+def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
+    """A supervisor crash mid-agent-state leaves real spend only in the
+    per-state log; the resuming supervisor books it as an AttemptSpend and
+    retires the log dir, so status and the budget keep the billed slice and
+    nothing folds twice."""
+    from agent6.app.machine import book_crashed_attempt
+    from agent6.machine import AttemptSpend, MachineJournal
+
+    journal = MachineJournal(tmp_path)
+    journal.ensure_dirs()
+    journal.begin(machine="m", version=1)
+    journal.append(_agent_step(0, 0.10))
+    _state_log(tmp_path, 1, "hunt", 0.059)  # crashed mid-state: unbooked
+
+    book_crashed_attempt(journal, tmp_path)
+    events = journal.read()
+    booked = [e for e in events if isinstance(e, AttemptSpend)]
+    assert len(booked) == 1
+    assert booked[0].seq == 1 and booked[0].state == "hunt"
+    assert abs(booked[0].usd - 0.059) < 1e-9
+    assert (tmp_path / "states" / "crashed-0001-hunt").is_dir()  # retired
+
+    # Idempotent: no orphan left, nothing more books.
+    book_crashed_attempt(journal, tmp_path)
+    assert len([e for e in journal.read() if isinstance(e, AttemptSpend)]) == 1
+
+    # The spend fold keeps the slice with the worker dead.
+    spend, _ = machine_spend(journal.read(), tmp_path, alive=False)
+    assert abs(spend.usd - 0.159) < 1e-9
+    assert spend.input_tokens == 170 and spend.output_tokens == 80
+
+
+def test_booked_attempt_spend_counts_against_max_usd(tmp_path: Path) -> None:
+    """The engine's cumulative budget check folds AttemptSpend: a crashed
+    attempt's billed slice cannot be re-granted on resume."""
+    from agent6.machine import AttemptSpend, MachineJournal, load_machine
+    from agent6.machine.engine import drive
+
+    f = tmp_path / "m.asm.toml"
+    f.write_text(
+        """\
+machine = "capped"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+max_usd = 0.05
+
+[states.route]
+kind = "branch"
+when = [{ else = true, goto = "done" }]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+""",
+        encoding="utf-8",
+    )
+    spec = load_machine(f)
+    journal = MachineJournal(tmp_path / "inst")
+    journal.ensure_dirs()
+    journal.begin(machine="capped", version=1)
+    journal.append(
+        AttemptSpend(ts="t", seq=0, state="route", usd=0.06, input_tokens=10, output_tokens=5)
+    )
+    result = drive(spec, journal, None, live=False)  # replay tolerates the event
+    assert result.status == "incomplete"
+    from tests.unit.test_machine_engine import FakeWorld
+
+    live = drive(spec, journal, FakeWorld({}), live=True)
+    assert live.status == "failed"
+    assert "max_usd" in live.reason

@@ -26,7 +26,7 @@ from agent6.app.machine._scriptcheck import (
     lint_and_typecheck,
     run_offline_tests,
 )
-from agent6.app.machine._spend import Spend, machine_spend, read_budget_totals
+from agent6.app.machine._spend import Spend, book_crashed_attempt, machine_spend, read_budget_totals
 
 # The composition entry points `create_machine` / `run_machine` are the public
 # modules `agent6.app.machine.create` / `.run` (mirroring `agent6.app.run`),
@@ -38,6 +38,7 @@ __all__ = [
     "OfflineTestOutcome",
     "Spend",
     "available_tools",
+    "book_crashed_attempt",
     "build_machine_notify_hook",
     "is_inside",
     "lint_and_typecheck",

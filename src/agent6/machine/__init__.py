@@ -38,6 +38,7 @@ from agent6.machine.engine import (
 from agent6.machine.graph import GraphFormat, render, render_dot, render_mermaid
 from agent6.machine.journal import (
     AgentFact,
+    AttemptSpend,
     JournalError,
     MachineBegin,
     MachineEnd,
@@ -75,6 +76,7 @@ __all__ = [
     "AgentFact",
     "AgentRequest",
     "AgentState",
+    "AttemptSpend",
     "BranchCheck",
     "DryRunReport",
     "EngineError",

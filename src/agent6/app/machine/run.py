@@ -31,7 +31,7 @@ from agent6.app.machine._preflight import (
     machine_network_refusal,
     machine_protect_paths,
 )
-from agent6.app.machine._spend import machine_spend
+from agent6.app.machine._spend import book_crashed_attempt, machine_spend
 from agent6.app.machine_agent import build_machine_agent_runner
 from agent6.app.preflight import budget_preflight
 from agent6.app.reporter import Reporter
@@ -335,6 +335,10 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # one at its first boundary; starting the machine is the answer to
             # any stale request (mirrors the session-side stale-marker clear).
             clear_stop_request(root)
+            # A crash mid-agent-state left its metered spend only in the
+            # per-state log; book it into the journal before the drive re-runs
+            # the state (which would start a fresh log over it).
+            book_crashed_attempt(journal, root)
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.
             write_worker_pid(root, os.getpid())

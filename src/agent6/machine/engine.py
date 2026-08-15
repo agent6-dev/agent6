@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from agent6.machine._semantics import validate_record_payload
 from agent6.machine.journal import (
     AgentFact,
+    AttemptSpend,
     BranchFact,
     Fact,
     JournalError,
@@ -866,6 +867,11 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     spent_usd = eng.spent_usd
     remedy = " Archive the instance directory to start fresh."
     for event in events:
+        if isinstance(event, AttemptSpend):
+            # A crashed attempt's booked slice: real budget spent with no step
+            # to carry it. Counts against max_usd; never moves the position.
+            spent_usd += event.usd
+            continue
         if not isinstance(event, StepEvent):
             continue
         state_spec = spec.states.get(state)

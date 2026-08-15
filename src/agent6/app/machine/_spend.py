@@ -16,9 +16,10 @@ import contextlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
-from agent6.machine import AgentFact, MachineEnd, StepEvent
+from agent6.machine import AgentFact, AttemptSpend, MachineEnd, MachineJournal, StepEvent
 from agent6.viewmodel.machine_state import newest_state_log
 
 
@@ -83,6 +84,43 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     return Spend(usd, tin, tout, partial)
 
 
+def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
+    """Journal an `AttemptSpend` for an orphaned in-flight state log, then
+    retire the log dir (renamed `crashed-<original>`, out of every seq
+    matcher) so the booked slice can never fold twice and the re-run starts
+    a fresh log.
+
+    A supervisor death mid-agent-state leaves real provider spend recorded
+    only in the per-state log; without this, resume re-granted the budget and
+    status under-reported. Called by the resuming supervisor before the drive
+    re-runs the state. No orphan log, an already-booked seq, or an empty
+    total books nothing.
+    """
+    newest = newest_state_log(root)
+    if newest is None:
+        return
+    seq = _state_dir_seq(newest.parent.name)
+    if seq is None:
+        return
+    if any(isinstance(e, StepEvent) and e.seq == seq for e in journal.read()):
+        return
+    spend = read_budget_totals(newest)
+    state = newest.parent.name.split("-", 1)[-1]
+    if spend.usd or spend.input_tokens or spend.output_tokens:
+        journal.append(
+            AttemptSpend(
+                ts=datetime.now(UTC).isoformat(timespec="microseconds"),
+                seq=seq,
+                state=state,
+                usd=spend.usd,
+                usd_partial=spend.partial,
+                input_tokens=spend.input_tokens,
+                output_tokens=spend.output_tokens,
+            )
+        )
+    newest.parent.rename(newest.parent.with_name(f"crashed-{newest.parent.name}"))
+
+
 def _state_dir_seq(dir_name: str) -> int | None:
     """The transition seq encoded in a `<seq>-<state>` per-state log dir name."""
     head = dir_name.split("-", 1)[0]
@@ -91,8 +129,9 @@ def _state_dir_seq(dir_name: str) -> int | None:
 
 def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple[Spend, str]:
     """Total spend for a machine instance and the in-flight state's name (`""`
-    if none): the sum of completed states' booked AgentFacts, PLUS the live spend
-    of the currently-running state.
+    if none): the sum of completed states' booked AgentFacts and crashed
+    attempts' booked AttemptSpends, PLUS the live spend of the
+    currently-running state.
 
     A state books its StepEvent only when it completes, so a machine
     mid-agent-state otherwise reads $0/dead while burning money. The running
@@ -112,6 +151,9 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
                     event.fact.output_tokens,
                     event.fact.usd_partial,
                 )
+        elif isinstance(event, AttemptSpend):
+            # A crashed attempt's booked slice (see book_crashed_attempt).
+            total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
         elif isinstance(event, MachineEnd):
             # A slice that ran but never got a StepEvent (a capture that could
             # not be reduced) rides on the end event. Folded unconditionally: an

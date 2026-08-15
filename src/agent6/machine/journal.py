@@ -202,8 +202,31 @@ class MachineEnd(BaseModel):
     output_tokens: int = 0
 
 
+class AttemptSpend(BaseModel):
+    """Metered spend of a state attempt the crash window orphaned.
+
+    A supervisor death mid-agent-state leaves real provider spend with no
+    StepEvent to book it and no MachineEnd to carry it; the per-state log
+    still holds the totals. The RESUMING supervisor journals this before
+    re-running the state, so the budget and every spend surface keep the
+    billed slice. Bookkeeping only: it adds no edge and never moves the
+    reducer."""
+
+    model_config = _MODEL_CONFIG
+
+    type: Literal["attempt.spend"] = "attempt.spend"
+    ts: str
+    seq: int = Field(ge=0)
+    state: str
+    usd: float = 0.0
+    usd_partial: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 JournalEvent = Annotated[
-    MachineBegin | StepEvent | MachineNotify | MachineEnd, Field(discriminator="type")
+    MachineBegin | StepEvent | MachineNotify | MachineEnd | AttemptSpend,
+    Field(discriminator="type"),
 ]
 
 _EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(JournalEvent)

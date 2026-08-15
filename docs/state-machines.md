@@ -919,7 +919,10 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   (reported cost when available, else cached price times tokens); a state
   whose model has no price data is bounded per state by the effective
   config's `[budget].max_tokens_fallback` instead (`0` there refuses
-  unmetered models outright).
+  unmetered models outright). A supervisor crash mid-state cannot re-grant
+  its slice: the resuming supervisor books the orphaned per-state log's
+  totals as an `attempt.spend` journal event, counted by `max_usd` and
+  every spend surface.
 - **Machines are operator artifacts, never LLM-authored.** The threat
   model assumes the file is written by the operator and reviewed like
   code. An LLM proposing a machine is fine, and `agent6 machine create`
