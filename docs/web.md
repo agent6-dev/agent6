@@ -1,19 +1,14 @@
 # Web UI
 
-`agent6 web` serves a browser front-end for driving agent6 from a desktop or a
-phone: watch a run stream, steer it, approve prompts, answer questions, read the
-conversation, and browse, create, run, and watch state machines.
+`agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone: watch a run stream, steer it, approve prompts, answer questions, read the conversation, and browse, create, run, and watch state machines.
 
-<video controls muted loop playsinline preload="metadata" class="no-lightbox">
-  <source src="/screenshots/out/web-desktop.webm" type="video/webm">
-</video>
+<video controls muted loop playsinline preload="metadata" class="no-lightbox"> <source src="/screenshots/out/web-desktop.webm" type="video/webm"> </video>
 
 The same UI on a phone (single column, bottom nav):
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
        style="max-width: 390px">
-  <source src="/screenshots/out/web-phone.webm" type="video/webm">
-</video>
+<source src="/screenshots/out/web-phone.webm" type="video/webm"> </video>
 
 ## Run it
 
@@ -23,63 +18,41 @@ agent6 web <session-id>   # open a session on load
 agent6 web <machine>  # open a machine instance on load
 ```
 
-`--host` / `--port` override the [`[web]`](config.md#web) config for one
-invocation. Stop it with Ctrl-C.
+`--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
+Stop it with Ctrl-C.
 
 ## What you can do
 
-Every page docks its text entry at the bottom, like a chat: type, Enter sends,
-Shift+Enter inserts a newline.
+Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
-- **Sessions page**: every session (mode, status, last activity, cost); the docked
-  composer starts new work (run / plan / ask); prune merged run branches, clear
-  saved asks.
-- **Machines page**: machine instances and `machine create` drafts, cards that
-  run an authored machine file, and a docked composer that creates a new one.
-- **Session view** (live over SSE): the conversation IS the page — the same
-  folded transcript the CLI and TUI render, with the in-progress turn
-  streaming underneath.
-    - A detail toggle cycles collapsed / expanded / hidden; any clipped item
-      expands on click.
-    - The run's context (status, task graph, budget, tool calls, latest
-      commit diff, event log) lives in a resizable details drawer.
-    - The docked composer steers a live run or resumes an ended one; `/`
-      completes the steer directives, Ctrl-R (composer focused) searches the
-      session's past messages.
-    - Stop now / stop after step, compact, merge, delete history, approve
-      `run_command` and MCP-tool prompts, and answer `ask_user` questions
-      inline. "Allow session" appears only where it would grant something
-      beyond the one call it is clicked on.
-- **Machines**: the state overview, the path taken, and the current agent
-  state's conversation. Approve and answer the current agent state's prompts
-  inline (same controls as a run). The docked entry submits as one of the two
-  machine verbs, mirroring the TUI machine watch: **Steer** (into the current
-  agent state; disabled when none is active or the machine ended) or
-  **Message** (a `poke` payload a waiting machine's next tool reads).
+- **Sessions page**: every session (mode, status, last activity, cost); the docked composer starts new work (run / plan / ask); prune merged run branches, clear saved asks.
+- **Machines page**: machine instances and `machine create` drafts, cards that run an authored machine file, and a docked composer that creates a new one.
+- **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath.
+    - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.
+    - The run's context (status, task graph, budget, tool calls, latest commit diff, event log) lives in a resizable details drawer.
+    - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
+    - Stop now / stop after step, compact, merge, delete history, approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
+      "Allow session" appears only where it would grant something beyond the one call it is clicked on.
+- **Machines**: the state overview, the path taken, and the current agent state's conversation.
+  Approve and answer the current agent state's prompts inline (same controls as a run).
+  The docked entry submits as one of the two machine verbs, mirroring the TUI machine watch: **Steer** (into the current agent state; disabled when none is active or the machine ended) or **Message** (a `poke` payload a waiting machine's next tool reads).
   `machine.notify`/end show as ephemeral banners and OS notifications.
-- **Config**: every setting with its value and source, filterable, click a row
-  to set it. Enum settings offer their choices; `models.*` fields autocomplete
-  the configured providers and the provider's model ids (the same completion
-  the TUI and CLI have). Secrets are never shown.
+- **Config**: every setting with its value and source, filterable, click a row to set it.
+  Enum settings offer their choices; `models.*` fields autocomplete the configured providers and the provider's model ids (the same completion the TUI and CLI have).
+  Secrets are never shown.
 
-The layout reflows. On a desktop, the nav rail collapses to an icon strip and
-the run view is a fixed pane whose drawer and conversation scroll internally.
-On a phone, a fixed top bar holds the theme toggle, a bottom tab bar navigates,
-the composer docks above it, and the run view shows one widget at a time —
-conversation by default; the ☰ menu in the top bar switches to the status
-overview, task graph, budget, tool calls, latest commit, or event log — so the
-page is the only scroller.
+The layout reflows.
+On a desktop, the nav rail collapses to an icon strip and the run view is a fixed pane whose drawer and conversation scroll internally.
+On a phone, a fixed top bar holds the theme toggle, a bottom tab bar navigates, the composer docks above it, and the page is the only scroller.
+The run view shows one widget at a time (conversation by default), and the menu in the top bar switches to the status overview, task graph, budget, tool calls, latest commit, or event log.
 
 ## Notifications and installing (PWA)
 
-The page installs as an app (a phone home-screen icon or a desktop window). Click
-**🔔 Notifications** on a machine view to grant permission; a `machine.notify`
-message or a machine finishing then pops an OS notification — foreground on any
-device, and backgrounded on desktop (a backgrounded phone won't wake, which is
-expected). A notification never clears or blocks the send/answer inputs: one
-popping mid-type keeps your text and focus. For a phone in your pocket, point the
-operator notify hook `[machine.notify].on_event` (see [config.md](config.md)) at
-a push service you already use.
+The page installs as an app (a phone home-screen icon or a desktop window).
+Click **🔔 Notifications** on a machine view to grant permission.
+A `machine.notify` message or a machine finishing then pops an OS notification: foreground on any device, backgrounded on desktop, and never on a backgrounded phone.
+A notification never clears or blocks the send and answer inputs, so one arriving mid-type keeps your text and focus.
+To reach a phone that is not open on the page, point the operator notify hook `[machine.notify].on_event` (see [config.md](config.md)) at a push service.
 
 ## How it talks to the server
 
@@ -94,35 +67,24 @@ curl -s localhost:7658/api/config              # effective config (no secrets)
 curl -sN localhost:7658/api/session/<id>/events    # SSE: a fresh snapshot per change
 ```
 
-`curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus
-the manifest's branch and compare facts.
-Writes are small JSON `POST`s (`/api/new`,
-`/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact,rm}`,
-`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`,
-`/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn /
-answer-file contracts, never arbitrary execution. A machine's `approve`/`answer`/
-`steer` land in the current agent state's per-state dir; `poke` drops a signal
-(with an optional `message`/`data` payload) on the instance. The machine name and
-every answer id are validated to a single path component, so a request cannot
-traverse out of the instance dir.
+`curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
+Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact,rm}`, `/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
+A machine's `approve`/`answer`/ `steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
+The machine name and every answer id are validated to a single path component, so a request cannot traverse out of the instance dir.
 
 ## Remote access (Tailscale)
 
-The server binds `127.0.0.1` by default and has no app-level auth. For remote
-access, put [Tailscale](https://tailscale.com) in front of the loopback bind:
+The server binds `127.0.0.1` by default and has no app-level auth.
+For remote access, put [Tailscale](https://tailscale.com) in front of the loopback bind:
 
 ```bash
 agent6 web                       # keep it on 127.0.0.1:7658
 tailscale serve --bg 7658        # HTTPS + WireGuard, reachable on your tailnet
 ```
 
-The tailnet (WireGuard) identity is the access control: only devices on your
-tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates
-HTTPS. agent6 itself handles no tokens or passwords.
+The tailnet (WireGuard) identity is the access control: only devices on your tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates HTTPS.
+agent6 itself handles no tokens or passwords.
 
-Binding a non-loopback address exposes the write surface, spawning runs and
-answering prompts, to anyone who can reach the port. It is refused unless you
-opt in, whether the host comes from [`[web].host`](config.md#web) (needs
-`[web].allow_non_loopback = true`) or `--host` (needs `--allow-non-loopback`), so
-a copied config or command cannot silently expose you. Prefer `tailscale serve`
-in front of a loopback bind over any raw non-loopback bind.
+Binding a non-loopback address exposes the write surface, spawning runs and answering prompts, to anyone who can reach the port.
+It is refused unless you opt in, whether the host comes from [`[web].host`](config.md#web) (needs `[web].allow_non_loopback = true`) or `--host` (needs `--allow-non-loopback`).
+Prefer `tailscale serve` in front of a loopback bind over a raw non-loopback bind.
