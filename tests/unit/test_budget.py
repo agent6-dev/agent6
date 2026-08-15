@@ -69,6 +69,31 @@ def test_usd_ceiling_off_when_unlimited() -> None:
     t.check()  # no raise
 
 
+def test_negative_usage_never_reduces_the_ledger() -> None:
+    """A gateway's counts are third-party arithmetic: negative fields (a
+    malformed or hostile payload) subtracted from the totals and un-exhausted
+    a cap. The one sink clamps signs, so spend only ever grows."""
+    t = _t()
+    t.record(
+        model="m", input_tokens=5, output_tokens=3, cache_read_tokens=1, cache_creation_tokens=2
+    )
+    before = t.snapshot()
+    t.record(
+        model="m",
+        input_tokens=-500,
+        output_tokens=-500,
+        cache_read_tokens=-500,
+        cache_creation_tokens=-500,
+        cost_usd=-9.0,
+    )
+    snap = t.snapshot()
+    assert snap.input_total == before.input_total
+    assert snap.output_total == before.output_total
+    assert snap.cache_read_total == before.cache_read_total
+    assert snap.cache_creation_total == before.cache_creation_total
+    assert t.estimate_usd()[0] >= 0.0
+
+
 def test_record_accumulates() -> None:
     t = _t()
     t.record(

@@ -198,6 +198,15 @@ class BudgetTracker:
         lands in the fallback token ledger.
         """
         with self._lock:
+            # A gateway is third-party arithmetic: a negative count (malformed
+            # or hostile) would SUBTRACT from the ledger and un-exhaust a cap,
+            # so the one sink clamps signs. Missing/zero input is the provider
+            # layer's fail-closed check; signs are this ledger's.
+            input_tokens = max(input_tokens, 0)
+            output_tokens = max(output_tokens, 0)
+            cache_read_tokens = max(cache_read_tokens, 0)
+            cache_creation_tokens = max(cache_creation_tokens, 0)
+            cost_usd = max(cost_usd, 0.0)
             totals = self._per_model.setdefault(model, _ModelTotals())
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
