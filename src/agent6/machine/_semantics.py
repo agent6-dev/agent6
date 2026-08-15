@@ -235,6 +235,23 @@ def _resolve_vars(
     return var_types, var_owner, var_values, problems
 
 
+def fixture_problems(spec: MachineSpec, fixture: dict[str, Any]) -> list[str]:
+    """Problems in a `--blackboard` fixture: every key must name a declared
+    var and every value must satisfy its type -- the same checks the declared
+    defaults get. Unchecked, a typo'd key was silently ignored and a string
+    `"false"` replaced a bool and routed branches as truthy."""
+    schema_names = frozenset(spec.schemas)
+    schemas, _ = _resolve_schemas(spec, schema_names)
+    var_types, _owner, _values, _ = _resolve_vars(spec, schema_names, schemas)
+    problems: list[str] = []
+    for name, value in fixture.items():
+        if name not in var_types:
+            problems.append(f"blackboard fixture: {name!r} is not a declared variable")
+            continue
+        problems.extend(_check_value(value, var_types[name], schemas, f"fixture {name!r}"))
+    return problems
+
+
 def _check_value(
     value: Any, t: TypeRef, schemas: dict[str, dict[str, TypeRef]], label: str
 ) -> list[str]:

@@ -212,6 +212,28 @@ def test_cli_machine_test_with_blackboard(
     assert re.search(r"check\s+\[0\]\s+judge", out), out
 
 
+def test_cli_machine_test_rejects_a_fixture_off_the_blackboard_schema(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fixture merged into the blackboard unvalidated: a typo'd key was
+    silently ignored and a string "false" replaced a bool and routed branches
+    as truthy. Every key must name a declared var; every value must satisfy
+    its type, exactly like the declared defaults."""
+    from agent6.ui.cli import main
+
+    f = _write(tmp_path)
+    bad_type = tmp_path / "bad_type.toml"
+    bad_type.write_text('approved = "false"\n', encoding="utf-8")
+    assert main(["machine", "test", str(f), "--blackboard", str(bad_type)]) == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err and "approved" in err and "bool" in err
+
+    typo = tmp_path / "typo.toml"
+    typo.write_text("aproved = true\n", encoding="utf-8")
+    assert main(["machine", "test", str(f), "--blackboard", str(typo)]) == 1
+    assert "not a declared variable" in capsys.readouterr().err
+
+
 def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
     from agent6.ui.cli import main
 

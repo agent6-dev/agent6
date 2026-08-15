@@ -56,6 +56,7 @@ from agent6.machine import (
     ToolState,
     drive,
     dry_run,
+    fixture_problems,
     load_machine,
     render,
 )
@@ -193,6 +194,9 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
             fixture = tomllib.loads(read_operator_file(blackboard))
         except tomllib.TOMLDecodeError as exc:
             raise OperatorError(f"blackboard fixture is not valid TOML: {exc}") from exc
+        fixture_errors = fixture_problems(spec, fixture)
+        if fixture_errors:
+            return _fail(path, fixture_errors, "blackboard")
     report = dry_run(spec, fixture)
     _print_dry_run_report(spec, report)
     if report.ok:

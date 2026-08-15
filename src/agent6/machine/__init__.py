@@ -13,7 +13,7 @@ blocking) cover 24/7 use.
 
 from __future__ import annotations
 
-from agent6.machine._semantics import load_machine, validate_semantics
+from agent6.machine._semantics import fixture_problems, load_machine, validate_semantics
 from agent6.machine.authoring import (
     MACHINE_AUTHOR_GUIDE,
     SCRIPTS_PAYLOAD_KEY,
@@ -98,6 +98,7 @@ __all__ = [
     "dry_run",
     "extract_scripts",
     "extract_toml",
+    "fixture_problems",
     "load_machine",
     "machine_lock",
     "read_source",
