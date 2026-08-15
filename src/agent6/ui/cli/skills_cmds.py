@@ -24,14 +24,13 @@ from pathlib import Path
 import httpx2
 
 from agent6.config.io import remove_toml_leaf, upsert_toml_leaf
-from agent6.config.layer import load_effective
+from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.errors import OperatorError, read_operator_file
 from agent6.paths import (
     chown_to_real_user,
     data_dir,
     global_config_path,
     mkdir_for_real_user,
-    repo_config_path,
 )
 from agent6.skills import (
     Skill,
@@ -476,7 +475,11 @@ def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tupl
 
 
 def _state_target(repo: bool) -> Path:
-    return repo_config_path(Path.cwd()) if repo else global_config_path()
+    # Through the resolved owner: the raw path helper ignores the global
+    # [agent6].state_dir override, so a custom-state setup wrote skill state
+    # into the DEFAULT tree while the effective config read the override --
+    # success printed, nothing changed.
+    return repo_config_path_for(Path.cwd()) if repo else global_config_path()
 
 
 def _require_known(name: str, repo_root: Path, config_path: Path | None = None) -> None:

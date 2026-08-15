@@ -377,3 +377,22 @@ def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
     _write_origin(skill, url=url, kind="dir", source_sha="")
     origin = _read_origin(skill)
     assert origin is not None and origin["url"] == url
+
+
+def test_repo_skill_state_honors_the_custom_state_base(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--repo skill state must write the config the effective loader READS.
+    The raw path helper ignored the global [agent6].state_dir override, so a
+    custom-state setup wrote the default tree, printed success, and the skill
+    stayed enabled."""
+    from agent6.ui.cli.skills_cmds import (
+        _state_target,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    custom = env / "custom-state"
+    gdir = env / "config"  # AGENT6_CONFIG_HOME names the agent6 config dir itself
+    gdir.mkdir(parents=True, exist_ok=True)
+    (gdir / "config.toml").write_text(f'[agent6]\nstate_dir = "{custom}"\n', encoding="utf-8")
+    target = _state_target(repo=True)
+    assert target.is_relative_to(custom), f"wrote {target}, outside the custom base"
