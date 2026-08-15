@@ -635,7 +635,7 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
     return None
 
 
-def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
+def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR0915
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the machine ends/waits, or on Ctrl-C. Read-only."""
@@ -656,7 +656,11 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
             print(f"  - {problem}", file=sys.stderr)
         return 1
     journal = MachineJournal(root)
-    ms = fold_machine(spec, journal.read())
+    try:
+        ms = fold_machine(spec, journal.read())
+    except JournalError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     print(_render_overview(ms), flush=True)
     if ms.ended is not None:
         print(f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} ({ms.ended.reason})")
@@ -676,9 +680,16 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     anchor: float | None = None
     try:
         while True:
-            ms = fold_machine(spec, journal.read())
+            try:
+                ms = fold_machine(spec, journal.read())
+            except JournalError as exc:
+                # The same clean degradation `machine status` gives a corrupt
+                # journal; attach must not turn it into a traceback.
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
             for t in cursor.new_transitions(ms):
-                print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}", flush=True)
+                tail = f" -- {t.detail}" if t.detail else ""
+                print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}{tail}", flush=True)
             for n in cursor.new_notifications(ms):
                 # Ring the bell + fire a desktop notification (if notify-send is
                 # present) so an operator watching over ssh is alerted.

@@ -803,13 +803,13 @@ class _Handler(BaseHTTPRequestHandler):
                 and not worker_is_alive(machine_dir)
                 and not machine_is_parked(machine_dir)
             ):
-                # Synthesize a truthful terminal before closing: m.ended is the
-                # client's only terminate signal (same auto-retry story as the
-                # run stream), and machine_status_word's word for a dead,
-                # unparked pid is "stopped". A bare return left the tab
-                # reconnecting forever over a "running" machine.
-                payload["machine"]["ended"] = {
-                    "status": "stopped",
+                # Supervisor loss is NOT a journaled end: the instance is
+                # resumable, and a fabricated `ended` (a status the journal
+                # vocabulary does not even hold) styled it terminal. A
+                # distinct field closes the stream truthfully; `ended` stays
+                # reserved for a durable MachineEnd. A bare return would
+                # leave the tab reconnecting forever over a "running" machine.
+                payload["machine"]["worker_lost"] = {
                     "reason": "worker died",
                     "state": payload["machine"].get("current", ""),
                 }

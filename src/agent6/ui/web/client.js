@@ -1377,7 +1377,7 @@ async function renderMachine(name, gen) {
     let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
     hbState.spin++;
-    if (data.machine && data.machine.ended) closeLive(); // machine done; stop the stream
+    if (data.machine && (data.machine.ended || data.machine.worker_lost)) closeLive(); // machine done or worker lost; stop the stream
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
@@ -1391,7 +1391,7 @@ function machineNotify(ctx, m) {
     // or fire a spurious "ended" banner/OS-notify. Only events that happen while
     // watching fire.
     ctx.seen = new Set(notes.map(keyOf));
-    if (m.ended) ctx.endedNotified = true;
+    if (m.ended || m.worker_lost) ctx.endedNotified = true;
     return;
   }
   for (const n of notes) {
@@ -1420,9 +1420,19 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // stopped instances all have a finished agent state whose loop polls no
   // marker, so painting {} reconciles any approval/question boxes away,
   // matching the Steer disable below (the server refuses the POST anyway).
-  const notRunning = !!m.ended || (m.status ? m.status !== 'running' : false);
+  const notRunning = !!m.ended || !!m.worker_lost || (m.status ? m.status !== 'running' : false);
   paintPrompts(cards, notRunning ? {} : (data.reasoning || {}));
   machineNotify(ctx, m);
+  if (m.worker_lost && !ctx.endedNotified) {
+    // Supervisor loss, not a journaled end: the instance is resumable.
+    ctx.endedNotified = true;
+    const banner = el('div', 'notif-banner error');
+    banner.appendChild(el('div', 'grow',
+      `${esc(m.machine || '')} stopped: ${esc(m.worker_lost.reason)} — resumable with agent6 machine run`));
+    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
+    banner.appendChild(x); ctx.notifsHost.appendChild(banner);
+    osNotify('agent6: ' + (m.machine || 'machine') + ' stopped', m.worker_lost.reason || '');
+  }
   if (m.ended && !ctx.endedNotified) {
     ctx.endedNotified = true;
     const banner = el('div', 'notif-banner ' + (m.ended.status === 'ok' ? 'info' : 'error'));
@@ -1432,7 +1442,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
   }
   structBody.innerHTML = '';
-  const word = m.status || (m.ended ? m.ended.status : '');
+  const word = m.worker_lost ? 'stopped' : (m.status || (m.ended ? m.ended.status : ''));
   structBody.appendChild(el('div', 'sub muted',
     `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}`));
   const tree = el('div', 'tree');
@@ -1446,10 +1456,11 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 
   pathBody.innerHTML = '';
   const path = el('div', 'tree');
-  for (const t of m.transitions || []) path.appendChild(el('div', 'node', `${t.seq}. ${t.state} —${t.label}→ ${t.goto}`));
+  for (const t of m.transitions || []) path.appendChild(el('div', 'node', `${t.seq}. ${t.state} —${t.label}→ ${t.goto}${t.detail ? ' — ' + t.detail : ''}`));
   if (!(m.transitions||[]).length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
+  if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)} — resumable`));
 
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no
@@ -1457,7 +1468,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // additionally needs a RUNNING worker (a parked or stopped machine's newest
   // state is finished; nothing polls the marker) and an agent state to inject
   // into. A poke is the exception: waking a waiting machine is its purpose.
-  const ended = !!m.ended;
+  const ended = !!m.ended || !!m.worker_lost;
   if (cards._steer_btn) {
     cards._steer_btn.disabled = notRunning || !cards._state;
     cards._steer_btn.title = ended ? 'the machine has ended'

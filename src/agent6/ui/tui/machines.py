@@ -33,6 +33,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.app.machine import validate_bundle
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -475,7 +476,10 @@ def _machine_row(path: Path) -> tuple[str, str, str]:
         # unknown, and `path.stem` on `<name>.asm.toml` renders half a filename
         # that is neither. The `file` column already says which file it was.
         return ("-", "-", "invalid")
-    problems = validate_semantics(spec)
+    # The bundle is part of validity: a missing or escaping `scripts/` entry is
+    # exactly what `machine check`/`run` refuse, so "valid" here must not
+    # contradict them.
+    problems = validate_semantics(spec) + validate_bundle(spec, path)
     return (
         spec.machine,
         str(len(spec.states)),

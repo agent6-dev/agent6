@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-from agent6.machine import MachineError, MachineJournal, load_machine
+from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.cli._common import (
@@ -73,7 +73,11 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
     except MachineError as exc:
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
-    ms = fold_machine(spec, MachineJournal(machine_dir).read())
+    try:
+        ms = fold_machine(spec, MachineJournal(machine_dir).read())
+    except JournalError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     print(json.dumps(machine_state_as_dict(ms, machine_dir)))
     return 0
 

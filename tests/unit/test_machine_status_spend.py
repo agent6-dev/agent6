@@ -264,3 +264,92 @@ reason = "routed"
     live = drive(spec, journal, FakeWorld({}), live=True)
     assert live.status == "failed"
     assert "max_usd" in live.reason
+
+
+def test_transitions_carry_bounded_failure_evidence(tmp_path: Path) -> None:
+    """A failed tool's exit code + last output line and a failed agent's stop
+    reason ride the shared fold's transition view, so every surface can show
+    WHY a machine took its failed edge; success stays one clean line."""
+    from agent6.machine import load_machine
+    from agent6.machine.journal import ToolFact
+    from agent6.viewmodel.machine_state import fold_machine
+
+    f = tmp_path / "m.asm.toml"
+    f.write_text(
+        """\
+machine = "evid"
+version = 1
+initial = "probe"
+
+[budget]
+max_transitions = 10
+
+[schemas.out]
+text = { type = "str" }
+
+[vars.agent]
+res = { type = "out", default = {} }
+
+[states.probe]
+kind = "tool"
+command = ["sh", "-c", "exit 2"]
+timeout_secs = 60
+on = { ok = "done", nonzero = "fix", timeout = "fix" }
+
+[states.fix]
+kind = "agent"
+prompt = "p"
+model = "m"
+timeout_secs = 60
+output_schema = "out"
+capture = { finish_json = "res" }
+on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "r"
+""",
+        encoding="utf-8",
+    )
+    spec = load_machine(f)
+    events = [
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="probe",
+            label="nonzero",
+            goto="fix",
+            fact=ToolFact(exit_code=2, stdout="", timed_out=False, stderr="boom\nno such file\n"),
+        ),
+        StepEvent(
+            ts="t",
+            seq=1,
+            state="fix",
+            label="failed",
+            goto="done",
+            fact=AgentFact(
+                outcome="failed",
+                reason="budget_exhausted",
+                payload=None,
+                usd=0.1,
+                input_tokens=1,
+                output_tokens=1,
+            ),
+        ),
+    ]
+    ms = fold_machine(spec, events)
+    assert ms.transitions[0].detail == "exit 2: no such file"
+    assert ms.transitions[1].detail == "failed: budget_exhausted"
+
+    ok_events = [
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="probe",
+            label="ok",
+            goto="done",
+            fact=ToolFact(exit_code=0, stdout="fine", timed_out=False),
+        )
+    ]
+    assert fold_machine(spec, ok_events).transitions[0].detail == ""

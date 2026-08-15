@@ -851,3 +851,22 @@ def test_hub_spawn_away_mode_reaches_the_instance(
     assert main(["machine", "run", str(f)]) == 0
     root = resolved_state_dir(tmp_path) / "machines" / "tiny"
     assert away_mode(root) == "wait"
+
+
+def test_attach_degrades_a_corrupt_journal_like_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine status` prints a clean ERROR for a corrupt journal; the watch
+    (attach's machine arm) must degrade identically, never propagate the
+    JournalError as a traceback."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    (root / "journal.jsonl").write_text('{"type": "machine.begin"\n', encoding="utf-8")
+    code = main(["attach", "tiny"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "ERROR:" in err

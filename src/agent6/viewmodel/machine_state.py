@@ -23,11 +23,13 @@ from pathlib import Path
 from typing import Any
 
 from agent6.machine.journal import (
+    AgentFact,
     JournalError,
     MachineEnd,
     MachineJournal,
     MachineNotify,
     StepEvent,
+    ToolFact,
 )
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
@@ -50,12 +52,18 @@ class MachineStateView:
 
 @dataclass(frozen=True, slots=True)
 class TransitionView:
-    """One journaled transition: state --label--> goto, in order."""
+    """One journaled transition: state --label--> goto, in order.
+
+    `detail` is the failure evidence a debugging operator needs at the
+    surface, bounded: a failed tool's exit code and last stderr/stdout line,
+    a failed agent state's stop reason. Empty on success -- the happy path
+    stays one line."""
 
     seq: int
     state: str
     label: str
     goto: str
+    detail: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +103,25 @@ class MachineState:
     notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
 
 
+def _fact_detail(step: StepEvent) -> str:
+    """Bounded failure evidence for one transition; "" on success."""
+    fact = step.fact
+    if isinstance(fact, ToolFact) and (fact.exit_code != 0 or fact.timed_out):
+        tail = next(
+            (
+                ln.strip()
+                for ln in reversed((fact.stderr or fact.stdout).splitlines())
+                if ln.strip()
+            ),
+            "",
+        )
+        head = "timed out" if fact.timed_out else f"exit {fact.exit_code}"
+        return f"{head}: {tail[:160]}" if tail else head
+    if isinstance(fact, AgentFact) and fact.outcome != "ok":
+        return f"{fact.outcome}: {fact.reason}"[:160]
+    return ""
+
+
 def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     """Reduce a machine journal (StepEvent/MachineEnd stream) to a watch view.
 
@@ -117,7 +144,8 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         for name, st in spec.states.items()
     )
     transitions = tuple(
-        TransitionView(seq=s.seq, state=s.state, label=s.label, goto=s.goto) for s in steps
+        TransitionView(seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=_fact_detail(s))
+        for s in steps
     )
     ended = MachineEndView.from_end(end) if end is not None else None
     notes = [e for e in events if isinstance(e, MachineNotify)]

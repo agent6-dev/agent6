@@ -1014,9 +1014,10 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A machine that died mid-state (no MachineEnd) must close its SSE stream
-    with a synthesized truthful terminal (ended.status="stopped") -- m.ended is
-    the client's only terminate signal, and the old bare return left the tab
-    reconnecting forever over a "running" machine."""
+    with a DISTINCT worker_lost frame: supervisor loss is not a journaled end
+    (the instance is resumable), so a fabricated `ended` styled it terminal;
+    `ended` stays reserved for a durable MachineEnd, and a bare return left
+    the tab reconnecting forever over a "running" machine."""
     import agent6.ui.web.server as server_mod
 
     monkeypatch.setattr(server_mod, "_MACHINE_POLL_S", 0.05)
@@ -1043,9 +1044,8 @@ def test_sse_machine_dead_worker_frame_is_terminal(
         conn.close()
     frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
     last = json.loads(frames[-1][len(b"data:") :])
-    assert last["machine"]["ended"] is not None
-    assert last["machine"]["ended"]["status"] == "stopped"
-    assert "died" in last["machine"]["ended"]["reason"]
+    assert last["machine"]["ended"] is None  # no journaled end was invented
+    assert "died" in last["machine"]["worker_lost"]["reason"]
 
 
 # --- POST hardening -----------------------------------------------------------
