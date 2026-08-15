@@ -910,6 +910,25 @@ def _cmd_sessions_dir() -> int:
     return 0
 
 
+def _rm_asks(cwd: Path, session_id: str) -> int:
+    """Clear this directory's asks bucket; a deletion failure is an error,
+    never a success line over a surviving directory."""
+    if session_id:
+        print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
+        return 2
+    bucket = bucket_dir(_state_dir(cwd), "asks")
+    gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
+    try:
+        shutil.rmtree(bucket)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(f"ERROR: could not remove {bucket}: {exc}", file=sys.stderr)
+        return 1
+    print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
+    return 0
+
+
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir, plus the run's hidden chain ref
     (`refs/agent6/<id>/head`, the gc anchor -- meaningless once the record is gone,
@@ -921,14 +940,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     elsewhere are untouched."""
     cwd = Path.cwd()
     if asks:
-        if session_id:
-            print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
-            return 2
-        bucket = bucket_dir(_state_dir(cwd), "asks")
-        gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
-        shutil.rmtree(bucket, ignore_errors=True)
-        print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
-        return 0
+        return _rm_asks(cwd, session_id)
     try:
         # rm is the surface that deletes a husk, so it resolves one.
         layout = resolve_or_newest_layout(cwd, session_id, allow_husk=True)
@@ -945,7 +957,13 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
             file=sys.stderr,
         )
         return 2
-    shutil.rmtree(layout.session_dir, ignore_errors=True)
+    try:
+        shutil.rmtree(layout.session_dir)
+    except OSError as exc:
+        # A partial delete leaves a real session remnant; success here would be
+        # a lie and the chain-ref cleanup below would strand its commits.
+        print(f"ERROR: could not remove {layout.session_dir}: {exc}", file=sys.stderr)
+        return 1
     note = ""
     chain = chain_ref_for(layout.session_id)
     try:

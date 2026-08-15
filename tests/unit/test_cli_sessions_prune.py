@@ -500,3 +500,32 @@ def test_prune_with_nothing_at_all_says_so(
 
     assert main(["sessions", "prune"]) == 0
     assert "nothing to prune" in capsys.readouterr().out
+
+
+def test_rm_reports_a_deletion_failure_instead_of_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """rmtree ran with ignore_errors=True and the command printed the removal
+    line with rc 0 while the directory survived; the chain-ref cleanup then
+    ran against a session that still existed. A deletion failure is rc 1
+    naming the error, and the session dir (and its ref) stay untouched."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _state_dir(repo) / "sessions" / "runs"
+    target = runs / "stuck-run-CCCC33"
+    target.mkdir(parents=True)
+    (target / "logs.jsonl").write_text(
+        '{"type": "session.start", "mode": "run"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
+    )
+    runs.chmod(0o500)  # the parent refuses the unlink
+    try:
+        rc = main(["sessions", "rm", "stuck-run"])
+    finally:
+        runs.chmod(0o700)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "could not remove" in err
+    assert target.is_dir()  # nothing pretended otherwise
