@@ -144,7 +144,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             "A standing goal for this run: a never-finishing fallback task the run"
             " re-enters whenever the ordinary queue drains or the worker tries to"
             " stop. New work always outranks it. The run ends on its budget, an"
-            " operator stop, or --max-iterations."
+            " operator stop, or the run's iteration cap."
         ),
     )
     _add_budget_flags(run_p)

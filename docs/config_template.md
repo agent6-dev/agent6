@@ -297,8 +297,10 @@ available").
 ## `[mcp]` + `[mcp.servers.<name>]` (optional)
 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as
-`mcp__<name>__<tool>`. A server runs as your user outside the jail with a
-curated env (never your provider keys; `pass_env` adds named vars). The LLM
+`mcp__<name>__<tool>`. A spawned server runs as a jailed child by default
+(its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts
+out) with a curated env (never your provider keys; `pass_env` adds named
+vars); a `url` server is a process you run and confine yourself. The LLM
 influences the ARGUMENTS it passes, so each call is approved like a command
 (`approve`), and audit each server like a `run_command` allow-list. `agent6 mcp connect` handshakes first and only then writes the
 entry; a server that does not start is skipped with an

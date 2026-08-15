@@ -57,9 +57,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         config_sub,
         "fill",
         help=(
-            "Write the fully-resolved config (every effective value, explicit)"
-            " to the global config file. Handy before tightening defaults or"
-            " for an audit snapshot."
+            "Write the defaults + global layers as one explicit global config"
+            " file (repo overlays and preset effects stay overlays). Handy"
+            " before tightening defaults or for an audit snapshot."
         ),
     )
     config_fill.add_argument(

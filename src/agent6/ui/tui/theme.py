@@ -32,7 +32,9 @@ try:
     from textual.theme import Theme
     from textual.widgets import Static
 except ImportError as e:  # pragma: no cover - clear runtime message
-    raise SystemExit("The TUI theme support needs textual: pip install 'agent6[tui]'") from e
+    raise SystemExit(
+        "The TUI theme support needs textual, a required dependency; reinstall agent6."
+    ) from e
 
 from agent6.ui.tui.clipboard import mux_passthrough
 from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme

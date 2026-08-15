@@ -34,7 +34,7 @@ try:
     from textual.widgets import OptionList, Static
     from textual.widgets.option_list import Option
 except ImportError as e:  # pragma: no cover
-    raise SystemExit("The menu bar needs textual: pip install 'agent6[tui]'") from e
+    raise SystemExit("The menu bar needs textual, a required dependency; reinstall agent6.") from e
 
 
 @dataclass(frozen=True, slots=True)

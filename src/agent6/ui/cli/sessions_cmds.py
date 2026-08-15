@@ -838,7 +838,7 @@ def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> i
     Read-only: no merges, no writes."""
     if len(session_ids) < 2:
         print(
-            f"ERROR: runs compare needs at least 2 run ids (got {len(session_ids)}).",
+            f"ERROR: sessions compare needs at least 2 run ids (got {len(session_ids)}).",
             file=sys.stderr,
         )
         return 2

@@ -33,9 +33,9 @@ cd your-repo
 agent6 run "add a --json output mode to the CLI"
 ```
 
-agent6 edits files, runs the verify command, and commits each passing step to a
-per-run commit chain (plus an `agent6/<id>` branch by default); your checkout
-is never touched. It stops when the model calls `finish_session` or a budget ceiling is hit.
+agent6 edits files in your working tree, runs the verify command, and commits
+each passing step to a per-run commit chain (plus an `agent6/<id>` branch by
+default); your branch, HEAD, and index are never touched. It stops when the model calls `finish_session` or a budget ceiling is hit.
 
 At a terminal the session then asks for the next input rather than ending: type
 the next instruction to continue in the same session (no `agent6 resume` to
