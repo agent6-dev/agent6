@@ -106,3 +106,22 @@ def test_exec_refuses_a_session_network_nobody_holds(
     err = capsys.readouterr().err
     assert rc == 2
     assert "no live session network" in err
+
+
+def test_attach_presentation_modes_are_mutually_exclusive(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--json silently won over --raw/--tui when combined; one presentation
+    at a time, refused by the parser."""
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["attach", "--json", "--raw"])
+    assert exc.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err
+
+
+def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
+    """--since replays event lines only the --raw tail renders; it was
+    silently ignored elsewhere."""
+    rc = cli.main(["attach", "--since", "5"])
+    assert rc == 2
+    assert "--since applies to --raw only" in capsys.readouterr().err

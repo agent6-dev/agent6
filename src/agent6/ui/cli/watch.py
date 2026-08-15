@@ -105,6 +105,11 @@ def _cmd_watch_target(  # noqa: PLR0911
     config_path: Path | None = None,
 ) -> int:
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
+    if since and not raw:
+        # --since replays event lines, which only the --raw tail renders;
+        # accepted elsewhere it was silently ignored.
+        print("agent6 attach: --since applies to --raw only.", file=sys.stderr)
+        return 2
     cwd = Path.cwd()
     runs_dir = _runs_dir(cwd)
     machines_dir = _machines_dir(cwd)

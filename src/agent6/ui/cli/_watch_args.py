@@ -36,17 +36,20 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="Session id (exact or prefix) or machine id. Omit for the most recent.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
-    watch_p.add_argument(
+    # One presentation at a time: JSON silently won over --raw/--tui when
+    # combined, which read as the other flag being broken.
+    watch_mode = watch_p.add_mutually_exclusive_group()
+    watch_mode.add_argument(
         "--tui",
         action="store_true",
         help="Open the full-screen TUI instead of the default conversation follow.",
     )
-    watch_p.add_argument(
+    watch_mode.add_argument(
         "--json",
         action="store_true",
         help="Print a one-shot JSON snapshot of the folded state and exit (the web wire form).",
     )
-    watch_p.add_argument(
+    watch_mode.add_argument(
         "--raw",
         action="store_true",
         help="Follow the no-deps event-line tail (type + key fields) instead of the conversation.",
