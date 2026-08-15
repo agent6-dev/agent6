@@ -842,3 +842,37 @@ def test_an_oversized_provider_response_is_refused_not_buffered(
     resp = _transport.http_post("https://x", headers={}, content=b"", timeout=5.0)
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+def test_a_gzip_encoded_provider_response_is_not_decoded_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`iter_bytes()` yields the DECODED body, but the rebuilt Response
+    carried the wire's `content-encoding: gzip` header, so httpx2 ran the
+    decoder again over plaintext and every gzip-encoded provider response
+    (Anthropic always, OpenRouter past its size threshold) failed with
+    `DecodingError: incorrect header check`. The representation headers are
+    dropped on rebuild; the rest (retry-after here) survive."""
+    import contextlib
+
+    from agent6.providers import _transport
+
+    class _FakeStreamResp:
+        status_code = 200
+        headers = httpx2.Headers(
+            {"content-encoding": "gzip", "content-length": "57", "retry-after": "7"}
+        )
+        request = httpx2.Request("POST", "https://x")
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            yield b'{"ok": true}'
+
+    @contextlib.contextmanager
+    def fake_stream(method: str, url: str, **kw: object):
+        yield _FakeStreamResp()
+
+    monkeypatch.setattr(_transport.httpx2, "stream", fake_stream)
+    resp = _transport.http_post("https://x", headers={}, content=b"", timeout=5.0)
+    assert resp.json() == {"ok": True}
+    assert "content-encoding" not in resp.headers
+    assert resp.headers.get("retry-after") == "7"

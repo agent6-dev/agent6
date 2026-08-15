@@ -69,9 +69,18 @@ def http_post(
                 raise ProviderError(
                     f"provider response exceeded {MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
                 )
+        # iter_bytes() decoded the body: the wire's representation headers
+        # (content-encoding, content-length) no longer describe the content,
+        # and carrying them over makes httpx2 run the decoder again over
+        # plaintext.
+        response_headers = [
+            (k, v)
+            for k, v in httpx2.Headers(resp.headers).multi_items()
+            if k not in ("content-encoding", "content-length")
+        ]
         return httpx2.Response(
             resp.status_code,
-            headers=resp.headers,
+            headers=response_headers,
             content=bytes(body),
             request=resp.request,
         )
