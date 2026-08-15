@@ -740,6 +740,12 @@ def _toml_scalar(value: Any) -> str:
         return toml_basic_string(value)
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_toml_scalar(v) for v in value) + "]"
+    if isinstance(value, dict):
+        # Inline table, so a dict ANYWHERE in a value (an extra_body option
+        # object inside an array, say) round-trips instead of being dropped
+        # or printed as Python repr.
+        body = ", ".join(f"{_toml_key(k)} = {_toml_scalar(v)}" for k, v in value.items())
+        return "{" + body + "}"
     return str(value)
 
 
@@ -772,7 +778,9 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
         for item in arr:
             lines.append(f"[[{path}.{_toml_key(key)}]]" if path else f"[[{_toml_key(key)}]]")
             for k2, v2 in item.items():
-                if v2 is not None and not isinstance(v2, dict):
+                if v2 is not None:
+                    # Dicts render as inline tables via _toml_scalar; skipping
+                    # them dropped an array item's nested objects.
                     lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
             lines.append("")
 
@@ -838,7 +846,7 @@ def materialize(
             for item in value:
                 lines.append(f"[[{section}]]")
                 for k2, v2 in item.items():
-                    if v2 is not None and not isinstance(v2, dict):
+                    if v2 is not None:
                         lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
                 lines.append("")
     if kept := _file_presets(keep_presets_from):

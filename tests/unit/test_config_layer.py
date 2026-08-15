@@ -395,6 +395,34 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     assert reloaded.providers["anthropic"].api_format == "anthropic"
 
 
+def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: Path) -> None:
+    """Dict-valued fields inside array items were dropped by the emitters, and
+    a dict inside a plain list printed as Python repr -- so `config fill` (and
+    a --parallel lane's snapshot) silently changed a valid provider request.
+    Every JSON-shaped extra_body value must survive materialize -> parse."""
+    gpath = repo.parent / "g" / "config.toml"
+    gpath.write_text(
+        gpath.read_text(encoding="utf-8")
+        + "\n[providers.gw]\n"
+        + 'api_format = "openai"\n'
+        + 'base_url = "https://gw.example.com/v1"\n'
+        + "[providers.gw.extra_body]\n"
+        + 'models = [{name = "a", options = {weight = 2, tags = ["x"]}}, {name = "b"}]\n'
+        + "mixed = [1, {flag = true}]\n",
+        encoding="utf-8",
+    )
+    eff = load_effective(repo)
+    out = tmp_path / "full.toml"
+    out.write_text(materialize(eff.config), encoding="utf-8")
+    reloaded = load_config(out)
+    body = reloaded.providers["gw"].extra_body
+    assert body["models"] == [
+        {"name": "a", "options": {"weight": 2, "tags": ["x"]}},
+        {"name": "b"},
+    ]
+    assert body["mixed"] == [1, {"flag": True}]
+
+
 def test_missing_flag_file_errors(repo: Path, tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_effective(repo, tmp_path / "does-not-exist.toml")
