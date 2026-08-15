@@ -7,22 +7,23 @@ A leaf beside `layout.py`: pydantic + path arithmetic, no agent6 imports, so
 app, the viewmodel, and the CLI parse a run's manifest through one owner and one
 shape instead of each re-deriving the read + error-catch + stringly `.get`.
 
-manifest.json is persistent history: every run dir ever written must keep
-rendering, so the model defaults every field and folds legacy shapes (``version:
-1` dirs, the pre-nesting flat `merged_*`` keys). Reading is lenient
-(`read_manifest` degrades a corrupt file through `ManifestError`, which the
-render consumers already catch and degrade on); the ONE strict contract is
-`session_mode` -- the fork/resume privilege gate, which refuses an unknown mode
-rather than falling open to the write ("run") tools.
+The model defaults every field and ignores unknown keys, so a partial or
+foreign-keyed manifest renders what it does carry -- lenience for damage, not a
+compatibility promise (the shape is liquid until 1.0; superseded keys are
+dropped, never folded). Reading is lenient (`read_manifest` degrades a corrupt
+file through `ManifestError`, which the render consumers already catch and
+degrade on); the ONE strict contract is `session_mode` -- the fork/resume
+privilege gate, which refuses an unknown mode rather than falling open to the
+write ("run") tools.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6.sessions.layout import session_layout
 from agent6.types import ResumableMode, UnknownSessionKind, session_kind
@@ -104,7 +105,7 @@ class WorkflowStamp(BaseModel):
 
 class MergeStamp(BaseModel):
     """Recorded once a run branch is merged, so later tooling tells a merged run
-    branch from an unmerged one (nests the pre-v2 flat merged_into/_sha/_ts)."""
+    branch from an unmerged one."""
 
     model_config = _MODEL_CONFIG
 
@@ -145,12 +146,11 @@ MANIFEST_VERSION = 3
 class SessionManifest(BaseModel):
     """The typed manifest.json a session starts with (and later stamps).
 
-    Every field defaults so ANY historical run dir on disk still parses (old
-    `version: 1` dirs, dirs missing later-added fields). `extra="ignore"` on
-    read drops keys this version dropped (the legacy `compare.group`); the
-    writer always emits the full shape. Known limitation: a stamp-rewrite by
-    this version drops keys only a NEWER version knows (load -> model_copy ->
-    dump cannot carry them), so the write path re-stamps `version` to keep
+    Every field defaults and `extra="ignore"` drops keys this version does not
+    know, so a manifest missing fields or carrying foreign keys still renders;
+    the writer always emits the full shape. Known limitation: a stamp-rewrite
+    by this version drops keys only a NEWER version knows (load -> model_copy
+    -> dump cannot carry them), so the write path re-stamps `version` to keep
     the on-disk claim truthful.
     """
 
@@ -186,23 +186,6 @@ class SessionManifest(BaseModel):
     parallel_id: str | None = None
     lane: int | None = None
     compare: CompareStamp | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _fold_legacy_keys(cls, data: Any) -> Any:
-        """Fold the pre-v2 flat merge keys (merged_into/merged_sha/merged_ts) into
-        the nested `merged` stamp, so a run merged before this reshape still
-        reads its merge record."""
-        if not isinstance(data, dict) or data.get("merged"):
-            return data
-        if data.get("merged_into") or data.get("merged_sha"):
-            data = dict(data)
-            data["merged"] = {
-                "into": data.get("merged_into", ""),
-                "sha": data.get("merged_sha", ""),
-                "ts": data.get("merged_ts", ""),
-            }
-        return data
 
     def session_mode(self) -> ResumableMode:
         """The session's mode, refusing anything this agent6 does not know.

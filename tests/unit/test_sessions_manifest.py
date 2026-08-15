@@ -61,17 +61,17 @@ def test_legacy_version_1_and_missing_profile(tmp_path: Path) -> None:
     assert m.workflow.preset == ""
 
 
-def test_legacy_flat_merge_keys_fold_into_merged(tmp_path: Path) -> None:
-    # A run merged before this reshape recorded flat merged_into/_sha/_ts.
+def test_unknown_keys_are_dropped_never_folded(tmp_path: Path) -> None:
+    """Superseded or foreign keys are ignored, not converted: a manifest
+    carrying only flat merged_* keys reads as unmerged (`merged is None`), the
+    safe direction -- prune's force-delete keys off the nested stamp."""
     _write(
         tmp_path,
         {"run_branch": "agent6/r", "merged_into": "main", "merged_sha": "abc123", "merged_ts": "t"},
     )
     m = read_manifest(tmp_path)
-    assert m.merged is not None
-    assert m.merged.into == "main"
-    assert m.merged.sha == "abc123"
-    assert m.merged.ts == "t"
+    assert m.merged is None
+    assert m.run_branch == "agent6/r"
 
 
 def test_legacy_compare_group_is_ignored(tmp_path: Path) -> None:
