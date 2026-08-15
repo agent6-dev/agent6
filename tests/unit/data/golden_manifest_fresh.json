@@ -28,7 +28,8 @@
   },
   "policy": {
     "run_commands": "",
-    "isolation": ""
+    "isolation": "",
+    "network": ""
   },
   "parked_task": "",
   "parent_session_id": null,

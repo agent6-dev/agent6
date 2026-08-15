@@ -30,7 +30,9 @@ from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork, run_in_jail
 from agent6.sessions.ipc import read_session_netns_pid
 from agent6.sessions.layout import SessionLayout
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.policy import jail_policy
+from agent6.types import NetworkMode
 
 _JOIN_ORDER = (("user", os.CLONE_NEWUSER), ("net", os.CLONE_NEWNET))
 
@@ -191,6 +193,23 @@ def forward(
         listener.close()
 
 
+def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | None:
+    """The run's recorded (isolation, network), or None when unreadable or
+    unstamped. An unknown network word reads as unset rather than guessing."""
+    try:
+        stamp = read_manifest(layout.session_dir).policy
+    except ManifestError:
+        return None
+    if stamp.isolation not in ("strict", "hardened", "none"):
+        return None
+    # "auto" (the knob) and "" (unstamped) resolve as None: jail_policy
+    # applies its own auto semantics, same as the run did.
+    network: NetworkMode | None = (
+        stamp.network if stamp.network in ("host", "session", "none") else None
+    )
+    return stamp.isolation, network
+
+
 def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[str, ...]) -> int:
     """Run *argv* the way the run's own commands run: same jail, same network.
 
@@ -204,10 +223,25 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     server, a tail) inside the run's network -- the one thing it is for.
     """
     pid = read_session_netns_pid(layout.session_dir)
-    isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
-    policy = jail_policy(
-        cwd, cfg, isolation, argv, network="session" if pid else None, timeout_s=0.0
-    )
+    # The RUN'S recorded isolation and network, not today's config: an
+    # operator who changed [sandbox] since the run started still gets the
+    # jail the run's own commands got (mounts stay config-derived; the help
+    # says so). A manifest without the stamp falls back to the current
+    # config with a warning naming the divergence risk.
+    stamped = _stamped_policy(layout)
+    if stamped is not None:
+        isolation_word, network_word = stamped
+        isolation = resolve_isolation(isolation_word, detect_env())
+        network = "session" if pid else network_word
+    else:
+        print(
+            "[agent6] warning: this run recorded no launch policy; using the"
+            " current config, which may differ from what the run's commands got.",
+            file=sys.stderr,
+        )
+        isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
+        network = "session" if pid else None
+    policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
     if policy.network == "session" and pid is None:
         # Config asked for the session network but this session has none to
         # join (the run ended, or never held one): refuse rather than open

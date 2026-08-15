@@ -12,6 +12,7 @@ port of the newest session."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -125,3 +126,65 @@ def test_attach_since_needs_raw(capsys: pytest.CaptureFixture[str]) -> None:
     rc = cli.main(["attach", "--since", "5"])
     assert rc == 2
     assert "--since applies to --raw only" in capsys.readouterr().err
+
+
+def test_exec_uses_the_runs_recorded_policy_over_current_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The run's manifest records its resolved isolation and network; exec
+    reproduces THEM after a config change (run strict, config later flipped
+    to none: exec must not run unconfined against "same jail"). A run with no
+    stamp falls back to the current config with a warning."""
+    from types import SimpleNamespace
+
+    from agent6.config import Config
+    from agent6.sessions.layout import SessionLayout
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
+    layout.ensure()
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "session_id": "r1",
+                "mode": "run",
+                "policy": {"run_commands": "yes", "isolation": "none", "network": "host"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_jail_policy(cwd: Path, cfg: Config, isolation: str, argv: Any, **kw: Any) -> Any:
+        captured["isolation"] = isolation
+        captured["network"] = kw.get("network")
+        raise RuntimeError("stop before running anything")
+
+    def _no_pid(_d: Path) -> None:
+        return None
+
+    def _env() -> Any:
+        return SimpleNamespace(sandbox_available=True)
+
+    def _resolve(word: str, _env_v: Any) -> str:
+        return word
+
+    monkeypatch.setattr(net_cmds, "jail_policy", fake_jail_policy)
+    monkeypatch.setattr(net_cmds, "read_session_netns_pid", _no_pid)
+    monkeypatch.setattr(net_cmds, "detect_env", _env)
+    monkeypatch.setattr(net_cmds, "resolve_isolation", _resolve)
+
+    cfg = Config.model_validate({"sandbox": {"isolation": "strict"}})
+    with pytest.raises(RuntimeError, match="stop before"):
+        net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
+    assert captured["isolation"] == "none"  # the stamp, not the config
+    assert captured["network"] == "host"
+
+    # No stamp: current config with a loud warning.
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps({"session_id": "r1", "mode": "run"}), encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="stop before"):
+        net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
+    assert captured["isolation"] == "strict"
+    assert "recorded no launch policy" in capsys.readouterr().err

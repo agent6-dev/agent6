@@ -58,14 +58,18 @@ class ModelsBrief(BaseModel):
 
 
 class PolicyStamp(BaseModel):
-    """How the run was launched: the two policy facts an operator wants to see
+    """How the run was launched: the policy facts an operator wants to see
     without opening config. Recorded so every surface reads them from one
-    place -- the TUI and web are other processes and have only the run dir."""
+    place -- the TUI and web are other processes and have only the run dir --
+    and so `agent6 exec` reproduces the run's isolation and network even
+    after the config moved (mounts stay config-derived; exec's help says
+    so)."""
 
     model_config = _MODEL_CONFIG
 
     run_commands: str = ""
     isolation: str = ""
+    network: str = ""
 
 
 class WorkflowStamp(BaseModel):

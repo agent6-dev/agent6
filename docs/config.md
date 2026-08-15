@@ -474,7 +474,8 @@ agent6 forward <id> 3000         # bridge that port to one on this machine
 agent6 exec <id> -- curl ...     # run a command in the run's sandbox
 ```
 
-`exec` runs in the whole sandbox — same mounts, same network — so what you see
+`exec` runs in the whole sandbox — the run's recorded isolation and network,
+with mounts from your current config — so what you see
 is what the agent sees. Neither is reachable by the model.
 
 ---

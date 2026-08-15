@@ -132,6 +132,7 @@ def write_session_manifest(
             # surface printing "auto" told the operator nothing about whether
             # the run was actually confined.
             isolation=isolation or str(cfg.sandbox.isolation),
+            network=str(cfg.sandbox.network),
         ),
         parked_task=parked_task,
         parent_session_id=parent_session_id,
