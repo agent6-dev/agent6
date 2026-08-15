@@ -31,13 +31,11 @@ from agent6.app.preflight import (
 )
 from agent6.app.providers import (
     InstrumentedProvider,
-    build_critic_provider,
     build_review_seats,
     build_role_provider,
     build_summariser_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
-    review_panel_configured,
 )
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
@@ -137,7 +135,6 @@ class SessionProviders:
     budget: BudgetTracker
     rm_role: RoleModel
     provider: Provider
-    critic_provider: Provider | None
     summariser_provider: Provider | None
     review_seats: list[ReviewSeat]
 
@@ -167,25 +164,20 @@ def build_session_providers(
         budget=budget,
         stream_text=stream_text,
     )
-    critic_provider = build_critic_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
     summariser_provider = build_summariser_provider(
         cfg, transcript_sink=transcript_sink, budget=budget, events=events
     )
-    # The grounded review panel runs at the critic trigger WHEN explicitly
-    # configured (any review_* key); otherwise critic!=off keeps the legacy
-    # single critic, so a pre-panel before_finish/periodic config still gates.
+    # The panel is THE in-loop review: trigger on with no seats builds the
+    # simple one-seat roster on the reviewer model.
     review_seats = (
         build_review_seats(cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events)
-        if cfg.review.trigger != "off" and review_panel_configured(cfg)
+        if cfg.review.trigger != "off"
         else []
     )
     return SessionProviders(
         budget=budget,
         rm_role=rm_role,
         provider=provider,
-        critic_provider=critic_provider,
         summariser_provider=summariser_provider,
         review_seats=review_seats,
     )

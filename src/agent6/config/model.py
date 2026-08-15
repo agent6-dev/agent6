@@ -133,7 +133,7 @@ class ModelsConfig(BaseModel):
       Unset -> falls back to `worker` (set it to a frontier model + high
       thinking for careful up-front planning).
     - `reviewer` drives the one-shot `agent6 review` subcommand and the
-      optional in-loop critic. Unset -> falls back to `worker`.
+      in-loop review panel. Unset -> falls back to `worker`.
 
     Any configured provider may serve any role. Leaving every role unset is
     valid (e.g. a global config that only declares providers); a role is
@@ -152,7 +152,9 @@ class ModelsConfig(BaseModel):
     )
     reviewer: RoleModel | None = Field(
         default=None,
-        description="Drives `agent6 review` and the in-loop critic. Unset falls back to `worker`.",
+        description=(
+            "Drives `agent6 review` and the in-loop review panel. Unset falls back to `worker`."
+        ),
     )
     planner: RoleModel | None = Field(
         default=None,

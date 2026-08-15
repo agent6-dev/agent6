@@ -292,20 +292,19 @@ class PromptConfig(BaseModel):
 
 
 class ReviewConfig(BaseModel):
-    """`[review]` section: critic-in-loop trigger + the adversarial review panel."""
+    """`[review]` section: the in-loop review panel and its trigger."""
 
     model_config = MODEL_CONFIG
 
-    # critic-in-loop. When != "off", Workflow runs the
-    # `reviewer` model as a critic at the chosen trigger and injects
-    # its critique as a user message the worker sees next turn.
-    #   off              - never (default; behaviour unchanged).
+    # When != "off", Workflow runs the review panel at the chosen trigger and
+    # injects its findings as a user message the worker sees next turn. With no
+    # `seats`, the panel is one seat on `[models.reviewer]` (same route
+    # `agent6 review` uses).
+    #   off              - never (default).
     #   on_verify_fail   - after every verify failure.
-    #   before_finish    - intercept `finish_session`; reject if critic
-    #                      is not satisfied and inject critique.
+    #   before_finish    - intercept `finish_session`; a gating `decision`
+    #                      rejects the finish while the panel is unsatisfied.
     #   periodic         - every `period` iterations.
-    # The reviewer provider must already be configured in
-    # `[models.reviewer]` (same one `agent6 review` uses).
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = Field(
         default="off",
         description=(
@@ -317,7 +316,7 @@ class ReviewConfig(BaseModel):
         default=10,
         description="Iterations between reviews for `periodic`.",
     )
-    # Adversarial review panel (opt-in). `seats` is THE roster: flat
+    # `seats` is THE roster: flat
     # "persona[@provider/model]" strings (e.g. "security" routes via
     # [models.reviewer]; "security@openrouter/moonshotai/kimi-k2" pins a
     # model). The `agent6 review --reviewers N`/`--personas` flags synthesize

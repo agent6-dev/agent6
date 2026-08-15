@@ -12,7 +12,7 @@ from agent6.tools.results import RawResult
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._review import ReviewSeat
 from agent6.workflows.loop import Workflow
-from tests.unit.test_critic import (
+from tests.unit.test_review_gate import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
     _resp_with_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -73,7 +73,7 @@ def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
 def test_has_reviewer_true_with_seats() -> None:
     wf = _wf(review_seats=[_seat(MagicMock())])
     assert wf._has_reviewer() is True  # pyright: ignore[reportPrivateUsage]
-    assert _wf()._has_reviewer() is False  # pyright: ignore[reportPrivateUsage]
+    assert _wf(review_seats=[])._has_reviewer() is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
@@ -91,7 +91,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
         dispatcher=_disp(),
         review_seats=[_seat(seat_provider)],
         review_decision="veto",
-        critic_mode="before_finish",
+        review_trigger="before_finish",
         base_sha="b",
     )
     messages = _begin()
@@ -119,7 +119,7 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
         dispatcher=_disp(),
         review_seats=[_seat(seat_provider)],
         review_decision="veto",
-        critic_mode="before_finish",
+        review_trigger="before_finish",
         base_sha="b",
     )  # review_budget_fraction defaults to 0.25
     with patch.object(Workflow, "_budget_fraction_remaining", return_value=0.10):
@@ -139,7 +139,7 @@ def test_panel_advisory_does_not_block_finish() -> None:
         dispatcher=_disp(),
         review_seats=[_seat(seat_provider)],
         review_decision="advisory",
-        critic_mode="before_finish",
+        review_trigger="before_finish",
         base_sha="b",
     )
     result = _drive(wf, _begin())
@@ -159,7 +159,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         dispatcher=_disp(),
         review_seats=[_seat(seat_provider)],
         review_decision="veto",
-        critic_mode="before_finish",
+        review_trigger="before_finish",
         base_sha="b",
     )
     result = _drive(wf, _begin())
@@ -181,7 +181,7 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
         dispatcher=_disp(),
         review_seats=[_seat(seat_provider)],
         review_decision="veto",
-        critic_mode="before_finish",
+        review_trigger="before_finish",
         max_consecutive_critic_rejections=0,  # isolate the per-run total disarm
         review_max_total_rejections=2,
         base_sha="b",

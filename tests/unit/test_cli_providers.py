@@ -36,14 +36,13 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
 
 
 def test_reviewer_family_builders_stamp_their_own_seats() -> None:
-    """critic, prompt reviser, summariser, and a bare-persona review seat are
+    """The prompt reviser, summariser, and a bare-persona review seat are
     distinct actors sharing the reviewer ROUTE; each stamps its own seat on
     transcripts. All of them stamping "reviewer" left persisted transcripts
     unable to tell which actor made a call."""
     from unittest.mock import call
 
     from agent6.app.providers import (
-        build_critic_provider,
         build_prompt_reviser_provider,
         build_review_seats,
         build_summariser_provider,
@@ -59,10 +58,6 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
         review=ReviewConfig(trigger="on_verify_fail", seats=("security",)),
         prompt=PromptConfig(revise_prompt="auto"),
     )
-
-    sink = MagicMock()
-    build_critic_provider(cfg, transcript_sink=sink, budget=MagicMock(), events=MagicMock())
-    assert sink.for_seat.call_args == call("critic")
 
     sink = MagicMock()
     build_prompt_reviser_provider(cfg, transcript_sink=sink, budget=MagicMock(), events=MagicMock())

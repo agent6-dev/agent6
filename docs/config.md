@@ -146,7 +146,7 @@ error.
 
 Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the
 USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`**
-drives `review` + the in-loop critic. `planner`/`reviewer` fall back to
+drives `review` + the in-loop review panel. `planner`/`reviewer` fall back to
 `worker`. Cross-vendor mixes are fine.
 
 <!-- the three roles are the same shape, so the table is rendered once -->

@@ -433,3 +433,33 @@ def test_restart_refuses_a_tail_leading_with_tool_results() -> None:
     orphan_tail = conv.turns[-1:]  # the results turn alone
     with pytest.raises(ValueError, match="kept tail"):
         conv.restart("[restart] summary", keep=orphan_tail)
+
+
+def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
+    """The summariser's plain-text tail shows user text, assistant text, tool
+    calls, and tool results; assistant thinking blocks never leak into it."""
+    from agent6.workflows._conversation import format_transcript_tail
+
+    conversation = Conversation.from_wire(
+        [
+            {"role": "user", "content": [{"type": "text", "text": "hello"}]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "internal reasoning"},
+                    {"type": "text", "text": "doing it"},
+                    {"type": "tool_use", "name": "run_command", "input": {}, "id": "x"},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "x", "content": "output"}],
+            },
+        ]
+    )
+    out = format_transcript_tail(conversation.turns)
+    assert "internal reasoning" not in out
+    assert "hello" in out
+    assert "doing it" in out
+    assert "run_command" in out
+    assert "output" in out

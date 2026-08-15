@@ -566,9 +566,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 mode=mode,
                 plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
                 after_auto_commit=after_auto_commit,
-                critic_provider=session.critic_provider,
-                critic_mode=cfg.review.trigger,
-                critic_period=cfg.review.period,
+                review_trigger=cfg.review.trigger,
+                review_period=cfg.review.period,
                 review_seats=session.review_seats,
                 review_decision=cfg.review.decision,
                 review_quorum=cfg.review.quorum,
@@ -579,7 +578,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 prompt_reviser_provider=prompt_reviser_provider,
                 revise_prompt=effective_revise_prompt,
                 temperature=role_temperature(cfg, role),
-                critic_temperature=role_temperature(cfg, "reviewer"),
                 prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
                 prompt_revision_selector=(
                     frontend.select_revised_prompt

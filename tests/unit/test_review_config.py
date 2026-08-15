@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Validation + opt-in logic for the review panel's config surface.
+"""Validation + roster logic for the review panel's config surface.
 
-These lock in three pre-squash fixes: malformed `seats` are rejected, an
-unreachable quorum gate is caught at load time, and a bare `trigger != off` config
-keeps the legacy single critic instead of being silently downgraded to the
-advisory panel.
+Malformed `seats` are rejected, an unreachable quorum gate is caught at load
+time, and a bare `trigger != off` config builds the simple-form roster (one
+reviewer-model seat) rather than a dead gate.
 """
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import ValidationError
 
-from agent6.app.providers import review_panel_configured
+from agent6.app.providers import build_review_seats
 from agent6.config import Config, ReviewConfig
 
 
@@ -41,16 +42,21 @@ def test_quorum_gt1_needs_distinct_models() -> None:
     assert ok.quorum == 2
 
 
-def test_panel_configured_distinguishes_bare_critic_from_panel() -> None:
-    # Bare critic, no panel keys -> NOT a panel (keeps the legacy gating critic).
-    bare = Config.model_validate({"review": {"trigger": "before_finish"}})
-    assert review_panel_configured(bare) is False
-    # Any explicit panel opt-in -> panel.
-    for rv in (
-        {"decision": "veto"},
-        {"tier": "explore"},
-        {"seats": ["security@p/m"]},
-        {"seats": ["security"]},
-    ):
-        cfg = Config.model_validate({"review": {"trigger": "before_finish", **rv}})
-        assert review_panel_configured(cfg) is True
+def test_trigger_on_with_no_seats_builds_the_one_seat_roster() -> None:
+    """A bare `trigger != off` config runs the panel in its simple form: the
+    session wiring asks for n=1 and gets one reviewer-model seat with a
+    built-in adversarial persona; no explicit `seats` are required."""
+    cfg = Config.model_validate(
+        {
+            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
+            "models": {
+                "worker": {"provider": "o", "model": "m"},
+                "reviewer": {"provider": "o", "model": "rm"},
+            },
+            "review": {"trigger": "before_finish"},
+        }
+    )
+    seats = build_review_seats(cfg, transcript_sink=MagicMock(), budget=MagicMock(), n=1)
+    assert len(seats) == 1
+    assert seats[0].model == "rm"
+    assert seats[0].persona  # a built-in persona, not an empty stance

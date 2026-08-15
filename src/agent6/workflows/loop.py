@@ -49,7 +49,6 @@ from agent6.memory import memory_dir
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
-    CRITIC_SYSTEM_PROMPT,
     GIST_DISTILL_SYSTEM_PROMPT,
     PINS_NO_RESTATE_CLAUSE,
     PROMPT_REVISION_SYSTEM_PROMPT,
@@ -105,11 +104,7 @@ from agent6.workflows._conversation import (
     Conversation,
     Notice,
     ToolResultItem,
-)
-from agent6.workflows._critic import (
-    CritiqueResult,
-    format_tail_for_critic,
-    parse_critic_verdict,
+    format_transcript_tail,
 )
 from agent6.workflows._dag_focus import (
     DAG_MUTATING_TOOLS,
@@ -203,7 +198,7 @@ from agent6.workflows._provider_call import (
     is_empty_tool_call_response,
     provider_error_hint,
 )
-from agent6.workflows._review import ReviewDispatch, ReviewSeat, run_panel
+from agent6.workflows._review import CritiqueResult, ReviewDispatch, ReviewSeat, run_panel
 from agent6.workflows._session_state import (
     TURN_IN_FLIGHT_NAME,
     ResumeError,
@@ -571,7 +566,6 @@ class Workflow:
     # 0.0 makes the tool-use loop reproducible. CLI wires these from
     # `cfg.models.<role>.temperature`.
     temperature: float | None = 0.0
-    critic_temperature: float | None = 0.0
     # Tiered context compaction thresholds (chars).
     compact_drop_at_chars: int = DROP_BLOCKS_AT_CHARS
     compact_summarise_at_chars: int = SUMMARISE_AT_CHARS
@@ -640,16 +634,12 @@ class Workflow:
     # message (app.fork.undo_fork, injected -- workflows never import app) and
     # returns (new_session_id, undone_text), or None with the reason printed.
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
-    # critic-in-loop. When `critic_provider` is set AND
-    # `critic_mode != "off"`, the workflow invokes the critic at the
-    # configured trigger (verify-failure / before finish_session / every
-    # critic_period iters) and injects its critique back into the
-    # conversation as a synthetic text block on the next user turn so
-    # the worker sees it on the following iteration. Default off keeps
-    # the single-provider behaviour intact.
-    critic_provider: Provider | None = None
-    critic_mode: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    critic_period: int = 10
+    # In-loop review panel. When `review_trigger != "off"` and `review_seats`
+    # is non-empty, the panel runs at the configured trigger (verify-failure /
+    # before finish_session / every review_period iters) over the run diff and
+    # injects its findings back into the conversation on the next user turn.
+    review_trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
+    review_period: int = 10
     # Optional one-shot prompt revision before the first worker call.
     # The CLI wires this to the reviewer model when prompt.revise_prompt !=
     # "off". It never receives tools and never iterates.
@@ -1739,32 +1729,24 @@ class Workflow:
           on_verify_fail - the verify just failed; surface a critique
                            alongside the failure so the worker has a second
                            opinion before its next edit.
-          periodic       - every critic_period iterations.
+          periodic       - every review_period iterations.
         """
         if (
-            self.critic_mode == "on_verify_fail"
+            self.review_trigger == "on_verify_fail"
             and turn.verify_just_failed
             and self._has_reviewer()
         ):
-            critique = self._review_or_critic(
-                state=state,
-                conversation=conversation,
-                trigger="verify_failed",
-                iteration=turn.iteration,
+            critique = self._run_review_panel(
+                state, trigger="verify_failed", iteration=turn.iteration
             )
             if critique is not None:
                 turn.critic_text = critique.text
         elif (
-            self.critic_mode == "periodic"
+            self.review_trigger == "periodic"
             and self._has_reviewer()
-            and turn.iteration % max(1, self.critic_period) == 0
+            and turn.iteration % max(1, self.review_period) == 0
         ):
-            critique = self._review_or_critic(
-                state=state,
-                conversation=conversation,
-                trigger="periodic",
-                iteration=turn.iteration,
-            )
+            critique = self._run_review_panel(state, trigger="periodic", iteration=turn.iteration)
             if critique is not None:
                 turn.critic_text = critique.text
 
@@ -1797,16 +1779,11 @@ class Workflow:
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
-            and self.critic_mode == "before_finish"
+            and self.review_trigger == "before_finish"
             and self._has_reviewer()
         ):
             return
-        critique = self._review_or_critic(
-            state=state,
-            conversation=conversation,
-            trigger="before_finish",
-            iteration=turn.iteration,
-        )
+        critique = self._run_review_panel(state, trigger="before_finish", iteration=turn.iteration)
         cap = self.max_consecutive_critic_rejections
         cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
         if critique is not None and not critique.satisfied and not cap_reached:
@@ -1995,7 +1972,7 @@ class Workflow:
         only triggers once per latch episode. The repeat counter resets on any
         new signature, so a normal re-read after an edit does not trigger."""
         if turn.critic_text:
-            turn.tool_results.append(Notice(f"[critic]\n{turn.critic_text}"))
+            turn.tool_results.append(Notice(f"[review]\n{turn.critic_text}"))
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
         if (
@@ -2791,7 +2768,7 @@ class Workflow:
         # critic review entirely. The rejection cap is shared with the
         # tool_use path so a stubborn worker can't bounce the loop forever.
         if (
-            self.critic_mode == "before_finish"
+            self.review_trigger == "before_finish"
             and self._has_reviewer()
             and self._silent_finish_critic_rejects(state, conversation, iteration=iteration)
         ):
@@ -2904,12 +2881,7 @@ class Workflow:
         finish was rejected (critique appended to the conversation; the loop
         continues). A cap-reached rejection or an approval resets the
         rejection counter and lets the finish proceed."""
-        critique = self._review_or_critic(
-            state=state,
-            conversation=conversation,
-            trigger="before_finish",
-            iteration=iteration,
-        )
+        critique = self._run_review_panel(state, trigger="before_finish", iteration=iteration)
         cap = self.max_consecutive_critic_rejections
         cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
         if critique is not None and not critique.satisfied and not cap_reached:
@@ -2920,7 +2892,7 @@ class Workflow:
             )
             state.consecutive_critic_rejections += 1
             conversation.notice(
-                "[critic]\nThe critic"
+                "[review]\nThe review panel"
                 " rejected your"
                 " silent finish (no"
                 " tool_use, just"
@@ -3709,7 +3681,7 @@ class Workflow:
             # A cap that swallows the whole history would make the restart
             # grow the context instead of shrinking it; keep nothing.
             tail_start = len(turns)
-        transcript = format_tail_for_critic(
+        transcript = format_transcript_tail(
             turns[1:tail_start], max_messages=len(conversation), max_chars=60_000
         )
         # The DAG is agent6's compaction memory: at each restart we ask the
@@ -4076,27 +4048,7 @@ class Workflow:
     def _has_reviewer(self) -> bool:
         """A second opinion is available: the review panel (seats) or the legacy
         single critic. Gates the in-loop critic triggers."""
-        return bool(self.review_seats) or self.critic_provider is not None
-
-    def _review_or_critic(
-        self,
-        *,
-        state: _LoopState,
-        conversation: Conversation,
-        trigger: str,
-        iteration: int,
-    ) -> CritiqueResult | None:
-        """Dispatch the in-loop second-opinion: the grounded review PANEL when
-        `review_seats` is configured, else the legacy single critic. Both
-        return a `CritiqueResult` the trigger logic consumes identically."""
-        if self.review_seats:
-            return self._run_review_panel(state, trigger=trigger, iteration=iteration)
-        return self._run_critic(
-            task=state.original_task,
-            conversation=conversation,
-            trigger=trigger,
-            iteration=iteration,
-        )
+        return bool(self.review_seats)
 
     def _run_diff(self) -> str:
         """The run's cumulative change: base commit vs the working tree, so it
@@ -4219,65 +4171,6 @@ class Workflow:
         else:
             text = render_findings(result.merged_findings) or "No blocking findings."
         return CritiqueResult(text=text, satisfied=not effective_blocked)
-
-    def _run_critic(
-        self,
-        *,
-        task: str,
-        conversation: Conversation,
-        trigger: str,
-        iteration: int,
-    ) -> CritiqueResult | None:
-        """Invoke the reviewer model as an in-loop critic.
-
-        Returns None when no critic provider is configured (caller treats
-        as "no critique, proceed"). Provider/budget errors are caught and
-        logged so a flaky critic never aborts an otherwise-working run.
-        """
-        if self.critic_provider is None:
-            return None
-        transcript = format_tail_for_critic(conversation.turns)
-        user_msg = (
-            f"TASK:\n{task}\n\nTRIGGER: {trigger}\n\n"
-            f"RECENT WORKER ACTIVITY (most recent last):\n{transcript}\n\n"
-            "Critique. End with VERDICT: SATISFIED or VERDICT: NEEDS_WORK."
-        )
-        self._emit("loop.critic.call", iteration=iteration, trigger=trigger)
-        try:
-            resp = self.critic_provider.call(
-                system=CRITIC_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_msg}],
-                tools=[],
-                max_tokens=self.per_call_max_tokens,
-                temperature=self.critic_temperature,
-            )
-        except (ProviderError, BudgetExceeded) as exc:
-            self._log(f"  critic call failed: {exc}")
-            self._emit("loop.critic.failed", iteration=iteration, error=str(exc)[:200])
-            return None
-        text = (resp.text or "").strip()
-        if output_cap_truncated(resp) or not text:
-            # A starved/empty critic response is a FAILED call, not a verdict:
-            # treat it like a ProviderError -- no critique, proceed.
-            self._log(
-                f"  critic produced no verdict (stop_reason={resp.stop_reason!r},"
-                f" {len(text)} chars); skipping the critique"
-            )
-            self._emit(
-                "loop.critic.inconclusive",
-                iteration=iteration,
-                trigger=trigger,
-                stop_reason=resp.stop_reason,
-            )
-            return None
-        satisfied = parse_critic_verdict(text)
-        self._emit(
-            "loop.critic.verdict",
-            iteration=iteration,
-            trigger=trigger,
-            satisfied=satisfied,
-        )
-        return CritiqueResult(text=text, satisfied=satisfied)
 
     # ---- steering and operator boundaries --------------------------------------
 

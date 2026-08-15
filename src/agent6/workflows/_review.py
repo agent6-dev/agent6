@@ -42,6 +42,17 @@ from agent6.workflows._panel import (
     aggregate_verdicts,
 )
 
+
+@dataclass(frozen=True, slots=True)
+class CritiqueResult:
+    """The in-loop panel's verdict the trigger logic consumes: the findings
+    text injected for the worker, and whether the panel is satisfied
+    (`satisfied=False` only when a blocking decision mode rejects)."""
+
+    text: str
+    satisfied: bool
+
+
 # A read-only dispatch callable for explore-tier seats: (tool_name, input) -> result.
 ReviewDispatch = Callable[[str, dict[str, Any]], ToolResult]
 

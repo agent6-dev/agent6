@@ -345,33 +345,9 @@ def _reviewer_seat_provider(
     )
 
 
-def build_critic_provider(
-    cfg: Config,
-    *,
-    transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
-    events: EventSink,
-) -> Provider | None:
-    """critic-in-loop. Routes the reviewer role as the critic
-    provider when `review.trigger != "off"`. Returns None when
-    disabled so Workflow leaves the critic path inert."""
-    if cfg.review.trigger == "off":
-        return None
-    return _reviewer_seat_provider(
-        cfg, "critic", transcript_sink=transcript_sink, budget=budget, events=events
-    )
-
-
+# The simple-form panel roster: adversarial lenses cycled when no explicit
+# seats are configured.
 _DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
-
-
-def review_panel_configured(cfg: Config) -> bool:
-    """True iff the user EXPLICITLY opted into the review panel (vs just enabling
-    the legacy single critic). When `trigger != "off"` but no [review] panel key
-    is set, we keep the legacy gating critic so a pre-panel before_finish/periodic
-    config is not silently downgraded to the advisory panel."""
-    rv = cfg.review
-    return bool(rv.seats) or rv.decision != "advisory" or rv.tier != "diff"
 
 
 def build_review_seats(
@@ -394,10 +370,10 @@ def build_review_seats(
     differing only by adversarial persona (`personas` cycled, else a built-in
     set).
 
-    With *events*, each seat is instrumented like the critic: only
-    InstrumentedProvider emits `budget.update`, so bare seat providers spent
-    real money no surface ever showed (the tracker enforced; the log never
-    heard). `agent6 review` passes None -- it has no session log."""
+    With *events*, each seat is instrumented: only InstrumentedProvider emits
+    `budget.update`, so bare seat providers spent real money no surface ever
+    showed (the tracker enforced; the log never heard). `agent6 review` passes
+    None -- it has no session log."""
 
     def _instrumented(provider: Provider, persona: str, model: str, provider_name: str) -> Provider:
         if events is None:

@@ -38,6 +38,7 @@ block-by-block and never forward the field.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -403,3 +404,34 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
             tool_use_id=block["tool_use_id"], content=block["content"], for_call=pending.pop(0)
         )
     raise ValueError(f"malformed conversation: {where} has unsupported type {block.get('type')!r}")
+
+
+def format_transcript_tail(
+    turns: Sequence[Turn], *, max_messages: int = 6, max_chars: int = 6000
+) -> str:
+    """Render the last few turns as a plain-text transcript for a
+    summariser call. Tool calls / results are shown as compact summaries;
+    long payloads are truncated so the call stays cheap. Assistant thinking
+    blocks are skipped."""
+    parts: list[str] = []
+    for turn in turns[-max_messages:]:
+        if isinstance(turn, AssistantTurn):
+            for block in turn.raw_content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
+                    parts.append(f"[assistant:text] {str(block.get('text', ''))[:1500]}")
+                elif btype == "tool_use":
+                    inp = json.dumps(block.get("input") or {}, ensure_ascii=False)
+                    parts.append(f"[assistant:tool_use {block.get('name', '')}] {inp[:800]}")
+            continue
+        for item in turn.items:
+            if isinstance(item, Notice):
+                parts.append(f"[user:text] {item.text[:1500]}")
+            else:
+                parts.append(f"[user:tool_result] {item.content[:800]}")
+    joined = "\n".join(parts)
+    if len(joined) > max_chars:
+        joined = joined[-max_chars:]
+    return joined
