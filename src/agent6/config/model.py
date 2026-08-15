@@ -207,8 +207,9 @@ class Agent6Section(BaseModel):
         default=None,
         description=(
             "Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the "
-            "workspace. Global-config only; `AGENT6_STATE_HOME` overrides. In a devcontainer the "
-            "default is ephemeral: point it at a persisted volume to keep runs across rebuilds."
+            "workspace. Global-config only; when set it wins over `AGENT6_STATE_HOME` and the "
+            "XDG default. In a devcontainer the default is ephemeral: point it at a persisted "
+            "volume to keep runs across rebuilds."
         ),
     )
 

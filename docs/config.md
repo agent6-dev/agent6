@@ -52,7 +52,7 @@ provider + model; `workflow.verify_command` is inferred per run when unset.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version (must be `1`). |
-| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the workspace. Global-config only; `AGENT6_STATE_HOME` overrides. In a devcontainer the default is ephemeral: point it at a persisted volume to keep runs across rebuilds. |
+| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base for all per-repo state (`<state_dir>/<repo-id>/`), out of the workspace. Global-config only; when set it wins over `AGENT6_STATE_HOME` and the XDG default. In a devcontainer the default is ephemeral: point it at a persisted volume to keep runs across rebuilds. |
 
 ## `[providers.<name>]`
 
