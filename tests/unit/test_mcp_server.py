@@ -401,6 +401,28 @@ def test_run_in_sandbox_validates_argv(tmp_path: Path, monkeypatch: pytest.Monke
     assert resps[1]["result"]["structuredContent"]["stdout"] == "ok"
 
 
+def test_every_published_schema_type_is_one_the_checker_validates(tmp_path: Path) -> None:
+    """`_schema_violation` validates the object/array/string subset and silently
+    skips any other `type`, so a tool field of an uncovered type (integer, say)
+    would advertise `additionalProperties: false` validation it never gets.
+    Holds the published table to the checker's covered set; growing the table
+    past it means growing the checker first."""
+    checked_types = {"object", "array", "string"}
+
+    def _types(schema: dict[str, Any]) -> set[str]:
+        found = {schema["type"]} if isinstance(schema.get("type"), str) else set()
+        for sub in schema.get("properties", {}).values():
+            found |= _types(sub)
+        if isinstance(schema.get("items"), dict):
+            found |= _types(schema["items"])
+        return found
+
+    server = _server(tmp_path, run_commands="yes")
+    for name, spec in server._tools.items():  # pyright: ignore[reportPrivateUsage]
+        unchecked = _types(spec.input_schema) - checked_types
+        assert not unchecked, f"{name} publishes type(s) {unchecked} the checker skips"
+
+
 def test_tool_arguments_are_checked_against_the_published_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
