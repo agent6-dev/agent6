@@ -630,6 +630,18 @@ def _agent_outcome(
     return "failed"
 
 
+def _agent_usd_cap(state_cap: float | None, remaining: float | None) -> float | None:
+    """The request's hard spend cap: the smaller of the state's own override
+    and the machine budget still unspent. The aggregate gate only guards state
+    STARTS, so without this an agent state's cap could exceed what the
+    machine had left and the child billed past the machine's max_usd."""
+    if state_cap is None:
+        return remaining
+    if remaining is None:
+        return state_cap
+    return min(state_cap, remaining)
+
+
 def _execute(
     spec: MachineSpec,
     state: StateSpec,
@@ -638,6 +650,7 @@ def _execute(
     *,
     seq: int = 0,
     state_name: str = "",
+    remaining_usd: float | None = None,
 ) -> tuple[str, str, Fact]:
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
@@ -680,7 +693,7 @@ def _execute(
                 provider=state.provider,
                 thinking=state.thinking,
                 temperature=state.temperature,
-                max_usd=state.max_usd,
+                max_usd=_agent_usd_cap(state.max_usd, remaining_usd),
                 max_tokens_fallback=state.max_tokens_fallback,
                 mode=state.mode,
                 # So the live World can give this execution its own watchable log.
@@ -903,6 +916,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
             return _emit_end(
                 journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )
+        remaining_usd = None if usd_limit is None else max(usd_limit - spent_usd, 0.0)
 
         try:
             if exit_on_wait and isinstance(current, WaitState):
@@ -921,7 +935,13 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
                 label, goto, fact = _block_on_wait(current, blackboard, journal, world, state)
             else:
                 label, goto, fact = _execute(
-                    spec, current, blackboard, world, seq=transitions, state_name=state
+                    spec,
+                    current,
+                    blackboard,
+                    world,
+                    seq=transitions,
+                    state_name=state,
+                    remaining_usd=remaining_usd,
                 )
         except _STATE_RUNTIME_ERRORS as exc:
             # A data-driven state failure (e.g. an absent optional field, a tool

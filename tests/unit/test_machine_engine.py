@@ -1071,7 +1071,9 @@ def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
     assert req.provider == "anthropic"
     assert req.thinking == "high"
     assert req.temperature == 0.3
-    assert req.max_usd == 2.5
+    # min(2.5 state cap, 1.0 machine budget): a state can never be handed
+    # more than the machine has.
+    assert req.max_usd == 1.0
     assert req.max_tokens_fallback == 90000
 
 
@@ -1175,6 +1177,30 @@ def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: Path) -> None:
     assert result.status == "failed"
     assert "max_usd" in result.reason
     assert len(world.agent_calls) == 1  # one step ran, then the budget guard fired
+
+
+def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
+    tmp_path: Path,
+) -> None:
+    """The aggregate guard only stops the NEXT state; the request itself
+    carried only the state's own override, so a $0.10 state cap against a
+    $0.05 machine budget handed the child more than the machine had. The
+    request's cap is min(state cap, remaining machine budget)."""
+    body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nmax_usd = 0.10')
+    journal, f = _load(tmp_path, body)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {},
+        agent_results=[
+            AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
+            AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
+        ],
+    )
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "failed" and "max_usd" in result.reason
+    caps = [req.max_usd for req in world.agent_calls]
+    assert caps[0] == 0.05  # min(0.10 state cap, 0.05 machine budget)
+    assert caps[1] == pytest.approx(0.01)  # the machine's remaining cent, not 0.10
 
 
 def test_agent_spend_threaded_into_fact(tmp_path: Path) -> None:
