@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -58,6 +59,9 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     chain_ref_for,
+    chain_tip,
+    checkout_detached,
+    fetch_branch,
     render_commit_trailer,
 )
 from agent6.git_ops import status as git_status
@@ -83,6 +87,7 @@ from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
 from agent6.workflows.loop import Workflow
+from agent6.workflows.subrun import SubrunError, clone_workspace
 
 
 def _no_console(_events: EventSink) -> None:
@@ -490,6 +495,8 @@ def build_machine_agent_runner(
     transcript_dir: Path,
     protect_paths: tuple[Path, ...] = (),
     commit_identity: CommitIdentity | None = None,
+    machine_id: str | None = None,
+    clone_root: Path | None = None,
 ) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
     """Build the host-side runner an `agent` state uses to drive a confined loop.
 
@@ -507,6 +514,16 @@ def build_machine_agent_runner(
     `events_log` is per CALL: the live World passes each agent-state execution
     its own `<instance>/states/<seq>-<state>/logs.jsonl` and `machine create`
     passes the draft log, so the subprocess writes a watchable event stream there.
+
+    `machine_id` + `clone_root` (set together by `machine run` for a machine
+    with `mode="run"` states): a run-mode request executes in a fresh clone
+    under `<clone_root>/state-<seq>`, checked out at the machine chain's tip
+    (the origin's HEAD on the first state), and its work lands back per
+    state: the chain ref for the next state's continuation, and the visible
+    `agent6/machine-<id>` branch at the same tip for the operator -- the run
+    story ("changes are on a branch; merge them") with the lane clone
+    mechanism. The operator's checkout is never touched; read-only requests
+    (`mode="agent"`, `machine create`) run in *cwd*.
     """
 
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
@@ -538,14 +555,32 @@ def build_machine_agent_runner(
                 output_tokens=spend.output_tokens,
             )
 
+        clone: Path | None = None
+        # Keep in sync with run_one's chain_ref: both derive the machine
+        # chain from the machine id.
+        chain = chain_ref_for(f"machine-{machine_id}") if machine_id is not None else None
+        if request.mode == "run" and chain is not None and clone_root is not None:
+            clone = clone_root / f"state-{request.step_seq:04d}"
+            try:
+                _clone_at_machine_chain(cwd, clone, chain)
+            except (SubrunError, GitError) as exc:
+                return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
+        workdir = clone or cwd
         payload = MachineAgentRequest(
-            cwd=cwd,
-            root=cwd,
+            cwd=workdir,
+            root=workdir,
             overlay=overlay,
             isolation=isolation,
             transcript_dir=transcript_dir,
             events_log=events_log,
-            protect_paths=protect_paths,
+            # Protect the clone's own copy of the bundle: the origin copy is
+            # what executes (and what M2's recorded-bundle compare holds), but
+            # the letter of "a state cannot rewrite its machine logic" covers
+            # the copy it can reach too.
+            protect_paths=tuple(
+                workdir / p.relative_to(cwd) if clone is not None and p.is_relative_to(cwd) else p
+                for p in protect_paths
+            ),
             commit_identity=commit_identity,
             request=request,
         )
@@ -571,9 +606,12 @@ def build_machine_agent_runner(
             # PLW1509 (fork-with-threads hazard): the hook is written for it,
             # async-signal-minimal -- libc preloaded at import, then only
             # prctl/getppid/_exit, no allocation or locks.
+            # AGENT6_SUBRUN: a machine state is subordinate work and must
+            # not itself fan out (the same depth-1 flag every lane carries).
             proc = subprocess.Popen(
                 argv,
                 start_new_session=True,
+                env={**os.environ, "AGENT6_SUBRUN": "1"},
                 preexec_fn=die_with_parent(os.getpid()),  # noqa: PLW1509
             )
             try:
@@ -586,14 +624,65 @@ def build_machine_agent_runner(
                     # group could be killed as root.
                     os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
-                return salvaged("timeout")
-            if proc.returncode != 0 or not out_file.is_file():
-                return salvaged("error")
-            try:
-                return AgentExecResult.model_validate_json(out_file.read_text(encoding="utf-8"))
-            except (OSError, ValidationError):
-                # A malformed result.json is treated like a missing one: the
-                # spend salvage keeps the budget honest.
-                return salvaged("error")
+                result = salvaged("timeout")
+            else:
+                if proc.returncode != 0 or not out_file.is_file():
+                    result = salvaged("error")
+                else:
+                    try:
+                        result = AgentExecResult.model_validate_json(
+                            out_file.read_text(encoding="utf-8")
+                        )
+                    except (OSError, ValidationError):
+                        # A malformed result.json is treated like a missing
+                        # one: the spend salvage keeps the budget honest.
+                        result = salvaged("error")
+        if clone is not None and chain is not None and machine_id is not None:
+            result = _land_machine_clone(cwd, clone, chain, f"agent6/machine-{machine_id}", result)
+        return result
 
     return run_agent
+
+
+def _clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
+    """Fresh clone checked out at the machine chain's tip.
+
+    A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched
+    in and the worktree detached onto its tip -- state N+1 starts from state
+    N's full tree. No chain yet (first run state, or the operator archived
+    it): the clone's own HEAD is the continuation-from-merged-state start."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    clone_workspace(origin, dest)
+    tip = chain_tip(origin, chain_ref)
+    if tip is not None:
+        fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")
+        checkout_detached(dest, tip)
+
+
+def _land_machine_clone(
+    origin: Path, clone: Path, chain_ref: str, branch: str, result: AgentExecResult
+) -> AgentExecResult:
+    """Land the state's work back in the origin and drop the clone.
+
+    Two refs, one tip: the chain ref carries the next state's continuation,
+    and the visible branch is the operator's handle on the same commits. Runs
+    on EVERY outcome -- a timed-out or failed state's real commits still land
+    (the outcome label routes the machine; work is never stranded). Serial
+    states (the instance lock) make both updates fast-forwards. An import
+    failure keeps the clone (the only copy; the prune sweep proves that and
+    keeps it) and routes the state as failed with no captured payload."""
+    advanced = chain_tip(clone, chain_ref)
+    if advanced is None or advanced == chain_tip(origin, chain_ref):
+        shutil.rmtree(clone, ignore_errors=True)
+        return result
+    try:
+        fetch_branch(origin, clone, f"{chain_ref}:{chain_ref}")
+        fetch_branch(origin, clone, f"{chain_ref}:refs/heads/{branch}")
+    except GitError as exc:
+        return result.model_copy(
+            update={"reason": f"import of machine work failed: {exc}", "payload": None}
+        )
+    shutil.rmtree(clone, ignore_errors=True)
+    return result

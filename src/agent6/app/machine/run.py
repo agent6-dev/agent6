@@ -34,6 +34,7 @@ from agent6.app.machine._preflight import (
 )
 from agent6.app.machine._spend import book_crashed_attempt, machine_spend
 from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import Config, ConfigError
@@ -294,6 +295,18 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,
+                # A machine that writes never touches the checkout: each
+                # mode="run" state works a fresh clone at the machine chain's
+                # tip and lands both the chain (next state's continuation)
+                # and the visible agent6/machine-<id> branch (the operator's
+                # handle) back per state -- the lane mechanism, sequential
+                # where lanes are parallel.
+                machine_id=spec.machine if has_run_agent else None,
+                clone_root=(
+                    subordinate_workdir_root(cfg, f"machine-{spec.machine}")
+                    if has_run_agent
+                    else None
+                ),
             )
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)

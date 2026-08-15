@@ -246,11 +246,18 @@ populate variables that a downstream `branch` reads.
 structured-output loop: the dispatcher refuses edit, `run_command`, and
 `run_verify`, so the state can only read and call `finish_session`. Set
 `mode = "run"` for a state that must do real coding work (edit + verify +
-commit tools), exactly like `agent6 run`. A `mode = "run"` state still
-returns only its outcome label and `finish_session` payload as control-flow
-signals; `machine run` resolves a git commit identity up front (from
-`[git.commit]` or the repo's git config) so the confined agent's commits
-succeed. In any agent state `run_command` is gated by
+commit tools), exactly like `agent6 run` -- including where the work lands:
+each run state executes in a fresh clone (the `--parallel` lane mechanism,
+under the same `[parallel].workdir` cache) checked out at the machine
+chain's tip, and its commits land back per state on the visible
+`agent6/machine-<id>` branch. Your checkout is never touched; merge the
+branch when you want the work, and `sessions prune` sweeps landed clones.
+States are sequential continuations of that branch (each starts from the
+previous state's tree), where lanes are parallel alternatives cut at base.
+A `mode = "run"` state still returns only its outcome label and
+`finish_session` payload as control-flow signals; `machine run` resolves a
+git commit identity up front (from `[git.commit]` or the repo's git config)
+so the confined agent's commits succeed. In any agent state `run_command` is gated by
 `sandbox.run_commands`: under the default `ask` an unattended machine
 auto-denies every call (`machine run` warns up front when a `mode = "run"`
 state would hit this); a machine spawned from the web or TUI hub instead
@@ -914,7 +921,9 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   file is data, not code.
 - **All side effects stay jailed.** `tool` states go through
   `run_in_jail`; each `agent` state is an ordinary run in its own
-  subprocess, its commands jailed like any run's. The per-state network
+  subprocess, its commands jailed like any run's. A `mode = "run"` state
+  additionally never touches the operator's checkout: it works a fresh
+  clone and its commits arrive on `agent6/machine-<id>`. The per-state network
   model and its refusals are specified in
   [security.md, State-machine egress](security.md#8-state-machine-egress-script-bundles).
 - **Spend bounds.** `[budget].max_transitions` is required and always

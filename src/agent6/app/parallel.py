@@ -53,6 +53,7 @@ from agent6.git_ops import (
     chain_tip,
     checkout_detached,
     diff_since,
+    list_chain_refs,
     list_run_branches,
 )
 from agent6.git_ops import status as git_status
@@ -130,11 +131,13 @@ class LaneRuntime:
 # ---------------------------------------------------------------------------
 
 
-def _workdir_root(cfg: Config, fanout_id: str) -> Path:
-    """Base dir for this fan-out's lane clones: `[parallel].workdir` (or
-    `<cache_dir>/parallel`) / `<fanout-id>`."""
+def subordinate_workdir_root(cfg: Config, group: str) -> Path:
+    """Base dir for a group of subordinate-work clones: `[parallel].workdir`
+    (or `<cache_dir>/parallel`) / `<group>`. Groups are fan-out ids (lane
+    clones) and `machine-<id>` (a run-state's per-state clone); one location,
+    so one prune sweep covers both."""
     base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
-    return base / fanout_id
+    return base / group
 
 
 def adopt_orphan_lane(
@@ -158,7 +161,7 @@ def adopt_orphan_lane(
         or not layout.session_dir.is_symlink()
     ):
         return None
-    clone = _workdir_root(cfg, manifest.parallel_id) / f"lane-{manifest.lane}"
+    clone = subordinate_workdir_root(cfg, manifest.parallel_id) / f"lane-{manifest.lane}"
     if not (clone / ".git").exists() or not branch_exists(clone, manifest.run_branch):
         return None
     real = layout.session_dir.resolve()
@@ -187,6 +190,10 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
                 continue
             try:
                 tips = [chain_tip(clone, br) for br in list_run_branches(clone)]
+                # A machine-state clone's work rides its chain ref, which is
+                # not a branch: prove those tips too, or the sweep deletes
+                # the only copy of chain-only commits.
+                tips += [sha for _ref, sha in list_chain_refs(clone)]
             except GitError:
                 safe = False
                 break
@@ -205,10 +212,10 @@ def build_lane_specs(
     spec: str, *, cfg: Config, fanout_id: str, workdir_root: Path | None = None
 ) -> list[LaneSpec]:
     """Plan the lanes for a `--parallel` fan-out, refusing over-cap up front.
-    *workdir_root* defaults to this fan-out's `_workdir_root` (the CLI adapter
+    *workdir_root* defaults to this fan-out's `subordinate_workdir_root` (the CLI adapter
     relies on that so it needn't reach the private helper)."""
     if workdir_root is None:
-        workdir_root = _workdir_root(cfg, fanout_id)
+        workdir_root = subordinate_workdir_root(cfg, fanout_id)
     models = parse_spec(spec, limit=cfg.parallel.max_lanes)
     return [
         LaneSpec(
@@ -543,7 +550,7 @@ def build_lane_spawner(
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
             reporter.err(f"[agent6] WARNING: {warning_message(verdict)}")
-        workdir_root = _workdir_root(cfg, coordinator_session_id) / group
+        workdir_root = subordinate_workdir_root(cfg, coordinator_session_id) / group
         specs = [
             LaneSpec(
                 lane=i,
