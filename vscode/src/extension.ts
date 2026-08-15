@@ -24,6 +24,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const channel = vscode.window.createOutputChannel(CHANNEL_NAME);
   context.subscriptions.push(channel);
 
+  // One live tail: picking a new run stops the previous one, or stale tails
+  // keep polling and interleave into the same channel until deactivation.
+  let activeTail: JsonlTail | undefined;
+  context.subscriptions.push({ dispose: () => activeTail?.stop() });
+
   const tailDisposable = vscode.commands.registerCommand(
     "agent6.tailRun",
     async () => {
@@ -36,7 +41,13 @@ export function activate(context: vscode.ExtensionContext): void {
       // (Path.cwd(), not the git toplevel); the workspace folder matches a
       // run started at the workspace root.
       const root = folders[0].uri.fsPath;
-      const runsDir = runsDirFor(root);
+      let runsDir: string;
+      try {
+        runsDir = runsDirFor(root);
+      } catch (err) {
+        vscode.window.showErrorMessage(`agent6: ${err instanceof Error ? err.message : err}`);
+        return;
+      }
       if (!fs.existsSync(runsDir)) {
         vscode.window.showErrorMessage(
           `agent6: no runs dir at ${runsDir}. Start one with 'agent6 run ...' from the workspace root.`,
@@ -81,9 +92,9 @@ export function activate(context: vscode.ExtensionContext): void {
       channel.clear();
       channel.show(true);
       channel.appendLine(`[agent6] tailing ${logsPath}`);
-      const tail = new JsonlTail(logsPath, (line) => channel.appendLine(line));
-      tail.start();
-      context.subscriptions.push({ dispose: () => tail.stop() });
+      activeTail?.stop();
+      activeTail = new JsonlTail(logsPath, (line) => channel.appendLine(line));
+      activeTail.start();
     },
   );
   context.subscriptions.push(tailDisposable);

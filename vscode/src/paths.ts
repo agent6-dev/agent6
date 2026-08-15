@@ -1,66 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Eric Lesiuta
 //
-// Where agent6 keeps run state, mirrored from src/agent6/paths.py.
+// Where agent6 keeps run state: asked of the installed CLI, never mirrored.
 //
-// Runs live out of the workspace, under the per-repo state dir
-// `<state base>/<repo-id>/sessions/runs/<session-id>/`. Keep this in lockstep with
-// paths.state_base and paths.repo_id: the extension is a viewer and must
-// find exactly the runs the CLI writes. No `vscode` import, so the module
-// also loads under plain node for sanity checks.
+// Runs live out of the workspace, under the per-repo state dir. The CLI owns
+// the id and base-dir algorithms (`agent6 sessions dir` prints the resolved
+// state dir as one bare line, honoring AGENT6_STATE_HOME and the global
+// `[agent6].state_dir`); a second implementation here drifted once and made
+// every run invisible. No `vscode` import, so the module also loads under
+// plain node for sanity checks.
 
-import * as crypto from "crypto";
-import * as fs from "fs";
-import * as os from "os";
+import { execFileSync } from "child_process";
 import * as path from "path";
 
-/** Leading-tilde expansion like Python's Path.expanduser(); `~user` is left as-is. */
-function expandUser(p: string): string {
-  if (p === "~") {
-    return os.homedir();
-  }
-  if (p.startsWith("~/")) {
-    return path.join(os.homedir(), p.slice(2));
-  }
-  return p;
-}
-
 /**
- * The agent6 state BASE directory, mirroring paths.state_base:
- * $AGENT6_STATE_HOME (names the base itself) > $XDG_STATE_HOME/agent6 >
- * ~/.local/state/agent6. A global `[agent6].state_dir` config override is
- * not read here; set AGENT6_STATE_HOME to the same base if you use one.
+ * The per-repo state dir for a workspace root, from `agent6 sessions dir`
+ * run at that root. Throws with the CLI's own words when agent6 is not
+ * installed or refuses; the command surfaces that message.
  */
-export function stateBase(): string {
-  const override = process.env.AGENT6_STATE_HOME;
-  if (override) {
-    return expandUser(override);
-  }
-  const xdg = process.env.XDG_STATE_HOME;
-  if (xdg) {
-    return path.join(xdg, "agent6");
-  }
-  return path.join(os.homedir(), ".local", "state", "agent6");
-}
-
-/**
- * Stable per-repo id, mirroring paths.repo_id:
- * `<folder>-<first 12 hex of sha256(canonical path)>`. Python canonicalizes
- * with Path.resolve() (symlinks resolved); realpathSync matches it for an
- * existing directory, path.resolve is the fallback when it does not exist.
- */
-export function repoId(repoRoot: string): string {
-  let real: string;
+export function stateDirFor(workspaceRoot: string): string {
+  let out: string;
   try {
-    real = fs.realpathSync(repoRoot);
-  } catch {
-    real = path.resolve(repoRoot);
+    out = execFileSync("agent6", ["sessions", "dir"], {
+      cwd: workspaceRoot,
+      encoding: "utf-8",
+      timeout: 10_000,
+    });
+  } catch (err) {
+    throw new Error(
+      `running 'agent6 sessions dir' failed (is agent6 on PATH?): ${String(err)}`,
+    );
   }
-  const digest = crypto.createHash("sha256").update(real, "utf-8").digest("hex");
-  return `${path.basename(real)}-${digest.slice(0, 12)}`;
+  const dir = out.trim();
+  if (dir.length === 0 || !path.isAbsolute(dir)) {
+    throw new Error(`'agent6 sessions dir' printed no usable path: ${JSON.stringify(out)}`);
+  }
+  return dir;
 }
 
-/** The runs bucket for a workspace root: `<state base>/<repo-id>/sessions/runs`. */
+/** The runs bucket for a workspace root: `<state dir>/sessions/runs`. */
 export function runsDirFor(workspaceRoot: string): string {
-  return path.join(stateBase(), repoId(workspaceRoot), "sessions", "runs");
+  return path.join(stateDirFor(workspaceRoot), "sessions", "runs");
 }

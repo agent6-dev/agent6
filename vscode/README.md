@@ -16,17 +16,13 @@ It is intentionally tiny:
 ## Where runs live
 
 Run state is out of the workspace; a checkout never carries an `.agent6/`
-dir. The extension mirrors the CLI's path logic (`src/agent6/paths.py`):
-
-- State base: `$AGENT6_STATE_HOME` if set (it names the base itself), else
-  `$XDG_STATE_HOME/agent6`, else `~/.local/state/agent6`.
-- Repo id: `<folder>-<first 12 hex of sha256(canonical path)>`, keyed on the
-  first workspace folder with symlinks resolved. agent6 keys state off the
-  directory it is invoked in, so start runs from the workspace root.
-- Sessions: `<state base>/<repo-id>/sessions/<bucket>/<id>/logs.jsonl`.
-
-The global `[agent6].state_dir` config override is not read; set
-`AGENT6_STATE_HOME` to the same base if you use one.
+dir. The extension asks the installed CLI (`agent6 sessions dir`, run at the
+first workspace folder) for the resolved per-repo state dir, so it always
+finds exactly the runs the CLI writes -- including under `AGENT6_STATE_HOME`
+and the global `[agent6].state_dir` override. Runs are
+`<state dir>/sessions/runs/<id>/logs.jsonl`. agent6 keys state off the
+directory it is invoked in, so start runs from the workspace root; `agent6`
+must be on the PATH VS Code inherits.
 
 ## Build
 
