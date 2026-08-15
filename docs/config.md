@@ -160,8 +160,8 @@ drives `review` + the in-loop review panel. `planner`/`reviewer` fall back to
 ## `[sandbox]`
 
 The security boundary. The model:
-[Isolation-level selection](security.md#3-isolation-level-selection) and
-[State-machine egress](security.md#8-state-machine-egress-script-bundles) in
+[Sandbox](security.md#2-sandbox) and
+[Network](security.md#5-network) in
 security.md. This is the field summary.
 
 | Field | Default | Meaning |

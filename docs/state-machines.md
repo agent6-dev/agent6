@@ -925,7 +925,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   additionally never touches the operator's checkout: it works a fresh
   clone and its commits arrive on `agent6/machine-<id>`. The per-state network
   model and its refusals are specified in
-  [security.md, State-machine egress](security.md#8-state-machine-egress-script-bundles).
+  [security.md, Network](security.md#5-network).
 - **Spend bounds.** `[budget].max_transitions` is required and always
   binds. `max_usd` (optional) caps the machine's cumulative METERED spend
   (reported cost when available, else cached price times tokens); a state
