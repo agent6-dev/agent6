@@ -87,7 +87,9 @@ def _fail(path: Path, problems: list[str], label: str = "") -> int:
 
 
 def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
-    """Shared `check`/`test` front half: load + structural bundle validation.
+    """Shared `check`/`test` front half: load, structural bundle validation,
+    and the effective-config overlay merge `machine run` performs -- so a bad
+    `[config]` key fails here, not first at run.
 
     Returns (spec, problems, label). spec is None when validation failed;
     label names the failing stage for the FAIL header.
@@ -99,6 +101,10 @@ def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
     bundle_problems = validate_bundle(spec, path)
     if bundle_problems:
         return None, bundle_problems, "bundle"
+    try:
+        load_effective_with_overlay(Path.cwd(), spec.config)
+    except ConfigError as exc:
+        return None, [str(exc)], "config"
     return spec, [], ""
 
 

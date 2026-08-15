@@ -676,6 +676,24 @@ reason = "lint"
 """
 
 
+def test_check_validates_the_config_overlay_run_will_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine run` merges the file's [config] table into the effective
+    config; check and test skipped that merge, so an unknown config key
+    returned OK from both and failed first at run."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "bad.asm.toml"
+    f.write_text(
+        TINY + '\n[config.workflow]\nnonsense_key = "x"\n',
+        encoding="utf-8",
+    )
+    assert main(["machine", "check", str(f)]) == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err and "nonsense_key" in err
+    assert main(["machine", "test", str(f)]) == 1
+
+
 def test_check_warns_on_binaries_unreachable_in_the_jail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
