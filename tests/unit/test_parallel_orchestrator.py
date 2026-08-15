@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -1611,3 +1611,51 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
     assert fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
     assert fanout_exit_code([_cand(False), _cand(False)]) == 4
     assert fanout_exit_code([_cand(False), _cand(None)]) == 4
+
+
+def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
+    """The fan-out advertises "$X/lane x N + judge = $Y total", but the
+    judge's tracker took the full config budget, so the effective ceiling
+    quietly exceeded the printed one. rank caps the judge at the lane cap
+    when one is given; the config budget stays the fallback."""
+    from contextlib import contextmanager
+
+    from agent6.app.compare import rank
+    from agent6.budget import BudgetTracker
+    from agent6.providers import ProviderError
+    from agent6.workflows.judge import CandidateBrief
+
+    seen: list[BudgetTracker] = []
+
+    def build(cfg: Config, sink: object, budget: BudgetTracker) -> object:
+        seen.append(budget)
+        raise ProviderError("captured; fall back to mechanical")
+
+    @contextmanager
+    def status() -> Generator[None]:
+        yield
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"api_format": "openai", "api_key_env": "K"}},
+            "models": {
+                "worker": {"provider": "p", "model": "m"},
+                "reviewer": {"provider": "p", "model": "judge"},
+            },
+            "budget": {"max_usd": 10.0},
+        }
+    )
+    briefs = [
+        CandidateBrief(session_id=f"s{i}", task="t", diff="", verify_ok=True, cost_usd=0.0)
+        for i in range(2)
+    ]
+    outcome = rank(
+        cfg,
+        briefs,
+        transcript_dir=tmp_path,
+        build_provider=build,  # pyright: ignore[reportArgumentType]
+        judging_status=status,
+        max_usd=0.25,
+    )
+    assert outcome.ranked_by == "mechanical"
+    assert [b.max_usd for b in seen] == [0.25]  # the lane cap, not the $10 config budget

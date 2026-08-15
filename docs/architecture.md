@@ -286,8 +286,10 @@ pipelines composed over the engine, never importing `agent6.ui`.
   stateless, the coordinator never compares its lanes) -- so every run view
   (`sessions show`, TUI/web run headers) shows where a lane placed and why, and the
   listings mark the winner with a `★`. Nothing merges automatically.
-  `--max-usd` is per lane (total spend up to `--max-usd` x lane count; the
-  orchestrator prints the `$X/lane x N = $Y total` line before spawning). The
+  `--max-usd` is per lane AND caps the compare judge like one more lane
+  (total spend up to `--max-usd` x (lanes + 1) when a reviewer judges; the
+  orchestrator prints the `$X/lane x N + judge = $Y total` line before
+  spawning). The
   web hub and TUI home new-run composers spawn the same fan-out from a
   `/parallel [spec] <task>` directive (parsed by `agent6.directive`); a
   multi-segment message spawns one detached `run --parallel <spec>` per segment

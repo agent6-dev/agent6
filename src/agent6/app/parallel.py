@@ -954,8 +954,12 @@ def run_parallel(
     bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
     reporter.err(f"[agent6] parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
+        # The judge is one more capped call series, so the advertised total
+        # includes it; without that the effective ceiling quietly exceeded
+        # the printed one.
         reporter.err(
-            f"[agent6] budget: ${max_usd:g}/lane x {len(lanes)} = ${max_usd * len(lanes):g} total"
+            f"[agent6] budget: ${max_usd:g}/lane x {len(lanes)} + judge"
+            f" = ${max_usd * (len(lanes) + 1):g} total"
         )
 
     results: list[LaneResult] = []
@@ -999,6 +1003,7 @@ def run_parallel(
         transcript_dir=origin_state / "parallel" / fanout_id,
         build_provider=runtime.build_provider,
         judging_status=runtime.judging_status,
+        max_usd=max_usd,
         reporter=reporter,
     )
     _stamp_compare_outcomes(

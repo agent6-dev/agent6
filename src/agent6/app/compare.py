@@ -74,17 +74,21 @@ def rank(
     transcript_dir: Path,
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
+    max_usd: float | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> RankOutcome:
     """Rank candidates best-first. Use the configured reviewer model as the
     compare judge when one resolves; fall back to the deterministic mechanical
     ranking when it is unset, there is only one candidate, or the judge call
-    fails (see `RankOutcome.ranked_by`)."""
+    fails (see `RankOutcome.ranked_by`).
+
+    *max_usd* caps the judge like one more lane (the fan-out advertises
+    "$X/lane x N + judge"); None falls back to the config budget."""
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
         budget = BudgetTracker(
-            max_usd=cfg.budget.max_usd,
+            max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
             max_tokens_fallback=cfg.budget.max_tokens_fallback,
         )
         try:
