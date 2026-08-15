@@ -490,3 +490,42 @@ def test_manager_close_kills_setsid_escapee(tmp_path: Path) -> None:
         if gc_pid is not None:
             with contextlib.suppress(ProcessLookupError, OSError):
                 os.kill(gc_pid, signal.SIGKILL)
+
+
+def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
+    """clientInfo.version hardcoded "0" while every other public surface
+    imports agent6.__version__; the handshake now carries the canonical one."""
+    import agent6
+    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+
+    seen = tmp_path / "init.json"
+    srv_py = tmp_path / "srv.py"
+    srv_py.write_text(
+        "import json, sys\n"
+        "line = sys.stdin.readline()\n"
+        f"open({str(seen)!r}, 'w').write(line)\n"
+        "msg = json.loads(line)\n"
+        "print(json.dumps({'jsonrpc': '2.0', 'id': msg['id'], 'result': {\n"
+        "    'protocolVersion': '2024-11-05', 'capabilities': {},\n"
+        "    'serverInfo': {'name': 'fake', 'version': '1'}}}))\n"
+        "sys.stdout.flush()\n"
+        "sys.stdin.readline()\n"
+        "print(json.dumps({'jsonrpc': '2.0', 'id': 2, 'result': {'tools': []}}))\n"
+        "sys.stdout.flush()\n"
+        "sys.stdin.read()\n",
+        encoding="utf-8",
+    )
+    srv = _MCPServer(
+        name="v",
+        command=("/usr/bin/python3", str(srv_py)),
+        startup_timeout_s=5.0,
+        call_timeout_s=5.0,
+        pass_env=(),
+        policy=None,
+    )
+    try:
+        srv.start()
+    finally:
+        srv.close()
+    init = json.loads(seen.read_text(encoding="utf-8"))
+    assert init["params"]["clientInfo"]["version"] == agent6.__version__

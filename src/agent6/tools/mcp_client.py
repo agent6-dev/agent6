@@ -19,13 +19,12 @@ client side, we do not advertise the corresponding capabilities.
 Threat model
 ============
 
-Each MCP server runs as the *operator's* user, OUTSIDE the agent6 jail,
-inheriting the agent6 process's FULL `os.environ` -- provider API keys
-included (the spawn passes no `env`). The argv comes exclusively from
-your config (`[mcp.servers.<name>] command = [...]`); the LLM cannot
-influence it: operator-controlled argv, full user authority, no
-sandboxing. (The `[notify]` hook is NARROWER -- it runs under a curated
-`hook_env` -- so an MCP server sees keys a notify hook does not.)
+Each MCP server is spawned as a jailed child by default (its own
+`[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) under
+a curated env that NEVER carries the provider API keys; `pass_env` adds
+named vars, and config refuses a `pass_env` naming a provider key. The
+argv comes exclusively from your config (`[mcp.servers.<name>] command =
+[...]`); the LLM cannot influence it.
 
 What the LLM *can* influence is the *arguments* to `tools/call` once
 a server is connected. The MCP server is responsible for validating
@@ -51,6 +50,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import IO, Any
 
+from agent6 import __version__
 from agent6.child_env import curated_env
 from agent6.sandbox.jail import (
     JailedProcess,
@@ -375,7 +375,7 @@ class _MCPServer:
                 {
                     "protocolVersion": _MCP_PROTOCOL_VERSION,
                     "capabilities": {},
-                    "clientInfo": {"name": "agent6", "version": "0"},
+                    "clientInfo": {"name": "agent6", "version": __version__},
                 },
                 timeout_s=self.startup_timeout_s,
             )
@@ -504,7 +504,7 @@ class _MCPServer:
             {
                 "protocolVersion": _MCP_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "agent6", "version": "0"},
+                "clientInfo": {"name": "agent6", "version": __version__},
             },
             timeout_s=self.startup_timeout_s,
         )
