@@ -169,3 +169,40 @@ def test_bash_install_refuses_an_unreadable_rc(
     finally:
         rc.chmod(0o600)
     assert rc.read_text(encoding="utf-8") == "# mine\n"
+
+
+def test_a_moved_config_home_updates_the_stale_source_block(
+    home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After the config home moves, install saw its marker and printed
+    "already sourced" while the block kept pointing at the OLD script path:
+    success reported, completions still broken."""
+    assert cmd_completions("bash", print_only=False) == 0
+    rc = home / ".bashrc"
+    old_block = rc.read_text(encoding="utf-8")
+    moved = home / "elsewhere"
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(moved))
+    assert cmd_completions("bash", print_only=False) == 0
+    text = rc.read_text(encoding="utf-8")
+    assert str(moved / "completions.bash") in text
+    assert str(home / ".config" / "agent6" / "completions.bash") not in text
+    assert text.count(">>> agent6 completions >>>") == 1
+    assert text != old_block
+    assert "updated the source path" in capsys.readouterr().out
+
+
+def test_malformed_completion_markers_are_refused_untouched(
+    home: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """agent6 edits only its ONE owned marker block; a duplicated or mangled
+    set is the operator's to fix, never silently rewritten."""
+    rc = home / ".bashrc"
+    rc.write_text(
+        "# >>> agent6 completions >>>\nx\n# <<< agent6 completions <<<\n"
+        "# >>> agent6 completions >>>\ny\n# <<< agent6 completions <<<\n",
+        encoding="utf-8",
+    )
+    before = rc.read_text(encoding="utf-8")
+    assert cmd_completions("bash", print_only=False) == 2
+    assert rc.read_text(encoding="utf-8") == before
+    assert "malformed agent6 completion markers" in capsys.readouterr().err

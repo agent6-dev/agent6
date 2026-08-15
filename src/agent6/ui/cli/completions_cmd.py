@@ -187,7 +187,30 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     block = f"\n{_MARK_BEGIN}\n[ -f {q} ] && source {q}  # agent6 tab-completion\n{_MARK_END}\n"
     existing = read_operator_file(rc) if rc.exists() else ""
     if _MARK_BEGIN in existing:
-        print(f"[agent6] refreshed {script} (already sourced from {rc})")
+        if (
+            existing.count(_MARK_BEGIN) != 1
+            or existing.count(_MARK_END) != 1
+            or existing.index(_MARK_END) < existing.index(_MARK_BEGIN)
+        ):
+            # The rc file is the operator's; agent6 edits only its one owned
+            # marker block, and a mangled or duplicated one is theirs to fix.
+            print(
+                f"[agent6] ERROR: {rc} holds malformed agent6 completion markers"
+                f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun.",
+                file=sys.stderr,
+            )
+            return 2
+        start = existing.index(_MARK_BEGIN)
+        end = existing.index(_MARK_END) + len(_MARK_END)
+        current = existing[start:end]
+        wanted = block.strip("\n")
+        if current == wanted:
+            print(f"[agent6] refreshed {script} (already sourced from {rc})")
+        else:
+            # A moved config home leaves the block pointing at the old script
+            # path; reporting "already sourced" then was a lie.
+            rc.write_text(existing[:start] + wanted + existing[end:], encoding="utf-8")
+            print(f"[agent6] updated the source path in {rc}")
     else:
         with rc.open("a", encoding="utf-8") as fh:
             fh.write(block)
