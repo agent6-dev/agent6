@@ -86,6 +86,11 @@ class TaskNode(BaseModel):
     notes: str = ""
     # See TaskNodeDraft.standing: the never-passing fallback node.
     standing: bool = False
+    # The graph_version of the mutation that last wrote this node (the same
+    # number its journal entry carries). 0 = written before stamps existed.
+    # Lets the curator detect a journal that lost its tail: a node stamped
+    # newer than the journal's max version is exactly that crash.
+    graph_version: int = 0
 
     @field_validator("id")
     @classmethod

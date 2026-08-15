@@ -180,6 +180,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | `commit_sha` | `str` | `''` |
 | `notes` | `str` | `''` |
 | `standing` | `bool` | `False` |
+| `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, _parallel_dispatch, loop}

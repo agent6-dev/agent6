@@ -187,3 +187,49 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
         {"op": "obsolete", "id": b.id, "reason": "dropped", "graph_version": 7},
         {"op": "set_cursor", "id": a.id, "graph_version": 8},
     ]
+
+
+def test_every_write_in_one_mutation_carries_the_journaled_version(tmp_path: Path) -> None:
+    """add_subtask writes the child and relinks the parent; both node files
+    carry the same graph_version the mutation's journal entry records, so a
+    journal that lost its tail is detectable from the nodes alone."""
+    import json as _json
+
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
+    child = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("child")))
+    assert root.graph_version == 1
+    assert child.graph_version == 2
+    nodes = c.nodes()
+    assert nodes[root.id].graph_version == 2  # relinked by the child's mutation
+    assert nodes[child.id].graph_version == 2
+    entries = [
+        _json.loads(line)
+        for line in layout.journal_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [e["graph_version"] for e in entries] == [1, 2]
+
+
+def test_a_lost_journal_tail_resyncs_the_version_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A death between a node write and its journal append lost the entry;
+    the reused version number then made two operations share one version,
+    corrupting fork-at-version undo. Boot detects the newer node stamp,
+    resyncs the counter past the lost number, and names the residual."""
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
+    c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("child")))
+    # Simulate the crash: drop the journal's last line (the v2 entry).
+    lines = layout.journal_path.read_text(encoding="utf-8").splitlines()
+    layout.journal_path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+
+    reopened = GraphCurator(layout)
+    err = capsys.readouterr().err
+    assert "lost its tail" in err and "v2" in err
+    assert reopened.graph_version == 2
+    third = reopened.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("late")))
+    assert third.graph_version == 3  # the lost number is never reused

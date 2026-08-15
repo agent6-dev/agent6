@@ -14,7 +14,9 @@ operations never touch (title, rationale, acceptance, relevant_paths,
 created_at, created_by) is immutable after creation. So the rebuild starts from
 the current nodes and undoes every mutation stamped after the target version.
 Two fields cannot be unwound and stay at their current value, both display-only:
-`notes` (appended prose with no per-append record) and `updated_at`.
+`notes` (appended prose with no per-append record) and `updated_at`. A
+mutation whose journal entry was lost to a crash (see the curator's boot
+resync) has nothing to undo, so it stays visible in every replayed version.
 """
 
 from __future__ import annotations

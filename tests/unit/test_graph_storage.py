@@ -163,3 +163,25 @@ def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: obje
     )
     nodes = load_graph(layout)
     assert bad_id not in nodes  # skipped, not loaded
+
+
+def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) -> None:
+    """The node file carries the mutation stamp; a file written before stamps
+    existed loads as 0 (never a parse failure)."""
+    layout = SessionLayout(state_dir=tmp_path, session_id="s")
+    layout.ensure()
+    node = _mk_node("0" * 26).model_copy(update={"graph_version": 7})
+    write_node(layout, {node.id: node}, node)
+    loaded = load_graph(layout)
+    assert loaded[node.id].graph_version == 7
+    # Strip the stamp line: the pre-stamp file shape.
+    md = next(layout.graph_dir.rglob("*.md"))
+    md.write_text(
+        "\n".join(
+            ln
+            for ln in md.read_text(encoding="utf-8").split("\n")
+            if not ln.startswith("graph_version:")
+        ),
+        encoding="utf-8",
+    )
+    assert load_graph(layout)[node.id].graph_version == 0

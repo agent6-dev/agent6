@@ -10,10 +10,11 @@ out-of-tree per-repo state dir. Unit tests instantiate it the same way.
 Mutations are validated structurally, then applied as:
 
   1. mutate in-memory graph state
-  2. append entry to `graph.jsonl` (the journal, append-only audit log)
-  3. atomically rewrite the affected node's `.md` file
+  2. atomically write the affected node `.md` files, each stamped with the
+     version this mutation will journal (nodes are the content authority)
+  3. append the entry to `graph.jsonl` (the journal, append-only audit log)
+     and commit the `graph_version` bump
   4. (if topology changed) atomically regenerate `graph.dot`
-  5. bump `graph_version`
 
 The flock around every mutation prevents interleaved file writes from
 accidental parallel curator instances (which we explicitly forbid). It does
@@ -153,6 +154,20 @@ class GraphCurator:
         layout.ensure()
         self._nodes: dict[str, TaskNode] = load_graph(layout)
         self._graph_version = self._compute_graph_version()
+        # A node stamped newer than the journal's max version is a death
+        # between the node write and its journal append: the entry is gone.
+        # Resync the counter so the lost number is never REUSED (two ops
+        # sharing a version corrupts fork-at-version undo) and say so; the
+        # change stays current but is invisible to historical replay.
+        node_max = max((n.graph_version for n in self._nodes.values()), default=0)
+        if node_max > self._graph_version:
+            sys.stderr.write(
+                f"agent6: graph journal lost its tail (a node is stamped v{node_max},"
+                f" the journal ends at v{self._graph_version}); continuing from"
+                f" v{node_max}. The lost operation stays in the current graph but"
+                " will not appear in fork --at-turn replays.\n"
+            )
+            self._graph_version = node_max
 
     def _compute_graph_version(self) -> int:
         return max(
@@ -207,6 +222,17 @@ class GraphCurator:
                 self._graph_version = self._compute_graph_version()
                 raise
 
+    def _write(self, node: TaskNode) -> TaskNode:
+        """Stamp *node* with the version this mutation will journal, cache it,
+        write its file, and return the stamped copy. Every write inside one
+        mutation carries the same number `_post_mutation` then records, so a
+        journal that lost its tail is detectable at load (the resync in
+        __init__)."""
+        stamped = node.model_copy(update={"graph_version": self._graph_version + 1})
+        self._nodes[stamped.id] = stamped
+        write_node(self._layout, self._nodes, stamped)
+        return stamped
+
     def add_subtask(self, intent: AddSubtaskIntent) -> TaskNode:
         with self._mutating():
             parent = self._nodes.get(intent.parent_id) if intent.parent_id else None
@@ -236,12 +262,11 @@ class GraphCurator:
                 updated_at=now,
                 created_by=intent.draft.created_by,
             )
-            self._nodes[node.id] = node
             # Write the child node BEFORE the parent->child link so a crash in
             # between can at worst leave an orphan node (parent_id set, not yet
             # listed in parent.children) rather than a dangling reference to a
             # child whose .md never made it to disk.
-            write_node(self._layout, self._nodes, node)
+            node = self._write(node)
             if parent is not None:
                 updated_parent = parent.model_copy(
                     update={
@@ -249,8 +274,7 @@ class GraphCurator:
                         "updated_at": now,
                     }
                 )
-                self._nodes[parent.id] = updated_parent
-                write_node(self._layout, self._nodes, updated_parent)
+                self._write(updated_parent)
             self._post_mutation(
                 AddSubtaskJournal(
                     id=node.id, parent_id=intent.parent_id, by=intent.draft.created_by
@@ -279,8 +303,7 @@ class GraphCurator:
                     ),
                 }
             )
-            self._nodes[updated.id] = updated
-            write_node(self._layout, self._nodes, updated)
+            updated = self._write(updated)
             self._post_mutation(UpdateStatusJournal(id=updated.id, new_status=intent.new_status))
             return updated
 
@@ -301,8 +324,7 @@ class GraphCurator:
                     "updated_at": _now(),
                 }
             )
-            self._nodes[updated.id] = updated
-            write_node(self._layout, self._nodes, updated)
+            updated = self._write(updated)
             self._post_mutation(AddDependencyJournal(id=updated.id, depends_on=intent.depends_on))
             return updated
 
@@ -320,8 +342,7 @@ class GraphCurator:
                     ),
                 }
             )
-            self._nodes[updated.id] = updated
-            write_node(self._layout, self._nodes, updated)
+            updated = self._write(updated)
             self._post_mutation(ObsoleteJournal(id=updated.id, reason=intent.reason))
             return updated
 
@@ -329,8 +350,7 @@ class GraphCurator:
         with self._mutating():
             node = self.get(intent.id)
             updated = node.model_copy(update={"commit_sha": intent.sha, "updated_at": _now()})
-            self._nodes[updated.id] = updated
-            write_node(self._layout, self._nodes, updated)
+            updated = self._write(updated)
             self._post_mutation(RecordCommitJournal(id=updated.id, sha=intent.sha))
             return updated
 
