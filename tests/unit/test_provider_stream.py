@@ -14,7 +14,7 @@ import json
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 import httpx2
@@ -233,3 +233,105 @@ def test_transport_error_names_the_wire_format() -> None:
         pytest.raises(ProviderError, match=r"HTTP error streaming from .* \(anthropic format\)"),
     ):
         _call(api_label="Anthropic", api_format="anthropic").run(_drain)
+
+
+class _LinesResponse:
+    """A 200 stream that emits ``lines`` then ends cleanly."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.status_code = 200
+        self.headers: dict[str, str] = {}
+        self._lines = lines
+
+    def __enter__(self) -> _LinesResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return b""
+
+    def iter_lines(self) -> Iterator[str]:
+        yield from self._lines
+
+
+def test_a_malformed_frame_normalizes_to_a_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shape error the consume loop did not tolerate (a flaky gateway's
+    null/renamed field) is a retryable ProviderError at the one seam both
+    providers stream through -- never a raw traceback that bypasses the
+    loop's retry wrapper."""
+    call = _call()
+    monkeypatch.setattr(
+        stream_mod.httpx2, "stream", _serve(_LinesResponse(['data: {"choices": "boom"}']))
+    )
+
+    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+        for line in resp.iter_lines():
+            clock.mark_data()
+            payload = json.loads(line[5:])
+            _ = int(payload["choices"][0]["index"])  # the shape error escapes here
+
+    with pytest.raises(ProviderError, match="did not match the wire shape"):
+        call.run(consume)
+
+
+def test_an_endless_frame_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One line with no newline buffers unbounded inside iter_lines: the
+    bounded reader refuses past the per-line ceiling as a retryable error
+    (the non-streaming path already caps its whole body)."""
+    from agent6.providers._stream import bounded_lines
+
+    call = _call()
+    huge = "data: " + "x" * 1024
+    monkeypatch.setattr(stream_mod.httpx2, "stream", _serve(_LinesResponse([huge])))
+
+    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+        for _line in bounded_lines(resp, max_line_bytes=512):
+            clock.mark_data()
+
+    with pytest.raises(ProviderError, match="stream frame exceeded"):
+        call.run(consume)
+
+
+def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
+    """The non-streaming twin: a parse that trips on a malformed 2xx body
+    surfaces as a retryable ProviderError from the one transport seam."""
+    from agent6.providers._transport import ProviderCall
+
+    def _bad_parse(_data: dict[str, Any]) -> Any:
+        raise KeyError("message")
+
+    call = ProviderCall(
+        api_label="OpenAI",
+        api_format="openai",
+        url="https://api.test/v1/chat/completions",
+        body={"model": "m"},
+        timeout_s=5.0,
+        api_key="k",
+        credential=None,
+        transcript_sink=None,
+        budget=None,
+        model="m",
+        build_headers=lambda _k: {},
+        adapt_400=lambda _s, _t, _b: False,
+        adapt_attempts=0,
+        require_metered=lambda _d: None,
+        parse=_bad_parse,
+    )
+
+    class _Resp:
+        status_code = 200
+        headers: ClassVar[dict[str, str]] = {}
+        text = "{}"
+
+        def json(self) -> dict[str, Any]:
+            return {"choices": [{}]}
+
+    with pytest.raises(ProviderError, match="did not match the wire shape"):
+        call._decode_success({}, _Resp())  # pyright: ignore[reportPrivateUsage, reportArgumentType]

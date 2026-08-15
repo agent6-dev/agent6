@@ -92,6 +92,20 @@ def http_stream(
         yield resp
 
 
+def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 1024):
+    """`resp.iter_lines()` with a per-line ceiling: one endless line from a
+    broken endpoint buffers unbounded inside iter_lines otherwise (the
+    non-streaming path already caps its whole body). Exceeding it raises a
+    retryable ProviderError. Both providers' consume loops read through
+    this."""
+    for line in resp.iter_lines():
+        if len(line) > max_line_bytes:
+            raise ProviderError(
+                f"stream frame exceeded {max_line_bytes} bytes; refusing to buffer it"
+            )
+        yield line
+
+
 class StreamClock:
     """Idle bookkeeping the per-provider consume loop feeds.
 
@@ -207,7 +221,10 @@ class SseCall:
         `consume` iterates `resp.iter_lines()` and parses the provider's
         events, marking the clock as it goes; accumulation happens in the
         caller's closure. A `ProviderError` it raises (mid-stream error
-        frame) propagates unchanged.
+        frame) propagates unchanged; any other shape error a malformed 2xx
+        frame provokes is normalized to a retryable ProviderError here, the
+        one seam both providers stream through, so it can never bypass the
+        loop's retry wrapper as a raw traceback.
         """
         clock = StreamClock()
         aborted = threading.Event()
@@ -277,7 +294,13 @@ class SseCall:
                         status_code=resp.status_code,
                         retry_after_s=parse_retry_after(resp.headers),
                     )
-                consume(resp, clock)
+                try:
+                    consume(resp, clock)
+                except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
+                    raise ProviderError(
+                        f"{self.api_label} stream frame did not match the wire shape:"
+                        f" {exc!r} (malformed 2xx event; retryable)"
+                    ) from exc
         except httpx2.HTTPError as exc:
             if interrupted.is_set():
                 # The operator asked to steer; the watchdog closed the stream so

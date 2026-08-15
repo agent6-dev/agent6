@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers._stream import SseCall, StreamClock, record_billed_usage
+from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.types import (
     ProviderError,
@@ -483,7 +483,7 @@ class AnthropicProvider:
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
             event_type = ""
-            for line in resp.iter_lines():
+            for line in bounded_lines(resp):
                 if not line:
                     event_type = ""
                     continue

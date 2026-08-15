@@ -295,7 +295,15 @@ class ProviderCall:
             )
         if self.budget is not None:
             self.require_metered(data)
-        parsed = self.parse(data)
+        try:
+            parsed = self.parse(data)
+        except (AttributeError, KeyError, TypeError, ValueError, IndexError) as exc:
+            # A malformed 2xx body (a flaky gateway's null/renamed fields) is a
+            # retryable provider fault, never a raw traceback that bypasses
+            # the loop's retry wrapper. The one parse seam both providers use.
+            raise ProviderError(
+                f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
+            ) from exc
         if self.budget is not None:
             self.budget.record(
                 model=self.model,

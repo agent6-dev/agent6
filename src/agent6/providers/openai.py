@@ -32,7 +32,7 @@ import httpx2
 from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers._openai_parse import parse_response
-from agent6.providers._stream import SseCall, StreamClock, record_billed_usage
+from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall, envelope_status
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
@@ -523,7 +523,7 @@ class OpenAIProvider:
 
         def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
             nonlocal finish_reason, usage, done_seen
-            for raw_line in resp.iter_lines():
+            for raw_line in bounded_lines(resp):
                 line = raw_line.strip()
                 if not line:
                     continue
