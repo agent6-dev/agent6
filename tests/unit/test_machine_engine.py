@@ -664,6 +664,21 @@ def test_wait_signal_path(tmp_path: Path) -> None:
     assert result == MachineResult("ok", "signalled", "woken", 1)
 
 
+def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: Path) -> None:
+    """The poke's claim file outlives take_signal (a death before the wake's
+    StepEvent re-delivers it on restart) and is dropped by the driver once the
+    step is durable -- without that ack every poke would re-deliver forever."""
+    journal, f = _load(tmp_path, WAITER)
+    spec = load_machine(f)
+    journal.poke("p")
+    assert journal.take_signal() == (True, "p")  # the claim is made, unacked
+    world = FakeWorld({}, wakes=[WaitWake("signal", "p")])
+    result = drive(spec, journal, world, live=True)
+    assert result == MachineResult("ok", "signalled", "woken", 1)
+    assert not journal.signal_path.with_suffix(".consuming").exists()
+    assert journal.take_signal() == (False, None)
+
+
 def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
     from agent6.machine.journal import MachineNotify
 

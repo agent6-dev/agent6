@@ -399,6 +399,7 @@ def test_take_signal_consumes_file(tmp_path: Path) -> None:
     assert j.take_signal() == (False, None)
     j.signal_path.write_text("", encoding="utf-8")  # a hand-touched empty poke
     assert j.take_signal() == (True, None)
+    j.ack_signal()
     assert j.take_signal() == (False, None)
 
 
@@ -407,16 +408,33 @@ def test_poke_writes_signal_consumed_by_take_signal(tmp_path: Path) -> None:
     assert j.take_signal() == (False, None)
     j.poke()
     assert j.take_signal() == (True, None)
+    j.ack_signal()
     assert j.take_signal() == (False, None)
+
+
+def test_a_poke_survives_until_its_step_is_acked(tmp_path: Path) -> None:
+    """take_signal used to unlink the claim as it read, so a death between the
+    take and the wake's fsynced StepEvent lost the poke with no trace (neither
+    signal, claim, nor journal). The claim now outlives the take: a restart
+    re-delivers the same payload until ack_signal, called only after the step
+    is durable."""
+    j = _journal(tmp_path)
+    j.poke({"cmd": "reload"})
+    assert j.take_signal() == (True, {"cmd": "reload"})
+    # Death before the step append: a fresh journal (restart) re-delivers.
+    j2 = _journal(tmp_path)
+    assert j2.take_signal() == (True, {"cmd": "reload"})
+    j2.ack_signal()
+    assert j2.take_signal() == (False, None)
 
 
 def test_take_signal_preserves_poke_landing_mid_consume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A poke that renames a fresh signal into place between take_signal's read
-    # and its unlink must survive for the next check (the old read-then-unlink
-    # destroyed it). The claim-by-rename makes the window structural: the racing
-    # poke lands at signal_path while we consume the renamed-away copy.
+    # A poke that renames a fresh signal into place while take_signal reads
+    # must survive for the next check. The claim-by-rename makes the window
+    # structural: the racing poke lands at signal_path while the renamed-away
+    # copy is being consumed.
     j = _journal(tmp_path)
     j.poke("first")
     real_read_text = Path.read_text
@@ -429,19 +447,21 @@ def test_take_signal_preserves_poke_landing_mid_consume(
     monkeypatch.setattr(Path, "read_text", racing_read_text)
     assert j.take_signal() == (True, "first")
     monkeypatch.undo()
+    j.ack_signal()
     assert j.take_signal() == (True, "second")  # the mid-consume poke survived
 
 
 def test_take_signal_recovers_stranded_consuming_file(tmp_path: Path) -> None:
-    """A crash between the rename-claim and the unlink strands signal.consuming;
-    restart never looked for it, so the poke (payload included) was lost forever,
-    and the next claim's rename would have clobbered it. A stranded claim is
-    consumed first, before any fresh signal."""
+    """An unacked claim (a crash anywhere before the wake step's ack) is
+    re-delivered first, before any fresh signal; renaming over it would have
+    clobbered its payload."""
     j = _journal(tmp_path)
     j.signal_path.with_suffix(".consuming").write_text('"stranded"', encoding="utf-8")
     j.poke("fresh")
     assert j.take_signal() == (True, "stranded")
+    j.ack_signal()
     assert j.take_signal() == (True, "fresh")
+    j.ack_signal()
     assert j.take_signal() == (False, None)
 
 
@@ -449,6 +469,7 @@ def test_poke_carries_payload(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.poke({"cmd": "reload", "n": 3})
     assert j.take_signal() == (True, {"cmd": "reload", "n": 3})
+    j.ack_signal()
     # A --message-style string payload round-trips too.
     j.poke("hello")
     assert j.take_signal() == (True, "hello")

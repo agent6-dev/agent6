@@ -516,10 +516,12 @@ def test_poke_carries_data_payload(
     capsys.readouterr()
     assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
     root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert MachineJournal(root).take_signal() == (True, {"cmd": "go"})
+    j = MachineJournal(root)
+    assert j.take_signal() == (True, {"cmd": "go"})
+    j.ack_signal()
     # --message wraps a plain string.
     assert main(["machine", "poke", "waiter_delayed", "--message", "hello"]) == 0
-    assert MachineJournal(root).take_signal() == (True, "hello")
+    assert j.take_signal() == (True, "hello")
 
 
 def test_poke_rejects_invalid_json_data(

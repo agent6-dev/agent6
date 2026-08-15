@@ -980,6 +980,10 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
                 fact=fact,
             )
         )
+        # The poke's claim is dropped only now that its wake is durable; a
+        # death anywhere earlier re-delivers it on restart.
+        if isinstance(fact, WaitFact) and fact.woke_by == "signal":
+            journal.ack_signal()
         blackboard = next_blackboard
         if isinstance(fact, AgentFact):
             spent_usd += fact.usd

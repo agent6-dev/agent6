@@ -425,12 +425,13 @@ class MachineJournal:
         renames a fresh signal into place from another process, so a
         read-then-unlink would destroy a poke that landed in between.
 
-        A consume path already present is a claim stranded by a crash between
-        the rename and the unlink (machine_lock guarantees no live second
-        consumer): consume IT first -- restart otherwise lost that poke forever,
-        and renaming over it would clobber the payload. Delivery is thus
-        at-least-once: a crash after the read can re-deliver, which a wake
-        tolerates (a bare poke is a valid wake).
+        The claim file OUTLIVES this call: it is deleted by `ack_signal` once
+        the wake's StepEvent is durable, never here. A consume path already
+        present is therefore an unacked claim (machine_lock guarantees no live
+        second consumer): read IT rather than renaming over it, so a death
+        anywhere before the ack re-delivers the same poke on restart.
+        Delivery is at-least-once across the whole claim-to-step window, which
+        a wake tolerates (a bare poke is a valid wake).
         """
         consume = self.signal_path.with_suffix(".consuming")
         if not consume.exists():
@@ -442,13 +443,20 @@ class MachineJournal:
             raw = consume.read_text(encoding="utf-8")
         except OSError:
             raw = ""
-        consume.unlink(missing_ok=True)
         if not raw.strip():
             return True, None
         try:
             return True, scrub_lone_surrogates(json.loads(raw))
         except json.JSONDecodeError:
             return True, None
+
+    def ack_signal(self) -> None:
+        """Discard the claimed poke once its wake's StepEvent is durable.
+
+        Deleting on take made the poke's only remaining trace an un-fsynced
+        return value, so a death between the take and the step append lost it
+        with nothing to re-deliver."""
+        self.signal_path.with_suffix(".consuming").unlink(missing_ok=True)
 
     def poke(self, payload: Any = None) -> None:
         """Drop a signal file so a blocked or armed `wait` wakes (§6 signal-poke).
