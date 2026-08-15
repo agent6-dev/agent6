@@ -562,6 +562,21 @@ graph`).
 | Repo memory                      | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memory/` (data) |
 | Session state on disk            | `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` (out of the workspace)    |
 
+## Bench and development switches
+
+Four env vars exist for benchmark A/B arms and harness experiments, not
+product configuration (which is `agent6 config show`'s domain; these are
+listed here so no behavior keys off undocumented state):
+
+- `AGENT6_SYMBOL_TOOLS`: selects a symbol-tool arm (hides part of the
+  navigation tool surface); a call to a hidden tool says so.
+- `AGENT6_DISABLE_APPLY_EDIT=1`: withholds `apply_edit`, forcing the
+  patch path; the refusal names the switch.
+- `AGENT6_WENT_QUIET_MAX_NUDGES`: overrides the empty-turn nudge cap.
+- `AGENT6_REASONING_EFFORT`: a default reasoning effort for
+  OpenAI-compatible reasoning models, below any configured
+  `[models.<role>].thinking`.
+
 ## Pre-1.0 stability
 
 See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md). Until 1.0 every public shape (config TOML,
