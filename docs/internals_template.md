@@ -1,9 +1,10 @@
 # Internals
 
-Generated maps of the code as it is today: each diagram is built from the
-current source at site-build time (`docs/gen_diagrams.py`), so it cannot
-drift. [architecture.md](architecture.md) explains the design these shapes
-serve.
+Maps of the code as it is today. The call graphs are built from the current
+source at site-build time (`docs/gen_diagrams.py`), so they cannot drift;
+the one flow chart is curated by hand and marked so. Click any diagram to
+pan and zoom it. [architecture.md](architecture.md) explains the design
+these shapes serve.
 
 ## The module layering
 
@@ -23,6 +24,26 @@ calls between the phase methods; deeper tiers regenerate from source with
 the same extractor.
 
 <!-- diagram: turn-pipeline -->
+
+## The turn, as a flow
+
+Curated, not generated: the branch structure below is maintained by hand
+against the same drive tier and reviewed with changes to it. The call graph
+above shows who calls whom; this shows the order and the decisions.
+
+```mermaid
+flowchart TD
+    pre["pre-call: snapshot, nudges, compaction"] --> model["provider call, streamed; steer can interrupt"]
+    model --> tools["dispatch tool calls, jailed"]
+    tools --> commit["auto-commit + metric"]
+    commit --> critic["critic and review triggers"]
+    critic --> gates{"model asked to finish?"}
+    gates -->|green verify| done(["finished"])
+    gates -->|red gate: refused| notices["notices + stop checks"]
+    gates -->|no| notices
+    notices -->|stop: budget, stagnation, abort| stopped(["stopped, resumable"])
+    notices -->|continue| pre
+```
 
 ## The run lifecycle
 
