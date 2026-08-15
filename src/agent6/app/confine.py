@@ -160,6 +160,21 @@ def warn_sandbox_gaps(
         # `agent6 check` lists it, where someone is asking.
 
 
+def warn_cleartext_credential_endpoints(
+    cfg: Config, *, reporter: Reporter = STDIO_REPORTER
+) -> None:
+    """Once per run: an endpoint sending its credential over plaintext http to
+    a non-loopback host is explicit-but-discouraged config, so it runs with a
+    loud warning naming the cost, never a refusal (an internal-network or VPN
+    endpoint is a real case)."""
+    for label in cfg.cleartext_credential_endpoints():
+        reporter.err(
+            f"[agent6] WARNING: {label} sends its credential over plaintext http"
+            " to a non-loopback host: anyone on the network path can read it."
+            " Use https where you can."
+        )
+
+
 def check_workspace_outside_private_dirs(root: Path) -> str | None:
     """A refusal message when the workspace and one of agent6's own private dirs
     (config, state base) OVERLAP in either direction, else None.

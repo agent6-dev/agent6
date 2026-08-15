@@ -5,7 +5,6 @@ spawned MCP server on top of one, may reach."""
 
 from __future__ import annotations
 
-import ipaddress
 import re
 from pathlib import Path
 from typing import Literal
@@ -14,6 +13,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent6.config._base import MODEL_CONFIG
+from agent6.config._surfaces import is_loopback_host
 from agent6.paths import private_dirs
 
 
@@ -387,7 +387,9 @@ class MCPServerEntry(BaseModel):
     token_env: str = Field(
         default="",
         description=(
-            "For a `url` server: env var holding the bearer. Named, never inlined; never logged."
+            "For a `url` server: env var holding the bearer. Named, never inlined; never logged. "
+            "Over plaintext `http://` to a non-loopback host the token is readable on the wire: "
+            "`mcp connect` asks first, and every run warns."
         ),
     )
     enabled: bool = Field(
@@ -469,11 +471,6 @@ class MCPServerEntry(BaseModel):
             raise ValueError(
                 "httpx_trust_env is for `url` servers; a spawned one has no http client"
             )
-        if self.token_env and self.url.startswith("http://") and not _is_loopback(self.url):
-            raise ValueError(
-                "a token over plain http would cross the network in cleartext;"
-                " use https, or drop token_env for a loopback server"
-            )
         return self
 
     @property
@@ -485,21 +482,14 @@ class MCPServerEntry(BaseModel):
         return self.sandbox.network if self.sandbox else "auto"
 
 
-def _is_loopback(url: str) -> bool:
-    """Whether *url*'s host is this machine. The operator dialling their own
-    server is the normal case for `url`, and the only one where plain http
-    with a token is not a cleartext secret on the wire."""
-    host = (urlsplit(url).hostname or "").lower()
-    if host == "localhost":
-        return True
-    try:
-        # Parsed, never prefix-matched: `127.evil.com` and `127.0.0.1.nip.io`
-        # both start with "127." and both resolve wherever their owner points
-        # them, so a string test sent the bearer token across the network in
-        # cleartext while claiming it never left the machine.
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+def is_loopback_url(url: str) -> bool:
+    """Whether *url*'s host is this machine: `is_loopback_host` over the PARSED
+    hostname, never a prefix match (`127.evil.com` resolves wherever its owner
+    points it). The operator dialling their own server is the normal case for
+    `url`, and the only one where plain http with a credential is not readable
+    on the wire; a non-loopback plaintext credential endpoint gets the
+    run-entry warning and the `mcp connect` confirmation."""
+    return is_loopback_host(urlsplit(url).hostname or "")
 
 
 def mcp_server_name_refusal(name: str) -> str:

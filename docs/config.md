@@ -440,7 +440,7 @@ unconfined process is still a way out — name the narrowest paths that work.
 | `enabled` | `false` | Master switch; `false` = zero `mcp__*` tools. |
 | `servers.<name>.command` | `[]` | argv for a stdio server agent6 spawns. Exactly one of this or `url`. |
 | `servers.<name>.url` | `""` | An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its environment or confinement. |
-| `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. |
+| `servers.<name>.token_env` | `""` | For a `url` server: env var holding the bearer. Named, never inlined; never logged. Over plaintext `http://` to a non-loopback host the token is readable on the wire: `mcp connect` asks first, and every run warns. |
 | `servers.<name>.enabled` | `true` | Per-server toggle. |
 | `servers.<name>.pass_env` | `[]` | Env vars the server needs, BY NAME. Everything else is the curated base. |
 | `servers.<name>.approve` | `"ask"` | Ask before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers THIS server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. No `no`: withholding a server's tools is what `enabled = false` says. |

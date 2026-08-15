@@ -17,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.config import Config, mcp_server_name_refusal
+from agent6.config import Config, is_loopback_url, mcp_server_name_refusal
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
@@ -82,6 +82,25 @@ def _refuse_bad_flags(
     return ""
 
 
+def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
+    """True to proceed past the plaintext-non-loopback confirmation.
+
+    Explicit-but-discouraged config, so the cost is named and never refused (an
+    internal-network or VPN endpoint is a real case): interactive asks, default
+    no; headless warns and proceeds.
+    """
+    if not (token_env and url.startswith("http://") and not is_loopback_url(url)):
+        return True
+    print(
+        f"WARNING: {url} is plaintext http to a non-loopback host: the token"
+        f" from ${token_env} will be readable on the network path.",
+        file=sys.stderr,
+    )
+    if not sys.stdin.isatty():
+        return True
+    return input("Connect anyway? [y/N]: ").strip().lower() in ("y", "yes")
+
+
 def _describe(spec: MCPServerSpec) -> str:
     if spec.http is not None:
         return f"connecting to {spec.http.url}"
@@ -106,6 +125,9 @@ def cmd_mcp_connect(
     if refusal:
         print(f"ERROR: {refusal}", file=sys.stderr)
         return 2
+    if not _cleartext_token_go_ahead(url, token_env):
+        print("nothing was written to config.", file=sys.stderr)
+        return 1
 
     spec = MCPServerSpec(
         name=name,

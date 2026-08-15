@@ -18,6 +18,7 @@ from agent6.config._sandbox import (
     MCPConfig,
     MCPServerEntry,
     SandboxConfig,
+    is_loopback_url,
     mcp_server_name_refusal,
 )
 from agent6.config._surfaces import (
@@ -78,6 +79,7 @@ __all__ = [
     "WebConfig",
     "WorkflowConfig",
     "is_loopback_host",
+    "is_loopback_url",
     "load_config",
     "mcp_server_name_refusal",
     "validate_base_url",

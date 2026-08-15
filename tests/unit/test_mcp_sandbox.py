@@ -114,25 +114,56 @@ def test_a_server_description_cannot_repaint_the_terminal(
 
 @pytest.mark.parametrize("host", ["127.evil.com", "127.0.0.1.nip.io"])
 def test_a_hostname_that_merely_starts_with_127_is_not_loopback(host: str) -> None:
-    """`startswith("127.")` accepted registerable, remotely-resolving names, so
-    the bearer token crossed the network in cleartext while the validator said
-    it never left the machine."""
-    with pytest.raises(ValueError, match="cleartext"):
-        Config.model_validate(
-            {
-                "mcp": {
-                    "enabled": True,
-                    "servers": {"s": {"url": f"http://{host}/mcp", "token_env": "TOK"}},
-                }
+    """`startswith("127.")` called registerable, remotely-resolving names
+    loopback, silencing the plaintext-credential warning while the bearer token
+    crossed the network readable. The hostname is parsed, so these names count
+    as non-loopback and the endpoint is listed for the run-entry warning."""
+    cfg = Config.model_validate(
+        {
+            "mcp": {
+                "enabled": True,
+                "servers": {"s": {"url": f"http://{host}/mcp", "token_env": "TOK"}},
             }
-        )
+        }
+    )
+    assert cfg.cleartext_credential_endpoints() == (f"[mcp.servers.s] http://{host}/mcp",)
 
 
 def test_a_real_loopback_url_still_takes_a_token() -> None:
     for url in ("http://127.0.0.1:8080/mcp", "http://localhost/mcp", "http://[::1]/mcp"):
-        Config.model_validate(
+        cfg = Config.model_validate(
             {"mcp": {"enabled": True, "servers": {"s": {"url": url, "token_env": "TOK"}}}}
         )
+        assert cfg.cleartext_credential_endpoints() == (), url
+
+
+def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
+    """An internal-network or VPN endpoint over http with a credential is a
+    real, deliberate setup: it loads (the old validator refused it) and is
+    listed for the run-entry warning and the connect confirmation. https and
+    credential-less http endpoints are not listed."""
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "corp": {
+                    "api_format": "openai",
+                    "base_url": "http://llm.corp.internal/v1",
+                    "api_key_env": "CORP_KEY",
+                },
+                "tls": {"api_format": "openai", "base_url": "https://llm.corp.internal/v1"},
+                "open": {
+                    "api_format": "openai",
+                    "base_url": "http://llm.corp.internal/v1",
+                    "auth_style": "none",
+                },
+            },
+            "mcp": {"servers": {"s": {"url": "http://mcp.corp.internal/mcp", "token_env": "T"}}},
+        }
+    )
+    assert cfg.cleartext_credential_endpoints() == (
+        "[providers.corp] http://llm.corp.internal/v1",
+        "[mcp.servers.s] http://mcp.corp.internal/mcp",
+    )
 
 
 def test_a_server_name_is_refused_before_it_becomes_a_table_header(

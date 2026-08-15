@@ -10,7 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from agent6.app.confine import check_network_support, warn_sandbox_gaps
+from agent6.app.confine import (
+    check_network_support,
+    warn_cleartext_credential_endpoints,
+    warn_sandbox_gaps,
+)
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import Environment, KernelInfo
 from agent6.sandbox.jail import ToolMountNotes
@@ -149,6 +153,30 @@ def test_hardened_warning_names_shared_tmp_and_persistent_home(
     assert "/tmp/agent6-home" in err
     assert "shared /tmp" in err
     assert "persists" in err
+
+
+def test_a_cleartext_credential_endpoint_warns_at_run_entry(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An endpoint sending its credential over plaintext http to a non-loopback
+    host is explicit-but-discouraged config: the run warns once per endpoint,
+    naming it and the cost, and never refuses. A clean config warns nothing."""
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "corp": {
+                    "api_format": "openai",
+                    "base_url": "http://llm.corp.internal/v1",
+                    "api_key_env": "K",
+                }
+            }
+        }
+    )
+    warn_cleartext_credential_endpoints(cfg)
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "[providers.corp]" in err and "plaintext http" in err
+    warn_cleartext_credential_endpoints(Config())
+    assert capsys.readouterr().err == ""
 
 
 def test_explicit_block_refuses_on_hardened() -> None:

@@ -308,7 +308,8 @@ depends_on = ["agent6.config._base"]
 [[modules]]
 # The [sandbox] and [mcp] models; paths for the private-dir grant refusals.
 path = "agent6.config._sandbox"
-depends_on = ["agent6.config._base", "agent6.paths"]
+# _surfaces: is_loopback_host, shared with the web bind gate.
+depends_on = ["agent6.config._base", "agent6.config._surfaces", "agent6.paths"]
 
 [[modules]]
 # The [git] model: worktree policy, chain commits, merge and message styles.

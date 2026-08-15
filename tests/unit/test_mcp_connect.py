@@ -257,6 +257,83 @@ def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
         )
 
 
+def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """url + token_env over plaintext http to a non-loopback host is
+    connectable (a VPN or internal endpoint is a real case) but confirmed
+    first, naming the cost. Declining (the default) probes nothing and writes
+    nothing."""
+    from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
+    from agent6.ui.cli import mcp_connect
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+
+    class _Tty:
+        def isatty(self) -> bool:
+            return True
+
+    def _no_probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
+        pytest.fail("declined connect must not probe")
+
+    monkeypatch.setattr(sys, "stdin", _Tty())
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+    monkeypatch.setattr(mcp_connect, "_probe", _no_probe)
+    rc = cmd_mcp_connect(
+        "corp",
+        command=[],
+        url="http://mcp.corp.internal/mcp",
+        token_env="TOK",
+        pass_env=[],
+        to_repo=False,
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "readable on the network" in err
+    assert not (tmp_path / "cfg" / "config.toml").exists()
+
+
+def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no terminal to ask, the connect proceeds with the same loud warning
+    (warn, never refuse: the config is explicit)."""
+    import io
+
+    from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
+    from agent6.ui.cli import mcp_connect
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO())
+
+    def _fake_probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
+        return (
+            (
+                MCPToolDescriptor(
+                    server_name="corp", tool_name="t", description="", input_schema={}
+                ),
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(mcp_connect, "_probe", _fake_probe)
+    rc = cmd_mcp_connect(
+        "corp",
+        command=[],
+        url="http://mcp.corp.internal/mcp",
+        token_env="TOK",
+        pass_env=[],
+        to_repo=False,
+    )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "readable on the network" in err
+    written = load_effective(tmp_path).config.mcp.servers["corp"]
+    assert written.url == "http://mcp.corp.internal/mcp" and written.token_env == "TOK"
+
+
 def test_mcp_connect_argv_does_not_clobber_the_dispatch_verb() -> None:
     """The `connect` positional shared its dest with the root subparser's
     command verb, so `mcp connect files -- npx srv` dispatched on a LIST and

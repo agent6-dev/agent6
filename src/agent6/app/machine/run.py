@@ -19,7 +19,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.confine import check_hide_paths_support, warn_sandbox_gaps
+from agent6.app.confine import (
+    check_hide_paths_support,
+    warn_cleartext_credential_endpoints,
+    warn_sandbox_gaps,
+)
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
@@ -272,6 +276,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 commit_identity,
             )
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
+    warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     root = resolved_state_dir(cwd) / "machines" / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).

@@ -19,6 +19,7 @@ from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.confine import (
     check_hide_paths_support,
     check_network_support,
+    warn_cleartext_credential_endpoints,
     warn_sandbox_gaps,
 )
 from agent6.app.machine._bundle import validate_bundle
@@ -154,6 +155,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(f"REFUSING: {hide_err}")
         return 2
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
+    warn_cleartext_credential_endpoints(cfg, reporter=reporter)
 
     state_dir = resolved_state_dir(cwd)
     bucket = session_bucket("machine")

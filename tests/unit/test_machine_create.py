@@ -145,6 +145,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
             sandbox=SimpleNamespace(isolation="none"),
             require_runnable=_require_runnable,
             models=SimpleNamespace(resolve=_resolve),
+            cleartext_credential_endpoints=lambda: (),
         )
         return SimpleNamespace(config=cfg)
 

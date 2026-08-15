@@ -20,6 +20,7 @@ from agent6.app.confine import (
     check_network_support,
     check_protect_git_support,
     check_workspace_outside_private_dirs,
+    warn_cleartext_credential_endpoints,
     warn_sandbox_gaps,
 )
 from agent6.app.frontend import SessionFacts
@@ -72,6 +73,7 @@ def select_isolation(
         reporter.err(f"REFUSING: {exc}")
         raise SessionRefused(2) from exc
     warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
+    warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.err("[agent6] aborted.")
         raise SessionRefused(1)
