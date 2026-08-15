@@ -821,16 +821,40 @@ class _EngineState:
     spent_usd: float = 0.0
 
 
+_STATE_FACT_KINDS: dict[type[StateSpec], type[Fact]] = {
+    ToolState: ToolFact,
+    AgentState: AgentFact,
+    WaitState: WaitFact,
+    BranchState: BranchFact,
+}
+
+
+def _declared_gotos(state: StateSpec) -> frozenset[str]:
+    """Every destination *state* can legally journal."""
+    if isinstance(state, BranchState):
+        return frozenset(clause.goto for clause in state.when)
+    if isinstance(state, ToolState | AgentState | WaitState):
+        return frozenset(state.on.values())
+    return frozenset()
+
+
 def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     """Replay recorded StepEvents through the pure reducer to rebuild the
     blackboard and position, advancing *eng* in place. Non-StepEvents
-    (begin/notify/end) are skipped; a fact that no longer reduces surfaces as a
-    clean EngineError."""
+    (begin/notify/end) are skipped.
+
+    Every recorded field the fold consumes is held to the machine: the step's
+    state must match the replayed position, seqs must be contiguous, the fact
+    kind must fit the state, and the goto must be an edge the state declares.
+    A journal that fails any of these (corruption, hand-editing, a torn write)
+    surfaces as a clean EngineError -- silently folding it would rebuild a
+    position and blackboard the machine never reached."""
     spec = eng.spec
     blackboard = eng.blackboard
     state = eng.state
     transitions = eng.transitions
     spent_usd = eng.spent_usd
+    remedy = " Archive the instance directory to start fresh."
     for event in events:
         if not isinstance(event, StepEvent):
             continue
@@ -840,6 +864,27 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
                 f"journal references state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started);"
                 " archive the instance directory to start fresh."
+            )
+        if event.state != state:
+            raise EngineError(
+                f"journal diverges at seq {event.seq}: it records state"
+                f" {event.state!r}, the replayed position is {state!r}.{remedy}"
+            )
+        if event.seq != transitions:
+            raise EngineError(
+                f"journal is not contiguous: expected seq {transitions}, found"
+                f" {event.seq} (state {state!r}).{remedy}"
+            )
+        expected_kind = _STATE_FACT_KINDS.get(type(state_spec))
+        if expected_kind is None or not isinstance(event.fact, expected_kind):
+            raise EngineError(
+                f"journal fact at seq {event.seq} is {type(event.fact).__name__},"
+                f" which state {state!r} cannot produce.{remedy}"
+            )
+        if event.goto not in _declared_gotos(state_spec):
+            raise EngineError(
+                f"journal goto {event.goto!r} at seq {event.seq} is not an edge"
+                f" state {state!r} declares.{remedy}"
             )
         try:
             blackboard = reduce(spec, state_spec, event.fact, blackboard)

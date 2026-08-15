@@ -26,6 +26,7 @@ from agent6.machine.engine import (
 )
 from agent6.machine.journal import (
     AgentFact,
+    BranchFact,
     MachineBegin,
     MachineEnd,
     MachineJournal,
@@ -515,9 +516,9 @@ def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -
     assert replayed.status == "failed"
 
 
-def test_recovery_rejects_unknown_resume_state(tmp_path: Path) -> None:
-    # An edited file that dropped a state the journal points to must fail loudly,
-    # not raise a bare KeyError from spec.states[...].
+def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: Path) -> None:
+    # A fabricated or corrupted destination must fail loudly at its own event,
+    # not fold a position the machine never reached.
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)
     journal.ensure_dirs()
@@ -528,11 +529,54 @@ def test_recovery_rejects_unknown_resume_state(tmp_path: Path) -> None:
             seq=0,
             state="scan",
             label="ok",
-            goto="ghost",  # not a state in COUNTER
+            goto="ghost",  # not an edge scan declares
             fact=ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
         )
     )
-    with pytest.raises(EngineError, match="no longer declares"):
+    with pytest.raises(EngineError, match="not an edge"):
+        drive(spec, journal, FakeWorld({}), live=True)
+
+
+def test_recovery_rejects_a_state_the_edited_file_dropped(tmp_path: Path) -> None:
+    # A legitimately recorded journal against a machine file later edited to
+    # drop the destination state must fail loudly, not raise a bare KeyError.
+    journal, _f = _load(tmp_path, COUNTER)
+    journal.ensure_dirs()
+    journal.begin(machine="counter", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="check",  # a real edge when recorded
+            fact=ToolFact(exit_code=0, stdout='{"items": ["a"]}', timed_out=False),
+        )
+    )
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=1,
+            state="check",
+            label="[1]",
+            goto="record",
+            fact=BranchFact(clause_index=1),
+        ),
+    )
+    edited = COUNTER.replace(
+        """[states.record]
+kind = "tool"
+command = ["record", "{{ items }}"]
+timeout_secs = 5
+on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
+
+""",
+        "",
+    ).replace('{ else = true, goto = "record" }', '{ else = true, goto = "stop_ok" }')
+    edited_dir = tmp_path / "edited"
+    edited_dir.mkdir()
+    spec = load_machine(_load(edited_dir, edited)[1])
+    with pytest.raises(EngineError, match=r"no longer declares|not an edge"):
         drive(spec, journal, FakeWorld({}), live=True)
 
 
@@ -1533,3 +1577,40 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: Path) 
     captured = blackboard["items"][0]
     assert "emoji tail" in captured  # kept, not dropped
     _Payload(task=captured).model_dump_json()  # the sink that raised
+
+
+def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: Path) -> None:
+    """The fold trusted every recorded field: a step whose state or seq
+    disagreed with the replayed position folded silently, and a fact kind the
+    state cannot produce no-op'd through reduce -- a fabricated journal
+    rebuilt a position and blackboard the machine never reached."""
+    base = [
+        dict(ts="t", seq=0, state="scan", label="ok", goto="check"),
+    ]
+    counter = iter(range(10))
+
+    def journal_with(**overrides: object) -> tuple[Any, Any]:
+        case_dir = tmp_path / f"case{next(counter)}"
+        case_dir.mkdir()
+        journal, f = _load(case_dir, COUNTER)
+        journal.ensure_dirs()
+        journal.begin(machine="counter", version=1)
+        fields: dict[str, Any] = {
+            **base[0],
+            "fact": ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
+        }
+        fields.update(overrides)
+        journal.append(StepEvent(**fields))
+        return journal, load_machine(f)
+
+    journal, spec = journal_with(state="record")  # not the replayed position
+    with pytest.raises(EngineError, match="diverges"):
+        drive(spec, journal, FakeWorld({}), live=True)
+
+    journal, spec = journal_with(seq=41)  # noncontiguous
+    with pytest.raises(EngineError, match="not contiguous"):
+        drive(spec, journal, FakeWorld({}), live=True)
+
+    journal, spec = journal_with(fact=BranchFact(clause_index=0))  # wrong kind for a tool state
+    with pytest.raises(EngineError, match="cannot produce"):
+        drive(spec, journal, FakeWorld({}), live=True)
