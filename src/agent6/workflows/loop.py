@@ -328,7 +328,12 @@ class _LoopState:
     jail_exec_failed_binary: str = ""
     jail_exec_failed_streak: int = 0
     sandbox_reachability_warned: bool = False
-    # Intervention nudge counters (each capped by a module-level patience const).
+    # Intervention nudge counters (each capped by a module-level patience
+    # const). Leg-local BY DESIGN, like every counter below not named in
+    # SessionSnapshot: resume is operator-initiated everywhere, so a resumed
+    # leg's refreshed patience is the operator deliberately granting another
+    # window. Only the completion-relevant subset persists (see
+    # _restore_completion_state).
     went_quiet_nudges_used: int = 0
     plateau_nudges_used: int = 0
     metric_finish_nudges_used: int = 0
