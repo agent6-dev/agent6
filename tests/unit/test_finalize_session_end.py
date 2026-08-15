@@ -709,3 +709,46 @@ def test_the_end_of_run_block_goes_through_the_reporter(
     assert captured.out == "", "the run-end block reached stdout, bypassing the reporter"
     assert captured.err == ""
     assert any("fs/write_text_file" in line for line in said), "it must still be reported"
+
+
+def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A GitError on the dirty-check used to fall through to "no changes were
+    committed" -- an unverified claim on a broken-git host. The banner now
+    says it could not check, and claims nothing either way."""
+    import agent6.app.finalize as finalize_mod
+    from agent6.git_ops import GitError
+
+    def _boom(_path: Path) -> object:
+        raise GitError("git unreadable here")
+
+    monkeypatch.setattr(finalize_mod, "git_status", _boom)
+    result = SessionResult(
+        completed=True, reason="finish_session", summary="", iterations=1, tool_calls=1
+    )
+    session_id = "run-x"
+    layout = _layout(
+        tmp_path,
+        session_id,
+        [
+            {"type": "session.start", "session_id": session_id, "user_task": "t"},
+            {"type": "session.end", "reason": result.reason, "all_passed": False},
+        ],
+    )
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps({"user_task": "t", "run_branch": "agent6/run-x", "base_branch": "master"}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    print_session_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+    assert "could not check the working tree" in out
+    assert "no changes were committed" not in out
+    assert "WARNING: the run finished but no commit reached" not in out

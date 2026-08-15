@@ -320,8 +320,16 @@ def _print_run_branch_footer(
         # branch_per_run promised agent6/<id> but no commit ever reached it (an
         # update-ref failure the loop's best-effort commit absorbed, or nothing
         # to commit). Stranded edits are a real failure (and exit code 5, via
-        # the same predicate); a clean tree means the run recorded nothing.
-        if stranded_edits(result, layout):
+        # the same predicate); a clean tree means the run recorded nothing. A
+        # tree git cannot READ gets the honest unknown, never a claim.
+        try:
+            tree_clean: bool | None = git_status(Path.cwd()).is_clean
+        except GitError as exc:
+            tree_clean = None
+            reporter.out(
+                f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
+            )
+        if tree_clean is not None and stranded_edits(result, layout):
             reporter.out(
                 f"\nWARNING: the run finished but no commit reached {run_branch}"
                 " -- the branch was never created."
@@ -331,7 +339,7 @@ def _print_run_branch_footer(
                 " see the run log)."
             )
             reporter.out(f"  retry after fixing the cause:  agent6 resume {layout.session_id}")
-        else:
+        elif tree_clean is True:
             reporter.out("\nno changes were committed")
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
