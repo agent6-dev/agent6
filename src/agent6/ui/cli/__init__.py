@@ -382,13 +382,30 @@ def _resolve_target(target: str) -> SessionLayout | None:
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
-    argv = tuple(a for a in args.argv if a != "--")
+    # `[SESSION --] CMD...`: only the FIRST `--` separates the optional session
+    # from the command, and the command rides verbatim (a later `--`, as in
+    # `git log -- path`, belongs to it). No `--` at all = the whole tail is the
+    # command, run in the newest session.
+    rest: list[str] = list(args.rest)
+    target = ""
+    if "--" in rest:
+        split = rest.index("--")
+        before, argv = rest[:split], tuple(rest[split + 1 :])
+        if len(before) > 1:
+            print(
+                f"agent6 exec: at most one session id before `--`, got {' '.join(before)!r}.",
+                file=sys.stderr,
+            )
+            return 2
+        target = before[0] if before else ""
+    else:
+        argv = tuple(rest)
     if not argv:
-        print("agent6 exec: give a command after `--`.", file=sys.stderr)
+        print("agent6 exec: give a command (after `--` when naming a session).", file=sys.stderr)
         return 2
-    layout = _resolve_target(args.target)
+    layout = _resolve_target(target)
     if layout is None:
-        print(f"agent6 exec: no session {args.target!r}", file=sys.stderr)
+        print(f"agent6 exec: no session {target!r}", file=sys.stderr)
         return 2
     try:
         cfg = load_effective(Path.cwd(), args.config).config
@@ -399,11 +416,16 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
 
 
 def _dispatch_forward(args: argparse.Namespace) -> int:
-    layout = _resolve_target(args.target)
+    target, port = args.target, args.port
+    if port is None and target.isdigit():
+        # `forward 8000` means "port 8000 of the newest session": a bare number
+        # is a port (the help says so; a numeric session id needs both args).
+        target, port = "", int(target)
+    layout = _resolve_target(target)
     if layout is None:
-        print(f"agent6 forward: no session {args.target!r}", file=sys.stderr)
+        print(f"agent6 forward: no session {target!r}", file=sys.stderr)
         return 2
-    if args.port is None:
+    if port is None:
         ports = listening_ports(layout.session_dir)
         if not ports:
             print(
@@ -414,7 +436,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
             return 1
         print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
         return 0
-    return forward(layout, args.port, args.local_port)
+    return forward(layout, port, args.local_port)
 
 
 def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911

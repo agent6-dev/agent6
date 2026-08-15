@@ -121,14 +121,17 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             "Run a command inside a live session's sandbox: same mounts, same"
             " network, so you see what the agent sees. The command is yours, not"
             " the model's, so it is never approved or recorded as a tool call."
-            " Put it after `--`."
+            " `agent6 exec CMD...` runs in the newest session;"
+            " `agent6 exec SESSION -- CMD...` names one. Only the first `--`"
+            " separates; later ones belong to the command."
         ),
     )
-    exec_target = exec_p.add_argument(
-        "target", nargs="?", default="", help="Session id (exact or prefix). Omit for the newest."
+    exec_rest = exec_p.add_argument(
+        "rest",
+        nargs=argparse.REMAINDER,
+        help="[SESSION --] CMD... The command rides verbatim.",
     )
-    exec_target.completer = _complete_session_ids  # type: ignore[attr-defined]
-    exec_p.add_argument("argv", nargs=argparse.REMAINDER, help="The command, after `--`.")
+    exec_rest.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     fwd_p = _sub(
         sub,
@@ -140,7 +143,14 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         ),
     )
     fwd_target = fwd_p.add_argument(
-        "target", nargs="?", default="", help="Session id (exact or prefix). Omit for the newest."
+        "target",
+        nargs="?",
+        default="",
+        help=(
+            "Session id (exact or prefix); omit for the newest. A bare number"
+            " here is read as the PORT of the newest session (name a numeric"
+            " session by giving both arguments)."
+        ),
     )
     fwd_target.completer = _complete_session_ids  # type: ignore[attr-defined]
     fwd_port = fwd_p.add_argument(
