@@ -397,7 +397,9 @@ the engine persists a signal-only pending wait (no wake instant) and
 resumes when poked.
 
 **Poke payloads.** `agent6 machine poke <id> [--data <json> | --message
-<text>]` carries an optional payload to the waking `wait`. The payload is
+<text>]` carries an optional payload to the waking `wait`. One signal is
+pending at a time: a second poke before the machine wakes replaces the
+first, payload included (a wake signal, not a queue). The payload is
 journaled on the `signal` `WaitFact` (replay-safe) and materialized to
 `$AGENT6_MACHINE_DATA_DIR/poke.json`, where the next `tool` reads it. No
 capture is added to `wait`: the payload flows through the existing tool ->
