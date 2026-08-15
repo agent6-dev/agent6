@@ -107,6 +107,39 @@ def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
     assert res.returncode == 124
 
 
+def test_closing_one_unconfined_server_spares_a_later_sibling(tmp_path: Path) -> None:
+    """`spawn_in_jail(isolation="none")` must register its pid like the jailed
+    path does: without that, closing server A escapee-sweeps sibling B spawned
+    after it (B is not in A's before-snapshot, sits in its own session, and is
+    in no protection set), SIGKILLing a live server instead of leaving its own
+    `close` to shut it down."""
+    import subprocess
+
+    from agent6.sandbox.jail import JailedProcess, spawn_in_jail
+
+    def _spawn() -> JailedProcess:
+        return spawn_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=(sys.executable, "-c", "import time; time.sleep(30)"),
+                isolation="none",
+                timeout_s=60.0,
+            ),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    a = _spawn()
+    b = _spawn()
+    try:
+        a.close()
+        assert b.popen.poll() is None, "closing A killed sibling B"
+    finally:
+        b.close()
+    assert b.popen.poll() is not None
+
+
 def test_child_exec_failure_is_command_error_not_jail_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

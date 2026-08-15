@@ -720,8 +720,8 @@ def spawn_in_jail(
     # it escaped the server, and `JailedProcess.close` sweeps exactly that set.
     before = frozenset(_own_children())
     if policy.isolation == "none":
-        return JailedProcess(
-            subprocess.Popen(
+        with _sweep_lock:
+            proc = subprocess.Popen(
                 argv,
                 stdin=stdin,
                 stdout=stdout,
@@ -729,9 +729,13 @@ def spawn_in_jail(
                 env=dict(policy.env),
                 cwd=policy.cwd,
                 start_new_session=True,
-            ),
-            before,
-        )
+            )
+            # Registered like the jailed branch's launcher: the server sits in
+            # its own session, so without this a SIBLING handle's close would
+            # escapee-sweep it (it is in no later spawn's before-snapshot).
+            # `JailedProcess.close` discards it on either branch.
+            _live_launchers.add(proc.pid)
+        return JailedProcess(proc, before)
     binary = _require_jail_binary()
     spec = json.loads(_policy_to_json(policy))
     spec["mode"] = "exec"
