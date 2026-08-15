@@ -188,6 +188,7 @@ def bridge_spawner(
     max_usd: float | None,
     auto_approve: bool = False,
     at: str | None = None,
+    fanout_id: str,
     runtime: LaneRuntime,
 ) -> LaneResult:
     """Clone the origin, spawn a detached `agent6 run` in the clone, and return a
@@ -244,6 +245,10 @@ def bridge_spawner(
         "AGENT6_STREAM_TO_LOG": "1",
         "AGENT6_DETACHED_AWAY": "wait",
         "AGENT6_SUBRUN": "1",
+        # The lane is self-describing from birth: its own manifest records the
+        # fan-out lineage, so a coordinator death cannot orphan the grouping
+        # (the old post-import stamp existed only while the coordinator lived).
+        "AGENT6_PARALLEL_LINEAGE": f"{fanout_id}:{spec.lane}",
     }
     session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
@@ -362,6 +367,7 @@ def run_lane_to_completion(
             max_usd=max_usd,
             auto_approve=auto_approve,
             at=at,
+            fanout_id=group,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -399,12 +405,6 @@ def run_lane_to_completion(
             _symlink_lane(origin_state, res)  # restore the live view; nothing moved
         return LaneResult(
             spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
-        )
-    stamp_err = _stamp_lineage(dest, group, spec.lane)
-    if stamp_err is not None:
-        reporter.err(
-            f"[agent6] lane {spec.lane} [{spec.session_id}]: imported, but the lineage"
-            f" stamp failed: {stamp_err}"
         )
     # The module contract ("clones + lane state are torn down after import")
     # applies to this path too; the fan-out's teardown lives in run_parallel.
@@ -714,9 +714,9 @@ def _stamp(session_dir: Path, **updates: object) -> str | None:
     """Apply typed field *updates* to an imported lane's manifest (read the model,
     `model_copy`, atomic rewrite). Returns an error string when the manifest
     cannot be read/parsed or written (the import itself stands; the caller reports
-    the degradation). The one stamping helper: `_stamp_lineage` (post-import) and
-    `_stamp_compare_outcomes` (post-ranking) both go through it, so the read +
-    atomic rewrite + loud-degrade contract lives in one place."""
+    the degradation). The one stamping helper: `_stamp_compare_outcomes`
+    (post-ranking) goes through it; lineage itself is written by the LANE at
+    birth (the spawn env), so a coordinator death cannot orphan the grouping."""
     mpath = session_dir / "manifest.json"
     try:
         m = read_manifest(session_dir)
@@ -730,13 +730,6 @@ def _stamp(session_dir: Path, **updates: object) -> str | None:
         # the loop keep importing/stamping the remaining lanes.
         return f"could not write {mpath}: {exc}"
     return None
-
-
-def _stamp_lineage(session_dir: Path, fanout_id: str, lane: int) -> str | None:
-    """Record fan-out lineage on an imported lane's manifest. The lane process
-    wrote the manifest not knowing it was a lane, so the orchestrator adds
-    `parallel_id`/`lane` post-import."""
-    return _stamp(session_dir, parallel_id=fanout_id, lane=lane)
 
 
 def _stamp_compare_outcomes(
@@ -823,12 +816,6 @@ def _import_lanes(
             failed.append((res, str(exc)))
             continue
         imported.append(res.spec)
-        stamp_err = _stamp_lineage(dest, fanout_id, res.spec.lane)
-        if stamp_err is not None:
-            reporter.err(
-                f"[agent6] lane {res.spec.lane} [{res.spec.session_id}]: imported, but the"
-                f" lineage stamp failed: {stamp_err}"
-            )
         summary = summarize_session_dir(dest)
         if not produced_result(summary.status):
             # Imported (its branch is safe in the origin) but not a candidate:
@@ -943,6 +930,7 @@ def run_parallel(
             origin=origin,
             max_usd=max_usd,
             auto_approve=auto_approve,
+            fanout_id=fanout_id,
             runtime=runtime,
         )
     try:

@@ -51,13 +51,33 @@ def _init_repo(repo: Path) -> None:
     _git(repo, "commit", "-q", "-m", "init")
 
 
-def _write_fake_run(session_dir: Path, task: str, *, status: str, cost: float) -> None:
+def _write_fake_run(
+    session_dir: Path,
+    task: str,
+    *,
+    status: str,
+    cost: float,
+    parallel_id: str | None = None,
+    lane: int | None = None,
+) -> None:
     session_dir.mkdir(parents=True)
-    (session_dir / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": session_dir.name, "mode": "run", "user_task": task})
-        + "\n",
-        encoding="utf-8",
-    )
+    # A real lane's manifest records its lineage from birth (the spawn env);
+    # the fakes mirror that for `<fanout>-l<N>` ids so post-import assertions
+    # hold for the same reason they do live.
+    manifest: dict[str, object] = {
+        "version": 2,
+        "session_id": session_dir.name,
+        "mode": "run",
+        "user_task": task,
+    }
+    fanout, sep, lane_s = session_dir.name.rpartition("-l")
+    if parallel_id is not None:
+        manifest["parallel_id"] = parallel_id
+        manifest["lane"] = lane
+    elif sep and fanout and lane_s.isdigit():
+        manifest["parallel_id"] = fanout
+        manifest["lane"] = int(lane_s)
+    (session_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": task},
         {"type": "budget.update", "usd_total": cost},
@@ -91,6 +111,7 @@ class _FakeSpawner:
         status_by_lane: dict[int, str] | None = None,
         cost_by_lane: dict[int, float] | None = None,
         pid_lanes: set[int] | None = None,
+        fanout_id: str | None = None,
     ) -> None:
         self.origin = origin
         self.origin_state = origin_state
@@ -102,6 +123,9 @@ class _FakeSpawner:
         # process), simulating the teardown window where session.end is already in
         # logs.jsonl but the lane process has not yet cleared its pid.
         self.pid_lanes = pid_lanes or set()
+        # The group/fanout id the real bridge spawner stamps into the lane env;
+        # the fabricated manifest mirrors it (None = derive from the id).
+        self.fanout_id = fanout_id
         self.prior_link_was_symlink: dict[int, bool] = {}
         self.tasks: list[str] = []
 
@@ -124,6 +148,8 @@ class _FakeSpawner:
         _write_fake_run(
             session_dir,
             task,
+            parallel_id=self.fanout_id,
+            lane=spec.lane if self.fanout_id is not None else None,
             status=self.status_by_lane.get(spec.lane, "passed"),
             cost=self.cost_by_lane.get(spec.lane, 0.05),
         )
@@ -397,7 +423,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
     spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "--allow-root pwn", cfg=cfg, origin=origin, max_usd=2.0,
-        runtime=replace(runtime, spawn=fake_spawn),
+        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
 
     argv = captured[-1]
@@ -422,7 +448,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
     spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
-        runtime=replace(runtime, spawn=fake_spawn),
+        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
 
     argv = captured[-1]
@@ -443,7 +469,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
     spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None,
-        runtime=replace(runtime, spawn=fake_spawn),
+        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
 
     assert "--auto-approve" not in captured[-1]
@@ -1106,7 +1132,7 @@ def test_run_lane_to_completion_imports_and_stamps(
 
     origin_state = resolved_state_dir(origin)
     cfg = Config()
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
     spec = LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
     )
@@ -1659,3 +1685,62 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
     )
     assert outcome.ranked_by == "mechanical"
     assert [b.max_usd for b in seen] == [0.25]  # the lane cap, not the $10 config budget
+
+
+def test_lane_is_self_describing_from_birth(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The spawn env carries the fan-out lineage and the manifest's one writer
+    records it, so the grouping survives a coordinator death -- the old
+    post-import stamp existed only while the coordinator lived, leaving
+    orphaned lanes listed as unrelated runs."""
+    from agent6.app.manifest import write_session_manifest
+    from agent6.sessions.layout import SessionLayout
+    from agent6.sessions.manifest import read_manifest
+
+    captured: list[dict[str, str]] = []
+
+    def fake_spawn(argv: list[str], workdir: Path, **kw: object) -> tuple[Path, str]:
+        env = kw.get("env")
+        assert isinstance(env, dict)
+        captured.append(env)
+        return workdir, ""
+
+    spec = LaneSpec(lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", model=None)
+    parallel.bridge_spawner(
+        spec, "do it", cfg=Config(), origin=origin, max_usd=None,
+        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+    )  # fmt: skip
+    assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "fan:2"
+
+    # The writer records it from the env, exactly as the spawned lane would.
+    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "fan:2")
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="fan-l2")
+    layout.ensure()
+    write_session_manifest(
+        layout,
+        session_id="fan-l2",
+        user_task="do it",
+        base_sha="s",
+        base_branch="main",
+        run_branch="agent6/fan-l2",
+        cfg=Config(),
+    )
+    m = read_manifest(layout.session_dir)
+    assert m.parallel_id == "fan"
+    assert m.lane == 2
+
+    # An ordinary run records no lineage.
+    monkeypatch.delenv("AGENT6_PARALLEL_LINEAGE")
+    layout2 = SessionLayout(state_dir=tmp_path / "state", session_id="plain-run")
+    layout2.ensure()
+    write_session_manifest(
+        layout2,
+        session_id="plain-run",
+        user_task="t",
+        base_sha="s",
+        base_branch="main",
+        run_branch=None,
+        cfg=Config(),
+    )
+    assert read_manifest(layout2.session_dir).parallel_id is None

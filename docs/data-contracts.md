@@ -56,7 +56,7 @@ Read a session's manifest.json into the typed SessionManifest. The single reader
 
 - **Written by:** app/{manifest}
 - **Read by:** app/{compare, finalize, fork, merge, parallel, resume, run}, tools/{sessions}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, sessions_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing, policy, state}
-- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (9 test files exercise it)
+- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (10 test files exercise it)
 
 ## SessionSnapshot
 

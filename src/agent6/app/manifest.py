@@ -6,6 +6,7 @@ reader and the on-disk shape (:class:`SessionManifest`) live in `sessions.manife
 from __future__ import annotations
 
 import datetime as _dt
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,7 @@ def write_session_manifest(
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
     """
+    lineage = _parallel_lineage()
     m = SessionManifest(
         agent6_version=__version__,
         session_id=session_id,
@@ -135,8 +137,24 @@ def write_session_manifest(
         parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
+        parallel_id=(lineage[0] if lineage else None),
+        lane=(lineage[1] if lineage else None),
     )
     write_manifest(layout.manifest_path, m)
+
+
+def _parallel_lineage() -> tuple[str, int] | None:
+    """The fan-out lineage the spawner stamped into this lane's environment
+    (`AGENT6_PARALLEL_LINEAGE=<fanout>:<lane>`), or None for an ordinary run.
+
+    Read here, in the manifest's one writer, so the lane is self-describing
+    from birth: the grouping survives a coordinator death instead of waiting
+    on a post-import stamp only a live coordinator could write."""
+    raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
+    fanout, sep, lane = raw.rpartition(":")
+    if not sep or not fanout or not lane.isdigit():
+        return None
+    return fanout, int(lane)
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:
