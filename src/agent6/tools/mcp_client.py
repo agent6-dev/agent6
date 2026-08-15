@@ -332,7 +332,7 @@ class _MCPServer:
         for name in self.pass_env:
             value = os.environ.get(name, "")
             if value:
-                text = text.replace(value, "***")
+                text = text.replace(value, "<REDACTED>")
         return text
 
     def start(self) -> None:

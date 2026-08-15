@@ -60,6 +60,7 @@ from agent6.providers.types import (
     ProviderInterrupted,
     TranscriptRecorder,
     parse_retry_after,
+    scrub_secret_values,
 )
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
@@ -271,7 +272,8 @@ class SseCall:
                     error_body = resp.read().decode("utf-8", errors="replace")[:8192]
                     self.record(status=resp.status_code, response=error_body)
                     raise ProviderError(
-                        f"{self.api_label} API error {resp.status_code}: {error_body[:500]}",
+                        f"{self.api_label} API error {resp.status_code}: "
+                        f"{scrub_secret_values(error_body, self.headers)[:500]}",
                         status_code=resp.status_code,
                         retry_after_s=parse_retry_after(resp.headers),
                     )

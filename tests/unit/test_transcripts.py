@@ -110,6 +110,47 @@ def test_transcript_redacts_api_key_on_network_error(
     assert leaks == []
 
 
+def test_a_response_body_echoing_the_credential_is_scrubbed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Some gateways echo the received key in a 401 body; the echo rode
+    verbatim into the transcript body and the ProviderError text, which header
+    redaction never touches. Both must carry the marker, not the value."""
+    sink = TranscriptSink(tmp_path / "transcripts")
+    api_key = "sk-ant-echoed-back-by-a-gateway"
+    provider = AnthropicProvider(
+        api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
+    )
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=401, text=f'{{"error": "bad key {api_key}"}}')
+
+    monkeypatch.setattr(httpx2, "post", fake_post)
+    with pytest.raises(ProviderError) as exc:
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert api_key not in str(exc.value)
+    assert "<REDACTED>" in str(exc.value)
+    assert _scan_for_secret(tmp_path / "transcripts", api_key) == []
+    files = list((tmp_path / "transcripts").glob("*.json"))
+    assert len(files) == 1 and "<REDACTED>" in files[0].read_text(encoding="utf-8")
+
+
+def test_record_scrubs_credential_values_from_the_bodies(tmp_path: Path) -> None:
+    """The sink-level scrub: a body string equal to a credential riding in the
+    request's auth headers (the bare token behind `Bearer ` included) is
+    replaced at the one serialization point."""
+    sink = TranscriptSink(tmp_path / "t")
+    path = sink.record(
+        request_headers={"authorization": "Bearer sk-tok-123456789"},
+        request_body={"echo": "sk-tok-123456789"},
+        response_status=200,
+        response_body={"msg": "key sk-tok-123456789 rejected"},
+    )
+    text = path.read_text(encoding="utf-8")
+    assert "sk-tok-123456789" not in text
+    assert text.count("<REDACTED>") >= 3
+
+
 def test_redact_headers_unit() -> None:
     out = _redact_headers(  # pyright: ignore[reportPrivateUsage]
         {"x-api-key": "secret", "Authorization": "Bearer t", "Other": "keep"}

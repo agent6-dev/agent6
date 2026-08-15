@@ -239,7 +239,7 @@ def test_a_passed_secret_is_redacted_from_a_server_failure(
         srv.close()
     msg = str(exc.value)
     assert "sk-supersecret-123" not in msg
-    assert "***" in msg
+    assert "<REDACTED>" in msg
 
 
 def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:

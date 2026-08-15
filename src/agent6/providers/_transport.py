@@ -29,6 +29,7 @@ from agent6.providers.types import (
     ProviderResponse,
     TranscriptRecorder,
     parse_retry_after,
+    scrub_secret_values,
 )
 
 # TCP+TLS handshake bound. A healthy endpoint connects in well under this;
@@ -212,7 +213,8 @@ class ProviderCall:
                 ):
                     continue
                 raise ProviderError(
-                    f"{self.api_label} API error {resp.status_code}: {resp.text[:500]}",
+                    f"{self.api_label} API error {resp.status_code}: "
+                    f"{scrub_secret_values(resp.text, headers)[:500]}",
                     status_code=resp.status_code,
                     retry_after_s=parse_retry_after(resp.headers),
                 )
@@ -234,7 +236,7 @@ class ProviderCall:
             self.record(headers, resp.status_code, resp.text[:8192])
             raise ProviderError(
                 f"non-JSON response from {self.api_label} "
-                f"(status {resp.status_code}): {resp.text[:500]}"
+                f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
             ) from exc
         if not isinstance(data, dict):
             # A 2xx whose valid JSON is not an object (array/string from a
@@ -245,7 +247,7 @@ class ProviderCall:
             self.record(headers, resp.status_code, resp.text[:8192])
             raise ProviderError(
                 f"{self.api_label} returned a non-object JSON body "
-                f"(status {resp.status_code}): {resp.text[:500]}"
+                f"(status {resp.status_code}): {scrub_secret_values(resp.text, headers)[:500]}"
             )
         self.record(headers, resp.status_code, data)
         # An in-band error envelope on a 2xx (OpenRouter/LiteLLM deliver an
@@ -261,7 +263,8 @@ class ProviderCall:
         err = data.get("error")
         if err and not _has_assistant_output(data):
             raise ProviderError(
-                f"{self.api_label} error in 2xx body: {_envelope_detail(err)}",
+                f"{self.api_label} error in 2xx body: "
+                f"{scrub_secret_values(_envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
             )
         if self.budget is not None:

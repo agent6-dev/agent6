@@ -97,6 +97,27 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
 
 
+def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
+    """Replace the exact credential values riding in *headers* with the
+    redaction marker wherever they appear in *text*.
+
+    Complements `_redact_headers`, which redacts the header FIELDS: a server
+    that echoes the received credential puts the value in a BODY or an error
+    excerpt. Scrubbed spellings: the raw value, the bare token behind a scheme
+    prefix (`Bearer <token>`), and each one's JSON-escaped form. Values under
+    8 chars are ignored (no real key is that short; replacing them would shred
+    the text)."""
+    for name, value in headers.items():
+        if name.lower() not in _REDACT_HEADER_NAMES or not value:
+            continue
+        for cand in {value, value.split(" ", 1)[-1]}:
+            if len(cand) < 8:
+                continue
+            for spelling in {cand, json.dumps(cand)[1:-1]}:
+                text = text.replace(spelling, _REDACTED)
+    return text
+
+
 def _max_seq_in_dir(transcripts_dir: Path) -> int:
     """The highest seq already recorded in *transcripts_dir*, or 0 if empty.
 
@@ -169,7 +190,8 @@ class TranscriptSink:
     stays globally unique and monotonic across resume legs -- every consumer
     (the load_transcripts sort, the `(seq N)` label, the `--seq` window) treats
     it as a run-global key. Monotonically increasing and thread-safe. Secrets in
-    request headers are redacted before any bytes hit disk.
+    request headers are redacted, and a credential value a body echoes is
+    scrubbed, before any bytes hit disk.
     """
 
     __slots__ = ("_dir", "_lock", "_seq")
@@ -225,7 +247,8 @@ class TranscriptSink:
         # `<name>.json.tmp` + write_text: the predictable temp was symlink-
         # followable (the class hardened out of secrets.py), and this also makes
         # the record durable.
-        atomic_write(path, json.dumps(payload, indent=2, sort_keys=True))
+        text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
+        atomic_write(path, text)
         return path
 
 
