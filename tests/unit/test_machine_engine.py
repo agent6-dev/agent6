@@ -1614,3 +1614,59 @@ def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: Path) -> Non
     journal, spec = journal_with(fact=BranchFact(clause_index=0))  # wrong kind for a tool state
     with pytest.raises(EngineError, match="cannot produce"):
         drive(spec, journal, FakeWorld({}), live=True)
+
+
+def test_stop_request_parks_at_the_transition_boundary(tmp_path: Path) -> None:
+    """A stop marker written mid-state parks the machine at the next boundary:
+    the finished state's fact is journaled, no MachineEnd is written, the
+    marker is consumed, and a later drive continues to the terminal."""
+    from agent6.machine.journal import stop_requested, write_stop_request
+
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    world = FakeWorld({"scan": _ok('{"items": ["a"]}'), "record": _ok()})
+    real_run_tool = world.run_tool
+
+    def stop_during_first_tool(
+        argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+    ) -> ToolExecResult:
+        write_stop_request(journal.root)
+        return real_run_tool(argv, timeout_s, network=network)
+
+    world.run_tool = stop_during_first_tool  # type: ignore[method-assign]
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "stopped"
+    assert not stop_requested(journal.root)  # consumed at the park
+    events = journal.read()
+    assert not isinstance(events[-1], MachineEnd)  # resumable, no end journaled
+    done = drive(
+        spec, journal, FakeWorld({"scan": _ok('{"items": ["a"]}'), "record": _ok()}), live=True
+    )
+    assert done.status == "ok"
+
+
+def test_stop_interrupts_a_foreground_wait_and_keeps_it_armed(tmp_path: Path) -> None:
+    """A stop that lands mid-sleep parks without consuming the wait: the
+    PendingWait survives, so a later run resumes the same wake instant."""
+    journal, f = _load(tmp_path, WAITER)
+    spec = load_machine(f)
+    world = FakeWorld({}, wakes=[WaitWake("stop")])
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "stopped"
+    pending = journal.read_pending_wait()
+    assert pending is not None and pending.state == "poll"
+
+
+def test_live_world_sleep_wakes_on_a_stop_request(tmp_path: Path) -> None:
+    """The stop marker interrupts a real sleep (a machine parked in an
+    hour-long or forever wait must not sleep through its own stop)."""
+    import time as _time
+
+    from agent6.machine.engine import LiveWorld
+    from agent6.machine.journal import write_stop_request
+
+    journal = MachineJournal(tmp_path / "inst")
+    journal.ensure_dirs()
+    world = LiveWorld(cwd=tmp_path, journal=journal, poll_interval_s=0.01)
+    write_stop_request(journal.root)
+    assert world.sleep_until(_time.time() + 3600).woke_by == "stop"

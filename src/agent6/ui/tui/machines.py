@@ -41,6 +41,7 @@ from agent6.machine import (
     load_machine,
     render,
     validate_semantics,
+    write_stop_request,
 )
 from agent6.sessions.ipc import (
     clear_steer_answer,
@@ -48,6 +49,7 @@ from agent6.sessions.ipc import (
     register_frontend,
     request_steer,
     unregister_frontend,
+    worker_is_alive,
     write_answer,
     write_question_answers,
     write_steer_answer,
@@ -138,6 +140,7 @@ class MachineWatchScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("s", "steer", "Steer"),
         Binding("m", "poke", "Message"),
+        Binding("x", "stop", "Stop"),
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
     ]
@@ -224,7 +227,9 @@ class MachineWatchScreen(Screen[None]):
         del parameters
         if action == "steer" and not self._steerable():
             return False
-        return not (action in ("steer", "poke") and self._ended)
+        if action == "stop" and not worker_is_alive(self._root):
+            return False
+        return not (action in ("steer", "poke", "stop") and self._ended)
 
     def _steerable(self) -> bool:
         """A steer only reaches an agent state the worker is actively running. A
@@ -265,6 +270,15 @@ class MachineWatchScreen(Screen[None]):
             write_steer_answer(state_dir, answer or "")
 
         return cb
+
+    def action_stop(self) -> None:
+        """Ask the running machine to park at its next transition boundary
+        (the durable stop marker; the instance stays resumable)."""
+        if not worker_is_alive(self._root):
+            self.app.notify("machine is not running; nothing to stop", timeout=4.0)
+            return
+        write_stop_request(self._root)
+        self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
 
     def action_poke(self) -> None:
         """Send a message to a waiting machine (a poke payload the next tool reads)."""

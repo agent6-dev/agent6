@@ -110,6 +110,15 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         metavar="TEXT",
         help="Shorthand for --data with a JSON string payload.",
     )
+    machine_stop = _sub(
+        machine_sub,
+        "stop",
+        help="Park a running machine at its next transition boundary (a marker, not a kill).",
+    )
+    machine_stop_id = machine_stop.add_argument(
+        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
+    )
+    machine_stop_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_replay = _sub(
         machine_sub,
         "replay",

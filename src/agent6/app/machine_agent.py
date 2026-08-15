@@ -26,6 +26,7 @@ module never imports `agent6.ui`.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os
 import signal
 import subprocess
@@ -418,6 +419,31 @@ def run_one(
     return _result(result.reason, payload, budget)
 
 
+# Loaded at import, never between fork and exec: dlopen allocates, and another
+# thread mid-malloc at fork would deadlock a post-fork load.
+_LIBC: ctypes.CDLL | None = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
+
+
+def die_with_parent(parent_pid: int) -> Callable[[], None]:
+    """A `preexec_fn` tying the child's life to *parent_pid* (Linux PDEATHSIG).
+
+    The kernel delivers SIGTERM to the child when its parent dies -- any death,
+    SIGKILL included. The re-check closes the fork window: a parent that died
+    before the prctl landed leaves the child re-parented, so the signal would
+    never come. Elsewhere (macOS best-effort) this is a no-op; the platform has
+    no equivalent tie.
+    """
+
+    def _setup() -> None:
+        if _LIBC is None:
+            return
+        _LIBC.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
+        if os.getppid() != parent_pid:
+            os._exit(128 + signal.SIGTERM)
+
+    return _setup
+
+
 def build_machine_agent_runner(
     overlay: dict[str, Any],
     cwd: Path,
@@ -499,8 +525,18 @@ def build_machine_agent_runner(
                 str(out_file),
             ]
             # Own session/process group so the timeout kill takes the agent
-            # subprocess AND its jail children with it.
-            proc = subprocess.Popen(argv, start_new_session=True)
+            # subprocess AND its jail children with it; PDEATHSIG so the
+            # whole tree dies with the supervisor instead of running on,
+            # spending and committing, after a SIGTERM/SIGKILL nobody waits
+            # out (the own-session child had no tie to its parent's life).
+            # PLW1509 (fork-with-threads hazard): the hook is written for it,
+            # async-signal-minimal -- libc preloaded at import, then only
+            # prctl/getppid/_exit, no allocation or locks.
+            proc = subprocess.Popen(
+                argv,
+                start_new_session=True,
+                preexec_fn=die_with_parent(os.getpid()),  # noqa: PLW1509
+            )
             try:
                 proc.wait(timeout=request.timeout_s)
             except subprocess.TimeoutExpired:

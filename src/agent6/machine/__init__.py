@@ -48,10 +48,13 @@ from agent6.machine.journal import (
     StepEvent,
     WaitFact,
     bundle_drift,
+    clear_stop_request,
     machine_lock,
     read_source,
+    stop_requested,
     write_bundle,
     write_source,
+    write_stop_request,
 )
 from agent6.machine.model import (
     PROTECTED_OVERLAY_LEAVES,
@@ -97,6 +100,7 @@ __all__ = [
     "World",
     "build_authoring_prompt",
     "bundle_drift",
+    "clear_stop_request",
     "drive",
     "dry_run",
     "extract_scripts",
@@ -108,7 +112,9 @@ __all__ = [
     "render",
     "render_dot",
     "render_mermaid",
+    "stop_requested",
     "validate_semantics",
     "write_bundle",
     "write_source",
+    "write_stop_request",
 ]

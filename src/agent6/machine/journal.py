@@ -530,6 +530,25 @@ def read_source(root: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def write_stop_request(root: Path) -> None:
+    """Ask the live machine to park at its next transition boundary.
+
+    A marker, not a kill (the `sessions stop` semantics): the state in flight
+    finishes and journals its fact, then the engine returns a "stopped" result
+    without a MachineEnd -- the instance stays resumable."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "stop").touch()
+
+
+def stop_requested(root: Path) -> bool:
+    return (root / "stop").is_file()
+
+
+def clear_stop_request(root: Path) -> None:
+    with suppress(FileNotFoundError):
+        (root / "stop").unlink()
+
+
 def write_bundle(root: Path, machine_path: Path) -> None:
     """Persist the exact executable bundle the instance starts from: the
     `.asm.toml` source plus its `scripts/` tree. Replay evidence, and the

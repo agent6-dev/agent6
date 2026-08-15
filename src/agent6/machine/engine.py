@@ -49,7 +49,9 @@ from agent6.machine.journal import (
     StepEvent,
     ToolFact,
     WaitFact,
+    clear_stop_request,
     scrub_lone_surrogates,
+    stop_requested,
 )
 from agent6.machine.model import (
     AgentState,
@@ -203,13 +205,15 @@ class AgentExecResult(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class WaitWake:
-    """How a `wait` woke: a clock `tick` or an operator `signal` poke.
+    """How a `wait` woke: a clock `tick`, an operator `signal` poke, or a
+    `stop` request interrupting the sleep (the wait stays armed; nothing is
+    journaled for it).
 
     `payload` is the JSON a poke carried (`None` for a bare poke or a tick);
     the engine journals it in the :class:`WaitFact` so a replay re-reads it.
     """
 
-    woke_by: Literal["tick", "signal"]
+    woke_by: Literal["tick", "signal", "stop"]
     payload: Any = None
 
 
@@ -364,6 +368,10 @@ class LiveWorld:
             signaled, payload = self.journal.take_signal()
             if signaled:
                 return WaitWake("signal", payload)
+            if stop_requested(self.journal.root):
+                # Interrupt the sleep; the wait's PendingWait stays armed so a
+                # later `machine run` resumes the same instant.
+                return WaitWake("stop")
             if wake_epoch is None:
                 time.sleep(self.poll_interval_s)
                 continue
@@ -398,7 +406,7 @@ class LiveWorld:
 
 @dataclass(frozen=True, slots=True)
 class MachineResult:
-    status: Literal["ok", "failed", "incomplete", "waiting"]
+    status: Literal["ok", "failed", "incomplete", "waiting", "stopped"]
     reason: str
     state: str
     transitions: int
@@ -548,8 +556,10 @@ def _block_on_wait(
     journal: MachineJournal,
     world: World,
     state_name: str,
-) -> tuple[str, str, Fact]:
-    """Foreground wait: block until the durable wake instant or a poke.
+) -> tuple[str, str, Fact] | None:
+    """Foreground wait: block until the durable wake instant or a poke, or
+    None when a stop request interrupted the sleep -- the pending wait stays
+    armed, nothing is journaled, and the caller parks.
 
     The deadline persists BEFORE the sleep -- the same `PendingWait` the
     `--exit-on-wait` path keeps -- so a supervisor death mid-sleep resumes the
@@ -564,6 +574,8 @@ def _block_on_wait(
         pending = PendingWait(state=state_name, wake_epoch=wake)
         journal.write_pending_wait(pending)
     woke = world.sleep_until(pending.wake_epoch)
+    if woke.woke_by == "stop":
+        return None
     journal.clear_pending_wait()
     return (
         woke.woke_by,
@@ -901,7 +913,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     eng.spent_usd = spent_usd
 
 
-def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR0915
+def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR0912, PLR0915
     """Continue live from where the journal ends: execute one state per
     iteration, journal its fact, and advance, until a terminal state (or a
     budget cap, a runtime state error, or an `--exit-on-wait` park) ends it."""
@@ -916,6 +928,13 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
     transitions = eng.transitions
     spent_usd = eng.spent_usd
     while True:
+        # The durable stop request (`machine stop`, or any writer of the
+        # instance's stop marker) parks at this boundary: the state in flight
+        # already journaled its fact, no MachineEnd is written, and the
+        # instance resumes exactly like a parked wait.
+        if stop_requested(journal.root):
+            clear_stop_request(journal.root)
+            return MachineResult("stopped", "stop requested by the operator", state, transitions)
         current = spec.states.get(state)
         if current is None:
             raise EngineError(
@@ -985,7 +1004,13 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
                     )
                 label, goto, fact = fired
             elif isinstance(current, WaitState):
-                label, goto, fact = _block_on_wait(current, blackboard, journal, world, state)
+                blocked = _block_on_wait(current, blackboard, journal, world, state)
+                if blocked is None:
+                    clear_stop_request(journal.root)
+                    return MachineResult(
+                        "stopped", "stop requested by the operator", state, transitions
+                    )
+                label, goto, fact = blocked
             else:
                 label, goto, fact = _execute(
                     spec,

@@ -127,8 +127,11 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
-    # Model the foreground shape: live worker (this pytest pid), no pending record.
+    # Model the foreground shape: live worker (this pytest pid), no pending
+    # record. The run cleared its own pid on exit, so the live worker is
+    # re-stamped explicitly.
     MachineJournal(root).clear_pending_wait()
+    write_worker_pid(root, os.getpid())
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
@@ -778,3 +781,55 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
     assert "`definitely-not-a-binary-xyz` ([states.lint] command)" in out.err
     assert "`also-missing-tool-abc` (scripts/helper.py)" in out.err
     assert "python3" not in out.err  # reachable binaries stay quiet
+
+
+def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine stop` writes the durable marker only for a live worker; a
+    parked/dead instance gets a refusal, never a marker that would ambush the
+    next `machine run` at its first boundary."""
+    from agent6.ui.cli import machine_cmds
+
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    assert main(["machine", "stop", "tiny"]) == 1  # ended: nothing to stop
+    assert "already ended" in capsys.readouterr().err
+    assert not (root / "stop").exists()
+
+    w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
+    assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    wroot = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    assert main(["machine", "stop", "waiter_delayed"]) == 1  # parked, worker dead
+    assert "not running" in capsys.readouterr().err
+    assert not (wroot / "stop").exists()
+
+    def _alive(_root: Path) -> bool:
+        return True
+
+    monkeypatch.setattr(machine_cmds, "worker_is_alive", _alive)
+    assert main(["machine", "stop", "waiter_delayed"]) == 0
+    assert "stop requested" in capsys.readouterr().out
+    assert (wroot / "stop").is_file()
+
+
+def test_run_start_clears_a_stale_stop_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A leftover stop marker must not park the next invocation at its first
+    boundary: starting the machine is the answer to any stale request."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root.mkdir(parents=True)
+    (root / "stop").touch()
+    assert main(["machine", "run", str(f)]) == 0
+    out = capsys.readouterr().out
+    assert "OK:" in out and "STOPPED" not in out
+    assert not (root / "stop").exists()

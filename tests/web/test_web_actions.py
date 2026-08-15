@@ -531,3 +531,25 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     ok, _ = actions.resume_run(tmp_path, "done-WEB111", "do more")
     assert ok is True
     assert spawned == ["do more"]
+
+
+def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None:
+    """The stop verb never plants a marker an ended or dead instance would
+    trip over later; a live worker gets the durable stop marker."""
+    from unittest.mock import patch
+
+    inst = _ended_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_stop(tmp_path, "tiny")
+    assert not ok and "ended" in msg
+    assert not (inst / "stop").exists()
+
+    (inst / "journal.jsonl").write_text(
+        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n',
+        encoding="utf-8",
+    )
+    ok, msg = actions.machine_stop(tmp_path, "tiny")
+    assert not ok and "not running" in msg
+    with patch.object(actions, "worker_is_alive", return_value=True):
+        ok, msg = actions.machine_stop(tmp_path, "tiny")
+    assert ok and "stop requested" in msg
+    assert (inst / "stop").is_file()

@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from agent6.app.machine_agent import MachineAgentRequest
 from agent6.machine import AgentExecResult, AgentRequest
 
@@ -76,3 +78,52 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: Path) -> None:
     rc, result = _round_trip(tmp_path, req)
     assert rc == 0
     assert result is not None and result.reason == "error"
+
+
+def test_machine_agent_child_dies_with_its_parent(tmp_path: Path) -> None:
+    """PDEATHSIG ties the spawned tree to the supervisor: kill the parent and
+    the child goes too, so machine work cannot run on -- spending and
+    committing -- after the supervisor is gone."""
+    import contextlib
+    import os
+    import signal
+    import textwrap
+    import time
+
+    if sys.platform != "linux":
+        pytest.skip("PDEATHSIG is Linux-only")
+    parent_src = textwrap.dedent(
+        """
+        import os, subprocess, sys, time
+        from agent6.app.machine_agent import die_with_parent
+
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            start_new_session=True,
+            preexec_fn=die_with_parent(os.getpid()),
+        )
+        print(child.pid, flush=True)
+        time.sleep(60)
+        """
+    )
+    parent = subprocess.Popen(
+        [sys.executable, "-P", "-c", parent_src], stdout=subprocess.PIPE, text=True
+    )
+    assert parent.stdout is not None
+    child_pid = int(parent.stdout.readline())
+    try:
+        os.kill(parent.pid, signal.SIGKILL)
+        parent.wait()
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            try:
+                state = Path(f"/proc/{child_pid}/status").read_text(encoding="utf-8").splitlines()
+                if any(ln.startswith("State:") and "Z" in ln.split()[1] for ln in state):
+                    return  # dead (zombie awaiting an unrelated reaper)
+            except OSError:
+                return  # gone entirely
+            time.sleep(0.05)
+        pytest.fail("the child survived its parent's death")
+    finally:
+        with contextlib.suppress(OSError):
+            os.kill(child_pid, signal.SIGKILL)

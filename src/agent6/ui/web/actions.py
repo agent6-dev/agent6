@@ -21,7 +21,13 @@ from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError, parse_compact, parse_directive
-from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
+from agent6.machine import (
+    JournalError,
+    MachineError,
+    MachineJournal,
+    load_machine,
+    write_stop_request,
+)
 from agent6.models.validate import directive_model_refusal
 from agent6.sessions.ipc import (
     read_worker_pid,
@@ -336,6 +342,20 @@ def _machine_has_ended(cwd: Path, name: str) -> bool:
         return model.machine_snapshot(machine_dir).get("ended") is not None
     except (MachineError, OSError):
         return False
+
+
+def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
+    """Write the durable stop marker for a running machine (parks at its next
+    transition boundary; resumable). Not-running is a refusal, not a marker."""
+    machine_dir = model.machine_dir_for(cwd, name)
+    if machine_dir is None:
+        return False, f"no machine {name!r}"
+    if _machine_has_ended(cwd, name):
+        return False, f"machine {name!r} has ended; nothing to stop"
+    if not worker_is_alive(machine_dir):
+        return False, f"machine {name!r} is not running; nothing to stop"
+    write_stop_request(machine_dir)
+    return True, "stop requested; the machine parks at its next transition boundary"
 
 
 def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -> tuple[bool, str]:

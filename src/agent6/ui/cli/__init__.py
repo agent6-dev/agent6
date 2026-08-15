@@ -69,6 +69,7 @@ from agent6.ui.cli.machine_cmds import (
     _cmd_machine_replay,
     _cmd_machine_run,
     _cmd_machine_status,
+    _cmd_machine_stop,
     _cmd_machine_test,
 )
 from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve
@@ -666,6 +667,8 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return _cmd_machine_status(args.machine_id)
     if args.machine_command == "poke":
         return _cmd_machine_poke(args.machine_id, data=args.data, message=args.message)
+    if args.machine_command == "stop":
+        return _cmd_machine_stop(args.machine_id)
     if args.machine_command == "replay":
         return _cmd_machine_replay(args.machine_id)
     if args.machine_command == "create":

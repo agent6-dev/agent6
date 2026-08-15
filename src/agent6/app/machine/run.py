@@ -51,13 +51,14 @@ from agent6.machine import (
     ToolPolicyFactory,
     ToolState,
     bundle_drift,
+    clear_stop_request,
     drive,
     load_machine,
     machine_lock,
     write_bundle,
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
-from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
@@ -330,6 +331,10 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     )
                     return 1
             data_dir.mkdir(parents=True, exist_ok=True)
+            # A leftover stop marker from a prior invocation would park this
+            # one at its first boundary; starting the machine is the answer to
+            # any stale request (mirrors the session-side stale-marker clear).
+            clear_stop_request(root)
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.
             write_worker_pid(root, os.getpid())
@@ -365,7 +370,13 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 state_log_keep=cfg.machine.state_log_keep,
                 notify_hook=surface_notify,
             )
-            result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
+            try:
+                result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
+            finally:
+                # The worker is done with the machine on every exit (ended,
+                # waiting, stopped, error): a stale pid file would read
+                # "running" wherever the pid number stays alive.
+                clear_worker_pid(root)
     except (JournalError, EngineError) as exc:
         reporter.err(f"ERROR: {exc}")
         return 1
@@ -373,6 +384,13 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.out(
             f"WAITING: {spec.machine} paused in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason})"
+        )
+        return 0
+    if result.status == "stopped":
+        reporter.out(
+            f"STOPPED: {spec.machine} parked in {result.state!r}"
+            f" after {_transitions(result.transitions)} ({result.reason});"
+            " resume with `agent6 machine run`."
         )
         return 0
     spend, _ = machine_spend(journal.read(), root, alive=False)

@@ -815,6 +815,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
 | `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
+| `agent6 machine stop <id>`                | park a RUNNING machine at its next transition boundary (a durable marker, not a kill; it also wakes a sleeping `wait`, leaving it armed). No `MachineEnd` is journaled, so the instance resumes with `machine run`. An ended or not-running machine is refused. Also on the web machine page and the TUI machine screen (`x`). |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 
 `machine check` is the human-editability payoff: precise, fail-loud

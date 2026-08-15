@@ -59,6 +59,7 @@ from agent6.machine import (
     fixture_problems,
     load_machine,
     render,
+    write_stop_request,
 )
 from agent6.paths import chown_to_real_user
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
@@ -559,6 +560,46 @@ def _cmd_machine_poke(
         return 1
     carried = "" if payload is None else " (with payload)"
     print(f"poked {machine_id}: it will wake on its next signal check{carried}")
+    return 0
+
+
+def _cmd_machine_stop(machine_id: str) -> int:
+    """Write the durable stop marker for a RUNNING machine.
+
+    The engine parks at its next transition boundary (or wakes out of a sleep)
+    without journaling an end, so the instance stays resumable. A machine that
+    is not running gets a refusal, not a marker that would ambush the next
+    `machine run`."""
+    cwd = Path.cwd()
+    root = _machines_dir(cwd) / machine_id
+    if not root.is_dir():
+        print(
+            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        events = MachineJournal(root).read()
+    except JournalError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if events and isinstance(events[-1], MachineEnd):
+        end = events[-1]
+        print(
+            f"ERROR: {machine_id} already ended in {end.state!r} ({end.status}: {end.reason});"
+            " nothing to stop.",
+            file=sys.stderr,
+        )
+        return 1
+    if not worker_is_alive(root):
+        print(
+            f"ERROR: {machine_id} is not running; nothing to stop."
+            " A parked instance resumes with `agent6 machine run`.",
+            file=sys.stderr,
+        )
+        return 1
+    write_stop_request(root)
+    print(f"stop requested: {machine_id} parks at its next transition boundary")
     return 0
 
 
