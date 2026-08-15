@@ -91,7 +91,7 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.sessions.manifest",
         primary=("SessionManifest",),
         writers=("app/manifest.py",),
-        pins=("tests/unit/test_runs_manifest.py",),
+        pins=("tests/unit/test_sessions_manifest.py",),
     ),
     Contract(
         title="SessionSnapshot",

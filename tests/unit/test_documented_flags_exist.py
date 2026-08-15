@@ -72,3 +72,18 @@ def _named_flags(text: str) -> set[str]:
 def test_documented_flags_exist(doc: Path) -> None:
     missing = _named_flags(doc.read_text("utf-8")) - _cli_flags() - _NOT_OURS
     assert not missing, f"{doc.name} names flags the CLI does not have: {sorted(missing)}"
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
+def test_documented_source_links_resolve(doc: Path) -> None:
+    """Every `blob/master/<path>` link a doc carries points at a real file.
+
+    A renamed module leaves the link 404ing on the published site, silently:
+    `docs/gen_contracts.py` pinned `tests/unit/test_runs_manifest.py` long
+    after it became `test_sessions_manifest.py`, and the generated contracts
+    page linked readers at nothing.
+    """
+    pat = re.compile(r"https://github\.com/agent6-dev/agent6/(?:blob|tree)/master/([^)\s#]+)")
+    linked = pat.findall(doc.read_text(encoding="utf-8"))
+    missing = sorted({p for p in linked if not (ROOT / p).exists()})
+    assert not missing, f"{doc.name} links at paths that do not exist: {missing}"

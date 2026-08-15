@@ -119,7 +119,6 @@ The primitive is pure git plumbing in [src/agent6/workflows/subrun.py](https://g
 
 - `clone_workspace(origin, dest)`: plain `git clone` of a disposable lane workspace.
 - `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the lane's branch into *origin* and moves its session dir under `<origin_state>/sessions/runs/`; refuses to overwrite an existing branch or session dir.
-- `join_branch(workspace, branch)`: merges a branch into the current branch; returns the merged sha, or `None` after an aborted conflict.
 - `LaneSpawner` / `GroupLaneSpawner` Protocols: one lane, or a sibling group, dispatched and awaited to completion.
 
 [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) is the orchestrator: it implements the spawner Protocols and is the only module that knows how to actually run a lane; the detached spawn it drives (`ui.spawn`, the same path `attach`/`resume` use) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`.
