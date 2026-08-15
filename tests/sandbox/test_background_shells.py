@@ -305,7 +305,10 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     assert any("exited 42" in line for line in roster_from_dir(tmp_path / "shells"))
     # The trail lives in the shell dir the command was never granted, so its
     # result.json carries the real 42 and no forged returncode=0 reached it.
-    shell_dir = next((tmp_path / "shells").iterdir())
+    # BY ID, never next(iterdir()): the shells root also holds the logs/
+    # sibling, and readdir order is filesystem-dependent -- picking blind made
+    # this red on runners whose order put logs/ first.
+    shell_dir = tmp_path / "shells" / view.id
     import json as _json
 
     result = _json.loads((shell_dir / "result.json").read_text(encoding="utf-8"))
