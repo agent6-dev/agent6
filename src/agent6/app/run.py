@@ -75,7 +75,12 @@ from agent6.git_ops import (
 from agent6.paths import chown_to_real_user, mkdir_for_real_user
 from agent6.providers import TranscriptSink
 from agent6.sandbox.jail import SessionNetwork
-from agent6.sessions.id import SessionIdError, unused_session_id, validate_explicit_session_id
+from agent6.sessions.id import (
+    SessionIdError,
+    session_id_bucket,
+    unused_session_id,
+    validate_explicit_session_id,
+)
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     clear_away_mode,
@@ -227,6 +232,14 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
     state_dir = resolved_state_dir(cwd)
     bucket = session_bucket(mode)
+    # Same-bucket reuse is the resume/park flow below; another bucket's id is
+    # a collision every surface would see as ambiguous.
+    if session_id and (held := session_id_bucket(state_dir, session_id)) not in (None, bucket):
+        reporter.err(
+            f"ERROR: --session-id {session_id!r} already names a session under {held}/;"
+            " ids are unique across every bucket. Pick another id."
+        )
+        return 2
     effective_session_id = session_id or unused_session_id(state_dir, bucket)
     layout = SessionLayout(
         state_dir=state_dir,

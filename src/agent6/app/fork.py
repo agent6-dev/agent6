@@ -51,6 +51,7 @@ from agent6.graph.storage import (
 from agent6.portable import atomic_write
 from agent6.sessions.id import (
     SessionIdError,
+    session_id_bucket,
     unused_session_id,
     validate_explicit_session_id,
 )
@@ -465,6 +466,14 @@ def create_fork(  # noqa: PLR0911
             validate_explicit_session_id(new_session_id)
         except SessionIdError as exc:
             reporter.err(f"ERROR: {exc}")
+            return "", 2
+        # Any bucket holding it makes the id ambiguous on every surface; the
+        # same-bucket case would also fail the target-dir check later.
+        if (held := session_id_bucket(state_dir, new_session_id)) is not None:
+            reporter.err(
+                f"ERROR: --session-id {new_session_id!r} already names a session under {held}/;"
+                " ids are unique across every bucket. Pick another id."
+            )
             return "", 2
     child_id = new_session_id or unused_session_id(state_dir, session_bucket(src_mode))
     rc = _materialize_fork(

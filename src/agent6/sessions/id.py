@@ -25,7 +25,7 @@ from pathlib import Path
 from agent6._data.words import ADJECTIVES, NOUNS
 from agent6.git_ops import valid_branch_name
 from agent6.graph.ulid import new_ulid
-from agent6.sessions.layout import bucket_dir
+from agent6.sessions.layout import SESSION_BUCKETS, bucket_dir
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -88,8 +88,22 @@ def friendly_token() -> str:
     return f"{adj}-{noun}-{ts_part}{rnd_part}"
 
 
+def session_id_bucket(state_dir: Path, session_id: str) -> str | None:
+    """The bucket whose directory already holds *session_id*, or None.
+
+    Ids are ONE public namespace across every bucket: the CLI resolver, the
+    web lookup, and the `agent6/<id>` branch all address a session by bare id,
+    so an id living in two buckets is ambiguous on every surface. The mint and
+    both explicit `--session-id` entry points check through here."""
+    for bucket in SESSION_BUCKETS:
+        if (bucket_dir(state_dir, bucket) / session_id).exists():
+            return bucket
+    return None
+
+
 def unused_session_id(state_dir: Path, bucket: str) -> str:
-    """A freshly minted id whose directory does not already exist.
+    """A freshly minted id whose directory exists in NO session bucket
+    (`session_id_bucket`), destined for *bucket*.
 
     An id carries 4 timestamp chars plus 2 random ones, so two minted in the
     same millisecond collide about once in 30 million. Every site that names a
@@ -98,7 +112,7 @@ def unused_session_id(state_dir: Path, bucket: str) -> str:
     """
     for _ in range(8):
         candidate = friendly_token()
-        if not (bucket_dir(state_dir, bucket) / candidate).exists():
+        if session_id_bucket(state_dir, candidate) is None:
             return candidate
     raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
 

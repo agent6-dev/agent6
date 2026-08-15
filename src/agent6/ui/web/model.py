@@ -61,14 +61,20 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
     """Locate a session dir by exact id across the hub buckets (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a session_id
     that is not a single safe path component. Husks are skipped so an orphaned
-    dir in runs/ cannot shadow a real ask of the same id."""
+    dir in runs/ cannot shadow a real ask of the same id. An id in TWO buckets
+    (state from before ids were one namespace) is ambiguous, so it resolves to
+    None rather than silently showing one of two sessions; the CLI resolver
+    names the ambiguity."""
     if not is_safe_component(session_id):
         return None
+    found: Path | None = None
     for sub in HUB_BUCKETS:
         d = bucket_dir(resolved_state_dir(cwd), sub) / session_id
         if d.is_dir() and not is_session_husk(d):
-            return d
-    return None
+            if found is not None:
+                return None
+            found = d
+    return found
 
 
 def machine_dir_for(cwd: Path, name: str) -> Path | None:

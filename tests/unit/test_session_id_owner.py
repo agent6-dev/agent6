@@ -33,12 +33,26 @@ def test_the_owner_gives_up_rather_than_reusing_a_directory(
         unused_session_id(tmp_path, "runs")
 
 
-def test_the_bucket_is_respected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The same id in a DIFFERENT bucket is not a collision: a plan and a run
-    are separate directories."""
+def test_an_id_taken_in_another_bucket_is_not_minted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ids are one public namespace: the CLI resolver, the web lookup, and the
+    agent6/<id> branch all address a session by bare id, so a plan minted with
+    a run's id was ambiguous on every surface (the CLI refused it as ambiguous,
+    the web silently picked one). The mint skips a candidate that exists in ANY
+    bucket."""
     from agent6.sessions import id as id_mod
 
-    monkeypatch.setattr(id_mod, "friendly_token", lambda: "same-name-AAAAAA")
+    minted = iter(["same-name-AAAAAA", "fresh-name-BBBBBB"])
+    monkeypatch.setattr(id_mod, "friendly_token", lambda: next(minted))
     (tmp_path / "sessions" / "runs" / "same-name-AAAAAA").mkdir(parents=True)
 
-    assert unused_session_id(tmp_path, "plans") == "same-name-AAAAAA"
+    assert unused_session_id(tmp_path, "plans") == "fresh-name-BBBBBB"
+
+
+def test_session_id_bucket_names_the_holder(tmp_path: Path) -> None:
+    from agent6.sessions.id import session_id_bucket
+
+    (tmp_path / "sessions" / "plans" / "demo").mkdir(parents=True)
+    assert session_id_bucket(tmp_path, "demo") == "plans"
+    assert session_id_bucket(tmp_path, "other") is None

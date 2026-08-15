@@ -261,6 +261,27 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     assert not (state_dir / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
+def test_fork_refuses_an_explicit_id_held_by_any_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ids are one public namespace, so a fork --session-id that any bucket
+    already holds is refused up front, naming the holder, before any child
+    state exists."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    (state_dir / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
+
+    rc = _cmd_fork(None, "src", new_session_id="taken-CCCC33", no_run=True)
+
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "asks/" in err and "unique across every bucket" in err
+    assert not (state_dir / "sessions" / "runs" / "taken-CCCC33").exists()
+
+
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A fork carries the source run's effective preset forward so `resume`
     # re-applies the same strategy; dropping it (writing preset="") would

@@ -251,6 +251,18 @@ def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
     assert model.machine_reasoning_snapshot(md) == {}
 
 
+def test_an_id_in_two_buckets_resolves_to_neither(tmp_path: Path) -> None:
+    """State from before ids were one namespace can hold the same id in two
+    buckets; showing whichever bucket iterates first silently served one of
+    two sessions. Ambiguity resolves to None (a 404 the CLI resolver names)."""
+    _run(tmp_path, "twin", [{"type": "session.start"}])
+    assert model.session_dir_for(tmp_path, "twin") is not None
+    d = _bucket(tmp_path, "plans") / "twin"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
+    assert model.session_dir_for(tmp_path, "twin") is None
+
+
 def test_run_dir_for_rejects_traversal(tmp_path: Path) -> None:
     _run(tmp_path, "good-run", [{"type": "session.start"}])
     assert model.session_dir_for(tmp_path, "good-run") is not None

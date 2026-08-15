@@ -415,7 +415,9 @@ one lock.
 
 Each session's directory `<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/` holds
 (the bucket is the mode plus `s`: `runs/`, `plans/`, `asks/`, `machines/`
-for `machine create` authoring):
+for `machine create` authoring). Ids are one namespace across every bucket —
+minting and explicit `--session-id` both refuse an id any bucket holds, since
+every surface addresses a session by bare id:
 
 - `graph.jsonl`: append-only journal of every task-graph mutation
   (curator-owned).
