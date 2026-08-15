@@ -50,8 +50,8 @@ class Agent6DocsInput(_ToolInput):
         "Read agent6's OWN documentation to answer questions about how to USE "
         "agent6 (configuring providers/models, sandbox isolation, machines, the "
         "CLI, budgets, etc.). Call with an empty `name` to list the available "
-        "docs, or set `name` to one of them (e.g. README, CONFIG, SECURITY, "
-        "AGENTS, ARCHITECTURE) to read its markdown."
+        "docs, or set `name` to one of them (e.g. README, GETTING-STARTED, "
+        "CONFIG, SECURITY, STATE-MACHINES, ARCHITECTURE) to read its markdown."
     )
 
     name: str = Field(default="")

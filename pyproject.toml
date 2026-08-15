@@ -43,6 +43,11 @@ exclude = ["src/agent6/jail"]
 "docs/architecture.md" = "agent6/_docs/ARCHITECTURE.md"
 "docs/config.md" = "agent6/_docs/CONFIG.md"
 "docs/security.md" = "agent6/_docs/SECURITY.md"
+"docs/getting-started.md" = "agent6/_docs/GETTING-STARTED.md"
+"docs/installation.md" = "agent6/_docs/INSTALLATION.md"
+"docs/state-machines.md" = "agent6/_docs/STATE-MACHINES.md"
+"docs/acp.md" = "agent6/_docs/ACP.md"
+"docs/web.md" = "agent6/_docs/WEB.md"
 
 # Compile agent6-jail during the wheel build; without cargo the hook builds a
 # pure-Python wheel (`agent6 check sandbox` explains the missing binary). CI
