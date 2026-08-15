@@ -53,7 +53,7 @@ def _capture_body(monkeypatch: pytest.MonkeyPatch, bodies: list[dict[str, Any]])
         bodies.append(json.loads(kwargs["content"]))
         return _FakeResponse(status_code=200, payload=_ok_payload())
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
 
 
 @pytest.mark.parametrize("level", ["low", "medium", "high"])

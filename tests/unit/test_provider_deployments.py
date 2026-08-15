@@ -62,7 +62,7 @@ def _openai_ok() -> httpx2.Response:
 def test_anthropic_direct_wire() -> None:
     p = AnthropicProvider(api_key="sk-ant", model="claude-x")  # deployment/auth default
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("httpx2.post", side_effect=fake):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.anthropic.com/v1/messages"
     assert captured["headers"]["x-api-key"] == "sk-ant"
@@ -82,7 +82,7 @@ def test_anthropic_vertex_wire() -> None:
         auth_style="bearer",
     )
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("httpx2.post", side_effect=fake):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == f"{_VERTEX_ANTHROPIC}/claude-opus-4-8:rawPredict"
     assert captured["headers"]["authorization"] == "Bearer ya29.tok"
@@ -94,7 +94,7 @@ def test_anthropic_vertex_wire() -> None:
 def test_openai_direct_wire() -> None:
     p = OpenAIProvider(api_key="sk-oai", model="gpt-x")  # bearer default
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx2.post", side_effect=fake):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["headers"]["authorization"] == "Bearer sk-oai"
@@ -112,7 +112,7 @@ def test_openai_azure_wire() -> None:
         extra_query={"api-version": "2024-06-01"},
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx2.post", side_effect=fake):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == (
         "https://res.openai.azure.com/openai/deployments/my-deployment"
@@ -128,7 +128,7 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
         api_key="", model="local", base_url="http://localhost:1234/v1", auth_style="none"
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx2.post", side_effect=fake):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert "authorization" not in captured["headers"]
     assert "api-key" not in captured["headers"]
@@ -177,7 +177,10 @@ def test_a_bad_credential_never_reaches_the_http_client() -> None:
     fails as a ProviderError with no HTTP request attempted at all."""
     p = OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
     with (
-        mock.patch("httpx2.post", side_effect=AssertionError("must not be called")),
+        mock.patch(
+            "agent6.providers._transport.http_post",
+            side_effect=AssertionError("must not be called"),
+        ),
         pytest.raises(ProviderError),
     ):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])

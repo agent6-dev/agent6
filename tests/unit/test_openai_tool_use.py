@@ -255,7 +255,7 @@ def test_call_with_tools_translates_request_and_response(
             ),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     tools = [
         ToolDefinition(
@@ -317,7 +317,7 @@ def test_response_with_malformed_tool_arguments_doesnt_crash(
             ),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert resp.tool_uses[0]["input"] == {"_raw_arguments": '{"path": "foo.py'}
@@ -355,7 +355,7 @@ def test_huge_malformed_tool_arguments_are_capped(
             ),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     parsed = resp.tool_uses[0]["input"]
@@ -381,7 +381,7 @@ def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> 
             payload=_ok_response({"role": "assistant", "content": "ok"}),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     provider.call(
         system="s",
@@ -403,7 +403,7 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
             payload=_ok_response({"role": "assistant", "content": "hi"}),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert "tools" not in captured["body"]
@@ -441,7 +441,7 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
             ),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
 
     # First call: simple user prompt.
@@ -529,7 +529,7 @@ def _call_with_text_content(
             },
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen2.5-coder")
     return provider.call(
         system="s",
@@ -605,7 +605,7 @@ def test_native_tool_calls_take_precedence_over_text(
             ),
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(
         system="s",
@@ -821,7 +821,7 @@ def test_blank_name_native_tool_call_is_dropped(
             },
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen3-coder-30b")
     resp = provider.call(
         system="s",
@@ -904,7 +904,7 @@ def test_max_completion_tokens_400_adapts_and_latches(monkeypatch: pytest.Monkey
         bodies.append(json.loads(kwargs["content"].decode("utf-8")))
         return responses[len(bodies) - 1]
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="my-azure-gpt5", deployment="azure")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.text == "ok"
@@ -929,7 +929,7 @@ def test_temperature_400_adapts_and_retries(monkeypatch: pytest.MonkeyPatch) -> 
         bodies.append(json.loads(kwargs["content"].decode("utf-8")))
         return responses[len(bodies) - 1]
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="my-deployment", deployment="azure")
     resp = provider.call(
         system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64, temperature=0.0
@@ -948,7 +948,7 @@ def test_null_usage_fields_do_not_crash(monkeypatch: pytest.MonkeyPatch) -> None
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=200, payload=payload)
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="m")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.input_tokens == 0

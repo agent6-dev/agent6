@@ -3,7 +3,7 @@
 """Tests for the Anthropic provider transcript writer.
 
 The critical security property: the literal `x-api-key` value must never
-land on disk. We monkeypatch httpx2.post so no network call is made.
+land on disk. The http_post seam is stubbed so no network call is made.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def test_transcript_redacts_api_key_on_success(
             },
         )
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hi"
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -84,7 +84,7 @@ def test_transcript_redacts_api_key_on_http_error(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=429, text="rate limited")
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -103,7 +103,7 @@ def test_transcript_redacts_api_key_on_network_error(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -125,7 +125,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=401, text=f'{{"error": "bad key {api_key}"}}')
 
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
     with pytest.raises(ProviderError) as exc:
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert api_key not in str(exc.value)

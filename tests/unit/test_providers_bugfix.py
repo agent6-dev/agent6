@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, ClassVar
 from unittest import mock
 
 import httpx2
@@ -783,17 +784,13 @@ def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPat
 
     seen: list[object] = []
 
-    def fake_post(url: str, **kw: object) -> object:
-        seen.append(kw["timeout"])
-        raise httpx2.ConnectError("stop")
-
     @contextlib.contextmanager
     def fake_stream(method: str, url: str, **kw: object):
         seen.append(kw["timeout"])
         raise httpx2.ConnectError("stop")
         yield  # pragma: no cover
 
-    monkeypatch.setattr(_transport.httpx2, "post", fake_post)
+    monkeypatch.setattr(_transport.httpx2, "stream", fake_stream)
     monkeypatch.setattr(_stream.httpx2, "stream", fake_stream)
     with contextlib.suppress(httpx2.HTTPError):
         _transport.http_post("https://x", headers={}, content=b"", timeout=600.0)
@@ -804,3 +801,44 @@ def test_both_http_seams_pass_the_granular_timeout(monkeypatch: pytest.MonkeyPat
         pass  # pragma: no cover -- the stub raises before yielding
     assert [type(t) for t in seen] == [httpx2.Timeout, httpx2.Timeout]
     assert all(t.connect == _transport.CONNECT_TIMEOUT_S for t in seen)  # type: ignore[union-attr]
+
+
+def test_an_oversized_provider_response_is_refused_not_buffered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The non-streaming seam buffered whatever arrived; a multi-MiB (or
+    hostile, unbounded) body was materialized whole while fetch and MCP bound
+    their reads. The body is read under MAX_RESPONSE_BYTES; exceeding it is a
+    retryable ProviderError, and a normal body still round-trips."""
+    import contextlib
+
+    from agent6.providers import _transport
+    from agent6.providers.types import ProviderError
+
+    class _FakeStreamResp:
+        status_code = 200
+        headers: ClassVar[dict[str, str]] = {}
+        request = httpx2.Request("POST", "https://x")
+
+        def __init__(self, chunks: list[bytes]) -> None:
+            self._chunks = chunks
+
+        def iter_bytes(self) -> Iterator[bytes]:
+            yield from self._chunks
+
+    def _serving(chunks: list[bytes]):
+        @contextlib.contextmanager
+        def fake_stream(method: str, url: str, **kw: object):
+            yield _FakeStreamResp(chunks)
+
+        return fake_stream
+
+    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", 1024)
+    monkeypatch.setattr(_transport.httpx2, "stream", _serving([b"x" * 600, b"y" * 600]))
+    with pytest.raises(ProviderError, match="exceeded"):
+        _transport.http_post("https://x", headers={}, content=b"", timeout=5.0)
+
+    monkeypatch.setattr(_transport.httpx2, "stream", _serving([b'{"ok": true}']))
+    resp = _transport.http_post("https://x", headers={}, content=b"", timeout=5.0)
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}

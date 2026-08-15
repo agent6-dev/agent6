@@ -44,11 +44,37 @@ def granular_timeout(timeout: float) -> httpx2.Timeout:
     return httpx2.Timeout(timeout, connect=min(CONNECT_TIMEOUT_S, timeout))
 
 
+# A full-window reply serializes to a few MiB; 64 MiB never clips a real
+# response while stopping a pathological or hostile endpoint from being
+# buffered whole into this process (fetch and MCP bound their reads the same
+# way).
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
+
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
-    """POST seam: tests stub this name, never `httpx2` globally."""
-    return httpx2.post(url, headers=headers, content=content, timeout=granular_timeout(timeout))
+    """POST seam: tests stub this name, never `httpx2` globally.
+
+    The body is read incrementally under `MAX_RESPONSE_BYTES`; an endpoint
+    exceeding it raises a retryable `ProviderError` instead of an unbounded
+    buffer."""
+    with httpx2.stream(
+        "POST", url, headers=headers, content=content, timeout=granular_timeout(timeout)
+    ) as resp:
+        body = bytearray()
+        for chunk in resp.iter_bytes():
+            body.extend(chunk)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise ProviderError(
+                    f"provider response exceeded {MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
+                )
+        return httpx2.Response(
+            resp.status_code,
+            headers=resp.headers,
+            content=bytes(body),
+            request=resp.request,
+        )
 
 
 def _has_assistant_output(data: dict[str, Any]) -> bool:

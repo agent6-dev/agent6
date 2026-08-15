@@ -472,7 +472,7 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
         return _R()
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    monkeypatch.setattr(httpx2, "post", fake_post)
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
 
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "ok"

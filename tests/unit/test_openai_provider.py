@@ -49,7 +49,7 @@ def test_call_translates_messages_and_parses_usage() -> None:
             }
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(
             system="you are a reviewer",
             messages=[{"role": "user", "content": "judge this"}],
@@ -85,7 +85,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
 
     # OpenAI-direct reasoning model (default base_url = api.openai.com).
     direct = OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "medium"
     assert "reasoning" not in captured["body"]
@@ -97,7 +97,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
         base_url="https://openrouter.ai/api/v1",
         reasoning_effort="high",
     )
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         router.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning") == {"effort": "high"}
     assert "reasoning_effort" not in captured["body"]
@@ -120,7 +120,7 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
         )
 
     direct = OpenAIProvider(api_key="sk", model="gpt-5", reasoning_effort="high")
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "high"
     assert "reasoning" not in captured["body"]  # not the nested OpenRouter object
@@ -143,7 +143,7 @@ def test_call_merges_extra_body() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["body"]["provider"] == {"sort": "throughput"}
@@ -167,7 +167,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
             }
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert resp.input_tokens == 0
@@ -189,7 +189,7 @@ def test_call_flattens_anthropic_block_content() -> None:
         {"type": "text", "text": "hello "},
         {"type": "text", "text": "world"},
     ]
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": msg_content}])
 
     assert captured["body"]["messages"][1] == {"role": "user", "content": "hello world"}
@@ -198,7 +198,10 @@ def test_call_flattens_anthropic_block_content() -> None:
 def test_call_raises_provider_error_on_http_status() -> None:
     provider = OpenAIProvider(api_key="sk", model="gpt-x")
     with (
-        mock.patch("httpx2.post", return_value=_fake_response({"error": "no"}, status=500)),
+        mock.patch(
+            "agent6.providers._transport.http_post",
+            return_value=_fake_response({"error": "no"}, status=500),
+        ),
         pytest.raises(ProviderError, match="OpenAI API error 500"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -223,7 +226,7 @@ def test_from_env_missing_env_var_yields_no_auth_header(
             }
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert "authorization" not in {k.lower() for k in captured["headers"]}
@@ -250,7 +253,7 @@ def test_base_url_override_and_extra_headers() -> None:
         captured["headers"] = kw["headers"]
         return _fake_response({"choices": [{"message": {"content": "k"}}], "usage": {}})
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
@@ -344,12 +347,12 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=16384)
     assert captured["body"]["max_tokens"] == REASONING_MODEL_MIN_MAX_TOKENS
 
     # Caller-supplied value above the floor wins.
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=65536)
     assert captured["body"]["max_tokens"] == 65536
 
@@ -362,7 +365,7 @@ def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=4096)
     assert captured["body"]["max_tokens"] == 4096
 
@@ -382,19 +385,19 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
     # No arg -> env override wins.
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"]["reasoning"] == {"effort": "medium"}
 
     # Explicit "off" -> reasoning channel explicitly disabled.
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="off"
         )
     assert captured["body"]["reasoning"] == {"enabled": False}
 
     # Explicit "low" -> overrides env "medium".
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"
         )
@@ -424,7 +427,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
             }
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert resp.text == "the answer is 42"
@@ -453,7 +456,7 @@ def test_call_captures_deepseek_reasoning_field() -> None:
             }
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert any(
@@ -484,7 +487,7 @@ def test_credential_overrides_static_key_in_auth_header() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
         )
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert captured["auth"] == "Bearer minted-tok"
@@ -509,7 +512,7 @@ def test_401_refreshes_token_command_and_retries(tmp_path: Path) -> None:
         seen.append(kw["headers"].get("authorization"))
         return responses[len(seen) - 1]
 
-    with mock.patch("httpx2.post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert seen == ["Bearer tok1", "Bearer tok2"]
@@ -525,6 +528,9 @@ def test_401_without_credential_is_not_retried() -> None:
         calls["n"] += 1
         return _fake_response({}, status=401)
 
-    with mock.patch("httpx2.post", side_effect=fake_post), pytest.raises(ProviderError):
+    with (
+        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post),
+        pytest.raises(ProviderError),
+    ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert calls["n"] == 1

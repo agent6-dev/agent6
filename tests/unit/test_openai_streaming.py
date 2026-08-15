@@ -436,7 +436,7 @@ def test_no_callback_does_not_stream() -> None:
         )
 
     with (
-        mock.patch("httpx2.post", side_effect=fake_post) as post_mock,
+        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post) as post_mock,
         mock.patch("httpx2.stream") as stream_mock,
     ):
         resp = provider.call(
