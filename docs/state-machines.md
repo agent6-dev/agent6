@@ -363,24 +363,20 @@ home for cross-iteration state; the journal records every transition either way.
 ```toml
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"   # at most one of: every_secs | until | cron
+every_secs = "{{ poll_secs }}"   # at most one of: every_secs | until
 on = { tick = "scan", signal = "scan" }
 ```
 
 `wait` is what makes a machine long-running without burning CPU or
-tokens. A state declares at most one of `every_secs`, `until` (an
-absolute ISO-8601 instant), or `cron` (a 5-field expression); two-or-more
-is a load error. On entry the engine computes the absolute next-wake
+tokens. A state declares at most one of `every_secs` or `until` (an
+absolute ISO-8601 instant); both at once is a load error. On entry the engine computes the absolute next-wake
 instant and journals it as a fact *before* sleeping, so a replay re-reads
 that instant and never actually sleeps. In v1 the process simply blocks
 in-process until the instant (or an external `signal`, a file/IPC poke,
 arrives first); because the wake is journaled absolutely, the
 `--exit-on-wait` persisted-wake driver (see
 [Reliability for 24/7 operation](#6-reliability-for-247-operation)) runs the identical file with
-no format change. (`cron` is parsed as a field but the v1 runtime cannot
-fire it, so `machine check` rejects a `cron` wait at load time, fail-loud,
-rather than letting it surface only when the wait is reached. Use
-`every_secs` or `until`.)
+no format change.
 
 **Wait-forever (no timer).** Declare *zero* timers to park indefinitely
 until an operator `signal` poke:

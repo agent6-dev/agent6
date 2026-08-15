@@ -728,14 +728,13 @@ def _validate_wait(
         for timing, value in (
             ("every_secs", state.every_secs),
             ("until", state.until),
-            ("cron", state.cron),
         )
         if value is not None
     ]
     if len(timings) > 1:
         problems = [
-            f"state {name!r}: a `wait` may declare at most one of `every_secs`, `until`,"
-            f" or `cron` (found: {timings})"
+            f"state {name!r}: a `wait` may declare at most one of `every_secs` or"
+            f" `until` (found: {timings})"
         ]
     elif not timings:
         # A wait with no timer parks until an operator `signal` poke (§4.3). It
@@ -744,18 +743,9 @@ def _validate_wait(
         problems = _validate_on(name, state.on, WAIT_LABELS - frozenset({"tick"}))
     else:
         problems = _validate_on(name, state.on, WAIT_LABELS)
-    if state.cron is not None:
-        # `cron` is parsed but the v1 runtime cannot fire it -- `machine run`
-        # would raise mid-run. Reject it at load so `machine check`/`test`
-        # catch it up front instead of failing only when the wait is reached.
-        problems.append(
-            f"state {name!r}: `cron` wait timing is not yet implemented"
-            " (reserved for a future persisted-wake runtime); use `every_secs` or `until`"
-        )
     for timing, value in (
         ("every_secs", state.every_secs),
         ("until", state.until),
-        ("cron", state.cron),
     ):
         if value is None:
             continue

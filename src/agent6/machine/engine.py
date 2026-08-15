@@ -515,7 +515,7 @@ def _route_branch(state: BranchState, blackboard: Mapping[str, object]) -> tuple
 
 def _is_forever(state: WaitState) -> bool:
     """A `wait` with no timer parks until a signal poke (§4.3), no wake instant."""
-    return state.every_secs is None and state.until is None and state.cron is None
+    return state.every_secs is None and state.until is None
 
 
 def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float) -> float:
@@ -539,9 +539,7 @@ def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=UTC)
         return moment.timestamp()
-    raise StateRuntimeError(
-        "`cron` wait timing is not implemented in the v1 runtime (Phase 4 persisted-wake)"
-    )
+    raise StateRuntimeError("a timerless `wait` has no wake instant to compute")
 
 
 def _block_on_wait(

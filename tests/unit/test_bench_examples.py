@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The shipped bench content stays loadable: every bench/machines example but
-the documented cron-reject demo passes the `machine check` loader, and no bench
+no bench
 config literal carries a field the schema has deleted (configs load under
 extra="forbid", so one stale name refuses the whole file). Guards the class of
 miss where a schema change sweeps src/tests/docs but not bench."""
@@ -17,9 +17,7 @@ from agent6.machine import MachineError, load_machine
 _REPO = Path(__file__).resolve().parents[2]
 _BENCH = _REPO / "bench"
 
-# The one deliberately-invalid example: wait-clock's v1 cron-reject demo
-# (the rejection itself is pinned by test_cron_wait_rejected_at_load).
-_EXPECTED_INVALID = {"cron-demo.asm.toml"}
+_EXPECTED_INVALID: set[str] = set()
 
 
 def _example_tomls() -> list[Path]:

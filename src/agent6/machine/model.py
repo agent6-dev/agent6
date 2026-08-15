@@ -345,7 +345,6 @@ class WaitState(BaseModel):
     notify: _NotifySpecT | None = None
     every_secs: Annotated[str, BeforeValidator(_seconds_as_str)] | None = None
     until: str | None = None
-    cron: str | None = None
     on: dict[str, str]
 
 

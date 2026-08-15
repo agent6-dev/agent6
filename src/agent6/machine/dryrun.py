@@ -172,7 +172,7 @@ def _check_state(
         if isinstance(state, WaitState):
             # A wait with no timer parks until a signal poke (no `tick` edge);
             # a timed wait simulates the tick path.
-            forever = state.every_secs is None and state.until is None and state.cron is None
+            forever = state.every_secs is None and state.until is None
             label = "signal" if forever else "tick"
             goto = state.on[label]
             ok = goto in spec.states

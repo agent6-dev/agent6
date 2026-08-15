@@ -173,12 +173,12 @@ def test_reserved_name(tmp_path: Path) -> None:
     assert any("reserved" in p and "result" in p for p in problems)
 
 
-def test_cron_wait_rejected_at_load(tmp_path: Path) -> None:
-    # `cron` parses but the v1 runtime cannot fire it; reject at load so
-    # `machine check` catches it rather than failing only at `machine run`.
+def test_cron_wait_is_an_unknown_key(tmp_path: Path) -> None:
+    # `wait` timings are every_secs and until; a `cron` key refuses at load
+    # like any other unknown key (extra = "forbid"), named in the problem.
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'cron = "0 * * * *"')
     problems = _problems(tmp_path, body)
-    assert any("cron" in p and "not yet implemented" in p for p in problems)
+    assert any("cron" in p for p in problems)
 
 
 def test_non_identifier_variable(tmp_path: Path) -> None:
