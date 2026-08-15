@@ -312,3 +312,37 @@ def test_denying_one_server_leaves_a_sibling_alone(tmp_path: Path) -> None:
         d.dispatch("mcp__other__echo", {"text": "hi"})  # the sibling still answers
     finally:
         mgr.close()
+
+
+def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> None:
+    """Full args are the consent rule, but a wall of text is as unread as a
+    clipped one: past the bound the COMPLETE payload lands in a session-dir
+    file (jailed commands cannot reach it) and the prompt names it. Under the
+    bound nothing changes; without a session dir the full text stays inline."""
+    seen: list[str] = []
+
+    def _capture(prompt: str, /, *, scope: str | None = None) -> bool:
+        seen.append(prompt)
+        return False
+
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    big = "y" * 10_000
+    mgr = _manager()
+    try:
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            approver=_capture,
+            session_dir=session_dir,
+        )
+        with pytest.raises(ToolDenied):
+            d.dispatch("mcp__fake__echo", {"text": big})
+    finally:
+        mgr.close()
+    assert len(seen) == 1
+    assert big not in seen[0], "the wall of text must not flood the prompt"
+    assert "full payload:" in seen[0] and "chars total" in seen[0]
+    payload = session_dir / "approval_payload.json"
+    assert payload.is_file() and big in payload.read_text(encoding="utf-8")

@@ -169,6 +169,10 @@ _EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_N
 _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 
+# An MCP approval prompt carries the FULL arguments up to this bound; past it
+# the complete payload goes to a session-dir file the prompt points at.
+_APPROVAL_PROMPT_MAX_CHARS = 4096
+
 _READ_HEAD_LINES = 6
 _READ_HEAD_CHARS = 300
 
@@ -738,6 +742,19 @@ class ToolDispatcher:
         if entry.approve == "yes":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
+        if len(args) > _APPROVAL_PROMPT_MAX_CHARS and self._session_dir is not None:
+            # Full args are the consent rule -- but a wall of text is as
+            # unread as a clipped one. Past the bound, the COMPLETE payload
+            # goes to a file (the session dir a jailed command cannot reach)
+            # and the prompt carries the head plus where to read the rest.
+            # With no session dir the full text stays in the prompt: hiding
+            # any of it with nowhere to point is the worse trade.
+            full = self._session_dir / "approval_payload.json"
+            full.write_text(args, encoding="utf-8")
+            args = (
+                f"{args[:_APPROVAL_PROMPT_MAX_CHARS]}"
+                f" ...[{len(args)} chars total; full payload: {full}]"
+            )
         if not self._approver(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
             raise ToolDenied(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
