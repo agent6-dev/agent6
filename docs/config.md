@@ -220,7 +220,6 @@ security.md. This is the field summary.
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. The operator's gate needs a verdict, so it is bounded; a model-chosen `run_command` is not (see `command_checkin_s`). |
 | `command_checkin_s` | `900.0` | How long a model's `run_command` may run before it is **handed back** as a background job. Not a timeout: nothing is killed, the command keeps running, and the model is told (`returncode: null`, `still_running: true`, a `background_id`) so it can wait with `read_background`, stop it, or carry on. `0` disables the hand-back, which is right when a human is watching and can interrupt. |
 | `require_verify_to_finish` | `false` | Refuse `finish_session` while the last verify is red or never ran (bounded nudges). Regardless, a finish over red is always reported "finished", never "passed". |
-| `spec_recheck_on_finish` | `false` | Bounce the first finish over a green verify once for a spec re-check. Measured (n=6/arm, 3 models): no gain beyond noise, one score drop, +38-88% cost. Kept off; candidate for removal. |
 
 ## `[review]`
 

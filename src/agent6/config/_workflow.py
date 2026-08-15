@@ -113,19 +113,6 @@ class WorkflowConfig(BaseModel):
             'Regardless, a finish over red is always reported "finished", never "passed".'
         ),
     )
-    # Opt-in: bounce the FIRST finish_session over a green verify once, with a
-    # directive to re-check every spec requirement (the committed suite may
-    # cover a subset). Targets the finish-on-green-but-incomplete failure
-    # mode measured on bench/coreagent's eventflow task; costs about one
-    # extra turn per run when on. See docs/config.md for the measurements.
-    spec_recheck_on_finish: bool = Field(
-        default=False,
-        description=(
-            "Bounce the first finish over a green verify once for a spec re-check. Measured "
-            "(n=6/arm, 3 models): no gain beyond noise, one score drop, +38-88% cost. Kept off; "
-            "candidate for removal."
-        ),
-    )
     metric: MetricConfig | None = Field(
         default=None,
         description="Optional continuous-score metric; unset = no `run_metric_command` tool.",

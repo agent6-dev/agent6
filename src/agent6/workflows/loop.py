@@ -155,7 +155,6 @@ from agent6.workflows._nudges import (
     RUN_BUDGET_NUDGE_GATELESS,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
-    SPEC_RECHECK_NUDGE,
     TASK_FINISH_PATIENCE,
     TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATE_AFTER,
@@ -339,7 +338,6 @@ class _LoopState:
     metric_finish_nudges_used: int = 0
     task_finish_nudges_used: int = 0
     verify_finish_nudges_used: int = 0
-    spec_recheck_done: bool = False
     ever_edited: bool = False
     # Attemptless-stagnation notice: recall spirals make few calls with long
     # reasoning between them, so the identical-signature repeat guard never
@@ -1768,7 +1766,6 @@ class Workflow:
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_green(state, turn)
-        self._gate_spec_recheck(state, turn)
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
 
@@ -1939,26 +1936,6 @@ class Workflow:
             iteration=turn.iteration,
             nudges_used=state.verify_finish_nudges_used,
         )
-
-    def _gate_spec_recheck(self, state: _LoopState, turn: _TurnState) -> None:
-        """Opt-in one-shot bounce of a finish over a GREEN verify: re-check the
-        spec, the suite may be a subset (see _nudges rationale). A never-green
-        or red tree is the verify gates' territory, not this one's."""
-        if not (
-            turn.finish_signal is not None
-            and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-            and self.config.workflow.spec_recheck_on_finish
-            and not state.spec_recheck_done
-            and self._tree_is_verify_green(state) is True
-        ):
-            return
-        state.spec_recheck_done = True
-        turn.finish_signal = None
-        turn.finish_payload = None
-        turn.tool_results.append(Notice(SPEC_RECHECK_NUDGE))
-        self._log(f"  finish_session gated: spec recheck at iter {turn.iteration}")
-        self._emit("loop.spec_recheck.gated", iteration=turn.iteration)
 
     def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Memory write-side backstop: defer the first finish_session ONCE when the

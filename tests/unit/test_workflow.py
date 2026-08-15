@@ -689,7 +689,6 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -752,7 +751,6 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -798,7 +796,6 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -896,7 +893,6 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -947,7 +943,6 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -1018,7 +1013,6 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1093,7 +1087,6 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=None,
         ),
@@ -1138,7 +1131,6 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     metric_cfg = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         )
@@ -1158,7 +1150,6 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             workflow=SimpleNamespace(
                 require_verify_to_finish=False,
-                spec_recheck_on_finish=False,
                 verify_command=("true",),
                 metric=None,
             ),
@@ -1213,7 +1204,6 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1287,7 +1277,6 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1371,7 +1360,6 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1468,7 +1456,6 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1688,7 +1675,6 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -1749,7 +1735,6 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -1816,7 +1801,6 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -1863,7 +1847,6 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -1926,7 +1909,6 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2036,7 +2018,6 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2108,7 +2089,6 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2168,7 +2148,6 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2284,7 +2263,6 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
         ),
@@ -2426,7 +2404,6 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2446,7 +2423,6 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -2466,7 +2442,6 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -3250,7 +3225,6 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=None,
         ),
@@ -3344,7 +3318,6 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=None,
         ),
@@ -3999,7 +3972,6 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=None,
         ),
@@ -4108,7 +4080,6 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4148,7 +4119,6 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4191,7 +4161,6 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=None,
         ),
@@ -4301,7 +4270,6 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=None,
         ),
@@ -4394,7 +4362,6 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4462,7 +4429,6 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4499,136 +4465,6 @@ def test_verify_failure_signature_normalizes_cosmetics() -> None:
     d = verify_failure_signature("ran in 3.21s at 0x7f01ab", "")
     e = verify_failure_signature("ran in 0.07s at 0x9921cd", "")
     assert d == e
-
-
-def _spec_recheck_wf(tmp_path: Path, provider: Any, dispatcher: Any, *, on: bool) -> Any:
-    config = SimpleNamespace(
-        git=_GIT_STUB,
-        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        workflow=SimpleNamespace(
-            require_verify_to_finish=False,
-            spec_recheck_on_finish=on,
-            verify_command=("true",),
-            metric=SimpleNamespace(goal=None),
-        ),
-    )
-    return _wf(
-        root=tmp_path,
-        config=config,
-        mode="run",
-        provider=provider,
-        dispatcher=dispatcher,
-        max_iterations=20,
-    )
-
-
-class _GreenDispatcher(_StubDispatcher):
-    def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
-        if name == "run_verify_command":
-            return ExecResult(
-                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
-            )
-        return RawResult({"ok": True})
-
-
-def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> None:
-    """With the knob on, the FIRST finish_session over a green verify is bounced
-    once with the spec-recheck directive (the eventflow failure mode: a green
-    subset-suite taken as done while spec requirements remain unmet); the
-    second finish goes through."""
-    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
-
-    class ProviderStub:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.nudges = 0
-
-        def call(self, **kwargs: Any) -> ProviderResponse:
-            self.calls += 1
-            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
-                self.nudges += 1
-            if self.calls == 1:
-                return _tool_resp("run_verify_command", tool_id="v1")
-            return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"f{self.calls}")
-
-    provider = ProviderStub()
-    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            conversation=Conversation.from_wire(messages),
-            tool_calls=0,
-            start_iteration=1,
-            root_task_id=None,
-            original_task="t",
-        )
-    assert provider.nudges == 1
-    assert result.completed is True
-    assert result.reason == "finish_session"
-
-
-def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path) -> None:
-    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
-
-    class ProviderStub:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.nudges = 0
-
-        def call(self, **kwargs: Any) -> ProviderResponse:
-            self.calls += 1
-            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
-                self.nudges += 1
-            if self.calls == 1:
-                return _tool_resp("run_verify_command", tool_id="v1")
-            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
-
-    provider = ProviderStub()
-    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=False)
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
-        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            conversation=Conversation.from_wire(messages),
-            tool_calls=0,
-            start_iteration=1,
-            root_task_id=None,
-            original_task="t",
-        )
-    assert provider.nudges == 0
-    assert result.completed is True
-
-
-def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> None:
-    """A finish over a never-green tree is the verify-green gate's territory;
-    the spec recheck targets exactly the green-but-incomplete case."""
-    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
-
-    class ProviderStub:
-        def __init__(self) -> None:
-            self.calls = 0
-            self.nudges = 0
-
-        def call(self, **kwargs: Any) -> ProviderResponse:
-            self.calls += 1
-            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
-                self.nudges += 1
-            return _tool_resp("finish_session", {"summary": "done"}, tool_id="f")
-
-    provider = ProviderStub()
-    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
-    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
-    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
-        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-            system="s",
-            conversation=Conversation.from_wire(messages),
-            tool_calls=0,
-            start_iteration=1,
-            root_task_id=None,
-            original_task="t",
-        )
-    assert provider.nudges == 0
 
 
 def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Path) -> None:
@@ -4670,7 +4506,6 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4722,7 +4557,6 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4782,7 +4616,6 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4856,7 +4689,6 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -4914,7 +4746,6 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -4991,7 +4822,6 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5079,7 +4909,6 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5143,7 +4972,6 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5270,7 +5098,6 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5330,7 +5157,6 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),  # GATELESS
             metric=SimpleNamespace(goal=None),
         ),
@@ -5392,7 +5218,6 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5621,7 +5446,6 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5677,7 +5501,6 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal=None),
         ),
@@ -5779,7 +5602,6 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
-            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         ),

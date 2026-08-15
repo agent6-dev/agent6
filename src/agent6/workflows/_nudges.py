@@ -124,20 +124,6 @@ def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
     return digest.hexdigest()
 
 
-# Opt-in spec-recheck finish gate ([workflow].spec_recheck_on_finish).
-# When the committed suite covers only a subset of the spec, models finish on
-# the first green verify with requirements unmet; a re-check directive raised
-# scores on every model tested (measured: bench/coreagent eventflow). Same
-# mechanism as a
-# one-turn native bounce: the FIRST finish_session over a green verify is
-# revoked once with the directive below. Off by default until the A/B
-# quantifies the cost on tasks whose suite IS the full spec.
-SPEC_RECHECK_NUDGE = (
-    "[harness spec-check] Verify is green but may cover only part of the"
-    " requirements. Re-read the task, check each stated requirement, fix"
-    " anything unmet, then call finish_session again."
-)
-
 # Plan-mode wrap-up: nudge once the budget fraction drops below the threshold,
 # or after this many iterations without having finished (or even started) a
 # plan at all. A plan rarely needs more than a handful of reads.
