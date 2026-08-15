@@ -752,18 +752,28 @@ def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
     assert ("end", "done", "finished", "ok") in world.notifications
 
 
-def test_terminal_notify_render_failure_keeps_status(tmp_path: Path) -> None:
-    # `notify` is presentation only: a render failure on a terminal must NOT flip
-    # the terminal's real ok/failed status (it is swallowed, no control-flow effect).
+def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
+    tmp_path: Path,
+) -> None:
+    """`notify` is presentation only: a render failure on a terminal must NOT
+    flip the terminal's real ok/failed status. It must not vanish either --
+    the swallow left no journal entry and no hook fire, so a broken template
+    meant notifications silently stopped. The failure is journaled as an
+    error-level machine.notify and the hook is told."""
     from agent6.machine.journal import MachineNotify
 
     journal, f = _load(tmp_path, NOTIFY_FAIL)
     spec = load_machine(f)
-    result = drive(spec, journal, FakeWorld({}), live=True)
+    world = FakeWorld({})
+    result = drive(spec, journal, world, live=True)
     assert result.status == "ok"
     assert result.reason == "finished"
-    # The failed render journaled no machine.notify and fired no notify hook.
-    assert not any(isinstance(e, MachineNotify) for e in journal.read())
+    note = next(e for e in journal.read() if isinstance(e, MachineNotify))
+    assert note.level == "error" and "notify failed" in note.message
+    assert any(
+        kind == "notify" and level == "error" and "notify failed" in message
+        for kind, _state, message, level in world.notifications
+    )
     events_ok = journal.read()
     assert isinstance(events_ok[-1], MachineEnd)
     assert events_ok[-1].status == "ok"

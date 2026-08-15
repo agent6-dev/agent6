@@ -124,6 +124,21 @@ def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
     }
 
 
+def test_machine_notify_hook_nonzero_exit_is_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """check=False keeps the hook non-fatal, but a nonzero exit was discarded
+    entirely: notifications silently stopped arriving. The exit is named on
+    stderr."""
+    body = _MACHINE_CFG_BODY.replace('"PLACEHOLDER"', '"raise SystemExit(3)"')
+    cfg_path = tmp_path / "agent6.toml"
+    cfg_path.write_text(body, encoding="utf-8")
+    hook = build_machine_notify_hook(load_config(cfg_path), "m", tmp_path / "inst")
+    assert hook is not None
+    hook("notify", "poll", "msg", "warn")
+    assert "hook exited 3" in capsys.readouterr().err
+
+
 def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
     body = _MACHINE_CFG_BODY.replace(
         '\n[machine.notify]\non_event = ["python3", "-c", "PLACEHOLDER"]\ntimeout_s = 10.0\n', ""

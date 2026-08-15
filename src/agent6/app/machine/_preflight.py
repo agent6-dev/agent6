@@ -114,8 +114,15 @@ def build_machine_notify_hook(
             AGENT6_MACHINE_LEVEL=level,
         )
         try:
-            subprocess.run(list(notify.on_event), env=env, timeout=notify.timeout_s, check=False)
+            res = subprocess.run(
+                list(notify.on_event), env=env, timeout=notify.timeout_s, check=False
+            )
         except (OSError, subprocess.TimeoutExpired) as exc:
             print(f"[agent6] machine.notify hook failed: {exc}", file=sys.stderr)
+            return
+        if res.returncode != 0:
+            # check=False keeps the hook non-fatal; a failing hook must still
+            # be visible or notifications silently stop arriving.
+            print(f"[agent6] machine.notify hook exited {res.returncode}", file=sys.stderr)
 
     return fire

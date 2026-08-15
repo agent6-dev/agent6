@@ -892,8 +892,18 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
                 pending = journal.read_pending_wait()
                 already_parked = pending is not None and pending.state == state
         if not already_parked:
-            with contextlib.suppress(*_STATE_RUNTIME_ERRORS):
+            try:
                 _emit_notify(current, blackboard, journal, world, state)
+            except _STATE_RUNTIME_ERRORS as exc:
+                # Non-fatal by design (presentation never flips a terminal's
+                # real status), but never silent: the failure is journaled and
+                # the hook told, so a broken notify template is visible.
+                fail = f"notify failed: {exc}"
+                with contextlib.suppress(JournalError):
+                    journal.append(
+                        MachineNotify(ts=_now_iso(), state=state, message=fail, level="error")
+                    )
+                world.notify("notify", state, fail, "error")
         if isinstance(current, TerminalState):
             result = _emit_end(
                 journal,
