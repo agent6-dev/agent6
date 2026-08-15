@@ -69,6 +69,19 @@ class JailBuildHook(BuildHookInterface):
             self._maybe_mark_platform_wheel(build_data, dest)
             return
 
+        if sys.platform != "linux":
+            # The jail is Linux-only (namespaces, Landlock, seccomp); on any
+            # other host the crate cannot compile, so a mac WITH cargo failed
+            # the sdist install while one without happened to pass. Non-Linux
+            # runs unsandboxed via isolation "none" (the documented posture).
+            print(
+                f"[hatch_build] {sys.platform} host: the agent6-jail binary is"
+                " Linux-only, skipping cargo build",
+                file=sys.stderr,
+            )
+            self._maybe_mark_platform_wheel(build_data, dest)
+            return
+
         manifest = root / "src" / "agent6" / "jail" / "Cargo.toml"
         if not manifest.is_file():
             print(
