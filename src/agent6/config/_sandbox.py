@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from agent6.config._base import MODEL_CONFIG
+from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 from agent6.config._surfaces import is_loopback_host
 from agent6.paths import private_dirs
 
@@ -89,7 +89,7 @@ class SandboxConfig(BaseModel):
     # still an egress channel a model drives -- a GET can encode data in its
     # path -- so a host not listed here is asked about, and an absent operator
     # is a no.
-    fetch_hosts: tuple[str, ...] = Field(
+    fetch_hosts: StrTuple = Field(
         default=(),
         description=(
             "Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent "
@@ -151,7 +151,7 @@ class SandboxConfig(BaseModel):
     # (not write) under `hardened`/`strict`. This LOOSENS confinement (the child
     # can read more of the host), so list only what the build/test actually
     # needs. Empty by default. No effect under `isolation = "none"`.
-    extra_read_paths: tuple[str, ...] = Field(
+    extra_read_paths: StrTuple = Field(
         default=(),
         description=(
             "Extra absolute paths **the run** may **read + execute**, at their real locations: a "
@@ -180,7 +180,7 @@ class SandboxConfig(BaseModel):
     # is readable). This loosens confinement further than extra_read_paths,
     # so list only what the task actually writes. Empty by default; no effect
     # under `none`.
-    extra_write_paths: tuple[str, ...] = Field(
+    extra_write_paths: StrTuple = Field(
         default=(),
         description=(
             "Extra absolute paths **the run** may **read + write**, at their real locations: a "
@@ -205,7 +205,7 @@ class SandboxConfig(BaseModel):
     # enter the jail, even through an explicit extra_read_paths grant of $HOME --
     # and this list adds to that set. Needs the mount namespace: on `hardened`
     # a hide inside a granted region refuses to run (see docs/security.md).
-    hide_paths: tuple[str, ...] = Field(
+    hide_paths: StrTuple = Field(
         default=(),
         description=(
             "Paths **the run** may never read or write, even under a broader grant. agent6's "
@@ -265,7 +265,7 @@ class MCPSandbox(BaseModel):
     model_config = MODEL_CONFIG
 
     # Readable+executable, and writable, BEYOND the command sandbox. `~` expands.
-    read_paths: tuple[str, ...] = Field(
+    read_paths: StrTuple = Field(
         default=(),
         description=(
             "Read+execute paths for this server BEYOND the sandbox a jailed command gets "
@@ -273,7 +273,7 @@ class MCPSandbox(BaseModel):
             "`HOME` are already there, so a block names only the server's own data."
         ),
     )
-    write_paths: tuple[str, ...] = Field(
+    write_paths: StrTuple = Field(
         default=(),
         description="Paths it may write, likewise additive.",
     )
@@ -371,7 +371,7 @@ class MCPServerEntry(BaseModel):
     # lifetime and confinement); `url` connects to one the OPERATOR runs, in
     # whatever container or sandbox they chose -- which is how anyone actually
     # runs a server that wants a browser or a device.
-    command: tuple[str, ...] = Field(
+    command: Argv = Field(
         default=(),
         description="argv for a stdio server agent6 spawns. Exactly one of this or `url`.",
     )
@@ -400,7 +400,7 @@ class MCPServerEntry(BaseModel):
     # Everything else comes from the curated base agent6 gives any child it
     # spawns outside the jail. Naming each one is the point: a provider key is
     # never among them, because nobody would write it down.
-    pass_env: tuple[str, ...] = Field(
+    pass_env: StrTuple = Field(
         default=(),
         description="Env vars the server needs, BY NAME. Everything else is the curated base.",
     )

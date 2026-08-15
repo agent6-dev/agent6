@@ -289,7 +289,7 @@ def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
         # may complete it, and the merged re-validation still catches a
         # genuinely absent field.
         return None
-    if err["type"] == "bool_parsing":
+    if err["type"] in ("bool_parsing", "bool_type"):
         return f"{key}: expected true or false, got {value!r}"
     return f"{key}: {err['msg']}"
 

@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from agent6.config._base import MODEL_CONFIG
+from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 
 
 class SkillsConfig(BaseModel):
@@ -35,7 +35,7 @@ class SkillsConfig(BaseModel):
     # Additional skill directories scanned BEFORE the installed dir (a local
     # checkout during skill development wins over an installed copy). Each may
     # hold skill subdirectories or be a single skill dir itself.
-    extra_dirs: tuple[str, ...] = Field(
+    extra_dirs: StrTuple = Field(
         default=(),
         description="Additional skill dirs, scanned BEFORE the installed dir.",
     )
@@ -77,7 +77,7 @@ class MachineNotifyConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    on_event: tuple[str, ...] = Field(
+    on_event: Argv = Field(
         default=(),
         description="argv per notify/end (empty = disabled).",
     )
@@ -199,7 +199,7 @@ class NotifyConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    on_complete: tuple[str, ...] = Field(
+    on_complete: Argv = Field(
         default=(),
         description="argv to run (empty = disabled).",
     )

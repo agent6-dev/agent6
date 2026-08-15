@@ -578,6 +578,47 @@ def test_budget_flag_override_rejects_non_finite(tmp_path: Path) -> None:
         cfg.with_budget_overrides(max_usd=float("inf"))
 
 
+def test_string_for_bool_rejected(tmp_path: Path) -> None:
+    # Strict mode: a quoted "true" is a typo, not a bool; lax coercion
+    # laundered it into the safe-looking value.
+    body = _VALID_TOML.replace("protect_git = true", 'protect_git = "true"')
+    with pytest.raises(ConfigError, match=r"protect_git.*valid boolean"):
+        load_config(_write(tmp_path, body))
+
+
+def test_string_for_int_rejected(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace("max_tokens_fallback = 100000", 'max_tokens_fallback = "100000"')
+    with pytest.raises(ConfigError, match=r"max_tokens_fallback.*valid integer"):
+        load_config(_write(tmp_path, body))
+
+
+def test_bool_for_number_rejected(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace("[budget]", "[budget]\nmax_usd = true")
+    with pytest.raises(ConfigError, match=r"max_usd.*valid number"):
+        load_config(_write(tmp_path, body))
+
+
+def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
+    # TOML parses inf as a float; an infinite HTTP timeout raised raw
+    # OverflowError deep in the transport instead of a config error.
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        "http_timeout_s = inf"
+    )
+    with pytest.raises(ConfigError, match="http_timeout_s"):
+        load_config(_write(tmp_path, body))
+
+
+def test_argv_rejects_blank_element(tmp_path: Path) -> None:
+    for literal in (
+        'verify_command = ["uv", " "]',
+        '[notify]\non_complete = ["notify-send", ""]',
+    ):
+        body = _VALID_TOML.replace('verify_command = ["true"]', literal)
+        with pytest.raises(ConfigError, match="argv elements"):
+            load_config(_write(tmp_path, body))
+
+
 def test_with_machine_agent_overrides(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_machine_agent_overrides(

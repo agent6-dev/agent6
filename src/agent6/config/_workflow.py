@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from agent6.config._base import MODEL_CONFIG
+from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 
 # The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
 # vocabulary has one owner.
@@ -33,7 +33,7 @@ class MetricConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    command: tuple[str, ...] = Field(
+    command: Argv = Field(
         min_length=1,
         description="argv to run.",
     )
@@ -54,7 +54,7 @@ class WorkflowConfig(BaseModel):
     # to empty. Optional: `agent6 run`/`plan` infer one per run when it is unset
     # (AGENTS.md -> repo signals -> a cheap LLM call; see agent6.verify_infer),
     # falling back to a gateless run. `agent6 init` can pin one.
-    verify_command: tuple[str, ...] = Field(
+    verify_command: Argv = Field(
         default=(),
         description=(
             'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
@@ -362,7 +362,7 @@ class ReviewConfig(BaseModel):
         default=0.25,
         description="Skip the in-loop panel once remaining budget falls below this fraction.",
     )
-    seats: tuple[str, ...] = Field(
+    seats: StrTuple = Field(
         default=(),
         description=(
             'Panel roster: `"persona"` routes via `[models.reviewer]`; '
