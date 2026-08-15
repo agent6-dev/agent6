@@ -206,3 +206,56 @@ def test_machine_agent_wires_the_summariser_seat(
     assert out.reason == "finish_session"
     assert wf_kwargs["summariser_provider"] is summariser
     assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter
+
+
+def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
+    """A hub-spawned machine (away-mode "wait") parks approvals and questions
+    for the front-end instead of inventing the headless answer -- the claim's
+    TIMING no longer decides: an answer that arrives after the prompt fired
+    (the viewer registering post-spawn) is honoured, exactly like a detached
+    run's."""
+    from agent6.sessions.ipc import set_away_mode
+
+    instance, state, events = _dirs(tmp_path)
+    set_away_mode(instance, "wait")
+    b = _build_machine_bridges(instance, state, events)
+
+    def _answer_late() -> None:
+        time.sleep(0.4)
+        register_frontend(instance, os.getpid())
+        write_answer(state, "approval-1", "yes")
+
+    t = threading.Thread(target=_answer_late)
+    t.start()
+    assert b.approve("run ls?", scope="command") is True
+    t.join()
+
+    def _answer_question_late() -> None:
+        time.sleep(0.4)
+        write_question_answers(state, "question-1", ("blue",))
+
+    t2 = threading.Thread(target=_answer_question_late)
+    t2.start()
+    q = UserQuestion(question="colour?", options=("blue", "red"))
+    assert b.ask((q,)) == ("blue",)
+    t2.join()
+
+
+def test_away_wait_prompt_stops_with_the_run(tmp_path: Path) -> None:
+    """A parked prompt must not outlive the operator's Stop: the steer abort
+    breaks the wait and the approval resolves to the safe deny."""
+    from agent6.sessions.ipc import request_steer, set_away_mode, write_steer_answer
+
+    instance, state, events = _dirs(tmp_path)
+    set_away_mode(instance, "wait")
+    b = _build_machine_bridges(instance, state, events)
+
+    def _stop_late() -> None:
+        time.sleep(0.4)
+        request_steer(instance)
+        write_steer_answer(instance, "abort")
+
+    t = threading.Thread(target=_stop_late)
+    t.start()
+    assert b.approve("run ls?", scope="command") is False
+    t.join()

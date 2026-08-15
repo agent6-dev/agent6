@@ -253,7 +253,10 @@ signals; `machine run` resolves a git commit identity up front (from
 succeed. In any agent state `run_command` is gated by
 `sandbox.run_commands`: under the default `ask` an unattended machine
 auto-denies every call (`machine run` warns up front when a `mode = "run"`
-state would hit this). Grant it per invocation with
+state would hit this); a machine spawned from the web or TUI hub instead
+PARKS each approval and question for the front-end (the spawn carries the
+same `wait` away-mode a detached run gets), so the answer never depends on
+when the viewer attached. Grant it per invocation with
 `agent6 machine run <file> --auto-approve` (the same operator flag `run`
 carries; ask upgrades to yes, a withheld `no` stays no), or set
 `sandbox.run_commands = "yes"` in the repo config. A machine `[config]`

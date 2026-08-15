@@ -149,6 +149,11 @@ def spawn_and_confirm(
                 stdout=subprocess.DEVNULL,
                 stderr=err,
                 start_new_session=True,
+                # Driven from a hub (web/TUI) over the bridge: approvals and
+                # questions WAIT for a front-end instead of being invented by
+                # the headless default -- the same away-mode every detached
+                # run spawn carries.
+                env={**os.environ, "AGENT6_DETACHED_AWAY": "wait"},
             )
         except OSError as exc:
             return f"failed to start agent6 {label}: {exc}"

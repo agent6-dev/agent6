@@ -30,7 +30,7 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -375,6 +375,26 @@ def _await_answer(
                 break
         time.sleep(poll_s)
     return _consume_answer(target)
+
+
+def await_frontend_reply[T](session_dir: Path, read_once: Callable[[], T | None]) -> T | None:
+    """Detach 'wait' mode: block until an answer arrives or a Stop ends the run.
+
+    `read_once` is called even with NO front-end claim registered: a
+    claim-less front-end (the web UI answering over HTTP) writes the same
+    answer files, and the answer's existence, not a claim, is the proof
+    someone answered. `read_once` paces itself (its liveness dead-grace
+    caps a claim-less round); the extra sleep paces the no-claim loop. A
+    front-end's Stop lands as a steer abort, which breaks the wait so the
+    run can end. Returns the reply, or None on stop."""
+    while True:
+        if steer_answer_is_abort(session_dir):
+            return None
+        reply = read_once()
+        if reply is not None:
+            return reply
+        if not frontend_is_live(session_dir):
+            time.sleep(1.0)
 
 
 def write_answer(session_dir: Path, prompt_id: str, answer: str) -> None:

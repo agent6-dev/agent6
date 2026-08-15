@@ -833,3 +833,21 @@ def test_run_start_clears_a_stale_stop_marker(
     out = capsys.readouterr().out
     assert "OK:" in out and "STOPPED" not in out
     assert not (root / "stop").exists()
+
+
+def test_hub_spawn_away_mode_reaches_the_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A hub-spawned machine (AGENT6_DETACHED_AWAY=wait in the spawn env)
+    records "wait" on its instance dir at run start, so every agent state's
+    bridges park prompts for the front-end regardless of when its viewer
+    registers."""
+    from agent6.sessions.ipc import away_mode
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    assert away_mode(root) == "wait"

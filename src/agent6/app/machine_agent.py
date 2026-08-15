@@ -64,6 +64,8 @@ from agent6.git_ops import status as git_status
 from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import Provider, TranscriptSink
 from agent6.sessions.ipc import (
+    await_frontend_reply,
+    away_mode,
     clear_answer,
     clear_pending_answers,
     clear_question_answers,
@@ -174,20 +176,17 @@ class _MachineBridges:
     steer_prompt: Callable[[], str | None]
 
 
-def _build_machine_bridges(
-    instance_dir: Path, state_dir: Path, events: EventSink
-) -> _MachineBridges:
-    """Wire run-level approval/question/steer bridges to a machine agent state.
+def _machine_approver(
+    instance_dir: Path, state_dir: Path, events: EventSink, counters: dict[str, int]
+) -> Approver:
+    """The approval bridge for one machine agent state.
 
-    No live front-end (a `frontends/` claim on the instance dir) makes each bridge a
-    safe headless default: deny an approval, answer a question with "", no steer.
-    """
-    # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
-    # counters restart at 1, so an answer file left by the aborted attempt would
-    # satisfy this execution's first prompt unseen. Drop the stale bridge state
-    # first (front-end claims live on the instance dir, so this touches none).
-    clear_pending_answers(state_dir)
-    counters = {"approval": 0, "question": 0}
+    A live front-end is asked in its own UI. Otherwise the instance's
+    away-mode governs, exactly as for a detached run: a hub-spawned machine
+    carries "wait" (park for the front-end -- the claim's TIMING no longer
+    decides; an approval that fired before the hub's viewer registered used
+    to be denied on the spot), and a pure headless machine keeps the safe
+    deny."""
 
     def approve(prompt: str, /, *, scope: str | None = None) -> bool:
         counters["approval"] += 1
@@ -207,10 +206,39 @@ def _build_machine_bridges(
             if answer is not None:
                 approved = record_answer(state_dir, answer, scope)
                 source = "frontend"
+        if approved is None and away_mode(instance_dir) == "wait":
+            reply = await_frontend_reply(
+                instance_dir,
+                lambda: read_answer(
+                    state_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                ),
+            )
+            if reply is not None:
+                approved = record_answer(state_dir, reply, scope)
+            source = "await-frontend"
         if approved is None:
             approved = False  # headless machine: no operator to ask, deny safely
         events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
         return approved
+
+    return approve
+
+
+def _build_machine_bridges(
+    instance_dir: Path, state_dir: Path, events: EventSink
+) -> _MachineBridges:
+    """Wire run-level approval/question/steer bridges to a machine agent state.
+
+    No live front-end (a `frontends/` claim on the instance dir) makes each bridge a
+    safe headless default: deny an approval, answer a question with "", no steer.
+    """
+    # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
+    # counters restart at 1, so an answer file left by the aborted attempt would
+    # satisfy this execution's first prompt unseen. Drop the stale bridge state
+    # first (front-end claims live on the instance dir, so this touches none).
+    clear_pending_answers(state_dir)
+    counters = {"approval": 0, "question": 0}
+    approve = _machine_approver(instance_dir, state_dir, events, counters)
 
     def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         counters["question"] += 1
@@ -227,6 +255,17 @@ def _build_machine_bridges(
             answers = read_question_answers(state_dir, question_id, live_dir=instance_dir)
             if answers is not None:
                 source = "frontend"
+        if answers is None and away_mode(instance_dir) == "wait":
+            # Hub-spawned: park for the front-end rather than inventing "".
+            reply = await_frontend_reply(
+                instance_dir,
+                lambda: read_question_answers(
+                    state_dir, question_id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                ),
+            )
+            if isinstance(reply, tuple):
+                answers = reply
+            source = "await-frontend"
         if answers is None:
             answers = tuple("" for _ in questions)
         events.emit("question.answer", id=question_id, answers=list(answers), source=source)

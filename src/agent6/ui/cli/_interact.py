@@ -9,13 +9,13 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
 from agent6.sessions.ipc import (
+    await_frontend_reply,
     away_mode,
     clear_answer,
     clear_question_answers,
@@ -26,7 +26,6 @@ from agent6.sessions.ipc import (
     session_allow_set,
     set_away_mode,
     set_session_allow,
-    steer_answer_is_abort,
 )
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._steer import (
@@ -118,26 +117,6 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
         print("  -> waiting; reattach (agent6 attach / the TUI) to approve.", file=sys.stderr)
 
 
-def _wait_for_reply[T](session_dir: Path, read_once: Callable[[], T | None]) -> T | None:
-    """Detach 'wait' mode: block until an answer arrives or a Stop ends the run.
-
-    `read_once` is called even with NO front-end claim registered: a
-    claim-less front-end (the web UI answering over HTTP) writes the same
-    answer files, and the answer's existence, not a claim, is the proof
-    someone answered. `read_once` paces itself (its liveness dead-grace
-    caps a claim-less round); the extra sleep paces the no-claim loop. A
-    front-end's Stop lands as a steer abort, which breaks the wait so the
-    run can end. Returns the reply, or None on stop."""
-    while True:
-        if steer_answer_is_abort(session_dir):
-            return None
-        reply = read_once()
-        if reply is not None:
-            return reply
-        if not frontend_is_live(session_dir):
-            time.sleep(1.0)
-
-
 def build_approver(
     session_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Approver:
@@ -190,7 +169,7 @@ def build_approver(
             # (a web/hub-spawned run whose viewers have all left): block until a
             # front-end attaches and answers, rather than deny. Deny discards the
             # run's work; wait pauses cleanly and is resumable (the default).
-            reply = _wait_for_reply(
+            reply = await_frontend_reply(
                 session_dir,
                 lambda: read_answer(session_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0),
             )
@@ -243,7 +222,7 @@ def build_questioner(
                 source = "frontend"
         if answers is None and away_mode(session_dir) == "wait":
             # Detached 'wait', nothing attached: block until a front-end answers.
-            reply = _wait_for_reply(
+            reply = await_frontend_reply(
                 session_dir,
                 lambda: read_question_answers(
                     session_dir, question_id, timeout_s=20.0, dead_grace_s=8.0

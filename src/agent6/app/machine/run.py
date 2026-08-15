@@ -24,6 +24,7 @@ from agent6.app.confine import (
     warn_cleartext_credential_endpoints,
     warn_sandbox_gaps,
 )
+from agent6.app.frontend import apply_spawned_away_default, approval_scopes
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
@@ -339,6 +340,10 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # per-state log; book it into the journal before the drive re-runs
             # the state (which would start a fresh log over it).
             book_crashed_attempt(journal, root)
+            # A hub-spawned machine (web/TUI: AGENT6_DETACHED_AWAY=wait) parks
+            # its approvals/questions for the front-end instead of the
+            # headless deny -- the same detach semantics a spawned run gets.
+            apply_spawned_away_default(root, approval_scopes(cfg))
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.
             write_worker_pid(root, os.getpid())
