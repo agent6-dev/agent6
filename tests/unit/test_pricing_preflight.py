@@ -71,3 +71,74 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
     )
     assert _setup.check_provider_keys(cfg) is None
     assert not called, "a configured openrouter provider already refreshes with a key"
+
+
+def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A seat pinning `persona@prov/model` used to skip key preflight: the run
+    started, mutated state, and died only when the seat was constructed."""
+
+    def _no_key(*_a: object, **_k: object) -> str:
+        return ""
+
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(_setup, "resolve_api_key", _no_key)
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "main": {"api_format": "anthropic", "auth_style": "none"},
+                "seatp": {"api_format": "anthropic", "api_key_env": "SEAT_KEY"},
+            },
+            "models": {
+                "worker": {"provider": "main", "model": "m"},
+                "reviewer": {"provider": "main", "model": "m"},
+            },
+            "review": {"seats": ["security@seatp/judge-1"]},
+        }
+    )
+    err = _setup.check_provider_keys(cfg)
+    assert err is not None and "seatp" in err
+
+
+def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    cfg = Config.model_validate(
+        {
+            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"provider": "main", "model": "m"}},
+            "review": {"seats": ["security@ghost/judge-1"]},
+        }
+    )
+    err = _setup.check_provider_keys(cfg)
+    assert err is not None and "ghost" in err
+
+
+def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The machine call site passes per-state provider pins as extras; an
+    absent pinned provider refuses before any state runs."""
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    cfg = Config.model_validate(
+        {
+            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"provider": "main", "model": "m"}},
+        }
+    )
+    err = _setup.check_provider_keys(cfg, extra_providers=["pinned-ghost"])
+    assert err is not None and "pinned-ghost" in err
+    assert _setup.check_provider_keys(cfg) is None
+
+
+def test_budget_preflight_prices_a_seat_pinned_model() -> None:
+    """A seat's pinned model joins the reachable set: with unmetered calls
+    refused, an unpriced seat model refuses up front instead of mid-review."""
+    from agent6.app.preflight import budget_preflight
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"provider": "main", "model": "claude-opus-5"}},
+            "review": {"seats": ["security@main/very-unpriced-model"]},
+            "budget": {"max_tokens_fallback": 0},
+        }
+    )
+    err = budget_preflight(cfg)
+    assert err is not None and "very-unpriced-model" in err

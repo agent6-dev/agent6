@@ -281,12 +281,18 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 return outcome
             cfg, isolation = outcome  # fix applied + re-validated clear; continue
         if has_agent_state:
-            missing = check_provider_keys(cfg)
+            # The machine's statically reachable routes include every agent
+            # state's provider/model pins; discovering a dead route only when
+            # that state fires wasted the run up to it.
+            agent_states = [s for s in spec.states.values() if isinstance(s, AgentState)]
+            pinned_providers = [s.provider for s in agent_states if s.provider]
+            pinned_models = [s.model for s in agent_states if s.model != "inherit"]
+            missing = check_provider_keys(cfg, extra_providers=pinned_providers)
             if missing is not None:
                 reporter.err(missing)
                 return 2
             # After check_provider_keys so the price cache has been refreshed.
-            budget_err = budget_preflight(cfg)
+            budget_err = budget_preflight(cfg, extra_models=pinned_models)
             if budget_err is not None:
                 reporter.err(f"REFUSING: {budget_err}")
                 return 2

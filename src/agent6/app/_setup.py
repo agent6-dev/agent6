@@ -7,6 +7,7 @@ values, and MCP server startup."""
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+from agent6.workflows.review import parse_seat_spec
 
 
 def detect_env() -> Environment:
@@ -144,20 +146,34 @@ def apply_git_ops_policy(cfg: Config) -> None:
     set_provider_key_env(p.api_key_env for p in cfg.providers.values() if p.api_key_env)
 
 
-def check_provider_keys(cfg: Config) -> str | None:
+def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:
     """Return an error message if any referenced provider has no resolvable key.
 
     A key may come from the env var named by `api_key_env` or from
-    `secrets.toml` (via `agent6 connect`). Only providers actually
-    referenced by a configured `[models.<role>]` are checked.
-    OpenAI-compat providers with no key configured at all are skipped
-    (unauthenticated local endpoints like Ollama).
+    `secrets.toml` (via `agent6 connect`). Checked over every provider the
+    run can STATICALLY reach: the configured `[models.<role>]` entries, any
+    provider a `[review].seats` spec pins, and *extra_providers* (a machine's
+    per-state pins) -- a route discovered only mid-run used to fail after
+    state existed and spend started. OpenAI-compat providers with no key
+    configured at all are skipped (unauthenticated local endpoints like
+    Ollama).
     """
     try:
         secrets = load_secrets()
     except SecretsError as exc:
         return str(exc)
     needed = {rm.provider for rm in cfg.models.configured().values()}
+    for spec in cfg.review.seats:
+        _persona, seat_provider, _model = parse_seat_spec(spec)
+        if seat_provider:
+            needed.add(seat_provider)
+    needed.update(p for p in extra_providers if p)
+    if absent := sorted(needed - cfg.providers.keys()):
+        return (
+            f"no [providers.{absent[0]}] entry, but a model route references it"
+            " (a role, a review seat, or a machine state pin). Add the provider"
+            " or fix the reference."
+        )
     for name, entry in cfg.providers.items():
         if name not in needed:
             continue

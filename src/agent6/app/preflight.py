@@ -8,7 +8,7 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +35,7 @@ from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.sessions.ipc import effective_run_commands
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+from agent6.workflows.review import parse_seat_spec
 
 
 class SessionRefused(Exception):
@@ -46,16 +47,23 @@ class SessionRefused(Exception):
         self.rc = rc
 
 
-def budget_preflight(cfg: Config) -> str | None:
-    """Budget refusals + notices over the RESOLVED role models, before any spend.
+def budget_preflight(cfg: Config, extra_models: Iterable[str] = ()) -> str | None:
+    """Budget refusals + notices over every statically reachable model,
+    before any spend: the resolved role models, any model a `[review].seats`
+    spec pins, and *extra_models* (a machine's per-state pins).
 
-    `max_tokens_fallback = 0` refuses when a configured role model cannot be
+    `max_tokens_fallback = 0` refuses when a reachable model cannot be
     metered (zero unmetered tokens allowed); `max_usd = 0` refuses when one
     CAN be (a run-nothing-metered rig). Otherwise an unpriced model gets a
     one-line notice naming the fallback bound that covers it. Models chosen
     later (a `/parallel` lane spec) are caught by the tracker's runtime
     backstop instead."""
     models = {rm.model for rm in cfg.models.configured().values()}
+    for spec in cfg.review.seats:
+        _persona, _provider, seat_model = parse_seat_spec(spec)
+        if seat_model:
+            models.add(seat_model)
+    models.update(m for m in extra_models if m)
     unpriced = sorted(m for m in models if lookup_price(m) is None)
     priced = sorted(m for m in models if lookup_price(m) is not None)
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
