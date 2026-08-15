@@ -65,8 +65,11 @@ def _nid(name: str) -> str:
 
 
 def _layering_mermaid() -> str:
+    # tach runs from the current interpreter's environment, never via
+    # `uv run`: a uv spawn re-syncs the project, which would uninstall a
+    # wheel-installed agent6 from the venv under a suite testing that wheel.
     proc = subprocess.run(
-        ["uv", "run", "tach", "show", "--mermaid", "-o", "/dev/stdout"],
+        [sys.executable, "-m", "tach", "show", "--mermaid", "-o", "/dev/stdout"],
         capture_output=True,
         text=True,
         check=True,

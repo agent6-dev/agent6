@@ -90,3 +90,14 @@ def test_a_tier_member_named_like_a_keyword_is_safe(tmp_path: Path) -> None:
     clashes = _ids_in(diagram) & _MERMAID_KEYWORDS
     assert not clashes, f"bare mermaid keyword(s) emitted as node ids: {sorted(clashes)}"
     assert '["call"]' in diagram and '["end"]' in diagram
+
+
+def test_the_generator_never_spawns_uv() -> None:
+    """The layering diagram shells out to tach; spawning it as `uv run tach`
+    re-syncs the project, which uninstalls a wheel-installed agent6 from the
+    venv mid-suite and swaps the checkout back in (the CI wheel arm then fails
+    every later test that reads package files off disk). The generator must
+    invoke tools from the running interpreter's environment, never through
+    `uv`."""
+    src = (_ROOT / "docs" / "gen_diagrams.py").read_text(encoding="utf-8")
+    assert '"uv"' not in src and "'uv'" not in src
