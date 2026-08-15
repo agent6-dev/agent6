@@ -11,6 +11,7 @@ editor sends would arrive only after the thing it meant to stop had finished.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,9 +148,12 @@ class Sessions:
         live = [s for s in self._by_id.values() if s.is_running()]
         for session in live:
             self.cancel(session)
+        # ONE deadline across every join: per-thread timeouts made N sessions
+        # wait N times the documented bound.
+        deadline = time.monotonic() + timeout_s
         for session in live:
             if session.thread is not None:
-                session.thread.join(timeout=timeout_s)
+                session.thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
     def cancel(self, session: Session) -> None:
         """Ask the run to stop at its next boundary.

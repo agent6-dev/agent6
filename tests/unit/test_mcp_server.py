@@ -181,7 +181,10 @@ def test_notifications_produce_no_response(tmp_path: Path) -> None:
     assert resps == []
 
 
-def test_malformed_json_is_skipped(tmp_path: Path) -> None:
+def test_malformed_json_answers_a_parse_error(tmp_path: Path) -> None:
+    """JSON-RPC's answer to an unparseable request is -32700 with a null id
+    (silence left the client hanging on a request it believes it sent); the
+    next well-formed request still works."""
     server = _server(tmp_path)
     server._stdin = io.BytesIO(  # type: ignore[attr-defined]
         b"not json\n"
@@ -191,9 +194,9 @@ def test_malformed_json_is_skipped(tmp_path: Path) -> None:
     server._stdout = io.BytesIO()  # type: ignore[attr-defined]
     server.serve()
     server._stdout.seek(0)  # type: ignore[attr-defined]
-    lines = server._stdout.readlines()  # type: ignore[attr-defined]
-    assert len(lines) == 1  # only the valid request got a response
-    assert json.loads(lines[0])["id"] == 7
+    replies = [json.loads(line) for line in server._stdout.readlines()]  # type: ignore[attr-defined]
+    assert [r.get("id") for r in replies] == [None, 7]
+    assert replies[0]["error"]["code"] == -32700
 
 
 # ---------------------------------------------------------------------------

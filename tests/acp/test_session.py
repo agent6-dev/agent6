@@ -310,3 +310,32 @@ def test_a_cancel_for_an_unknown_session_says_so() -> None:
     replies = _drive(_msg(0, "session/cancel", sessionId="typo") + b"\n", sessions)
     assert replies, "the editor was told nothing at all"
     assert "cancel" in replies[0]["params"]["update"]["content"]["text"]
+
+
+def test_eof_grace_is_one_deadline_across_sessions() -> None:
+    """wait_for_turns joined each live thread with the FULL timeout, so N
+    sessions waited N times the documented bound; one shared deadline caps
+    the whole shutdown."""
+    sessions = _sessions(_ends)
+    release = threading.Event()
+
+    def _hold(_session: Session, _text: str) -> str:
+        release.wait(timeout=10)
+        return "end_turn"
+
+    held = Sessions(run=_hold, state_dir_for=lambda cwd: cwd / ".state")
+    for i in range(3):
+        s = Session(acp_id=f"s{i}", cwd=Path("/repo"))
+        held._by_id[s.acp_id] = s  # pyright: ignore[reportPrivateUsage]
+        held.start_turn(s, "go", finish=lambda _r: None)
+    start = time.monotonic()
+    try:
+        held.wait_for_turns(timeout_s=0.5)
+        elapsed = time.monotonic() - start
+        assert elapsed < 1.2, f"three sessions waited {elapsed:.2f}s; the bound is 0.5s total"
+    finally:
+        release.set()
+        for s in held._by_id.values():  # pyright: ignore[reportPrivateUsage]
+            if s.thread is not None:
+                s.thread.join(timeout=5)
+    del sessions

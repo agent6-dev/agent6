@@ -261,6 +261,9 @@ class MCPServer:
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
+                    # JSON-RPC's answer to an unparseable request: the parse
+                    # error with a null id, never silence.
+                    self._reply(None, error={"code": -32700, "message": "parse error"})
                     continue
                 if not isinstance(msg, dict):
                     continue
