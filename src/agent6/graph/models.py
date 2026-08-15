@@ -43,7 +43,6 @@ NodeActor = Literal[
     "alignment_guard",
     "user",
     "reviewer",
-    "critic",
 ]
 
 

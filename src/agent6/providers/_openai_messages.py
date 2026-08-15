@@ -129,7 +129,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             # user message between the assistant's tool_calls and the tool
             # replies -- most OpenAI-compatible gateways tolerate that, but
             # it is technically malformed -- and (b) make injected
-            # "[loop-guard]" / "[harness]" / "[critic]" notices arrive
+            # "[loop-guard]" / "[harness]" / "[review]" notices arrive
             # before the tool result they were commenting on, so weak
             # models lost the causal link entirely. Tool results first,
             # then any operator/harness text as a follow-up user turn.

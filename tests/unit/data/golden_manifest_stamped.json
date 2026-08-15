@@ -16,7 +16,7 @@
     "reviewer": null
   },
   "workflow": {
-    "critic": "on",
+    "review_trigger": "on",
     "revise_prompt": "off",
     "preset": "",
     "verify_command": [],

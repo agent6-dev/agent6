@@ -50,7 +50,7 @@ almost always a sign of the wrong design.
   (docs/config.md).
   Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
-  `reviewer` drives `review` + the in-loop critic.
+  `reviewer` drives `review` + the in-loop review panel.
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the application
   pipelines composed over the engine but never a front-end -- the
   run/resume/fork/machine-agent lifecycles, the run-branch merge + finalize,
@@ -92,10 +92,10 @@ stateDiagram-v2
 Notes:
 
 - **One LLM, one history, one loop.** By default there is no
-  planner→worker handoff, no critic step, no separate reviewer agent:
+  planner→worker handoff, no review step, no separate reviewer agent:
   multi-step work is the model calling the next tool in the same
-  conversation. The in-loop critic and the adversarial review panel
-  are opt-in (`[review]` config) and layer onto this same history.
+  conversation. The in-loop review panel is opt-in (`[review]` config)
+  and layers onto this same history.
 - **Snapshot before every LLM call.** `loop_state.json` is rewritten
   in the session directory (`<state-dir>/<repo-id>/sessions/<bucket>/<session-id>/`,
   out of the workspace) before each provider request, with a per-turn
@@ -374,7 +374,7 @@ flowchart TD
 ## Curator
 
 The task graph is owned by an in-process `GraphCurator` (`graph/curator.py`).
-The agent constructs one per run; the worker / planner / critic /
+The agent constructs one per run; the worker / planner /
 alignment-guard roles are in-process in the one loop and mutate through it. The
 same process writes the rest of the run state (resume snapshot, event log,
 transcripts).
@@ -514,9 +514,9 @@ any external viewer (the fold to render-ready state lives in
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `standing` (is an "allow all" on offer) / `id`, `approved`, `source` (`frontend`/`stdin`/`session`/`away-deny`/`await-frontend`/`headless`) |
 | `question.prompt`/`.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
-| `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
+| `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 sessions show`) |
-| `loop.review.*`             | adversarial review panel: `loop.review.start` (trigger, seats), `loop.review.seat` (seat, model, verdict, findings), `loop.review.panel` (blocked, raw_blocked, decision, n_block, disarmed), `loop.review.skipped` |
+| `loop.review.*`             | review panel: `loop.review.start` (trigger, seats), `loop.review.seat` (seat, model, verdict, findings), `loop.review.panel` (blocked, raw_blocked, decision, n_block, disarmed), `loop.review.skipped`, and the finish gate's `loop.review.rejected_finish` / `.rejected_silent_finish` / `.rejection_cap_reached` |
 | `session.end`                   | `reason`, `iterations`, `all_passed`; one shape from every exit path (loop, machine-create, interrupt fallback) |
 
 A `run_command` approval is published as `approval.prompt`; the dashboard

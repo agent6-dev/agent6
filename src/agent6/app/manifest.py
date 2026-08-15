@@ -112,7 +112,7 @@ def write_session_manifest(
             reviewer=_model_brief(cfg.models.resolve("reviewer")),
         ),
         workflow=WorkflowStamp(
-            critic=cfg.review.trigger,
+            review_trigger=cfg.review.trigger,
             revise_prompt=cfg.prompt.revise_prompt,
             # The preset the run actually used (--preset flag or top-level
             # `preset`), with how it was chosen: only a flag-selected one is

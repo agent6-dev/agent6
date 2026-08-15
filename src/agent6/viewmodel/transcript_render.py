@@ -51,8 +51,8 @@ class Turn:
 
 # The seats whose round-trips ARE the conversation: the loop's driving provider,
 # whose role differs by mode ("planner" in plan mode). Everything else shares the
-# run's sink but is a side-call -- the gist distiller, the tier-2 summariser, the
-# critic, a review seat -- and a side-call's one-message request reads as a
+# run's sink but is a side-call -- the gist distiller, the tier-2 summariser, a
+# review seat -- and a side-call's one-message request reads as a
 # compaction restart to the fold below, which then printed a phantom "context
 # summarised" marker, rendered its scratch prompt as a turn, and re-emitted the
 # history behind it. A transcript written before seats were stamped has none and

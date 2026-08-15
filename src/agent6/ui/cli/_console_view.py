@@ -327,7 +327,7 @@ class ConsoleView:
                 self._status_active = True
 
     def notice(self, msg: str) -> None:
-        """Print a workflow notice (auto-commit, critic, tool_error) on the SAME
+        """Print a workflow notice (auto-commit, review, tool_error) on the SAME
         stream as the stream/spinner, clearing the spinner first under the lock so
         the notice can't collide with a spinner write on a shared terminal."""
         with self._lock:

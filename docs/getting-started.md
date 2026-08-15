@@ -18,7 +18,7 @@ agent6 routes three model roles independently:
 | Role       | Set with            | Used by                                   |
 | ---------- | ------------------- | ----------------------------------------- |
 | `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`          |
-| `reviewer` | `[models.reviewer]` | `agent6 review` and the in-loop critic    |
+| `reviewer` | `[models.reviewer]` | `agent6 review` and the in-loop review panel |
 | `planner`  | `[models.planner]`  | `agent6 plan` (falls back to `worker`)    |
 
 ```sh

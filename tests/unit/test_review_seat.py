@@ -476,7 +476,7 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     """Only InstrumentedProvider emits budget.update, so bare seat providers
     spent real money no surface ever showed: the tracker enforced, but the log
     never heard, and the run's cost was under-reported permanently. With the
-    run's sink each seat is wrapped like the critic; `agent6 review` has no
+    run's sink each seat is wrapped; `agent6 review` has no
     session log, passes no sink, and stays bare."""
     from agent6.app import providers as prov_mod
     from agent6.app.providers import InstrumentedProvider

@@ -234,7 +234,7 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
 
 
 def test_notice_clears_the_spinner_before_printing() -> None:
-    """A workflow notice (auto-commit, critic) routes through the ConsoleView so
+    """A workflow notice (auto-commit, review) routes through the ConsoleView so
     it clears the spinner line first and writes to the same stream -- no garble
     with the stderr heartbeat on a shared terminal."""
     import time

@@ -11,7 +11,7 @@ from agent6.viewmodel import worker_models
 def test_first_seen_unique_workers_only() -> None:
     events = [
         {"type": "role.call", "role": "worker", "model": "m1"},
-        {"type": "role.call", "role": "critic", "model": "mc"},
+        {"type": "role.call", "role": "reviewer", "model": "mc"},
         {"type": "role.call", "role": "worker", "model": "m2"},
         {"type": "role.call", "role": "worker", "model": "m1"},
         {"type": "role.call", "role": "worker"},  # an older log: no model field

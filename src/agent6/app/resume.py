@@ -176,7 +176,7 @@ def snapshot_head_mismatch(
 
     Divergence, not mere movement: the run's own per-step commits advance the
     chain forward from the snapshot between snapshot writes (a turn commits,
-    then a critic/metric call runs before the next snapshot), so a kill in that
+    then a review/metric call runs before the next snapshot), so a kill in that
     window leaves the tip ahead of the recorded head_sha on the SAME line. That
     must resume cleanly. Only refuse when the tip is not a descendant of the
     snapshot head -- someone rewrote or replaced the chain ref -- i.e. the

@@ -291,7 +291,7 @@ def _pending_key(event: dict[str, Any], name: str) -> int | str:
 
 
 # The roles whose output IS the session talking. Derived from the code table so
-# it cannot drift: everything else (verify_inferer, summariser, critic,
+# it cannot drift: everything else (verify_inferer, summariser,
 # reviewer) is a side call whose raw answer is not addressed to the operator.
 DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values())
 
@@ -439,7 +439,7 @@ class TranscriptFold:
 
     def _is_side_call(self, event: dict[str, Any]) -> bool:
         """Whether this result belongs to a role other than one that DRIVES a
-        session -- an inferer, summariser, critic or reviewer.
+        session -- an inferer, summariser or reviewer.
 
         Allowlisted from the SessionKind table rather than listing the side
         roles, so a new driving mode is covered and a new side call is silent by

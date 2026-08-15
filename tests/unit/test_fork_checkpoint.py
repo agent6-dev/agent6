@@ -255,7 +255,7 @@ def _seed_source_run(
                 "base_branch": "main",
                 "run_branch": f"agent6/{session_id}",
                 "workflow": {
-                    "critic": "off",
+                    "review_trigger": "off",
                     "revise_prompt": "off",
                     "preset": workflow_profile,
                     # Default: a seeded preset is one the fork replays (flag-selected);

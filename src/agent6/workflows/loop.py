@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The agent loop: one system prompt, one model driving tool calls, and a
 deterministic harness around it (jail, budget, verify timeout, DAG curator
-for persistence and resume). One driver, no subagent cascade: the critic
-and review panel gate checkpoints, they never steer. Green verifies
+for persistence and resume). One driver, no subagent cascade: the
+review panel gates checkpoints, it never steers. Green verifies
 auto-commit, so the chain records each tree a verify certified.
 """
 
@@ -288,7 +288,7 @@ class _LoopState:
     """Mutable per-run bookkeeping threaded through the agent loop.
 
     The loop accumulates cross-iteration state: how often each intervention
-    (critic rejection, went-quiet / plateau / early-finish nudge, plan/run
+    (review rejection, went-quiet / plateau / early-finish nudge, plan/run
     budget nudge) has fired against its cap, the degenerate-repeat-call guard,
     and verify-settled completion tracking. Holding it in one object lets the
     loop's phases be methods that take `state` rather than a long parameter
@@ -304,9 +304,9 @@ class _LoopState:
     # or a huge kept tail) must not summarise every other iteration. Leg-local
     # (not snapshotted): a resumed leg rebuilds a small context anyway.
     tier2_floor_chars: int = 0
-    # Consecutive before_finish critic rejections, so a stubborn worker can't
-    # burn the budget bouncing off the critic.
-    consecutive_critic_rejections: int = 0
+    # Consecutive before_finish review rejections, so a stubborn worker can't
+    # burn the budget bouncing off the panel.
+    consecutive_review_rejections: int = 0
     # Per-run TOTAL review-panel blocks (persisted across resume). Decays on a
     # pass; once it hits review_max_total_rejections the gate auto-disarms to
     # advisory for the rest of the run (oscillation can't burn the budget).
@@ -460,7 +460,7 @@ class _TurnState:
     finish_stale_gate: str = ""
     finish_kind: Literal["finish_session", "finish_planning"] = "finish_session"
     # The user-turn items accumulated for this turn: tool results in dispatch
-    # order, with advisory notices (critic, metric, nudges) appended after
+    # order, with advisory notices (review, metric, nudges) appended after
     # (or, for the broken-verify flag, between them).
     tool_results: list[ToolResultItem | Notice] = field(default_factory=list)
     verify_just_passed: bool = False
@@ -479,7 +479,7 @@ class _TurnState:
     metric_after_verify_pass: bool = False
     metric_feedback: str | None = None
     metric_plateau_finish: str | None = None
-    critic_text: str | None = None
+    review_text: str | None = None
     plateau_should_stop: bool = False
     verify_settled_stop: bool = False
     no_progress_stop: bool = False
@@ -561,7 +561,7 @@ class Workflow:
     # (measured: bench/perf/README.md).
     metric_task_max_tokens: int = 65536
     # Sampling temperature pinned for every provider call (worker and
-    # critic); unset, each provider routes to its own default, and OpenRouter's
+    # review seats); unset, each provider routes to its own default, and OpenRouter's
     # per-model defaults are high enough to produce degenerate output. Pinning
     # 0.0 makes the tool-use loop reproducible. CLI wires these from
     # `cfg.models.<role>.temperature`.
@@ -667,16 +667,16 @@ class Workflow:
     # per drop event) before the bare marker. Off = pre-gist behavior.
     compact_elision_gists: bool = True
     # Cap on consecutive `before_finish` rejections.
-    # When the worker repeatedly calls finish_session and the critic keeps
-    # saying NEEDS_WORK, the loop would otherwise burn budget bouncing.
+    # When the worker repeatedly calls finish_session and the panel keeps
+    # rejecting, the loop would otherwise burn budget bouncing.
     # After this many back-to-back rejections, the next finish_session is
-    # accepted (with a `[critic]` warning still injected so the
+    # accepted (with a `[review]` warning still injected so the
     # transcript records the disagreement). 0 disables the cap.
-    max_consecutive_critic_rejections: int = 2
-    # Adversarial review panel. When `review_seats` is non-empty the in-loop
-    # critic triggers run the grounded PANEL (run_panel over the run diff +
-    # verify result) instead of the single critic. `review_decision` gates only
-    # for veto/quorum; "advisory" just injects findings as a [review] message.
+    max_consecutive_review_rejections: int = 2
+    # The in-loop review panel: every trigger runs the grounded panel
+    # (run_panel over the run diff + verify result). `review_decision` gates
+    # only for veto/quorum; "advisory" just injects findings as a [review]
+    # message.
     # The panel reviews `git diff base_sha` (the run's cumulative change). The
     # per-run rejection counter auto-disarms the gate after
     # `review_max_total_rejections` blocks so it can never stall the run.
@@ -968,7 +968,7 @@ class Workflow:
         `_TurnState` per tool-use iteration, driven through the turn phases
         in order. Any phase returning a SessionResult ends the run.
 
-        `original_task` is the exact task string (in-loop critic calls ground
+        `original_task` is the exact task string (in-loop review calls ground
         on it): run() threads it straight through, resume() reads it verbatim
         from the snapshot -- never re-derived from the message history.
 
@@ -1069,7 +1069,7 @@ class Workflow:
             result = self._turn_auto_commit_and_metric(state, turn)
             if result is not None:
                 return result
-            self._turn_critic_triggers(state, turn, conversation)
+            self._turn_review_triggers(state, turn, conversation)
             self._turn_finish_gates(state, turn, conversation)
             self._turn_notices(state, turn)
             self._turn_metric_plateau(state, turn)
@@ -1514,7 +1514,7 @@ class Workflow:
             # Salvage a title-only plan_markdown: weak models put the real plan
             # in `summary`, leaving plan.md a stub that --from-plan must
             # re-derive. Fold the summary under the title so the plan
-            # carries content. The critic pass gated content quality; this only
+            # carries content. The review gate judged content quality; this only
             # rescues field misuse.
             if _plan_is_title_only(plan_md) and len(summary) > len(plan_md):
                 title = next((ln for ln in plan_md.splitlines() if ln.strip()), "# Plan")
@@ -1720,10 +1720,10 @@ class Workflow:
             commit_subject=commit_subject[:200],
         )
 
-    def _turn_critic_triggers(
+    def _turn_review_triggers(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
-        """Observe-only critic triggers (before_finish, which can revoke a
+        """Observe-only review triggers (before_finish, which can revoke a
         finish, lives in the finish gates):
 
           on_verify_fail - the verify just failed; surface a critique
@@ -1740,7 +1740,7 @@ class Workflow:
                 state, trigger="verify_failed", iteration=turn.iteration
             )
             if critique is not None:
-                turn.critic_text = critique.text
+                turn.review_text = critique.text
         elif (
             self.review_trigger == "periodic"
             and self._has_reviewer()
@@ -1748,7 +1748,7 @@ class Workflow:
         ):
             critique = self._run_review_panel(state, trigger="periodic", iteration=turn.iteration)
             if critique is not None:
-                turn.critic_text = critique.text
+                turn.review_text = critique.text
 
     # ---- finish gates ----------------------------------------------------------
 
@@ -1756,25 +1756,25 @@ class Workflow:
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
         """Gates that can revoke this turn's finish_session, in precedence order:
-        critic (before_finish), metric early-finish, open subtasks, verify
+        review (before_finish), metric early-finish, open subtasks, verify
         green, memory backstop. Each clears `turn.finish_signal` and appends
         its nudge; later gates then see the finish as already revoked and stay
         quiet."""
-        self._gate_before_finish_critic(state, turn, conversation)
+        self._gate_before_finish_review(state, turn, conversation)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_green(state, turn)
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
 
-    def _gate_before_finish_critic(
+    def _gate_before_finish_review(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
-        """Gate the agent's finish_session on critic approval. If the critic says
-        NEEDS_WORK, suppress the finish (the tool_result still goes back so the
-        call isn't half-applied) and inject the critique - the loop carries on
-        with the critique visible. After `max_consecutive_critic_rejections`
-        back-to-back rejections the finish goes through (critique still
+        """Gate the agent's finish_session on panel approval. An unsatisfied
+        verdict suppresses the finish (the tool_result still goes back so the
+        call isn't half-applied) and injects the findings - the loop carries on
+        with them visible. After `max_consecutive_review_rejections`
+        back-to-back rejections the finish goes through (findings still
         injected) so the worker can't bounce indefinitely."""
         if not (
             turn.finish_signal is not None
@@ -1784,36 +1784,36 @@ class Workflow:
         ):
             return
         critique = self._run_review_panel(state, trigger="before_finish", iteration=turn.iteration)
-        cap = self.max_consecutive_critic_rejections
-        cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
+        cap = self.max_consecutive_review_rejections
+        cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
         if critique is not None and not critique.satisfied and not cap_reached:
-            self._log(f"  critic rejected finish_session at iter {turn.iteration}")
-            self._emit("loop.critic.rejected_finish", iteration=turn.iteration)
+            self._log(f"  review rejected finish_session at iter {turn.iteration}")
+            self._emit("loop.review.rejected_finish", iteration=turn.iteration)
             turn.finish_signal = None
             turn.finish_payload = None
-            state.consecutive_critic_rejections += 1
-            turn.critic_text = (
-                "The critic rejected your finish_session call. Address the"
+            state.consecutive_review_rejections += 1
+            turn.review_text = (
+                "The review panel rejected your finish_session call. Address the"
                 " issues below before calling finish_session again.\n\n" + critique.text
             )
         elif critique is not None and not critique.satisfied and cap_reached:
             self._log(
-                f"  critic rejected finish_session at iter {turn.iteration} but"
+                f"  review rejected finish_session at iter {turn.iteration} but"
                 f" rejection cap ({cap}) reached - letting finish through"
             )
             self._emit(
-                "loop.critic.rejection_cap_reached",
+                "loop.review.rejection_cap_reached",
                 iteration=turn.iteration,
-                rejections=state.consecutive_critic_rejections,
+                rejections=state.consecutive_review_rejections,
             )
-            turn.critic_text = (
-                "The critic flagged issues but the rejection cap was"
-                " reached; finish_session will be accepted. Critique:\n\n" + critique.text
+            turn.review_text = (
+                "The review panel flagged issues but the rejection cap was"
+                " reached; finish_session will be accepted. Findings:\n\n" + critique.text
             )
-            state.consecutive_critic_rejections = 0
+            state.consecutive_review_rejections = 0
         elif critique is not None:
-            self._log("  critic approved finish_session")
-            state.consecutive_critic_rejections = 0
+            self._log("  review approved finish_session")
+            state.consecutive_review_rejections = 0
 
     def _gate_metric_early_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Metric-run early-finish guard. On optimisation runs the worker often
@@ -1957,8 +1957,8 @@ class Workflow:
     # ---- turn notices and spiral guards ----------------------------------------
 
     def _turn_notices(self, state: _LoopState, turn: _TurnState) -> None:
-        """Append the turn's advisory texts to the tool_results block: critic
-        critique, metric feedback, the memory flip advisory, then the
+        """Append the turn's advisory texts to the tool_results block: review
+        findings, metric feedback, the memory flip advisory, then the
         degenerate-loop notice.
 
         The memory flip advisory fires once per run, at the first verify that
@@ -1971,8 +1971,8 @@ class Workflow:
         (when a new streak crosses the threshold) so spamming the same call
         only triggers once per latch episode. The repeat counter resets on any
         new signature, so a normal re-read after an edit does not trigger."""
-        if turn.critic_text:
-            turn.tool_results.append(Notice(f"[review]\n{turn.critic_text}"))
+        if turn.review_text:
+            turn.tool_results.append(Notice(f"[review]\n{turn.review_text}"))
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
         if (
@@ -2763,14 +2763,14 @@ class Workflow:
                 nudges_used=state.silent_no_work_nudges_used,
             )
             return None
-        # Same before_finish critic gate as an explicit finish_session tool_use.
+        # Same before_finish review gate as an explicit finish_session tool_use.
         # Without this, an agent that stops emitting tool calls bypasses
-        # critic review entirely. The rejection cap is shared with the
+        # review entirely. The rejection cap is shared with the
         # tool_use path so a stubborn worker can't bounce the loop forever.
         if (
             self.review_trigger == "before_finish"
             and self._has_reviewer()
-            and self._silent_finish_critic_rejects(state, conversation, iteration=iteration)
+            and self._silent_finish_review_rejects(state, conversation, iteration=iteration)
         ):
             return None
         # metric-run early-finish guard, mirroring the finish_session path: a
@@ -2874,48 +2874,44 @@ class Workflow:
             tool_calls=state.tool_calls,
         )
 
-    def _silent_finish_critic_rejects(
+    def _silent_finish_review_rejects(
         self, state: _LoopState, conversation: Conversation, *, iteration: int
     ) -> bool:
-        """Run the before_finish critic against a silent finish. True = the
-        finish was rejected (critique appended to the conversation; the loop
+        """Run the before_finish panel against a silent finish. True = the
+        finish was rejected (findings appended to the conversation; the loop
         continues). A cap-reached rejection or an approval resets the
         rejection counter and lets the finish proceed."""
         critique = self._run_review_panel(state, trigger="before_finish", iteration=iteration)
-        cap = self.max_consecutive_critic_rejections
-        cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
+        cap = self.max_consecutive_review_rejections
+        cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
         if critique is not None and not critique.satisfied and not cap_reached:
-            self._log(f"  critic rejected silent_finish at iter {iteration}")
+            self._log(f"  review rejected silent_finish at iter {iteration}")
             self._emit(
-                "loop.critic.rejected_silent_finish",
+                "loop.review.rejected_silent_finish",
                 iteration=iteration,
             )
-            state.consecutive_critic_rejections += 1
+            state.consecutive_review_rejections += 1
             conversation.notice(
-                "[review]\nThe review panel"
-                " rejected your"
-                " silent finish (no"
-                " tool_use, just"
-                " text). Address the"
-                " issues below and"
-                " continue the task.\n\n" + critique.text
+                "[review]\nThe review panel rejected your silent finish (no"
+                " tool_use, just text). Address the issues below and continue"
+                " the task.\n\n" + critique.text
             )
             return True
         if critique is not None and not critique.satisfied and cap_reached:
             self._log(
-                f"  critic rejected silent_finish at"
+                f"  review rejected silent_finish at"
                 f" iter {iteration} but rejection cap"
                 f" ({cap}) reached - accepting finish"
             )
             self._emit(
-                "loop.critic.rejection_cap_reached",
+                "loop.review.rejection_cap_reached",
                 iteration=iteration,
-                rejections=state.consecutive_critic_rejections,
+                rejections=state.consecutive_review_rejections,
             )
-            state.consecutive_critic_rejections = 0
+            state.consecutive_review_rejections = 0
         elif critique is not None:
-            self._log("  critic approved silent_finish")
-            state.consecutive_critic_rejections = 0
+            self._log("  review approved silent_finish")
+            state.consecutive_review_rejections = 0
         return False
 
     def _handle_went_quiet(
@@ -4043,11 +4039,11 @@ class Workflow:
         assert last_exc is not None
         raise last_exc
 
-    # ---- review and critic -----------------------------------------------------
+    # ---- review panel ----------------------------------------------------------
 
     def _has_reviewer(self) -> bool:
-        """A second opinion is available: the review panel (seats) or the legacy
-        single critic. Gates the in-loop critic triggers."""
+        """A second opinion is available: the review panel has seats. Gates
+        every in-loop review trigger."""
         return bool(self.review_seats)
 
     def _run_diff(self) -> str:

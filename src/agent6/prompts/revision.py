@@ -2,33 +2,15 @@
 # Copyright 2026 Eric Lesiuta
 """Auxiliary agent-loop prompts.
 
-The in-loop critic, the prompt-revision pass, the context summariser, the
-per-file gist distiller, and the post-compaction restart notice. Pure text;
-the loop owns running each call.
+The prompt-revision pass, the context summariser, the per-file gist
+distiller, and the post-compaction restart notice. Pure text; the loop owns
+running each call.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Literal
-
-CRITIC_SYSTEM_PROMPT = (
-    "You are a strict reviewing critic embedded inside an autonomous coding"
-    " agent's loop. The worker agent is editing a real repository to satisfy"
-    " a user task. You see (a) the task, (b) a short tail of the worker's"
-    " recent assistant messages and tool calls, and (c) the trigger that"
-    " summoned you.\n\n"
-    "Your job is to point out concrete problems the worker is likely to miss:"
-    " mis-stated requirements, off-by-one logic, missing edge cases, broken"
-    " invariants, security regressions, test coverage gaps, anything that"
-    " suggests the work is not actually done.\n\n"
-    "Be terse. Bullet points. If everything looks fine, say so. End your"
-    " response with exactly one of these verdict lines on its own line:\n"
-    "    VERDICT: SATISFIED\n"
-    "    VERDICT: NEEDS_WORK\n"
-    "Anything else in the last line is treated as NEEDS_WORK."
-)
-
 
 PROMPT_REVISION_SYSTEM_PROMPT = """\
 You revise raw coding-agent tasks before the main worker loop starts.

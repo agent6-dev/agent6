@@ -182,7 +182,7 @@ def test_disarm_after_max_total_rejections_lets_finish_through() -> None:
         review_seats=[_seat(seat_provider)],
         review_decision="veto",
         review_trigger="before_finish",
-        max_consecutive_critic_rejections=0,  # isolate the per-run total disarm
+        max_consecutive_review_rejections=0,  # isolate the per-run total disarm
         review_max_total_rejections=2,
         base_sha="b",
     )

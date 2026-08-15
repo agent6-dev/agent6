@@ -166,7 +166,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
 
 
 def test_before_finish_rejection_cap_lets_finish_through() -> None:
-    """After max_consecutive_critic_rejections back-to-back rejections the
+    """After max_consecutive_review_rejections back-to-back rejections the
     finish goes through (findings still injected) so the worker cannot
     bounce forever."""
     worker = MagicMock()
@@ -178,7 +178,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review_trigger="before_finish",
-        max_consecutive_critic_rejections=2,
+        max_consecutive_review_rejections=2,
     )
     with patch.object(Workflow, "_run_review_panel", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]

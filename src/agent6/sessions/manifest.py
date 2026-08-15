@@ -72,7 +72,7 @@ class WorkflowStamp(BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    critic: str = ""
+    review_trigger: str = ""
     revise_prompt: str = ""
     preset: str = ""
     # The verify gate this run is pinned to, and where it came from:

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Construct role/critic/reviser/summariser providers for CLI commands."""
+"""Construct role/reviser/summariser/review-seat providers for CLI commands."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def build_role_provider(
 ) -> Provider:
     """Construct the configured provider for `role`. *seat* is the transcript
     seat stamp when the caller is a distinct actor sharing the role's route
-    (critic, summariser, ...); default = the role itself.
+    (a review seat, the summariser, ...); default = the role itself.
 
     Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
     by `api_key_env` first, then `secrets.toml`). `model_override` (if

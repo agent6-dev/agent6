@@ -130,7 +130,7 @@ def warn_install_inside_workspace(cwd: Path, *, reporter: Reporter) -> None:
 @dataclass(frozen=True, slots=True)
 class SessionProviders:
     """The per-run provider battery: the driving role's instrumented provider
-    plus the critic/summariser/review seats, all metering into one tracker."""
+    plus the summariser and review seats, all metering into one tracker."""
 
     budget: BudgetTracker
     rm_role: RoleModel

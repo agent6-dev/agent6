@@ -157,7 +157,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
             driver=ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=ModelBrief(provider="anthropic", model="claude-y"),
         ),
-        workflow=WorkflowStamp(critic="off", revise_prompt="on", preset="strict"),
+        workflow=WorkflowStamp(review_trigger="off", revise_prompt="on", preset="strict"),
     )
     path = tmp_path / "manifest.json"
     write_manifest(path, m)
@@ -190,7 +190,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         base_branch="master",
         run_branch="agent6/r-lane02",
         models=ModelsBrief(driver=ModelBrief(provider="openai", model="gpt-z")),
-        workflow=WorkflowStamp(critic="on", revise_prompt="off", preset=""),
+        workflow=WorkflowStamp(review_trigger="on", revise_prompt="off", preset=""),
         parent_session_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,

@@ -3,7 +3,7 @@
 """The loop-owned conversation: typed turns over the provider wire.
 
 `Conversation` owns the loop's history as typed turns -- one shape for
-every consumer (compaction, cache roll, critic tail) -- and produces the
+every consumer (compaction, cache roll, transcript tail) -- and produces the
 Anthropic-wire `list[dict]` only at the boundary:
 
 - `to_wire()` builds the exact dict list providers and resume snapshots

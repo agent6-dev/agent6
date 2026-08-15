@@ -45,7 +45,7 @@ _PIPELINE_TIER = (
     "_turn_provider_call",
     "_turn_dispatch_tools",
     "_turn_auto_commit_and_metric",
-    "_turn_critic_triggers",
+    "_turn_review_triggers",
     "_turn_finish_gates",
     "_turn_notices",
     "_turn_stop_checks",

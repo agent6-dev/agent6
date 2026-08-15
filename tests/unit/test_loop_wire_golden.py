@@ -119,8 +119,8 @@ class _WorkerScript:
 
 class _SummariserScript:
     """Scripted summariser seat: first call is the gist distiller, second is
-    the tier-2 restart summary. Captures both requests (they embed the critic
-    tail renderer's output, pinning that renderer too)."""
+    the tier-2 restart summary. Captures both requests (they embed the
+    transcript-tail renderer's output, pinning that renderer too)."""
 
     def __init__(self) -> None:
         self.captured: list[dict[str, str]] = []

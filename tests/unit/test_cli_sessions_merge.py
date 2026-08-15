@@ -645,7 +645,7 @@ def test_merge_squash_trailer_names_every_code_writer(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "role.call", "role": "worker", "model": "m-one"},
-                {"type": "role.call", "role": "critic", "model": "m-critic"},
+                {"type": "role.call", "role": "reviewer", "model": "m-rev"},
                 {"type": "role.call", "role": "worker", "model": "m-two"},
                 {"type": "role.call", "role": "worker", "model": "m-one"},
             )
@@ -655,7 +655,7 @@ def test_merge_squash_trailer_names_every_code_writer(
     assert main(["sessions", "merge", "run-TRL222", "--strategy", "squash"]) == 0
     head = _head_message(tmp_path)
     assert "Assisted-by: agent6:m-one, m-two" in head
-    assert "m-critic" not in head
+    assert "m-rev" not in head
 
 
 def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(

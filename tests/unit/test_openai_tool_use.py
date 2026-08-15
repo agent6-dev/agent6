@@ -110,7 +110,7 @@ def test_translate_user_text_plus_tool_result_emits_both() -> None:
 
     Emitted text first then tool_result, which both
     violated the OpenAI ordering rule AND caused harness-injected
-    notices ([loop-guard], [harness], [critic]) to arrive BEFORE the
+    notices ([loop-guard], [harness], [review]) to arrive BEFORE the
     tool result they were commenting on. Weak models lost the causal
     link and ignored the notice entirely - observed live with Kimi K2.6
     looping on `read_file` 10x in a row despite three loop-guard
@@ -133,7 +133,7 @@ def test_translate_user_text_plus_tool_result_emits_both() -> None:
 
 def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
     """regression: when the harness injects a [loop-guard] /
-    [harness] / [critic] notice into a user turn that also carries
+    [harness] / [review] notice into a user turn that also carries
     tool_results, the notice must land in a SEPARATE user message
     AFTER all the role=tool messages so weak models see it as a fresh
     instruction rather than something the tool said. Tests with

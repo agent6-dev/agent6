@@ -292,6 +292,6 @@ _OUTPUT_CAP_STOP_REASONS = frozenset({"length", "max_tokens"})
 
 def output_cap_truncated(resp: ProviderResponse) -> bool:
     """Whether *resp* was cut off by the output token cap. THE single owner: the
-    review seat, the in-loop critic, and the loop's starvation trip-wire all ask
-    it, so "the cap ate the answer" cannot be spelled three different ways."""
+    review seats and the loop's starvation trip-wire all ask it, so "the cap
+    ate the answer" cannot be spelled three different ways."""
     return resp.stop_reason.strip().lower() in _OUTPUT_CAP_STOP_REASONS
