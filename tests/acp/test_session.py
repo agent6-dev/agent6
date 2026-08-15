@@ -47,6 +47,37 @@ def test_a_new_session_needs_an_absolute_cwd() -> None:
     assert "absolute" in reply["error"]["message"]
 
 
+def test_a_new_session_refuses_editor_supplied_mcp_servers(tmp_path: Path) -> None:
+    """agent6's MCP servers are operator config; a nonempty editor list was
+    read for nothing and silently succeeded, so the editor showed servers
+    connected that never existed. The refusal names where they belong."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    sessions = _sessions(_ends)
+    (reply,) = _drive(
+        _msg(1, "session/new", cwd=str(tmp_path), mcpServers=[{"name": "x", "command": "srv"}])
+        + b"\n",
+        sessions,
+    )
+    assert "[mcp.servers]" in reply["error"]["message"]
+    (reply,) = _drive(_msg(2, "session/new", cwd=str(tmp_path), mcpServers=[]) + b"\n", sessions)
+    assert "sessionId" in reply["result"]
+
+
+def test_a_resource_link_rides_as_its_uri() -> None:
+    """`resource_link` is ACP's baseline attach-a-file shape; it was dropped,
+    so a link-only prompt refused as empty. The uri rides verbatim as text --
+    the workspace boundary still decides what the path reaches."""
+    blocks = [
+        {"type": "text", "text": "fix this"},
+        {"type": "resource_link", "uri": "file:///w/x.py", "name": "x.py"},
+    ]
+    assert prompt_text({"prompt": blocks}) == "fix this\n\nAttached: file:///w/x.py"
+    only_link = [{"type": "resource_link", "uri": "file:///w/x.py"}]
+    assert prompt_text({"prompt": only_link}) == "Attached: file:///w/x.py"
+
+
 def test_a_prompt_runs_and_answers_with_its_stop_reason() -> None:
     ran: list[str] = []
 

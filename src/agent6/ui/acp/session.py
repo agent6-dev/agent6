@@ -84,6 +84,17 @@ class Sessions:
         refusal = git_repo_refusal(cwd)
         if refusal is not None:
             raise RpcError(INVALID_PARAMS, refusal)
+        servers = params.get("mcpServers")
+        if isinstance(servers, list) and servers:
+            # agent6's MCP servers are operator config, never editor-supplied
+            # (the tool surface is fixed; see docs/security.md). Accepting the
+            # session and silently not starting them would read as connected.
+            raise RpcError(
+                INVALID_PARAMS,
+                "agent6 does not take MCP servers from the editor: configure them in "
+                "agent6's own config ([mcp.servers], `agent6 mcp connect`) and remove "
+                "them from this agent's entry.",
+            )
         session = Session(acp_id=friendly_token(), cwd=cwd)
         self._by_id[session.acp_id] = session
         return {"sessionId": session.acp_id}
@@ -153,20 +164,26 @@ class Sessions:
 
 
 def prompt_text(params: dict[str, Any]) -> str:
-    """The prompt's text blocks, joined.
+    """The prompt's text and resource_link blocks, joined.
 
-    ACP sends content blocks; agent6's task is prose. Non-text blocks (an
-    image, an embedded resource) are dropped rather than rendered as a
-    placeholder the model would try to read.
+    ACP sends content blocks; agent6's task is prose. A `resource_link` (the
+    baseline attach-a-file shape) is rendered as its uri VERBATIM: the model
+    reads it through the ordinary tools, so the workspace boundary still
+    decides what the path reaches. Other non-text blocks (an image, an
+    embedded resource) are dropped rather than rendered as a placeholder the
+    model would try to read; initialize does not advertise them.
     """
     blocks = params.get("prompt")
     if not isinstance(blocks, list):
         raise RpcError(INVALID_PARAMS, "prompt must be a list of content blocks")
-    parts = [
-        str(b.get("text", ""))
-        for b in blocks
-        if isinstance(b, dict) and b.get("type") == "text" and b.get("text")
-    ]
+    parts: list[str] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "text" and b.get("text"):
+            parts.append(str(b["text"]))
+        elif b.get("type") == "resource_link" and b.get("uri"):
+            parts.append(f"Attached: {b['uri']}")
     text = "\n\n".join(parts).strip()
     if not text:
         raise RpcError(INVALID_PARAMS, "the prompt carried no text")
