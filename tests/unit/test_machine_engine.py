@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 
+from agent6.app.machine.run import machine_tool_policy_factory
+from agent6.config import Config
 from agent6.machine._semantics import load_machine
 from agent6.machine.engine import (
     AgentExecResult,
@@ -751,7 +753,9 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
             cwd=tmp_path,
             journal=MachineJournal(tmp_path / "i"),
             data_dir=data_dir,
-            isolation=isolation,
+            tool_policy=machine_tool_policy_factory(
+                Config(), tmp_path, isolation, protect_paths=(), data_dir=data_dir
+            ),
         )
         world.run_tool(("python3", "x.py"), 5.0)
         policy = captured["policy"]
@@ -777,13 +781,16 @@ def test_tool_jails_carry_the_operator_hide_paths(
 
     monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
     hidden = tmp_path / "cred.txt"
+    cfg = Config.model_validate({"sandbox": {"hide_paths": [str(hidden)]}})
     world = LiveWorld(
         cwd=tmp_path,
         journal=MachineJournal(tmp_path / "i"),
-        hide_paths=(hidden,),
+        tool_policy=machine_tool_policy_factory(
+            cfg, tmp_path, "strict", protect_paths=(), data_dir=None
+        ),
     )
     world.run_tool(("python3", "x.py"), 5.0)
-    assert captured["policy"].hide_paths == (hidden,)
+    assert hidden in captured["policy"].hide_paths
 
 
 def test_live_world_run_tool_maps_rc124_to_timed_out(
@@ -803,7 +810,13 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
         return CommandResult(argv=policy.argv, returncode=124, stdout="", stderr="", duration_s=0.0)
 
     monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"))
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path / "i"),
+        tool_policy=machine_tool_policy_factory(
+            Config(), tmp_path, "strict", protect_paths=(), data_dir=None
+        ),
+    )
     res = world.run_tool(("sleep", "99"), 1.0)
     assert res.timed_out is True
     assert res.exit_code == 124
@@ -1359,9 +1372,15 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
         return "/usr/bin:/bin:/fake/bin", (Path("/fake/real-tools"),)
 
     monkeypatch.setattr(engine_mod, "run_in_jail", fake_run_in_jail)
-    monkeypatch.setattr(engine_mod, "operator_tool_paths", fake_tool_paths)
+    monkeypatch.setattr("agent6.tools.policy.operator_tool_paths", fake_tool_paths)
     monkeypatch.setenv("PATH", "/host/only/path")  # must NOT leak into the jail
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path))
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path),
+        tool_policy=machine_tool_policy_factory(
+            Config(), tmp_path, "strict", protect_paths=(), data_dir=None
+        ),
+    )
     world.run_tool(("sometool", "arg"), timeout_s=5.0)
 
     policy = captured["policy"]

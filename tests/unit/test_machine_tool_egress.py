@@ -15,6 +15,7 @@ from agent6.app.machine import (
     machine_protect_paths,
     validate_bundle,
 )
+from agent6.app.machine.run import machine_tool_policy_factory
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
@@ -175,11 +176,65 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     return seen
 
 
+def _world(
+    tmp_path: Path,
+    isolation: str,
+    *,
+    cfg: Config | None = None,
+    protect_paths: tuple[Path, ...] = (),
+    data_dir: Path | None = None,
+) -> LiveWorld:
+    """A LiveWorld wired exactly as run_machine wires it: through the shared
+    policy builder, so these pins hold the REAL machine confinement."""
+    factory = machine_tool_policy_factory(
+        cfg or Config(),
+        tmp_path,
+        isolation,  # type: ignore[arg-type]
+        protect_paths=protect_paths,
+        data_dir=data_dir,
+    )
+    return LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path / "i"),
+        tool_policy=factory,
+        data_dir=data_dir,
+    )
+
+
+def test_machine_tool_jail_carries_operator_grants_and_protect_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The machine tool jail is built by the same policy builder as run
+    commands, so an operator's extra read/write grants, hide_paths, and
+    protect_git reach it. The hand-built policy carried none of them: a
+    configured grant failed only in machines, and a strict machine tool could
+    write .git while ordinary runs protected it."""
+    seen = _patch_jail(monkeypatch)
+    (tmp_path / ".git").mkdir()
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "extra_read_paths": ["/srv/ro"],
+                "extra_write_paths": ["/srv/rw"],
+                "hide_paths": ["/srv/secret"],
+                "protect_git": True,
+            }
+        }
+    )
+    world = _world(tmp_path, "strict", cfg=cfg)
+    world.run_tool(("true",), 5.0, network="none")
+    policy = seen[-1]
+    assert Path("/srv/ro") in policy.extra_ro_paths
+    assert Path("/srv/rw") in policy.extra_rw_paths
+    assert Path("/srv/secret") in policy.hide_paths
+    assert (tmp_path / ".git").resolve() in policy.extra_protect_paths
+
+
 def test_liveworld_non_network_tool_is_isolated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="strict")
+    world = _world(tmp_path, "strict")
     world.run_tool(("true",), 5.0, network="none")
     assert seen[-1].network == "none"
 
@@ -191,9 +246,7 @@ def test_liveworld_grants_data_dir_rw_and_env(
     # $AGENT6_MACHINE_DATA_DIR, so a tool script can persist on hardened too.
     seen = _patch_jail(monkeypatch)
     data = tmp_path / "i" / "data"
-    world = LiveWorld(
-        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened", data_dir=data
-    )
+    world = _world(tmp_path, "hardened", data_dir=data)
     world.run_tool(("true",), 5.0, network="none")
     policy = seen[-1]
     assert data in policy.extra_rw_paths
@@ -208,7 +261,7 @@ def test_liveworld_no_data_dir_grants_no_extra_rw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
+    world = _world(tmp_path, "hardened")
     world.run_tool(("true",), 5.0, network="none")
     assert seen[-1].extra_rw_paths == ()
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
@@ -218,7 +271,7 @@ def test_liveworld_disables_python_bytecode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), isolation="hardened")
+    world = _world(tmp_path, "hardened")
     world.run_tool(("python3", "-m", "unittest"), 5.0, network="none")
     assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
@@ -228,14 +281,10 @@ def test_liveworld_passes_protect_paths_to_jail(
 ) -> None:
     seen = _patch_jail(monkeypatch)
     guarded = (tmp_path / "m.asm.toml", tmp_path / "scripts")
-    world = LiveWorld(
-        cwd=tmp_path,
-        journal=MachineJournal(tmp_path / "i"),
-        isolation="strict",
-        protect_paths=guarded,
-    )
+    world = _world(tmp_path, "strict", protect_paths=guarded)
     world.run_tool(("true",), 5.0)
-    assert seen[-1].extra_protect_paths == guarded
+    assert guarded[0] in seen[-1].extra_protect_paths
+    assert guarded[1] in seen[-1].extra_protect_paths
 
 
 # --- machine-file immutability (_machine_protect_paths) --------------------

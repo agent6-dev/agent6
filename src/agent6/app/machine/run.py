@@ -35,7 +35,7 @@ from agent6.app.machine._spend import machine_spend
 from agent6.app.machine_agent import build_machine_agent_runner
 from agent6.app.preflight import budget_preflight
 from agent6.app.reporter import Reporter
-from agent6.config import ConfigError
+from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.git_ops import CommitIdentity, GitError, is_git_repo, paths_dirty, verify_git_identity
 from agent6.machine import (
@@ -48,6 +48,7 @@ from agent6.machine import (
     MachineEnd,
     MachineError,
     MachineJournal,
+    ToolPolicyFactory,
     ToolState,
     drive,
     load_machine,
@@ -56,7 +57,8 @@ from agent6.machine import (
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import write_worker_pid
-from agent6.types import IsolationLevel
+from agent6.tools.policy import jail_policy, passthrough_env
+from agent6.types import IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
 
 
@@ -134,6 +136,43 @@ def uncommitted_scripts_warning(path: Path, cwd: Path) -> str | None:
         f"{scripts} has uncommitted changes; `machine run` executes its scripts as "
         "trusted logic. Review and commit the bundle for a reproducible run."
     )
+
+
+def machine_tool_policy_factory(
+    cfg: Config,
+    cwd: Path,
+    isolation: IsolationLevel,
+    *,
+    protect_paths: tuple[Path, ...],
+    data_dir: Path | None,
+) -> ToolPolicyFactory:
+    """Per-call tool-jail policies for a machine, through the ONE shared
+    builder (`jail_policy`) plus the machine deltas: the bundle's protect
+    paths and the data dir's RW grant + `$AGENT6_MACHINE_DATA_DIR`. Operator
+    grants, `protect_git`, hidden paths, env, and tool mounts therefore hold
+    in machine tool jails exactly as in run commands."""
+    env_base = passthrough_env()
+    extra_rw: tuple[Path, ...] = ()
+    if data_dir is not None:
+        # Exported to match where the jail mounts the dir: extra_rw_paths mount
+        # at their real locations on every isolation level.
+        env_base["AGENT6_MACHINE_DATA_DIR"] = str(data_dir)
+        extra_rw = (data_dir,)
+
+    def build(argv: tuple[str, ...], timeout_s: float, network: NetworkMode) -> JailPolicy:
+        return jail_policy(
+            cwd,
+            cfg,
+            isolation,
+            argv,
+            timeout_s=timeout_s,
+            network=network,
+            extra_rw_paths=extra_rw,
+            extra_protect_paths=protect_paths,
+            env_base=env_base,
+        )
+
+    return build
 
 
 def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
@@ -325,15 +364,14 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 cwd=cwd,
                 journal=journal,
                 agent_runner=agent_runner,
-                isolation=isolation,
-                protect_paths=protect_paths,
+                tool_policy=machine_tool_policy_factory(
+                    cfg, cwd, isolation, protect_paths=protect_paths, data_dir=data_dir
+                ),
                 data_dir=data_dir,
                 # Each agent state writes its own watchable logs.jsonl here, so a
                 # running machine is followable like a run (pruned to keep recent).
                 state_log_root=root / "states",
                 notify_hook=surface_notify,
-                memory_limit_mb=cfg.sandbox.memory_limit_mb,
-                hide_paths=tuple(Path(p) for p in cfg.sandbox.hide_paths),
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

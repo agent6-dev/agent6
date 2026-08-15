@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shutil
 import time
 from collections.abc import Callable, Mapping
@@ -70,9 +69,9 @@ from agent6.machine.template import (
     render_value,
 )
 from agent6.portable import atomic_write
-from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
+from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.layout import LOGS_NAME
-from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+from agent6.types import JailPolicy, NetworkMode
 
 __all__ = [
     "AgentExecResult",
@@ -239,7 +238,9 @@ class World(Protocol):
     def notify(self, kind: str, state: str, message: str, level: str) -> None: ...
 
 
-_SAFE_ENV_KEYS = ("LANG", "LC_ALL", "TERM")
+# The per-call tool-jail policy, injected by the CLI (see LiveWorld.tool_policy):
+# (argv, timeout_s, network) -> the JailPolicy the shared builder produced.
+ToolPolicyFactory = Callable[[tuple[str, ...], float, NetworkMode], JailPolicy]
 
 
 def _state_log_seq(p: Path) -> int:
@@ -284,82 +285,41 @@ class LiveWorld:
     # (None for the rare runner that wants no log). The World derives the path.
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
-    isolation: IsolationLevel = "strict"
+    # Builds each tool jail's policy. The CLI wires the ONE shared builder
+    # (tools.policy.jail_policy) with the machine deltas baked in -- bundle
+    # protect paths, the data-dir RW grant + $AGENT6_MACHINE_DATA_DIR -- so a
+    # machine tool is confined exactly like a run command: same operator
+    # grants, same protect_git, same hidden paths, same env. Injected so this
+    # module needs no config import, like agent_runner.
+    tool_policy: ToolPolicyFactory | None = None
     # When set, each agent-state execution writes a watchable event stream to
     # `<state_log_root>/<seq>-<state>/logs.jsonl` (the CLI points it at
     # `<instance>/states`), pruned to the most recent `state_log_keep` so a
     # long-running machine's logs stay bounded. None disables per-state logs.
     state_log_root: Path | None = None
     state_log_keep: int = 50
-    # Paths made read-only in every tool jail, the running machine's own
-    # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
-    # logic or bundled scripts mid-run (set by the CLI).
-    protect_paths: tuple[Path, ...] = ()
     # Out-of-band operator notify hook, fired on a `notify` message and on the
     # terminal `machine.end`. The CLI wires it to the operator's configured argv
     # (`[machine.notify].on_event`), run on the host outside the jail. None means
     # no hook; the in-page/TUI/CLI front-ends still render the journaled events.
     notify_hook: Callable[[str, str, str, str], None] | None = None
-    # The machine's persistent, writable scratch dir: granted RW in every tool
-    # jail and surfaced to scripts as $AGENT6_MACHINE_DATA_DIR. It lives out of
-    # the workspace (under the per-repo state dir) and persists across
-    # iterations, so it is where a `tool` keeps DURABLE state (a built venv,
-    # caches). cwd is writable too, but it is the repo, not durable machine
-    # state. Set by the CLI to <instance>/data.
+    # The machine's persistent, writable scratch dir, surfaced to scripts as
+    # $AGENT6_MACHINE_DATA_DIR (the tool_policy factory bakes in the RW grant
+    # and the env var). It lives out of the workspace (under the per-repo
+    # state dir) and persists across iterations, so it is where a `tool` keeps
+    # DURABLE state (a built venv, caches). cwd is writable too, but it is the
+    # repo, not durable machine state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
-    # Per-process memory cap (MiB) for every tool jail, from
-    # `[sandbox].memory_limit_mb` (the CLI wires it); 0 (the default) disables.
-    memory_limit_mb: int = 0
-    # Operator additions to the jail's hidden set, from `[sandbox].hide_paths`
-    # (the CLI wires it). agent6's own private dirs are always hidden by the
-    # launcher and need no wiring.
-    hide_paths: tuple[Path, ...] = ()
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
     ) -> ToolExecResult:
-        # The engine is the host-netns supervisor, so an opt-in tool's jail
-        # gets the host network (it inherits the engine's netns); a non-opt-in
-        # tool gets a fresh empty netns. Whether opt-in is permitted at all is
-        # gated by the CLI at startup (sandbox.network), so by the time we
-        # run, `network` is authoritative.
-        env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
-        # The jail-correct PATH plus the RO+exec mounts that make it true: ONE
-        # computation shared with run_command/verify's jail and the `machine
-        # check` probe (sandbox.jail.operator_tool_paths).
-        tool_path, tool_mounts = operator_tool_paths()
-        env_list.append(("PATH", tool_path))
-        # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is
-        # writable on both isolation levels. Mirrors the run_command jail env.
-        env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
-        env_list.append(("PYTHONDONTWRITEBYTECODE", "1"))
-        # Same reason as the run_command jail: a machine tool's `uv run` must
-        # use the venv the operator already synced; the jail is offline and
-        # HOME is a fresh tmpfs, so a sync would re-resolve against an empty
-        # cache and fail.
-        env_list.append(("UV_NO_SYNC", "1"))
-        extra_rw: tuple[Path, ...] = ()
-        if self.data_dir is not None:
-            # Grant RW on the data dir + tell the script where it is. This is the
-            # portable way to persist across iterations (hardened tool jails are
-            # otherwise read-only); the journal still records every transition.
-            # The jail mounts extra_rw_paths at their real locations in every
-            # isolation, so the host abspath resolves inside as-is.
-            env_list.append(("AGENT6_MACHINE_DATA_DIR", str(self.data_dir)))
-            extra_rw = (self.data_dir,)
-        policy = JailPolicy(
-            cwd=self.cwd,
-            argv=argv,
-            isolation=self.isolation,
-            env=tuple(env_list),
-            network=network,
-            extra_protect_paths=self.protect_paths,
-            extra_rw_paths=extra_rw,
-            tool_paths=tool_mounts,
-            hide_paths=self.hide_paths,
-            timeout_s=float(timeout_s),
-            memory_limit_mb=self.memory_limit_mb,
-        )
+        # `network` is authoritative here: opt-in was gated by the CLI at
+        # startup (sandbox.network), and the factory's builder clamps it to
+        # what the isolation level truthfully provides.
+        if self.tool_policy is None:
+            raise EngineError("LiveWorld has no tool_policy factory wired")
+        policy = self.tool_policy(tuple(argv), float(timeout_s), network)
         try:
             result = run_in_jail(policy)
         except JailUnavailableError as exc:
