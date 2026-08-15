@@ -208,6 +208,17 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     policy = jail_policy(
         cwd, cfg, isolation, argv, network="session" if pid else None, timeout_s=0.0
     )
+    if policy.network == "session" and pid is None:
+        # Config asked for the session network but this session has none to
+        # join (the run ended, or never held one): refuse rather than open
+        # /proc/None. The command joins a LIVE session's network only.
+        print(
+            f"agent6 exec: {layout.session_id} has no live session network to join"
+            " (the run ended, or never held one). Pick a running session, or set"
+            " [sandbox].network away from 'session' for this command.",
+            file=sys.stderr,
+        )
+        return 2
     if policy.network == "session":
         # The run's network belongs to the run; borrow it through the holder
         # rather than making one of our own, which would be a different place.

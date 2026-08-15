@@ -82,3 +82,27 @@ def test_forward_bare_number_is_a_port_of_the_newest_session(seen: dict[str, Any
 def test_forward_session_and_port(seen: dict[str, Any]) -> None:
     assert cli.main(["forward", "brave-otter", "8000"]) == 0
     assert seen == {"target": "brave-otter", "port": 8000}
+
+
+def test_exec_refuses_a_session_network_nobody_holds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`[sandbox].network = "session"` + an ended run used to reach
+    `os.open("/proc/None/ns/user")` -- an unexpected traceback instead of a
+    refusal naming the situation. exec joins a LIVE session's network only.
+    The isolation seam is pinned to strict so the policy derives "session"
+    on every host this suite runs on."""
+    from agent6.config import Config
+    from agent6.ui.cli import net_cmds
+
+    def _strict(req: str, env: Any) -> str:
+        return "strict"
+
+    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
+    (tmp_path / "run").mkdir()
+    layout = SessionLayout(state_dir=tmp_path, session_id="run")
+    cfg = Config.model_validate({"sandbox": {"network": "session"}})
+    rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "no live session network" in err
