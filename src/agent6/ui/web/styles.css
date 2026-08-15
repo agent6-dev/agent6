@@ -285,7 +285,7 @@ aside.rail { display: none; }
     padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
-  aside.rail .rail-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px; cursor: pointer; }
+  aside.rail .rail-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px; cursor: pointer; color: inherit; text-decoration: none; }
   aside.rail .rail-brand b { color: var(--accent); }
   aside.rail .rail-brand img { border-radius: 6px; }
   aside.rail .rail-nav { display: flex; flex-direction: column; gap: 2px; }

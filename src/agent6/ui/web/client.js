@@ -95,6 +95,19 @@ function closeLive() {
 function closeOverlay() { if (activeOverlayClose) activeOverlayClose(); }
 function pill(status, label) { const p = el('span', 'pill ' + esc(status), esc(label || status)); return p; }
 
+// One owner for anything clickable that is not a native control: a keyboard
+// user gets the same activation (Tab to focus, Enter/Space to fire) and a
+// screen reader gets a role + name. Native <a>/<button>/<input> never need it.
+function actionable(elem, activate, label) {
+  elem.setAttribute('role', 'button');
+  elem.tabIndex = 0;
+  if (label) elem.setAttribute('aria-label', label);
+  elem.onclick = activate;
+  elem.onkeydown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+  };
+}
+
 function setTab(name) {
   document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === name));
 }
@@ -273,6 +286,8 @@ function listCard(title, entries, empty, paint) {
     const g = el('div', 'grow');
     it.appendChild(g);
     paint(e, it, g);
+    if (it.onclick) actionable(it, it.onclick,
+      [...g.children].map(c => c.textContent).join(' · ').slice(0, 120));
     list.appendChild(it);
   }
   card.appendChild(list);
@@ -1506,7 +1521,7 @@ async function renderConfig(gen) {
     // per-key payload the editor overlay shows it in.
     tr.title = s.description || 'click to edit';
     tr.style.cursor = 'pointer';
-    tr.onclick = () => editConfig(k, s);
+    actionable(tr, () => editConfig(k, s), 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
   }
   card.appendChild(tbl);
@@ -1522,7 +1537,10 @@ function editConfig(key, s) {
     : typeof s.value === 'object' ? JSON.stringify(s.value)
     : String(s.value);
   const back = el('div', 'overlay');
+  const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'edit ' + key);
   const title = el('h2', null, key);
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
   box.appendChild(title);
@@ -1580,7 +1598,10 @@ function editConfig(key, s) {
   }
   row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
-  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  const close = () => {
+    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
+    if (opener && opener.isConnected) opener.focus();
+  };
   activeOverlayClose = close; // navigating away dismisses it
   function onKey(e) { if (e.key === 'Escape') close(); }
   document.addEventListener('keydown', onKey);
