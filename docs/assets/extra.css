@@ -128,6 +128,14 @@
   color: var(--md-default-fg-color--light);
 }
 
+/* Diagrams. Material renders each one into a closed shadow root, so page CSS
+   reaches the host box only: flex centres the diagram the shadow tree draws
+   inside it (it is left-aligned otherwise). */
+.md-typeset .mermaid {
+  display: flex;
+  justify-content: center;
+}
+
 /* Screenshots: rounded, framed, click-to-zoom (glightbox). */
 .md-typeset img[src*="screenshots/"],
 .md-typeset .a6-shot img {

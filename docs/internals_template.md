@@ -22,15 +22,15 @@ changes to it: the order of a turn and the decisions that end it.
 
 ```mermaid
 flowchart TD
-    pre["pre-call: snapshot, nudges, compaction"] --> model["provider call, streamed; steer can interrupt"]
-    model --> tools["dispatch tool calls, jailed"]
+    pre["pre-call: snapshot,<br/>nudge, compact"] --> model["provider call, streamed<br/>steer interrupts"]
+    model --> tools["tool calls, jailed"]
     tools --> commit["auto-commit + metric"]
     commit --> review["review triggers"]
-    review --> gates{"model asked to finish?"}
-    gates -->|green verify| done(["finished"])
-    gates -->|red gate: refused| notices["notices + stop checks"]
+    review --> gates{"finish<br/>requested?"}
+    gates -->|verify green| done(["finished"])
+    gates -->|gate red| notices["notices + stop checks"]
     gates -->|no| notices
-    notices -->|stop: budget, stagnation, abort| stopped(["stopped, resumable"])
+    notices -->|budget, stagnation, abort| stopped(["stopped, resumable"])
     notices -->|continue| pre
 ```
 
