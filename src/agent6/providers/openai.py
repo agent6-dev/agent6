@@ -172,8 +172,9 @@ class OpenAIProvider:
     extra_headers: tuple[tuple[str, str], ...] = ()
     # Provider-specific JSON merged into every request body (e.g. OpenRouter
     # `provider` routing, see config OpenAIProviderEntry.extra_body). Keys here
-    # override computed body fields, EXCEPT the load-bearing
-    # messages/model/stream/stream_options (filtered in `call`).
+    # override computed tuning fields, EXCEPT the structural set filtered in
+    # `call` (messages/model/stream/stream_options/tools/tool_choice/
+    # response_format/n).
     extra_body: dict[str, Any] = field(default_factory=dict)
     # Static URL query params merged onto every request (e.g. Azure's
     # api-version). See config extra_query.
@@ -383,7 +384,19 @@ class OpenAIProvider:
         # flipping `stream` would make the non-streaming path get an SSE body
         # that `resp.json()` can't parse. Those are filtered out.
         if self.extra_body:
-            reserved = {"messages", "model", "stream", "stream_options"}
+            # Structural keys only: the conversation, the tool schema, tool
+            # choice, and the response shape the parser reads (`n` > 1 and a
+            # response_format change both break choices[0]-as-the-answer).
+            reserved = {
+                "messages",
+                "model",
+                "stream",
+                "stream_options",
+                "tools",
+                "tool_choice",
+                "response_format",
+                "n",
+            }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
         # Names of the tools actually offered this turn. Used purely as
         # a guard for the text-embedded-tool-call recovery in

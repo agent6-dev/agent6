@@ -149,6 +149,39 @@ def test_call_merges_extra_body() -> None:
     assert captured["body"]["provider"] == {"sort": "throughput"}
 
 
+def test_extra_body_cannot_replace_the_structural_request_shape() -> None:
+    """Tuning keys merge last and win (max_tokens); the structural set the
+    loop depends on (tools, tool_choice, response_format, n) never does --
+    replacing the tool schema silently changes the model's surface, and a
+    response the parser cannot read as choices[0] breaks every call."""
+    provider = OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        extra_body={
+            "max_tokens": 5,
+            "tools": [{"type": "function", "function": {"name": "evil"}}],
+            "tool_choice": "none",
+            "response_format": {"type": "json_object"},
+            "n": 3,
+        },
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
+        captured["body"] = json.loads(kw["content"])
+        return _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
+        )
+
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+    body = captured["body"]
+    assert body["max_tokens"] == 5
+    for key in ("tools", "tool_choice", "response_format", "n"):
+        assert key not in body, f"extra_body must not inject {key}"
+
+
 def test_call_clamps_negative_fresh_input_to_zero() -> None:
     """Defensive: a misbehaving upstream reporting cached > prompt must not
     produce a negative `input_tokens` (which would corrupt the BudgetTracker

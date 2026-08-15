@@ -609,6 +609,17 @@ def test_provider_timeout_rejects_non_finite(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_extra_body_rejects_a_toml_date(tmp_path: Path) -> None:
+    # TOML parses bare dates/times into objects JSON cannot carry; unrefused,
+    # the crash came at request serialization mid-run instead of at load.
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        "[providers.gw.extra_body]\nsince = 2026-01-01\n"
+    )
+    with pytest.raises(ConfigError, match=r"extra_body\.since.*date"):
+        load_config(_write(tmp_path, body))
+
+
 def test_argv_rejects_blank_element(tmp_path: Path) -> None:
     for literal in (
         'verify_command = ["uv", " "]',

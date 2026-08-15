@@ -359,7 +359,19 @@ class AnthropicProvider:
         if tool_payload:
             body["tools"] = tool_payload
         if self.extra_body:
-            reserved = {"system", "messages", "model", "stream", "anthropic_version"}
+            # The STRUCTURAL keys agent6 owns: replacing the conversation, the
+            # tool schema, or how a response arrives silently changes what the
+            # loop sent or breaks its parser. Tuning keys (max_tokens,
+            # temperature, thinking) merge last and win.
+            reserved = {
+                "system",
+                "messages",
+                "model",
+                "stream",
+                "anthropic_version",
+                "tools",
+                "tool_choice",
+            }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
         # The transport rebuilds headers per attempt (a token_command

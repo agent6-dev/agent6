@@ -73,7 +73,7 @@ non-default host).
 | `token_command` | none | argv that prints a short-lived bearer to stdout; re-run on TTL and once on `401`/`403`. Wins over `api_key_env`. |
 | `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output. |
 | `extra_headers` | `{}` | Extra HTTP headers on every request. Not for secrets. |
-| `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered), e.g. OpenRouter routing options. |
+| `extra_body` | `{}` | Provider-specific JSON merged into every request body LAST, so tuning keys (max_tokens, temperature) win; the structural keys agent6 owns (messages, model, stream, tools, tool choice, response shape) are filtered. Values must be JSON-shaped: a TOML date/time is refused. e.g. OpenRouter routing options. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Per-HTTP-call timeout (read/write; connect is bounded at 20s). |
 | `prompt_caching` | `true` | (`anthropic`) Prompt caching: system prompt, tools, and the growing conversation re-read at 0.1x input price. |

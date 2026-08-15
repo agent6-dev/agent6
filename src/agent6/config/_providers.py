@@ -71,6 +71,24 @@ _API_FORMAT_DESCRIPTION = (
 )
 
 
+def _require_json_shaped(value: Any, path: str) -> None:
+    """Refuse any value JSON cannot carry (TOML also parses dates/times)."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            _require_json_shaped(item, f"{path}[{i}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _require_json_shaped(item, f"{path}.{key}")
+        return
+    raise ValueError(
+        f"extra_body{path} holds a {type(value).__name__}, which JSON cannot carry"
+        " (a TOML date/time is the usual cause); quote it as a string"
+    )
+
+
 class _ProviderBase(BaseModel):
     """Transport + auth fields shared by every provider, independent of format.
 
@@ -146,8 +164,10 @@ class _ProviderBase(BaseModel):
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Provider-specific JSON merged into every request body (load-bearing keys filtered), "
-            "e.g. OpenRouter routing options."
+            "Provider-specific JSON merged into every request body LAST, so tuning keys "
+            "(max_tokens, temperature) win; the structural keys agent6 owns (messages, model, "
+            "stream, tools, tool choice, response shape) are filtered. Values must be "
+            "JSON-shaped: a TOML date/time is refused. e.g. OpenRouter routing options."
         ),
     )
     extra_query: dict[str, str] = Field(
@@ -196,6 +216,15 @@ class _ProviderBase(BaseModel):
     def _check_token_command(cls, v: list[str] | None) -> list[str] | None:
         if v is not None and (not v or any(not arg.strip() for arg in v)):
             raise ValueError("token_command must be a non-empty argv of non-empty strings")
+        return v
+
+    @field_validator("extra_body")
+    @classmethod
+    def _check_extra_body_json_shaped(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """TOML also parses dates and times, which JSON cannot carry: caught
+        here, at load, instead of a serialization crash mid-request."""
+        for key, value in v.items():
+            _require_json_shaped(value, f".{key}")
         return v
 
     @model_validator(mode="after")

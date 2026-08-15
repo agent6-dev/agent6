@@ -210,3 +210,23 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
         streaming=False,
     )
     assert aurl == f"https://res.openai.azure.com/openai/deployments/{quoted}/chat/completions"
+
+
+def test_anthropic_extra_body_cannot_replace_the_structural_request_shape() -> None:
+    """The anthropic twin of the openai structural filter: tools/tool_choice
+    never inject (the loop owns the tool schema); tuning keys still win."""
+    p = AnthropicProvider(
+        api_key="sk-test",
+        model="claude-x",
+        extra_body={
+            "max_tokens": 7,
+            "tools": [{"name": "evil", "input_schema": {"type": "object"}}],
+            "tool_choice": {"type": "any"},
+        },
+    )
+    captured, fake = _capture(_anthropic_ok())
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+        p.call(system="s", messages=[{"role": "user", "content": "q"}])
+    body = captured["body"]
+    assert body["max_tokens"] == 7
+    assert "tools" not in body and "tool_choice" not in body
