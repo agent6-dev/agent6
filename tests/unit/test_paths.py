@@ -354,3 +354,28 @@ def test_the_common_case_carries_no_hash_at_all(tmp_path: Path) -> None:
     and means something."""
     assert paths.repo_id(Path("/home/u/agent6")) == "home-u-agent6-3"
     assert paths.repo_id(Path("/tmp")) == "tmp-0"
+
+
+def test_one_state_dir_reader_two_strictness_policies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ONE parser of [agent6].state_dir serves both consumers: state_base
+    reads it best-effort (an unreadable global config falls back rather than
+    breaking every path consumer), while the config load reads it strict (a
+    present-but-malformed file refuses loudly). Two parsers of the same file
+    drifted once."""
+    from agent6.paths import read_global_state_dir
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
+    # Absent file: None either way.
+    assert read_global_state_dir() is None
+    assert read_global_state_dir(strict=True) is None
+    # Present + valid.
+    (tmp_path / "config.toml").write_text('[agent6]\nstate_dir = "/x"\n', encoding="utf-8")
+    assert read_global_state_dir() == "/x"
+    assert read_global_state_dir(strict=True) == "/x"
+    # Present + malformed: best-effort falls back, strict refuses.
+    (tmp_path / "config.toml").write_text("not = valid = toml", encoding="utf-8")
+    assert read_global_state_dir() is None
+    with pytest.raises(ValueError, match="cannot be read"):
+        read_global_state_dir(strict=True)

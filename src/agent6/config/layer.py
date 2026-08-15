@@ -47,6 +47,7 @@ from agent6.config.model import (
 )
 from agent6.paths import (
     global_config_path,
+    read_global_state_dir,
     repo_config_path,
     state_dir,
 )
@@ -89,29 +90,24 @@ def _read_toml(path: Path) -> dict[str, Any]:
 
 
 def _global_state_dir() -> str | None:
-    """Read `[agent6].state_dir` (the state BASE) from the GLOBAL config only.
+    """`[agent6].state_dir` (the state BASE) from the GLOBAL config only,
+    with the loud validation a config load owes.
 
     Resolved *before* the layered merge because it locates the directory the
-    per-repo config lives in. Honored only from the global config;
-    `_forbid_repo_state_dir` rejects it in any other layer.
-    """
-    gpath = global_config_path()
-    if not gpath.is_file():
-        return None
-    data = _read_toml(gpath)
-    section = data.get("agent6")
-    if isinstance(section, dict):
-        sd = section.get("state_dir")
-        if isinstance(sd, str):
-            # Raw pre-model read locating the per-repo config dir, so it runs
-            # BEFORE the Config model (which also validates state_dir). Apply
-            # the same absolute-path check here; fail loudly, don't drift.
-            if not Path(sd).expanduser().is_absolute():
-                raise ConfigError(
-                    f"[agent6].state_dir in {gpath} must be an absolute path, got {sd!r}"
-                )
-            return sd
-    return None
+    per-repo config lives in; `_forbid_repo_state_dir` rejects the key in any
+    other layer. ONE parser of the key (`paths.read_global_state_dir`, the
+    same one `state_base` reads best-effort), so the masker and the writer
+    cannot drift; this wrapper adds the absolute-path refusal the pre-model
+    read needs (the Config model validates it again later)."""
+    try:
+        sd = read_global_state_dir(strict=True)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    if sd is not None and not Path(sd).expanduser().is_absolute():
+        raise ConfigError(
+            f"[agent6].state_dir in {global_config_path()} must be an absolute path, got {sd!r}"
+        )
+    return sd
 
 
 def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:

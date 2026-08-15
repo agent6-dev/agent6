@@ -167,17 +167,22 @@ def data_dir(user: RealUser | None = None) -> Path:
 _STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itself
 
 
-def _state_dir_override() -> str | None:
-    """`[agent6].state_dir` from the GLOBAL config file, or None.
-
-    `state_base` honors it so every private-path consumer (jail mask, workspace
-    policy, boundary preflight, grant validators) masks the SAME base the
-    writer uses. Best-effort read: config load (`config.layer`) is where a
-    missing or malformed file, or a non-absolute value, fails loudly.
-    """
+def read_global_state_dir(*, strict: bool = False) -> str | None:
+    """The raw `[agent6].state_dir` string from the GLOBAL config file, or
+    None. THE one parser of that key: `state_base` reads it best-effort so
+    every private-path consumer (jail mask, workspace policy, boundary
+    preflight, grant validators) masks the SAME base the writer uses, and
+    `config.layer._global_state_dir` reads it *strict* (a present-but-
+    unreadable file raises ValueError for the config load to refuse on;
+    absent stays None either way)."""
+    path = global_config_path()
     try:
-        data = tomllib.loads(global_config_path().read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        if strict:
+            raise ValueError(f"Config file cannot be read ({path}): {exc}") from exc
         return None
     section = data.get("agent6")
     sd = section.get("state_dir") if isinstance(section, dict) else None
@@ -192,7 +197,7 @@ def state_base(user: RealUser | None = None) -> Path:
 
     The override wins so the base masked from every jail is the one runs
     actually write to; `state_dir` applies the same precedence for the writer."""
-    if (override := _state_dir_override()) is not None:
+    if (override := read_global_state_dir()) is not None:
         return Path(override).expanduser()
     return _user_dir(user, _STATE_DIR_ENV, "XDG_STATE_HOME", ".local", "state")
 
