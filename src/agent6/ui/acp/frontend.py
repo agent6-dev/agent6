@@ -143,6 +143,11 @@ def acp_frontend(
         confirm_run_on_run_branch=lambda branch: _approve(
             f"Continue this run on {branch!r}, which is already a run branch?"
         ),
+        confirm_replay_after_crash=lambda iteration, tools: _approve(
+            f"The previous run died mid-turn (iteration {iteration};"
+            f" {', '.join(tools) or 'unknown tools'}). Its tools may have partially"
+            " applied; replaying can repeat a non-idempotent effect. Re-run the turn?"
+        ),
         prompt_detach_away_mode=lambda _session_dir, _scopes: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,
         build_repl_hook=_no_repl,

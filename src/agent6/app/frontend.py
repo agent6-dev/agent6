@@ -147,6 +147,10 @@ class SessionFrontend:
     make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
+    # Resume found a mid-turn-crash marker matching the turn about to re-run:
+    # its tools may have partially applied. (iteration, tool names) -> replay?
+    # Interactive fronts prompt (default no); headless warns and proceeds.
+    confirm_replay_after_crash: Callable[[int, tuple[str, ...]], bool]
     prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
     select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None]
     # `run -i` / `ask -i`

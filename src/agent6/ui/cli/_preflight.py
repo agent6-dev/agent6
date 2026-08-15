@@ -33,6 +33,29 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
+def confirm_replay_after_crash(iteration: int, tools: tuple[str, ...]) -> bool:
+    """Resume found a mid-turn-crash marker for the turn about to re-run: its
+    tools may have partially applied, and replaying can repeat a
+    non-idempotent effect. Interactive: ask, default NO (abort and inspect).
+    Headless: warn loudly and proceed -- the at-least-once recovery a detached
+    resume always had, now with the risk named."""
+    named = ", ".join(tools) if tools else "unknown tools"
+    warning = (
+        f"[agent6] The previous run died mid-turn (iteration {iteration}; {named}).\n"
+        "  Its tools may have PARTIALLY APPLIED; replaying the turn can repeat a\n"
+        "  non-idempotent effect (an appending command, a migration, an MCP call)."
+    )
+    if not sys.stdin.isatty():
+        print(warning + " Proceeding (non-interactive).", file=sys.stderr)
+        return True
+    print(warning, file=sys.stderr)
+    try:
+        ans = input("  Re-run the turn anyway? [y/N]: ")
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return ans.strip().lower() in {"y", "yes"}
+
+
 def confirm_unconfined_autorun(isolation: IsolationLevel, cfg: Config) -> bool:
     """The one genuinely dangerous combination: the sandbox is OFF and
     run_command is auto-approved, so the agent can run any command on the host

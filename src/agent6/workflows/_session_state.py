@@ -6,6 +6,7 @@ each LLM call (load here; the loop owns saving it)."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -241,3 +242,43 @@ def load_session_snapshot(path: Path) -> SessionSnapshot:
         return SessionSnapshot.model_validate(raw)
     except ValidationError as exc:
         raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc
+
+
+# The mid-turn-crash marker. Written beside the snapshot BEFORE a turn's
+# tools dispatch and deleted only AFTER the after-tools snapshot advanced, so
+# a crash in the dispatch->snapshot window leaves a marker whose iteration
+# equals the turn resume would re-run: the one case where replay may repeat a
+# non-idempotent side effect. A clean stop deletes it; a crash mid-snapshot
+# leaves a STALE marker (iteration < next_iteration) resume clears silently.
+TURN_IN_FLIGHT_NAME = "turn_in_flight.json"
+
+
+def write_turn_marker(path: Path, iteration: int, tools: tuple[str, ...]) -> None:
+    """Best-effort: a marker that cannot be written must not fail the turn
+    (the write exists to improve a crash's recovery, not to gate progress)."""
+    with contextlib.suppress(OSError):
+        path.write_text(
+            json.dumps({"iteration": iteration, "tools": list(tools)}), encoding="utf-8"
+        )
+
+
+def read_turn_marker(path: Path) -> tuple[int, tuple[str, ...]] | None:
+    """The marker's (iteration, tool names), or None when absent/unreadable
+    (an unreadable marker reads as absent: the recovery it improves is
+    best-effort, and refusing a resume over a corrupt marker would invert
+    the feature's point)."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    iteration = raw.get("iteration") if isinstance(raw, dict) else None
+    if not isinstance(iteration, int):
+        return None
+    tools = raw.get("tools")
+    names = tuple(t for t in tools if isinstance(t, str)) if isinstance(tools, list) else ()
+    return iteration, names
+
+
+def clear_turn_marker(path: Path) -> None:
+    with contextlib.suppress(OSError):
+        path.unlink(missing_ok=True)

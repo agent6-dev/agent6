@@ -6137,3 +6137,94 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: Path) -> None:
     assert evt["iteration"] == 2
     assert "unable to write" in evt["error"]
     assert evt["commit_subject"] == "agent6 iter 2: fix"
+
+
+def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Path) -> None:
+    """The mid-turn-crash marker is on disk WHILE tools dispatch (a crash in
+    the dispatch->snapshot window leaves it at the re-run iteration for resume
+    to ask about) and gone once the after-tools snapshot advanced (a clean
+    turn leaves nothing; a later resume never falsely prompts)."""
+    from agent6.workflows._session_state import TURN_IN_FLIGHT_NAME, read_turn_marker
+
+    marker = tmp_path / TURN_IN_FLIGHT_NAME
+    seen: list[tuple[int, tuple[str, ...]] | None] = []
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            seen.append(read_turn_marker(marker))
+            if name == "run_verify_command":
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
+            return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False, verify_command=("true",), metric=None
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=3,
+        resume_state_path=tmp_path / "loop_state.json",
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    with patch("agent6.workflows.loop.chain_commit", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.completed is True
+    assert seen[0] == (1, ("run_verify_command",))  # live during dispatch
+    assert seen[-1] is not None and seen[-1][0] == 2  # second turn's own marker
+    assert not marker.exists()  # a clean end leaves nothing
+
+
+def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
+    """No marker proceeds; a stale one proceeds and clears silently; a
+    matching one asks -- decline keeps the marker (resume again to be asked
+    again), accept clears it so one crash asks once."""
+    from agent6.app.resume import turn_replay_allowed
+    from agent6.workflows._session_state import TURN_IN_FLIGHT_NAME, write_turn_marker
+
+    marker = tmp_path / TURN_IN_FLIGHT_NAME
+    asked: list[tuple[int, tuple[str, ...]]] = []
+
+    def _no(iteration: int, tools: tuple[str, ...]) -> bool:
+        asked.append((iteration, tools))
+        return False
+
+    def _yes(iteration: int, tools: tuple[str, ...]) -> bool:
+        asked.append((iteration, tools))
+        return True
+
+    assert turn_replay_allowed(tmp_path, 5, _no) is True  # no marker, never asks
+    write_turn_marker(marker, 3, ("apply_patch",))
+    assert turn_replay_allowed(tmp_path, 5, _no) is True  # stale: cleared, no ask
+    assert not marker.exists()
+    assert asked == []
+    write_turn_marker(marker, 5, ("run_command",))
+    assert turn_replay_allowed(tmp_path, 5, _no) is False  # matching + decline
+    assert marker.exists()  # stays for the next resume to ask again
+    assert turn_replay_allowed(tmp_path, 5, _yes) is True  # matching + accept
+    assert not marker.exists()  # asks once
+    assert asked == [(5, ("run_command",)), (5, ("run_command",))]

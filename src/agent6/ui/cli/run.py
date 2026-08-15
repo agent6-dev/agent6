@@ -57,6 +57,7 @@ from agent6.ui.cli._live import (
     tui_session,
 )
 from agent6.ui.cli._preflight import (
+    confirm_replay_after_crash,
     confirm_run_on_run_branch,
     confirm_unconfined_autorun,
 )
@@ -167,6 +168,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,
+        confirm_replay_after_crash=confirm_replay_after_crash,
         prompt_detach_away_mode=prompt_detach_away_mode,
         select_revised_prompt=lambda original, revised, questions: select_revised_prompt(
             original, revised, questions, console_cell[0]

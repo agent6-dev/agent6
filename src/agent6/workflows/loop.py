@@ -205,12 +205,15 @@ from agent6.workflows._provider_call import (
 )
 from agent6.workflows._review import ReviewDispatch, ReviewSeat, run_panel
 from agent6.workflows._session_state import (
+    TURN_IN_FLIGHT_NAME,
     ResumeError,
     SessionEndReason,
     SessionResult,
     SessionSnapshot,
     Verification,
+    clear_turn_marker,
     load_session_snapshot,
+    write_turn_marker,
 )
 from agent6.workflows._spiral_guards import SpiralGuard
 from agent6.workflows._toolset import (
@@ -1056,6 +1059,16 @@ class Workflow:
                     return outcome
                 continue
             turn = _TurnState(iteration=iteration, resp=got, assistant=assistant)
+            # BEFORE dispatch: a crash between a tool's side effect and the
+            # after-tools snapshot below leaves this marker at the iteration
+            # resume would re-run, so resume can ask instead of silently
+            # replaying a non-idempotent effect.
+            if self.resume_state_path is not None:
+                write_turn_marker(
+                    self.resume_state_path.parent / TURN_IN_FLIGHT_NAME,
+                    iteration,
+                    tuple(tu.name for tu in assistant.tool_uses),
+                )
             result = self._turn_dispatch_tools(state, turn)
             if result is not None:
                 return result
@@ -1076,11 +1089,12 @@ class Workflow:
             # Snapshot AFTER the executed tools (assistant turn + tool_results
             # are now in the conversation) so a crash before iteration N+1's
             # pre-call snapshot resumes from AFTER the dispatched tools instead
-            # of replaying them. Without this, a kill after a non-idempotent
-            # tool (run_command `>>`, apply_patch, a migration) but before the
-            # next iteration would re-issue iteration N's identical provider
-            # call and re-dispatch the same tool_uses (temperature 0.0 makes
-            # re-emission likely) -- double-applying edits / re-running commands.
+            # of replaying them. The dispatch->snapshot window itself stays
+            # open (the side effect and this write are not atomic); the
+            # in-flight marker above covers it, so resume detects the one case
+            # where replay may repeat a non-idempotent effect and asks. Marker
+            # deletion comes AFTER this write: a crash mid-snapshot then leaves
+            # a stale marker resume clears silently, never a missed one.
             self._save_resume_snapshot(
                 system=system,
                 messages=conversation.to_wire(),
@@ -1089,6 +1103,8 @@ class Workflow:
                 root_task_id=root_task_id,
                 state=state,
             )
+            if self.resume_state_path is not None:
+                clear_turn_marker(self.resume_state_path.parent / TURN_IN_FLIGHT_NAME)
             result = self._turn_stop_checks(state, turn, conversation)
             if result is not None:
                 return result

@@ -112,7 +112,13 @@ from agent6.types import SESSION_KINDS, IsolationLevel, session_bucket, session_
 from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
 from agent6.workflows._context import agents_md_notices
-from agent6.workflows._session_state import SessionEndReason, load_session_snapshot
+from agent6.workflows._session_state import (
+    TURN_IN_FLIGHT_NAME,
+    SessionEndReason,
+    clear_turn_marker,
+    load_session_snapshot,
+    read_turn_marker,
+)
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
 
 
@@ -128,6 +134,34 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
         for kind in SESSION_KINDS.values()
         if kind.resumable
     ]
+
+
+def turn_replay_allowed(
+    session_dir: Path,
+    next_iteration: int,
+    confirm: Callable[[int, tuple[str, ...]], bool],
+) -> bool:
+    """Whether resume may proceed given the mid-turn-crash marker state.
+
+    No marker (clean stop) or a STALE one (crash after the after-tools
+    snapshot advanced but before the delete; iteration < next) proceeds, the
+    stale marker cleared silently -- no false prompt. A marker matching the
+    turn about to re-run is a genuine mid-turn crash: its tools may have
+    partially applied, so the front-end decides (interactive default no;
+    headless warns and proceeds). Approval clears the marker so one crash
+    asks once."""
+    marker_path = session_dir / TURN_IN_FLIGHT_NAME
+    marker = read_turn_marker(marker_path)
+    if marker is None:
+        return True
+    iteration, tools = marker
+    if iteration < next_iteration:
+        clear_turn_marker(marker_path)
+        return True
+    if not confirm(iteration, tools):
+        return False
+    clear_turn_marker(marker_path)
+    return True
 
 
 def snapshot_head_mismatch(
@@ -405,6 +439,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
+        if not turn_replay_allowed(
+            layout.session_dir, snapshot.next_iteration, frontend.confirm_replay_after_crash
+        ):
+            reporter.err(
+                "Not resuming: inspect the working tree and the run log first"
+                " (the marker stays; resume again and answer yes to replay)."
+            )
+            return 2
         manifest_preset = manifest.workflow.replay_preset
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
