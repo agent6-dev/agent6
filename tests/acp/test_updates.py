@@ -121,11 +121,20 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
     in ok/name/detail. Reading body alone made a provider error, a budget stop
     and an iteration cap produce ZERO notifications -- an editor watching a run
     that simply stops."""
-    for reason in ("provider_error", "budget_exhausted", "max_iterations", "steer_abort"):
+    labels = {
+        "provider_error": "provider error",
+        "budget_exhausted": "budget exhausted",
+        "max_iterations": "hit iteration cap",
+        "steer_abort": "stopped",
+    }
+    for reason, label in labels.items():
         events = [{"type": "session.end", "reason": reason, "all_passed": False}]
         updates = updates_for_events(events, acp_session_id="s")
         assert updates, f"{reason} rendered as nothing"
-        assert "did not pass" in updates[-1]["params"]["update"]["content"]["text"]
+        text = updates[-1]["params"]["update"]["content"]["text"]
+        # The reason's own label, in the shared status vocabulary -- never a
+        # blanket "did not pass" verdict.
+        assert f"Session {label}" in text
 
 
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
@@ -250,3 +259,15 @@ def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
     )
     assert "\x1b" not in call["params"]["update"]["title"]
     assert "\x07" not in call["params"]["update"]["title"]
+
+
+def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
+    """A deliberate finish that verified nothing is "finished" in the shared
+    status vocabulary; "did not pass" implied a check that never existed."""
+    updates = updates_for_events(
+        [{"type": "session.end", "reason": "finish_session", "all_passed": False}],
+        acp_session_id="s",
+    )
+    text = updates[-1]["params"]["update"]["content"]["text"]
+    assert "Session finished" in text
+    assert "did not pass" not in text

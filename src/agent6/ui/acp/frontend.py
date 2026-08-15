@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +26,7 @@ from agent6.events import EventSink
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
+from agent6.ui.steer import file_bridge_steer
 from agent6.workflows.loop import SessionResult, Workflow
 
 # What the client is asked, and what an unaskable client is assumed to have
@@ -37,30 +37,6 @@ from agent6.workflows.loop import SessionResult, Workflow
 # answer among several is not a permission, and must never be offered as
 # one the editor may remember.
 Asker = Callable[[str, tuple[str, ...], bool | None], str | None]
-
-
-def _false() -> bool:
-    return False
-
-
-def _nothing() -> None:
-    return None
-
-
-@dataclass(slots=True)
-class _NoSteer:
-    """No pause menu: ACP steers by prompting into a live session instead.
-
-    `SteerHooks` is a Protocol of callable ATTRIBUTES, so this holds fields
-    rather than defining methods."""
-
-    requested: Callable[[], bool] = _false
-    clear: Callable[[], None] = _nothing
-    prompt: Callable[[], str | None] = _nothing
-    restore: Callable[[], None] = _nothing
-    abort_pending: Callable[[], bool] = _false
-    interrupt: Callable[[], bool] = _false
-    reset_stage: Callable[[], None] = _nothing
 
 
 def acp_frontend(
@@ -109,9 +85,15 @@ def acp_frontend(
         return _approve("Run commands UNSANDBOXED on this host, with no per-command prompt?")
 
     def _steer(
-        _events: EventSink, _session_dir: Path, _facts: Callable[[], SessionFacts]
+        _events: EventSink, session_dir: Path, _facts: Callable[[], SessionFacts]
     ) -> SteerHooks:
-        return _NoSteer()
+        # The file bridge, not an inert stub: a later prompt on this session
+        # resumes the run with its text seeded through the steer files
+        # (resume --steer), and the loop's pre-call drain reads THESE hooks --
+        # inert ones dropped the seeded instruction, so the resumed model
+        # re-finished the old task. Mid-run nothing here writes steer files
+        # (can_steer stays False), so no new affordance is offered.
+        return file_bridge_steer(session_dir)
 
     def _no_repl(
         _session_dir: Path, _budget: BudgetTracker, _task: str, _mcp: object

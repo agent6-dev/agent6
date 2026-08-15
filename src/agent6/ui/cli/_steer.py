@@ -17,7 +17,6 @@ import sys
 import tempfile
 import termios
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -34,25 +33,8 @@ from agent6.sessions.ipc import (
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable
 from agent6.ui.cli._steer_menu import BtwRunner, normalize_steer_choice, pause_menu
+from agent6.ui.steer import SteerState, file_bridge_steer
 from agent6.viewmodel.format import format_cost
-
-
-@dataclass
-class SteerState:
-    requested: Callable[[], bool]
-    clear: Callable[[], None]
-    prompt: Callable[[], str | None]
-    restore: Callable[[], None]
-    # Polled during a streaming call so a Stop interrupts a long turn promptly.
-    abort_pending: Callable[[], bool]
-    # Polled during a streaming call: True aborts the in-flight model call so
-    # the steer prompt runs now instead of at the next between-step boundary.
-    interrupt: Callable[[], bool]
-    # Called at each leg entry (wf.run/resume): a stage armed in a finished leg
-    # must not open a phantom pause (or abort the first call) in the next one.
-    # Zeroes only the SIGINT stage; the steer marker files stay, because
-    # resume --steer seeds the next leg through them.
-    reset_stage: Callable[[], None]
 
 
 @contextlib.contextmanager
@@ -385,37 +367,6 @@ def install_steer_sigint(
         abort_pending=lambda: steer_answer_is_abort(session_dir),
         interrupt=interrupt,
         reset_stage=reset_stage,
-    )
-
-
-def file_bridge_steer(session_dir: Path) -> SteerState:
-    """Steer for a run with no controlling terminal (detached spawn from the
-    TUI hub or the web UI): no SIGINT handler, requests and answers travel
-    only over the front-end file bridge. Without this, a hub-spawned run
-    would never poll the `steer.request` marker and every web/TUI steer
-    would be silently lost."""
-
-    def prompt() -> str | None:
-        answer = read_steer_answer(session_dir)
-        # No answer (front-end died or abandoned the prompt): clear the
-        # request marker so it cannot re-trigger another blocking read at the
-        # very next boundary, looping the run.
-        if answer is None:
-            clear_steer_request(session_dir)
-        return answer
-
-    def clear() -> None:
-        clear_steer_answer(session_dir)
-        clear_steer_request(session_dir)
-
-    return SteerState(
-        requested=lambda: steer_request_pending(session_dir),
-        clear=clear,
-        prompt=prompt,
-        restore=lambda: None,
-        abort_pending=lambda: steer_answer_is_abort(session_dir),
-        interrupt=lambda: steer_request_pending(session_dir),
-        reset_stage=lambda: None,  # no SIGINT stage on the file bridge
     )
 
 

@@ -85,11 +85,14 @@ def _ending(item: TranscriptItem) -> str:
     budget stop and an iteration cap render as SILENCE -- an editor watching a
     run that simply stops -- and made a finish over a red gate look identical
     to a green one.
+
+    The words are the status vocabulary every other surface uses: "passed"
+    only for all-gates-green, otherwise the end reason's own label --
+    "finished" is a deliberate finish that verified nothing (a gateless run),
+    never a failure verdict like "did not pass" implied.
     """
-    verdict = "passed" if item.ok else "did not pass"
-    parts = [f"Session {verdict}"]
-    if item.name:
-        parts.append(f"({item.name})")
+    word = "passed" if item.ok else (item.name or "ended")
+    parts = [f"Session {word}"]
     if item.detail:
         parts.append(f"- {item.detail}")
     ending = " ".join(parts)

@@ -147,3 +147,25 @@ def test_the_ask_repl_is_refused_rather_than_faked() -> None:
     front, _asked = _frontend()
     with pytest.raises(RuntimeError, match="drives its own turns"):
         front.run_ask_repl(None, None, None, "q")  # pyright: ignore[reportArgumentType]
+
+
+def test_steer_hooks_consume_a_seeded_resume_steer(tmp_path: Path) -> None:
+    """A later ACP prompt resumes the run with its text seeded through the
+    steer files (resume --steer); the frontend's hooks are the file bridge
+    that reads them. Inert hooks dropped the seeded instruction, so the
+    resumed model ran one turn without it and re-finished the old task."""
+    from agent6.sessions.ipc import request_steer, write_steer_answer
+
+    front, _ = _frontend()
+    hooks = front.make_steer_state(
+        None,  # pyright: ignore[reportArgumentType]
+        tmp_path,
+        lambda: None,  # pyright: ignore[reportArgumentType]
+    )
+    assert hooks.requested() is False
+    request_steer(tmp_path)
+    write_steer_answer(tmp_path, "append the line 'second turn'")
+    assert hooks.requested() is True
+    assert hooks.prompt() == "append the line 'second turn'"
+    hooks.clear()
+    assert hooks.requested() is False

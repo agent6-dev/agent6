@@ -60,6 +60,7 @@ depends_on = [
 [[modules]]
 path = "agent6.ui.cli"
 depends_on = [
+  "agent6.ui.steer",
   "agent6.app",
   "agent6.config",
   "agent6.config.io",
@@ -145,6 +146,12 @@ path = "agent6.ui.tui"
 depends_on = ["agent6.app", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.secrets", "agent6.viewmodel"]
 
 [[modules]]
+# The steer seam + its file-bridge implementation, shared by the CLI's SIGINT
+# machinery and terminal-less fronts (detached spawns, ACP).
+path = "agent6.ui.steer"
+depends_on = ["agent6.sessions.ipc"]
+
+[[modules]]
 # Find the agent6 exe and spawn it detached (new work / machines / background
 # resume). Consumed by the CLI, the TUI, and the web server. Pure stdlib leaf.
 path = "agent6.ui.spawn"
@@ -167,6 +174,7 @@ path = "agent6.ui.acp"
 # The types SessionFrontend's own signatures name: implementing the seam means
 # naming what it passes. The same set ui.cli has, minus everything that draws.
 depends_on = [
+  "agent6.ui.steer",
   "agent6",
   "agent6.app",
   "agent6.budget",
