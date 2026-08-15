@@ -462,7 +462,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.sessions_command == "stop":
         return _cmd_stop(session_id=args.session_id)
     if args.sessions_command == "prune":
-        return _cmd_prune(delete_squashed=args.delete_squashed)
+        return _cmd_prune(delete_squashed=args.delete_squashed, config_path=args.config)
     if args.sessions_command == "dir":
         return _cmd_sessions_dir()
     if args.sessions_command == "rm":

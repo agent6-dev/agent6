@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.merge import execute_merge
+from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.config import (
     Config,
     ConfigError,
@@ -79,6 +80,7 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
+from agent6.workflows.subrun import SubrunError
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:
 # a listing where a provider_error death reads as plain text is how dead runs
@@ -503,6 +505,17 @@ def _plan_merge(  # noqa: PLR0911
     except ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    # An orphaned fan-out lane (coordinator died before importing it) is
+    # adopted here: fetch its branch from the lane clone and replace the
+    # live-view symlink, then merge like any run.
+    try:
+        adopted = adopt_orphan_lane(cwd, cfg, layout, manifest)
+    except SubrunError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if adopted is not None:
+        print(f"[agent6] {adopted}")
+        layout = SessionLayout(state_dir=layout.state_dir, session_id=layout.session_id)
     # chain_tip resolves both shapes head_ref takes: a branch name and the
     # hidden refs/agent6/<id>/head chain ref.
     if chain_tip(cwd, run_branch) is None:
@@ -670,10 +683,14 @@ def _prune_squash_merged(
     return False
 
 
-def _cmd_prune(*, delete_squashed: bool = False) -> int:
+def _cmd_prune(  # noqa: PLR0912
+    *, delete_squashed: bool = False, config_path: Path | None = None
+) -> int:
     """Delete agent6/* run branches that `git branch -d` can safely remove
     (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
-    ones and unmerged ones (review first).
+    ones and unmerged ones (review first). Sweep fan-out clone dirs whose every
+    lane branch tip already exists in this repo (content-safe by commit proof;
+    a clone holding any commit this repo lacks is kept whole).
 
     With `--delete-squashed` also force-delete branches the manifest confirms
     were squash-merged into an existing base -- their content is safe in that
@@ -728,7 +745,19 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
     # last branch the refs it kept for a later pass would be unreachable by
     # this command forever.
     refs_deleted, refs_kept = _prune_chain_refs(cwd, state_dir, delete_squashed=delete_squashed)
-    if not branches and not (refs_deleted or refs_kept):
+    clones_swept = clones_kept = 0
+    try:
+        cfg = load_effective(cwd, config_path).config
+    except ConfigError as exc:
+        print(f"[agent6] fan-out clone sweep skipped (config unreadable: {exc})", file=sys.stderr)
+    else:
+        clones_swept, clones_kept = sweep_fanout_clones(cwd, cfg)
+        if clones_kept:
+            print(
+                f"[agent6] kept {clones_kept} fan-out clone dir(s) holding commits this"
+                " repo lacks (merge or archive their lanes first)"
+            )
+    if not branches and not (refs_deleted or refs_kept or clones_swept or clones_kept):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
         return 0
     kept = merged_kept + unmerged_kept
@@ -739,9 +768,14 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
         if refs_deleted or refs_kept
         else ""
     )
+    clones_note = (
+        f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
+        if clones_swept or clones_kept
+        else ""
+    )
     print(
         f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
-        f"({merged_kept} merged, {unmerged_kept} unmerged){refs_note}",
+        f"({merged_kept} merged, {unmerged_kept} unmerged){refs_note}{clones_note}",
     )
     return 0
 

@@ -1744,3 +1744,32 @@ def test_lane_is_self_describing_from_birth(
         cfg=Config(),
     )
     assert read_manifest(layout2.session_dir).parallel_id is None
+
+
+def test_sweep_keeps_a_clone_holding_unmerged_commits(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep is content-safe by commit proof: a fan-out dir whose lane
+    clone holds any commit the origin lacks is kept whole (the clone may be
+    the only copy); one whose every lane tip the origin holds is deleted."""
+    from agent6.app.parallel import sweep_fanout_clones
+
+    workdir = tmp_path / "cache"
+    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+
+    unmerged = workdir / "fan-a" / "lane-1"
+    unmerged.parent.mkdir(parents=True)
+    clone_workspace(origin, unmerged)
+    create_branch(unmerged, "agent6/fan-a-l1")
+    (unmerged / "x.txt").write_text("x\n", encoding="utf-8")
+    commit_all(unmerged, "lane work")
+
+    merged = workdir / "fan-b" / "lane-1"
+    merged.parent.mkdir(parents=True)
+    clone_workspace(origin, merged)
+    create_branch(merged, "agent6/fan-b-l1")  # tip == origin HEAD: nothing unique
+
+    swept, kept = sweep_fanout_clones(origin, cfg)
+    assert (swept, kept) == (1, 1)
+    assert (workdir / "fan-a").is_dir()  # unique commits: kept whole
+    assert not (workdir / "fan-b").exists()

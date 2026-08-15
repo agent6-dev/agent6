@@ -47,13 +47,20 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
 from agent6.directive import parse_spec
-from agent6.git_ops import GitError, checkout_detached, diff_since
+from agent6.git_ops import (
+    GitError,
+    branch_exists,
+    chain_tip,
+    checkout_detached,
+    diff_since,
+    list_run_branches,
+)
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, bucket_dir
-from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir
+from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
@@ -128,6 +135,70 @@ def _workdir_root(cfg: Config, fanout_id: str) -> Path:
     `<cache_dir>/parallel`) / `<fanout-id>`."""
     base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
     return base / fanout_id
+
+
+def adopt_orphan_lane(
+    origin: Path, cfg: Config, layout: SessionLayout, manifest: SessionManifest
+) -> str | None:
+    """Import an orphaned fan-out lane so an ordinary merge can land it.
+
+    A coordinator death leaves a finished lane's branch only in its clone
+    under `[parallel].workdir`, with the origin state still holding the
+    live-view symlink. When the manifest carries fan-out lineage, the branch
+    is absent from the origin, and the clone still holds it, run the
+    coordinator's own import: fetch the branch, then replace the symlink with
+    the real run dir. Returns the printable note, or None when this session
+    is not that shape. Raises SubrunError when the attempt fails (the symlink
+    is restored)."""
+    if (
+        not manifest.run_branch
+        or manifest.parallel_id is None
+        or manifest.lane is None
+        or branch_exists(origin, manifest.run_branch)
+        or not layout.session_dir.is_symlink()
+    ):
+        return None
+    clone = _workdir_root(cfg, manifest.parallel_id) / f"lane-{manifest.lane}"
+    if not (clone / ".git").exists() or not branch_exists(clone, manifest.run_branch):
+        return None
+    real = layout.session_dir.resolve()
+    layout.session_dir.unlink()
+    try:
+        import_run(origin, clone, manifest.run_branch, real, layout.state_dir)
+    except SubrunError:
+        layout.session_dir.symlink_to(real)
+        raise
+    return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
+
+
+def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
+    """Delete fan-out clone dirs whose every lane branch tip already exists in
+    *origin* (content-safe by commit proof, the prune --delete-squashed
+    philosophy). Returns (swept, kept). A lane clone holding any commit the
+    origin lacks keeps its whole fan-out dir: the clone may be the only copy."""
+    base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
+    if not base.is_dir():
+        return 0, 0
+    swept = kept = 0
+    for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
+        safe = True
+        for clone in sorted(fanout.glob("lane-*")):
+            if not (clone / ".git").exists():
+                continue
+            try:
+                tips = [chain_tip(clone, br) for br in list_run_branches(clone)]
+            except GitError:
+                safe = False
+                break
+            if any(tip is not None and chain_tip(origin, tip) is None for tip in tips):
+                safe = False
+                break
+        if safe:
+            shutil.rmtree(fanout, ignore_errors=True)
+            swept += 1
+        else:
+            kept += 1
+    return swept, kept
 
 
 def build_lane_specs(

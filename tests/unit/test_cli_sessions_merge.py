@@ -719,3 +719,78 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     assert msg == "feat: x\n\nbody"
     assert seen["budget"] is tracker, "the squash call minted its own budget"
     assert "budget.update" in sink.types, "the squash spend never reached the log"
+
+
+def test_merge_adopts_an_orphaned_fanout_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A coordinator death leaves a finished lane's branch only in its clone,
+    with the origin state holding the live-view symlink. `sessions merge`
+    adopts it (fetch from the clone, replace the symlink) and lands it like
+    any run; `sessions prune` then sweeps the fan-out clone dir, whose every
+    commit the origin now holds."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base_sha = _git(tmp_path, "rev-parse", "HEAD")
+
+    # The lane clone, as the spawner leaves it: workdir cache / fanout / lane-1.
+    workdir = tmp_path / "cache" / "parallel"
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    (tmp_path / "cfg").mkdir()
+    (tmp_path / "cfg" / "config.toml").write_text(
+        f'[parallel]\nworkdir = "{workdir}"\n', encoding="utf-8"
+    )
+    clone = workdir / "fan" / "lane-1"
+    clone.parent.mkdir(parents=True)
+    _git(tmp_path, "clone", "-q", str(tmp_path), str(clone))
+    _git(clone, "config", "user.email", "t@t")
+    _git(clone, "config", "user.name", "t")
+    _git(clone, "checkout", "-q", "-b", "agent6/fan-l1")
+    (clone / "work.txt").write_text("lane work\n", encoding="utf-8")
+    _git(clone, "add", "-A")
+    _git(clone, "commit", "-q", "-m", "agent6 iter 1: work")
+
+    # The lane's session dir in ITS bucket + the origin's live-view symlink,
+    # with the birth-stamped lineage.
+    lane_state = tmp_path / "lane-state" / "sessions" / "runs" / "fan-l1"
+    lane_state.mkdir(parents=True)
+    (lane_state / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "fan-l1",
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base_sha,
+                "base_branch": "main",
+                "run_branch": "agent6/fan-l1",
+                "parallel_id": "fan",
+                "lane": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (lane_state / "logs.jsonl").write_text(
+        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": False}) + "\n",
+        encoding="utf-8",
+    )
+    origin_runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    origin_runs.mkdir(parents=True)
+    (origin_runs / "fan-l1").symlink_to(lane_state)
+
+    assert main(["sessions", "merge", "fan-l1", "--strategy", "squash"]) == 0
+    out = capsys.readouterr().out
+    assert "imported orphaned lane branch agent6/fan-l1" in out
+    assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "lane work\n"
+    assert not (origin_runs / "fan-l1").is_symlink()  # the real dir replaced it
+
+    # Every lane commit is now in the origin: prune sweeps the fan-out dir.
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert "fan-out clones: swept 1" in out
+    assert not (workdir / "fan").exists()
