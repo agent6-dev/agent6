@@ -80,7 +80,19 @@ jobs:
         # sandbox-smoke job below.
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - run: uv run pytest -ra
+      - name: The suite imports the installed wheel, not the checkout
+        # pytest's `pythonpath = ["src"]` serves local dev; here it would
+        # shadow the artifact under test, so the run below overrides it and
+        # this step proves the resolution.
+        # --no-sync everywhere after the install: a bare `uv run` re-syncs
+        # the project, silently swapping the artifact back for the checkout.
+        run: |
+          uv run --no-sync python -c "
+          import agent6
+          assert 'site-packages' in agent6.__file__, agent6.__file__
+          print('testing', agent6.__file__)"
+
+      - run: uv run --no-sync pytest -ra --override-ini=pythonpath=
 
   sandbox-smoke:
     name: agent6 check sandbox (${{ matrix.platform.arch }})
