@@ -294,3 +294,74 @@ def test_denied_beats_a_grant(tmp_path: Path) -> None:
     )
     with pytest.raises(ToolError, match="hidden from this run"):
         _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
+
+
+def _hide_on_hardened(path: str, extra: dict[str, object] | None = None) -> str | None:
+    from agent6.app.confine import check_hide_paths_support
+
+    data: dict[str, object] = {"sandbox": {"hide_paths": [path], **(extra or {})}}
+    return check_hide_paths_support(Config.model_validate(data), "hardened")
+
+
+def test_hide_paths_refuses_the_launcher_grant_regions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The preflight built its region set from cwd + the extra grants only,
+    while the launcher also grants /tmp, the system roots, and the operator
+    tool dirs -- a hide_paths entry under those passed preflight and stayed
+    readable (a silently-inert explicit setting)."""
+    monkeypatch.chdir(tmp_path)
+    tool_dir = Path("/nonexistent-tools/bin")
+    monkeypatch.setattr(
+        "agent6.tools.policy.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
+    )
+    r = _hide_on_hardened("/tmp/secret-cache")
+    assert r is not None and "/tmp" in r
+    r = _hide_on_hardened("/etc/agent6-private")
+    assert r is not None and "system dir" in r
+    r = _hide_on_hardened(str(tool_dir / "sub"))
+    assert r is not None and "tool dir" in r
+    assert _hide_on_hardened("/nonexistent-elsewhere/private") is None
+
+
+def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A literal `..` refuses upstream at config validation; a symlink alias
+    resolves before containment; a grant INSIDE the hidden tree exposes part
+    of it and refuses too."""
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(Exception, match="'\\.\\.'"):
+        _hide_on_hardened("/opt/../etc/shadow-file")
+    link = tmp_path / "alias"
+    link.symlink_to("/etc")
+    assert _hide_on_hardened(str(link / "agent6-private")) is not None
+    hidden_tree = Path("/nonexistent-vault")
+    r = _hide_on_hardened(str(hidden_tree), {"extra_read_paths": [str(hidden_tree / "inner")]})
+    assert r is not None and "extra_read_paths" in r
+
+
+def test_hide_paths_refuses_an_mcp_server_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each enabled server's own policy regions join the preflight set."""
+    from agent6.app.confine import check_hide_paths_support
+
+    monkeypatch.chdir(tmp_path)
+    mcp_dir = Path("/nonexistent-mcp-data")
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"hide_paths": [str(mcp_dir / "creds")]},
+            "mcp": {
+                "enabled": True,
+                "servers": {
+                    "srv": {
+                        "command": ["fake-server"],
+                        "sandbox": {"read_paths": [str(mcp_dir)]},
+                    }
+                },
+            },
+        }
+    )
+    r = check_hide_paths_support(cfg, "hardened")
+    assert r is not None and "mcp.servers.srv" in r

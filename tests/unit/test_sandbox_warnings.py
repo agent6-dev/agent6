@@ -287,8 +287,11 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
 ) -> None:
     from agent6.app.confine import check_hide_paths_support
 
+    # Private homes OUTSIDE every hardened grant region (/tmp is granted RW,
+    # so a tmp-based home is genuinely exposed there -- the twin below pins
+    # that as a true positive). The normal ~/.local layout is this case.
     for var in ("CONFIG", "STATE", "DATA", "CACHE"):
-        monkeypatch.setenv(f"AGENT6_{var}_HOME", str(tmp_path / var.lower()))
+        monkeypatch.setenv(f"AGENT6_{var}_HOME", f"/nonexistent-private/{var.lower()}")
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
@@ -297,6 +300,25 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     warn_sandbox_gaps("hardened", _env(4), cfg)
     assert capsys.readouterr().err == ""
     assert check_hide_paths_support(cfg, "hardened") is None
+
+
+def test_hardened_warns_when_private_state_sits_in_a_granted_region(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The preflight used to see only cwd + the extra grants, so private
+    dirs under the host's shared /tmp (which the hardened launcher grants
+    RW) went unwarned -- silently readable by every command."""
+    for var in ("CONFIG", "STATE", "DATA", "CACHE"):
+        monkeypatch.setenv(f"AGENT6_{var}_HOME", str(tmp_path / var.lower()))
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.chdir(ws)
+    monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
+    cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
+    warn_sandbox_gaps("hardened", _env(4), cfg)
+    err = capsys.readouterr().err
+    assert str(tmp_path).startswith("/tmp"), "the fixture premise: pytest tmp lives under /tmp"
+    assert "jailed commands can READ" in err and "/tmp" in err
 
 
 def test_root_on_hardened_names_what_it_costs(

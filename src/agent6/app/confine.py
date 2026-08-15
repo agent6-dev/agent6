@@ -14,11 +14,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent6.app._setup import mcp_server_policy
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.paths import hidden_paths, is_root, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason
 from agent6.sandbox.jail import tool_mount_notes
+from agent6.tools.policy import jail_policy
 from agent6.types import IsolationLevel
 
 
@@ -135,14 +137,14 @@ def warn_sandbox_gaps(
             "Landlock ABI 3 (Linux 6.2). Run on 'strict' -- its mount namespace "
             "confines truncation on any ABI -- or upgrade the kernel."
         )
-    for hidden, region in unmaskable_exposures(cfg, isolation):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation):
         reporter.err(
             "[agent6] WARNING: jailed commands can READ"
-            f" {hidden} -- it sits inside {region}, which they are granted,"
-            " and 'hardened' has no mount namespace to mask it out (Landlock"
-            " has no deny rules). Provider keys, transcripts, notes and run"
-            " history in there are readable by every command this run runs."
-            " Use 'strict' to keep them masked under the same grant."
+            f" {hidden} -- it overlaps {region} ({source}), which they are"
+            " granted, and 'hardened' has no mount namespace to mask it out"
+            " (Landlock has no deny rules). Provider keys, transcripts, notes"
+            " and run history in there are readable by every command this run"
+            " runs. Use 'strict' to keep them masked under the same grant."
         )
     if isolation in ("strict", "hardened"):
         notes = tool_mount_notes()
@@ -234,24 +236,61 @@ def check_protect_git_support(
     )
 
 
-def unmaskable_exposures(cfg: Config, isolation: IsolationLevel) -> tuple[tuple[Path, Path], ...]:
-    """`(hidden path, granted region containing it)` pairs this isolation
+def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], ...]:
+    """Every region the hardened launcher grants a command, labeled by its
+    source. Derived from the SAME builders the run uses (`jail_policy` for the
+    command surface, `mcp_server_policy` per enabled server) so preflight and
+    enforcement cannot drift; the fixed sets mirror the launcher's hardened
+    ruleset (jail/src/main.rs): /tmp is granted RW, the system roots
+    read+exec."""
+    policy = jail_policy(root, cfg, "hardened", ("true",))
+    regions: list[tuple[Path, str]] = [
+        (root, "the workspace"),
+        (Path("/tmp"), "the host's shared /tmp (hardened has no private tmpfs)"),  # noqa: S108
+    ]
+    for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
+        regions.append((Path(sysdir), "a system dir every command is granted"))
+    regions += [(Path(p), "sandbox.extra_read_paths") for p in policy.extra_ro_paths]
+    regions += [(Path(p), "sandbox.extra_write_paths") for p in policy.extra_rw_paths]
+    regions += [(Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
+    if cfg.mcp.enabled:
+        for name, srv in cfg.mcp.servers.items():
+            if not srv.enabled:
+                continue
+            spol = mcp_server_policy(cfg, root, "hardened", srv)
+            if spol is None:
+                continue  # unconfined by explicit opt-out; its own loud path
+            regions += [(Path(p), f"[mcp.servers.{name}] read_paths") for p in spol.extra_ro_paths]
+            regions += [(Path(p), f"[mcp.servers.{name}] write_paths") for p in spol.extra_rw_paths]
+            regions.append((Path(spol.cwd), f"[mcp.servers.{name}]'s working dir"))
+    return tuple(regions)
+
+
+def unmaskable_exposures(
+    cfg: Config, isolation: IsolationLevel
+) -> tuple[tuple[Path, Path, str], ...]:
+    """`(hidden path, granted region, region source)` triples this isolation
     cannot mask, hidden-path first. Empty on strict (it masks) and on `none`
     (no jail at all; the blanket unsandboxed warning covers that).
 
     On `hardened` there is no mount namespace and Landlock has no deny rules,
-    so anything inside a granted region -- the workspace, or an extra grant --
-    is readable however private it is.
+    so a hidden path OVERLAPPING any granted region is exposed in both
+    directions: hidden-inside-grant leaves the whole path readable, and a
+    grant INSIDE the hidden tree leaves that part readable. Paths are
+    resolved before containment so a `..` spelling cannot dodge the check.
     """
     if isolation != "hardened":
         return ()
-    sb = cfg.sandbox
-    regions = (
-        Path.cwd(),
-        *(Path(p) for p in (*sb.extra_read_paths, *sb.extra_write_paths)),
-    )
-    hidden = hidden_paths(Path(p) for p in sb.hide_paths)
-    return tuple((h, region) for region in regions for h in hidden if h.is_relative_to(region))
+    regions = _hardened_grant_regions(cfg, Path.cwd())
+    out: list[tuple[Path, Path, str]] = []
+    for h in hidden_paths(Path(p) for p in cfg.sandbox.hide_paths):
+        hr = h.resolve()
+        for region, source in regions:
+            rr = region.resolve()
+            if hr.is_relative_to(rr) or rr.is_relative_to(hr):
+                out.append((h, region, source))
+                break  # one exposing region per hidden path carries the point
+    return tuple(out)
 
 
 def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | None:
@@ -269,13 +308,13 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
     if isolation != "hardened":
         return None  # before reading config: every other level masks
     listed = {Path(p) for p in cfg.sandbox.hide_paths}
-    for hidden, region in unmaskable_exposures(cfg, isolation):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation):
         if hidden in listed:
             return (
-                f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
-                f" {str(region)!r} -- a region jailed commands can read. Masking it"
-                " needs the mount namespace only 'strict' has. Use strict, drop the"
-                " entry, or move one of the two."
+                f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps"
+                f" {str(region)!r} ({source}) -- a region jailed commands can"
+                " read. Masking it needs the mount namespace only 'strict' has."
+                " Use strict, drop the entry, or move one of the two."
             )
     return None
 
