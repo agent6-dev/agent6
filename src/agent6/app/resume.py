@@ -37,6 +37,7 @@ from agent6.app.finalize import (
     print_interrupt_end,
     print_session_end,
     session_exit_code,
+    stranded_edits,
 )
 from agent6.app.frontend import (
     SessionFrontend,
@@ -801,7 +802,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             verified=result.verified,
             reporter=reporter,
         )
-        return session_exit_code(result)
+        return session_exit_code(result, stranded=stranded_edits(result, layout))
     finally:
         # Single owner of worker.pid for every resume exit path, refusals and
         # Ctrl-C during verify inference included.

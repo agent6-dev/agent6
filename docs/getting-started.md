@@ -87,6 +87,13 @@ agent6 fork <session-id> --at-turn 7       # branch a new run from turn 7; --ste
 State is snapshotted before each model call and checkpointed per turn. `fork` rolls a
 copy back to a turn and continues it as a new run; the original is never changed.
 
+**Exit codes** (`agent6 run` / `resume`; scripts branch on these): `0` finished
+with a green gate or nothing to gate on; `1` the run broke (crash, provider
+error); `2` operator error (bad flag or config); `3` budget exhausted;
+`4` finished over a red or never-run verify gate; `5` finished but no commit
+landed and the edits sit uncommitted in the working tree (a run that changed
+nothing stays `0`); `130` interrupted.
+
 ## Plan, review, and ask
 
 ```sh

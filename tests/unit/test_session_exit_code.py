@@ -9,6 +9,8 @@ completed=False is exit 1, a clean or ungated finish is 0.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent6.app.finalize import session_exit_code
 from agent6.workflows._session_state import SessionEndReason, Verification
 from agent6.workflows.loop import SessionResult
@@ -86,3 +88,58 @@ def test_auto_merge_needs_a_vouched_for_tree() -> None:
     assert not auto_merge_eligible(
         _result(completed=False, reason="max_iterations", verified="passed")
     )
+
+
+def test_exit_code_stranded_edits_are_five() -> None:
+    """Completed, gate green (or absent), but the promised branch never
+    materialized and the edits sit uncommitted: 0 would tell a script the
+    deliverable landed. A red gate outranks 5 (the gate is the primary
+    signal); an unstranded finish stays 0."""
+    ok = _result(completed=True, reason="finish_session", verified="passed")
+    assert session_exit_code(ok, stranded=True) == 5
+    assert session_exit_code(ok, stranded=False) == 0
+    red = _result(completed=True, reason="finish_session", verified="failed")
+    assert session_exit_code(red, stranded=True) == 4
+    broke = _result(completed=False, reason="provider_error")
+    assert session_exit_code(broke, stranded=True) == 1
+
+
+def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
+    """The predicate is true exactly when the manifest promised a branch that
+    does not exist AND the tree is dirty; a clean tree (nothing to commit) and
+    an existing branch are both False."""
+    import subprocess
+
+    from agent6.app.finalize import stranded_edits
+    from agent6.sessions.layout import SessionLayout
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "a.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "a.txt"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"],
+        check=True,
+    )
+    import json
+
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
+    layout.session_dir.mkdir(parents=True)
+    (layout.session_dir / "manifest.json").write_text(
+        json.dumps({"user_task": "t", "run_branch": "agent6/r1", "base_branch": "master"}),
+        encoding="utf-8",
+    )
+    result = _result(completed=True, reason="finish_session", verified="passed")
+    import os
+
+    old = Path.cwd()
+    os.chdir(repo)
+    try:
+        assert stranded_edits(result, layout) is False  # clean tree
+        (repo / "a.txt").write_text("changed", encoding="utf-8")
+        assert stranded_edits(result, layout) is True  # dirty + branch missing
+        subprocess.run(["git", "-C", str(repo), "branch", "agent6/r1"], check=True)
+        assert stranded_edits(result, layout) is False  # branch exists
+    finally:
+        os.chdir(old)

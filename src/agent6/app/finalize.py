@@ -51,23 +51,58 @@ _EXIT_BUDGET_EXHAUSTED = 3
 # condition into a refusal to finish at all. Public: the parallel fan-out exits
 # with it when gates ran and no lane passed.
 EXIT_VERIFY_FAILED = 4
+# The agent finished and the gate (if any) was green, but the promised run
+# branch never came into existence and the edits sit uncommitted
+# (`stranded_edits`): the deliverable a script would collect on 0 is not
+# there. A run that changed nothing stays 0.
+EXIT_NO_COMMIT_LANDED = 5
 
 
-def session_exit_code(result: SessionResult) -> int:
+def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
     """Map a finished run to its process exit code.
 
     0 finished (nothing to gate on, or the gate was green) / 3 budget /
-    4 finished over a not-green verify / 1 else.
+    4 finished over a not-green verify / 5 finished with its edits stranded
+    uncommitted (`stranded_edits`) / 1 else.
 
     4 covers red AND unverified: the tree is not green, and that is what 4
     means -- exiting 0 on "no verify ran" would let a worker pass by never
-    running the gate. WHOSE failure it is shows in the word and the reason,
-    not here; a script reading 0 would take it as passing."""
+    running the gate. 5 is the same principle for the deliverable: the
+    promised branch never materialized and the edits sit uncommitted, so 0
+    would tell a script the work landed. A red gate outranks 5 (the gate is
+    the primary signal; the footer still says both). WHOSE failure it is
+    shows in the word and the reason, not here; a script reading 0 would
+    take it as passing."""
     if result.completed:
-        return EXIT_VERIFY_FAILED if result.verified in ("failed", "unverified") else 0
+        if result.verified in ("failed", "unverified"):
+            return EXIT_VERIFY_FAILED
+        return EXIT_NO_COMMIT_LANDED if stranded else 0
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
+
+
+def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
+    """A completed run whose promised branch never came into existence while
+    edits sit uncommitted in the working tree. Exit code 5 and the end
+    banner's WARNING read this one predicate, so the machine surface and the
+    human surface cannot disagree."""
+    if not result.completed:
+        return False
+    run_branch = ""
+    merged = False
+    with contextlib.suppress(ManifestError):
+        manifest = read_manifest(layout.session_dir)
+        run_branch = manifest.run_branch or ""
+        merged = manifest.merged is not None and _stamp_covers_branch(
+            run_branch, manifest.merged.tip
+        )
+    if not run_branch or merged or branch_exists(Path.cwd(), run_branch):
+        return False
+    dirty = False
+    with contextlib.suppress(GitError):
+        dirty = not git_status(Path.cwd()).is_clean
+    return dirty
 
 
 def auto_merge_eligible(result: SessionResult) -> bool:
@@ -284,12 +319,9 @@ def _print_run_branch_footer(
     elif result.completed and run_branch:
         # branch_per_run promised agent6/<id> but no commit ever reached it (an
         # update-ref failure the loop's best-effort commit absorbed, or nothing
-        # to commit). A dirty tree means edits are stranded (a real failure); a
-        # clean tree means the run simply recorded nothing.
-        dirty = False
-        with contextlib.suppress(GitError):
-            dirty = not git_status(Path.cwd()).is_clean
-        if dirty:
+        # to commit). Stranded edits are a real failure (and exit code 5, via
+        # the same predicate); a clean tree means the run recorded nothing.
+        if stranded_edits(result, layout):
             reporter.out(
                 f"\nWARNING: the run finished but no commit reached {run_branch}"
                 " -- the branch was never created."
