@@ -827,6 +827,75 @@ def test_create_rejects_lint_bad_script(
     assert not (tmp_path / "scripted.asm.toml").exists()
 
 
+def test_create_publish_validates_the_destination_before_claiming_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The scratch validation ran on a clean copy; the destination can differ
+    (a pre-existing escaping symlink under scripts/). rc 0 with machine_created
+    plus a "won't run yet" warning was a success banner over a broken bundle;
+    a published bundle that fails validation is now a FAILED outcome."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_session",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
+                },
+                usd=0.01,
+            )
+        ],
+    )
+    out_dir = tmp_path / "dest"
+    (out_dir / "scripts").mkdir(parents=True)
+    outside = tmp_path / "outside.py"
+    outside.write_text("print('x')\n", encoding="utf-8")
+    (out_dir / "scripts" / "evil.py").symlink_to(outside)
+    code = main(["machine", "create", "Run a script", "-o", str(out_dir / "m.asm.toml")])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "FAILED" in err and "does not validate" in err
+    assert "OK: wrote draft" not in err
+
+
+def test_create_writes_scripts_before_the_machine_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The .asm is the bundle's commit point: a death mid-publish must leave
+    inert scripts, never a machine file whose scripts are missing. A script
+    write failure therefore leaves no machine file behind."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_session",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
+                },
+                usd=0.01,
+            )
+        ],
+    )
+
+    real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
+
+    def boom(base_dir: Path, scripts: dict[str, str]) -> None:
+        if base_dir == tmp_path:  # the publish call; scratch validation proceeds
+            raise OSError("disk full")
+        real_write(base_dir, scripts)
+
+    monkeypatch.setattr(_create, "_write_scripts", boom)
+    code = main(["machine", "create", "Run a script"])
+    assert code == 1
+    assert not (tmp_path / "scripted.asm.toml").exists()
+
+
 def test_create_never_ships_script_exits_1(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

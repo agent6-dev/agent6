@@ -41,6 +41,7 @@ from agent6.machine import (
     extract_toml,
     load_machine,
 )
+from agent6.portable import atomic_write
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import emit_session_start
@@ -356,29 +357,35 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # The writes decide the outcome, so session.end waits for them.
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(payload, encoding="utf-8")
+        # Scripts first, the machine file last and atomically: the .asm is the
+        # bundle's commit point, so a death mid-publish leaves inert scripts,
+        # never a machine whose scripts are missing.
         _write_scripts(target.parent, valid_scripts)
+        atomic_write(target, payload)
     except OSError as exc:
         events.emit("session.end", reason="write_failed", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
         reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
         reporter.out(payload.removesuffix("\n"))
         return 1
-    # End the watchable session; all_passed marks a valid machine authored AND
-    # written.
+    # The destination can differ from the validated scratch copy (e.g. a
+    # pre-existing symlink under scripts/), so the structural check on what was
+    # PUBLISHED decides the outcome: a success banner over a bundle that won't
+    # run was a lie. Lint/types are not re-run (the bytes are identical to the
+    # scratch copy that passed).
+    out_problems = validate_bundle(spec, target)
+    if out_problems:
+        events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)
+        reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
+        for problem in out_problems:
+            reporter.err(f"  - {problem}")
+        return 1
+    # End the watchable session; all_passed marks a valid machine authored,
+    # written, and validated in place.
     events.emit("session.end", reason="machine_created", iterations=attempt, all_passed=True)
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     reporter.err(
         f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}."
     )
-    # The scratch validation ran against a clean copy; re-run the STRUCTURAL
-    # bundle check on the output dir, which can differ from scratch (e.g. a
-    # pre-existing symlink under scripts/). Lint/types are NOT re-run: the
-    # written files are byte-identical to the scratch copy that just passed.
-    out_problems = validate_bundle(spec, target)
-    if out_problems:
-        reporter.err("WARNING: the written bundle has problems and won't run yet:")
-        for problem in out_problems:
-            reporter.err(f"  - {problem}")
     reporter.err("Review and commit it; `machine run` only accepts committed machines.")
     return 0
