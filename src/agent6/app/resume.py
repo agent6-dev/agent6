@@ -10,7 +10,9 @@ import contextlib
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from agent6.app._session import (
     build_session_providers,
@@ -49,6 +51,7 @@ from agent6.app.preflight import (
     require_git_repo,
 )
 from agent6.app.providers import (
+    build_prompt_reviser_provider,
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
@@ -501,6 +504,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg, role=role, events=events, transcript_sink=transcript_sink, stream_text=stream_text
         )
         budget = session.budget
+        # The same revision wiring as a fresh leg: dropping it made every
+        # resumed leg silently lose prompt revision.
+        effective_revise_prompt = cfg.prompt.revise_prompt
+        if effective_revise_prompt == "interactive" and tui_enabled:
+            reporter.err(
+                "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
+                " owns it. Skipping prompt revision for this leg."
+            )
+            effective_revise_prompt = "off"
+        prompt_reviser_provider = build_prompt_reviser_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
         # Resume reuses the verify command the ORIGINAL run resolved (stored in the
         # snapshot), so the tool list, prompt, and commit branch stay consistent
         # with the frozen system prompt -- never re-inferring, which could flip and
@@ -600,10 +615,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     undo_outcome.append(got)
                 return got
 
+            after_auto_commit: Callable[[int, str], Literal["continue", "stop"]] = (
+                frontend.build_repl_hook(cwd, budget, session_id, mcp_manager)
+                if interactive and mode == "run"
+                else (lambda _i, _s: "continue")
+            )
             wf = Workflow(
                 root=cwd,
                 config=cfg,
                 interactive=interactive,
+                state_dir=state_dir,
+                after_auto_commit=after_auto_commit,
                 commit_trailer=render_commit_trailer(
                     cfg.git.commit.trailer, models=(session.rm_role.model,)
                 ),
@@ -641,6 +663,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
                 ),
                 budget=budget,
+                prompt_reviser_provider=prompt_reviser_provider,
+                revise_prompt=effective_revise_prompt,
+                prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
+                prompt_revision_selector=(
+                    frontend.select_revised_prompt
+                    if effective_revise_prompt == "interactive"
+                    else None
+                ),
                 resume_state_path=snapshot_path,
                 mode=mode,
                 plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
