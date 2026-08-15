@@ -11,7 +11,9 @@ from it.
 The run id is minted HERE, before the run starts, so `session/cancel` has
 something to address. Letting the lifecycle mint its own left the session with
 no handle: the cancel reported success while the run continued to completion,
-spending budget and making commits.
+spending budget and making commits. It is minted ONCE per ACP session: later
+prompts resume that same run with the new text seeded as its first steering
+instruction, so the session is one conversation, not a row of strangers.
 
 `run_task` reads the process cwd, so a run in a session's directory has to
 chdir there -- which is process-global. Runs are therefore serialised on the
@@ -30,8 +32,9 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from agent6.app.finalize import EXIT_NO_COMMIT_LANDED, EXIT_VERIFY_FAILED
-from agent6.app.frontend import FrontendCapabilities
+from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
+from agent6.app.resume import resume_task
 from agent6.app.run import run_task
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.sessions.id import unused_session_id
@@ -216,6 +219,28 @@ class RunBridge:
         )
         return chosen
 
+    def _frontend(self, session: Session) -> SessionFrontend:
+        return acp_frontend(
+            ask=lambda prompt, options, standing: self.ask(session, prompt, options, standing),
+            # `initialize` has not landed if this is None, and nothing is
+            # known about the client; the cautious answer is that it can do
+            # nothing.
+            capabilities=self.server.client_capabilities or FrontendCapabilities(),
+            agent6_exe=agent6_exe,
+            spawn_detached_resume=functools.partial(
+                spawn_detached_resume, config_path=self.config_path
+            ),
+        )
+
+    def _resumable(self, session: Session) -> bool:
+        """A later prompt continues the session's run: the prior turn left a
+        resume snapshot. A first prompt, or one whose run died before its
+        first save, starts fresh under a new id."""
+        if not session.session_id:
+            return False
+        layout = session.layout(resolved_state_dir(session.cwd))
+        return (layout.session_dir / "loop_state.json").is_file()
+
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to say anything of its own."""
         if not session.session_id:
@@ -224,24 +249,26 @@ class RunBridge:
 
     def run(self, session: Session, text: str) -> StopReason:
         # BEFORE the queue, not after. `_runs` is held for a whole run, so a
-        # second session's turn can wait here for many minutes, and minting
+        # second session's turn can wait here for many minutes, and deciding
         # the id inside would leave that whole window with no run to address:
         # a cancel writes no marker, the turn runs to completion spending
         # budget and making commits, and the editor is told "cancelled".
-        # Through the owner: this id reaches run_task as an EXPLICIT one,
+        # Through the owner: a fresh id reaches run_task as an EXPLICIT one,
         # which skips the lifecycle's own minting -- a collision would refuse
         # the turn with "use agent6 resume <id>" over an id the editor never
         # chose.
-        session.session_id = unused_session_id(
-            resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
-        )
+        resuming = self._resumable(session)
+        if not resuming:
+            session.session_id = unused_session_id(
+                resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
+            )
         with self._runs:
             if session.cancelled:
                 # Cancelled while queued. The marker is for a run in flight;
                 # one that has not started is stopped by not starting it.
                 return "cancelled"
             try:
-                return self._run(session, text)
+                return self._run(session, text, resuming=resuming)
             except Exception as exc:
                 # A run that dies before it has a journal has no other way to
                 # say so, and the turn still ends with a stop reason. A broken
@@ -255,8 +282,7 @@ class RunBridge:
                     )
                 return "refusal"
 
-    def _run(self, session: Session, text: str) -> StopReason:
-        effective = load_effective(session.cwd, self.config_path)
+    def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
         layout = session.layout(resolved_state_dir(session.cwd))
         os.chdir(session.cwd)
 
@@ -281,32 +307,35 @@ class RunBridge:
 
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop),
+            args=(session, layout.logs_path, _stop, resuming),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
         tail.start()
         try:
-            code = run_task(
-                effective.config,
-                text,
-                frontend=acp_frontend(
-                    ask=lambda prompt, options, standing: self.ask(
-                        session, prompt, options, standing
-                    ),
-                    # `initialize` has not landed if this is None, and nothing
-                    # is known about the client; the cautious answer is that it
-                    # can do nothing.
-                    capabilities=self.server.client_capabilities or FrontendCapabilities(),
-                    agent6_exe=agent6_exe,
-                    spawn_detached_resume=functools.partial(
-                        spawn_detached_resume, config_path=self.config_path
-                    ),
-                ),
-                session_id=session.session_id,
-                explicit_leaves=frozenset(effective.sources),
-                reporter=teeing_reporter(said),
-            )
+            if resuming:
+                # The prompt rides in as the resumed run's first steering
+                # instruction; resume accepts a finished run exactly when it
+                # carries one. resume_task loads config itself, from the same
+                # explicit path.
+                code = resume_task(
+                    self.config_path,
+                    session.session_id,
+                    frontend=self._frontend(session),
+                    force=False,
+                    steer=text,
+                    reporter=teeing_reporter(said),
+                )
+            else:
+                effective = load_effective(session.cwd, self.config_path)
+                code = run_task(
+                    effective.config,
+                    text,
+                    frontend=self._frontend(session),
+                    session_id=session.session_id,
+                    explicit_leaves=frozenset(effective.sources),
+                    reporter=teeing_reporter(said),
+                )
         finally:
             ended.set()
             tail.join(timeout=DRAIN_S)
@@ -317,10 +346,18 @@ class RunBridge:
             )
         return stop_reason(code)
 
-    def _stream(self, session: Session, logs_path: Path, stop: Callable[[], bool]) -> None:
-        """Project the run's journal into `session/update` as it is written."""
+    def _stream(
+        self, session: Session, logs_path: Path, stop: Callable[[], bool], resuming: bool
+    ) -> None:
+        """Project the run's journal into `session/update` as it is written.
+
+        A resumed run appends to the journal its prior legs already fill, and
+        the editor rendered those turns as they happened -- start at the end,
+        or the whole conversation replays as if new."""
         fold = TranscriptFold()
-        for event in tail_events(logs_path, stop_when_finished=True, should_stop=stop):
+        for event in tail_events(
+            logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
+        ):
             for item in fold.feed(event):
                 for body in updates_for(
                     item, acp_session_id=session.acp_id, session_id=session.session_id

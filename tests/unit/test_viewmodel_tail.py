@@ -216,3 +216,33 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> Non
         "finish_session",
     ]
     assert out[-1]["reason"] == "finish_session"  # stopped at the final end, not the stop
+
+
+def test_start_at_end_skips_existing_lines(tmp_path: Path) -> None:
+    """A resumed run appends to a journal whose prior legs the viewer already
+    rendered: start_at_end yields only what arrives after the tail attaches --
+    including past a prior leg's session.end, which must not stop it."""
+    path = tmp_path / "logs.jsonl"
+    path.write_text(
+        '{"type": "old"}\n{"type": "session.end"}\n',
+        encoding="utf-8",
+    )
+    stop = {"n": 0}
+
+    def _should_stop() -> bool:
+        stop["n"] += 1
+        if stop["n"] == 2:  # first poll found nothing new; append the new leg
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write('{"type": "fresh"}\n{"type": "session.end"}\n')
+        return stop["n"] > 10
+
+    got = list(
+        tail_events(
+            path,
+            poll_s=0.01,
+            stop_when_finished=True,
+            should_stop=_should_stop,
+            start_at_end=True,
+        )
+    )
+    assert [e["type"] for e in got] == ["fresh", "session.end"]

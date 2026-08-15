@@ -55,6 +55,12 @@ A session runs one turn at a time. Prompting one that is busy is refused
 rather than queued, so the editor can offer the prompt again; mid-run
 steering is `agent6`'s pause menu, which an editor has no terminal for.
 
+A session is one conversation: the first prompt starts an `agent6 run`, and
+every later prompt resumes that same run with the new text as its first
+steering instruction (the `agent6 resume --steer` semantics), so the model
+keeps its history, its run branch, and its budget circuit-breaker per turn. A
+prompt whose prior turn died before the first snapshot starts fresh instead.
+
 Runs are serialised across the connection: a second prompt waits for the first
 to reach a boundary. `session/cancel` drops the same stop marker `agent6 sessions stop`
 does -- a marker, not a kill, so the step in flight finishes and commits before

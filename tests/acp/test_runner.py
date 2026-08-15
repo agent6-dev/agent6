@@ -542,3 +542,51 @@ def test_a_cwd_that_does_not_exist_is_refused_by_name(tmp_path: Path) -> None:
         assert "not a directory" in error["message"]
     finally:
         wire.close()
+
+
+def test_a_second_prompt_resumes_the_same_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ACP session is one conversation: the first prompt mints a run id and
+    starts a run; the next prompt resumes that run with its text as the steer
+    seed, and only a session with no snapshot starts fresh."""
+    from types import SimpleNamespace
+
+    calls: list[tuple[str, str, str]] = []
+    monkeypatch.chdir(tmp_path)
+
+    def _state_dir(_cwd: Path) -> Path:
+        return tmp_path / "state"
+
+    def _minted(*_a: object, **_k: object) -> str:
+        return "run-AAAA11"
+
+    def _effective(*_a: object, **_k: object) -> object:
+        return SimpleNamespace(config=None, sources=[])
+
+    monkeypatch.setattr(runner, "resolved_state_dir", _state_dir)
+    monkeypatch.setattr(runner, "unused_session_id", _minted)
+    monkeypatch.setattr(runner, "load_effective", _effective)
+
+    def _run_task(_config: object, text: str, **kw: Any) -> int:
+        calls.append(("run", str(kw["session_id"]), text))
+        return 0
+
+    def _resume_task(_config_path: object, session_id: str, **kw: Any) -> int:
+        calls.append(("resume", session_id, str(kw["steer"])))
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _run_task)
+    monkeypatch.setattr(runner, "resume_task", _resume_task)
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path)
+
+    assert bridge.run(session, "first task") == "end_turn"
+    assert calls == [("run", "run-AAAA11", "first task")]
+
+    # The run left a snapshot: the next prompt continues it, same id.
+    layout = session.layout(tmp_path / "state")
+    layout.session_dir.mkdir(parents=True, exist_ok=True)
+    (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
+    assert bridge.run(session, "and now this") == "end_turn"
+    assert calls[1] == ("resume", "run-AAAA11", "and now this")

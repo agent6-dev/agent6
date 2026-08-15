@@ -40,6 +40,8 @@ class Session:
     # every notification addresses. Distinct from `session_id`, agent6's.
     acp_id: str
     cwd: Path
+    # agent6's run id: empty until the first prompt mints it; later prompts
+    # resume that same run, so the ACP session stays one conversation.
     session_id: str = ""
     thread: threading.Thread | None = None
     cancelled: bool = False
