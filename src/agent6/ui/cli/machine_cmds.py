@@ -177,7 +177,8 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
         return _fail(path, problems, label)
     # Static (lint + types) then the offline mock tests in a no-network jail.
     script_problems = lint_and_typecheck(path.parent / "scripts")
-    script_problems.extend(run_offline_tests(path.parent, detect_env().detected_isolation))
+    offline = run_offline_tests(path.parent, detect_env().detected_isolation)
+    script_problems.extend(offline.problems)
     if script_problems:
         return _fail(path, script_problems, "scripts")
     fixture: dict[str, Any] | None = None
@@ -189,9 +190,16 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
     report = dry_run(spec, fixture)
     _print_dry_run_report(spec, report)
     if report.ok:
+        # A skip rides the verdict line, not a stderr aside: OK with tests
+        # silently unrun read as "tests ran green".
+        skipped = (
+            f"; {_plural(offline.skipped, 'offline script test')} NOT run ({offline.skip_reason})"
+            if offline.skipped
+            else ""
+        )
         print(
             f"\nOK: {path} dry-run passed ({_plural(len(report.states), 'state')}, "
-            f"{_plural(len(report.branches), 'branch', 'branches')})"
+            f"{_plural(len(report.branches), 'branch', 'branches')}){skipped}"
         )
         return 0
     print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)

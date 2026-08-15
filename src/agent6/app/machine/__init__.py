@@ -21,6 +21,7 @@ from agent6.app.machine._preflight import (
     machine_protect_paths,
 )
 from agent6.app.machine._scriptcheck import (
+    OfflineTestOutcome,
     available_tools,
     lint_and_typecheck,
     run_offline_tests,
@@ -34,6 +35,7 @@ from agent6.app.machine._spend import Spend, machine_spend, read_budget_totals
 # re-exporting them from this `__init__` would loop back through it.
 __all__ = [
     "MachineFrontend",
+    "OfflineTestOutcome",
     "Spend",
     "available_tools",
     "build_machine_notify_hook",

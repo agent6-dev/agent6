@@ -173,6 +173,30 @@ def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert "dry-run passed" in out
 
 
+def test_cli_machine_test_verdict_names_unrun_offline_tests(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a host that cannot jail the offline script tests, the OK verdict
+    itself says how many were NOT run and why. The skip lived only in a stderr
+    aside, so `machine test` read as "tests ran green" while a deliberately
+    failing test never executed."""
+    from types import SimpleNamespace
+
+    from agent6.ui.cli import machine_cmds, main
+
+    f = _write(tmp_path)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
+    monkeypatch.setattr(
+        machine_cmds, "detect_env", lambda: SimpleNamespace(detected_isolation="hardened")
+    )
+    assert main(["machine", "test", str(f)]) == 0
+    out = capsys.readouterr().out
+    assert "1 offline script test NOT run" in out
+    assert "hardened" in out
+
+
 def test_cli_machine_test_with_blackboard(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

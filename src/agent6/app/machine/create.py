@@ -259,7 +259,13 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
             problems = lint_and_typecheck(scratch / "scripts", fix=True)
-            problems.extend(run_offline_tests(scratch, isolation))
+            offline = run_offline_tests(scratch, isolation)
+            problems.extend(offline.problems)
+            if offline.skipped:
+                reporter.err(
+                    f"machine create: {offline.skipped} offline script test(s) NOT run"
+                    f" ({offline.skip_reason}); static checks still applied"
+                )
             report = dry_run(candidate_spec, None)
             problems.extend(
                 f"dry-run state {c.name!r}: {c.detail}"

@@ -28,13 +28,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sandbox import run_in_jail
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.types import IsolationLevel, JailPolicy
 
-__all__ = ["available_tools", "lint_and_typecheck", "run_offline_tests"]
+__all__ = ["OfflineTestOutcome", "available_tools", "lint_and_typecheck", "run_offline_tests"]
 
 _TEST_SUFFIX = "_test.py"
 _MAX_DIAG_LINES = 30
@@ -148,26 +149,40 @@ def lint_and_typecheck(scripts_dir: Path, *, fix: bool = False) -> list[str]:
     return problems
 
 
+@dataclass(frozen=True, slots=True)
+class OfflineTestOutcome:
+    """`run_offline_tests`' verdict: failures, plus what could NOT run.
+
+    `skipped`/`skip_reason` ride to the caller's own verdict surface -- a
+    skip buried in stderr while the verdict read OK looked like tests ran
+    green."""
+
+    problems: tuple[str, ...] = ()
+    skipped: int = 0
+    skip_reason: str = ""
+
+
 def run_offline_tests(
     bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float = 30.0
-) -> list[str]:
+) -> OfflineTestOutcome:
     """Execute every `scripts/**/*_test.py` in a no-network jail (the bundle's
-    offline simulation). Returns failures (empty = all green / nothing to run).
+    offline simulation).
 
     Requires the strict isolation: it is the only one whose network namespace can
-    enforce the no-network contract on model-authored code. Skipped, with a loud
-    "NOT run" note and the static checks still applied, on `none` (no jail at
-    all) and `hardened` (a jail, but no network namespace, so
-    `network=False` is silently ignored and the scripts would reach the
-    host network). Each test gets a fresh writable `$AGENT6_MACHINE_DATA_DIR`
-    so record-style scripts can be exercised. Tests run under the default
-    `JailPolicy` memory cap (these are offline mocks; the operator's
-    `[sandbox].memory_limit_mb` is not consulted)."""
+    enforce the no-network contract on model-authored code. On `none` (no jail
+    at all) and `hardened` (a jail, but no network namespace, so
+    `network="none"` cannot be honored and the scripts would reach the host
+    network) the tests are counted as skipped with the reason, for the caller
+    to render on its verdict; the static checks still apply. Each test gets a
+    fresh writable `$AGENT6_MACHINE_DATA_DIR` so record-style scripts can be
+    exercised. Tests run under the default `JailPolicy` memory cap (these are
+    offline mocks; the operator's `[sandbox].memory_limit_mb` is not
+    consulted)."""
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
-        return []
+        return OfflineTestOutcome()
     if not sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}")):
-        return []
+        return OfflineTestOutcome()
     # Run against a private temp COPY, like lint_and_typecheck: the real
     # bundle lives under the per-repo state dir, which the jail masks as a
     # private path, so tests run in place saw an empty tree (python3: can't
@@ -183,23 +198,17 @@ def run_offline_tests(
 
 def _run_offline_tests_in(
     bundle_dir: Path, isolation: IsolationLevel, *, timeout_s: float
-) -> list[str]:
+) -> OfflineTestOutcome:
     scripts_dir = bundle_dir / "scripts"
     tests = sorted(scripts_dir.rglob(f"*{_TEST_SUFFIX}"))
     if isolation != "strict":
         # none: no jail to confine model-authored code in. hardened: a jail, but
-        # no network namespace, so network=False is silently ignored and
-        # the scripts would run with the host network -- exfil or pull-and-exec
-        # of model-authored code during `machine create`. Only strict can honor
-        # the no-network contract. Skipping is the only safe option on the rest,
-        # but say so: a silent pass here looks like "tests ran green". The static
-        # checks still apply.
+        # no network namespace, so network="none" cannot be honored and the
+        # scripts would run with the host network -- exfil or pull-and-exec of
+        # model-authored code during `machine create`. Only strict can honor
+        # the no-network contract; skipping is the only safe option on the rest.
         reason = "no sandbox" if isolation == "none" else "no network isolation (hardened)"
-        print(
-            f"note: {reason} on this host; {len(tests)} offline script test(s) NOT run",
-            file=sys.stderr,
-        )
-        return []
+        return OfflineTestOutcome(skipped=len(tests), skip_reason=reason)
     data_dir = bundle_dir / ".scriptcheck_data"
     problems: list[str] = []
     try:
@@ -226,9 +235,12 @@ def _run_offline_tests_in(
             except JailUnavailableError as exc:
                 # The jail is a prerequisite for ANY test here, so fail fast on
                 # the first unavailability rather than repeating it per test.
-                return [
-                    f"could not run offline tests in a jail ({exc}); static checks still applied"
-                ]
+                return OfflineTestOutcome(
+                    problems=(
+                        f"could not run offline tests in a jail ({exc});"
+                        " static checks still applied",
+                    )
+                )
             if res.returncode != 0:
                 detail = (res.stderr or res.stdout or "").strip()
                 # Tracebacks name the absolute bundle dir. Relativize so the
@@ -242,4 +254,4 @@ def _run_offline_tests_in(
                 )
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)
-    return problems
+    return OfflineTestOutcome(problems=tuple(problems))
