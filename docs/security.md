@@ -5,7 +5,7 @@ Each section states what is enforced and what is not.
 
 ## Reporting
 
-Open a GitHub issue prefixed `[security]`.
+Report privately through GitHub's [Security tab](https://github.com/agent6-dev/agent6/security/advisories/new).
 Include: agent6 version (`agent6 --version`), kernel + distro (`uname -a`, `/etc/os-release`), `agent6 check sandbox` output, and a minimal repro (ideally a failing test under `tests/security/`).
 
 ## Threat model
