@@ -89,7 +89,10 @@ class SessionResult:
                           in the jail; the model cannot fix operator config.
       loop_guard_killed - identical tool call repeated past the kill threshold.
       interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
-      steer_abort       - operator typed "abort" at a steering prompt.
+      steer_abort       - operator stopped the run: `agent6 sessions stop`, a
+                          front-end's stop, or "abort" at a steering prompt.
+                          Ends it mid-call, at the step boundary, or while
+                          parked, whichever the marker reaches first.
       undone            - operator sent /undo; the leg ended after forking a
                           child at the state before their last message.
       detached          - operator chose "detach"; the CLI respawns a detached
