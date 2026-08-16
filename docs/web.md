@@ -40,7 +40,7 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
   Approve and answer the current agent state's prompts inline (same controls as a run).
   The docked entry submits as one of the two machine verbs, mirroring the TUI machine watch: **Steer** (into the current agent state; disabled when none is active or the machine ended) or **Message** (a `poke` payload a waiting machine's next tool reads).
   `machine.notify`/end show as ephemeral banners and OS notifications.
-- **Config**: every setting with its value and source, filterable, click a row to set it.
+- **Config page**: every setting with its value and source, filterable, click a row to set it.
   Enum settings offer their choices; `models.*` fields autocomplete the configured providers and the provider's model ids (the same completion the TUI and CLI have).
   Secrets are never shown.
 

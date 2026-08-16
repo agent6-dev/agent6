@@ -38,7 +38,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 - **State machines**: LLM-drafted, operator-reviewed, journaled, replayable; they pause for input, take events, steer from any front-end ([State machines](https://agent6.dev/state-machines/))
 - **Code review**: `agent6 review` on any diff, plus an in-loop panel of adversarial reviewers where only blocking-category findings gate
 - **Parallel fan-out**: `--parallel N|model-a,model-b` clone-based lanes, auto-compared into a ranked report; `sessions compare` for past runs, `/parallel` mid-run ([Architecture](https://agent6.dev/architecture/#parallel-runs))
-- **Skills**: SKILL.md packs (Claude Code / Pi format) index into the prompt, load on demand, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
+- **Skills**: SKILL.md packs (the format Claude Code and most agents share) index into the prompt, load on demand, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
 - **Fixed tool surface**: extended only by operator-configured MCP servers, off by default, jailed by default
 - **Eight runtime dependencies**, no telemetry, no auto-update
 
