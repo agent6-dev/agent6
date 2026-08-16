@@ -37,25 +37,20 @@ jobs:
           merge-multiple: true
           path: dist/
 
-      - name: Sanity-check artifacts (both arch wheels + the sdist)
+      - name: Check what is about to upload
+        # Both arch wheels, the sdist, and nothing carrying a version other
+        # than the tag's: a tag cut off a commit whose __version__ says
+        # otherwise would ship mismatched artifacts.
         run: |
           ls -la dist/
-          test "$(ls dist/agent6-*.whl 2>/dev/null | wc -l)" -ge 2
-          test -n "$(ls dist/agent6-*.tar.gz 2>/dev/null)"
-
-      - name: Every artifact's version matches the release tag
-        # Any published release starts this upload; without this, a tag
-        # created off a commit whose __version__ says otherwise would ship
-        # mismatched artifacts. The tag (vX.Y.Z) is the release's claim;
-        # every wheel and the sdist must carry exactly X.Y.Z.
-        run: |
           tag="${GITHUB_REF_NAME#v}"
-          echo "release tag version: $tag"
+          test "$(ls dist/agent6-*.whl | wc -l)" -ge 2
+          test -n "$(ls dist/agent6-*.tar.gz)"
           for f in dist/agent6-*.whl dist/agent6-*.tar.gz; do
-            base=$(basename "$f")
-            ver=$(echo "$base" | sed -E 's/^agent6-([0-9][^-]*)[-.].*$/\1/; s/\.tar$//')
-            echo "$base -> $ver"
-            test "$ver" = "$tag" || { echo "::error::$base version $ver != tag $tag"; exit 1; }
+            case "$(basename "$f")" in
+              agent6-"$tag"-*.whl | agent6-"$tag".tar.gz) ;;
+              *) echo "::error::$(basename "$f") is not version $tag"; exit 1 ;;
+            esac
           done
 
       - name: Publish to PyPI
