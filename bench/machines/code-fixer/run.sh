@@ -5,12 +5,11 @@
 # (seed/stats.py) are copied into a throwaway git repo so each run starts from
 # the same failing state and the agent's edits never touch this checkout.
 #
-# Runs under the default sandbox config: tool states get their own network
-# namespace (strict, from the jail launcher) and the agent confines its egress
-# to the provider API. On a host that supports only the hardened profile, a
-# tool state is refused under the default `sandbox.network = "session"`, and
-# agent6 prints the one-line config opt-in to apply (it never relaxes the
-# sandbox unattended). Nothing here touches your global config.
+# Runs under the default sandbox config: on strict, every jailed command (the
+# tool states, and whatever the agent runs) gets the run's own network. A host
+# that supports only hardened has no network namespace, so the default
+# `sandbox.network = "auto"` degrades with a warning there; an explicit
+# `session` refuses instead. Nothing here touches your global config.
 #
 # Usage:  bash bench/machines/code-fixer/run.sh [workdir]
 set -euo pipefail
@@ -41,14 +40,16 @@ echo "== before: verify reports failing =="
 (cd "$WORK" && python3 scripts/verify.py)
 echo
 echo "== running code-fixer machine =="
-(cd "$WORK" && "$AGENT6" machine run code-fixer.asm.toml)
+# --auto-approve: the agent state runs the checker itself, and nothing is
+# attached to answer approvals in a throwaway repo.
+(cd "$WORK" && "$AGENT6" machine run code-fixer.asm.toml --auto-approve)
 echo
-echo "== after: verify =="
-(cd "$WORK" && python3 scripts/verify.py)
+echo "== after: verify the machine's branch (the checkout never moves) =="
+(cd "$WORK" && python3 scripts/verify.py --ref agent6/machine-code-fixer)
 echo
-echo "== agent's fix (git diff of stats.py) =="
-git -C "$WORK" --no-pager diff -- stats.py 2>/dev/null
-git -C "$WORK" --no-pager log --oneline -5
+echo "== agent's fix (on agent6/machine-code-fixer) =="
+git -C "$WORK" --no-pager diff HEAD..agent6/machine-code-fixer -- stats.py
+git -C "$WORK" --no-pager log --oneline -5 agent6/machine-code-fixer
 echo
 echo "== machine status =="
 (cd "$WORK" && "$AGENT6" machine status code-fixer)
