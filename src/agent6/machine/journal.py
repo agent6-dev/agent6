@@ -261,6 +261,18 @@ class PendingWait(BaseModel):
     # on a wake instant, so `--exit-on-wait` parks it until the operator pokes.
     wake_epoch: float | None = None
 
+    @property
+    def wake_at(self) -> str:
+        """The wake instant as an ISO-8601 UTC timestamp, "" when there is none.
+
+        Every surface that shows an operator when a parked machine wakes reads
+        this, so `machine run --exit-on-wait` and `machine status` cannot render
+        the same instant differently.
+        """
+        if self.wake_epoch is None:
+            return ""
+        return datetime.fromtimestamp(self.wake_epoch, tz=UTC).isoformat()
+
 
 # --------------------------------------------------------------------------
 # The journal directory.

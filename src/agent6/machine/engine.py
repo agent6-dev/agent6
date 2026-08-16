@@ -1002,7 +1002,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
                 if fired is None:
                     pending = journal.read_pending_wait()
                     if pending is not None and pending.wake_epoch is not None:
-                        detail = f"until {pending.wake_epoch}"
+                        detail = f"until {pending.wake_at}"
                     else:
                         detail = "until a signal poke"
                     return MachineResult(

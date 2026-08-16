@@ -1020,6 +1020,11 @@ def test_exit_on_wait_arms_and_yields_waiting(tmp_path: Path) -> None:
     assert pending.state == "poll"
     assert pending.wake_epoch == 1060.0
     assert not any(isinstance(e, StepEvent) for e in journal.read())
+    # Both surfaces that show an operator when this wakes read one owner, so
+    # the run banner cannot print a raw epoch while `machine status` prints a
+    # timestamp for the same instant.
+    assert pending.wake_at == "1970-01-01T00:17:40+00:00"
+    assert pending.wake_at in result.reason
 
 
 def test_exit_on_wait_fires_tick_when_due(tmp_path: Path) -> None:

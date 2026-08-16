@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ast
 import contextlib
-import datetime as _dt
 import difflib
 import json
 import shutil
@@ -502,8 +501,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         print(f"  pending wait: unreadable ({pending_note})")
     if pending is not None:
         if pending.wake_epoch is not None:
-            wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()
-            print(f"  next wake: {wake} (waiting in {pending.state!r})")
+            print(f"  next wake: {pending.wake_at} (waiting in {pending.state!r})")
         else:
             print(f"  waiting for a signal poke (in {pending.state!r})")
     if snapshot is not None and snapshot.blackboard:
