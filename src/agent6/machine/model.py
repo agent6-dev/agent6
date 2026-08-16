@@ -391,7 +391,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
 class MachineSpec(BaseModel):
     """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
     named `states` graph, and an optional agent6 `[config]` overlay whose
-    operator-only security policy is refused (see PROTECTED_OVERLAY_*) so an
+    operator-only security policy is refused (see `PROTECTED_OVERLAY_*`) so an
     untrusted machine file cannot weaken the sandbox."""
 
     model_config = _MODEL_CONFIG

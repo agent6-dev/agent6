@@ -8,13 +8,12 @@ app, the viewmodel, and the CLI parse a run's manifest through one owner and one
 shape instead of each re-deriving the read + error-catch + stringly `.get`.
 
 The model defaults every field and ignores unknown keys, so a partial or
-foreign-keyed manifest renders what it does carry -- lenience for damage, not a
-compatibility promise (the shape is liquid until 1.0; superseded keys are
-dropped, never folded). Reading is lenient (`read_manifest` degrades a corrupt
-file through `ManifestError`, which the render consumers already catch and
-degrade on); the ONE strict contract is `session_mode` -- the fork/resume
-privilege gate, which refuses an unknown mode rather than falling open to the
-write ("run") tools.
+foreign-keyed manifest renders what it does carry, which is lenience for damage
+rather than a compatibility promise (the shape is liquid until 1.0; superseded keys are
+dropped, never folded). Reading is lenient: `read_manifest` degrades a corrupt
+file through `ManifestError`, which the render consumers already catch. The one
+strict contract is `session_mode`, the fork/resume privilege gate, which refuses
+an unknown mode rather than falling open to the write ("run") tools.
 """
 
 from __future__ import annotations
@@ -60,8 +59,8 @@ class ModelsBrief(BaseModel):
 class PolicyStamp(BaseModel):
     """How the run was launched: the policy facts an operator wants to see
     without opening config. Recorded so every surface reads them from one
-    place -- the TUI and web are other processes and have only the run dir --
-    and so `agent6 exec` reproduces the run's isolation and network even
+    place (the TUI and web are other processes with only the run dir), and so
+    `agent6 exec` reproduces the run's isolation and network even
     after the config moved (mounts stay config-derived; exec's help says
     so)."""
 

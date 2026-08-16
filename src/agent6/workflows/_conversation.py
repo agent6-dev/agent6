@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-owned conversation: typed turns over the provider wire.
 
-`Conversation` owns the loop's history as typed turns -- one shape for
-every consumer (compaction, cache roll, transcript tail) -- and produces the
+`Conversation` owns the loop's history as typed turns, one shape for every
+consumer (compaction, cache roll, transcript tail), and produces the
 Anthropic-wire `list[dict]` only at the boundary:
 
 - `to_wire()` builds the exact dict list providers and resume snapshots
@@ -14,7 +14,7 @@ Anthropic-wire `list[dict]` only at the boundary:
   exactly the shapes the loop writes and reproduces them byte-for-byte, and
   it fails loudly on anything else.
 
-Pair safety is structural, not disciplined: a `tool_use` turn can only be
+Pair safety is structural: a `tool_use` turn can only be
 followed by `results()` covering exactly its ids, `pop_quiet_assistant`
 removes only a turn with no tool calls, `restart` keeps whole turns, and
 compaction rewrites result *content* in place via `set_result_content`. No
@@ -26,8 +26,8 @@ cached (1.25x to write). The provider marks the system prompt and the tool
 list, but the conversation dominates input tokens in a long run and grows
 every turn: without a breakpoint near the tail, each turn re-bills the whole
 history at full price (quadratic in run length). The roll keeps exactly two
-marks: the previous call's position (the guaranteed cache HIT) and the final
-block of the last user turn (the WRITE the next call's hit lands on) --
+marks: the previous call's position (the guaranteed cache hit) and the final
+block of the last user turn (the write the next call's hit lands on), for
 4 breakpoints total with the provider's two static ones, Anthropic's
 per-request maximum. Marks persist through `to_wire()` into resume
 snapshots, so continuity survives crash-resume; tier-1 elision rewrites old
@@ -106,7 +106,7 @@ class AssistantTurn:
 @dataclass(frozen=True, slots=True)
 class UserTurn:
     """One user message: tool results and/or notices, in wire order
-    (canonically results first, notices after -- see Conversation.results)."""
+    (canonically results first, notices after; see Conversation.results)."""
 
     items: tuple[ToolResultItem | Notice, ...]
 

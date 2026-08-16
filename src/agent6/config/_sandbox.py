@@ -32,7 +32,7 @@ class SandboxConfig(BaseModel):
         description=(
             "`auto` picks the strongest the host supports (`strict`, else `hardened`; `none` only "
             "when the host offers no confinement, loudly). Explicit `strict`/`hardened` refuse "
-            "where unsupported, never downgrade. Explicit `none` runs UNSANDBOXED (also "
+            "where unsupported, never downgrade. Explicit `none` runs unsandboxed (also "
             "`--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`)."
         ),
     )
@@ -59,7 +59,7 @@ class SandboxConfig(BaseModel):
     network: Literal["auto", "session", "only_explicit_states", "host"] = Field(
         default="auto",
         description=(
-            "Which network jailed commands join. `auto`: the run's PRIVATE network (commands "
+            "Which network jailed commands join. `auto`: the run's private network (commands "
             "reach each other, nothing off the box, nothing outside reaches in), enforced on "
             "`strict`, degraded to the host's with a warning on `hardened`/`none`. `session`: "
             "the same, refusing where unenforceable. `only_explicit_states`: strict-only; "
@@ -92,11 +92,11 @@ class SandboxConfig(BaseModel):
     fetch_hosts: StrTuple = Field(
         default=(),
         description=(
-            "Hosts the `fetch` tool reads WITHOUT asking; any other host prompts, and an absent "
+            "Hosts the `fetch` tool reads without asking; any other host prompts, and an absent "
             'operator is a no. Empty = every fetch prompts; `["*"]` = any host, written down as '
-            "a choice; a leading dot allows subdomains (`.readthedocs.io`). HOSTS, not URL "
-            "prefixes. The rest of fetch is fixed (https only, 1 MiB cap, redirects returned "
-            "not followed: security.md, Fixed tool surface). Hidden when "
+            "a choice; a leading dot allows subdomains (`.readthedocs.io`). Each entry is a "
+            "host, never a URL prefix. The rest of fetch is fixed (https only, 1 MiB cap, "
+            "redirects returned not followed: security.md, Fixed tool surface). Hidden when "
             '`network = "host"`; withheld from '
             "machine/agent states. A GET can still encode data in its path, hence the empty "
             "default."
@@ -268,7 +268,7 @@ class MCPSandbox(BaseModel):
     read_paths: StrTuple = Field(
         default=(),
         description=(
-            "Read+execute paths for this server BEYOND the sandbox a jailed command gets "
+            "Read+execute paths for this server beyond the sandbox a jailed command gets "
             "(absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as "
             "`HOME` are already there, so a block names only the server's own data."
         ),
@@ -293,17 +293,17 @@ class MCPSandbox(BaseModel):
         description=(
             "Which network this server joins. `auto`: one of its own where the host can give a "
             "namespace, degrading to the host's with a warning. `none`: the same, refusing "
-            "rather than running connected. `session`: the RUN's network, so a dev server a "
+            "rather than running connected. `session`: the run's network, so a dev server a "
             "background command started answers this server too (a browser server driving the "
             "app under test), and still nothing off the box. `host`: the machine's network."
         ),
     )
     # No confinement at all: the server runs as the operator, with their whole
-    # filesystem and network. For a server whose job IS arbitrary host access.
+    # filesystem and network. For a server whose job is arbitrary host access.
     unconfined: bool = Field(
         default=False,
         description=(
-            "No sandbox at all, for a server whose job IS arbitrary host access. Contradicts every "
+            "No sandbox at all, for a server whose job is arbitrary host access. Contradicts every "
             "other field here, so setting both is refused rather than half-applied."
         ),
     )
@@ -378,7 +378,7 @@ class MCPServerEntry(BaseModel):
     url: str = Field(
         default="",
         description=(
-            "An http(s) endpoint the OPERATOR runs; agent6 only connects, owning none of its "
+            "An http(s) endpoint the operator runs; agent6 only connects, owning none of its "
             "environment or confinement."
         ),
     )
@@ -402,12 +402,12 @@ class MCPServerEntry(BaseModel):
     # never among them, because nobody would write it down.
     pass_env: StrTuple = Field(
         default=(),
-        description="Env vars the server needs, BY NAME. Everything else is the curated base.",
+        description="Env vars the server needs, by name. Everything else is the curated base.",
     )
     sandbox: MCPSandbox | None = Field(
         default=None,
         description=(
-            "Extra grants for a SPAWNED server beyond the sandbox a jailed command gets; absent "
+            "Extra grants for a spawned server beyond the sandbox a jailed command gets; absent "
             "= exactly that sandbox. A `url` server is your own process: confine it where you "
             "start it."
         ),
@@ -421,7 +421,7 @@ class MCPServerEntry(BaseModel):
         description=(
             "Ask before each of this server's tool calls, showing the arguments the model "
             'chose; `yes` never asks. The session answers are per server: "allow all" covers '
-            'THIS server for the run (not the command tools, not a sibling server), "deny all" '
+            'this server for the run (not the command tools, not a sibling server), "deny all" '
             "withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. "
             "No `no`: withholding a server's tools is what `enabled = false` says."
         ),

@@ -38,14 +38,12 @@ Two rules hold whoever is driving:
 One session is one directory (`session/new` carries an absolute `cwd`), and its config is that directory's own layered config: global, then repo, then any preset.
 The directory has to be a git repository, since it becomes what the jail mounts writable and a run needs git to branch and commit each step.
 
-A session runs one turn at a time.
-Prompting a busy session is refused rather than queued, so the editor can offer the prompt again.
-
 A session is one conversation.
 The first prompt starts an `agent6 run`, and every later prompt resumes that run with the new text as its first steering instruction (the `agent6 resume --steer` semantics), so the model keeps its history, its run branch, and its per-turn budget circuit-breaker.
 A prompt whose prior turn died before the first snapshot starts fresh instead.
 
-Runs are serialised across the connection: a second prompt waits for the first to reach a boundary.
+A session runs one turn at a time: prompting a busy session is refused rather than queued, so the editor can offer the prompt again.
+Across sessions, one connection runs one prompt at a time: a prompt for another session waits for the run in flight to end, because the working directory a run commits in is process-global.
 `session/cancel` drops the same stop marker `agent6 sessions stop` does, so the step in flight finishes and commits before the run ends.
 
 ## Not implemented

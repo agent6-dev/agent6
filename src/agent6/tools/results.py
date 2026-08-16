@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Typed tool-handler results: every handler returns one of these frozen values
-instead of a bare dict, each owning two representations: the model-facing
-`to_wire()` dict and the one-line human `summary()`.
+instead of a bare dict.
+Each owns two representations, the model-facing `to_wire()` dict and the
+one-line human `summary()`.
 
-- `to_wire()` -- the exact dict the loop JSON-dumps into the model's
+- `to_wire()`: the dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
   insertion order), and value formats are the model-facing contract. Pinned by
   `tests/unit/test_tool_result_wire.py`.
-- `summary()` -- the one-line human string for the log tail / TUI; each
+- `summary()`: the one-line human string for the log tail / TUI; each
   result states its own (never inferred from the dict's keys).
 
 Internal values, so frozen dataclasses (not pydantic): the wire dict is
@@ -258,7 +259,7 @@ class ExecResult(ToolResult):
     ONE shape whether the command finished or is still running: a `returncode`
     of None with a `background_id` set means it outlived its check-in and was
     handed back, and the model polls it with read_background. Never "a result
-    OR a handle" -- that would be two shapes for one tool.
+    OR a handle", which would be two shapes for one tool.
     """
 
     returncode: int | None

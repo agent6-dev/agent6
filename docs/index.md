@@ -52,7 +52,7 @@ A run resumes from its snapshot, or forks into a new run at any past turn.
 </div>
 
 <div class="a6-card" markdown>
-### State machines
+### Agent state machines
 Longer tasks run as declarative machines: model-drafted, operator-reviewed, journaled, replayable.
 </div>
 
@@ -71,7 +71,7 @@ Merging stays manual.
   <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
-`agent6 run` is headless by default, streaming the run's conversation in your terminal.
+`agent6 run` streams the run's conversation in your terminal, with no full-screen UI.
 `agent6 tui` opens the hub instead: every run for the repository with its mode, status, and cost, where you open a session to read its live conversation, toggle the dashboard (Ctrl+D), or scroll the event log.
 `agent6 run --tui` starts on that conversation view, and `-i` drives the run from a stdin REPL.
 The [terminal UI](terminal.md) page has a still of each screen.

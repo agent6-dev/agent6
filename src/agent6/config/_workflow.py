@@ -59,7 +59,7 @@ class WorkflowConfig(BaseModel):
         description=(
             'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
             '&& b"]`). Optional: unset infers per run (AGENTS.md `## Verify command`, then repo '
-            "manifests, then a model call over the manifests -- skipped when there are none), "
+            "manifests, then a model call over the manifests, skipped when there are none), "
             "injected in-memory and printed. None inferable = the run starts gateless; a "
             "recognizable project created mid-run adopts the first resolvable inferred gate. "
             "Set it to pin one."
@@ -148,7 +148,7 @@ class ContextConfig(BaseModel):
         gt=0,
         description=(
             "Tier 1: oldest tool results become placeholders. Unset sizes from the worker's "
-            "context window (~45%); set BOTH thresholds to pin."
+            "context window (~45%); set both thresholds to pin."
         ),
     )
     summarise_at_chars: int | None = Field(
@@ -200,7 +200,7 @@ class ContextConfig(BaseModel):
         drop, summarise = self.drop_at_chars, self.summarise_at_chars
         if (drop is None) != (summarise is None):
             raise ValueError(
-                "set BOTH context.drop_at_chars and"
+                "set both context.drop_at_chars and"
                 " summarise_at_chars, or NEITHER (neither == adaptive,"
                 " sized from the worker model's context window). Both at once:"
                 " agent6 config set context"
@@ -222,7 +222,7 @@ class PromptConfig(BaseModel):
 
     model_config = MODEL_CONFIG
 
-    # ADVANCED: replace run-mode's static base system prompt (role + edit/tool-use/
+    # Advanced: replace run-mode's static base system prompt (role + edit/tool-use/
     # dag/scope rules) with the contents of this file. The dynamic blocks (verify,
     # metric, budget, repo-priors + AGENTS.md) still append, so repo context and
     # the budget cap are preserved. Empty = the built-in default. You own keeping
@@ -232,7 +232,7 @@ class PromptConfig(BaseModel):
     system_prompt_file: str = Field(
         default="",
         description=(
-            "ADVANCED: replace run-mode's static base prompt with this file (dynamic blocks still "
+            "Advanced: replace run-mode's static base prompt with this file (dynamic blocks still "
             "append). Warned at startup if core tool names are missing."
         ),
     )
@@ -329,7 +329,7 @@ class ReviewConfig(BaseModel):
     quorum: int = Field(
         ge=1,
         default=2,
-        description="K for `quorum`; counts distinct MODELS, so same-model seats can't fake it.",
+        description="K for `quorum`; counts distinct models, so same-model seats can't fake it.",
     )
     # Per-run cap on total panel blocks before the gate auto-downgrades to
     # advisory for the rest of the run (so a gating panel can never stall forever).
@@ -428,7 +428,7 @@ class BudgetConfig(BaseModel):
     max_tokens_fallback: int = Field(
         ge=-1,
         default=2_000_000,
-        description="Token cap for UNMETERED calls only (local models, price gaps).",
+        description="Token cap for unmetered calls only (local models, price gaps).",
     )
 
     @field_validator("max_usd")

@@ -51,7 +51,7 @@ Unset roles fall back to `worker`.
 
 One provider, one model, one message history.
 The model drives by calling tools; the workflow dispatches them, snapshots state, and tracks budget.
-There is no planner-to-worker handoff and no separate reviewer agent by default: multi-step work is the model calling the next tool in the same conversation.
+Multi-step work is the model calling the next tool in the same conversation: no planner-to-worker handoff, no separate reviewer agent by default.
 The in-loop review panel is opt-in (`[review]`) and layers onto that same history.
 
 ```mermaid
@@ -293,7 +293,7 @@ A checkpoint with `graph_version: 0` has no version to rebuild at, so its fork c
 
 A fork's tree is the repo as of that committed sha, nothing more.
 On a gated run, an edit not yet committed at the forked turn is absent from the fork's tree even though the copied transcript mentions it, and the forked run picks it up by re-reading the real files.
-Modelling a fork as a commit plus the conversation up to that turn is the design choice: predictable and cheap, against snapshotting uncommitted bytes into every checkpoint.
+A fork is a commit plus the conversation up to that turn, which is predictable and cheap, rather than snapshotting uncommitted bytes into every checkpoint.
 
 ## Events
 
@@ -325,7 +325,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 
 A `run_command` approval publishes as `approval.prompt`.
 The TUI shows an Allow/Deny modal and writes the operator's literal choice to `approvals/<id>.answer`, which the workflow reads before recording `approval.answer`.
-What a choice grants is the asking side's: each prompt names the scope an "allow all" would cover (`command`, or one MCP server), a standing answer is recorded per scope, and a gate that offers none sets `standing: false` so no front-end shows the button.
+The asking side decides what a choice grants: each prompt names the scope an "allow all" would cover (`command`, or one MCP server), a standing answer is recorded per scope, and a gate that offers none sets `standing: false` so no front-end shows the button.
 The answer poll falls back headless, to a stdin prompt or a deny for a machine state, only after the front-end has stayed dead for 30 consecutive seconds, so a page reload or a locked phone does not convert a pending approval into a deny.
 While a browser watches a run it registers as the run's answer front-end, so prompts bridge to the page.
 The task DAG is not in this stream: it is curator-owned in `graph.jsonl`, read through `agent6 sessions graph`.

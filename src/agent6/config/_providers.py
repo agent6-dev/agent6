@@ -164,7 +164,7 @@ class _ProviderBase(BaseModel):
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Provider-specific JSON merged into every request body LAST, so tuning keys "
+            "Provider-specific JSON merged last into every request body, so tuning keys "
             "(max_tokens, temperature) win; the structural keys agent6 owns (messages, model, "
             "stream, tools, tool choice, response shape) are filtered. Values must be "
             "JSON-shaped: a TOML date/time is refused. e.g. OpenRouter routing options."

@@ -32,12 +32,12 @@ class SkillsConfig(BaseModel):
         default=True,
         description="Master switch: off = no index, no `use_skill`, no slash commands.",
     )
-    # Additional skill directories scanned BEFORE the installed dir (a local
+    # Additional skill directories scanned before the installed dir (a local
     # checkout during skill development wins over an installed copy). Each may
     # hold skill subdirectories or be a single skill dir itself.
     extra_dirs: StrTuple = Field(
         default=(),
-        description="Additional skill dirs, scanned BEFORE the installed dir.",
+        description="Additional skill dirs, scanned before the installed dir.",
     )
     # Per-skill exceptions, one value per skill so contradictory states are
     # unrepresentable: "disabled" drops it from the index; "always" injects

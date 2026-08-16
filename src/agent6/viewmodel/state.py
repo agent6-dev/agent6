@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Pure event-fold: list[event_dict] -> SessionState.
 
-The wire form `session_state_as_dict` builds from a SessionState IS the data
+The wire form `session_state_as_dict` built from a SessionState is the data
 contract for any external viewer (`attach --json`, the web page, a future
 TS mirror): SessionState's fields plus `status`/`status_label`/`live`/
 `operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.

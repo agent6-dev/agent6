@@ -13,7 +13,7 @@ The same UI on a phone (single column, bottom nav):
   <source src="/screenshots/out/web-phone.webm" type="video/webm">
 </video>
 
-## Run it
+## Start the server
 
 ```bash
 agent6 web              # serve the hub on http://127.0.0.1:7658
@@ -24,7 +24,7 @@ agent6 web <machine>    # open a machine instance on load
 `--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
 Stop it with Ctrl-C.
 
-## What you can do
+## Pages
 
 Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
@@ -36,13 +36,21 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
     - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
     - Stop now / stop after step, compact, merge, delete history, approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
       "Allow session" appears only where it would grant something beyond the one call it is clicked on.
-- **Machines**: the state overview, the path taken, and the current agent state's conversation.
+- **Machine view**: the state overview, the path taken, and the current agent state's conversation.
   Approve and answer the current agent state's prompts inline (same controls as a run).
   The docked entry submits as one of the two machine verbs, mirroring the TUI machine watch: **Steer** (into the current agent state; disabled when none is active or the machine ended) or **Message** (a `poke` payload a waiting machine's next tool reads).
   `machine.notify`/end show as ephemeral banners and OS notifications.
 - **Config**: every setting with its value and source, filterable, click a row to set it.
   Enum settings offer their choices; `models.*` fields autocomplete the configured providers and the provider's model ids (the same completion the TUI and CLI have).
   Secrets are never shown.
+
+Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-machine.webm" type="video/webm">
+</video>
+
+## Layout
 
 The layout reflows.
 On a desktop, the nav rail collapses to an icon strip and the run view is a fixed pane whose drawer and conversation scroll internally.
@@ -55,9 +63,9 @@ The page installs as an app (a phone home-screen icon or a desktop window).
 Click **🔔 Notifications** on a machine view to grant permission.
 A `machine.notify` message or a machine finishing then pops an OS notification: foreground on any device, backgrounded on desktop, and never on a backgrounded phone.
 A notification never clears or blocks the send and answer inputs, so one arriving mid-type keeps your text and focus.
-To reach a phone that is not open on the page, point the operator notify hook `[machine.notify].on_event` (see [config.md](config.md)) at a push service.
+To reach a phone that is not open on the page, point the operator notify hook [`[machine.notify].on_event`](config.md#machinenotify-optional) at a push service.
 
-## How it talks to the server
+## The HTTP API
 
 The page reads the same wire form as `agent6 attach --json`:
 
@@ -72,7 +80,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 
 `curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
 Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact,rm}`, `/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
-A machine's `approve`/`answer`/ `steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
+A machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
 The machine name and every answer id are validated to a single path component, so a request cannot traverse out of the instance dir.
 
 ## Remote access (Tailscale)

@@ -65,7 +65,7 @@ class TaskNodeDraft(BaseModel):
 class TaskNode(BaseModel):
     """A persisted task-graph node: a time-sortable 26-char ULID `id`, a
     `parent_id`/`children` pair the curator keeps mutually consistent, and a
-    `status` drawn from the fixed NodeStatus vocabulary."""
+    `status` drawn from the fixed `NodeStatus` vocabulary."""
 
     model_config = _MODEL_CONFIG
 

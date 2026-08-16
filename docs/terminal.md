@@ -1,6 +1,6 @@
 # Terminal UI
 
-The CLI and the full-screen TUI, screen by screen.
+The full-screen TUI screen by screen, then the plain CLI.
 Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
@@ -48,29 +48,22 @@ The config page shows every setting, its effective value, and where that value c
 
 ![The keys and actions overlay](screenshots/out/08-help.png)
 
-## Watching a state machine
-
-agent6 also runs editable state machines: a `.asm.toml` of tool, branch, agent, and wait states driven over a journal.
-Author one, read its graph, and watch it execute.
-Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a failing check pass, a tool state re-runs the check, and the machine routes on the result until it is green or the attempt budget is spent, with the agent's reasoning streamed live like a run.
-
-<video controls muted loop playsinline preload="metadata" class="no-lightbox">
-  <source src="/screenshots/out/machine-demo.webm" type="video/webm">
-</video>
-
-The same machine from the browser: start it on the Machines page and watch the current state stream, with the run's approvals and questions answerable in place.
-
-<video controls muted loop playsinline preload="metadata" class="no-lightbox">
-  <source src="/screenshots/out/web-machine.webm" type="video/webm">
-</video>
-
-## From the terminal
+## Without the TUI
 
 `agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and Ctrl-R searches the session's past messages).
 Runs started from the TUI or web hub are detached instead, and `agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">
+</video>
+
+## Watching a state machine
+
+An [agent state machine](state-machines.md) runs in the terminal like anything else: author the file, read its graph, watch it execute.
+Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a failing check pass, a tool state re-runs the check, and the machine routes on the result until it is green or the attempt budget is spent, with the agent's reasoning streamed live like a run.
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/machine-demo.webm" type="video/webm">
 </video>
 
 ---

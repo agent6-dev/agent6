@@ -107,7 +107,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
   No `/dev/tty`.
 - `/proc` (`strict`): fresh and private, empty if that fails.
   The launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`.
-- seccomp: deny-list returning `EPERM` -- `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set.
+- seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set.
   Everything else is allowed.
 - Capabilities: cleared between fork and exec.
 - Timeout: `timeout_s` (default 600), then SIGKILL of the process group; the command reports rc=124.
@@ -299,7 +299,7 @@ Under `none` isolation nothing is enforced or refused.
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets.
   It makes one read-only `GET` to the provider's key endpoint to confirm auth (status only; `--no-verify` skips it) and executes nothing a remote returns.
 
-### 9. State: curator, location, locks
+### 9. State and locks
 
 - An in-process `GraphCurator` owns the task graph.
   It validates every mutation against a pydantic schema before writing and holds a per-mutation flock on the session dir.
@@ -386,7 +386,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 ## Prompt-injection tests
 
 [`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py) runs an adversarial corpus through the planner, worker, and reviewer prompts and asserts no exfiltration, no out-of-policy tool calls, and no following of embedded instructions to weaken constraints.
-It catches prompt regressions; the structural defenses above are what confine a model that follows them.
+It catches prompt regressions; the structural defenses above confine a model that follows an injection.
 
 ## Known limitations
 

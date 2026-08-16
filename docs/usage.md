@@ -47,7 +47,7 @@ When the repo has not set `workflow.verify_command`, agent6 infers one per run a
 A run that can infer nothing still proceeds, committing every editing step as an ungated checkpoint.
 Pin one in the per-repo config, or with `agent6 init`, to make it deterministic.
 
-`agent6 run` is headless by default and streams the run in your terminal.
+`agent6 run` streams the run in your terminal, with no full-screen UI.
 `--tui` opens the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+D), and `-i` drives the run from a stdin REPL.
 
 ## Inspect a run
@@ -106,6 +106,9 @@ agent6 ask "how does the task-graph curator work?"
 
 - `agent6 review --reviewers 3 --personas security,correctness,tests` runs a panel whose findings are checked against the diff, so only real problems gate.
 - `ask` runs in any directory; `run` and `plan` need a git repository for branches, diffs, and merges.
+
+## Run options
+
 - `--preset quick|standard|ultra|paranoid` selects a strategy.
   `agent6 config presets` lists them and `agent6 config set preset <name>` persists one.
 - `agent6 run "task" --parallel 3` (or `model-a,model-b`) fans out isolated lanes and prints a ranked comparison.

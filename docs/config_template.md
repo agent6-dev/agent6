@@ -1,9 +1,11 @@
 # Configuration
 
-agent6 is **secure by default**: every field has a default (security-sensitive ones default to the safe value), so you only set what you want to change.
-This is the field reference; the security model behind `[sandbox]` and `[git]` is [security.md](security.md).
+Every field has a default and the security-sensitive ones default to the safe value, so you set only what you want to change.
+This is the field reference; the [security model](security.md) covers what `[sandbox]` and `[git]` enforce.
 
-## Where config lives (layered, lowest precedence first)
+## Where config lives
+
+The layers, lowest precedence first:
 
 | Layer | Path | Set with |
 |---|---|---|
@@ -13,9 +15,9 @@ This is the field reference; the security model behind `[sandbox]` and `[git]` i
 | explicit | `--config FILE` | `agent6 run --config FILE` |
 
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
-It can be empty or absent when the global config supplies a provider + model; `workflow.verify_command` is inferred per run when unset.
+It can be empty or absent when the global config supplies a provider and model; `workflow.verify_command` is inferred per run when unset.
 
-## Creating & inspecting
+## Creating and inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
 - `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
@@ -25,13 +27,13 @@ It can be empty or absent when the global config supplies a provider + model; `w
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay).
   Every edit is re-validated and rolled back if invalid.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
-- Writes are atomic and the edit lock FAILS OPEN (a blocked lock never blocks the write; worst case one lost update, the error says "kept as written").
+- Writes are atomic and the edit lock fails open (a blocked lock never blocks the write; worst case one lost update, the error says "kept as written").
   A config file that is a symlink is followed only when you own the target.
 - `agent6 config fill`: materialize defaults + global config into the global file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values), naming each; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without running.
-  `config show` prints what is SET (`network = "auto"`); `check` prints what that resolved to on this host, for the isolation level, the commands' network, and each MCP server's network and `approve`.
+  `config show` prints what is set (`network = "auto"`); `check` prints what that resolved to on this host, for the isolation level, the commands' network, and each MCP server's network and `approve`.
 
 ---
 
@@ -78,7 +80,7 @@ api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
-### OpenRouter routing & caching (`extra_body`)
+### OpenRouter routing and caching (`extra_body`)
 
 OpenRouter's default routing is not deterministic, so prompt caching may or may not engage call-to-call.
 Pin it with `extra_body.provider` ([routing docs](https://openrouter.ai/docs/features/provider-routing)):
@@ -147,7 +149,7 @@ This is the field summary.
 
 <!-- config-table: review -->
 
-Grounding is mechanical, not prose: a `block` gates only if its `file:line` is in the diff AND its category is in a fixed allowed set (security / sandbox-bypass / off-topic-edit / data-loss / verify-uncovered-correctness); everything else is advisory and cannot stall the run.
+Grounding is mechanical, not prose: a `block` gates only if its `file:line` is in the diff and its category is in a fixed allowed set (security / sandbox-bypass / off-topic-edit / data-loss / verify-uncovered-correctness); everything else is advisory and cannot stall the run.
 
 ## `[context]`
 
@@ -253,11 +255,11 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 
 <!-- config-table: parallel -->
 
-## `[mcp]` + `[mcp.servers.<name>]` (optional)
+## `[mcp]` and `[mcp.servers.<name>]` (optional)
 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>`.
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
-The LLM influences the ARGUMENTS it passes, so each call is approved like a command (`approve`), and audit each server like a `run_command` allow-list.
+The LLM influences the arguments it passes, so each call is approved like a command (`approve`), and audit each server like a `run_command` allow-list.
 `agent6 mcp connect` handshakes first and only then writes the entry; a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
 
 ```

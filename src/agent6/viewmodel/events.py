@@ -6,12 +6,12 @@ The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
 **fields}` dicts and never validates; ~90 distinct types exist. The SessionState fold
 (`viewmodel.state.apply_event`) structurally consumes only the families defined
 here. `parse_event` turns one raw event dict into exactly one of those frozen
-families, or a `RawEvent` passthrough for every other type -- the compatibility
+families, or a `RawEvent` passthrough for every other type, the compatibility
 surface that keeps old run dirs folding: a type this module does not know becomes
 `RawEvent`, which the fold drops, never a crash.
 
 Hand-rolled frozen dataclasses, not pydantic (unlike `machine/journal.py`):
-logs.jsonl is append-only history, so the fold MUST keep the exact coercion
+logs.jsonl is append-only history, so the fold keeps the exact coercion
 semantics old run dirs were written against (`str()`/`int()`/`bool()` with
 per-field defaults, `_as_int`'s swallow-to-zero, the isinstance guards). A
 pydantic model would impose its own coercion and validation-failure semantics,
