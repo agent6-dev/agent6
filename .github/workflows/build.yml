@@ -93,6 +93,18 @@ jobs:
       - name: Verify wheel metadata
         run: uv tool run --from twine twine check dist/*
 
+      - name: A wheel builds from the sdist alone
+        # The wheel force-includes docs the sdist has to carry; a missing one
+        # is a FileNotFoundError at build time, and building both from the
+        # checkout never sees it.
+        if: matrix.sdist
+        run: |
+          rm -rf /tmp/sdist-roundtrip && mkdir -p /tmp/sdist-roundtrip
+          tar xzf dist/agent6-*.tar.gz -C /tmp/sdist-roundtrip
+          cd /tmp/sdist-roundtrip/agent6-*/
+          uv build --wheel --out-dir /tmp/sdist-roundtrip/wheel/
+          uv tool run --from twine twine check /tmp/sdist-roundtrip/wheel/*
+
       - uses: actions/upload-artifact@v7
         with:
           name: agent6-dist-${{ matrix.arch }}
