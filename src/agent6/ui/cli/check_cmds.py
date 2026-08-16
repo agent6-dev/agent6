@@ -68,11 +68,12 @@ def _isolation_means(isolation: IsolationLevel) -> str:
         )
     if isolation == "hardened":
         return (
-            "commands share this host's filesystem, network and /proc, bounded"
-            " by Landlock path rules and a filtered syscall set. No namespaces,"
-            " so nothing here is private to the run. See docs/security.md."
+            "commands work in the host's own filesystem, /tmp, /proc and"
+            " network, shared with everything else on it. Landlock path rules"
+            " and a filtered syscall set are the whole boundary."
+            " See docs/security.md."
         )
-    return "NOTHING is confined: commands run as you, on this host. See docs/security.md."
+    return "Nothing is confined: commands run as you. See docs/security.md."
 
 
 def _cmd_check_sandbox() -> int:
@@ -344,18 +345,18 @@ def _grant_lines(ws: Workspace) -> list[str]:
 
 def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -> None:
     print(
-        "  jailed commands (run_command / verify_command / metric_command;"
+        "  jailed commands (run_command, the verify gate, the metric command;"
         f" approval: sandbox.run_commands = {cfg.sandbox.run_commands}):"
     )
     if selected == "none":
-        print("    UNCONFINED: no jail on this host; commands run with your full access.")
+        print("    UNCONFINED: no jail on this host; commands run as you.")
         return
     git_note = (
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
     )
     print(f"    rw  {ws.root}  (the workspace{git_note})")
     if selected == "strict":
-        print("    rw  /tmp  (private to the command, empty each run)")
+        print("    rw  /tmp  (a fresh tmpfs per command)")
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (+ a minimal /etc)")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
@@ -430,7 +431,7 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
 
     ws = workspace_for(cfg, Path.cwd())
     print()
-    print("  in-process tools (read_file / apply_edit / list_dir / grep; no approval):")
+    print("  in-process file tools (read_file, list_dir, apply_edit, apply_patch; no approval):")
     print(f"    rw  {ws.root}  (the workspace)")
     for line in _grant_lines(ws):
         print(line)
