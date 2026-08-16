@@ -815,7 +815,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # When True (the auto-spawned co-process of `agent6 run`), the view
         # ends WITH the run: once it finishes, the dashboard holds on the
         # payoff until the user leaves (Ctrl+Q), and only then does the parent
-        # command return. `agent6 watch` leaves this False and keeps following.
+        # command return. `agent6 attach --tui` leaves this False and keeps
+        # following.
         self.exit_on_end = exit_on_end
         # The run ended under exit_on_end and the dashboard is holding.
         self._end_hold = False
