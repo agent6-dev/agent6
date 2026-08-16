@@ -1033,15 +1033,16 @@ class ConfigScreen(Screen[None]):
 
     def _refuse_unset(self, setting: ConfigSetting) -> bool:
         """Notify-and-True when the setting cannot be unset here. "Already at
-        its default" is only truthful when it IS the default; a preset-sourced
-        leaf (source "preset") is modified but lives in the synthesized
-        [presets.<name>] layer, which no config-file unset can revert."""
+        its default" is only truthful when it IS the default; a leaf from any
+        other layer (a preset's synthesized [presets.<name>], a `--config`
+        file) is modified but outside the two files an unset writes."""
         if not setting.modified:
             self.notify(f"{setting.key} is already at its default.")
             return True
         if setting.source not in ("global", "repo"):
             self.notify(
-                f"{setting.key} is set by the active preset; edit the preset to change it.",
+                f"{setting.key} comes from the {setting.source} layer;"
+                " unset edits only the global and repo config.",
                 severity="warning",
             )
             return True

@@ -36,12 +36,13 @@ run_commands = "yes"
 
 
 class _Host(App[None]):
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(self, repo_root: Path, config_path: Path | None = None) -> None:
         super().__init__()
         self._repo = repo_root
+        self._config_path = config_path
 
     def on_mount(self) -> None:
-        self.push_screen(ConfigScreen(self._repo))
+        self.push_screen(ConfigScreen(self._repo, self._config_path))
 
 
 @pytest.fixture
@@ -1055,6 +1056,35 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
             assert notes, "no notification fired"
             assert "already at its default" not in notes[-1]
             assert "preset" in notes[-1]
+
+    asyncio.run(scenario())
+
+
+def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(repo: Path, tmp_path: Path) -> None:
+    """A leaf a `--config FILE` layer set is not a preset leaf: Reset names the
+    layer it came from, so the operator edits the file they passed."""
+    overlay = tmp_path / "overlay.toml"
+    overlay.write_text('[review]\ntrigger = "off"\n', encoding="utf-8")
+
+    async def scenario() -> None:
+        app = _Host(repo, overlay)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            setting = next(
+                s
+                for s in build_config_view(load_effective(repo, overlay)).settings
+                if s.key == "review.trigger"
+            )
+            assert setting.source == "flag" and setting.modified
+            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen.action_reset()
+            await pilot.pause()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes, "no notification fired"
+            assert "preset" not in notes[-1]
+            assert "flag" in notes[-1]
 
     asyncio.run(scenario())
 
