@@ -58,9 +58,12 @@ def test_a_command_that_exits_on_its_own_reports_its_code(
     shells: BackgroundShells, tmp_path: Path
 ) -> None:
     """The core lie: a background command ends and the roster still says
-    "running". State comes from the process, the code from the launcher."""
+    "running". State comes from the process, the code from the launcher.
+
+    The state at start is not pinned here: a command this short can be gone
+    before `start` samples it, and "exited" is then the true answer. A
+    long-lived command carries that half (`sleep 300`, below)."""
     view = shells.start(("/bin/sh", "-c", "echo bye; exit 7"), _policy_for(tmp_path))
-    assert view.state == "running"
     assert _wait_state(shells, view.id, "exited") == "exited"
     after, output = shells.read(view.id, tail_lines=50)
     assert after.returncode == 7
