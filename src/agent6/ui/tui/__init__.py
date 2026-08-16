@@ -15,8 +15,7 @@ and web.
 
 Everything is launched out-of-process and only reads `logs.jsonl` + writes the
 small answer files the workflow polls (via `agent6.sessions.ipc`), so the core loop
-is untouched and any other front-end (VS Code, web, desktop) mirrors the same
-file contract.
+is untouched and the web and ACP front-ends mirror the same file contract.
 """
 
 from __future__ import annotations

@@ -3,8 +3,8 @@
 """agent6 as an MCP (Model Context Protocol) server.
 
 Exposes the workspace's verify command, jail, patch tool, and DAG
-storage to an external MCP client (e.g. VS Code Copilot's hand-off
-menu, Claude Desktop). Speaks line-delimited JSON-RPC 2.0 over stdio,
+storage to an external MCP client (Claude Desktop, an editor's agent
+mode). Speaks line-delimited JSON-RPC 2.0 over stdio,
 the same framing the embedded client in `tools/mcp_client.py`
 consumes.
 

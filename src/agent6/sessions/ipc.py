@@ -13,14 +13,13 @@ answers prompts by writing files. When an approval is needed:
    Otherwise it falls back to a plain stdin prompt.
 3. The front-end (when present) presents a modal / control, then writes
    `<session_dir>/approvals/<id>.answer` containing the operator's literal
-   choice: `yes`, `no`, `session` or `session-deny`. What a choice GRANTS is
-   the asking side's to decide (see `Approver`), not the front-end's -- the
-   front-end reports the click.
+   choice: `yes`, `no`, `session` or `session-deny`. The asking side decides
+   what a choice grants (see `Approver`); the front-end reports the click.
 
 We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
 - the front-end may crash without taking the workflow down with it,
-- any front-end can mirror it (the TUI, the web server, a VS Code extension).
+- every front-end mirrors the same files (the TUI, the web server, the ACP agent).
 """
 
 from __future__ import annotations

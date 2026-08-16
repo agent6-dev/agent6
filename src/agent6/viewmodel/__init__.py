@@ -18,8 +18,8 @@ Layout:
     config_view.py       effective-config tree -> the `config show` view.
 
 No I/O in the folds, no textual, no async: just frozen dataclasses and pure
-functions, so a viewer in any language (a VS Code extension, a web client) can
-mirror `SessionState` / `MachineState` field-for-field.
+functions, so a viewer in any language mirrors `SessionState` / `MachineState`
+field-for-field.
 """
 
 from __future__ import annotations

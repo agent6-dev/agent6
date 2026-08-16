@@ -3,8 +3,8 @@
 """Structured JSONL event sink.
 
 Emits one JSON object per line to `<run-dir>/logs.jsonl` (the run dir under the
-per-repo state dir), to give external tools (and the bundled VS Code extension)
-a stable, tail-able view of an agent run without parsing the freeform `print` log.
+per-repo state dir), so a front-end or an external tool follows a run by tailing
+one file instead of parsing the freeform `print` log.
 
 Design notes:
 - Write-only and append-only. No reads, no rotation, no schema validation,

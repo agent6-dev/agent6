@@ -317,8 +317,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             "Run agent6 as an MCP stdio server, exposing run_verify /"
             " run_in_sandbox / apply_patch_in_sandbox / query_dag / list_sessions"
             " using the cwd's agent6 config. Speaks line-delimited JSON-RPC"
-            " on stdin/stdout; spawn from an MCP-aware client (e.g. VS Code"
-            " Copilot's hand-off menu) and configure it with this command."
+            " on stdin/stdout; configure an MCP-aware client to spawn this"
+            " command."
         ),
     )
     mcp_serve.add_argument(
