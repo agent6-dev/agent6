@@ -26,7 +26,7 @@ mkdir -p "$OUT"
 for bin in agent6 python3 ffmpeg; do
   command -v "$bin" >/dev/null 2>&1 || { echo "web_demo.sh: missing tool: $bin" >&2; exit 1; }
 done
-"$PW_PY" -c "import playwright" 2>/dev/null || {
+"$PW_PY" -c "from playwright.sync_api import sync_playwright" 2>/dev/null || {
   echo "web_demo.sh: \$WEB_DEMO_PY ($PW_PY) has no playwright; see the header." >&2; exit 1; }
 
 TMP="$(mktemp -d)"

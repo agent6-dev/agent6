@@ -26,7 +26,7 @@ export AGENT6_FORCE_STREAM=1
 for bin in agent6 python3 ffmpeg; do
   command -v "$bin" >/dev/null 2>&1 || { echo "web_machine_demo.sh: missing tool: $bin" >&2; exit 1; }
 done
-"$PW_PY" -c "import playwright" 2>/dev/null || {
+"$PW_PY" -c "from playwright.sync_api import sync_playwright" 2>/dev/null || {
   echo "web_machine_demo.sh: \$WEB_DEMO_PY ($PW_PY) has no playwright; see web_demo.sh." >&2; exit 1; }
 [ -s "$CASSETTE" ] || { echo "web_machine_demo.sh: missing cassette $CASSETTE" >&2; exit 1; }
 
