@@ -113,7 +113,7 @@ def warn_sandbox_gaps(
         reporter.err(
             "[agent6] WARNING: 'hardened' cannot protect .git: the read-only bind "
             "needs a mount namespace, which only 'strict' has. A jailed command can "
-            "write .git here; the in-process edit tools still refuse. For the same "
+            "write .git; the in-process edit tools still refuse. For the same "
             "reason /tmp is the host's shared /tmp, and HOME (/tmp/agent6-home) is a "
             "host dir that persists and is shared by every run on this machine. "
             "Use 'strict' for a private /tmp and a protected .git."
@@ -124,8 +124,8 @@ def warn_sandbox_gaps(
             "sandbox.network = 'auto' cannot give the run its own session "
             "network: jailed commands share this process's host network, which "
             "hardened does not confine. Run on 'strict' for a session "
-            "network, or set sandbox.network = 'session' to refuse rather "
-            "than run here."
+            "network, or set sandbox.network = 'session' to refuse the run "
+            "instead."
         )
     if isolation == "hardened" and env.landlock_abi < 3:
         reporter.err(
