@@ -19,15 +19,16 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 - No writes outside the workspace.
   `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`.
-- No reads outside the workspace and a read-only system set for installed toolchains: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`, `/proc`.
-  `sandbox.extra_read_paths` adds more.
+- No reads outside the workspace and a read-only system set for installed toolchains.
+  Under `strict` it is `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, plus a minimal `/etc` the launcher writes and a curated `/dev`; under `hardened` Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`.
+  `sandbox.extra_read_paths` adds more, and `agent6 check boundaries` prints the resolved set.
 - `/tmp` is writable at every level.
   Under `strict` it is a private tmpfs discarded with the run; under `hardened` it is the host's `/tmp`, and `HOME` (`/tmp/agent6-home`) is a host dir shared by every run on the machine.
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git)).
   A `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress.
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary.
     - Every chmod-family syscall (`fchmodat2` included) is denied when the mode carries `S_ISUID` / `S_ISGID`; ordinary chmod passes.
-      Every mount carries `nosuid` and `nodev`.
+      Every mount carries `nosuid` and `nodev`, except the five bound `/dev` character nodes (`null`, `zero`, `urandom`, `random`, `full`), which `nodev` would make unusable.
       `/tmp` allows exec, which toolchains use for helpers.
     - Children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`).
     - Nothing a command starts outlives it.
@@ -281,9 +282,8 @@ Under `none` isolation nothing is enforced or refused.
   On `hardened` the default degrades with a warning and an explicitly-set `true` refuses to run.
   A jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network.
   Landlock cannot express the exclusion: a grant on a directory is recursive, and stacked rulesets intersect, so denying `.git` means not granting the workspace root either.
-- The protected scope is the project's own `.git`.
-  A nested `.git` (a vendored repo's, a submodule's) is workspace content.
-  The in-process edit tools refuse either way ([File access](#3-file-access)).
+- The protected scope is the project's own `.git`, at every isolation level: the in-process edit tools refuse to write under it ([File access](#3-file-access)).
+  A nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file.
 
 **Repo-controlled host code in a poisoned `.git/config`**
 
