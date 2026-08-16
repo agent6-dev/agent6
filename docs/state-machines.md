@@ -572,7 +572,7 @@ No new tool, no file-writing capability.
   Failures loop back with the failing source, up to `--max-attempts` (default 3); retries carry the prior draft so the model patches, not regenerates.
 - The result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout and exits non-zero).
   Scripts land in `scripts/`.
-- Each attempt is watchable: a draft dir under the state dir carries the prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow live; the create runs detached.
+- Each attempt is watchable: a draft dir under the state dir carries the prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow live. The CLI streams the draft in the foreground; the TUI and web start it detached and follow that dir.
 - [Security considerations](#9-security-considerations)'s invariant holds: `create` only drafts into the working tree; the operator reviews and commits; `machine run` refuses an uncommitted bundle (the `.asm.toml` and its `scripts/`).
 
 ---
