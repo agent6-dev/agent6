@@ -95,7 +95,8 @@ def test_machine_detail_text_parses_a_valid_machine(tmp_path: Path) -> None:
     text = machine_detail_text(_write(tmp_path / "m.asm.toml"))
     assert "machine: waiter_demo" in text
     assert "initial: poll" in text
-    assert "validation: OK" in text
+    # Named for what it ran: this view checks semantics, not the script bundle.
+    assert "semantics: OK" in text
     assert "graph (mermaid):" in text
     # States read as the user's kind word (agent/tool/wait/terminal), matching the
     # watch screen + web, not the internal class name (AgentState/TerminalState).

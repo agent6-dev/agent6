@@ -516,7 +516,7 @@ class HomeScreen(Screen[None]):
             ConfirmModal(
                 f"Merge run {session_id}?",
                 "Runs `agent6 sessions merge` to land this run's branch on its base using your "
-                "git.merge_strategy. The working tree must be clean.",
+                "git.merge_strategy. Ref plumbing only: the checkout never moves.",
                 confirm_label="Merge",
             ),
             self._on_merge_confirm(session_id),

@@ -507,10 +507,10 @@ def machine_detail_text(path: Path) -> str:
     problems = validate_semantics(spec)
     lines.append("")
     if problems:
-        lines.append(f"validation: {len(problems)} problem(s)")
+        lines.append(f"semantics: {len(problems)} problem(s)")
         lines.extend(f"  - {p}" for p in problems)
     else:
-        lines.append("validation: OK")
+        lines.append("semantics: OK  (`agent6 machine check` also lints the bundle's scripts)")
     lines += ["", "graph (mermaid):", render(spec, "mermaid")]
     return "\n".join(lines)
 
