@@ -36,6 +36,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 - **Background commands**: `background: true` hands back a handle, `read_background` polls, `/shells` lists them; none outlive the run
 - **Context control**: compaction visible on every surface, `/compact [focus]`, `/pin`, repo memory injected per run
 - **State machines**: LLM-drafted, operator-reviewed, journaled, replayable; they pause for input, take events, steer from any front-end ([State machines](https://agent6.dev/state-machines/))
+- **Task graph**: the worker keeps its plan in a persistent DAG (dependencies, acceptance criteria, statuses) journaled with the run; it survives crash and compaction restarts, shows live on every surface, and `decompose = "auto"` front-loads it for models measured to need it
 - **Code review**: `agent6 review` on any diff, plus an in-loop panel of adversarial reviewers where only blocking-category findings gate
 - **Parallel fan-out**: `--parallel N|model-a,model-b` clone-based lanes, auto-compared into a ranked report; `sessions compare` for past runs, `/parallel` mid-run ([Architecture](https://agent6.dev/architecture/#parallel-runs))
 - **Skills**: SKILL.md packs (the format Claude Code and most agents share) index into the prompt, load on demand, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
