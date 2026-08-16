@@ -15,6 +15,7 @@ line, which is exactly where the stale pair hid.
 from __future__ import annotations
 
 import re
+import tomllib
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -87,3 +88,24 @@ def test_documented_source_links_resolve(doc: Path) -> None:
     linked = pat.findall(doc.read_text(encoding="utf-8"))
     missing = sorted({p for p in linked if not (ROOT / p).exists()})
     assert not missing, f"{doc.name} links at paths that do not exist: {missing}"
+
+
+@pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.name)
+def test_documented_toml_examples_parse(doc: Path) -> None:
+    """Every ```toml block a doc ships parses as TOML.
+
+    The state-machine spec's worked example carried inline tables split over
+    two lines, which TOML forbids: `agent6 machine check` rejected the file a
+    reader copied straight out of the page. Blocks using `<name>` placeholders
+    or `...` elisions are sketches of shape, not files, and are skipped.
+    """
+    text = doc.read_text(encoding="utf-8")
+    for block in re.finditer(r"```toml\n(.*?)```", text, re.S):
+        body = block.group(1)
+        if "<" in body or "\n..." in body:
+            continue
+        line = text[: block.start()].count("\n") + 1
+        try:
+            tomllib.loads(body)
+        except tomllib.TOMLDecodeError as exc:  # pragma: no cover - the failure IS the message
+            pytest.fail(f"{doc.name}:{line} toml block does not parse: {exc}")

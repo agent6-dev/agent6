@@ -156,8 +156,7 @@ Call finish_session with JSON {label, confidence}.
 output_schema = "classification"   # a [schemas.*] entry; validates the payload
 capture = { finish_json = "verdict" }   # payload -> blackboard var `verdict`
 timeout_secs = 600
-on = { ok = "route", failed = "poll", timeout = "poll",
-       budget_exhausted = "halt" }
+on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 # mode = "agent"                   # "agent" (default, read-only) | "run"
 # Optional per-state overrides (inherit the effective config when unset):
@@ -194,8 +193,7 @@ Connection secrets are never expressed here, only a `provider` *name* that must 
 kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"          # types `result` so fields are navigable
-capture = { set = {
-  pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
+capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
 timeout_secs = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 ```
@@ -277,8 +275,7 @@ On replay the journaled payload reproduces the identical input.
 [states.route]
 kind = "branch"
 when = [
-  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7",
-    goto = "record" },
+  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7", goto = "record" },
   { else = true, goto = "poll" },
 ]
 ```
@@ -668,8 +665,7 @@ on = { tick = "scan", signal = "scan" }
 kind = "tool"
 command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
 output_schema = "scan_result"
-capture = { set = {
-  pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
+capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
 timeout_secs = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 
@@ -689,14 +685,12 @@ Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
 output_schema = "classification"
 capture = { finish_json = "verdict" }
 timeout_secs = 600
-on = { ok = "route", failed = "poll", timeout = "poll",
-       budget_exhausted = "halt" }
+on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
 [states.route]
 kind = "branch"
 when = [
-  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7",
-    goto = "record" },
+  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7", goto = "record" },
   { else = true, goto = "poll" },
 ]
 
