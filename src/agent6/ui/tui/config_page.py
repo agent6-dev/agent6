@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The TUI config viewer/editor — a thin renderer over the shared config
-view-model (`config_layer.build_config_view`) and the shared edit path
-(`config_layer.set_config_value` / `unset_config_value`). All config logic
-lives in those layers, so this page and the web editor never drift.
+view-model (`viewmodel.config_view.build_config_view`) and the shared edit
+path (`config.write.set_config_value` / `unset_config_value`). All config
+logic lives in those layers, so this page and the web editor never drift.
 
 Discoverability is driven by ONE action registry (:data:`CONFIG_ACTIONS`): the
 same list generates the on-screen action bar (clickable + keyboard-navigable

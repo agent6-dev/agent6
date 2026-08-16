@@ -69,9 +69,8 @@ _DEFAULT_PRESET_LABEL = "(config default)"
 
 def _available_presets(repo_cwd: Path) -> list[str]:
     """Preset names the new-work chooser offers (the built-ins plus the user's
-    custom `[presets.<name>]` tables). Delegates to `config_layer` -- the
-    TUI's config entry point (see config_page.py) -- so the dropdown and the
-    `--preset` CLI flag resolve against the same source."""
+    custom `[presets.<name>]` tables). Delegates to `config.layer`, so the
+    dropdown and the `--preset` CLI flag resolve against the same source."""
     from agent6.config.layer import available_preset_names  # noqa: PLC0415
 
     return available_preset_names(repo_cwd, None)

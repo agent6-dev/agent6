@@ -134,8 +134,8 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
     if not assume_yes and not sys.stdin.isatty():
-        # Refuse rather than silently take every default and write files
-        # (matching `agent6 connect`); consent comes from a TTY or --yes.
+        # Refuse rather than silently take every default and write files:
+        # consent comes from a TTY or --yes.
         print(
             "ERROR: no input. stdin is not a TTY; re-run with --yes to accept every default.",
             file=sys.stderr,

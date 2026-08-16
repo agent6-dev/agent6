@@ -768,8 +768,7 @@ def commit_paths(
     The commit is path-limited (`git commit -- <paths>`), so unrelated
     changes the user already STAGED stay staged and uncommitted, and unrelated
     WIP in the worktree is never swept in. Used by `agent6 init`'s scaffold
-    commit and the startup `.gitignore` auto-update, which must not fold the
-    user's in-progress work into their commit.
+    commit, which must not fold the user's in-progress work into it.
     """
     if not paths:
         raise GitError("commit_paths requires at least one path")

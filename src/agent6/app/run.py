@@ -313,10 +313,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # the worker is blocked in a long provider call (which emits no events).
         write_worker_pid(layout.session_dir, os.getpid())
 
-        # One live run-mode worker per CHECKOUT, not just per run dir: auto-commits
-        # are `git add -A` on whatever HEAD points at, so a second concurrent run
-        # that checks out its own branch makes both workers commit each other's
-        # in-flight edits onto whichever branch won the last checkout. Taken BEFORE
+        # One live run-mode worker per CHECKOUT, not just per run dir: two runs
+        # share one worktree, so each would commit the other's in-flight edits
+        # into its own chain. Taken BEFORE
         # any tree mutation (auto-stash, branch cut). plan/ask are read-only and
         # skip it. A refused submission is PARKED, not dropped: the manifest saves
         # the verbatim task and `agent6 resume <id>` starts it once the checkout

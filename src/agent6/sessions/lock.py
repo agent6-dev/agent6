@@ -70,12 +70,11 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
     """Take a non-blocking exclusive lock on `<state-dir>/repo.lock`: one live
     `run`-mode worker per CHECKOUT.
 
-    Run-mode workers share one working tree: each auto-commit is a plain
-    `git add -A` + commit on whatever HEAD points at, so a second concurrent
-    run that checks out its own branch makes BOTH workers commit each other's
-    in-flight edits onto whichever branch was checked out last -- the same
-    interleaving corruption the run-dir lock prevents for one run, at repo
-    scope. plan/ask make no commits and never take this lock.
+    Run-mode workers share one working tree, and each commit stages that whole
+    tree (into a temp index, `chain_commit`), so a second concurrent run would
+    fold the other's in-flight edits into its own chain: the interleaving the
+    run-dir lock prevents for one run, at repo scope. plan/ask make no commits
+    and never take this lock.
 
     The holder stamps its run id into the file so a refusal can name the live
     run. Same crash-safety as `acquire_single_writer`: flock releases on
