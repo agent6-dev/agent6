@@ -267,12 +267,13 @@ Under `none` isolation nothing is enforced or refused.
 
 **agent6's own git**
 
-- `git_ops.py` is the only module through which agent6 invokes git.
+- agent6's own git writes go through `git_ops.py` alone.
   It wraps the safe ops (status, add, commit, diff, branch, checkout) and refuses `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force`, and any `--force` / `-f` on a destructive verb.
+  The read-only exceptions are on the [subprocess allowlist](#12-host-side-subprocess-allowlist): the `review` / `sessions diff` / `ask` collectors carry the same hardening flags, and `skills install` clones with fixed argv.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch the manifest confirms was squash-merged (the commit survives in the reflog).
-- git's environment is stripped of provider keys.
-  agent6's git runs on the host and inherits the environment with the configured `api_key_env` names removed, so a credential helper or content driver never inherits one.
+- `git_ops.py` runs git with the configured `api_key_env` names removed from its environment, so a credential helper or content driver never inherits one.
   PATH, SSH, proxy, and credential-helper vars stay.
+  The read-only collectors inherit the environment untouched: they contact no remote, and the hardening flags leave no repo-controlled code to receive it.
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
