@@ -18,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT6="$(cd "$HERE/../../.." && pwd)/.venv/bin/agent6"
 WORK="${1:-/tmp/agent6-machine-code-fixer}"
 
-rm -rf "$WORK"; mkdir -p "$WORK/scripts"
+rm -rf "$WORK" "${WORK}-state"; mkdir -p "$WORK/scripts"
 cp "$HERE/code-fixer.asm.toml" "$HERE/ruff.toml" "$WORK/"
 cp "$HERE/scripts/"*.py "$WORK/scripts/"
 cp "$HERE/seed/stats.py" "$WORK/"
@@ -26,9 +26,10 @@ git -C "$WORK" init -q
 git -C "$WORK" -c user.email=bench@bench -c user.name=bench add -A
 git -C "$WORK" -c user.email=bench@bench -c user.name=bench commit -q -m "seed: buggy median"
 
-# Keep all agent6 state (per-repo config + machine journal) inside the workspace
-# so each run is hermetic and re-runnable.
-export AGENT6_STATE_HOME="$WORK/.agent6-state"
+# Keep all agent6 state (per-repo config + machine journal) beside the
+# workspace, hermetic per run; a state dir inside it is refused (jailed
+# commands could read transcripts, and commits would stage them).
+export AGENT6_STATE_HOME="${WORK}-state"
 # The mode="run" agent commits its fix. This host has no git identity at all, so
 # give agent6 one to commit under (resolved on the host, exported into the
 # confined agent which can't read ~/.gitconfig). A real repo with local or

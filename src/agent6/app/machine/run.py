@@ -21,6 +21,7 @@ from pathlib import Path
 from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.confine import (
     check_hide_paths_support,
+    config_refusal,
     warn_cleartext_credential_endpoints,
     warn_sandbox_gaps,
 )
@@ -220,7 +221,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # snapshot_keep never slips through to a pure machine. The agent/tool block
     # below adds the provider/sandbox checks only those state kinds need.
     try:
-        cfg = load_effective_with_overlay(cwd, spec.config, explicit_path=config_path).config
+        eff = load_effective_with_overlay(cwd, spec.config, explicit_path=config_path)
+        cfg = eff.config
     except ConfigError as exc:
         reporter.err(f"ERROR: {exc}")
         return 2
@@ -261,6 +263,10 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             if isinstance(outcome, int):
                 return outcome
             cfg, isolation = outcome  # fix applied + re-validated clear; continue
+        cfg_err = config_refusal(cfg, isolation, cwd, explicit_leaves=eff.explicit_leaves)
+        if cfg_err is not None:
+            reporter.err(f"REFUSING: {cfg_err}")
+            return 2
         if has_agent_state:
             # The machine's statically reachable routes include every agent
             # state's provider/model pins; discovering a dead route only when

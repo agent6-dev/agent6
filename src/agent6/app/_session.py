@@ -15,11 +15,8 @@ from typing import Literal
 import agent6
 from agent6.app._setup import SandboxOverrides, detect_env
 from agent6.app.confine import (
-    check_hide_paths_support,
-    check_mcp_network_support,
     check_network_support,
-    check_protect_git_support,
-    check_workspace_outside_private_dirs,
+    config_refusal,
     warn_cleartext_credential_endpoints,
     warn_sandbox_gaps,
 )
@@ -79,25 +76,11 @@ def select_isolation(
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         raise SessionRefused(2)
-    mcp_net_err = check_mcp_network_support(cfg, selected)
-    if mcp_net_err is not None:
-        reporter.err(f"REFUSING: {mcp_net_err}")
-        raise SessionRefused(2)
-    hide_err = check_hide_paths_support(cfg, selected)
-    if hide_err is not None:
-        reporter.err(f"REFUSING: {hide_err}")
-        raise SessionRefused(2)
-    ws_err = check_workspace_outside_private_dirs(Path.cwd())
-    if ws_err is not None:
-        reporter.err(f"REFUSING: {ws_err}")
-        raise SessionRefused(2)
-    # A DEFAULT degrades with the warning above; a value the operator wrote
-    # down refuses, because they asked for something this host cannot give.
-    git_err = check_protect_git_support(
-        cfg, selected, explicitly_set="sandbox.protect_git" in explicit_leaves
-    )
-    if git_err is not None:
-        reporter.err(f"REFUSING: {git_err}")
+    # The shared list (`config_refusal`): a default this host cannot honour
+    # degraded with a warning above; a value the operator wrote down refuses.
+    cfg_err = config_refusal(cfg, selected, Path.cwd(), explicit_leaves=explicit_leaves)
+    if cfg_err is not None:
+        reporter.err(f"REFUSING: {cfg_err}")
         raise SessionRefused(2)
     budget_err = budget_preflight(cfg)
     if budget_err is not None:

@@ -896,3 +896,66 @@ def test_attach_degrades_a_corrupt_journal_like_status(
     assert code == 1
     err = capsys.readouterr().err
     assert "ERROR:" in err
+
+
+def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine run` had its own hand-assembled preflight and skipped the
+    protect_git check `run`/`ask` make, so on hardened an explicit
+    `protect_git = true` warned and ran instead of refusing (docs/security.md
+    states the refusal without qualification). Both lifecycles now run
+    `config_refusal`."""
+    from agent6.app.machine import run as run_mod
+
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    (cfg_home / "config.toml").write_text("[sandbox]\nprotect_git = true\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+
+    class _Env:
+        detected_isolation = "hardened"
+
+    monkeypatch.setattr(run_mod, "detect_env", _Env)
+
+    def _hardened(_req: str, _env: object) -> str:
+        return "hardened"
+
+    monkeypatch.setattr(run_mod, "resolve_isolation", _hardened)
+    f = workspace / "probe.asm.toml"
+    f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSING" in err and "protect_git" in err
+
+
+def test_run_refuses_a_state_dir_inside_the_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 run` refuses a state base inside the workspace (jailed commands
+    could read transcripts, and commits would stage them); `machine run` did
+    not, so the same config ran there."""
+    from agent6.app.machine import run as run_mod
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "inside-state"))
+    monkeypatch.chdir(tmp_path)
+
+    class _Env:
+        detected_isolation = "strict"
+
+    monkeypatch.setattr(run_mod, "detect_env", _Env)
+
+    def _strict(_req: str, _env: object) -> str:
+        return "strict"
+
+    monkeypatch.setattr(run_mod, "resolve_isolation", _strict)
+    f = tmp_path / "probe.asm.toml"
+    f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSING" in err and "private directory" in err

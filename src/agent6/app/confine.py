@@ -343,6 +343,34 @@ def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | N
     return None
 
 
+def config_refusal(
+    cfg: Config,
+    isolation: IsolationLevel,
+    workspace: Path,
+    *,
+    explicit_leaves: frozenset[str] = frozenset(),
+) -> str | None:
+    """The first refusal for a config this host cannot honor, else None.
+
+    The one list every lifecycle runs (`run`/`resume`/`ask` through
+    select_isolation, `machine run` after its interactive network fix), so a
+    check added here cannot land in one lifecycle and not the other. The
+    NETWORK checks stay per-lifecycle: machines route theirs through
+    `resolve_network_fix` and allow per-state opt-ins.
+    """
+    for err in (
+        check_mcp_network_support(cfg, isolation),
+        check_hide_paths_support(cfg, isolation),
+        check_workspace_outside_private_dirs(workspace),
+        check_protect_git_support(
+            cfg, isolation, explicitly_set="sandbox.protect_git" in explicit_leaves
+        ),
+    ):
+        if err is not None:
+            return err
+    return None
+
+
 def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     """A refusal message if the network config EXPLICITLY enforces something
     this isolation cannot provide, else None.
