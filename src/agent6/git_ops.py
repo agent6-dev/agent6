@@ -822,12 +822,22 @@ def chain_tip(path: Path, ref: str) -> str | None:
     return sha if res.returncode == 0 and sha else None
 
 
-def _worktree_tree(path: Path) -> str:
+def _worktree_tree(path: Path, seed: str | None) -> str:
     """Tree sha of the worktree's CURRENT content, staged into a temp index;
-    the shared index is never read or written."""
+    the shared index is never read or written.
+
+    *seed* (the commit the tree will be diffed or parented against; None in an
+    unborn repo) pre-populates the index with that commit's tree before
+    `add -A`: ignore rules apply only to UNTRACKED files, so an empty index
+    made `add -A` skip tracked-but-ignored files and every chain commit
+    silently dropped them, which a later merge turned into deletions. New
+    ignored files stay out, and a file deleted from the worktree still leaves
+    the tree, exactly as `add -A` behaves on the real index."""
     tmp = Path(tempfile.mkdtemp(prefix="agent6-chain-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
+        if seed is not None:
+            _run(path, "read-tree", seed, env_extra=env)
         _run(path, "add", "-A", env_extra=env)
         return _run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
@@ -844,7 +854,7 @@ def chain_dirty(path: Path, ref: str, fallback_parent: str | None) -> bool:
     Raises GitError outside a repo -- callers treat that as clean."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    return base_tree != _worktree_tree(path)
+    return base_tree != _worktree_tree(path, base)
 
 
 def chain_dirty_paths(path: Path, ref: str, fallback_parent: str | None, limit: int) -> list[str]:
@@ -852,7 +862,7 @@ def chain_dirty_paths(path: Path, ref: str, fallback_parent: str | None, limit: 
     at *limit* (an unborn chain diffs against the empty tree)."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, _worktree_tree(path)).stdout
+    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, _worktree_tree(path, base)).stdout
     return [line for line in out.splitlines() if line][:limit]
 
 
@@ -879,8 +889,8 @@ def chain_commit(
     the new sha, or None when the tree is identical to the parent's (nothing
     to record).
     """
-    tree = _worktree_tree(path)
     parent = chain_tip(path, ref) or fallback_parent
+    tree = _worktree_tree(path, parent)
     parent_args: list[str] = []
     if parent is not None:
         if _run(path, "rev-parse", f"{parent}^{{tree}}").stdout.strip() == tree:

@@ -1284,3 +1284,54 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: Path) ->
     assert chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t4") is None
     assert _rev(tmp_path, "refs/agent6/t4") == s1
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
+
+
+def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: Path) -> None:
+    """A file committed before it was gitignored stays tracked, but `add -A`
+    into the EMPTY chain temp index applied ignore rules to it (ignore covers
+    only untracked files, and to a fresh index everything is untracked): every
+    chain commit silently dropped such files from its tree, `chain_dirty` read
+    the repo as permanently dirty, and a later `sessions merge` deleted the
+    files from the operator's branch. Found by a run on a clone of this
+    repository, whose bench results are tracked-but-ignored: the run branch
+    deleted 40 of them. The temp index is now seeded from the parent tree."""
+    repo = _repo_with_ignored_tracked(tmp_path)
+    ref = "refs/agent6/t/head"
+    head = _rev(repo, "HEAD")
+
+    # No edits: the worktree matches the chain base exactly.
+    assert git_ops.chain_dirty(repo, ref, head) is False
+
+    (repo / "code.py").write_text("print('v2')\n", encoding="utf-8")
+    assert git_ops.chain_dirty_paths(repo, ref, head, 10) == ["code.py"]
+    sha = git_ops.chain_commit(repo, "step", ref=ref, fallback_parent=head)
+    assert sha is not None
+    files = _run_git(repo, "ls-tree", "-r", "--name-only", sha).splitlines()
+    assert "results.log" in files, files
+    assert "scratch.log" not in files  # new ignored files still stay out
+    diff = _run_git(repo, "diff", "--name-only", f"{head}..{sha}").splitlines()
+    assert diff == ["code.py"], diff
+
+
+def _run_git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+    ).stdout
+
+
+def _repo_with_ignored_tracked(tmp_path: Path) -> Path:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _run_git(repo, "init", "-q")
+    _run_git(repo, "config", "user.email", "t@t")
+    _run_git(repo, "config", "user.name", "t")
+    (repo / "code.py").write_text("print('v1')\n", encoding="utf-8")
+    (repo / "results.log").write_text("kept\n", encoding="utf-8")
+    _run_git(repo, "add", "-A")
+    _run_git(repo, "commit", "-q", "-m", "base")
+    # Ignored AFTER being tracked, the shape that bit; plus a new ignored file.
+    (repo / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    _run_git(repo, "add", ".gitignore")
+    _run_git(repo, "commit", "-q", "-m", "ignore logs")
+    (repo / "scratch.log").write_text("never tracked\n", encoding="utf-8")
+    return repo
