@@ -22,10 +22,10 @@ jobs:
     # Arch- and version-independent static checks: run once.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
 
@@ -49,10 +49,10 @@ jobs:
           - { arch: arm64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.platform.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv + Python ${{ matrix.python }}
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
@@ -105,10 +105,10 @@ jobs:
           - { arch: arm64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.platform.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.0.1
 
       - name: Download the built wheel for this arch
         uses: actions/download-artifact@v8
