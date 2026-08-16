@@ -118,6 +118,57 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
     assert "was pruned" in capsys.readouterr().out
 
 
+def test_a_run_that_committed_nothing_is_not_reported_as_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that made no commits never cuts its branch (nor its chain ref), so
+    "no longer exists (deleted...)" told the operator a branch had been removed
+    that was never created. Observed on a run whose task started a server and
+    edited nothing."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _manifest(tmp_path, "nocommit1", base, merged=False)  # no branch, no chain ref
+
+    assert main(["sessions", "commits", "nocommit1"]) == 0
+    out = capsys.readouterr().out
+    assert "committed nothing" in out and "never cut" in out
+    assert "no longer exists" not in out
+
+    assert main(["sessions", "merge", "nocommit1"]) == 2
+    assert "committed nothing" in capsys.readouterr().err
+
+
+def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Deleting the run branch by hand leaves the commits on the chain ref, so
+    the message that reports the missing branch says where they are."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "gonebr1", "a.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/gonebr1")
+    _git(tmp_path, "update-ref", chain_ref_for("gonebr1"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/gonebr1")
+    _manifest(tmp_path, "gonebr1", base, merged=False)
+
+    assert main(["sessions", "commits", "gonebr1"]) == 0
+    out = capsys.readouterr().out
+    assert chain_ref_for("gonebr1") in out
+    assert "committed nothing" not in out
+
+
 def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

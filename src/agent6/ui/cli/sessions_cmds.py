@@ -385,10 +385,29 @@ def _cmd_stop(*, session_id: str) -> int:
     return 0
 
 
+def _committed_nothing(cwd: Path, session_id: str) -> bool:
+    """True when a run left no commit anywhere: the chain ref it commits to was
+    never created, so its branch was never cut either."""
+    return chain_tip(cwd, chain_ref_for(session_id)) is None
+
+
+def _no_ref_to_merge(cwd: Path, manifest: SessionManifest, run_branch: str) -> str:
+    """Why there is nothing to merge: a run that committed nothing never cut its
+    branch, anything else lost the ref after the fact."""
+    if _committed_nothing(cwd, manifest.session_id):
+        return "this run committed nothing; there is nothing to merge."
+    return (
+        f"run ref {run_branch!r} no longer exists; its commits survive at"
+        f" {chain_ref_for(manifest.session_id)}."
+    )
+
+
 def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
-    """A friendly message when a run's branch no longer exists (it was pruned),
-    or None if the branch is still present. Uses the manifest's recorded merge so
-    diff/commits say where the work went instead of leaking a raw git fatal."""
+    """A friendly message when a run's branch is absent, or None when it is
+    there. Uses the manifest's recorded merge so diff/commits say where the work
+    went instead of leaking a raw git fatal, and separates the two ways to get
+    here: a merged-then-pruned branch, and a run that committed nothing, whose
+    branch was never cut."""
     if branch_exists(cwd, run_branch):
         return None
     merged_into = manifest.merged.into if manifest.merged else ""
@@ -398,7 +417,12 @@ def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -
         if merged_sha and set(merged_sha) != {"0"}:
             note += f" as {merged_sha[:12]}\n  see: git show {merged_sha[:12]}"
         return note
-    return f"[agent6] run branch {run_branch} no longer exists (deleted, and no merge recorded)."
+    if _committed_nothing(cwd, manifest.session_id):
+        return f"[agent6] this run committed nothing, so {run_branch} was never cut."
+    return (
+        f"[agent6] run branch {run_branch} is gone with no merge recorded; its commits"
+        f" survive at {chain_ref_for(manifest.session_id)}."
+    )
 
 
 def _cmd_commits(*, session_id: str) -> int:
@@ -519,7 +543,7 @@ def _plan_merge(  # noqa: PLR0911
     # chain_tip resolves both shapes head_ref takes: a branch name and the
     # hidden refs/agent6/<id>/head chain ref.
     if chain_tip(cwd, run_branch) is None:
-        print(f"ERROR: run ref {run_branch!r} no longer exists.", file=sys.stderr)
+        print(f"ERROR: {_no_ref_to_merge(cwd, manifest, run_branch)}", file=sys.stderr)
         return 2
     if not branch_exists(cwd, target):
         print(
