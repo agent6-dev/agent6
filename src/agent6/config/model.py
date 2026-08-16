@@ -482,7 +482,9 @@ _MISSING_API_FORMAT = 'set api_format = "anthropic" or "openai" (see docs/config
 
 
 def _format_validation_error(
-    err: ValidationError, source: str, locate: Callable[[str], str | None] | None = None
+    err: ValidationError,
+    source: str,
+    locate: Callable[[str, str], str | None] | None = None,
 ) -> str:
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
@@ -491,7 +493,7 @@ def _format_validation_error(
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
             msg = _MISSING_API_FORMAT
         lines.append(f"  - {loc}: {msg} (type={issue['type']})")
-        if locate is not None and (where := locate(loc)):
+        if locate is not None and (where := locate(loc, issue["type"])):
             lines.append(where)
     return "\n".join(lines)
 
@@ -500,14 +502,15 @@ def validate_config(
     raw: dict[str, object],
     *,
     source: str = "<config>",
-    locate: Callable[[str], str | None] | None = None,
+    locate: Callable[[str, str], str | None] | None = None,
 ) -> Config:
     """Validate an already-parsed (and possibly layer-merged) config dict.
 
     Shared by :func:`load_config` and the layered loader
     (`agent6.config.layer`) so both surface identical field-pointing errors.
-    `locate` maps a dotted leaf to a "which file, how to fix" hint appended to
-    its error line, so a stale value in a layered config names its own source.
+    `locate` maps (dotted leaf, pydantic error type) to a "which file, how to
+    fix" hint appended to its error line, so a stale value in a layered config
+    names its own source and the remedy that works for that kind of error.
     """
     try:
         return Config.model_validate(raw)

@@ -70,6 +70,20 @@ def test_layering_merges_global_and_repo(repo: Path) -> None:
     assert cfg.sandbox.run_commands == "yes"
 
 
+def test_an_unknown_key_points_at_config_fix(repo: Path) -> None:
+    """`agent6 config set` refuses a key `Config` has no field for, so pointing
+    an extra_forbidden leaf at it sends the operator to a second error. The
+    remedy that works is `agent6 config fix`, which drops the key. A bad VALUE
+    on a real key still points at `config set`."""
+    gcfg = Path(repo).parent / "g" / "config.toml"
+    gcfg.write_text('[sandbox]\nnonexistent_key = 1\nisolation = "srtict"\n', encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        load_effective(repo)
+    text = str(exc.value)
+    assert "sandbox.nonexistent_key" in text and "fix: agent6 config fix" in text
+    assert "fix: agent6 config set sandbox.isolation <value>" in text
+
+
 def test_source_map_attribution(repo: Path) -> None:
     eff = load_effective(repo)
     assert eff.sources["models.worker.model"] == "global"
