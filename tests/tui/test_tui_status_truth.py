@@ -25,6 +25,7 @@ from textual.widgets import Static
 from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.conversation import SteerInput
 from agent6.ui.tui.modals import ApprovalModal
+from agent6.viewmodel.state import apply_event
 
 
 def _mk_parked(d: Path) -> None:
@@ -354,6 +355,34 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
             )
 
     asyncio.run(scenario())
+
+
+def test_a_finished_log_is_read_before_the_first_tick(tmp_path: Path) -> None:
+    """A finished run takes its status from the log, not from the fold the
+    reader thread has not filled yet: in between it reads as killed (no worker,
+    no end), and the exit_on_end hold stamped "stale" over a run that passed."""
+    d = tmp_path / "seeded"
+    d.mkdir(parents=True)
+    evs = [
+        {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
+        {"type": "session.end", "reason": "finish_session", "iterations": 1, "all_passed": True},
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+
+    app = Agent6TUI(d, exit_on_end=True)
+    app._seed_from_disk()
+    assert app.dir_status[0] == "passed"
+    # Mid-catch-up: the reader has delivered session.start and nothing else, so
+    # the status turns "stale" (started, no worker, no end folded yet). The run
+    # is not lost, it is unread.
+    app.state = apply_event(app.state, evs[0])
+    app._refresh_dir_status()
+    assert app.dir_status[0] == "stale"
+    assert not app.worker_lost, "the fold has not reached the end the log already holds"
+    app.state = apply_event(app.state, evs[1])
+    app._refresh_dir_status()
+    assert app.dir_status[0] == "passed"
+    assert not app.worker_lost
 
 
 def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: Path) -> None:

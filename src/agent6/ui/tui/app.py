@@ -829,6 +829,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self.dir_status: tuple[str, str] = status_for_session_dir(
             session_dir, status_facts(self.state)
         )
+        # Lines the log held at open; worker_lost waits for the fold to reach it.
+        self._seed_log_count = 0
         # Header task line for a run with no session.start yet (parked/created):
         # the fold has no user_task, but the manifest knows the work.
         self.fallback_task = ""
@@ -875,17 +877,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # web/TUI/attach viewers each hold their own.
         register_frontend(self.session_dir, os.getpid())
         self.sub_title = self.run_title()  # menu-bar title context
-        # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
-        # detached, whose session.steer_requested replays on open); only prompt for ones
-        # that arrive AFTER we start watching, so opening a run never re-prompts
-        # for a stale, already-handled steer request. Seed with the SAME fold _tick compares
-        # against: a byte-substring count also matched the literal inside event
-        # payloads (a grep of the source for the event name), over-seeding the
-        # baseline and swallowing the next real steer.
-        with contextlib.suppress(OSError):
-            self._seen_steer = fold_session(
-                tail_events(self.logs_path, follow=False)
-            ).steer_requests
+        self._seed_from_disk()
         # Pushed (not the app's default screen): only the push path loads a
         # screen's CSS, and the hub pushes its HomeScreen the same way. The
         # conversation opens on top -- the primary view -- with the dashboard
@@ -902,6 +894,19 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self.set_interval(0.2, self._tick)
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
+
+    def _seed_from_disk(self) -> None:
+        """Fold the log already on disk, before the reader thread starts.
+
+        It seeds the status this viewer opens on, the line the fold must reach
+        for an absent `session.end` to mean anything (`worker_lost`), and the
+        steer baseline, so a request already in the log does not prompt.
+        """
+        with contextlib.suppress(OSError):
+            seeded = fold_session(tail_events(self.logs_path, follow=False))
+            self._seen_steer = seeded.steer_requests
+            self._seed_log_count = seeded.log_count
+            self.dir_status = status_for_session_dir(self.session_dir, status_facts(seeded))
 
     def on_unmount(self) -> None:
         self._stop.set()
@@ -967,10 +972,11 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     @property
     def worker_lost(self) -> bool:
-        """The recorded worker is gone without a session.end (kill -9 / OOM) --
+        """The recorded worker is gone without a session.end (kill -9 / OOM),
         the hub's "stale". Derived from dir_status, so a resume that brings a
-        live worker back clears it."""
-        return self.dir_status[0] == "stale"
+        live worker back clears it. False while the fold trails the log: an end
+        it has not reached is not an absent one."""
+        return self.dir_status[0] == "stale" and self.state.log_count >= self._seed_log_count
 
     def _refresh_dir_status(self) -> None:
         """Recompute dir_status (a pid probe + a manifest read pre-start; the
