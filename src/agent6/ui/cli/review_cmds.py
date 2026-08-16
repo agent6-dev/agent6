@@ -57,7 +57,7 @@ def _collect_review_diff(
     (`diff.external`/`diff.*.textconv`/`core.fsmonitor`) would run its
     payload on the host the moment the operator reviews it.
     """
-    hardening = git_hardening_flags()
+    hardening = git_hardening_flags(root)
     if base:
         diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, f"{base}..{head}"]
         if paths:
@@ -216,7 +216,7 @@ def _cmd_review(  # noqa: PLR0911
         return 0
 
     log_proc = subprocess.run(
-        [git, *git_hardening_flags(), "log", "-n", "10", "--oneline"],
+        [git, *git_hardening_flags(root), "log", "-n", "10", "--oneline"],
         cwd=root,
         capture_output=True,
         errors="replace",

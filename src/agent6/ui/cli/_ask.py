@@ -124,7 +124,7 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
     # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
     # would otherwise run on the host when the operator asks about a prior run.
     proc = subprocess.run(
-        ["git", *git_hardening_flags(), "diff", *DIFF_SHOW_SAFETY_FLAGS, range_spec],
+        ["git", *git_hardening_flags(cwd), "diff", *DIFF_SHOW_SAFETY_FLAGS, range_spec],
         cwd=cwd,
         capture_output=True,
         check=False,

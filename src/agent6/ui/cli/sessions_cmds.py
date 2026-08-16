@@ -223,7 +223,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     if paths:
         probe_args.extend(["--", *paths])
     probe = subprocess.run(
-        ["git", *git_hardening_flags(), *probe_args], cwd=cwd, check=False, capture_output=True
+        ["git", *git_hardening_flags(cwd), *probe_args], cwd=cwd, check=False, capture_output=True
     )
     if probe.returncode == 0:
         # No COMMITTED changes yet. A run commits only after a verify pass, so a
@@ -233,7 +233,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         dirty = _dirty_worktree_note(cwd, run_branch)
         print(dirty if dirty else "(no changes)")
         return 0
-    proc = subprocess.run(["git", *git_hardening_flags(), *args], cwd=cwd, check=False)
+    proc = subprocess.run(["git", *git_hardening_flags(cwd), *args], cwd=cwd, check=False)
     return proc.returncode
 
 
@@ -248,7 +248,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     # index and would fire a poisoned `.git/config` core.fsmonitor on the host.
     try:
         current = subprocess.run(
-            ["git", *git_hardening_flags(), "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", *git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -257,7 +257,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
         if current.returncode != 0 or current.stdout.strip() != str(run_branch):
             return ""
         status = subprocess.run(
-            ["git", *git_hardening_flags(), "status", "--porcelain"],
+            ["git", *git_hardening_flags(cwd), "status", "--porcelain"],
             cwd=cwd,
             check=False,
             capture_output=True,

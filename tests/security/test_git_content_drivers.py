@@ -156,3 +156,21 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: Path) 
     assert "filter.pwn.clean=" in git_ops._repo_driver_overrides(root)  # pyright: ignore[reportPrivateUsage]
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
+
+
+def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: Path) -> None:
+    """`agent6 review`'s working-tree diff shells out to git directly, and its
+    hardening carried the fixed `-c` set without the per-name driver overrides,
+    so `git diff HEAD` ran the repo's clean filter on the host."""
+    from agent6.ui.cli.review_cmds import (
+        _collect_review_diff,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    marker = tmp_path / "pwned"
+    root = _repo(tmp_path / "r")
+    _poison_clean_filter(root, marker)
+    git_ops.set_repo_filter_policy(False)
+
+    proc = _collect_review_diff("git", root, base="", head="HEAD", paths=())
+    assert "f.txt" in proc.stdout, proc.stdout
+    assert not marker.exists(), "the repo's clean filter ran a host command"

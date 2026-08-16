@@ -63,7 +63,7 @@ def test_boundaries_report_covers_every_actor(
     checks = check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert [c.status for c in checks] == ["PASS"]
-    assert "in-process tools" in out
+    assert "in-process file tools" in out
     assert "jailed commands" in out
     assert "(the workspace; .git re-bound read-only)" in out
     assert "ro  system: /usr /bin /sbin /lib /lib64 /etc/alternatives" in out

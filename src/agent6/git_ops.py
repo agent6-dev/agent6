@@ -272,16 +272,19 @@ def _repo_driver_overrides(cwd: Path) -> tuple[str, ...]:
 DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
 
 
-def git_hardening_flags() -> tuple[str, ...]:
-    """The `-c` overrides every agent6 git invocation must carry (see
-    _GIT_HARDENING). Public so the few callers that shell out to git
-    outside this module (`agent6 review`/`sessions diff` collectors) apply the
-    same hardening; place them BEFORE the subcommand. Diff/show callers also add
-    DIFF_SHOW_SAFETY_FLAGS after the subcommand."""
-    if _hook_policy["honor_repo_hooks"]:
-        return _GIT_HARDENING
+def git_hardening_flags(cwd: Path) -> tuple[str, ...]:
+    """The `-c` overrides every agent6 git invocation must carry: the fixed set
+    (_GIT_HARDENING), the hooks path unless the policy honors repo hooks, and a
+    blank override per content driver *cwd* defines (`_repo_driver_overrides`).
+
+    Public so the callers that shell out to git outside this module (`agent6
+    review` / `sessions diff` / `ask` collectors) carry the same hardening;
+    place them BEFORE the subcommand. Diff/show callers also add
+    DIFF_SHOW_SAFETY_FLAGS after the subcommand.
+    """
     # /dev/null is not a directory, so git finds (and runs) no hooks there.
-    return (*_GIT_HARDENING, "-c", "core.hooksPath=/dev/null")
+    hooks = () if _hook_policy["honor_repo_hooks"] else ("-c", "core.hooksPath=/dev/null")
+    return (*_GIT_HARDENING, *hooks, *_repo_driver_overrides(cwd))
 
 
 def _run(
@@ -299,7 +302,7 @@ def _run(
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
     for name in _provider_key_env:
         env.pop(name, None)
-    hardening = git_hardening_flags()
+    hardening = git_hardening_flags(cwd)
     # A poisoned `.git/config` reaches a host command two ways on a diff/show:
     # `diff.external` and per-file `diff.<d>.textconv`. The `-c` overrides above
     # cover neither cleanly (and git 2.53 dies rc=128 on the empty `diff.external`
@@ -310,7 +313,7 @@ def _run(
     # Blank the repo's own content drivers on EVERY op, not a guessed list of
     # driver-running subcommands: enumerating which git verbs run a clean/smudge
     # /merge driver is enumerating badness, and missing one reopens the RCE.
-    full_argv = (_git(), *hardening, *_repo_driver_overrides(cwd), *argv)
+    full_argv = (_git(), *hardening, *argv)
     index_lock = cwd / ".git" / "index.lock"
     lock_preexisted = index_lock.exists()
     proc = subprocess.Popen(
@@ -1132,7 +1135,7 @@ def _bring_worktree_file_forward(
         # would corrupt a binary blob.
         with file.open("wb") as out:
             subprocess.run(
-                [_git(), *git_hardening_flags(), "cat-file", "blob", new_sha],
+                [_git(), *git_hardening_flags(path), "cat-file", "blob", new_sha],
                 cwd=path,
                 stdout=out,
                 stderr=subprocess.DEVNULL,

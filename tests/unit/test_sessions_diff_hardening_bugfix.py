@@ -18,7 +18,7 @@ from agent6.ui.cli.sessions_cmds import _dirty_worktree_note  # pyright: ignore[
 
 def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[list[str]] = []
-    flags = list(git_hardening_flags())
+    flags = list(git_hardening_flags(Path.cwd()))
 
     class _Done:
         def __init__(self, stdout: str) -> None:
@@ -33,8 +33,10 @@ def test_dirty_worktree_note_hardens_its_git_probes(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(subprocess, "run", _fake_run)
     note = _dirty_worktree_note(Path("/repo"), "agent6/run")
     assert "1 file modified" in note
-    assert len(seen) == 2  # rev-parse + status
-    for argv in seen:
-        assert argv[0] == "git"
+    # `git_hardening_flags` reads the repo's driver names first, so each probe
+    # is preceded by that config read (an absolute-path git, not "git").
+    probes = [argv for argv in seen if argv[0] == "git"]
+    assert len(probes) == 2  # rev-parse + status
+    for argv in probes:
         # the hardening flags sit right after "git", before the subcommand
         assert argv[1 : 1 + len(flags)] == flags
