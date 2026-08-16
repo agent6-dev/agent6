@@ -25,16 +25,21 @@ _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
 
 def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
-    """The repo-relative scaffold files git would track. The per-repo config
+    """The repo-relative scaffold files git would record. The per-repo config
     lives out of the workspace under the state dir, so it is never a candidate
     here; filter to paths under root defensively, then unignored() drops
-    anything the just-written .gitignore covers so we never `git add -f`."""
-    return unignored(
+    anything the just-written .gitignore covers so we never `git add -f`.
+
+    A path with nothing pending is dropped too, so the commit line names what
+    the commit holds: init leaves an existing AGENTS.md alone, and listing it
+    told the operator it had been committed."""
+    candidates = unignored(
         root,
         tuple(
             str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
         ),
     )
+    return tuple(rel for rel in candidates if paths_dirty(root, (rel,)))
 
 
 def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
@@ -128,6 +133,14 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         )
         return 2
     interactive = not assume_yes
+    # A scaffold path the operator had already edited carries THEIR work: a
+    # path-limited commit would sweep it into agent6's scaffold commit, so it
+    # is excluded and reported instead.
+    scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
+    theirs = (
+        tuple(p for p in scaffold_all if paths_dirty(cwd, (p.name,))) if is_git_repo(cwd) else ()
+    )
+    scaffold = tuple(p for p in scaffold_all if p not in theirs)
     try:
         rc = init_workspace(
             cwd,
@@ -146,11 +159,10 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
     if rc == 0:
         # Only the repo-tracked scaffold; the per-repo config is out of the
         # workspace (under the state dir) and never committed.
-        _offer_git_setup(
-            cwd,
-            (cwd / "AGENTS.md", cwd / ".gitignore"),
-            interactive=interactive,
-        )
+        _offer_git_setup(cwd, scaffold, interactive=interactive)
+        if theirs:
+            names = ", ".join(sorted(p.name for p in theirs))
+            print(f"  left uncommitted (already edited): {names}")
         _print_next_steps()
     # Don't leave root-owned scaffolding in the user's repo (sudo case).
     chown_to_real_user(target.parent)

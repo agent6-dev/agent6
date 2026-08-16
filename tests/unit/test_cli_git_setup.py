@@ -248,3 +248,40 @@ def test_an_unanswerable_run_creates_no_session(
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
     assert not (resolved_state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()
+
+
+def test_init_never_commits_the_operators_own_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 init` committed AGENTS.md by path, so an edit the operator had
+    in flight landed inside "chore: scaffold agent6 config" -- and the summary
+    line named AGENTS.md even when init had left it untouched."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_repo(repo)
+    (repo / "AGENTS.md").write_text("theirs v1\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=repo,
+        check=True,
+    )
+    (repo / "AGENTS.md").write_text("theirs v2, still being written\n", encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert main(["init", "--yes"]) == 0
+
+    out = capsys.readouterr().out
+    assert "committed the agent6 scaffold (.gitignore)" in out
+    assert "left uncommitted (already edited): AGENTS.md" in out
+    head = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert head == [".gitignore"], head
+    assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "theirs v2, still being written\n"
