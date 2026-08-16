@@ -362,6 +362,6 @@ def _warn_servers_that_keep_the_network(
             reporter.err(
                 f"[agent6] WARNING: MCP server {name!r} keeps this host's network:"
                 f" taking it away needs the network namespace only 'strict' has, and"
-                f" this host resolved to {isolation!r}. Set its sandbox.network ="
-                " 'none' to refuse rather than run connected."
+                f" this host resolved to {isolation!r}. On 'hardened', setting its"
+                " sandbox.network = 'none' refuses the run instead of connecting it."
             )

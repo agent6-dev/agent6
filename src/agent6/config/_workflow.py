@@ -114,7 +114,10 @@ class WorkflowConfig(BaseModel):
     )
     metric: MetricConfig | None = Field(
         default=None,
-        description="Optional continuous-score metric; unset = no `run_metric_command` tool.",
+        description=(
+            "Optional continuous-score metric. Unset, `run_metric_command` stays on the"
+            " tool list and refuses the call, naming this key."
+        ),
     )
 
 

@@ -82,10 +82,11 @@ def warn_sandbox_gaps(
             f"[agent6] WARNING: running UNSANDBOXED ({origin}). "
             "Every command runs as a plain subprocess with no filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
-            "any spawned MCP server. sandbox.memory_limit_mb caps jailed processes, "
-            "so it is inert here. Only the surrounding environment, a container for "
-            "instance, bounds what a command can reach. Use 'auto', 'strict', or "
-            "'hardened' for kernel-enforced isolation."
+            "any spawned MCP server. sandbox.memory_limit_mb still applies: the "
+            "launcher enforces it with confinement off. Only the "
+            "surrounding environment, a container for instance, bounds what a command "
+            "can reach. Use 'auto', 'strict', or 'hardened' for kernel-enforced "
+            "isolation."
         )
     elif isolation == "strict" and env.landlock_abi < 1:
         reporter.err(

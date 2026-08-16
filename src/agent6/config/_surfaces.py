@@ -187,9 +187,9 @@ class NotifyConfig(BaseModel):
     - `AGENT6_SESSION_OK`      , `1` if the workflow finished cleanly, `0` otherwise
     - `AGENT6_SESSION_REASON`  , workflow termination reason (e.g. `finish_session`,
                                  `budget_exhausted`, `provider_error`)
-    - `AGENT6_SESSION_VERIFIED`, `passed` / `failed` / `unverified` (the
-                                 verify gate's verdict; a hook wanting "green"
-                                 reads this, not `OK`)
+    - `AGENT6_SESSION_VERIFIED`, `passed` / `failed` / `unverified` /
+                                 `not_applicable` (the verify gate's verdict;
+                                 a hook wanting "green" reads this, not `OK`)
     - `AGENT6_SESSION_DIR`     , absolute path to the session dir
 
     Use cases: desktop notification (`notify-send`), shell-bell, ssh
