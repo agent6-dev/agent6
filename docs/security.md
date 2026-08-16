@@ -392,7 +392,7 @@ It catches prompt regressions; the structural defenses above confine a model tha
 
 - User namespaces must be enabled; agent6 refuses `strict` on distros that disable them.
 - AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile.
-  agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it, per-command jailing is `strict`; without it, `hardened`.
+  agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it `strict` is available, without it `hardened`.
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
 - Devcontainers get `hardened`: the container bounds filesystem damage, and jailed commands share the container's network ([Network](#5-network)).
   The XDG state base is ephemeral (lost on rebuild), so mount a volume at the state dir or set `[agent6].state_dir`.

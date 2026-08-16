@@ -61,10 +61,10 @@ def _isolation_means(isolation: IsolationLevel) -> str:
         # the run its own network, and `sandbox.network = "host"` declines it.
         # The config section prints what this project resolved to.
         return (
-            "commands get their own filesystem view (only granted paths exist),"
-            " a private /proc and PID namespace, a filtered syscall set, and the"
-            " run's own network unless sandbox.network says otherwise."
-            " See docs/security.md."
+            "the run's commands share one jail: their own filesystem view (only"
+            " granted paths exist), a private /proc, PID namespace and /tmp, a"
+            " filtered syscall set, and the run's own network unless"
+            " sandbox.network says otherwise. See docs/security.md."
         )
     if isolation == "hardened":
         return (
@@ -356,7 +356,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
     )
     print(f"    rw  {ws.root}  (the workspace{git_note})")
     if selected == "strict":
-        print("    rw  /tmp  (a fresh tmpfs per command)")
+        print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (+ a minimal /etc)")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")

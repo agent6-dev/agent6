@@ -3,8 +3,8 @@
 """Minimal ctypes wrapper for the Linux Landlock LSM: the ABI probe.
 
 `landlock_abi()` feeds isolation resolution (sandbox.detect). Landlock rules
-themselves are applied per-command by the jail launcher (jail/src/main.rs),
-never to the agent process (see app/confine.py).
+themselves are applied by the jail launcher (jail/src/main.rs), never to the
+agent process (see app/confine.py).
 
 References:
 - Documentation/userspace-api/landlock.rst in the Linux kernel tree

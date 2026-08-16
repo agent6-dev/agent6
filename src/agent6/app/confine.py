@@ -3,7 +3,7 @@
 """Warnings and cross-checks for what an isolation level does NOT confine.
 
 The agent process itself is never confined, at any isolation level: every
-boundary is the jail's, applied per command, and the levels differ only in
+boundary is the jail's, and the levels differ only in
 which jail features the launcher enables (docs/security.md owns the model
 and the rationale). Nothing bounds the agent's own filesystem or egress; a
 partial block on a trusted process reads as a guarantee it cannot keep, so

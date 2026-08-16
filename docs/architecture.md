@@ -35,7 +35,7 @@ Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `co
   The single-turn `code_review` call shape lives here too; the agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
-  Every boundary is per command; the agent process itself is never confined.
+  The jail bounds commands, one launcher per run; the agent process itself is never confined.
 
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a workflow.
 `cli_main` is the one error boundary: an `OperatorError` (`agent6.errors`, with `ConfigError` and `MemoryStoreError` as subclasses) prints as an `ERROR:` refusal at exit 2, and anything else is a bug that crash-reports with a saved traceback at exit 1.
