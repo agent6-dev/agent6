@@ -93,6 +93,21 @@ def test_boundaries_report_is_level_aware(
     assert "network  host" in out
 
 
+def test_boundaries_report_says_withheld_rather_than_unapproved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run_commands = "no"` withholds the command tools from the model. The
+    header read "approval: sandbox.run_commands = no", which describes a
+    prompting policy for tools the model never sees."""
+    _force(monkeypatch, "strict")
+    check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
+        Config(sandbox=SandboxConfig(run_commands="no"))
+    )
+    out = capsys.readouterr().out
+    assert "withheld from the model (sandbox.run_commands = no)" in out
+    assert "approval: sandbox.run_commands" not in out
+
+
 def test_boundaries_report_names_each_mcp_server(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -359,9 +359,18 @@ def _grant_lines(ws: Workspace) -> list[str]:
 
 
 def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -> None:
+    # The resolved fact, not the knob's value: "no" WITHHOLDS the command tools
+    # from the model rather than prompting for them, and the paths below are
+    # then what an operator-driven jailed command (a machine tool state, an
+    # MCP server) reaches.
+    gate = {
+        "yes": "auto-approved",
+        "ask": "prompted per call",
+        "no": "withheld from the model",
+    }[cfg.sandbox.run_commands]
     print(
-        "  jailed commands (run_command, the verify gate, the metric command;"
-        f" approval: sandbox.run_commands = {cfg.sandbox.run_commands}):"
+        "  jailed commands (run_command, the verify gate, the metric command):"
+        f" {gate} (sandbox.run_commands = {cfg.sandbox.run_commands})"
     )
     if selected == "none":
         print("    UNCONFINED: no jail on this host; commands run as you.")
