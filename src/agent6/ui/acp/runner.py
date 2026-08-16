@@ -331,7 +331,7 @@ class RunBridge:
                     text,
                     frontend=self._frontend(session),
                     session_id=session.session_id,
-                    explicit_leaves=frozenset(effective.sources),
+                    explicit_leaves=effective.explicit_leaves,
                     reporter=teeing_reporter(said),
                 )
         finally:

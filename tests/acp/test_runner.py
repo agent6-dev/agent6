@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 
 from agent6.app.reporter import Reporter
+from agent6.config import Config
+from agent6.config.layer import EffectiveConfig
 from agent6.config.model import ConfigError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp import runner
@@ -550,7 +552,6 @@ def test_a_second_prompt_resumes_the_same_run(
     """An ACP session is one conversation: the first prompt mints a run id and
     starts a run; the next prompt resumes that run with its text as the steer
     seed, and only a session with no snapshot starts fresh."""
-    from types import SimpleNamespace
 
     calls: list[tuple[str, str, str]] = []
     monkeypatch.chdir(tmp_path)
@@ -561,8 +562,10 @@ def test_a_second_prompt_resumes_the_same_run(
     def _minted(*_a: object, **_k: object) -> str:
         return "run-AAAA11"
 
-    def _effective(*_a: object, **_k: object) -> object:
-        return SimpleNamespace(config=None, sources=[])
+    def _effective(*_a: object, **_k: object) -> EffectiveConfig:
+        # The real type: the bridge reads `explicit_leaves` off it, and a
+        # SimpleNamespace stand-in cannot answer for that.
+        return EffectiveConfig(config=Config(), sources={}, layers=())
 
     monkeypatch.setattr(runner, "resolved_state_dir", _state_dir)
     monkeypatch.setattr(runner, "unused_session_id", _minted)

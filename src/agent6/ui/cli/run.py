@@ -272,7 +272,7 @@ def _cmd_run(  # noqa: PLR0911
     the flag overrides, resolve skills and @file refs, route `--parallel`,
     then drive the lifecycle (`app.run.run_task`) with the injected seam."""
     effective = load_effective(Path.cwd(), config_path, preset=preset)
-    cfg, explicit_leaves = effective.config, frozenset(effective.sources)
+    cfg, explicit_leaves = effective.config, effective.explicit_leaves
     if budget_overrides is not None:
         cfg = budget_overrides.apply(cfg)
     if sandbox_overrides is not None:

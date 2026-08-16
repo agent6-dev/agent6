@@ -91,3 +91,24 @@ def test_a_new_top_level_entry_can_be_created_on_hardened(tmp_path: Path) -> Non
         )
     )
     assert "made-them" in res.stdout, res.stdout + res.stderr
+
+
+def test_the_default_reaches_the_check_as_a_default(tmp_path: Path) -> None:
+    """The caller asked `effective.sources` for the explicit leaves, and that
+    dict holds EVERY leaf with its layer, so a default read as operator intent:
+    on a host without user namespaces (auto -> hardened) `agent6 run`/`ask`
+    refused to start at all, against a config nobody had written."""
+    from agent6.config.layer import load_effective
+
+    effective = load_effective(tmp_path, None)
+    assert effective.config.sandbox.protect_git is True
+    assert effective.sources["sandbox.protect_git"] == "default"
+    assert "sandbox.protect_git" not in effective.explicit_leaves
+    assert (
+        check_protect_git_support(
+            effective.config,
+            "hardened",
+            explicitly_set="sandbox.protect_git" in effective.explicit_leaves,
+        )
+        is None
+    )

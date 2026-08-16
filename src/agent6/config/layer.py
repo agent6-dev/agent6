@@ -76,6 +76,14 @@ class EffectiveConfig:
     sources: dict[str, str]  # dotted leaf path -> layer name
     layers: tuple[Layer, ...]  # the layers that actually contributed (existing files)
 
+    @property
+    def explicit_leaves(self) -> frozenset[str]:
+        """The leaves a config layer set, without the ones sitting at their
+        built-in default. A preflight that refuses what the host cannot honor
+        asks this: the operator wrote the value down, so it is a demand rather
+        than a default to degrade."""
+        return frozenset(leaf for leaf, layer in self.sources.items() if layer != "default")
+
 
 def _read_toml(path: Path) -> dict[str, Any]:
     try:

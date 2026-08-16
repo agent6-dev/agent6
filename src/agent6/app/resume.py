@@ -476,7 +476,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         try:
             effective = load_effective(Path.cwd(), config_path, preset=preset or manifest_preset)
-            cfg, explicit_leaves = effective.config, frozenset(effective.sources)
+            cfg, explicit_leaves = effective.config, effective.explicit_leaves
             apply_git_ops_policy(cfg)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)

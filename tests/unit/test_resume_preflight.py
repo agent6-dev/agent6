@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import subprocess as sp
 from pathlib import Path
-from typing import ClassVar
 
 import pytest
 
@@ -249,20 +248,17 @@ model = "worker-model"
 
 def _stub_load_effective(monkeypatch: pytest.MonkeyPatch, toml_body: str, tmp: Path) -> None:
     from agent6.config import load_config
+    from agent6.config.layer import EffectiveConfig
 
     cfg_path = tmp / "cfg.toml"
     cfg_path.write_text(toml_body, encoding="utf-8")
     cfg = load_config(cfg_path)
 
-    class _Loaded:
-        config = cfg
-        # Per-leaf provenance, as the real EffectiveConfig carries: the
-        # preflight uses it to tell a DEFAULT this host cannot honour (degrade)
-        # from a value the operator wrote down (refuse).
-        sources: ClassVar[dict[str, str]] = {}
-
-    def _load(*_a: object, **_k: object) -> _Loaded:
-        return _Loaded()
+    # The real type: preflight reads `explicit_leaves` off it to tell a DEFAULT
+    # this host cannot honour (degrade) from a value the operator wrote down
+    # (refuse), and a stand-in cannot answer for that.
+    def _load(*_a: object, **_k: object) -> EffectiveConfig:
+        return EffectiveConfig(config=cfg, sources={}, layers=())
 
     monkeypatch.setattr(resume_mod, "load_effective", _load)
 
