@@ -37,8 +37,7 @@ rationale = { type = "str", optional = true }
 [states.attempt]
 kind   = "agent"
 mode   = "run"                  # edits + verify + commit tools (not the default read-only)
-model  = "claude-sonnet-4-6"
-provider = "anthropic"
+# Inherits your [models.worker]; a state may pin `provider`/`model` instead.
 max_tokens_fallback = 200000
 prompt = """
 A test in this repository is failing. Run the test to see the failure:
