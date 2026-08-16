@@ -9,12 +9,12 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "Eric Lesiuta" }]
 dependencies = [
     "argcomplete>=3,<4",
-    "httpx2>=2.3",
+    "httpx2>=2.3,<3",
     "pydantic>=2.7,<3",
     "ruff>=0.6,<1",  # runtime, not dev: lints the scripts `machine create` generates
-    "textual>=0.86",
-    "tree-sitter==0.25.2",
-    "tree-sitter-language-pack==1.8.1",
+    "textual>=8,<9",
+    "tree-sitter==0.26.0",
+    "tree-sitter-language-pack==1.14.3",
     "ty>=0.0.46,<0.1",  # runtime: typechecks the scripts `machine create` generates
 ]
 
@@ -109,6 +109,7 @@ select = [
 ]
 ignore = [
     "PLR0913",  # too many args; fine in our typed APIs
+    "PLR0917",  # same call, counted positionally
     "S101",     # asserts allowed
     "S603",     # subprocess: we audit every call site
     "S607",     # subprocess partial path: we use absolute paths
