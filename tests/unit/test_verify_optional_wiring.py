@@ -10,12 +10,12 @@ import json
 import subprocess as sp
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
 
 from agent6.config import Config
+from agent6.config.layer import EffectiveConfig
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
 from agent6.workflows._prompt_blocks import build_system_prompt
@@ -286,15 +286,13 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     cfg = _role_cfg({"sandbox": {"run_commands": "no"}})
     monkeypatch.setenv("K", "test-key")
 
-    class _Loaded:
-        config = cfg
-        sources: ClassVar[dict[str, str]] = {}
-
     def _none(*_a: object, **_k: object) -> None:
         return None
 
-    def _load(*_a: object, **_k: object) -> _Loaded:
-        return _Loaded()
+    # The real type: preflight reads `explicit_leaves` to tell a default this
+    # host cannot honour (degrade) from a value the operator set (refuse).
+    def _load(*_a: object, **_k: object) -> EffectiveConfig:
+        return EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _strict(*_a: object, **_k: object) -> str:
         return "strict"

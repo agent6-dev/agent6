@@ -4,7 +4,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from agent6.config import Config
 from agent6.workflows.loop import (
+    Workflow,
     _summarise_assistant_text_for_commit,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -46,3 +51,27 @@ def test_truncates_long_subject() -> None:
 def test_unclosed_thinking_block_falls_back() -> None:
     out = _summarise_assistant_text_for_commit("<thinking>oops never closed", 9)
     assert out == "agent6 iter 9: verify passed"
+
+
+def test_the_configured_identity_reaches_the_commit(tmp_path: Path) -> None:
+    """`[git.commit].name`/`.email` are the only identity on a machine whose
+    git has none. Preflight accepts them, and the loop dropped them: every
+    chain commit died with "Author identity unknown", the run reported
+    "finished", and no branch existed."""
+    cfg = Config.model_validate(
+        {"git": {"commit": {"name": "Agent Six", "email": "agent6@example.com"}}}
+    )
+    wf = Workflow(
+        root=tmp_path,
+        config=cfg,
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        commit_trailer="Assisted-by: agent6:m1",
+    )
+    identity = wf._commit_identity()  # pyright: ignore[reportPrivateUsage]
+    assert identity is not None
+    assert (identity.name, identity.email) == ("Agent Six", "agent6@example.com")
+    assert identity.trailer == "Assisted-by: agent6:m1"
+
+    bare = Workflow(root=tmp_path, config=Config(), provider=MagicMock(), dispatcher=MagicMock())
+    assert bare._commit_identity() is None  # pyright: ignore[reportPrivateUsage]

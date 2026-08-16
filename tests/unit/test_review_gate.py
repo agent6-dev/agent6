@@ -22,7 +22,13 @@ from agent6.workflows._conversation import Conversation
 from agent6.workflows._review import CritiqueResult
 from agent6.workflows.loop import Workflow
 
-_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
+# The `[git]` surface the loop reads: the checkpoint message and the commit
+# identity (`_commit_identity`), empty as a real Config carries it unset.
+_GIT_STUB = SimpleNamespace(
+    commit=SimpleNamespace(
+        checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
+    )
+)
 
 
 def _silent(_msg: str) -> None:

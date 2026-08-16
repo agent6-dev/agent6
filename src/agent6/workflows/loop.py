@@ -4670,9 +4670,18 @@ class Workflow:
             emit_session_start(self.events, self.events.path.parent, event_type, **fields)
 
     def _commit_identity(self) -> CommitIdentity | None:
-        """The provenance trailer for this loop's commits; author identity
-        stays git's own resolution (the app verified it at startup)."""
-        return CommitIdentity(trailer=self.commit_trailer) if self.commit_trailer else None
+        """Author identity plus the provenance trailer for this loop's commits.
+
+        `[git.commit].name`/`.email` are the only identity on a machine whose
+        git has none: preflight accepts them, so dropping them here made every
+        chain commit fail with "Author identity unknown".
+        """
+        commit = self.config.git.commit
+        if not (commit.name or commit.email or self.commit_trailer):
+            return None
+        return CommitIdentity(
+            name=commit.name or None, email=commit.email or None, trailer=self.commit_trailer
+        )
 
     def _chain_commit(self, subject: str) -> str:
         """One commit of the worktree onto the run's detached chain; "" when

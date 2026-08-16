@@ -23,7 +23,14 @@ from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import Workflow
 
-_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
+# The `[git]` surface the loop reads: the checkpoint message and the commit
+# identity (`_commit_identity`), which the real Config carries as empty
+# strings when the operator sets neither.
+_GIT_STUB = SimpleNamespace(
+    commit=SimpleNamespace(
+        checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
+    )
+)
 
 
 class _StubDispatcher:

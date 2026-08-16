@@ -26,7 +26,13 @@ from agent6.workflows.loop import (
     _LoopState,  # pyright: ignore[reportPrivateUsage]
 )
 
-_GIT_STUB = SimpleNamespace(commit=SimpleNamespace(checkpoint=SimpleNamespace(message="agent6")))
+# The `[git]` surface the loop reads: the checkpoint message and the commit
+# identity (`_commit_identity`), empty as a real Config carries it unset.
+_GIT_STUB = SimpleNamespace(
+    commit=SimpleNamespace(
+        checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
+    )
+)
 
 
 def _silent(_: str) -> None:

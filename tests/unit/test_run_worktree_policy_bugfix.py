@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import ClassVar
 
 import pytest
 
@@ -31,6 +30,7 @@ from agent6.config import (
     RoleModel,
     SandboxConfig,
 )
+from agent6.config.layer import EffectiveConfig
 from agent6.git_ops import status as git_status
 
 
@@ -64,15 +64,11 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
-    class _Loaded:
-        config = cfg
-        # Per-leaf provenance: the preflight uses it to tell a DEFAULT that
-        # this host cannot honour (degrade with a warning) from a value the
-        # operator wrote down (refuse).
-        sources: ClassVar[dict[str, str]] = {}
-
-    def _load_effective(*a: object, **k: object) -> _Loaded:
-        return _Loaded()
+    # The real type: preflight reads `explicit_leaves` to tell a DEFAULT this
+    # host cannot honour (degrade with a warning) from a value the operator
+    # wrote down (refuse).
+    def _load_effective(*a: object, **k: object) -> EffectiveConfig:
+        return EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _noop(*a: object, **k: object) -> None:
         return None
