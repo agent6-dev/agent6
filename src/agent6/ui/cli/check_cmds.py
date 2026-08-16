@@ -35,6 +35,7 @@ from agent6.sandbox.detect import (
     IsolationUnavailableError,
     degrade_reason,
     resolve_isolation,
+    sandbox_disabled_by_env,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
 from agent6.tools.policy import Workspace, resolve_network, workspace_for
@@ -76,16 +77,27 @@ def _isolation_means(isolation: IsolationLevel) -> str:
     return "Nothing is confined: commands run as you. See docs/security.md."
 
 
-def _cmd_check_sandbox() -> int:
+def _unprobeable(requested: str) -> str:
+    """Why there is no jail to probe: the three ways isolation resolves to `none`."""
+    if sandbox_disabled_by_env():
+        return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1: commands run unconfined; skipped"
+    if requested == "none":
+        return "sandbox.isolation = 'none': commands run unconfined; skipped"
+    return "no kernel sandbox on this host; skipped"
+
+
+def _cmd_check_sandbox(cfg: Config | None = None) -> int:
     """Run the sandbox boundary self-tests on the host's kernel.
 
-    The probes run under the *effective* isolation this host resolves to
-    (`resolve_isolation("auto", ...)`), not a hardcoded one. On a host that
-    blocks unprivileged user namespaces (default-seccomp Docker, or Ubuntu
-    with `kernel.apparmor_restrict_unprivileged_userns=1`) the effective
-    isolation is `hardened`, which is exactly what `agent6 run` would use there;
-    testing `strict` instead would report a spurious FAIL for a sandbox the
-    agent never uses on this host.
+    The probes run under the isolation THIS config resolves to
+    (`resolve_isolation(sandbox.isolation, ...)`), so they exercise the sandbox
+    `agent6 run` would use here. On a host that blocks unprivileged user
+    namespaces (default-seccomp Docker, or Ubuntu with
+    `kernel.apparmor_restrict_unprivileged_userns=1`) `auto` resolves to
+    `hardened`; testing `strict` there would report a spurious FAIL for a
+    sandbox the agent never uses. An explicit level this host cannot give is a
+    FAIL naming the refusal, since a run would refuse too. Without a config
+    (`cfg is None`) the built-in default `auto` applies.
     """
     reports: list[SandboxReport] = []
 
@@ -100,8 +112,14 @@ def _cmd_check_sandbox() -> int:
     )
 
     env = detect_env()
-    isolation = resolve_isolation("auto", env)
-    print(f"  effective isolation (auto): {isolation}")
+    requested = cfg.sandbox.isolation if cfg is not None else "auto"
+    try:
+        isolation = resolve_isolation(requested, env)
+    except IsolationUnavailableError as exc:
+        print(f"  sandbox.isolation = {requested!r} cannot run on this host")
+        reports.append(SandboxReport(name="isolation", ok=False, detail=str(exc)))
+        return _print_sandbox_reports(reports)
+    print(f"  effective isolation ({requested}): {isolation}")
     reason = degrade_reason(env)
     if reason is not None:
         # A degraded level never appears without its why (same line the run
@@ -131,16 +149,9 @@ def _cmd_check_sandbox() -> int:
         for tool in notes.exposes_home_dir:
             print(f"    {tool}")
     if isolation == "none":
-        # No kernel sandbox to test (a non-Linux host, or a deliberate `none`
-        # opt-out), and running the boundary probes unconfined would let the
-        # /etc-write probe actually escape onto the host. Report and stop.
-        reports.append(
-            SandboxReport(
-                name="jail",
-                ok=False,
-                detail="no kernel sandbox on this platform (effective isolation 'none'); skipped",
-            )
-        )
+        # Nothing to probe, and running the boundary probes unconfined would let
+        # the /etc-write probe actually escape onto the host.
+        reports.append(SandboxReport(name="jail", ok=False, detail=_unprobeable(requested)))
         return _print_sandbox_reports(reports)
 
     cwd = Path.cwd()
@@ -242,9 +253,20 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
     print()
 
     checks: list[_DoctorCheck] = []
+    # Every section needs the config: the sandbox probes run under the isolation
+    # it selects, so they test the jail a run here would use.
+    cfg: Config | None = None
+    load_error: str | None = None
+    try:
+        cfg = load_effective(Path.cwd(), config_path).config
+    except (ConfigError, OSError) as exc:
+        load_error = str(exc)
+
     if section in {"all", "sandbox"}:
         print("== sandbox ==")
-        rc = _cmd_check_sandbox()
+        if load_error is not None:
+            print(f"  config unreadable ({load_error}); probing the default isolation")
+        rc = _cmd_check_sandbox(cfg)
         checks.append(
             _DoctorCheck(
                 name="sandbox",
@@ -254,17 +276,9 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         )
         print()
 
-    try:
-        cfg = (
-            load_effective(Path.cwd(), config_path).config
-            if section in {"all", "mcp", "verify", "config", "boundaries"}
-            else None
-        )
-    except (ConfigError, OSError) as exc:
-        cfg = None
-        if section in {"all", "mcp", "verify", "config", "boundaries"}:
-            print(f"== config ==\n[FAIL] cannot load config: {exc}\n")
-            checks.append(_DoctorCheck(name="config_load", status="FAIL", detail=str(exc)))
+    if load_error is not None and section in {"all", "mcp", "verify", "config", "boundaries"}:
+        print(f"== config ==\n[FAIL] cannot load config: {load_error}\n")
+        checks.append(_DoctorCheck(name="config_load", status="FAIL", detail=load_error))
 
     if cfg is not None and section in {"all", "config"}:
         print("== config ==")

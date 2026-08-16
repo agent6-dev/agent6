@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import pytest
 
+from agent6.config import Config, SandboxConfig
+from agent6.sandbox.detect import IsolationUnavailableError
 from agent6.types import CommandResult, JailPolicy
 from agent6.ui.cli import check_cmds
 
@@ -51,6 +53,20 @@ def _force_profile(
         return isolation
 
     monkeypatch.setattr(check_cmds, "resolve_isolation", fake_select)
+
+
+def _honour_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the resolver to return exactly what the config asked for."""
+    monkeypatch.setattr(check_cmds, "detect_env", object)
+
+    def _reason(_env: object) -> str | None:
+        return None
+
+    def _resolve(requested: str, _env: object) -> str:
+        return requested
+
+    monkeypatch.setattr(check_cmds, "degrade_reason", _reason)
+    monkeypatch.setattr(check_cmds, "resolve_isolation", _resolve)
 
 
 def test_check_sandbox_hardened_passes_and_skips_network(
@@ -129,3 +145,55 @@ def test_check_sandbox_degraded_names_why(
     # exposure is a Landlock read grant and the words must say so.
     assert "granted read-only (Landlock path rules)" in out
     assert "mounted read-only into the jail" not in out
+
+
+def test_check_sandbox_probes_the_isolation_the_config_selects(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The probes exercise the jail a run here would use. With
+    `sandbox.isolation = "hardened"` configured on a strict-capable host the
+    section reported `(auto): strict` and probed strict, contradicting the
+    `check config` section of the same command."""
+    _honour_request(monkeypatch)
+    cfg = Config(sandbox=SandboxConfig(isolation="hardened"))
+    rc = check_cmds._cmd_check_sandbox(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "effective isolation (hardened): hardened" in out
+    assert stub_jail and all(p.isolation == "hardened" for p in stub_jail)
+
+
+def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit level the host cannot give is a FAIL naming the refusal (a
+    run would refuse too), never probes run under some other level."""
+    monkeypatch.setattr(check_cmds, "detect_env", object)
+
+    def _refuse(req: str, _env: object) -> str:
+        raise IsolationUnavailableError(f"sandbox.isolation = {req!r} requires user namespaces")
+
+    monkeypatch.setattr(check_cmds, "resolve_isolation", _refuse)
+    rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
+        Config(sandbox=SandboxConfig(isolation="strict"))
+    )
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "requires user namespaces" in out
+    assert stub_jail == []
+
+
+def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`none` from the config is the operator's opt-out, not a platform without
+    a sandbox: the skip line must not blame the platform."""
+    _honour_request(monkeypatch)
+    rc = check_cmds._cmd_check_sandbox(  # pyright: ignore[reportPrivateUsage]
+        Config(sandbox=SandboxConfig(isolation="none"))
+    )
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "sandbox.isolation = 'none': commands run unconfined" in out
+    assert "no kernel sandbox" not in out
+    assert stub_jail == []
