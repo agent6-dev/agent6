@@ -1,6 +1,6 @@
-# Tour
+# Terminal UI
 
-A walk through the terminal UI.
+The CLI and the full-screen TUI, screen by screen.
 Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"

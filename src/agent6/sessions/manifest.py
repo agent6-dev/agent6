@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read a session's manifest.json into the typed :class:`SessionManifest`. The single
-reader + the on-disk shape; the writer is `app.manifest`.
+"""Read a session's manifest.json into the typed :class:`SessionManifest`: the one
+reader and the on-disk shape, with `app.manifest` as the writer.
 
 A leaf beside `layout.py`: pydantic + path arithmetic, no agent6 imports, so
 app, the viewmodel, and the CLI parse a run's manifest through one owner and one

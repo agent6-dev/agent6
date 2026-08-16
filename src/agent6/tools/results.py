@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Typed tool-handler results: every handler returns one of these frozen values
-instead of a bare dict, each owning its two representations -- the exact
-model-facing `to_wire()` dict and the one-line human `summary()`.
+instead of a bare dict, each owning two representations: the model-facing
+`to_wire()` dict and the one-line human `summary()`.
 
 - `to_wire()` -- the exact dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve

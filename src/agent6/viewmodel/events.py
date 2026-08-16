@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed read model for the ~22 logs.jsonl event families the SessionState fold consumes.
+"""Typed read model for the logs.jsonl event families the SessionState fold consumes.
 
 The write side (`agent6.events.EventSink`) appends free-form `{"type", "ts",
 **fields}` dicts and never validates; ~90 distinct types exist. The SessionState fold

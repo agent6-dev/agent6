@@ -132,7 +132,7 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Usage: usage.md
-  - Tour: tour.md
+  - Terminal UI: terminal.md
   - Web UI: web.md
   - Editor integration: acp.md
   - Configuration: config.md

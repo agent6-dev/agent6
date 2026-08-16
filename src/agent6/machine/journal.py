@@ -3,8 +3,8 @@
 """Append-only journal, blackboard snapshots, and the single-writer lock for one
 machine instance. The journal is the source of truth: the pure reducer validates
 each impure observation, the validated fact is appended as a JournalEvent, and
-only then does the returned blackboard replace the current one, so replaying the
-events reproduces the exact path from the pure reducer.
+the returned blackboard replaces the current one only then. Replaying the events
+reproduces the reducer's path exactly.
 
 The recorded observations are a tool's exit code and stdout, a wait's resolved
 wake instant, and a branch's chosen clause (§5.1); the reducer reads them back

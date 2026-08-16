@@ -463,11 +463,8 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Eight typed contracts own facts that used to travel as `dict[str, Any]`, each
-with one writer set, a known reader set, and byte-level pins guarding its frozen
-surface. This page is **generated** by `docs/gen_contracts.py` from those
-modules' docstrings and the source tree; edit the docstrings, not this file
-(regenerate with `{REGEN_CMD}`).
+Each of the {len(CONTRACTS)} typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
+Every card is generated from the module and class docstrings, so edit those rather than this page.
 """
 
 

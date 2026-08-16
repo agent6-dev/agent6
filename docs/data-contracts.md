@@ -5,11 +5,8 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Eight typed contracts own facts that used to travel as `dict[str, Any]`, each
-with one writer set, a known reader set, and byte-level pins guarding its frozen
-surface. This page is **generated** by `docs/gen_contracts.py` from those
-modules' docstrings and the source tree; edit the docstrings, not this file
-(regenerate with `uv run python docs/gen_contracts.py`).
+Each of the 9 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
+Every card is generated from the module and class docstrings, so edit those rather than this page.
 
 ## Conversation
 
@@ -27,7 +24,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 [`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 6 nested models
 
-Read a session's manifest.json into the typed SessionManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
+Read a session's manifest.json into the typed SessionManifest: the one reader and the on-disk shape, with `app.manifest` as the writer.
 
 **SessionManifest** &mdash; The typed manifest.json a session starts with (and later stamps).
 
@@ -98,7 +95,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 
 [`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 23 frozen result types
 
-Typed tool-handler results: every handler returns one of these frozen values instead of a bare dict, each owning its two representations -- the exact model-facing `to_wire()` dict and the one-line human `summary()`.
+Typed tool-handler results: every handler returns one of these frozen values instead of a bare dict, each owning two representations: the model-facing `to_wire()` dict and the one-line human `summary()`.
 
 **ToolResult** &mdash; One tool handler's typed result: it owns the model-facing `to_wire()` dict and its one-line `summary()`.
 
@@ -112,7 +109,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 [`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 27 frozen families
 
-Typed read model for the ~22 logs.jsonl event families the SessionState fold consumes.
+Typed read model for the logs.jsonl event families the SessionState fold consumes.
 
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
@@ -147,7 +144,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 [`agent6.machine.journal`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) &middot; tagged union of 5 frozen families
 
-Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: the pure reducer validates each impure observation, the validated fact is appended as a JournalEvent, and only then does the returned blackboard replace the current one, so replaying the events reproduces the exact path from the pure reducer.
+Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: the pure reducer validates each impure observation, the validated fact is appended as a JournalEvent, and the returned blackboard replaces the current one only then. Replaying the events reproduces the reducer's path exactly.
 
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
