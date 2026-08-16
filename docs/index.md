@@ -30,7 +30,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 <div class="a6-card" markdown>
 ### Command sandbox
 Commands the model runs go through a jail with Landlock and seccomp, one per run.
-Under the default `strict` policy they also get a read-only `.git` and the run's own network, with no route off the box.
+Under `strict`, what `auto` picks when the host allows it, they also get a read-only `.git` and the run's own network, with no route off the box.
 </div>
 
 <div class="a6-card" markdown>

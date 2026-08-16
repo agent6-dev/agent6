@@ -49,9 +49,9 @@ Across sessions, one connection runs one prompt at a time: a prompt for another 
 ## Not implemented
 
 - `session/load`: ACP v2 reorganises it, and resume carries agent6's own semantics (`agent6 resume`, `agent6 fork`), so `initialize` reports the capability as absent.
-- Mid-run steering: a steer arrives through agent6's pause menu, which needs a terminal, so an ACP session's follow-up is the next prompt.
+- Mid-run steering: ACP has no message for a prompt while a turn is running, so a session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
-- Embedded resources in a prompt: a resource block's uri is client-controlled, so only text blocks are read and `promptCapabilities.embeddedContext` says so.
+- Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri, which the model opens through the ordinary tools, so the workspace boundary still decides what it reaches). Images and embedded resources are dropped, and `promptCapabilities.embeddedContext` says so.
 
 ## Troubleshooting
 

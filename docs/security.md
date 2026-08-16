@@ -58,8 +58,8 @@ It reaches the machine through two surfaces:
 - The in-process tools, whose paths resolve against the file boundary ([File access](#3-file-access)).
 - Anything that executes, which runs in the jail ([Sandbox](#2-sandbox)).
 
-The model sees the fixed tool set in `src/agent6/tools/schema.py`: structured edits, read-only navigation, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, and capability-gated `run_command`.
-There is no `shell`, no `write_file`, no `web_fetch`, and no `eval`.
+The model sees the fixed tool set in `src/agent6/tools/schema.py`: structured edits, read-only navigation, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, an approval-gated `fetch` ([Network](#5-network)), and capability-gated `run_command`.
+There is no `shell`, no `write_file`, and no `eval`.
 Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
 
 ### 2. Sandbox
@@ -110,10 +110,11 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 - seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set.
   Everything else is allowed.
 - Capabilities: cleared between fork and exec.
-- Timeout: `timeout_s` (default 600), then SIGKILL of the process group; the command reports rc=124.
-- One launcher per run under `strict`; its commands share that netns, PID namespace, and `/tmp`.
+- Timeout: `timeout_s` (the verify and metric gates use `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group and rc=124.
+  A model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job instead ([Commands and environment](#4-commands-and-environment)).
+- One launcher per run at every isolation level; its commands share that netns, PID namespace, and `/tmp`.
   Closing the run's channel takes the PID namespace down.
-  Elsewhere each command gets its own launcher.
+  A launcher that cannot start leaves each command its own.
 - The policy arrives as JSON on the launcher's stdin, validated against a strict schema; unknown fields are refused.
 - `[sandbox].memory_limit_mb` (default 0, off): per-process `RLIMIT_DATA`.
 
@@ -242,7 +243,7 @@ Under `none` isolation nothing is enforced or refused.
 - State-changing POSTs carry a CSRF guard: the body must be `Content-Type: application/json` (a cross-site `fetch` with it triggers a preflight the server never answers) and any `Origin` must match `Host`.
   It holds on loopback and behind `tailscale serve`, and does not cover DNS rebinding (that needs a Host allow-list incompatible with the tailnet name).
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
-- The machine write surface (`POST /api/machine/<name>/{poke,answer,approve,steer}`) uses the same guards.
+- The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
   `poke` writes only the instance signal file (inert JSON the next `tool` reads); the others write only the current agent state's per-state dir.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   No telemetry, no auto-update, no remote control plane.
