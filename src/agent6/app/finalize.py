@@ -214,7 +214,10 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out("\nthe worker says this run's verify gate no longer matches the task:")
     reporter.out(f"  it proposes: {result.stale_gate}")
     reporter.out("  nothing changed. To adopt it:")
-    reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(result.stale_gate)}")
+    # `verify_command` is argv, so `config set` takes a JSON array: the shell
+    # string the worker proposes is rejected as "not a valid tuple".
+    argv = json.dumps(shlex.split(result.stale_gate))
+    reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
 
 
 def _stamp_covers_branch(run_branch: str, merged_tip: str) -> bool:

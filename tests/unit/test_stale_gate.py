@@ -65,7 +65,12 @@ def test_the_operator_gets_a_paste_ready_line() -> None:
         )
     text = out.getvalue()
     assert "nothing changed" in text
-    assert "agent6 config set workflow.verify_command 'uv run pytest tests/unit'" in text
+    # argv, as `config set` accepts it: the shell string it proposes is
+    # rejected with "Input should be a valid tuple".
+    assert (
+        'agent6 config set workflow.verify_command \'["uv", "run", "pytest", "tests/unit"]\''
+        in text
+    )
 
 
 def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
