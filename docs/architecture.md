@@ -249,8 +249,8 @@ Every mutation validates against a pydantic schema before it applies.
 
 ```mermaid
 flowchart LR
-    Agent[agent6 run<br/>main process] -->|in-process GraphCurator| Graph[(graph.jsonl, graph/*.md, cursor.json)]
-    Agent -->|in-process| Rest[(loop_state.json, logs.jsonl, transcripts)]
+    Agent["agent6 run<br/>main process"] -->|in-process GraphCurator| Graph["graph.jsonl<br/>graph/*.md<br/>cursor.json"]
+    Agent -->|in-process| Rest["loop_state.json<br/>logs.jsonl<br/>transcripts"]
 ```
 
 One curator per run is an invariant: two live curators on one session dir cache the graph independently, so the second one's write drops the first's parent-child links.

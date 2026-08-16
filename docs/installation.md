@@ -58,20 +58,11 @@ agent6 check                # sandbox, config, keys, MCP, verify, boundaries
 
 ## Requirements
 
-Python
-:   3.12 or newer
-
-A provider
-:   an API key for at least one
-
-The sandbox
-:   Linux on x86_64 or aarch64
-
-`strict` isolation
-:   unprivileged user namespaces
-
-Building from source
-:   a Rust toolchain (the PyPI wheels bundle `agent6-jail`)
+- Python 3.12 or newer
+- One provider: Anthropic, or any OpenAI-compatible endpoint (a local one needs no key)
+- Linux on x86_64 or aarch64 for the sandbox
+- Unprivileged user namespaces for `strict` isolation
+- A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
 
 The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exists for x86_64 and aarch64.
 
