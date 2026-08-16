@@ -46,7 +46,11 @@ def test_rejects_lambda() -> None:
 
 
 def test_rejects_arithmetic_binop() -> None:
-    with pytest.raises(PredicateError, match="unsupported syntax"):
+    """The BinOp rejection names the constraint and the fix, not the AST class:
+    `machine create` feeds validation diagnostics back to the drafting model
+    verbatim, and "unsupported syntax: BinOp" told it (and a human author)
+    nothing about what to change."""
+    with pytest.raises(PredicateError, match="arithmetic is not allowed"):
         parse_predicate("a + b == 2")
 
 

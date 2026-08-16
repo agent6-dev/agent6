@@ -133,6 +133,11 @@ def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR091
     if isinstance(node, (ast.Name, ast.Attribute)):
         references.append(_as_reference(node))
         return
+    if isinstance(node, ast.BinOp):
+        raise PredicateError(
+            "arithmetic is not allowed in a predicate; compute the value in the"
+            " state that writes it and branch on the stored var"
+        )
     raise PredicateError(f"unsupported syntax: {type(node).__name__}")
 
 

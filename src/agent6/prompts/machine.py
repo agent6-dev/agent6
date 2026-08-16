@@ -113,8 +113,10 @@ grammar. Terminal states end the machine.
     ]
 
   Predicate allow-list: comparisons (== != < <= > >=), `and`/`or`/`not`,
-  `in`, `len(x)`, record navigation `x.field`, and literals. NO arbitrary
-  function calls, attribute method calls, or comprehensions.
+  `in`, `len(x)`, `has(x)` (optional-field presence), record navigation
+  `x.field`, and literals. NO arithmetic, no calls beyond those two, no
+  method calls or comprehensions: compute in the state that writes the
+  var, then branch on the stored value.
 
 ### wait: pause until an instant or a poke
     [states.poll]
