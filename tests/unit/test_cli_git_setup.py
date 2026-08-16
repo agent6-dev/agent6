@@ -285,3 +285,36 @@ def test_init_never_commits_the_operators_own_edits(
     ).stdout.split()
     assert head == [".gitignore"], head
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "theirs v2, still being written\n"
+
+
+def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The non-repo path runs `git init` and commits the scaffold, where every
+    file is untracked and therefore looks like agent6's. An AGENTS.md the
+    operator wrote before ever running agent6 is not."""
+    repo = tmp_path / "fresh"
+    repo.mkdir()
+    # Carries a verify section already, so init leaves the file untouched.
+    (repo / "AGENTS.md").write_text(
+        "theirs\n\n## Verify command\n\n```bash\npytest\n```\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def _yes(*_a: object, **_k: object) -> bool:
+        return True
+
+    monkeypatch.setattr("agent6.ui.cli.init_cmds._ask", _yes)
+    monkeypatch.setattr("agent6.init._ask", _yes)
+    assert main(["init"]) == 0
+
+    head = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert head == [".gitignore"], head
+    assert (repo / "AGENTS.md").read_text(encoding="utf-8").startswith("theirs\n")

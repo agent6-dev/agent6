@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -22,6 +23,14 @@ from agent6.init import _ask, init_workspace
 from agent6.paths import chown_to_real_user
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
+
+
+def _digest(path: Path) -> str | None:
+    """The file's content hash, or None when it does not exist."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
@@ -133,14 +142,11 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         )
         return 2
     interactive = not assume_yes
-    # A scaffold path the operator had already edited carries THEIR work: a
-    # path-limited commit would sweep it into agent6's scaffold commit, so it
-    # is excluded and reported instead.
+    # A scaffold path init leaves untouched is the operator's file, whether or
+    # not this is a repo yet: committing it by path would put THEIR work in
+    # agent6's scaffold commit, so it is excluded and reported instead.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
-    theirs = (
-        tuple(p for p in scaffold_all if paths_dirty(cwd, (p.name,))) if is_git_repo(cwd) else ()
-    )
-    scaffold = tuple(p for p in scaffold_all if p not in theirs)
+    before = {p: _digest(p) for p in scaffold_all}
     try:
         rc = init_workspace(
             cwd,
@@ -157,10 +163,15 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
             f"{exc}\nFix or delete the per-repo config at {target}, then re-run `agent6 init`."
         ) from exc
     if rc == 0:
+        theirs = tuple(p for p in scaffold_all if before[p] is not None and _digest(p) == before[p])
         # Only the repo-tracked scaffold; the per-repo config is out of the
         # workspace (under the state dir) and never committed.
-        _offer_git_setup(cwd, scaffold, interactive=interactive)
-        if theirs:
+        _offer_git_setup(
+            cwd, tuple(p for p in scaffold_all if p not in theirs), interactive=interactive
+        )
+        # Only where a scaffold commit was on the table: outside a repo (and
+        # after a declined `git init`) nothing was committed to leave out of.
+        if theirs and is_git_repo(cwd):
             names = ", ".join(sorted(p.name for p in theirs))
             print(f"  left uncommitted (already edited): {names}")
         _print_next_steps()
