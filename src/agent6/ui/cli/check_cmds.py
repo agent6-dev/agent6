@@ -229,11 +229,12 @@ class _DoctorCheck:
 def _cmd_check(config_path: Path | None, *, section: str) -> int:
     """Consolidated pre-flight (sandbox + config + MCP + verify).
 
-    All checks are read-only. The command never spawns the agent loop,
-    never makes a network call to the configured providers, and never
-    writes to the repo: MCP servers are started in a throwaway directory
-    just long enough to enumerate their tool descriptors, then closed, and
-    one that would need write access to start is reported, not started.
+    All checks are read-only. The command never spawns the agent loop and
+    never writes to the repo: MCP servers are started in a throwaway
+    directory just long enough to enumerate their tool descriptors, then
+    closed, and one that would need write access to start is reported, not
+    started. The one network call is the provider's model listing, refreshed
+    for pricing when a key resolves (TTL-gated, ~1.5s, never fatal).
 
     Returns 0 when every selected check passes, 1 otherwise.
     """

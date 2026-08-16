@@ -111,7 +111,8 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
 
     assert main(["sessions", "commits", "gone11"]) == 0
     out = capsys.readouterr().out
-    assert "was pruned" in out and "squash-merged into main" in out
+    # The manifest stamp records where, not with which strategy.
+    assert "was pruned" in out and "merged into main" in out
 
     assert main(["sessions", "diff", "gone11"]) == 0
     assert "was pruned" in capsys.readouterr().out

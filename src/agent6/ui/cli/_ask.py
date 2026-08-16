@@ -66,7 +66,7 @@ def cmd_ask_list() -> int:
 
 def summarize_session_log(logs_path: Path) -> str:
     """Compact prose summary of a run's logs.jsonl: outcome + event counts +
-    recent notable events. Used to seed `agent6 ask --run`."""
+    recent notable events. Used to seed `agent6 ask --from`."""
     if not logs_path.is_file():
         return "(no logs.jsonl for this run)"
     events: list[dict[str, Any]] = []
@@ -103,7 +103,7 @@ def summarize_session_log(logs_path: Path) -> str:
 
 
 def fmt_run_event(e: dict[str, Any]) -> str:
-    """One-line summary of a logs.jsonl event for the ask `--run` digest."""
+    """One-line summary of a logs.jsonl event for the ask `--from` digest."""
     t = str(e.get("type", ""))
     if t == "tool.call":
         return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
@@ -119,7 +119,7 @@ def fmt_run_event(e: dict[str, Any]) -> str:
 def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
     """Hardened `git diff <range>`, bytes-captured and lossy-decoded: the old
     `text=True` strict decode raised UnicodeDecodeError out of communicate()
-    on a valid non-UTF-8 diff (a latin-1 file), crashing `ask --run`."""
+    on a valid non-UTF-8 diff (a latin-1 file), crashing `ask --from`."""
     # operator-controlled argv, no LLM input (same as `agent6 sessions diff`).
     # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
     # would otherwise run on the host when the operator asks about a prior run.

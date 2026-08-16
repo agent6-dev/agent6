@@ -79,17 +79,18 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         "--auto-approve",
         action="store_true",
         help=(
-            "Auto-approve every jailed command for this run instead of prompting"
-            " (same as sandbox.run_commands = yes). Confinement still depends"
-            " on sandbox.isolation; combined with --dangerously-disable-sandbox"
-            " it hands the agent unprompted host access."
+            "Auto-approve every jailed command for this run instead of prompting."
+            " Raises sandbox.run_commands to `yes` unless it is `no`, which the"
+            " flag never overrides. Confinement still depends on"
+            " sandbox.isolation; combined with --dangerously-disable-sandbox it"
+            " hands the agent unprompted host access."
         ),
     )
     approval.add_argument(
         "--no-commands",
         action="store_true",
         help=(
-            "Withhold every jailed command for this session (same as"
+            "Withhold every jailed command for this session (sets"
             " sandbox.run_commands = no): no run_command, no verify gate, no"
             " background commands. What `/btw` asks its side question with."
         ),

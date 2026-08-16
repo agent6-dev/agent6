@@ -394,7 +394,7 @@ def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -
     merged_into = manifest.merged.into if manifest.merged else ""
     merged_sha = manifest.merged.sha if manifest.merged else ""
     if merged_into:
-        note = f"[agent6] run branch {run_branch} was pruned; squash-merged into {merged_into}"
+        note = f"[agent6] run branch {run_branch} was pruned; merged into {merged_into}"
         if merged_sha and set(merged_sha) != {"0"}:
             note += f" as {merged_sha[:12]}\n  see: git show {merged_sha[:12]}"
         return note

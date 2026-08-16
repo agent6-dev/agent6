@@ -209,7 +209,7 @@ def _status_suffix(session_facts: Callable[[], SessionFacts] | None) -> str:
 
 
 _JOB_CONTROL_HINT = (
-    "[agent6] job control is unavailable here; /detach (Ctrl-C, then d) keeps it running.\n"
+    "[agent6] job control is unavailable here; Ctrl-C then /detach keeps it running.\n"
 )
 
 
