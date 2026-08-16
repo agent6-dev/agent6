@@ -774,10 +774,12 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
     Raises JailUnavailableError if the launcher binary is missing or setup fails.
 
     The `none` isolation is the unsandboxed path: the command runs as a plain
-    subprocess with no kernel confinement. `auto` selects it only on non-Linux
-    hosts; an explicit `isolation = "none"`, `--dangerously-disable-sandbox`, or
-    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` selects it on any host. The CLI prints a
-    prominent warning before any such run.
+    subprocess with no kernel confinement. `auto` resolves to it wherever the
+    host offers no mechanism at all (non-Linux, or a Linux kernel with neither
+    namespaces nor Landlock); an explicit `isolation = "none"`,
+    `--dangerously-disable-sandbox`, or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`
+    selects it on any host. The CLI prints a prominent warning before any such
+    run.
 
     Security review note: this is the single place where an
     LLM-influenced argv runs without the jail. It exists solely so agent6 is
@@ -1183,7 +1185,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     """
     outcome_dir.mkdir(parents=True, exist_ok=True)
     if policy.isolation == "none":
-        # Unsandboxed escape hatch (non-Linux only); see run_in_jail's note.
+        # Unsandboxed escape hatch; see run_in_jail's note.
         with _sweep_lock:
             proc = subprocess.Popen(
                 list(policy.argv),

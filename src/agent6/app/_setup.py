@@ -351,8 +351,8 @@ def _warn_servers_that_keep_the_network(
     """`network = "auto"` is the secure default and cannot be honoured without
     a network namespace, so where it degrades it says so -- per server, here,
     where the operator is already being told about their servers. An explicit
-    `block` refused long before this (check_mcp_network_support). A `probe`
-    warns only about servers it actually starts."""
+    `none` or `session` refused long before this (check_mcp_network_support). A
+    `probe` warns only about servers it actually starts."""
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
