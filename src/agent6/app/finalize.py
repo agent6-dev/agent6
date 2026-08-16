@@ -43,7 +43,7 @@ from agent6.workflows.loop import SessionResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
 # the cap and `agent6 resume`" apart from a genuine failure. Documented in
-# CONFIG.md ([budget]); a budget-stopped run is resumable from its snapshot.
+# docs/config.md ([budget]); a budget-stopped run is resumable from its snapshot.
 _EXIT_BUDGET_EXHAUSTED = 3
 # The agent finished deliberately but the verify gate was red or stale. Its own
 # code so a script can tell "the work is not green" from "the run broke" (1)

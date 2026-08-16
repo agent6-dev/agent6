@@ -38,7 +38,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-# Environment overrides. All optional; documented in CONFIG.md.
+# Environment overrides. All optional; documented in docs/config.md.
 _ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
 _GLOBAL_DIR_ENV = "AGENT6_CONFIG_HOME"  # points at the agent6 global dir itself
 
