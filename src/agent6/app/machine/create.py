@@ -279,7 +279,14 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # Any failure becomes a retry diagnostic so the agent fixes it itself.
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
-            problems = lint_and_typecheck(scratch / "scripts", fix=True)
+            problems = lint_and_typecheck(
+                scratch / "scripts",
+                fix=True,
+                # The scratch lives under the state dir, where ruff's discovery
+                # finds no config; resolve from where the bundle publishes so
+                # this gate and the operator's later `machine check` agree.
+                ruff_config_from=output.parent if output is not None else cwd,
+            )
             # ruff --fix rewrote the scratch copies, so those are the bytes that
             # passed. Publishing the model's originals writes a bundle that
             # fails the `machine check` this command sends the operator to.

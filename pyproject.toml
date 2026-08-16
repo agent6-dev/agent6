@@ -125,10 +125,6 @@ ignore = [
 "src/agent6/ui/web/page.py" = ["E501"]
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
 "bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
-# A machine bundle is linted twice: here, and by `agent6 machine check`, whose
-# `ruff --isolated` defaults include BLE001. The noqa that one needs reads as
-# unused under this config.
-"bench/machines/*/scripts/*.py" = ["RUF100"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
 # web_demo.py embeds a block of cursor/animation JS as a string; line length is moot there.
 "docs/screenshots/web_demo.py" = ["E501"]

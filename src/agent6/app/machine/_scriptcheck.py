@@ -6,11 +6,12 @@ is production-ready: lint-clean, typed, and proven to *simulate* offline.
 Two layers, matching their risk:
 
 * :func:`lint_and_typecheck`, STATIC analysis only (ruff + ty read the files,
-  they never run them), so it shells out directly with a fixed argv on a private
-  temp copy. `ruff --isolated` ignores any repo config (the scratch bundle
-  lives under the user's repo, whose ruleset must not bleed in); ty checks the
-  real scripts only, mock-heavy `*_test.py` files trip ty on
-  `unittest.mock` internals, so they are gated by *execution* instead.
+  they never run them), so it shells out directly with a fixed argv. ruff runs
+  on the real files, so its own config discovery applies: the nearest config
+  above the machine file (the bundle's own pyproject.toml/ruff.toml, else the
+  repo's) pins the lint rules. ty has no config-isolation flag, so it checks a
+  private temp copy; mock-heavy `*_test.py` files trip it on `unittest.mock`
+  internals, so they are gated by *execution* instead.
 * :func:`run_offline_tests`, EXECUTES each `*_test.py`. Because that runs
   model-authored code, it goes through :func:`run_in_jail` (no network, the same
   confinement a tool state gets), never a bare subprocess.
@@ -28,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,59 +95,84 @@ def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     return f"{label} found problems:\n{_trim(out)}"
 
 
-def _write_back_fixes(fixed_copy: Path, scripts_dir: Path) -> None:
-    """Copy ruff-repaired files from the temp copy back over the originals
-    (machine create's own generated bundle only; see lint_and_typecheck)."""
-    for fixed in sorted(fixed_copy.rglob("*.py")):
-        target = scripts_dir / fixed.relative_to(fixed_copy)
-        if target.read_bytes() != fixed.read_bytes():
-            target.write_bytes(fixed.read_bytes())
+def _nearest_ruff_config(start: Path) -> Path | None:
+    """The ruff config governing *start*: the nearest `.ruff.toml`, `ruff.toml`,
+    or `pyproject.toml` with a `[tool.ruff]` table, walking up. Mirrors ruff's
+    own discovery, for the one caller whose files live outside the tree their
+    config governs (machine create's scratch bundle)."""
+    base = start.resolve()
+    for directory in (base, *base.parents):
+        for name in (".ruff.toml", "ruff.toml", "pyproject.toml"):
+            candidate = directory / name
+            if not candidate.is_file():
+                continue
+            if name == "pyproject.toml":
+                try:
+                    data = tomllib.loads(candidate.read_text(encoding="utf-8"))
+                except (OSError, tomllib.TOMLDecodeError):
+                    continue
+                if "ruff" not in data.get("tool", {}):
+                    continue
+            return candidate
+    return None
 
 
-def lint_and_typecheck(scripts_dir: Path, *, fix: bool = False) -> list[str]:
+def lint_and_typecheck(
+    scripts_dir: Path, *, fix: bool = False, ruff_config_from: Path | None = None
+) -> list[str]:
     """Lint (ruff) and type-check (ty) the bundle's Python scripts, no execution.
 
-    Works on a private temp copy of *scripts_dir* so neither tool picks up the
-    user's repo config. Returns human-readable problems (empty = clean / tools
-    absent). `*_test.py` files are linted but not type-checked.
+    Returns human-readable problems (empty = clean / tools absent).
+    `*_test.py` files are linted but not type-checked.
+
+    ruff runs on the real files with its own config discovery, so the nearest
+    config above the machine file pins the rules: the bundle's own
+    pyproject.toml/ruff.toml, else the repo's, else ruff's defaults.
+    `ruff_config_from` (machine create only) resolves that config from the
+    publish destination instead: the scratch bundle lives under the state dir,
+    where discovery would find nothing, and the draft gate must agree with the
+    `machine check` the published bundle faces. `--no-cache` keeps the
+    operator-facing verbs write-free (no `.ruff_cache`).
 
     `fix=True` (machine create only, on its OWN generated bundle) applies
-    ruff's safe fixes to the copy, writes the fixed files back, and reports
-    only what remains: a whole authoring attempt burned on fixable lint
-    otherwise. Operator-facing verbs (`machine check`/`test`) never fix --
-    a check must not mutate the operator's files."""
+    ruff's safe fixes in place and reports only what remains: a whole
+    authoring attempt burned on fixable lint otherwise. Operator-facing verbs
+    (`machine check`/`test`) never fix -- a check must not mutate the
+    operator's files."""
     if not scripts_dir.is_dir() or not any(scripts_dir.rglob("*.py")):
         return []
     problems: list[str] = []
-    # The temp copy exists for ty: it has no config-isolation flag and walks up
-    # from the checked files to the nearest pyproject.toml, which could pull in a
-    # stray config (the scratch bundle lives under the per-repo state dir). ruff
-    # is isolated by its --isolated flag; it just shares the copy.
-    work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
-    try:
-        dst = work / "scripts"
-        shutil.copytree(scripts_dir, dst, symlinks=True)
-        if ruff := _resolve_tool("ruff"):
-            argv = [*ruff, "check", "--isolated", "--output-format", "concise"]
-            if fix:
-                argv.append("--fix")
-            problem = _run_static([*argv, str(dst)], work, "ruff (lint)")
-            if fix:
-                _write_back_fixes(dst, scripts_dir)
-            if problem:
-                problems.append(problem)
-        else:
-            print("note: ruff not installed; script lint skipped", file=sys.stderr)
-        if ty := _resolve_tool("ty"):
-            real = [str(p) for p in sorted(dst.rglob("*.py")) if not p.name.endswith(_TEST_SUFFIX)]
-            if real:
-                problem = _run_static([*ty, "check", *real], work, "ty (type check)")
+    if ruff := _resolve_tool("ruff"):
+        argv = [*ruff, "check", "--no-cache", "--output-format", "concise"]
+        if ruff_config_from is not None:
+            found = _nearest_ruff_config(ruff_config_from)
+            argv += ["--config", str(found)] if found is not None else ["--isolated"]
+        if fix:
+            argv.append("--fix")
+        bundle_dir = scripts_dir.resolve().parent
+        problem = _run_static([*argv, scripts_dir.name], bundle_dir, "ruff (lint)")
+        if problem:
+            problems.append(problem)
+    else:
+        print("note: ruff not installed; script lint skipped", file=sys.stderr)
+    if ty := _resolve_tool("ty"):
+        real = sorted(p for p in scripts_dir.rglob("*.py") if not p.name.endswith(_TEST_SUFFIX))
+        if real:
+            # ty has no config-isolation flag and walks up from the checked
+            # files to the nearest pyproject.toml, which could pull in a stray
+            # config, so it checks a private temp copy.
+            work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
+            try:
+                dst = work / "scripts"
+                shutil.copytree(scripts_dir, dst, symlinks=True)
+                copies = [str(dst / p.relative_to(scripts_dir)) for p in real]
+                problem = _run_static([*ty, "check", *copies], work, "ty (type check)")
                 if problem:
                     problems.append(problem)
-        else:
-            print("note: ty not installed; script type check skipped", file=sys.stderr)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+    else:
+        print("note: ty not installed; script type check skipped", file=sys.stderr)
     return problems
 
 

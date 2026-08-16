@@ -97,6 +97,37 @@ def test_missing_scripts_dir_is_clean(tmp_path: Path) -> None:
     assert scriptcheck.lint_and_typecheck(tmp_path / "nope") == []
 
 
+def test_lint_follows_the_bundles_ruff_config(tmp_path: Path) -> None:
+    """`machine check` linted with `ruff --isolated`, so its verdict tracked the
+    installed ruff's default rules rather than anything the operator wrote: the
+    shipped code-fixer bundle failed on rules a newer ruff turned on. Ruff now
+    runs on the real files, so its own discovery applies and the nearest config
+    above the machine file (here the bundle's own ruff.toml) pins the rules."""
+    _need("ruff")
+    (tmp_path / "ruff.toml").write_text('[lint]\nignore = ["F401"]\n', encoding="utf-8")
+    _write(tmp_path / "scripts", "imports.py", "import json\n")
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+
+
+def test_create_fix_mode_lints_under_the_destinations_config(tmp_path: Path) -> None:
+    """`machine create` drafts in a scratch dir outside the repo, where ruff's
+    discovery cannot see the config the published bundle will be checked under;
+    `ruff_config_from` resolves it from the publish destination so the draft
+    gate and the operator's later `machine check` agree."""
+    _need("ruff")
+    dest = tmp_path / "repo"
+    dest.mkdir()
+    (dest / "ruff.toml").write_text('[lint]\nignore = ["F401"]\n', encoding="utf-8")
+    body = "import json\n"
+    _write(tmp_path / "scratch" / "scripts", "imports.py", body)
+    problems = scriptcheck.lint_and_typecheck(
+        tmp_path / "scratch" / "scripts", fix=True, ruff_config_from=dest
+    )
+    assert not any("ruff" in p for p in problems)
+    # F401 is off in the destination's config: nothing to fix, file untouched.
+    assert (tmp_path / "scratch" / "scripts" / "imports.py").read_text(encoding="utf-8") == body
+
+
 # --- dynamic: offline test execution (jail patched, no fork) ----------------
 
 
