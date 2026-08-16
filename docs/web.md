@@ -79,7 +79,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 ```
 
 `curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
-Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,resume,stop_step,compact,rm}`, `/api/machine/<name>/{poke,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
+Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
 A machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
 The machine name and every answer id are validated to a single path component, so a request cannot traverse out of the instance dir.
 

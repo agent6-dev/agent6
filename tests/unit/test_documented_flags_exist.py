@@ -109,3 +109,16 @@ def test_documented_toml_examples_parse(doc: Path) -> None:
             tomllib.loads(body)
         except tomllib.TOMLDecodeError as exc:  # pragma: no cover - the failure IS the message
             pytest.fail(f"{doc.name}:{line} toml block does not parse: {exc}")
+
+
+def test_docs_name_every_web_write_verb() -> None:
+    """docs/web.md enumerates the browser UI's write surface, which a reader
+    audits to see what a POST can do. The list had drifted: `undo` (forks a run)
+    and a machine's `stop` existed in the server and were absent from the page.
+    """
+    server = (ROOT / "src" / "agent6" / "ui" / "web" / "server.py").read_text(encoding="utf-8")
+    verbs = set(re.findall(r'verb == "([a-z_]+)"', server))
+    assert verbs, "no POST verbs found in the web server"
+    page = (ROOT / "docs" / "web.md").read_text(encoding="utf-8")
+    missing = sorted(v for v in verbs if v not in page)
+    assert not missing, f"docs/web.md does not name web POST verb(s): {missing}"
