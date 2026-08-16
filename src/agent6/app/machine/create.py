@@ -72,6 +72,11 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
         p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
 
 
+def _reread_scripts(base_dir: Path, scripts: dict[str, str]) -> dict[str, str]:
+    """The same bundle keys, re-read from disk after ruff's safe fixes."""
+    return {rel: (base_dir / rel).read_text(encoding="utf-8") for rel in scripts}
+
+
 def _check_machine_text(
     text: str, scripts: dict[str, str], scratch: Path
 ) -> tuple[MachineSpec | None, list[str]]:
@@ -275,6 +280,10 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
             problems = lint_and_typecheck(scratch / "scripts", fix=True)
+            # ruff --fix rewrote the scratch copies, so those are the bytes that
+            # passed. Publishing the model's originals writes a bundle that
+            # fails the `machine check` this command sends the operator to.
+            candidate_scripts = _reread_scripts(scratch, candidate_scripts)
             offline = run_offline_tests(scratch, isolation)
             problems.extend(offline.problems)
             if offline.skipped:
@@ -371,8 +380,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # The destination can differ from the validated scratch copy (e.g. a
     # pre-existing symlink under scripts/), so the structural check on what was
     # PUBLISHED decides the outcome: a success banner over a bundle that won't
-    # run was a lie. Lint/types are not re-run (the bytes are identical to the
-    # scratch copy that passed).
+    # run was a lie. Lint/types are not re-run: these bytes ARE the scratch copy
+    # that passed (_reread_scripts picks up ruff's fixes before publishing).
     out_problems = validate_bundle(spec, target)
     if out_problems:
         events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)

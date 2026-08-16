@@ -570,6 +570,43 @@ def test_create_output_flag_creates_parent_dirs(
     assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
 
 
+def test_create_publishes_the_bytes_the_lint_gate_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate lints with `--fix` on a scratch copy, so the source that PASSED
+    is ruff's repaired one. Publishing the model's original bytes wrote a bundle
+    that failed the `agent6 machine check` this command points the operator at
+    (observed live: 4 fixable errors in a freshly created bundle)."""
+    from agent6.app.machine import _scriptcheck as scriptcheck
+
+    if "ruff" not in scriptcheck.available_tools():
+        pytest.skip("ruff not installed")
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    unused_import = "import json\nprint('hi')\n"  # F401: ruff fixes it safely
+
+    def fake_build(
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            return AgentExecResult(
+                reason="finish_session",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": unused_import},
+                },
+                usd=0.01,
+            )
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Run a script"]) == 0
+    written = (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8")
+    assert "import json" not in written, written
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+
+
 def test_create_retry_prompt_carries_prior_scripts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -725,7 +762,10 @@ def test_create_writes_script_bundle(
     assert (tmp_path / "scripted.asm.toml").exists()
     script = tmp_path / "scripts" / "run.py"
     assert script.exists()
-    assert script.read_text(encoding="utf-8") == SCRIPT_BODY + "\n"
+    # The published bytes are the gate's (ruff --fix ran on the copy that
+    # passed), so this compares content rather than the model's exact source.
+    written = script.read_text(encoding="utf-8")
+    assert written.startswith("import json") and "print(json.dumps({}))" in written
     assert "1 script(s)" in out.err
 
 
