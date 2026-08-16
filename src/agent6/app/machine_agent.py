@@ -157,11 +157,16 @@ def _result(
 
 
 def _apply_operator_env_grants(cfg: Config) -> Config:
-    """The supervisor's `machine run --auto-approve` grant, carried by env like
-    the sandbox setter (operator-only, structurally LLM-unreachable; a machine
-    [config] overlay must not and cannot set sandbox.*). Upgrades run_commands
-    ask -> yes, never a withheld no (`with_sandbox_overrides`)."""
-    return cfg.with_sandbox_overrides(auto_approve=os.environ.get("AGENT6_AUTO_APPROVE") == "1")
+    """The supervisor's `machine run --auto-approve` / `--no-commands` choices,
+    carried by env like the sandbox setter (operator-only, structurally
+    LLM-unreachable; a machine [config] overlay must not and cannot set
+    sandbox.*). Upgrades run_commands ask -> yes, never a withheld no, and
+    withholds every command tool when the operator asked for that
+    (`with_sandbox_overrides`)."""
+    return cfg.with_sandbox_overrides(
+        auto_approve=os.environ.get("AGENT6_AUTO_APPROVE") == "1",
+        no_commands=os.environ.get("AGENT6_NO_COMMANDS") == "1",
+    )
 
 
 @dataclass(frozen=True, slots=True)

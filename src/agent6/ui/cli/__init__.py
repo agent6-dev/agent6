@@ -662,6 +662,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             exit_on_wait=args.exit_on_wait,
             disable_sandbox=args.dangerously_disable_sandbox,
             auto_approve=args.auto_approve,
+            no_commands=args.no_commands,
         )
     if args.machine_command == "status":
         return _cmd_machine_status(args.machine_id)

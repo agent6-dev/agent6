@@ -162,6 +162,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     exit_on_wait: bool = False,
     disable_sandbox: bool = False,
     auto_approve: bool = False,
+    no_commands: bool = False,
 ) -> int:
     reporter = frontend.reporter
     if disable_sandbox:
@@ -179,6 +180,10 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # `with_sandbox_overrides`, which upgrades ask -> yes but never
         # resurrects a withheld "no".
         os.environ["AGENT6_AUTO_APPROVE"] = "1"
+    if no_commands:
+        # The tightening counterpart, carried the same way: each agent state's
+        # subprocess withholds every command tool, as `run --no-commands` does.
+        os.environ["AGENT6_NO_COMMANDS"] = "1"
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -219,7 +224,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except ConfigError as exc:
         reporter.err(f"ERROR: {exc}")
         return 2
-    cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve)
+    cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve, no_commands=no_commands)
     if has_run_agent and cfg.sandbox.run_commands == "ask":
         # Say the dead-end up front: an unattended machine auto-denies every
         # run_command under 'ask' (machine bridges deny when no front-end is

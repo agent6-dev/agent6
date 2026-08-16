@@ -691,6 +691,32 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
     assert os.environ.get("AGENT6_AUTO_APPROVE") == "1"
 
 
+def test_run_no_commands_withholds_them_from_the_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--no-commands` reached `machine run`'s parser and stopped there: the
+    dispatch never read it, so an operator running an unfamiliar machine with
+    it got the machine's full command surface."""
+    import os
+
+    from agent6.app.machine_agent import (
+        _apply_operator_env_grants,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.config import Config
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    # setenv, not delenv: monkeypatch records an absent var as nothing to
+    # restore, so `main` setting it would leak into the next test.
+    monkeypatch.setenv("AGENT6_NO_COMMANDS", "")
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "nocmd.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    main(["machine", "run", str(f), "--no-commands"])
+    assert os.environ.get("AGENT6_NO_COMMANDS") == "1"
+    yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    assert _apply_operator_env_grants(yes).sandbox.run_commands == "no"
+
+
 def test_apply_operator_env_grants_upgrades_ask_never_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
