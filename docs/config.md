@@ -197,7 +197,7 @@ This is the field summary.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `verify_command` | `[]` | argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a && b"]`). Optional: unset infers per run (AGENTS.md `## Verify command`, then repo manifests, then a model call over the manifests, skipped when there are none), injected in-memory and printed. None inferable = the run starts gateless; a recognizable project created mid-run adopts the first resolvable inferred gate. Set it to pin one. |
+| `verify_command` | `[]` | argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a && b"]`). Set it to pin one. Left unset, each run infers a gate and prints it: AGENTS.md `## Verify command` first, then the repo's manifest files, then a model call over those manifests. A run that can infer none starts gateless and adopts the first gate a recognizable project created mid-run yields. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. The operator's gate needs a verdict, so it is bounded; a model-chosen `run_command` is not (see `command_checkin_s`). |
 | `command_checkin_s` | `900.0` | How long a model's `run_command` may run before it is **handed back** as a background job. Not a timeout: nothing is killed, the command keeps running, and the model is told (`returncode: null`, `still_running: true`, a `background_id`) so it can wait with `read_background`, stop it, or carry on. `0` disables the hand-back, which is right when a human is watching and can interrupt. |
 | `require_verify_to_finish` | `false` | Refuse `finish_session` while the last verify is red or never ran (bounded nudges). Regardless, a finish over red is always reported "finished", never "passed". |

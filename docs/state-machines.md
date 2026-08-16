@@ -284,7 +284,9 @@ when = [
 ```
 
 `when` is an ordered list; the first matching `if` wins; a final `else = true` is required (total function, no "stuck" state).
-The predicate grammar is a restricted, non-Turing-complete expression language (see [Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()` (presence of a reference: the guard an `optional` record field needs before a read, e.g. `has(out.score) and out.score > 0`, since `and` short-circuits), numeric/string literals, and blackboard references (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)).
+The predicate grammar is a restricted, non-Turing-complete expression language (see [Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, numeric/string literals, and blackboard references (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)).
+`has()` tests whether a reference is present, the guard an `optional` record field needs before a read.
+`has(out.score) and out.score > 0` is safe because `and` short-circuits.
 No function calls beyond a tiny fixed allow-list, no Python attribute access, no `eval`.
 Dotted references like `verdict.confidence` are *data* navigation into a record value interpreted by agent6's own evaluator (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)), never Python attribute resolution.
 This is a hard security boundary: a `.asm.toml` file must never be able to execute arbitrary code.

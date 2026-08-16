@@ -88,7 +88,7 @@ def add(state_dir: Path, name: str, body: str) -> Path:
         _append_index_line(state_dir, name, first[:120])
         raise MemoryStoreError(
             f"memory {name!r} existed but was missing from the index; re-indexed it."
-            f" The body given now was NOT saved; edit {path} to change it."
+            f" The body passed here was not saved; edit {path} to change it."
         )
     path.write_text(body + "\n", encoding="utf-8")
     _append_index_line(state_dir, name, body.splitlines()[0][:120])

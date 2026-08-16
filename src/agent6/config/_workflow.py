@@ -58,11 +58,10 @@ class WorkflowConfig(BaseModel):
         default=(),
         description=(
             'argv defining "a step succeeded" (no shell; wrap a pipeline as `["sh","-c","a '
-            '&& b"]`). Optional: unset infers per run (AGENTS.md `## Verify command`, then repo '
-            "manifests, then a model call over the manifests, skipped when there are none), "
-            "injected in-memory and printed. None inferable = the run starts gateless; a "
-            "recognizable project created mid-run adopts the first resolvable inferred gate. "
-            "Set it to pin one."
+            '&& b"]`). Set it to pin one. Left unset, each run infers a gate and prints it: '
+            "AGENTS.md `## Verify command` first, then the repo's manifest files, then a "
+            "model call over those manifests. A run that can infer none starts gateless and "
+            "adopts the first gate a recognizable project created mid-run yields."
         ),
     )
     # per-call timeout for verify_command (and metric_command) in

@@ -317,7 +317,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
     out = capsys.readouterr().out
     assert "changes are on agent6/miss" not in out
     assert "sessions merge" not in out  # never advertise merge for a missing branch
-    assert "no commit reached agent6/miss" in out  # the truthful warning
+    assert "no commit on agent6/miss" in out  # the truthful warning
     assert "uncommitted in the working tree" in out
 
 
@@ -751,4 +751,4 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     out = capsys.readouterr().out
     assert "could not check the working tree" in out
     assert "no changes were committed" not in out
-    assert "WARNING: the run finished but no commit reached" not in out
+    assert "WARNING: the run finished with no commit on" not in out

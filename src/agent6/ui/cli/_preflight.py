@@ -18,9 +18,9 @@ def confirm_run_on_run_branch(base_branch: str) -> bool:
     off it. Confirm before proceeding. A non-interactive caller (a detached TUI/web
     run) has no terminal to prompt, so it warns and proceeds."""
     warning = (
-        f"[agent6] You are on run branch '{base_branch}', not a base branch. A new run\n"
-        "  branches off it; you may have meant to merge it (agent6 sessions merge) or\n"
-        "  switch back (git switch <base>) first."
+        f"[agent6] You are on run branch '{base_branch}', so a new run branches off\n"
+        "  it. Merge it (agent6 sessions merge) or switch back (git switch <base>)\n"
+        "  first."
     )
     if not sys.stdin.isatty():
         print(warning + " Proceeding (non-interactive).", file=sys.stderr)

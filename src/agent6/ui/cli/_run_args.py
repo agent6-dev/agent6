@@ -36,9 +36,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Seed from another session (a run, a plan or an ask): its task,"
-            " outcome, diff and key events. Starts a new run; the source is"
-            " untouched (that is `fork`, which keeps a session's mode)."
+            "Seed a new run from another session (a run, a plan or an ask):"
+            " its task, outcome, diff and key events. The source is untouched;"
+            " use `fork` to clone a session at a past turn instead."
         ),
     )
     run_from.completer = _complete_session_ids  # type: ignore[attr-defined]
@@ -108,11 +108,10 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "Plan-first: the agent lays the task out as ordered DAG subtasks"
-            " (add_task) before editing, then works them one at a time: a plan it"
-            " builds and follows on its own, no approval step, populating the task"
-            " graph. Same as setting [prompt].decompose for this run. Helps on"
-            " multi-part tasks and smaller models; a capable model decomposes"
-            " implicitly, so measure before leaving it on."
+            " (add_task) before editing, then works them one at a time, with no"
+            " approval step. Same as setting [prompt].decompose for this run."
+            " Helps on multi-part tasks and smaller models; a capable model"
+            " decomposes implicitly, so measure before leaving it on."
         ),
     )
     run_skill = run_p.add_argument(
@@ -257,8 +256,8 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         metavar="TEXT",
         help=(
             "Inject TEXT as an operator steering instruction at the forked"
-            " session's first safe boundary, the fresh direction this fork"
-            " exists to try. Not with --no-run (resume --steer later instead)."
+            " session's first safe boundary. Not with --no-run; use"
+            " `resume --steer` afterwards."
         ),
     )
     _add_budget_flags(fork_p)

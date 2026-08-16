@@ -333,17 +333,16 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
         if env.landlock_abi < 1:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'hardened' requires Landlock (Linux >= 5.13 "
-                "with the Landlock LSM enabled), which this kernel does not "
-                "provide, and without it hardened would apply no filesystem "
-                "confinement at all. Set isolation = 'auto', or 'none' to run "
-                "unsandboxed."
+                "with the Landlock LSM enabled), which this kernel does not provide. "
+                "Hardened without it applies no filesystem confinement at all. Set "
+                "isolation = 'auto', or 'none' to run unsandboxed."
             )
         if env.landlock_abi < 3:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'hardened' requires Landlock ABI 3 (Linux 6.2) "
                 "to confine file truncation, but this kernel's Landlock is ABI "
                 f"{env.landlock_abi}: a jailed command could truncate "
-                "(truncate/ftruncate) files OUTSIDE its write grants. Set isolation "
+                "(truncate/ftruncate) files outside its write grants. Set isolation "
                 "= 'auto' to run with a warning, or upgrade the kernel."
             )
         return "hardened"

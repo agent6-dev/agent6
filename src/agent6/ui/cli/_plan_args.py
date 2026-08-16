@@ -126,8 +126,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Seed from another session (a run, a plan or an ask): its task,"
-            " outcome, diff and key events (exact id or unambiguous prefix)."
+            "Seed this question from another session (a run, a plan or an ask):"
+            " its task, outcome, diff and key events (exact id or unambiguous"
+            " prefix)."
         ),
     )
     ask_session.completer = _complete_session_ids  # type: ignore[attr-defined]

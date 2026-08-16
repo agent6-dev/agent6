@@ -80,13 +80,12 @@ def warn_sandbox_gaps(
         )
         reporter.err(
             f"[agent6] WARNING: running UNSANDBOXED ({origin}). "
-            "Commands (including the LLM's run_command and verify_command) "
-            "and any spawned MCP server execute as plain subprocesses with NO "
-            "filesystem, network, or syscall confinement and no memory cap "
-            "(sandbox.memory_limit_mb bounds jailed processes, and there are "
-            "none here); the agent is contained "
-            "only by the surrounding environment (e.g. the container it runs in). "
-            "Use 'auto'/'strict'/'hardened' for kernel-enforced isolation."
+            "Every command runs as a plain subprocess with no filesystem, network, "
+            "or syscall confinement: the LLM's run_command, the verify command, and "
+            "any spawned MCP server. sandbox.memory_limit_mb caps jailed processes, "
+            "so it is inert here. Only the surrounding environment, a container for "
+            "instance, bounds what a command can reach. Use 'auto', 'strict', or "
+            "'hardened' for kernel-enforced isolation."
         )
     elif isolation == "strict" and env.landlock_abi < 1:
         reporter.err(
@@ -104,20 +103,19 @@ def warn_sandbox_gaps(
         # permissions from narrowing it.
         reporter.err(
             "[agent6] WARNING: running as root under 'hardened': file permissions "
-            "no longer narrow what a jailed command READS, so root-only files in "
-            "the granted system set (/etc/shadow, /etc/sudoers, the host's ssh "
-            "private keys) are readable by it. 'strict' pivots into a minimal "
-            "rootfs where they are absent. Run as your normal user."
+            "no longer narrow what a jailed command reads, so it can read the "
+            "root-only files in the granted system set (/etc/shadow, /etc/sudoers, "
+            "the host's ssh private keys). 'strict' pivots into a minimal rootfs "
+            "where they are absent. Run as your normal user."
         )
     if isolation == "hardened" and cfg.sandbox.protect_git:
         reporter.err(
-            "[agent6] WARNING: 'hardened' cannot protect .git: that is a "
-            "read-only bind, which needs the mount namespace only 'strict' has. "
-            "A jailed command can write .git here; the in-process edit tools "
-            "still refuse to. The same missing mount namespace makes /tmp the "
-            "host's shared /tmp, not a private tmpfs, and HOME (/tmp/agent6-home) "
-            "a real host dir that persists and is shared across every run on this "
-            "host. Use 'strict' for a private /tmp and a protected .git."
+            "[agent6] WARNING: 'hardened' cannot protect .git: the read-only bind "
+            "needs a mount namespace, which only 'strict' has. A jailed command can "
+            "write .git here; the in-process edit tools still refuse. For the same "
+            "reason /tmp is the host's shared /tmp, and HOME (/tmp/agent6-home) is a "
+            "host dir that persists and is shared by every run on this machine. "
+            "Use 'strict' for a private /tmp and a protected .git."
         )
     if isolation == "hardened" and cfg.sandbox.network == "auto":
         reporter.err(
@@ -132,19 +130,18 @@ def warn_sandbox_gaps(
         reporter.err(
             f"[agent6] WARNING: 'hardened' on Landlock ABI {env.landlock_abi} (< 3) "
             "does not confine file truncation: a jailed command can truncate "
-            "(truncate/ftruncate) files OUTSIDE its write grants, discarding their "
-            "contents; its other writes stay confined. Full write-confinement needs "
-            "Landlock ABI 3 (Linux 6.2). Run on 'strict' (its mount namespace "
-            "confines truncation on any ABI) or upgrade the kernel."
+            "(truncate/ftruncate) files outside its write grants, discarding their "
+            "contents. Its other writes stay confined. Full write-confinement needs "
+            "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
+            "whose mount namespace confines truncation on any ABI."
         )
     for hidden, region, source in unmaskable_exposures(cfg, isolation):
         reporter.err(
-            "[agent6] WARNING: jailed commands can READ"
-            f" {hidden}: it overlaps {region} ({source}), which they are"
-            " granted, and 'hardened' has no mount namespace to mask it out"
-            " (Landlock has no deny rules). Provider keys, transcripts, notes"
-            " and run history in there are readable by every command this run"
-            " runs. Use 'strict' to keep them masked under the same grant."
+            f"[agent6] WARNING: jailed commands can read {hidden}: it sits inside"
+            f" {region} ({source}), which they are granted, and 'hardened' has no"
+            " mount namespace to mask it out. Every command this run starts can"
+            " read the provider keys, transcripts, notes, and run history in there."
+            " Use 'strict' to keep them masked under the same grant."
         )
     if isolation in ("strict", "hardened"):
         notes = tool_mount_notes()
@@ -311,10 +308,10 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
     for hidden, region, source in unmaskable_exposures(cfg, isolation):
         if hidden in listed:
             return (
-                f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps"
-                f" {str(region)!r} ({source}), a region jailed commands can"
-                " read. Masking it needs the mount namespace only 'strict' has."
-                " Use strict, drop the entry, or move one of the two."
+                f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
+                f" {str(region)!r} ({source}), granted to jailed commands."
+                " Masking it needs the mount namespace only 'strict' has:"
+                " use strict, drop the entry, or move one of the two."
             )
     return None
 

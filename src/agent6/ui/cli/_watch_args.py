@@ -23,10 +23,10 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Attach to a run or machine live and drive it: follow the conversation"
             " (the same render as `agent6 run`) and, on a terminal, answer its"
-            " run_command approvals and ask_user questions right here, as if you"
-            " never detached. --raw is the no-deps event-line tail, --tui the"
-            " full-screen TUI, --json a one-shot snapshot of the folded state."
-            " Omit the target for the most recent run."
+            " run_command approvals and ask_user questions. --raw is the no-deps"
+            " event-line tail, --tui the full-screen TUI, --json a one-shot"
+            " snapshot of the folded state. Omit the target for the most recent"
+            " run."
         ),
     )
     watch_target = watch_p.add_argument(

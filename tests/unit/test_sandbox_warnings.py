@@ -238,7 +238,7 @@ def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
 
     warn_sandbox_gaps("hardened", _env(4), cfg)
     err = capsys.readouterr().err
-    assert "WARNING" in err and "READ" in err
+    assert "WARNING" in err and "can read" in err
     assert str(cfg_dir) in err and str(home) in err
     assert check_hide_paths_support(cfg, "hardened") is None  # warned, not refused
 
@@ -319,7 +319,7 @@ def test_hardened_warns_when_private_state_sits_in_a_granted_region(
     warn_sandbox_gaps("hardened", _env(4), cfg)
     err = capsys.readouterr().err
     assert str(tmp_path).startswith("/tmp"), "the fixture premise: pytest tmp lives under /tmp"
-    assert "jailed commands can READ" in err and "/tmp" in err
+    assert "jailed commands can read" in err and "/tmp" in err
 
 
 def test_root_on_hardened_names_what_it_costs(

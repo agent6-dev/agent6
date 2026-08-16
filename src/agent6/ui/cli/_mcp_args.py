@@ -41,8 +41,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         metavar="VAR",
         help=(
             "For --url: the environment variable holding the bearer token."
-            " Named, never inlined: a secret in a config file is a secret in a"
-            " backup."
+            " The config records the name; the value never enters it."
         ),
     )
     connect.add_argument(

@@ -169,10 +169,10 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     if ok:
         print(
             f"Installed {_APPARMOR_PROFILE_PATH}; `agent6 check sandbox` now reports strict"
-            " (per-command jailing). Heads-up: strict's default provider-egress also needs"
-            " THIS process to create a user namespace, which this surgical profile does not"
-            " grant, so a default `agent6 run` falls back to hardened (with a note). For"
-            " full strict, set kernel.apparmor_restrict_unprivileged_userns=0 (host-wide), or"
-            " use sandbox.network='host'."
+            " (per-command jailing). Strict's default provider-egress needs the agent"
+            " process itself to create a user namespace, which this profile does not"
+            " grant, so a default `agent6 run` falls back to hardened and says so. For"
+            " full strict, set kernel.apparmor_restrict_unprivileged_userns=0 (host-wide),"
+            " or use sandbox.network='host'."
         )
     return 0 if ok else 1

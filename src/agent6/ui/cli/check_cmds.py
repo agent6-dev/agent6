@@ -62,8 +62,8 @@ def _isolation_means(isolation: IsolationLevel) -> str:
         # The config section prints what this project resolved to.
         return (
             "commands get their own filesystem view (only granted paths exist),"
-            " a private /proc and PID namespace, a filtered syscall set, and,"
-            " unless sandbox.network says otherwise, the run's own network."
+            " a private /proc and PID namespace, a filtered syscall set, and the"
+            " run's own network unless sandbox.network says otherwise."
             " See docs/security.md."
         )
     if isolation == "hardened":
@@ -348,7 +348,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
         f" approval: sandbox.run_commands = {cfg.sandbox.run_commands}):"
     )
     if selected == "none":
-        print("    UNCONFINED: no jail on this host; commands run as you, everywhere.")
+        print("    UNCONFINED: no jail on this host; commands run with your full access.")
         return
     git_note = (
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
