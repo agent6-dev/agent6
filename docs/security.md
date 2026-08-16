@@ -394,7 +394,7 @@ It catches prompt regressions; the structural defenses above confine a model tha
 - AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile.
   agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it, per-command jailing is `strict`; without it, `hardened`.
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
-- Devcontainers get `hardened`: the container bounds filesystem damage, and the network stays Landlock-confined when supported.
+- Devcontainers get `hardened`: the container bounds filesystem damage, and jailed commands share the container's network ([Network](#5-network)).
   The XDG state base is ephemeral (lost on rebuild), so mount a volume at the state dir or set `[agent6].state_dir`.
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace: a jailed command can rewrite it, and the next tool call runs the rewrite as you, outside the jail.
   Install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry when it detects this shape.
