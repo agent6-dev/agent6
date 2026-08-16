@@ -197,7 +197,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
         # now rather than contradicting ourselves one command later.
         print(
             f"WARNING: no key entered, but the Anthropic API format requires one.\n"
-            f"  [providers.{name}] is written but not usable yet -- rerun"
+            f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
         )
     else:

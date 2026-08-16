@@ -118,7 +118,7 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
             f"[agent6] WARNING: custom system_prompt_file ({path}) does not mention "
             f"{', '.join(missing)}; the worker may not know how to "
             f"{' or '.join(actions)}. The override "
-            "replaces the built-in run-mode base -- you own preserving the tool "
+            "replaces the built-in run-mode base: you own preserving the tool "
             "contracts. Inspect the assembled prompt with `agent6 prompt show`.",
             file=sys.stderr,
         )
@@ -250,8 +250,8 @@ def headless_approval_refusal(
         return None
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
-        " way to ask, no TUI and no away-mode. Every command -- the verify gate"
-        " included -- would wait forever.\n"
+        " way to ask, no TUI and no away-mode. Every command (the verify gate"
+        " included) would wait forever.\n"
         "  - unattended: sandbox.run_commands = 'yes' (or --auto-approve), or 'no'"
         " to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"

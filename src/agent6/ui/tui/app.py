@@ -1166,7 +1166,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         marker (the same file-bridge pattern as steer); the loop honors it at
         its next safe boundary by forcing a summarise-and-restart."""
         if not self.session_controllable():
-            self.notify("the session is not live -- nothing to compact", severity="warning")
+            self.notify("the session is not live, nothing to compact", severity="warning")
             return
         if request_compact(self.session_dir):
             self.notify("compaction requested; applies at the next safe boundary")
@@ -1178,7 +1178,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         the file bridge -- the stream watchdog interrupts the in-flight turn and
         the run ends (resumable)."""
         if not self.session_controllable():
-            self.notify("the session is not live -- nothing to stop", severity="warning")
+            self.notify("the session is not live, nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1200,7 +1200,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         the loop honors at its next completed-iteration boundary, so the step's
         tool results and auto-commit land before the run ends (resumable)."""
         if not self.session_controllable():
-            self.notify("the session is not live -- nothing to stop", severity="warning")
+            self.notify("the session is not live, nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1222,7 +1222,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Delete this run's history and return to the hub. History only: the run
         branch and its commits are git's (`sessions prune` is the branch verb)."""
         if self.session_controllable():
-            self.notify("the session is still live -- stop it first", severity="warning")
+            self.notify("the session is still live, stop it first", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -1251,7 +1251,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         """Resume a finished/stopped run: it continues in the background (appending
         to the same log) and this dashboard follows straight through."""
         if self.session_controllable():
-            self.notify("the session is still going -- nothing to resume", severity="warning")
+            self.notify("the session is still going, nothing to resume", severity="warning")
             return
         err = spawn_detached_resume(Path.cwd(), self.session_dir.name, config_path=self.config_path)
         self.notify(

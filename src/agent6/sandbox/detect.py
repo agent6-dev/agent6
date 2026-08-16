@@ -334,7 +334,7 @@ def resolve_isolation(requested: str, env: Environment) -> IsolationLevel:
             raise IsolationUnavailableError(
                 "sandbox.isolation = 'hardened' requires Landlock (Linux >= 5.13 "
                 "with the Landlock LSM enabled), which this kernel does not "
-                "provide -- without it hardened would apply no filesystem "
+                "provide, and without it hardened would apply no filesystem "
                 "confinement at all. Set isolation = 'auto', or 'none' to run "
                 "unsandboxed."
             )

@@ -62,8 +62,8 @@ def _isolation_means(isolation: IsolationLevel) -> str:
         # The config section prints what this project resolved to.
         return (
             "commands get their own filesystem view (only granted paths exist),"
-            " a private /proc and PID namespace, a filtered syscall set, and --"
-            " unless sandbox.network says otherwise -- the run's own network."
+            " a private /proc and PID namespace, a filtered syscall set, and,"
+            " unless sandbox.network says otherwise, the run's own network."
             " See docs/security.md."
         )
     if isolation == "hardened":
@@ -348,7 +348,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
         f" approval: sandbox.run_commands = {cfg.sandbox.run_commands}):"
     )
     if selected == "none":
-        print("    UNCONFINED: no jail on this host -- commands run as you, everywhere.")
+        print("    UNCONFINED: no jail on this host; commands run as you, everywhere.")
         return
     git_note = (
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
@@ -373,7 +373,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
         print(f"    --  {p}  ({verb})")
     net = resolve_network(cfg, selected)
     net_line = {
-        "session": "the run's own network -- no route off this machine"
+        "session": "the run's own network, no route off this machine"
         " (reach it: agent6 exec / agent6 forward)",
         "host": "this machine's network, unconfined",
         "none": "no network at all",
@@ -430,7 +430,7 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
 
     ws = workspace_for(cfg, Path.cwd())
     print()
-    print("  in-process tools (read_file / apply_edit / list_dir / grep -- no approval):")
+    print("  in-process tools (read_file / apply_edit / list_dir / grep; no approval):")
     print(f"    rw  {ws.root}  (the workspace)")
     for line in _grant_lines(ws):
         print(line)

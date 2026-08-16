@@ -23,14 +23,14 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         "server_command",
         nargs="*",
         metavar="ARGV",
-        help=("argv for a server to SPAWN (put it after `--`). Exactly one of this or --url."),
+        help=("argv for a server to spawn (put it after `--`). Exactly one of this or --url."),
     )
     connect.add_argument(
         "--url",
         default="",
         metavar="URL",
         help=(
-            "An http(s) endpoint of a server YOU run, which agent6 only connects"
+            "An http(s) endpoint of a server you run, which agent6 only connects"
             " to. Exactly one of this or a command."
         ),
     )
@@ -41,7 +41,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         metavar="VAR",
         help=(
             "For --url: the environment variable holding the bearer token."
-            " Named, never inlined -- a secret in a config file is a secret in a"
+            " Named, never inlined: a secret in a config file is a secret in a"
             " backup."
         ),
     )

@@ -36,8 +36,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Seed from another session -- a run, a plan or an ask: its task,"
-            " outcome, diff and key events. Starts a NEW run; the source is"
+            "Seed from another session (a run, a plan or an ask): its task,"
+            " outcome, diff and key events. Starts a new run; the source is"
             " untouched (that is `fork`, which keeps a session's mode)."
         ),
     )
@@ -108,7 +108,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "Plan-first: the agent lays the task out as ordered DAG subtasks"
-            " (add_task) before editing, then works them one at a time -- a plan it"
+            " (add_task) before editing, then works them one at a time: a plan it"
             " builds and follows on its own, no approval step, populating the task"
             " graph. Same as setting [prompt].decompose for this run. Helps on"
             " multi-part tasks and smaller models; a capable model decomposes"
@@ -209,7 +209,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "fork",
         help=(
-            "Clone a run, rolled back to a checkpoint, into a NEW run and continue"
+            "Clone a run, rolled back to a checkpoint, into a new run and continue"
             " it (the source run is never mutated)."
         ),
     )
@@ -257,7 +257,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         metavar="TEXT",
         help=(
             "Inject TEXT as an operator steering instruction at the forked"
-            " session's first safe boundary -- the fresh direction this fork"
+            " session's first safe boundary, the fresh direction this fork"
             " exists to try. Not with --no-run (resume --steer later instead)."
         ),
     )

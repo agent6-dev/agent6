@@ -96,7 +96,7 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
         set_away_mode(session_dir, "wait")
         return
     print(
-        "[agent6] Detaching with run_commands=ask -- nothing will be watching to approve.",
+        "[agent6] Detaching with run_commands=ask; nothing will be watching to approve.",
         file=sys.stderr,
     )
     ans = tty_prompt(

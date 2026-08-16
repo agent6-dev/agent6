@@ -105,7 +105,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default=0,
         metavar="N",
         help=(
-            "Run an adversarial REVIEW PANEL of N grounded reviewers instead of one"
+            "Run an adversarial review panel of N grounded reviewers instead of one"
             " freeform review. Findings are grounded against the diff (only real,"
             " block-eligible problems gate). 0 (default) = the classic single review."
         ),

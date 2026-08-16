@@ -481,7 +481,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
         pid = read_worker_pid(root)
-        running_in = f" -- running {inflight_state!r}" if inflight_state else ""
+        running_in = f", running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
         print(f"  status: {word}")

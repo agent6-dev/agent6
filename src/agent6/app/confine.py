@@ -80,7 +80,7 @@ def warn_sandbox_gaps(
         )
         reporter.err(
             f"[agent6] WARNING: running UNSANDBOXED ({origin}). "
-            "Commands -- including the LLM's run_command and verify_command -- "
+            "Commands (including the LLM's run_command and verify_command) "
             "and any spawned MCP server execute as plain subprocesses with NO "
             "filesystem, network, or syscall confinement and no memory cap "
             "(sandbox.memory_limit_mb bounds jailed processes, and there are "
@@ -105,13 +105,13 @@ def warn_sandbox_gaps(
         reporter.err(
             "[agent6] WARNING: running as root under 'hardened': file permissions "
             "no longer narrow what a jailed command READS, so root-only files in "
-            "the granted system set -- /etc/shadow, /etc/sudoers, the host's ssh "
-            "private keys -- are readable by it. 'strict' pivots into a minimal "
+            "the granted system set (/etc/shadow, /etc/sudoers, the host's ssh "
+            "private keys) are readable by it. 'strict' pivots into a minimal "
             "rootfs where they are absent. Run as your normal user."
         )
     if isolation == "hardened" and cfg.sandbox.protect_git:
         reporter.err(
-            "[agent6] WARNING: 'hardened' cannot protect .git -- that is a "
+            "[agent6] WARNING: 'hardened' cannot protect .git: that is a "
             "read-only bind, which needs the mount namespace only 'strict' has. "
             "A jailed command can write .git here; the in-process edit tools "
             "still refuse to. The same missing mount namespace makes /tmp the "
@@ -134,13 +134,13 @@ def warn_sandbox_gaps(
             "does not confine file truncation: a jailed command can truncate "
             "(truncate/ftruncate) files OUTSIDE its write grants, discarding their "
             "contents; its other writes stay confined. Full write-confinement needs "
-            "Landlock ABI 3 (Linux 6.2). Run on 'strict' -- its mount namespace "
-            "confines truncation on any ABI -- or upgrade the kernel."
+            "Landlock ABI 3 (Linux 6.2). Run on 'strict' (its mount namespace "
+            "confines truncation on any ABI) or upgrade the kernel."
         )
     for hidden, region, source in unmaskable_exposures(cfg, isolation):
         reporter.err(
             "[agent6] WARNING: jailed commands can READ"
-            f" {hidden} -- it overlaps {region} ({source}), which they are"
+            f" {hidden}: it overlaps {region} ({source}), which they are"
             " granted, and 'hardened' has no mount namespace to mask it out"
             " (Landlock has no deny rules). Provider keys, transcripts, notes"
             " and run history in there are readable by every command this run"
@@ -312,7 +312,7 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
         if hidden in listed:
             return (
                 f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps"
-                f" {str(region)!r} ({source}) -- a region jailed commands can"
+                f" {str(region)!r} ({source}), a region jailed commands can"
                 " read. Masking it needs the mount namespace only 'strict' has."
                 " Use strict, drop the entry, or move one of the two."
             )

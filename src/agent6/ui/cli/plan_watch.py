@@ -231,7 +231,7 @@ def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -
     if scan.finished:
         return f"{word} ({scan.end_reason})"
     detail = {
-        "waiting": "needs answer -- attach to respond",
+        "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
         "parked": "resume to start",
         # "no events yet" was claimed unconditionally, over logs that HAD

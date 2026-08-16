@@ -268,8 +268,8 @@ def print_session_end(
         )
         reporter.out(
             "  Likely a per-user / version-manager install (rustup, pyenv, nvm, ...)"
-            " whose config or toolchain the sandbox does not expose -- not an agent6"
-            " bug. Fix options:"
+            " whose config or toolchain the sandbox does not expose. Not an agent6"
+            " bug; fix options:"
         )
         reporter.out(f"    - make `{binary}` run from a clean shell (a system-wide install)")
         reporter.out("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
@@ -332,7 +332,7 @@ def _print_run_branch_footer(
         if tree_clean is not None and stranded_edits(result, layout):
             reporter.out(
                 f"\nWARNING: the run finished but no commit reached {run_branch}"
-                " -- the branch was never created."
+                ": the branch was never created."
             )
             reporter.out(
                 "  Edits are left uncommitted in the working tree (the commit failed;"

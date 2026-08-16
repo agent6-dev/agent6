@@ -58,7 +58,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-invocation sandbox/approval override flags (every paid
     command carries both: run/plan/ask/resume and machine run).
 
-    `--dangerously-disable-sandbox` runs the agent's commands UNCONFINED on
+    `--dangerously-disable-sandbox` runs the agent's commands unconfined on
     the host (equivalent to a one-off `sandbox.isolation = "none"`); the env
     `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` does the same. `--auto-approve`
     auto-approves `run_command` for this invocation: it upgrades
@@ -69,7 +69,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         "--dangerously-disable-sandbox",
         action="store_true",
         help=(
-            "Run the agent's commands UNCONFINED on the host (no Landlock/"
+            "Run the agent's commands unconfined on the host (no Landlock/"
             "seccomp/namespaces). Only for a disposable or already-isolated"
             " machine; the host becomes the only boundary."
         ),
