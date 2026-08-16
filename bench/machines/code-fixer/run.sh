@@ -19,7 +19,7 @@ AGENT6="$(cd "$HERE/../../.." && pwd)/.venv/bin/agent6"
 WORK="${1:-/tmp/agent6-machine-code-fixer}"
 
 rm -rf "$WORK"; mkdir -p "$WORK/scripts"
-cp "$HERE/code-fixer.asm.toml" "$WORK/"
+cp "$HERE/code-fixer.asm.toml" "$HERE/ruff.toml" "$WORK/"
 cp "$HERE/scripts/"*.py "$WORK/scripts/"
 cp "$HERE/seed/stats.py" "$WORK/"
 git -C "$WORK" init -q

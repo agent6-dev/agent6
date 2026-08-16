@@ -1,0 +1,7 @@
+# Pins the bundle's lint rules: `agent6 machine check` lints scripts/ under the
+# nearest config above the machine file, so this travels with a copied bundle.
+line-length = 100
+
+[lint]
+# The checker deliberately catches Exception: the code under check may raise anything.
+ignore = ["BLE001"]
