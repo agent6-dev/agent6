@@ -475,13 +475,22 @@ class Config(BaseModel):
             )
 
 
+# pydantic reports a provider block with no `api_format` as
+# "Unable to extract tag using discriminator", which names neither the key to
+# add nor its two values. A hand-written block is a documented way in.
+_MISSING_API_FORMAT = 'set api_format = "anthropic" or "openai" (see docs/config.md)'
+
+
 def _format_validation_error(
     err: ValidationError, source: str, locate: Callable[[str], str | None] | None = None
 ) -> str:
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
         loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
-        lines.append(f"  - {loc}: {issue['msg']} (type={issue['type']})")
+        msg = issue["msg"]
+        if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
+            msg = _MISSING_API_FORMAT
+        lines.append(f"  - {loc}: {msg} (type={issue['type']})")
         if locate is not None and (where := locate(loc)):
             lines.append(where)
     return "\n".join(lines)

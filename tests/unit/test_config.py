@@ -875,3 +875,14 @@ def test_api_format_discriminates_the_provider_entry(tmp_path: Path) -> None:
     assert get_args(OpenAIProviderEntry.model_fields["api_format"].annotation) == ("openai",)
     assert next(iter(AnthropicProviderEntry.model_fields)) == "api_format"
     assert next(iter(OpenAIProviderEntry.model_fields)) == "api_format"
+
+
+def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> None:
+    """pydantic's own text ("Unable to extract tag using discriminator") names
+    neither the key nor its values, and hand-writing a provider block is a
+    documented way in."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert 'set api_format = "anthropic" or "openai"' in str(exc.value)
