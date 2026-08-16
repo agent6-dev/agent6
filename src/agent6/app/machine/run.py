@@ -13,8 +13,11 @@ interactive step, held cli-side). The machine ENGINE is unchanged.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
+import shutil
 import sys
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -34,13 +37,20 @@ from agent6.app.machine._preflight import (
     machine_protect_paths,
 )
 from agent6.app.machine._spend import book_crashed_attempt, machine_spend
-from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.machine_agent import build_machine_agent_runner, clone_at_machine_chain
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
-from agent6.git_ops import CommitIdentity, GitError, is_git_repo, paths_dirty, verify_git_identity
+from agent6.git_ops import (
+    CommitIdentity,
+    GitError,
+    is_git_repo,
+    machine_chain_ref_for,
+    paths_dirty,
+    verify_git_identity,
+)
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -61,10 +71,12 @@ from agent6.machine import (
     write_bundle,
 )
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
+from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.tools.policy import jail_policy, passthrough_env
-from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
+from agent6.workflows.subrun import SubrunError
 
 
 def _fail(reporter: Reporter, path: Path, problems: list[str], label: str = "") -> int:
@@ -116,6 +128,45 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
                 f" committed {label}. Review and commit the bundle first."
             )
     return None
+
+
+def machine_tool_runner(
+    cwd: Path, machine_id: str, clone_root: Path
+) -> Callable[[JailPolicy], CommandResult]:
+    """A jail runner that executes each tool policy in the machine's own tree.
+
+    Run states commit to the machine chain and never touch the checkout the
+    policy was built against, so a tool state jailed there cannot see their
+    work; each call runs in a fresh clone at the chain tip instead (the same
+    tree a run state starts from). Tree writes are scratch, discarded with the
+    clone: the durable channels stay the blackboard and
+    `$AGENT6_MACHINE_DATA_DIR`, which is exactly what tool tree-writes were
+    before, since a run state's clone never contained them either. Bundle
+    protect paths under *cwd* are remapped to the clone's own copy, like a run
+    state's."""
+
+    def run(policy: JailPolicy) -> CommandResult:
+        dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
+        try:
+            clone_at_machine_chain(cwd, dest, machine_chain_ref_for(machine_id))
+        except (SubrunError, GitError) as exc:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise JailUnavailableError(f"machine tree clone failed: {exc}") from exc
+        try:
+            return run_in_jail(
+                dataclasses.replace(
+                    policy,
+                    cwd=dest,
+                    extra_protect_paths=tuple(
+                        dest / p.relative_to(cwd) if p.is_relative_to(cwd) else p
+                        for p in policy.extra_protect_paths
+                    ),
+                )
+            )
+        finally:
+            shutil.rmtree(dest, ignore_errors=True)
+
+    return run
 
 
 def machine_tool_policy_factory(
@@ -240,6 +291,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             " allow. Edits, verify, and the auto-commit need no approval."
         )
     snapshot_keep = cfg.machine.snapshot_keep
+    # One clone base for every state of a machine that writes: the agent
+    # states' per-state clones and the tool states' per-call trees.
+    clone_root = subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
     if has_agent_state or tool_states:
         try:
             if has_agent_state:
@@ -306,18 +360,14 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,
-                # A machine that writes never touches the checkout: each
-                # mode="run" state works a fresh clone at the machine chain's
-                # tip and lands both the chain (next state's continuation)
-                # and the visible agent6/machine-<id> branch (the operator's
-                # handle) back per state -- the lane mechanism, sequential
-                # where lanes are parallel.
+                # A machine that writes never touches the checkout: every
+                # agent state works a fresh clone at the machine chain's tip,
+                # and each mode="run" state lands both the chain (next
+                # state's continuation) and the visible agent6/machine-<id>
+                # branch (the operator's handle) back per state -- the lane
+                # mechanism, sequential where lanes are parallel.
                 machine_id=spec.machine if has_run_agent else None,
-                clone_root=(
-                    subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
-                    if has_run_agent
-                    else None
-                ),
+                clone_root=clone_root if has_run_agent else None,
             )
     warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
@@ -395,6 +445,11 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 agent_runner=agent_runner,
                 tool_policy=machine_tool_policy_factory(
                     cfg, cwd, isolation, protect_paths=protect_paths, data_dir=data_dir
+                ),
+                # A machine that writes runs its tool states in its own tree,
+                # so an edit-then-check loop sees the run states' commits.
+                jail_runner=(
+                    machine_tool_runner(cwd, spec.machine, clone_root) if has_run_agent else None
                 ),
                 data_dir=data_dir,
                 # Each agent state writes its own watchable logs.jsonl here, so a

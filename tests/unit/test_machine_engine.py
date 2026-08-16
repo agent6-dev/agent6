@@ -18,6 +18,7 @@ from agent6.machine.engine import (
     AgentExecResult,
     AgentRequest,
     EngineError,
+    LiveWorld,
     MachineResult,
     ToolExecResult,
     WaitWake,
@@ -690,6 +691,29 @@ def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
     assert result.status == "failed"
     assert "`every_secs` must be >= 1" in result.reason
     assert not any(isinstance(event, StepEvent) for event in journal.read())
+
+
+def test_run_tool_uses_the_injected_jail_runner(tmp_path: Path) -> None:
+    """The tool step executes through LiveWorld.jail_runner, the seam the CLI
+    overrides so a run-machine's tools run in the machine's own tree; the
+    default stays the plain jail."""
+    from agent6.types import CommandResult, JailPolicy
+
+    seen: list[JailPolicy] = []
+
+    def _runner(policy: JailPolicy) -> CommandResult:
+        seen.append(policy)
+        return CommandResult(argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0)
+
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path / "i"),
+        tool_policy=lambda argv, timeout_s, network: JailPolicy(cwd=tmp_path, argv=argv),
+        jail_runner=_runner,
+    )
+    res = world.run_tool(("echo", "hi"), 5.0)
+    assert res.exit_code == 0 and not res.timed_out
+    assert [p.argv for p in seen] == [("echo", "hi")]
 
 
 def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:

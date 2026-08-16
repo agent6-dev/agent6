@@ -61,12 +61,14 @@ class _FakeChild:
 
     captured_env: ClassVar[dict[str, str]] = {}
     workdirs: ClassVar[list[Path]] = []
+    seen_files: ClassVar[list[set[str]]] = []
 
     def __init__(self, argv: list[str], **kw: Any) -> None:
         _FakeChild.captured_env = dict(kw.get("env") or {})
         req = json.loads(Path(argv[-2]).read_text(encoding="utf-8"))
         cwd = Path(req["cwd"])
         _FakeChild.workdirs.append(cwd)
+        _FakeChild.seen_files.append({e.name for e in cwd.iterdir()})
         seq = req["request"]["step_seq"]
         if req["request"]["mode"] == "run":
             # Mirror the nested loop: commit the tree, advance the chain ref
@@ -128,17 +130,83 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     assert _FakeChild.captured_env["AGENT6_SUBRUN"] == "1"
 
 
-def test_read_only_states_run_in_place_without_a_clone(
+def test_read_only_states_see_the_machine_tree_and_land_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A read-only judge in a machine with run states ran in the operator's
+    checkout, so it could not see the work it was judging. It now runs in a
+    fresh clone at the chain tip like every state of such a machine; it
+    commits nothing, so the branch does not move and its clone is cleaned up
+    by the landing's no-op path."""
     origin = _origin(tmp_path)
     monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
+    _FakeChild.seen_files = []
     runner = _runner(origin, tmp_path)
-    r = runner(_req(0, mode="agent"), None)
-    assert r.reason == "finish_session"
+    assert runner(_req(0), None).reason == "finish_session"
+    tip_after_run = chain_tip(origin, BRANCH)
+    assert runner(_req(1, mode="agent"), None).reason == "finish_session"
+    judge_dir = _FakeChild.workdirs[-1]
+    assert judge_dir != origin
+    assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
+    assert chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
+    assert not any((tmp_path / "clones").glob("state-*"))  # cleaned up
+
+
+def test_without_a_machine_tree_read_only_states_run_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No machine_id/clone_root (`machine create`, a machine with no run
+    states): a read-only request runs in cwd, as before."""
+    origin = _origin(tmp_path)
+    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    _FakeChild.workdirs = []
+    runner = ma.build_machine_agent_runner(
+        {}, origin, "none", tmp_path / "m1" / "agent_transcripts", (), None
+    )
+    assert runner(_req(0, mode="agent"), None).reason == "finish_session"
     assert _FakeChild.workdirs == [origin]
     assert not (tmp_path / "clones").exists()
+
+
+def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tool state's jail mounted the operator's checkout, which a run
+    state's commits never reach, so an edit-then-check loop never converged
+    (the shipped code-fixer burned its whole attempt budget this way). The
+    runner clones the chain tip per call, remaps the bundle protect paths to
+    the clone's own copy, and discards the tree after."""
+    from agent6.app.machine import run as machine_run
+    from agent6.types import CommandResult, JailPolicy
+
+    origin = _origin(tmp_path)
+    _git(origin, "checkout", "-q", "-b", "scratch")
+    (origin / "work.txt").write_text("landed\n", encoding="utf-8")
+    _git(origin, "add", "-A")
+    _git(origin, "commit", "-q", "-m", "agent6 iter 1: work")
+    _git(origin, "update-ref", CHAIN, "HEAD")
+    _git(origin, "checkout", "-q", "main")
+    _git(origin, "branch", "-D", "scratch")
+    assert not (origin / "work.txt").exists()
+
+    captured: dict[str, object] = {}
+
+    def fake_jail(policy: JailPolicy) -> CommandResult:
+        captured["cwd"] = policy.cwd
+        captured["saw_work"] = (policy.cwd / "work.txt").exists()
+        captured["protect"] = policy.extra_protect_paths
+        return CommandResult(argv=policy.argv, returncode=0, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(machine_run, "run_in_jail", fake_jail)
+    runner = machine_run.machine_tool_runner(origin, "m1", tmp_path / "clones")
+    policy = JailPolicy(cwd=origin, argv=("x",), extra_protect_paths=(origin / "scripts",))
+    assert runner(policy).returncode == 0
+    clone_cwd = captured["cwd"]
+    assert isinstance(clone_cwd, Path) and clone_cwd != origin
+    assert captured["saw_work"] is True
+    assert captured["protect"] == (clone_cwd / "scripts",)
+    assert not clone_cwd.exists()  # scratch tree, discarded
 
 
 def test_import_failure_keeps_the_clone_and_routes_failed(

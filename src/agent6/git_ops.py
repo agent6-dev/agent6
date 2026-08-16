@@ -638,6 +638,17 @@ _CHAIN_NS = "refs/agent6"
 _CHAIN_KIND = "head"
 
 
+def machine_chain_ref_for(machine_id: str) -> str:
+    """The chain ref a machine's states continue from (`chain_ref_for`, under
+    the machine namespace)."""
+    return chain_ref_for(f"machine-{machine_id}")
+
+
+def machine_branch_for(machine_id: str) -> str:
+    """The visible branch a machine's `mode="run"` states land on."""
+    return f"agent6/machine-{machine_id}"
+
+
 def chain_ref_for(session_id: str) -> str:
     """The ref holding a session's commit chain: `refs/agent6/<id>/head`.
 

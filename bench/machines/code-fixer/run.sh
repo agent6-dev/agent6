@@ -18,7 +18,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT6="$(cd "$HERE/../../.." && pwd)/.venv/bin/agent6"
 WORK="${1:-/tmp/agent6-machine-code-fixer}"
 
-rm -rf "$WORK" "${WORK}-state"; mkdir -p "$WORK/scripts"
+rm -rf "$WORK" "${WORK}-state" "${WORK}-check"; mkdir -p "$WORK/scripts"
 cp "$HERE/code-fixer.asm.toml" "$HERE/ruff.toml" "$WORK/"
 cp "$HERE/scripts/"*.py "$WORK/scripts/"
 cp "$HERE/seed/stats.py" "$WORK/"
@@ -46,7 +46,9 @@ echo "== running code-fixer machine =="
 (cd "$WORK" && "$AGENT6" machine run code-fixer.asm.toml --auto-approve)
 echo
 echo "== after: verify the machine's branch (the checkout never moves) =="
-(cd "$WORK" && python3 scripts/verify.py --ref agent6/machine-code-fixer)
+rm -rf "${WORK}-check"
+git clone -q -b agent6/machine-code-fixer "$WORK" "${WORK}-check"
+(cd "${WORK}-check" && python3 scripts/verify.py)
 echo
 echo "== agent's fix (on agent6/machine-code-fixer) =="
 git -C "$WORK" --no-pager diff HEAD..agent6/machine-code-fixer -- stats.py

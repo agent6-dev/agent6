@@ -175,7 +175,9 @@ The LLM cannot pick the next state; it can only populate variables that a downst
 The default `"agent"` is a read-only, structured-output loop: the dispatcher refuses edit, `run_command`, and `run_verify`, so the state can only read and call `finish_session`.
 Set `mode = "run"` for a state that must do real coding work (edit + verify + commit tools), exactly like `agent6 run`, including where the work lands: each run state executes in a fresh clone (the `--parallel` lane mechanism, under the same `[parallel].workdir` cache) checked out at the machine chain's tip, and its commits land back per state on the visible `agent6/machine-<id>` branch.
 Your checkout is never touched; merge the branch when you want the work, and `sessions prune` sweeps landed clones.
-A `tool` state runs in your checkout, which those commits never reach, so a state that checks a run state's work reads the branch (`git show agent6/machine-<id>:<path>`), not the working tree.
+A machine with run states works its own tree everywhere: each `tool` state and read-only agent state also runs in a fresh clone at the chain tip, so an edit-then-check loop sees the committed work with no plumbing.
+A `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR` (a run state's clone never contained another state's uncommitted writes anyway).
+A machine with no run states runs its tool states in your checkout, unchanged.
 States are sequential continuations of that branch (each starts from the previous state's tree), where lanes are parallel alternatives cut at base.
 A `mode = "run"` state still returns only its outcome label and `finish_session` payload as control-flow signals; `machine run` resolves a git commit identity up front (from `[git.commit]` or the repo's git config) so the confined agent's commits succeed.
 In any agent state `run_command` is gated by `sandbox.run_commands`: under the default `ask` an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this); a machine spawned from the web or TUI hub instead parks each approval and question for the front-end (the spawn carries the same `wait` away-mode a detached run gets), so the answer never depends on when the viewer attached.
@@ -611,7 +613,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   Dotted references are agent6-interpreted json data navigation ([Names and references](#45-names-references-and-namespaces-normative)), not Python attribute resolution.
   A `.asm.toml` file is data, not code.
 - **All side effects stay jailed.** `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, its commands jailed like any run's.
-  A `mode = "run"` state additionally never touches the operator's checkout: it works a fresh clone and its commits arrive on `agent6/machine-<id>`.
+  A machine with `mode = "run"` states additionally never touches the operator's checkout: every state works a fresh clone of it, run-state commits arrive on `agent6/machine-<id>`, and tool-state tree writes are discarded with the clone.
   The per-state network model and its refusals are specified in [security.md, Network](security.md#5-network).
 - **Spend bounds.** `[budget].max_transitions` is required and always binds.
   `max_usd` (optional) caps the machine's cumulative metered spend (reported cost when available, else cached price times tokens); a state whose model has no price data is bounded per state by the effective config's `[budget].max_tokens_fallback` instead (`0` there refuses unmetered models outright).

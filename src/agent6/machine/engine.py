@@ -74,7 +74,7 @@ from agent6.machine.template import (
 from agent6.portable import atomic_write
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.layout import LOGS_NAME
-from agent6.types import JailPolicy, NetworkMode
+from agent6.types import CommandResult, JailPolicy, NetworkMode
 
 __all__ = [
     "AgentExecResult",
@@ -319,6 +319,11 @@ class LiveWorld:
     # DURABLE state (a built venv, caches). cwd is writable too, but it is the
     # repo, not durable machine state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
+    # Executes one tool policy. The CLI overrides it for a machine with
+    # `mode = "run"` states so tools run in the machine's own tree (a fresh
+    # clone at the chain tip); None is the plain jail. Injected so this
+    # module needs no git import, like agent_runner.
+    jail_runner: Callable[[JailPolicy], CommandResult] | None = None
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
@@ -330,7 +335,7 @@ class LiveWorld:
             raise EngineError("LiveWorld has no tool_policy factory wired")
         policy = self.tool_policy(tuple(argv), float(timeout_s), network)
         try:
-            result = run_in_jail(policy)
+            result = (self.jail_runner or run_in_jail)(policy)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
         # run_in_jail's contract is to RETURN a rc=124 result on timeout, never

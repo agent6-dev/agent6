@@ -58,10 +58,11 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
-    chain_ref_for,
     chain_tip,
     checkout_detached,
     fetch_branch,
+    machine_branch_for,
+    machine_chain_ref_for,
     render_commit_trailer,
 )
 from agent6.git_ops import status as git_status
@@ -448,7 +449,7 @@ def run_one(
         # instance dir name is its session-unique id. Read-only states never
         # commit (mode gate), so the refs stay None there.
         chain_ref=(
-            chain_ref_for(f"machine-{req.transcript_dir.parent.name}") if not read_only else None
+            machine_chain_ref_for(req.transcript_dir.parent.name) if not read_only else None
         ),
         chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
         commit_per_step=cfg.git.commit_per_step,
@@ -521,14 +522,16 @@ def build_machine_agent_runner(
     passes the draft log, so the subprocess writes a watchable event stream there.
 
     `machine_id` + `clone_root` (set together by `machine run` for a machine
-    with `mode="run"` states): a run-mode request executes in a fresh clone
-    under `<clone_root>/state-<seq>`, checked out at the machine chain's tip
-    (the origin's HEAD on the first state), and its work lands back per
-    state: the chain ref for the next state's continuation, and the visible
-    `agent6/machine-<id>` branch at the same tip for the operator -- the run
-    story ("changes are on a branch; merge them") with the lane clone
-    mechanism. The operator's checkout is never touched; read-only requests
-    (`mode="agent"`, `machine create`) run in *cwd*.
+    with `mode="run"` states): EVERY agent state then executes in a fresh
+    clone under `<clone_root>/state-<seq>`, checked out at the machine
+    chain's tip (the origin's HEAD before the first landing), so a read-only
+    judge sees the machine's work too. A run-mode state's commits land back
+    per state: the chain ref for the next state's continuation, and the
+    visible `agent6/machine-<id>` branch at the same tip for the operator --
+    the run story ("changes are on a branch; merge them") with the lane
+    clone mechanism; a read-only state commits nothing, so its landing is a
+    no-op cleanup. The operator's checkout is never touched. Without them
+    (`machine create`, a machine with no run states) requests run in *cwd*.
     """
 
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
@@ -561,13 +564,11 @@ def build_machine_agent_runner(
             )
 
         clone: Path | None = None
-        # Keep in sync with run_one's chain_ref: both derive the machine
-        # chain from the machine id.
-        chain = chain_ref_for(f"machine-{machine_id}") if machine_id is not None else None
-        if request.mode == "run" and chain is not None and clone_root is not None:
+        chain = machine_chain_ref_for(machine_id) if machine_id is not None else None
+        if chain is not None and clone_root is not None:
             clone = clone_root / f"state-{request.step_seq:04d}"
             try:
-                _clone_at_machine_chain(cwd, clone, chain)
+                clone_at_machine_chain(cwd, clone, chain)
             except (SubrunError, GitError) as exc:
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
@@ -643,13 +644,13 @@ def build_machine_agent_runner(
                         # one: the spend salvage keeps the budget honest.
                         result = salvaged("error")
         if clone is not None and chain is not None and machine_id is not None:
-            result = _land_machine_clone(cwd, clone, chain, f"agent6/machine-{machine_id}", result)
+            result = _land_machine_clone(cwd, clone, chain, machine_branch_for(machine_id), result)
         return result
 
     return run_agent
 
 
-def _clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
+def clone_at_machine_chain(origin: Path, dest: Path, chain_ref: str) -> None:
     """Fresh clone checked out at the machine chain's tip.
 
     A clone copies branches, not `refs/agent6/*`, so the chain ref is fetched

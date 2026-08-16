@@ -55,10 +55,9 @@ on = { ok = "verify", failed = "verify", budget_exhausted = "giveup", timeout = 
 
 [states.verify]
 kind = "tool"
-# A tool state runs in the operator's checkout, which a mode="run" agent state
-# never touches: its commits land on the machine's own branch. So the check
-# reads that branch (agent6/machine-<machine name>), not the working tree.
-command = ["python3", "scripts/verify.py", "--ref", "agent6/machine-code-fixer"]
+# Runs in the machine's own tree (a fresh clone at the chain tip), so it sees
+# the run state's committed fix; the operator's checkout is never touched.
+command = ["python3", "scripts/verify.py"]
 output_schema = "verify_result"
 capture = { set = { passed = "{{ result.passed }}", summary = "{{ result.summary }}" } }
 timeout_secs = 120
