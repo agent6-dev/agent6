@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Generate docs/internals.md from docs/internals_template.md.
+"""Generate docs/architecture.md from docs/architecture_template.md.
 
 Two marker kinds expand from the current source, so the page cannot drift
 from the code:
@@ -14,9 +14,9 @@ chain. Names that only need listing are listed. Drawing every module and
 every tool as a node produced a page-wide hairball at a tenth the legible
 type size.
 
-Run by the pages workflow before ``mkdocs build``; ``docs/internals.md`` is
-generated output and never committed. Regenerate locally with
-``uv run python docs/gen_diagrams.py``.
+Run by the pages workflow before ``mkdocs build``; ``docs/architecture.md`` is
+committed generated output, pinned by tests/unit/test_gen_diagrams.py.
+Regenerate with ``uv run python docs/gen_diagrams.py``.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
-_TEMPLATE = _ROOT / "docs" / "internals_template.md"
-_OUT = _ROOT / "docs" / "internals.md"
+_TEMPLATE = _ROOT / "docs" / "architecture_template.md"
+_OUT = _ROOT / "docs" / "architecture.md"
 # A diagram owns its line and expands to a fenced block; a generated name
 # list substitutes in place, so it can sit inside a sentence.
 _DIAGRAM = re.compile(r"^<!-- diagram: ([a-z-]+) -->$")
@@ -302,8 +302,8 @@ _BLOCKS = {
 
 def render(template: str) -> str:
     out: list[str] = [
-        "<!-- Generated from docs/internals_template.md by docs/gen_diagrams.py;"
-        " edit those, then regenerate. -->",
+        "<!-- Generated from docs/architecture_template.md by docs/gen_diagrams.py;"
+        " edit that, then regenerate. -->",
     ]
     for line in template.splitlines():
         diagram = _DIAGRAM.match(line)

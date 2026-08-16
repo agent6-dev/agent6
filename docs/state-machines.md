@@ -1,6 +1,7 @@
-# agent6 state machines
+# Agent state machines
 
-agent6 state machines are a declarative, human-editable, machine-parseable layer on top of agent6 that lets operators compose *mini-agents*: small, reliable, deterministic programs whose building blocks are agent6 runs, sandboxed tool calls, timed waits, and branches.
+An agent state machine is a declarative, human-editable, machine-parseable program whose building blocks are agent6 runs, sandboxed tool calls, timed waits, and branches.
+It lets an operator compose small deterministic agents that run for a long time, and agent6 is the runner.
 
 This document is the specification and reference for the format and its runtime.
 The feature is implemented end-to-end under `src/agent6/machine/` and exposed through the `agent6 machine` subcommands: `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, and `replay` (see [CLI surface](#7-cli-surface)).
@@ -487,7 +488,7 @@ load(file) -> Machine            # pydantic, extra=forbid, frozen
 blackboard = Machine.initial_vars()
 state = Machine.initial
 loop:
-    event   = execute(state, blackboard)     # the ONLY impure step
+    event   = execute(state, blackboard)     # the only impure step
     journal.append(event)                    # append-only, fsync
     blackboard = reduce(blackboard, event)   # pure
     state   = next_state(Machine, state, event, blackboard)  # pure
@@ -530,7 +531,7 @@ These heavy logs are pruned to the most recent `state_log_keep` (default 50) so 
 
 Sizing for long-running machines: the journal grows monotonically, roughly one line (~200 B) per transition.
 A 10-minute-interval machine makes ~150k transitions a year (3 per tick on the idle path), on the order of tens of MB.
-Snapshots do NOT accumulate: each write keeps only the most recent `[machine] snapshot_keep` (default 5, `0` = keep every one) and deletes the rest, so replay from the journal is bounded by that tail.
+Snapshots do not accumulate: each write keeps only the most recent `[machine] snapshot_keep` (default 5, `0` = keep every one) and deletes the rest, so replay from the journal is bounded by that tail.
 The per-state reasoning logs also do not grow with wall-clock time, only with agent-state executions, and they self-prune.
 The journal itself has no rotation; archive or delete an instance directory once its history is no longer needed for replay, and size `[budget] max_transitions` as the primary runaway guard.
 

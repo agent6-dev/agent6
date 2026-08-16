@@ -69,7 +69,7 @@ deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/publishers/anthropic/models"
 token_command = ["gcloud", "auth", "print-access-token"]
 
-# Azure OpenAI (the model id IS the deployment name; api-version required)
+# Azure OpenAI (the model id is the deployment name; api-version required)
 [providers.azure]
 api_format = "openai"
 deployment = "azure"
@@ -165,7 +165,7 @@ Operator-installed SKILL.md packs (the agentskills.io format).
 Installed under `$XDG_DATA_HOME/agent6/skills/<name>/`; `agent6 skills install <url>` takes a SKILL.md URL, a git repo (every `skills/*/SKILL.md`), or a local path.
 Installed = enabled: an index in the system prompt, on-demand content via `use_skill`, a `/<name>` pause-menu command, and `run --skill <name>`.
 The format is shared with Claude Code and most agentskills.io tooling: point `extra_dirs` at an existing collection (`~/.claude/skills`, …) or install to copy.
-Repo-local skill dirs are deliberately NOT discovered (repo content is not config).
+Repo-local skill dirs are not discovered (repo content is not config).
 Trust model: [security.md](security.md).
 
 <!-- config-table: skills -->

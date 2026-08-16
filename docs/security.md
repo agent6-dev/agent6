@@ -1,4 +1,4 @@
-# SECURITY
+# Security
 
 agent6 treats the LLM as untrusted.
 Each section states what is enforced and what is not.
@@ -311,7 +311,7 @@ Under `none` isolation nothing is enforced or refused.
 
 ### 10. Parallel lanes
 
-`agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs-fan-out-and-coordinator-dispatch)) each spawn subordinate work.
+`agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
 
 - Every lane is an ordinary run: a detached `agent6 run` on its own clone, with its own jail per `sandbox.isolation` and its own `run_commands` policy.
   No sandbox socket is shared across lanes or with the parent.

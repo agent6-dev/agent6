@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The generated internals diagrams stay parseable by mermaid.
+"""The generated architecture diagrams stay parseable by mermaid.
 
 Node ids are DATA (package, method, and tool names lifted from source), and
 mermaid reserves bare words like ``graph``, ``call``, and ``end`` anywhere in
@@ -47,9 +47,13 @@ def _load_generator() -> ModuleType:
 
 
 def _ids_in(diagram: str) -> set[str]:
-    """Every token in node-id position: quoted labels and |edge labels| are
-    stripped first, so what remains on a body line is ids, arrows, and link
-    operators."""
+    """Every token in node-id position.
+
+    Labels are stripped first, in every shape mermaid spells them: quoted,
+    `|edge label|`, and the bracket forms (`[text]`, `[(text)]`, `{text}`,
+    `([text])`). A label may say anything, keywords included; only what is
+    left on the line is an id, an arrow, or a link operator.
+    """
     ids: set[str] = set()
     for line in diagram.splitlines()[1:]:
         stripped = line.strip()
@@ -57,6 +61,8 @@ def _ids_in(diagram: str) -> set[str]:
             continue
         bare = re.sub(r'"[^"]*"', "", stripped)
         bare = re.sub(r"\|[^|]*\|", "", bare)
+        bare = re.sub(r"\[[^\]]*\]", "", bare)
+        bare = re.sub(r"\{[^}]*\}", "", bare)
         for token in re.findall(r"[A-Za-z_]\w*", bare):
             ids.add(token)
     return ids
@@ -66,7 +72,7 @@ def test_no_emitted_node_id_is_a_mermaid_keyword() -> None:
     """Rendered over the real tree: every diagram's ids stay off the keyword
     list (the layering diagram used to emit the ``graph`` package bare)."""
     gen = _load_generator()
-    page = gen.render((_ROOT / "docs" / "internals_template.md").read_text(encoding="utf-8"))
+    page = gen.render((_ROOT / "docs" / "architecture_template.md").read_text(encoding="utf-8"))
     blocks = re.findall(r"```mermaid\n(.*?)```", page, re.S)
     assert blocks, "no diagrams rendered"
     for block in blocks:
@@ -130,3 +136,13 @@ def test_every_asset_the_site_config_references_exists() -> None:
     refs = re.findall(r"^\s*-\s+(assets/\S+)$", config, re.M)
     assert refs, "no asset references found in the site config"
     assert not [r for r in refs if not (_ROOT / "docs" / r).is_file()]
+
+
+def test_architecture_page_is_not_stale() -> None:
+    """`docs/architecture.md` is rendered from the template plus the current
+    source, and committed, so a source change that moves a diagram has to be
+    regenerated: run `uv run python docs/gen_diagrams.py`."""
+    gen = _load_generator()
+    template = (_ROOT / "docs" / "architecture_template.md").read_text(encoding="utf-8")
+    committed = (_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    assert gen.render(template) == committed

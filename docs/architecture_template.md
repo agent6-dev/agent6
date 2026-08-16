@@ -1,4 +1,3 @@
-<!-- Generated from docs/architecture_template.md by docs/gen_diagrams.py; edit that, then regenerate. -->
 # Architecture
 
 How agent6 runs, end to end.
@@ -11,20 +10,9 @@ The engine stack is `ui -> app -> workflows -> tools -> sandbox`.
 An edge is "imports from"; a dashed edge would mark an import climbing the stack.
 [tach](https://docs.gauge.sh/) records the map ([tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)); workflows never import each other, and the engine never imports the UI.
 
-```mermaid
-graph TD
-    n_ui["ui"]
-    n_app["app"]
-    n_workflows["workflows"]
-    n_tools["tools"]
-    n_sandbox["sandbox"]
-    n_ui --> n_app
-    n_app --> n_workflows
-    n_workflows --> n_tools
-    n_tools --> n_sandbox
-```
+<!-- diagram: layering -->
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `config`, `directive`, `errors`, `events`, `git_ops`, `graph`, `init`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secrets`, `sessions`, `skills`, `types`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root.
   The four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`), `ui/mcp_server.py` (agent6 as an MCP server), and the write helpers `ui/spawn` and `ui/notify`, over the shared read-model fold (`viewmodel`).
@@ -131,60 +119,16 @@ Delivery is measured: small models never call `use_skill` from the index alone, 
 `app/run.py`'s `run_task` composes one stage per step, drawn in the order it calls them: refusals and clamps, isolation, git preflight, manifest, provider and tool assembly, gate inference, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
-```mermaid
-graph TD
-    n_run_task["run_task"]
-    n_session_config["session_config"]
-    n_headless_approval_refusal["headless_approval_refusal"]
-    n_select_isolation["select_isolation"]
-    n_git_preflight["git_preflight"]
-    n_write_session_manifest["write_session_manifest"]
-    n_build_session_providers["build_session_providers"]
-    n_infer_verify_if_unset["infer_verify_if_unset"]
-    n_drop_gate_if_unrunnable["drop_gate_if_unrunnable"]
-    n_pin_gate["pin_gate"]
-    n_build_session_tools["build_session_tools"]
-    n_finalize_auto_merge["finalize_auto_merge"]
-    n_print_session_end["print_session_end"]
-    n_fire_notify_hook["fire_notify_hook"]
-    n_session_exit_code["session_exit_code"]
-    n_finalize_auto_stash["finalize_auto_stash"]
-    n_run_task --> n_session_config
-    n_session_config --> n_headless_approval_refusal
-    n_headless_approval_refusal --> n_select_isolation
-    n_select_isolation --> n_git_preflight
-    n_git_preflight --> n_write_session_manifest
-    n_write_session_manifest --> n_build_session_providers
-    n_build_session_providers --> n_infer_verify_if_unset
-    n_infer_verify_if_unset --> n_drop_gate_if_unrunnable
-    n_drop_gate_if_unrunnable --> n_pin_gate
-    n_pin_gate --> n_build_session_tools
-    n_build_session_tools --> n_finalize_auto_merge
-    n_finalize_auto_merge --> n_print_session_end
-    n_print_session_end --> n_fire_notify_hook
-    n_fire_notify_hook --> n_session_exit_code
-    n_session_exit_code --> n_finalize_auto_stash
-```
+<!-- diagram: run-lifecycle -->
 
 ## Tool dispatch
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
 
-```mermaid
-graph TD
-    n_dispatch["dispatch"]
-    n_dispatch_inner["dispatch_inner"]
-    n_run_handler["run_handler"]
-    n_approve_mcp_call["approve_mcp_call"]
-    n_dispatch_inner --> n_approve_mcp_call
-    n_dispatch_inner --> n_run_handler
-    n_dispatch --> n_dispatch_inner
-    n_table["handler table: 22 tools"]
-    n_run_handler -.->|by name| n_table
-```
+<!-- diagram: tool-dispatch -->
 
-The table routes `agent6_docs`, `read_file`, `list_dir`, `outline`, `find_definition`, `find_references`, `apply_edit`, `apply_patch`, `run_verify_command`, `run_command`, `read_session`, `fetch`, `read_background`, `stop_background`, `run_metric_command`, `finish_session`, `finish_planning`, `ask_user`, `add_task`, `update_task`, `list_tasks`, `use_skill`.
+The table routes <!-- generated: tool-names -->.
 
 ## A review
 
